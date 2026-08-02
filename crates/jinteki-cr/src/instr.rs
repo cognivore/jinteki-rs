@@ -75,6 +75,32 @@ pub enum Instruction {
     /// "Run any server." / "make another run" (Doppelgänger class) — pushes
     /// a nested run timing structure.
     InitiateRun(ServerId),
+    /// "Trace [N] — if successful, …; if unsuccessful, …" (10.8). Expanded
+    /// by the resolution loop into the 10.8.6 step sequence.
+    Trace {
+        base: i64,
+        if_successful: Vec<Instruction>,
+        if_unsuccessful: Vec<Instruction>,
+        /// "When the trace is determined…, if your trace strength is N or
+        /// greater, …" (Gemini class, 10.8.5).
+        determined_min: Option<(i64, Vec<Instruction>)>,
+    },
+    /// 10.8.6a: the trace initiates ("when initiated" conditions meet); the
+    /// base trace strength is a modifiable value (9.9.6d).
+    TraceInitiate { base: i64 },
+    /// 10.8.6c: the Corp may spend credits to increase the trace strength.
+    TraceCorpSpend,
+    /// 10.8.6d: the Runner may spend credits to increase their link strength.
+    TraceRunnerSpend,
+    /// 10.8.6e: determine success; the associated conditionals pend (10.8.5).
+    TraceDetermine {
+        if_successful: Vec<Instruction>,
+        if_unsuccessful: Vec<Instruction>,
+        determined_min: Option<(i64, Vec<Instruction>)>,
+    },
+    /// "Play a Psi Game." — one instruction: sealed bids, reveal, immediate
+    /// spend, branch (10.14.6).
+    PsiGame { on_match: Vec<Instruction>, on_differ: Vec<Instruction> },
     /// "Break up to N subroutines on the encountered ice." (first unbroken)
     BreakSubroutines { count: u32 },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).

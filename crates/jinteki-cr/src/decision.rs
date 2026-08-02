@@ -96,6 +96,10 @@ pub enum DecisionSpec {
     DiscardCards { count: u32, hand: Vec<ObjectId> },
     /// CR 10.3.1e: choose which minimal appropriate set is trashed.
     MinimalSet { sets: Vec<Vec<ObjectId>> },
+    /// 10.8.6c/d: openly spend credits on a trace (0..=max).
+    TraceSpend { max: u32, strength_so_far: i64, corp_side: bool },
+    /// 10.14.6b: a sealed Psi-Game bid; `legal` per 10.14.3.
+    PsiBid { legal: Vec<u32> },
 }
 
 /// Defunctionalized answers.
@@ -115,4 +119,6 @@ pub enum DecisionAnswer {
     JackOut(bool),
     Discard(Vec<ObjectId>),
     ChooseSet(usize),
+    SpendCredits(u32),
+    Bid(u32),
 }

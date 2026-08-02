@@ -59,6 +59,10 @@ pub enum GameChange {
     BreachEnded { server: ServerId },
     CardEnteredRoot { obj: ObjectId, server: ServerId },
     SubroutineResolved { ice: ObjectId, index: usize },
+    /// 10.8.6a: a trace initiated.
+    TraceInitiated { base: i64 },
+    /// 10.8.6e: the trace was determined.
+    TraceDetermined { success: bool, trace_strength: i64, link_strength: i64 },
     GameBegan,
 }
 

@@ -52,6 +52,10 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_modified_values_retain_properties_1",
     "example_rule_replace_imminent_effects_1",
     "example_rule_persistent_applicability_1",
+    // Wave 2c: traces (10.8) and bidding/psi (10.14).
+    "example_rule_trace_conditional_abilities_1",
+    "example_rule_bid_possible_1",
+    "example_rule_bid_possible_2",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -1885,6 +1889,175 @@ fn example_rule_persistent_applicability_1() {
         .filter(|c| matches!(c, GameChange::RunEnded { .. }))
         .count();
     assert_eq!(runs_ended, 2, "two runs actually ended");
+}
+
+// ===========================================================================
+// §10.8 / §10.14 — traces and psi (wave 2c)
+// ===========================================================================
+
+/// example_rule_trace_conditional_abilities_1 (10.8.5): a Gemini-class
+/// "Trace 3" with an "if successful" body AND a "when determined, if trace
+/// strength ≥ 5" body. Corp spends 3 → strength 6 vs link 0: both pend
+/// (2 net total). A second attempt with 0 spent → strength 3: successful
+/// but < 5, so only 1 net.
+#[test]
+fn example_rule_trace_conditional_abilities_1() {
+    let mut vm = Vm::empty(60);
+    tk::install_root(&mut vm, tk::gemini_like("Gemini-like"), ServerId::Remote(1), true);
+    vm.st.corp.credits = 3;
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut fired = 0;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && fired < 2 => {
+                if let Some(opt) = tk::option_labeled(options, "gemini") {
+                    fired += 1;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::TraceSpend { corp_side: true, max, .. } => {
+                // First attempt: spend 3 (strength 6); second: spend 0.
+                let n = if fired == 1 { (*max).min(3) } else { 0 };
+                vm.answer(DecisionAnswer::SpendCredits(n));
+            }
+            DecisionSpec::TraceSpend { corp_side: false, .. } => {
+                vm.answer(DecisionAnswer::SpendCredits(0));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(fired, 2);
+    let determinations: Vec<(bool, i64)> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::TraceDetermined { success, trace_strength, .. } => {
+                Some((*success, *trace_strength))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(determinations, vec![(true, 6), (true, 3)]);
+    // 2 net from the first (both bodies) + 1 net from the second.
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 5 - 3);
+    assert_eq!(vm.st.corp.credits, 0, "the 3 credits were openly spent");
+}
+
+/// example_rule_bid_possible_1 (10.14.3): with 0 pool credits and 1
+/// spendable hosted credit, the Runner cannot bid 2 but CAN bid 1.
+#[test]
+fn example_rule_bid_possible_1() {
+    let mut vm = Vm::empty(61);
+    tk::install_root(&mut vm, tk::psi_button("Adrian-like"), ServerId::Remote(1), true);
+    let fencer = tk::install_rig(&mut vm, tk::fencer_like("Fencer-like", 1));
+    vm.st
+        .objects
+        .get_mut(&fencer)
+        .unwrap()
+        .counters
+        .insert(CounterKind::Credit, 1);
+    vm.st.runner.credits = 0;
+    vm.st.corp.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    let mut runner_legal = None;
+    let mut fired = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp => {
+                match tk::option_labeled(options, "psi") {
+                    Some(opt) if !fired => {
+                        fired = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                    }
+                    _ => vm.answer(DecisionAnswer::Pass),
+                }
+            }
+            DecisionSpec::PsiBid { legal } if s == Side::Corp => {
+                vm.answer(DecisionAnswer::Bid(0));
+                let _ = legal;
+            }
+            DecisionSpec::PsiBid { legal } if s == Side::Runner => {
+                runner_legal = Some(legal.clone());
+                vm.answer(DecisionAnswer::Bid(1));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(
+        runner_legal,
+        Some(vec![0, 1]),
+        "10.14.3: cannot bid 2, can bid 1 via the hosted credit; 0 always legal"
+    );
+    assert_eq!(
+        vm.st.objects[&fencer].counter(CounterKind::Credit),
+        0,
+        "the hosted credit paid the bid"
+    );
+    assert_eq!(vm.st.runner.tags, 1, "bids differed (0 vs 1): the differ branch ran");
+}
+
+/// example_rule_bid_possible_2 (10.14.3): an RSVP-class prohibition on
+/// spending credits forces the Runner to bid 0.
+#[test]
+fn example_rule_bid_possible_2() {
+    let mut vm = Vm::empty(62);
+    tk::install_root(&mut vm, tk::psi_button("Psi-like"), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::rsvp_like("RSVP-like"), ServerId::Remote(2), true);
+    vm.st.runner.credits = 5;
+    vm.st.corp.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    let mut runner_legal = None;
+    let mut fired = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp => {
+                match tk::option_labeled(options, "psi") {
+                    Some(opt) if !fired => {
+                        fired = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                    }
+                    _ => vm.answer(DecisionAnswer::Pass),
+                }
+            }
+            DecisionSpec::PsiBid { .. } if s == Side::Corp => {
+                vm.answer(DecisionAnswer::Bid(0));
+            }
+            DecisionSpec::PsiBid { legal } if s == Side::Runner => {
+                runner_legal = Some(legal.clone());
+                vm.answer(DecisionAnswer::Bid(0));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(
+        runner_legal,
+        Some(vec![0]),
+        "10.14.3: unable to spend, the Runner must bid 0"
+    );
+    assert_eq!(vm.st.runner.credits, 5, "nothing was spent");
+    assert_eq!(vm.st.corp.credits, 3, "bids matched at 0: the match branch ran (+1)");
 }
 
 // ===========================================================================

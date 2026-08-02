@@ -172,6 +172,8 @@ pub enum StaticDecl {
     /// "<side> cannot draw cards." (Lockdown class; 9.9.2 statics remove
     /// parts of expected effects.)
     CannotDraw(Side),
+    /// "<side> cannot spend credits." (RSVP class; forces 0 bids, 10.14.3.)
+    CannotSpendCredits(Side),
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).

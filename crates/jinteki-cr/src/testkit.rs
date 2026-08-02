@@ -883,6 +883,68 @@ pub fn doppel_like(name: &'static str, server: ServerId) -> PrintedCard {
     c
 }
 
+/// Gemini shape (10.8.5): "Trace 3 — if successful, do 1 net damage. When
+/// the trace is determined, if your trace strength is 5 or greater, do 1
+/// net damage."
+pub fn gemini_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::Trace {
+            base: 3,
+            if_successful: vec![Instruction::Damage {
+                kind: DamageKind::Net,
+                amount: 1,
+                responsible: Side::Corp,
+            }],
+            if_unsuccessful: vec![],
+            determined_min: Some((
+                5,
+                vec![Instruction::Damage {
+                    kind: DamageKind::Net,
+                    amount: 1,
+                    responsible: Side::Corp,
+                }],
+            )),
+        }],
+    )
+    .labeled("gemini: trace 3")];
+    c
+}
+
+/// Adrian-Seis-adjacent psi button: "Play a Psi Game. If the bids differ,
+/// the Runner gains 1 credit tag-marker." (outcome observability)
+pub fn psi_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PsiGame {
+            on_match: vec![Instruction::GainCredits(Side::Corp, 1)],
+            on_differ: vec![Instruction::GainTags(1)],
+        }],
+    )
+    .labeled("psi: play a psi game")];
+    c
+}
+
+/// Fencer-Fueno shape: hosted credits are spendable by the Runner.
+pub fn fencer_like(name: &'static str, credits: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.hosted_credits_spendable = true;
+    let _ = credits; // loaded by the test after install
+    c
+}
+
+/// RSVP shape: "The Runner cannot spend credits." (static for the test.)
+pub fn rsvp_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::CannotSpendCredits(
+        Side::Runner,
+    )])
+    .labeled("rsvp: runner cannot spend")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------
@@ -957,6 +1019,8 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
             DecisionAnswer::Discard(hand.iter().take(*count as usize).copied().collect())
         }
         DecisionSpec::MinimalSet { .. } => DecisionAnswer::ChooseSet(0),
+        DecisionSpec::TraceSpend { .. } => DecisionAnswer::SpendCredits(0),
+        DecisionSpec::PsiBid { .. } => DecisionAnswer::Bid(0),
     }
 }
 

@@ -138,6 +138,18 @@ pub enum DecisionCtx {
     MinimalSet,
     /// Additional-cost-to-steal decision for the accessed agenda (1.16.10).
     StealCost(ObjectId),
+    /// 10.8.6c/d trace spends.
+    TraceSpend(Side),
+    /// 10.14.6 sealed psi bids.
+    PsiBid(Side),
+}
+
+/// An in-progress trace attempt (10.8.6): shared state across the expanded
+/// step instructions.
+#[derive(Debug, Clone)]
+pub struct TraceState {
+    pub trace_strength: i64,
+    pub link_strength: i64,
 }
 
 /// Setup progress (§1.6 is a procedure, not a timing structure).
@@ -174,6 +186,10 @@ pub struct Vm {
     pub orphan_set_aside_counters: Vec<(CounterKind, u32)>,
     /// CR 9.5.5: set-aside cards left over — trashed at step 10.3.1g.
     pub set_aside_card_cleanup: Vec<ObjectId>,
+    /// In-progress trace attempt (10.8; NOT a timing structure, 9.2.2e).
+    pub trace: Option<TraceState>,
+    /// Sealed first bid of an in-progress Psi Game (10.14.6).
+    psi_first_bid: Option<u32>,
     pub pending_decision: Option<(Side, DecisionSpec, DecisionCtx)>,
     answer: Option<DecisionAnswer>,
     pub game_over: Option<GameResult>,
@@ -318,6 +334,8 @@ impl Vm {
             last_minimal_sets: None,
             orphan_set_aside_counters: Vec::new(),
             set_aside_card_cleanup: Vec::new(),
+            trace: None,
+            psi_first_bid: None,
             pending_decision: None,
             answer: None,
             game_over: None,
@@ -1638,6 +1656,18 @@ impl Vm {
             Instruction::ReplaceImminentDamageKind { .. } | Instruction::InitiateRun(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
+            Instruction::TraceInitiate { base } => {
+                // 9.9.6d: the base trace strength is a modifiable value (it
+                // need not be positive).
+                cite!("rule_modifiable_value_base_trace_strength");
+                vec![EffectAtom::new(EffectClass::Structural, *base, controller)]
+            }
+            Instruction::TraceCorpSpend
+            | Instruction::TraceRunnerSpend
+            | Instruction::TraceDetermine { .. }
+            | Instruction::PsiGame { .. } => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
+            }
             Instruction::GainAllottedClicks(side) => {
                 let n = self.st.player(*side).allotted_clicks as i64;
                 vec![EffectAtom::new(EffectClass::GainClicks, n, *side)]
@@ -2128,6 +2158,37 @@ impl Vm {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                     af.instructions[idx].clone()
                 };
+                // 10.8.6: a Trace instruction expands into the step sequence
+                // of resolving a trace attempt (a procedure, not a timing
+                // structure — 9.2.2e; its checkpoints come from 10.8.6b and
+                // the cost payments in (c)/(d)).
+                if let Instruction::Trace { base, if_successful, if_unsuccessful, determined_min } =
+                    &instr
+                {
+                    cite!("rule_steps_of_resolving_trace_attempt");
+                    cite!("rule_not_timing_structures");
+                    let (b, isucc, iunsucc, dmin) = (
+                        *base,
+                        if_successful.clone(),
+                        if_unsuccessful.clone(),
+                        determined_min.clone(),
+                    );
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        af.instructions[af.idx] = Instruction::TraceInitiate { base: b };
+                        af.instructions.insert(af.idx + 1, Instruction::TraceCorpSpend);
+                        af.instructions.insert(af.idx + 2, Instruction::TraceRunnerSpend);
+                        af.instructions.insert(
+                            af.idx + 3,
+                            Instruction::TraceDetermine {
+                                if_successful: isucc,
+                                if_unsuccessful: iunsucc,
+                                determined_min: dmin,
+                            },
+                        );
+                    }
+                    // Re-enter Targets with the expanded first step.
+                    return;
+                }
                 // Nested costs: an unpayable cost forces the branch without
                 // a decision (1.16.1b — the choice cannot be taken).
                 match &instr {
@@ -2573,6 +2634,84 @@ impl Vm {
                 self.initiate_run(*server);
                 // The nested run frame is now on top; this ability resumes
                 // after the run completes (9.2.4d LIFO nesting).
+            }
+            Instruction::TraceInitiate { .. } => {
+                // 10.8.6a: the trace initiates; "when initiated" conditions
+                // meet. The (possibly modified) base is the atom's value.
+                cite!("step_trace_initiated");
+                cite!("rule_trace_attempt_and_base_trace_strength");
+                let base = imm.atoms.first().map(|a| a.value).unwrap_or(0);
+                self.trace = Some(TraceState { trace_strength: base, link_strength: 0 });
+                self.changes.record(GameChange::TraceInitiated { base });
+                // 10.8.6b: a checkpoint occurs — this is the post-instruction
+                // checkpoint of this expanded step (9.11.1e).
+                cite!("step_trace_checkpoint");
+                cite!("rule_trace_checkpoint");
+            }
+            Instruction::TraceCorpSpend => {
+                cite!("step_trace_corp_spend_credits");
+                cite!("rule_trace_strength");
+                let max = self.spendable_credits(Side::Corp);
+                let strength = self.trace.as_ref().map(|t| t.trace_strength).unwrap_or(0);
+                self.ask(
+                    Side::Corp,
+                    DecisionSpec::TraceSpend { max, strength_so_far: strength, corp_side: true },
+                    DecisionCtx::TraceSpend(Side::Corp),
+                );
+            }
+            Instruction::TraceRunnerSpend => {
+                cite!("step_trace_runner_spend_credits");
+                cite!("rule_link_strength");
+                let max = self.spendable_credits(Side::Runner);
+                let link = self.trace.as_ref().map(|t| t.link_strength).unwrap_or(0);
+                self.ask(
+                    Side::Runner,
+                    DecisionSpec::TraceSpend { max, strength_so_far: link, corp_side: false },
+                    DecisionCtx::TraceSpend(Side::Runner),
+                );
+            }
+            Instruction::TraceDetermine { if_successful, if_unsuccessful, determined_min } => {
+                cite!("step_trace_determine_success");
+                cite!("rule_compare_trace_and_link_strength");
+                let t = self.trace.take().unwrap_or(TraceState {
+                    trace_strength: 0,
+                    link_strength: 0,
+                });
+                let success = t.trace_strength > t.link_strength;
+                self.changes.record(GameChange::TraceDetermined {
+                    success,
+                    trace_strength: t.trace_strength,
+                    link_strength: t.link_strength,
+                });
+                // 10.8.5: the associated conditionals pend after (e); they
+                // resolve as the following instructions of this ability.
+                cite!("rule_trace_conditional_abilities");
+                let mut inject: Vec<Instruction> =
+                    if success { if_successful.clone() } else { if_unsuccessful.clone() };
+                if let Some((min, extra)) = determined_min {
+                    if t.trace_strength >= *min {
+                        inject.extend(extra.iter().cloned());
+                    }
+                }
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    for (k, ins) in inject.into_iter().enumerate() {
+                        af.instructions.insert(af.idx + 1 + k, ins);
+                    }
+                }
+                cite!("step_trace_complete");
+            }
+            Instruction::PsiGame { on_match, on_differ } => {
+                // 10.14.6c: one instruction — sealed bids, reveal, immediate
+                // spend, then the outcome branch; no checkpoints inside.
+                cite!("rule_psi_game");
+                cite!("rule_psi_bid_reveal");
+                let _ = (on_match, on_differ);
+                let legal = self.psi_legal_bids(Side::Corp);
+                self.ask(
+                    Side::Corp,
+                    DecisionSpec::PsiBid { legal },
+                    DecisionCtx::PsiBid(Side::Corp),
+                );
             }
             Instruction::PreventTrashOf(protected) => {
                 // Sacrificial-Construct class: remove the object from the
@@ -3240,6 +3379,72 @@ impl Vm {
         true
     }
 
+    /// CR 1.10.3c-adjacent: credits a player can actually spend — pool plus
+    /// hosted credits on cards that allow spending them, minus prohibitions
+    /// (RSVP class → 0).
+    pub fn spendable_credits(&self, side: Side) -> u32 {
+        if self
+            .active_statics()
+            .iter()
+            .any(|(_, d)| matches!(d, StaticDecl::CannotSpendCredits(s) if *s == side))
+        {
+            cite!("rule_bid_possible");
+            return 0;
+        }
+        let hosted: u32 = self
+            .st
+            .objects
+            .values()
+            .filter(|o| o.controller == side && card_active(o) && o.printed.hosted_credits_spendable)
+            .map(|o| o.counter(CounterKind::Credit))
+            .sum();
+        self.st.player(side).credits + hosted
+    }
+
+    /// 10.14.6b + 10.14.3: legal Psi bids — 0, 1, or 2, capped by what the
+    /// player can actually spend; 0 is always legal.
+    pub fn psi_legal_bids(&self, side: Side) -> Vec<u32> {
+        cite!("rule_psi_bid_options");
+        cite!("rule_bid_possible");
+        let max = self.spendable_credits(side).min(2);
+        (0..=max).collect()
+    }
+
+    /// Spend credits from the pool first, then from spendable hosted pools.
+    fn spend_flexible(&mut self, side: Side, mut n: u32) {
+        let from_pool = n.min(self.st.player(side).credits);
+        self.st.player_mut(side).credits -= from_pool;
+        n -= from_pool;
+        if n > 0 {
+            let ids: Vec<ObjectId> = self
+                .st
+                .objects
+                .values()
+                .filter(|o| {
+                    o.controller == side && card_active(o) && o.printed.hosted_credits_spendable
+                })
+                .map(|o| o.id)
+                .collect();
+            for id in ids {
+                if n == 0 {
+                    break;
+                }
+                let have = self.st.objects[&id].counter(CounterKind::Credit);
+                let take = have.min(n);
+                if take > 0 {
+                    self.st
+                        .objects
+                        .get_mut(&id)
+                        .unwrap()
+                        .counters
+                        .insert(CounterKind::Credit, have - take);
+                    self.changes.record(GameChange::AbilityUsed { source: id });
+                    n -= take;
+                }
+            }
+        }
+    }
+
     /// Would an active MANDATORY interrupt avoid a tag the Runner takes now?
     fn tag_cost_blocked(&self) -> bool {
         for o in self.st.objects.values() {
@@ -3712,6 +3917,96 @@ impl Vm {
                     }
                 }
                 self.last_minimal_sets = None;
+            }
+            (DecisionCtx::TraceSpend(side), DecisionAnswer::SpendCredits(n)) => {
+                // 10.8.2/10.8.3: openly spend credits; this is a payment, so
+                // its checkpoint follows (10.3.4).
+                let n = n.min(self.spendable_credits(side));
+                self.spend_flexible(side, n);
+                if n > 0 {
+                    self.changes.record(GameChange::CreditsLost { side, amount: n });
+                    self.changes.record(GameChange::CostPaid {
+                        side,
+                        credits: n,
+                        clicks: 0,
+                        trashed: Vec::new(),
+                    });
+                }
+                if let Some(t) = self.trace.as_mut() {
+                    match side {
+                        Side::Corp => t.trace_strength += n as i64,
+                        Side::Runner => t.link_strength += n as i64,
+                    }
+                }
+                if n > 0 {
+                    cite!("rule_checkpoint_after_paying_cost");
+                    self.checkpoint_and_react(None);
+                }
+                // The spend instruction completes.
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    if af.phase == AbilityPhase::Resolve {
+                        af.phase = AbilityPhase::Checkpoint;
+                    }
+                }
+            }
+            (DecisionCtx::PsiBid(side), DecisionAnswer::Bid(n)) => {
+                cite!("rule_bid_secret");
+                let legal = self.psi_legal_bids(side);
+                assert!(legal.contains(&n), "illegal bid {n} (10.14.3)");
+                match side {
+                    Side::Corp => {
+                        // Seal the Corp's bid; ask the Runner.
+                        self.psi_first_bid = Some(n);
+                        let legal = self.psi_legal_bids(Side::Runner);
+                        self.ask(
+                            Side::Runner,
+                            DecisionSpec::PsiBid { legal },
+                            DecisionCtx::PsiBid(Side::Runner),
+                        );
+                    }
+                    Side::Runner => {
+                        // Reveal: both spend immediately — no checkpoint or
+                        // window between reveal and spend (10.14.4a/10.14.6c).
+                        cite!("rule_bid_spent_immediately");
+                        cite!("rule_bid_is_cost");
+                        let corp_bid = self.psi_first_bid.take().unwrap_or(0);
+                        let runner_bid = n;
+                        self.spend_flexible(Side::Corp, corp_bid);
+                        self.spend_flexible(Side::Runner, runner_bid);
+                        if corp_bid > 0 {
+                            self.changes.record(GameChange::CreditsLost {
+                                side: Side::Corp,
+                                amount: corp_bid,
+                            });
+                        }
+                        if runner_bid > 0 {
+                            self.changes.record(GameChange::CreditsLost {
+                                side: Side::Runner,
+                                amount: runner_bid,
+                            });
+                        }
+                        // 10.14.6d: branch on match/differ as the following
+                        // instructions.
+                        cite!("rule_psi_outcome");
+                        let (idx, instr) = {
+                            let Some(Frame::Ability(af)) = self.frames.last() else {
+                                unreachable!()
+                            };
+                            (af.idx, af.instructions[af.idx].clone())
+                        };
+                        if let Instruction::PsiGame { on_match, on_differ } = instr {
+                            let inject = if corp_bid == runner_bid { on_match } else { on_differ };
+                            if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                                for (k, ins) in inject.into_iter().enumerate() {
+                                    af.instructions.insert(idx + 1 + k, ins);
+                                }
+                                if af.phase == AbilityPhase::Resolve {
+                                    af.phase = AbilityPhase::Checkpoint;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             (ctx, ans) => panic!("mismatched decision answer {ans:?} for {ctx:?}"),
         }

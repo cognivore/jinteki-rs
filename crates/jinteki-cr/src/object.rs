@@ -137,6 +137,9 @@ pub struct PrintedCard {
     pub recurring_credits: Option<u32>,
     /// CR 1.16.10 printed additional cost to steal (Obokata class).
     pub additional_steal_cost: Option<crate::ability::Cost>,
+    /// CR 1.10.3c: hosted credits on this card are spendable by its
+    /// controller (Fencer Fueno class — drives bid legality, 10.14.3).
+    pub hosted_credits_spendable: bool,
     pub abilities: Vec<AbilityDef>,
 }
 
@@ -157,6 +160,7 @@ impl PrintedCard {
             console: false,
             recurring_credits: None,
             additional_steal_cost: None,
+            hosted_credits_spendable: false,
             abilities: Vec::new(),
         }
     }
