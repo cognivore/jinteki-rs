@@ -41,12 +41,44 @@ pub async fn handle(mut ws: WebSocket) {
                     .as_str()
                     .unwrap_or(jinteki_core::carddb::RUNNER_ID)
                     .to_string();
+                let corp_deck = jinteki_core::carddb::corp_deck();
+                let runner_deck = jinteki_core::carddb::runner_deck();
+                // NO silent vanilla play: refuse any deck containing a card
+                // whose behavior is not natively implemented, and say which.
+                let missing: Vec<&str> = corp_deck
+                    .iter()
+                    .chain(runner_deck.iter())
+                    .chain([jinteki_core::carddb::CORP_ID, runner_id.as_str()].iter())
+                    .filter(|t| {
+                        !matches!(
+                            jinteki_core::printed::impl_status(t),
+                            jinteki_core::printed::ImplStatus::Behavior
+                        )
+                    })
+                    .copied()
+                    .collect();
+                if !missing.is_empty() {
+                    let _ = ws
+                        .send(Message::Text(
+                            json!({
+                                "type": "error",
+                                "error": format!(
+                                    "deck contains cards without implemented behavior: {}",
+                                    missing.join(", ")
+                                ),
+                            })
+                            .to_string()
+                            .into(),
+                        ))
+                        .await;
+                    continue;
+                }
                 let mut st = GameState::new_with_decks(
                     seed,
                     jinteki_core::carddb::CORP_ID,
-                    &jinteki_core::carddb::corp_deck(),
+                    &corp_deck,
                     &runner_id,
-                    &jinteki_core::carddb::runner_deck(),
+                    &runner_deck,
                 );
                 st.system_log(format!("Local game vs bot, seed {seed}."));
                 let bot_rng = ChaCha8Rng::seed_from_u64(seed ^ 0xB07);

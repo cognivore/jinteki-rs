@@ -14,6 +14,11 @@ let S = null;               // last state
 let ACTIONS = [];           // legal actions (local mode)
 let raised = null;          // raised hand card cid
 let prev = { credits: {}, clicks: {}, logn: 0 };
+// Jitter control: deal-in animation fires only for cards never seen before,
+// and each board section re-renders only when its slice of state changed.
+let seenCids = new Set();
+let sectionCache = {};
+const hoverCapable = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 let lobbyGameid = null;
 let amHost = false;
 let zoomTimer = null;
@@ -36,13 +41,29 @@ function show(id) {
 
 /* ── networking ──────────────────────────────────────────────────────── */
 function connect(path, onopen) {
+  seenCids = new Set();
+  sectionCache = {};
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}${path}`);
   ws.onopen = onopen;
   ws.onmessage = (ev) => handle(JSON.parse(ev.data));
-  ws.onclose = () => { toast("Connection closed"); };
+  ws.onclose = () => { showDisconnected(); };
 }
-function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function showDisconnected() {
+  if (!document.getElementById("screen-game").classList.contains("active")) {
+    toast("Connection closed");
+    return;
+  }
+  const o = $("gameover-overlay");
+  o.style.display = "flex";
+  o.innerHTML = `<h1>DISCONNECTED</h1>
+    <div class="why">The connection dropped (dev server restart?). Local games live in memory — start a new one.</div>
+    <button class="big go" onclick="location.reload()">Back to base</button>`;
+}
+function send(obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  else toast("Not connected");
+}
 function act(command, args) { send({ type: "action", command, args: args || {} }); }
 
 function handle(m) {
@@ -170,12 +191,22 @@ function isSelectMode() {
 }
 function actionsFor(cid) { return ACTIONS.filter((a) => a.cid === cid); }
 
+function dirty(key, val) {
+  const s = JSON.stringify(val);
+  if (sectionCache[key] === s) return false;
+  sectionCache[key] = s;
+  return true;
+}
+
 function render() {
   if (!S) return;
+  // Seat orientation: YOUR territory renders on YOUR half of the board,
+  // adjacent to your bar and hand; the opponent's on theirs.
+  $("board").classList.toggle("flipped", mySide === "corp");
   renderBars();
-  renderServers();
-  renderRig();
-  renderHand();
+  if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt()])) renderServers();
+  if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt()])) renderRig();
+  if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
   renderPrompt();
   renderChips();
   renderTurnBtn();
@@ -218,11 +249,11 @@ function barHtml(st, side, isOpp) {
   const clicks = "●".repeat(Math.max(0, st.click || 0)) || "–";
   return `
     <span class="stat who">${(id || side).split(":")[0]}</span>
-    <span class="stat cred">⬡ ${st.credit ?? 0}</span>
-    <span class="stat">${clicks}</span>
-    <span class="stat">✋ ${st["hand-count"] ?? (st.hand || []).length}</span>
-    <span class="stat">🂠 ${st["deck-count"] ?? 0}</span>
-    <span class="stat">★ ${st["agenda-point"] ?? 0}${s.extra}</span>`;
+    <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
+    <span class="stat" title="clicks remaining">${clicks}</span>
+    <span class="stat" title="cards in hand">Hand ${st["hand-count"] ?? (st.hand || []).length}</span>
+    <span class="stat" title="cards in deck">Deck ${st["deck-count"] ?? 0}</span>
+    <span class="stat" title="agenda points">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
 }
 
 const SERVER_ORDER = (k) => ({ archives: 0, rd: 1, hq: 2 }[k] ?? 10 + parseInt(k.replace("remote", ""), 10));
@@ -320,17 +351,23 @@ function renderFocus() {
   const ice = (srv.ices || [])[run.position - 1];
   if (!ice) { panel.style.display = "none"; return; }
   panel.style.display = "flex";
-  const rezzed = !!ice.rezzed && ice.title;
+  const known = !!ice.title; // corp always knows its own ice
+  const rezzed = !!ice.rezzed;
   const subs = (ice.subroutines || [])
     .map((s) => `<div class="fsub ${s.broken ? "fbroken" : ""}">↳ ${sym(s.label)}</div>`)
     .join("");
+  const hint = rezzed
+    ? subs
+    : mySide === "corp"
+      ? `<div class="fsub">Your ice — decide whether to rez it.</div>`
+      : `<div class="fsub">The Corp may rez it as you approach.</div>`;
   panel.innerHTML = `
     <div class="fhead">${phase === "encounter-ice" ? "ENCOUNTER" : "APPROACHING"}</div>
     <div class="fcard">
-      <b>${rezzed ? ice.title : "Unrezzed ice"}</b>
-      ${rezzed && ice.strength != null ? `<span class="fstr">STR ${ice.strength}</span>` : ""}
+      <b>${known ? ice.title : "Unrezzed ice"}</b>
+      ${known && ice.strength != null ? `<span class="fstr">STR ${ice.strength}</span>` : ""}
     </div>
-    ${rezzed ? subs : `<div class="fsub">The Corp may rez it as you approach.</div>`}
+    ${rezzed ? subs : hint}
     <button class="chip" id="focus-peek">Peek board</button>`;
   document.getElementById("focus-peek").onclick = () => {
     focusPeek = true;
@@ -361,10 +398,13 @@ function renderHand() {
   const mid = (cards.length - 1) / 2;
   cards.forEach((c, i) => {
     const el = cardEl(c, { side: mySide, hand: true });
-    const rot = (i - mid) * 6;
-    const lift = Math.abs(i - mid) * 5;
-    el.style.transform = `rotate(${rot}deg) translateY(${lift}px)`;
-    if (raised === c.cid) el.classList.add("raised");
+    if (raised !== c.cid) {
+      const rot = (i - mid) * 6;
+      const lift = Math.abs(i - mid) * 5;
+      el.style.transform = `rotate(${rot}deg) translateY(${lift}px)`;
+    } else {
+      el.classList.add("raised");
+    }
     handEl.appendChild(el);
   });
 }
@@ -373,7 +413,9 @@ function cardEl(c, opts) {
   opts = opts || {};
   const el = document.createElement("div");
   const facedown = c.facedown && !c.title;
-  el.className = "card" + (opts.ice ? " ice" : "") + (facedown ? " facedown" : "") +
+  const isNew = !seenCids.has(c.cid);
+  if (isNew) seenCids.add(c.cid);
+  el.className = "card" + (isNew ? " deal" : "") + (opts.ice ? " ice" : "") + (facedown ? " facedown" : "") +
     (opts.side === "corp" ? " corp-card" : " runner-card") +
     (opts.identity ? " identity" : "") +
     (c.rezzed === false && opts.side === "corp" && !opts.hand && !facedown ? " unrezzed" : "") +
@@ -391,6 +433,17 @@ function cardEl(c, opts) {
       ${c["advance-counter"] ? `<div class="badge adv">${c["advance-counter"]}</div>` : ""}
       ${c.counter && c.counter.credit ? `<div class="badge cred">${c.counter.credit}</div>` : ""}
     </div>`;
+  // Real card art from the NetrunnerDB CDN (code travels with every card);
+  // text scaffold stays as fallback when the image can't load.
+  const code = c.code || (c.images && c.images.en && ""); // jnet also carries :code
+  if (!facedown && code) {
+    const img = new Image();
+    img.onload = () => {
+      el.style.backgroundImage = `url(${cardImgUrl(code)})`;
+      el.classList.add("art");
+    };
+    img.src = cardImgUrl(code);
+  }
 
   // legality glow (local mode) / select hint
   const acts = actionsFor(c.cid);
@@ -404,7 +457,7 @@ function cardEl(c, opts) {
     el.classList.add("legal");
   }
 
-  // tap + long-press
+  // tap + long-press (mobile read gesture) + hover preview (desktop)
   let pressTimer = null, longFired = false;
   el.addEventListener("pointerdown", (e) => {
     longFired = false;
@@ -415,7 +468,51 @@ function cardEl(c, opts) {
     if (!longFired) onCardTap(c, opts, el);
   });
   el.addEventListener("pointerleave", () => clearTimeout(pressTimer));
+  if (hoverCapable) {
+    el.addEventListener("mouseenter", () => showHoverPreview(c));
+    el.addEventListener("mouseleave", hideHoverPreview);
+  }
   return el;
+}
+
+function cardImgUrl(code) {
+  return `https://card-images.netrunnerdb.com/v2/large/${code}.jpg`;
+}
+
+/* ── card info (shared by hover preview and long-press zoom) ─────────── */
+function cardInfoHtml(c) {
+  const lines = [];
+  if (c.type) lines.push(c.type + (c.subtypes && c.subtypes.length ? " — " + c.subtypes.join(" · ") : ""));
+  if (c.cost != null) lines.push("Cost " + c.cost + (c.strength != null ? " · Strength " + c.strength : ""));
+  else if (c.strength != null) lines.push("Strength " + c.strength);
+  if (c.advancementcost != null) lines.push(`Adv req ${c.advancementcost} · ${c.agendapoints} pts`);
+  if (c["trash-cost"] != null) lines.push("Trash cost " + c["trash-cost"]);
+  if (c["advance-counter"]) lines.push("Advancements: " + c["advance-counter"]);
+  if (c.counter && c.counter.credit) lines.push("Credits hosted: " + c.counter.credit);
+  if (c.implementation) lines.push("⚠ " + c.implementation);
+  const art = c.code
+    ? `<img class="zart" src="${cardImgUrl(c.code)}" alt="" onerror="this.remove()">`
+    : "";
+  return `${art}<h3>${c.title || "Facedown card"}</h3>
+    <div class="zline">${lines.join("<br>")}</div>
+    <div class="ztext">${sym(c.text || "")}</div>
+    ${(c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
+}
+
+function showHoverPreview(c) {
+  let hp = document.getElementById("hover-preview");
+  if (!hp) {
+    hp = document.createElement("div");
+    hp.id = "hover-preview";
+    hp.className = "hover-preview";
+    document.body.appendChild(hp);
+  }
+  hp.innerHTML = `<div class="zoom-card small">${cardInfoHtml(c)}</div>`;
+  hp.style.display = "block";
+}
+function hideHoverPreview() {
+  const hp = document.getElementById("hover-preview");
+  if (hp) hp.style.display = "none";
 }
 
 /* ── interactions ────────────────────────────────────────────────────── */
@@ -545,9 +642,9 @@ function renderChips() {
     bar.appendChild(b);
   };
   if (mode === "local") {
-    if (has("credit")) mk("+1 ⬡", () => act("credit"));
-    if (has("draw")) mk("Draw", () => act("draw"));
-    if (has("remove-tag")) mk("Untag (2⬡)", () => act("remove-tag"));
+    if (has("credit")) mk("Gain 1 ⬡", () => act("credit"));
+    if (has("draw")) mk("Draw a card", () => act("draw"));
+    if (has("remove-tag")) mk("Remove tag (2⬡)", () => act("remove-tag"));
     const runs = ACTIONS.filter((a) => a.command === "run");
     if (runs.length) mk("Run ▾", () => {
       openSheet(runs.map((a) => [SERVER_NAME(a.server), () => act("run", { server: a.server })]),
@@ -647,22 +744,10 @@ function renderLog() {
 
 /* ── zoom / gameover / toast ─────────────────────────────────────────── */
 function zoomCard(c) {
+  hideHoverPreview();
   const o = $("zoom-overlay");
   o.style.display = "flex";
-  const lines = [];
-  if (c.type) lines.push(c.type + (c.subtypes && c.subtypes.length ? " — " + c.subtypes.join(" · ") : ""));
-  if (c.cost != null) lines.push("Cost " + c.cost + (c.strength != null ? " · Strength " + c.strength : ""));
-  else if (c.strength != null) lines.push("Strength " + c.strength);
-  if (c.advancementcost != null) lines.push(`Adv req ${c.advancementcost} · ${c.agendapoints} pts`);
-  if (c["trash-cost"] != null) lines.push("Trash cost " + c["trash-cost"]);
-  if (c["advance-counter"]) lines.push("Advancements: " + c["advance-counter"]);
-  if (c.counter && c.counter.credit) lines.push("Credits hosted: " + c.counter.credit);
-  o.innerHTML = `<div class="zoom-card">
-      <h3>${c.title || "Facedown card"}</h3>
-      <div class="zline">${lines.join("<br>")}</div>
-      <div class="ztext">${sym(c.text || "")}</div>
-      ${(c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}
-    </div>`;
+  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>`;
   o.onclick = () => { o.style.display = "none"; };
 }
 

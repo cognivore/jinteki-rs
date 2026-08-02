@@ -83,6 +83,10 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 @keyframes pulse { 50% { opacity: .3; } }
 
 #board { position: absolute; inset: 30px 0 150px 0; display: flex; flex-direction: column; }
+/* Corp seat: your servers on your (bottom) half, runner rig up top. */
+#board.flipped { flex-direction: column-reverse; }
+#board.flipped .server { flex-direction: column-reverse; }
+#board.flipped .servers { align-items: flex-end; }
 .zone-half { flex: 1; overflow: hidden; }
 #mid-strip { height: 26px; display: flex; align-items: center; justify-content: center; position: relative; }
 .phase-pill { background: var(--gold); color: #241c04; font-weight: 700; padding: 4px 14px;
@@ -112,7 +116,8 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* ── Cards ────────────────────────────────────────────────────────────── */
 .card { position: relative; width: 64px; height: 88px; border-radius: 8px; background: var(--panel);
   border: 1.5px solid var(--line); display: flex; flex-direction: column; padding: 4px;
-  font-size: 9.5px; line-height: 1.15; flex-shrink: 0; animation: dealin .3s; }
+  font-size: 9.5px; line-height: 1.15; flex-shrink: 0; }
+.card.deal { animation: dealin .3s; }
 @keyframes dealin { from { transform: translateY(10px) scale(.85); opacity: 0; } }
 .card .cost { position: absolute; top: -6px; left: -6px; width: 20px; height: 20px; border-radius: 50%;
   background: var(--gold); color: #241c04; font-weight: 800; display: flex; align-items: center;
@@ -150,8 +155,9 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .hand .card.raised { transform: translateY(-46px) scale(1.28) !important; z-index: 60; margin: 0 12px; }
 
 /* ── Bars & buttons ───────────────────────────────────────────────────── */
-.action-bar { position: fixed; bottom: calc(96px + env(safe-area-inset-bottom, 0)); left: 10px;
+.action-bar { position: fixed; bottom: calc(146px + env(safe-area-inset-bottom, 0)); left: 10px;
   display: flex; gap: 8px; z-index: 45; flex-wrap: wrap; max-width: 46vw; }
+.action-bar .chip { background: var(--panel); border-color: var(--legal); }
 #turn-btn-wrap { position: fixed; right: 12px; top: 50%; transform: translateY(-50%); z-index: 45; }
 #turn-btn { width: 84px; height: 84px; border-radius: 50%; border: 3px solid var(--line);
   background: var(--panel); color: var(--dim); font-weight: 800; font-size: 13px; }
@@ -206,6 +212,21 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .zoom-card h3 { margin: 0; font-size: 20px; }
 .zoom-card .zline { color: var(--dim); font-size: 13px; }
 .zoom-card .ztext { font-size: 15px; line-height: 1.45; white-space: pre-wrap; }
+
+/* card art */
+.card.art { background-size: cover; background-position: center top; }
+.card.art .cname, .card.art .ctype, .card.art .subs { visibility: hidden; }
+.card.art.ice { background-position: center; }
+.zoom-card .zart { width: 100%; border-radius: 10px; margin-bottom: 4px; }
+.hover-preview .zoom-card.small .zart { width: 100%; }
+
+/* desktop hover preview */
+.hover-preview { position: fixed; top: 36px; right: 10px; z-index: 150; pointer-events: none; }
+.hover-preview .zoom-card.small { width: 220px; min-height: 0; padding: 12px; border-width: 1px;
+  animation: none; }
+.hover-preview .zoom-card.small h3 { font-size: 15px; }
+.hover-preview .zoom-card.small .ztext { font-size: 12.5px; }
+.hover-preview .zoom-card.small .zline { font-size: 11px; }
 
 /* toast + gameover */
 .toast { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 100;

@@ -254,6 +254,9 @@ fn card_json(st: &GameState, cid: Cid, visible: bool) -> Value {
     let mut m = Map::new();
     m.insert("cid".into(), json!(cid));
     m.insert("title".into(), json!(def.title));
+    if let Some(p) = crate::printed::printed(def.title) {
+        m.insert("code".into(), json!(p.code));
+    }
     // Text and stats come from the printed database for every title;
     // card_text falls back to the hand-written pool strings if needed.
     m.insert("text".into(), json!(crate::carddb::card_text(def.title)));
