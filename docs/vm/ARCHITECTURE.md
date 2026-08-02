@@ -214,3 +214,52 @@ a test loads `docs/rules/cr-index.json` and fails on any citation of a
 nonexistent rule id, and reports rule-coverage (cited/total) as the DP-7b
 number. Wave agents: cite as you implement; an uncited primitive is a
 review rejection.
+
+## 12. Encodings, the final-tagless boundary, and the anti-overfit contract
+
+How DESIGN.md's dual-encoding rule ("initial surface, final core") lands in
+this crate — and the discipline that keeps CR examples from bending the
+kernel around themselves.
+
+**Rules content is initial-encoded, deliberately.** Cards, abilities,
+declarations, instructions, and the §11 step tables are DATA
+(`PrintedCard`/`AbilityDef`/`StaticDecl`/`Instruction`,
+`timing-structures.json`) — never callbacks — because everything that
+verifies this campaign consumes them as data: `cite!` coverage, the
+odometers, the future §9.11 transcriber, redaction, replay diffing. You can
+audit data; you cannot audit a closure. The VM is *one interpreter* of that
+data, concrete-first: while there is exactly one semantics interpreter,
+trait-abstracting it is ceremony (the GADT-artifact study's own lesson —
+don't pay for polymorphism before the second interpreter exists).
+
+**The final-tagless obligations attach at the seams, on the cutover
+schedule (§10).** The Decision stream is already the defunctionalized
+Prompt algebra with multiple honest drivers (example scripts, the slice
+driver; server and bot join at cutover). `Vm.rng` is a seeded field today
+and becomes the Rng algebra when the replay/speculative interpreters
+arrive; Reveal/Persist/Log wrap at cutover behind the same narrow algebras
+jinteki-core exposes, which is what the wire/view layer consumes. FT with
+one interpreter is ceremony; FT at seams with real second interpreters is
+the design.
+
+**The anti-overfit contract** (binding on wave agents, extends §11):
+
+1. Kernel sources never branch on card or example identity. Card names
+   appear in `src/` only inside comments, as *class exemplars* naming the
+   motivating class of a general mechanism ("Ashigaru class").
+2. Vocabulary variants are named for the rule concept and parameterized so
+   the entire class is expressible — `AdditionalStealCost(Cost)`, never a
+   Strongbox special. A variant that can express exactly one printed card
+   is a defect.
+3. `testkit` shapes construct cards exclusively through the public
+   vocabulary (`PrintedCard` + `AbilityDef` + `Instruction`) — no
+   privileged kernel hooks. A simplification inside a shape (a fixed
+   installee where the example doesn't exercise targeting) must be
+   annotated in the shape's doc comment and is legitimate only while
+   orthogonal to every example using that shape.
+4. **The re-derivation gate** (DP-7c entry criterion): when the §9.11
+   transcriber lands, every testkit shape used by a CR-example test is
+   re-derived from the corresponding real card's printed text, and the
+   DP-7a suite must pass unchanged. Divergence means harvested overfit —
+   either the example test is wrong or the kernel is, and the CR decides
+   which.
