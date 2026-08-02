@@ -263,7 +263,21 @@ the design.
    DP-7a suite must pass unchanged. Divergence means harvested overfit —
    either the example test is wrong or the kernel is, and the CR decides
    which.
-5. **Quantity positions never get bespoke variants.** Everywhere card text
+5. **Tests are plans, not loops.** An example test declares setup (cards,
+   hands, credits — data), one *plan per player* (data: ordered
+   `when <decision-matcher> → <answer>` rules plus a default policy), and
+   assertions on the outcome; a single shared driver folds
+   `Vm × CorpPlan × RunnerPlan → FinalState`. The player seam is the
+   final-tagless boundary done honestly: the scripted plan and the
+   random-walk bot are two real interpreters of the same player algebra
+   (the server/human driver joins at cutover). Hand-rolled `while
+   vm.step()` loops in tests are the named defect. `tk::inject_*`-style
+   state manufacture — effects appearing by test fiat instead of being
+   created by a card through the vocabulary — is forbidden; where it exists
+   as scaffolding for machinery not yet built, it must be annotated and it
+   cannot survive the re-derivation gate (no printed text stands behind an
+   injection).
+6. **Quantity positions never get bespoke variants.** Everywhere card text
    computes a number (strength X, damage per something, credits per
    something, trace base, "for each" counts) there is ONE `Quantity`
    selector language: a pure data expression evaluated against world state
