@@ -362,8 +362,121 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .prompt-sheet { bottom: calc(96px + var(--sab)); }
 }
 
+/* ── Card reader: in landscape, art LEFT and text RIGHT, everything inside
+      the viewport (grid: the art spans the left column, all text flows into
+      the right). Portrait keeps the stacked layout with a bounded image. ── */
+.zoom-overlay .zoom-card { max-height: 86vh; overflow-y: auto; }
+.zoom-overlay .zoom-card .zart { max-height: 48vh; width: auto; max-width: 100%;
+  align-self: center; }
+@media (orientation: landscape) {
+  .zoom-overlay .zoom-card {
+    display: grid;
+    grid-template-columns: minmax(200px, 42%) minmax(220px, 1fr);
+    column-gap: 16px;
+    align-items: start;
+    align-content: start;
+    width: min(92vw, 760px);
+    max-height: 86vh;
+    padding: 16px;
+  }
+  .zoom-overlay .zoom-card .zart {
+    grid-column: 1;
+    grid-row: 1 / span 40;
+    width: 100%;
+    height: auto;
+    max-height: none;
+    margin: 0;
+    border-radius: 10px;
+  }
+  .zoom-overlay .zoom-card > :not(.zart) { grid-column: 2; }
+  .zoom-overlay .zoom-card h3 { margin-top: 0; }
+}
+@media (orientation: landscape) and (max-height: 640px) {
+  .zoom-overlay .zoom-card {
+    width: min(94vw, 660px);
+    max-height: 94vh;
+    padding: 12px;
+    column-gap: 12px;
+    row-gap: 4px;
+  }
+  .zoom-overlay .zoom-card h3 { font-size: 17px; }
+  .zoom-overlay .zoom-card .ztext { font-size: 12.5px; line-height: 1.35; }
+  .zoom-overlay .zoom-card .zline { font-size: 11px; }
+}
+
 /* portrait nudge */
 @media (orientation: portrait) {
   .hand .card { width: 60px; height: 84px; margin: 0 -18px; }
   .action-bar { max-width: 80vw; }
 }
+
+/* ── Accounts / decks / library screens (ACCOUNTS-AND-DECKS.md §9) ────── */
+.account-chip { position: absolute; top: calc(10px + var(--sat)); right: calc(10px + var(--sar));
+  max-width: 44vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-chip.claimed { border-color: var(--legal); color: var(--legal); }
+.home-nav { display: flex; gap: 12px; }
+.home-nav .chip { min-width: 120px; }
+.deck-chip { width: 100%; margin: 6px 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+
+.bottom-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  background: var(--panel); border-top: 1px solid var(--line);
+  border-radius: 14px 14px 0 0; max-height: 70vh; overflow-y: auto;
+  padding: 10px 12px calc(14px + var(--sab)); display: flex; flex-direction: column; gap: 8px; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center;
+  font-weight: 600; }
+.deckpick { width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.deckpick.disabled { opacity: 0.45; }
+
+.deck-rows { display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  overflow-y: auto; }
+#screen-decks .deck-rows, #screen-library .deck-rows { position: absolute;
+  top: 56px; bottom: 0; left: 0; right: 0; padding-bottom: calc(16px + var(--sab)); }
+#screen-library .deck-rows { top: 104px; }
+.deck-row { display: flex; align-items: center; gap: 10px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; }
+.deck-row .t { flex: 1; min-width: 0; }
+.deck-row .t small { color: var(--dim); display: block; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+
+.badge-impl, .badge-legal, .badge-pub, .badge-inf { display: inline-block;
+  margin-left: 8px; padding: 1px 7px; border-radius: 9px; font-size: 11px;
+  border: 1px solid var(--line); vertical-align: 1px; }
+.badge-impl.ok, .badge-legal.ok { color: var(--ok); border-color: var(--ok); }
+.badge-impl.warn { color: var(--gold); border-color: var(--gold); }
+.badge-legal.bad { color: var(--danger); border-color: var(--danger); }
+.badge-pub { color: var(--legal); border-color: var(--legal); }
+.badge-inf { color: var(--corp); border-color: transparent; letter-spacing: 2px; }
+
+.edit-body { position: absolute; top: 56px; bottom: 64px; left: 0; right: 0;
+  overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.edit-body input, .edit-body textarea { width: 100%; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+  padding: 12px; font-size: 16px; }
+.idline { display: flex; align-items: center; gap: 10px; color: var(--dim); }
+.idline span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.addrow { padding: 0 12px; }
+#screen-deck-edit .addrow, #screen-import .addrow { padding: 0; }
+#screen-library .addrow { position: absolute; top: 58px; left: 0; right: 0; }
+#screen-library .addrow input, #library-q { width: 100%; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+  padding: 10px 12px; font-size: 16px; }
+.valid-strip { position: absolute; left: 0; right: 0; bottom: 0; min-height: 52px;
+  padding: 8px 12px calc(8px + var(--sab)); background: var(--bg2);
+  border-top: 1px solid var(--line); display: flex; align-items: center;
+  gap: 10px; flex-wrap: wrap; z-index: 5; }
+.chip.warn { border-color: var(--gold); color: var(--gold); }
+.chip.danger { border-color: var(--danger); color: var(--danger); }
+.fieldlabel { color: var(--dim); font-size: 13px; }
+.import-roll { display: flex; align-items: center; gap: 8px; margin: 8px 0;
+  flex-wrap: wrap; }
+.import-bad { color: var(--danger); margin: 4px 0; }
+.acc-claimed { color: var(--legal); margin: 8px 0; }
+.acc-anon { color: var(--dim); margin: 8px 0; }
+.bottom-actions { display: flex; gap: 12px; justify-content: stretch;
+  padding-bottom: calc(8px + var(--sab)); }
+.bottom-actions .big { flex: 1; }
+#edit-results:not(:empty) { border: 1px dashed var(--line); border-radius: 10px; }
