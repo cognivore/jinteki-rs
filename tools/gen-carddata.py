@@ -2,8 +2,9 @@
 """gen-carddata.py — card database + coverage codegen for jinteki-rs.
 
 Pipeline (see docs/CARD-COVERAGE.md):
-  tools/raw_data.edn  (official card data, from
-      https://raw.githubusercontent.com/NoahTheDuke/netrunner-data/master/edn/raw_data.edn)
+  tools/raw_data.edn  (official card data, vendored byte-for-byte from
+      NoahTheDuke/netrunner-data edn/raw_data.edn at the commit pinned in
+      tools/raw_data.edn.lock — fetch/verify/actualise via tools/fetch-carddata.rs)
     │  tolerant EDN reader (below)
     ▼
   crates/jinteki-core/carddata/cards.json      printed data for EVERY card
@@ -302,6 +303,17 @@ def as_int(v):
 
 
 def normalize_card(c):
+    # Deck-construction + import fields (ACCOUNTS-AND-DECKS.md §6.1): influence
+    # pips, identity ceilings, previous-printing codes for NRDB import of old
+    # decklists, the NRDB v3 slug, and the standard ban flag.
+    previous_codes = [
+        pv.get(":code")
+        for pv in (c.get(":previous-versions") or [])
+        if isinstance(pv, dict) and pv.get(":code")
+    ]
+    fmt = c.get(":format") or {}
+    standard = fmt.get(":standard") if isinstance(fmt, dict) else None
+    standard_banned = bool(isinstance(standard, dict) and standard.get(":banned"))
     return OrderedDict(
         [
             ("title", c.get(":title")),
@@ -323,6 +335,12 @@ def normalize_card(c):
             ("set", c.get(":setname")),
             ("cycle", c.get(":cycle_code")),
             ("rotated", bool(c.get(":rotated", False))),
+            ("influence_cost", as_int(c.get(":factioncost"))),
+            ("influence_limit", as_int(c.get(":influencelimit"))),
+            ("min_deck_size", as_int(c.get(":minimumdecksize"))),
+            ("previous_codes", previous_codes),
+            ("slug", c.get(":normalizedtitle")),
+            ("standard_banned", standard_banned),
         ]
     )
 
@@ -490,8 +508,11 @@ def main():
     lines.append("## How the pipeline works")
     lines.append("")
     lines.append(
-        "`tools/raw_data.edn` (official card data, vendored from "
-        "[netrunner-data](https://raw.githubusercontent.com/NoahTheDuke/netrunner-data/master/edn/raw_data.edn)) "
+        "`tools/raw_data.edn` (official card data, vendored byte-for-byte from "
+        "[netrunner-data](https://github.com/NoahTheDuke/netrunner-data) `edn/raw_data.edn` "
+        "at the commit pinned in `tools/raw_data.edn.lock`; actualise/verify/re-fetch it with "
+        "`rust-script tools/fetch-carddata.rs [verify|pinned]` — no argument moves the pin "
+        "to the latest upstream commit) "
         "is parsed by `tools/gen-carddata.py` (a small tolerant EDN reader), which emits:"
     )
     lines.append("")

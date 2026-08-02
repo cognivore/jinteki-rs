@@ -1,0 +1,7 @@
+{
+  "upstream_repo": "NoahTheDuke/netrunner-data",
+  "upstream_path": "edn/raw_data.edn",
+  "commit": "c62855fd2a0307e500893457350ac9b86760532c",
+  "sha256": "ae0474d2c9190a7e90ee9fd83b9393bf93990ff3e6bf40c85c6f4e5b0836c75e",
+  "fetched_at": "2026-08-02T00:00:00+00:00"
+}

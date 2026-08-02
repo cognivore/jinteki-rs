@@ -100,6 +100,10 @@ function handle(m) {
         localStorage.removeItem("jinteki_local");
         show("screen-home");
         toast("Previous game expired — start a new one");
+      } else if (m.error.startsWith("deck contains cards without implemented behavior")) {
+        // Strict-mode refusal: show the per-card reasons in full, not a
+        // truncated toast (ACCOUNTS-AND-DECKS.md §6.3).
+        showStrictRefusal(m.error);
       } else {
         toast("⚠ " + m.error);
       }
@@ -122,7 +126,12 @@ $("btn-local").onclick = () => {
   mode = "local";
   connect("/ws/local", () => {
     const seed = parseInt($("seed").value, 10);
-    send({ type: "start", side: mySide, seed: Number.isFinite(seed) ? seed : undefined });
+    send({
+      type: "start",
+      side: mySide,
+      seed: Number.isFinite(seed) ? seed : undefined,
+      deck_id: selectedDeck ? selectedDeck.id : undefined,
+    });
   });
 };
 
@@ -862,3 +871,638 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.style.display = "none"; }, 2600);
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Accounts, decks, library, NRDB import (ACCOUNTS-AND-DECKS.md §9).
+   Plain fetch() + the HttpOnly jrs_session cookie; the WS game channel
+   above is untouched. Everything renders with textContent/escaped nodes —
+   no user string ever meets innerHTML (§12.6).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+let ME = null;              // /api/me summary; never persisted to localStorage
+let selectedDeck = null;    // deck chosen for Play vs Bot ({id,name} | null)
+let editDeck = null;        // deck being edited (client-side draft)
+let importDraft = null;     // unsaved import draft awaiting Save
+let libFilter = { side: "", q: "" };
+let currentLibDeck = null;
+
+async function api(path, opts) {
+  const o = opts || {};
+  const init = { method: o.method || "GET", headers: {} };
+  if (o.body !== undefined) {
+    init.headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(o.body);
+  }
+  const res = await fetch(path, init);
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* non-JSON */ }
+  if (!res.ok) {
+    const msg = (data && data.error) || `request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+/* Strict-mode refusal detail: the offending titles, one per line. */
+function showStrictRefusal(msg) {
+  show("screen-home");
+  const o = $("zoom-overlay");
+  // zoom-overlay lives inside screen-game; reparent to body once so it can
+  // cover any screen. Idempotent.
+  if (o.parentElement !== document.body) document.body.appendChild(o);
+  o.style.display = "flex";
+  o.textContent = "";
+  const card = document.createElement("div");
+  card.className = "zoom-card";
+  const h = document.createElement("h3");
+  h.textContent = "Deck not playable vs bot";
+  card.appendChild(h);
+  const intro = document.createElement("div");
+  intro.className = "zline";
+  intro.textContent = "These cards have no implemented behavior yet:";
+  card.appendChild(intro);
+  const list = msg.split(":").slice(1).join(":").trim();
+  list.split(", ").forEach((t) => {
+    const d = document.createElement("div");
+    d.className = "ztext";
+    d.textContent = "✗ " + t;
+    card.appendChild(d);
+  });
+  o.appendChild(card);
+  o.onclick = () => { o.style.display = "none"; };
+}
+
+/* ── build stamp: the binary is the single source of the build id ────── */
+(async function bootVersion() {
+  try {
+    const rev = await (await fetch("/version")).text();
+    const short = rev.slice(0, 12);
+    const b = $("build"); if (b) b.textContent = short;
+    const bl = $("build-log"); if (bl) bl.textContent = short;
+  } catch (e) { /* offline: placeholders stay empty */ }
+})();
+
+/* ── boot: identity first, then the auth-redirect toast ──────────────── */
+const AUTH_TOASTS = {
+  ok: "Signed in — this browser now holds your account",
+  invalid: "That sign-in link is not valid — request a fresh one",
+  expired: "That sign-in link expired — request a fresh one",
+  conflict: "This account already has a different email",
+};
+(async function bootAccount() {
+  try {
+    ME = await api("/api/me");
+  } catch (e) {
+    ME = null; // offline / server without accounts: UI stays playable
+  }
+  renderAccountChip();
+  const param = new URLSearchParams(location.search).get("auth");
+  if (param) {
+    history.replaceState(null, "", "/");
+    if (AUTH_TOASTS[param]) toast(AUTH_TOASTS[param]);
+    if (param === "ok") { try { ME = await api("/api/me"); } catch (e) {} renderAccountChip(); }
+  }
+})();
+
+function renderAccountChip() {
+  const chip = $("account-chip");
+  if (!ME) { chip.textContent = "…"; return; }
+  chip.textContent = ME.kind === "claimed" ? `✓ ${ME.display_name}` : ME.display_name;
+  chip.classList.toggle("claimed", ME.kind === "claimed");
+}
+
+/* ── tiny DOM helpers (no innerHTML with user strings) ───────────────── */
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function implBadge(playable) {
+  const total = playable.behavior + playable.jnet_only + playable.unimplemented;
+  const b = el("span", "badge-impl", `${playable.behavior}/${total}`);
+  b.classList.add(playable.behavior === total ? "ok" : "warn");
+  b.title = `${playable.behavior} of ${total} cards playable vs bot`;
+  return b;
+}
+function legalBadge(legal) {
+  return el("span", "badge-legal " + (legal ? "ok" : "bad"), legal ? "✓ legal" : "✗ illegal");
+}
+
+/* ── navigation wiring ───────────────────────────────────────────────── */
+$("nav-decks").onclick = () => { show("screen-decks"); loadMyDecks(); };
+$("nav-library").onclick = () => { show("screen-library"); loadLibrary(); };
+$("account-chip").onclick = () => { show("screen-account"); renderAccountScreen(); };
+$("decks-back").onclick = () => show("screen-home");
+$("library-back").onclick = () => show("screen-home");
+$("account-back").onclick = () => show("screen-home");
+$("edit-back").onclick = () => { show("screen-decks"); loadMyDecks(); };
+$("import-back").onclick = () => show("screen-decks");
+$("libdeck-back").onclick = () => show("screen-library");
+$("decks-import").onclick = () => { resetImport(); show("screen-import"); };
+$("decks-new").onclick = () => openEditor(null);
+
+/* ── my decks ────────────────────────────────────────────────────────── */
+async function loadMyDecks() {
+  const box = $("decks-list");
+  box.textContent = "loading…";
+  let list;
+  try { list = await api("/api/decks"); } catch (e) { box.textContent = e.message; return; }
+  box.textContent = "";
+  if (!list.length) {
+    const empty = el("div", "deck-row");
+    empty.appendChild(el("div", "t", "No decks yet — fork one from the Library or Import from NetrunnerDB."));
+    box.appendChild(empty);
+    return;
+  }
+  list.forEach((d) => box.appendChild(deckRow(d, () => openEditor(d.id))));
+}
+
+function deckRow(d, onOpen) {
+  const row = el("div", "deck-row");
+  const t = el("div", "t");
+  const line1 = el("div", "", d.name);
+  line1.appendChild(legalBadge(d.legal));
+  line1.appendChild(implBadge(d.playable));
+  const line2 = el("small", "", `${d.side === "corp" ? "⬢ Corp" : "⬡ Runner"} · ${d.identity.title}`);
+  if (d.author_name) line2.textContent += ` · by ${d.author_name}`;
+  if (d.published_at) line1.appendChild(el("span", "badge-pub", "published"));
+  t.appendChild(line1);
+  t.appendChild(line2);
+  row.appendChild(t);
+  const open = el("button", "chip go", "Open");
+  open.onclick = onOpen;
+  row.appendChild(open);
+  return row;
+}
+
+/* ── deck editor ─────────────────────────────────────────────────────── */
+async function openEditor(deckId) {
+  if (deckId) {
+    try { editDeck = await api(`/api/decks/${deckId}`); }
+    catch (e) { toast(e.message); return; }
+  } else {
+    editDeck = { id: null, name: "", identity: { title: "", code: "" }, cards: [], notes: "",
+                 validation: null, published_at: null };
+  }
+  show("screen-deck-edit");
+  $("edit-name").value = editDeck.name;
+  $("edit-notes").value = editDeck.notes || "";
+  $("edit-search").value = "";
+  $("edit-results").textContent = "";
+  $("edit-title-label").textContent = editDeck.id ? "Edit deck" : "New deck";
+  renderEditor();
+}
+
+function editorLines() {
+  return (editDeck.cards || []).map((c) => ({ title: c.title, qty: c.qty }));
+}
+
+function renderEditor() {
+  $("edit-identity").textContent = editDeck.identity.title || "no identity — search below and tap one";
+  $("edit-publish").style.display = editDeck.id && !editDeck.published_at ? "" : "none";
+  $("edit-unpublish").style.display = editDeck.id && editDeck.published_at ? "" : "none";
+  $("edit-delete").style.display = editDeck.id ? "" : "none";
+  const box = $("edit-cards");
+  box.textContent = "";
+  (editDeck.cards || []).forEach((c, i) => {
+    const row = el("div", "deck-row");
+    const t = el("div", "t");
+    const l1 = el("div", "", `${c.qty}× ${c.title}`);
+    const impl = c.impl_status || "unknown";
+    const badge = el("span", "badge-impl " + (impl === "behavior" ? "ok" : "warn"),
+      impl === "behavior" ? "✓" : impl === "jnet_only" ? "jnet" : "✗");
+    badge.title = impl === "behavior" ? "fully playable vs bot"
+      : impl === "jnet_only" ? "not yet implemented here (jinteki.net has it)"
+      : "not implemented anywhere yet";
+    l1.appendChild(badge);
+    if (c.influence_spent) l1.appendChild(el("span", "badge-inf", "●".repeat(Math.min(c.influence_spent, 5))));
+    t.appendChild(l1);
+    row.appendChild(t);
+    const minus = el("button", "chip", "−");
+    minus.onclick = () => { c.qty -= 1; if (c.qty <= 0) editDeck.cards.splice(i, 1); revalidate(); };
+    const plus = el("button", "chip", "+");
+    plus.onclick = () => { c.qty += 1; revalidate(); };
+    row.appendChild(minus);
+    row.appendChild(plus);
+    // long-press zoom reuses the game's card reader
+    attachZoom(row, c);
+    box.appendChild(row);
+  });
+  renderValidStrip();
+}
+
+function attachZoom(elm, c) {
+  let t = null;
+  elm.addEventListener("pointerdown", () => { t = setTimeout(() => zoomCard({ title: c.title, code: c.code }), 420); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => elm.addEventListener(ev, () => clearTimeout(t)));
+  elm.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+function renderValidStrip() {
+  const strip = $("edit-valid");
+  const v = editDeck.validation;
+  if (!v) { strip.textContent = editDeck.identity.title ? "validating…" : ""; return; }
+  strip.textContent = "";
+  const c = v.counts;
+  const sums = el("span", "",
+    `${c.cards} cards · inf ${c.influence_used}/${c.influence_limit == null ? "∞" : c.influence_limit}` +
+    (editDeck.side === "corp" || (editDeck.identity && v.counts.agenda_points > 0) ? ` · ${c.agenda_points} AP` : ""));
+  strip.appendChild(legalBadge(v.legal));
+  strip.appendChild(sums);
+  if (v.playable) strip.appendChild(implBadge(v.playable));
+  if (v.problems.length) {
+    const n = el("button", "chip warn", `${v.problems.length} problem${v.problems.length > 1 ? "s" : ""}`);
+    n.onclick = () => {
+      const o = $("zoom-overlay");
+      o.style.display = "flex";
+      const card = el("div", "zoom-card");
+      card.appendChild(el("h3", "", "Deck problems"));
+      v.problems.forEach((p) => card.appendChild(el("div", "ztext", p.message)));
+      (v.warnings || []).forEach((p) => card.appendChild(el("div", "zline", "⚠ " + p.message)));
+      o.textContent = "";
+      o.appendChild(card);
+      o.onclick = () => { o.style.display = "none"; };
+    };
+    strip.appendChild(n);
+  }
+}
+
+let validateTimer = null;
+function revalidate() {
+  renderEditor();
+  clearTimeout(validateTimer);
+  if (!editDeck.identity.title) return;
+  validateTimer = setTimeout(async () => {
+    try {
+      const v = await api("/api/decks/validate", { method: "POST", body: {
+        name: $("edit-name").value || "draft",
+        identity: { title: editDeck.identity.title },
+        cards: editorLines(),
+      }});
+      editDeck.validation = v;
+      // refresh per-card impl/influence from the authoritative check
+      const byTitle = {};
+      (v.cards || []).forEach((cv) => { byTitle[cv.title] = cv; });
+      (editDeck.cards || []).forEach((c) => {
+        const cv = byTitle[c.title];
+        if (cv) { c.impl_status = cv.impl_status; c.influence_spent = cv.influence_spent; c.code = cv.code; }
+      });
+      renderEditor();
+    } catch (e) { /* keep the last strip on transient errors */ }
+  }, 250);
+}
+
+let searchTimer = null;
+$("edit-search").oninput = () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(doCardSearch, 200);
+};
+$("edit-pick-identity").onclick = () => {
+  $("edit-search").value = "";
+  $("edit-search").placeholder = "search identities";
+  $("edit-search").focus();
+  doCardSearch(true);
+};
+
+async function doCardSearch(identityMode) {
+  const q = $("edit-search").value.trim();
+  const box = $("edit-results");
+  const wantIdentity = identityMode === true || $("edit-search").placeholder.includes("identities");
+  if (!q && !wantIdentity) { box.textContent = ""; return; }
+  const params = new URLSearchParams();
+  params.set("q", q);
+  if (wantIdentity) params.set("type", "Identity");
+  else if (editDeck.side) {
+    // side auto-locked to the identity (§9.2)
+    params.set("side", editDeck.side === "corp" ? "Corp" : "Runner");
+  }
+  let list;
+  try { list = await api(`/api/cards?${params}`); } catch (e) { box.textContent = e.message; return; }
+  box.textContent = "";
+  list.forEach((c) => {
+    const row = el("div", "deck-row");
+    const t = el("div", "t");
+    const l1 = el("div", "", c.title);
+    const badge = el("span", "badge-impl " + (c.impl === "behavior" ? "ok" : "warn"),
+      c.impl === "behavior" ? "✓" : c.impl === "jnet_only" ? "jnet" : "✗");
+    l1.appendChild(badge);
+    t.appendChild(l1);
+    t.appendChild(el("small", "", `${c.side} · ${c.type}${c.faction ? " · " + c.faction : ""}` +
+      (c.influence_cost != null ? " · inf " + c.influence_cost : "")));
+    row.appendChild(t);
+    const add = el("button", "chip go", wantIdentity ? "Pick" : "Add");
+    add.onclick = () => {
+      if (wantIdentity || c.type === "Identity") {
+        editDeck.identity = { title: c.title, code: c.code };
+        editDeck.side = c.side === "Corp" ? "corp" : "runner";
+        $("edit-search").placeholder = "add cards — search the pool";
+        $("edit-search").value = "";
+        box.textContent = "";
+      } else {
+        const have = editDeck.cards.find((x) => x.title === c.title);
+        if (have) have.qty += 1;
+        else editDeck.cards.push({ title: c.title, code: c.code, qty: 1 });
+      }
+      revalidate();
+    };
+    attachZoom(row, c);
+    row.appendChild(add);
+    box.appendChild(row);
+  });
+}
+
+$("edit-save").onclick = async () => {
+  if (!editDeck.identity.title) { toast("Pick an identity first"); return; }
+  const body = {
+    name: $("edit-name").value.trim() || "unnamed deck",
+    identity: { title: editDeck.identity.title },
+    cards: editorLines(),
+    notes: $("edit-notes").value,
+  };
+  try {
+    editDeck = editDeck.id
+      ? await api(`/api/decks/${editDeck.id}`, { method: "PUT", body })
+      : await api("/api/decks", { method: "POST", body });
+    toast("Deck saved");
+    renderEditor();
+  } catch (e) { toast(e.message); }
+};
+
+$("edit-delete").onclick = async () => {
+  if (!editDeck.id || !confirm("Delete this deck?")) return;
+  try {
+    await api(`/api/decks/${editDeck.id}`, { method: "DELETE" });
+    show("screen-decks");
+    loadMyDecks();
+  } catch (e) { toast(e.message); }
+};
+
+$("edit-publish").onclick = async () => {
+  if (ME && ME.kind !== "claimed") {
+    toast("Claim your account with an email to publish");
+    show("screen-account"); renderAccountScreen();
+    return;
+  }
+  try {
+    editDeck = await api(`/api/decks/${editDeck.id}/publish`, { method: "POST" });
+    toast("Published to the library");
+    renderEditor();
+  } catch (e) { toast(e.message); }
+};
+
+$("edit-unpublish").onclick = async () => {
+  try {
+    editDeck = await api(`/api/decks/${editDeck.id}/unpublish`, { method: "POST" });
+    toast("Removed from the library");
+    renderEditor();
+  } catch (e) { toast(e.message); }
+};
+
+/* ── NRDB import ─────────────────────────────────────────────────────── */
+function resetImport() {
+  importDraft = null;
+  $("import-form").style.display = "";
+  $("import-preview").style.display = "none";
+  $("import-input").value = "";
+}
+
+$("import-go").onclick = async () => {
+  const input = $("import-input").value.trim();
+  if (!input) return;
+  $("import-go").disabled = true;
+  $("import-go").textContent = "Importing…";
+  try {
+    const res = await api("/api/decks/import", { method: "POST", body: { input } });
+    importDraft = res.deck;
+    renderImportPreview(res.deck, res.report);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    $("import-go").disabled = false;
+    $("import-go").textContent = "Import";
+  }
+};
+
+function renderImportPreview(deck, report) {
+  $("import-form").style.display = "none";
+  $("import-preview").style.display = "";
+  const box = $("import-report");
+  box.textContent = "";
+  box.appendChild(el("h3", "", deck.name));
+  box.appendChild(el("div", "hint", `${deck.side === "corp" ? "Corp" : "Runner"} · ${deck.identity.title}`));
+  const v = report.validation;
+  const roll = el("div", "import-roll");
+  const total = v.playable.behavior + v.playable.jnet_only + v.playable.unimplemented;
+  roll.appendChild(implBadge(v.playable));
+  roll.appendChild(el("span", "", ` ${v.playable.behavior} of ${total} cards playable vs bot`));
+  roll.appendChild(legalBadge(v.legal));
+  box.appendChild(roll);
+  const note = (label, items, cls) => {
+    if (!items || !items.length) return;
+    const d = el("div", cls || "zline", `${label}: ${items.join(", ")}`);
+    box.appendChild(d);
+  };
+  note("Unknown codes (dropped)", report.unknown_codes, "import-bad");
+  note("Rotated", report.rotated);
+  if (report.via_previous_printing) {
+    box.appendChild(el("div", "zline", `${report.via_previous_printing} resolved via previous printings`));
+  }
+  (v.problems || []).forEach((p) => box.appendChild(el("div", "import-bad", p.message)));
+  const cards = $("import-cards");
+  cards.textContent = "";
+  (v.cards || []).forEach((c) => {
+    const row = el("div", "deck-row");
+    const t = el("div", "t");
+    const l1 = el("div", "", `${c.qty}× ${c.title}`);
+    const badge = el("span", "badge-impl " + (c.impl_status === "behavior" ? "ok" : "warn"),
+      c.impl_status === "behavior" ? "✓" : c.impl_status === "jnet_only" ? "jnet" : "✗");
+    l1.appendChild(badge);
+    t.appendChild(l1);
+    row.appendChild(t);
+    attachZoom(row, c);
+    cards.appendChild(row);
+  });
+}
+
+$("import-discard").onclick = resetImport;
+$("import-save").onclick = async () => {
+  if (!importDraft) return;
+  try {
+    const saved = await api("/api/decks", { method: "POST", body: {
+      name: importDraft.name,
+      identity: { title: importDraft.identity.title },
+      cards: importDraft.cards.map((c) => ({ title: c.title, qty: c.qty })),
+      notes: importDraft.notes,
+      source: importDraft.source,
+    }});
+    toast("Deck saved");
+    resetImport();
+    show("screen-decks");
+    loadMyDecks();
+  } catch (e) { toast(e.message); }
+};
+
+/* ── library ─────────────────────────────────────────────────────────── */
+document.querySelectorAll("[data-lside]").forEach((b) => {
+  b.onclick = () => {
+    libFilter.side = b.dataset.lside;
+    document.querySelectorAll("[data-lside]").forEach((x) => x.classList.toggle("on", x === b));
+    loadLibrary();
+  };
+});
+let libSearchTimer = null;
+$("library-q").oninput = () => {
+  clearTimeout(libSearchTimer);
+  libSearchTimer = setTimeout(() => { libFilter.q = $("library-q").value.trim(); loadLibrary(); }, 250);
+};
+
+async function loadLibrary() {
+  const box = $("library-list");
+  box.textContent = "loading…";
+  const params = new URLSearchParams();
+  if (libFilter.side) params.set("side", libFilter.side);
+  if (libFilter.q) params.set("q", libFilter.q);
+  let res;
+  try { res = await api(`/api/library?${params}`); } catch (e) { box.textContent = e.message; return; }
+  box.textContent = "";
+  if (!res.decks.length) {
+    const empty = el("div", "deck-row");
+    empty.appendChild(el("div", "t", "Nothing published yet."));
+    box.appendChild(empty);
+    return;
+  }
+  res.decks.forEach((d) => box.appendChild(deckRow(d, () => openLibDeck(d.id))));
+}
+
+async function openLibDeck(id) {
+  let d;
+  try { d = await api(`/api/library/${id}`); } catch (e) { toast(e.message); return; }
+  currentLibDeck = d;
+  show("screen-lib-deck");
+  $("libdeck-title").textContent = d.name;
+  const meta = $("libdeck-meta");
+  meta.textContent = "";
+  meta.appendChild(el("div", "", `${d.side === "corp" ? "Corp" : "Runner"} · ${d.identity.title}`));
+  meta.appendChild(el("small", "hint", `by ${d.author_name}`));
+  const v = d.validation;
+  const roll = el("div", "import-roll");
+  roll.appendChild(legalBadge(v.legal));
+  roll.appendChild(implBadge(v.playable));
+  meta.appendChild(roll);
+  if (d.notes) meta.appendChild(el("div", "zline", d.notes));
+  const cards = $("libdeck-cards");
+  cards.textContent = "";
+  (d.cards || []).forEach((c) => {
+    const row = el("div", "deck-row");
+    const t = el("div", "t");
+    const l1 = el("div", "", `${c.qty}× ${c.title}`);
+    const badge = el("span", "badge-impl " + (c.impl_status === "behavior" ? "ok" : "warn"),
+      c.impl_status === "behavior" ? "✓" : c.impl_status === "jnet_only" ? "jnet" : "✗");
+    l1.appendChild(badge);
+    t.appendChild(l1);
+    row.appendChild(t);
+    attachZoom(row, c);
+    cards.appendChild(row);
+  });
+}
+
+$("libdeck-fork").onclick = async () => {
+  if (!currentLibDeck) return;
+  try {
+    await api(`/api/library/${currentLibDeck.id}/fork`, { method: "POST" });
+    toast("Forked to your decks");
+    show("screen-decks");
+    loadMyDecks();
+  } catch (e) { toast(e.message); }
+};
+
+/* ── deck picker for Play vs Bot (§9.1: playable first, greyed rest) ── */
+$("deck-select-chip").onclick = async () => {
+  const sheet = $("deck-sheet");
+  const list = $("deck-sheet-list");
+  list.textContent = "loading…";
+  sheet.style.display = "";
+  let decks;
+  try { decks = await api("/api/decks"); } catch (e) { list.textContent = e.message; return; }
+  list.textContent = "";
+  const starter = el("button", "chip deckpick", "Starter deck (built-in)");
+  starter.onclick = () => { selectedDeck = null; renderDeckChip(); sheet.style.display = "none"; };
+  list.appendChild(starter);
+  const mine = decks.filter((d) => d.side === mySide);
+  // Playable decks first (§9.1), then by how close the rest are.
+  const playableFirst = mine.slice().sort((a, b) =>
+    (a.playable.jnet_only + a.playable.unimplemented) -
+    (b.playable.jnet_only + b.playable.unimplemented));
+  playableFirst.forEach((d) => {
+    const un = d.playable.jnet_only + d.playable.unimplemented;
+    const playable = un === 0 && d.legal;
+    const b = el("button", "chip deckpick" + (playable ? "" : " disabled"),
+      `${d.name} — ${d.identity.title.split(":")[0]}` + (playable ? "" : ` (${un} not playable)`));
+    if (playable) {
+      b.onclick = () => { selectedDeck = { id: d.id, name: d.name }; renderDeckChip(); sheet.style.display = "none"; };
+    } else {
+      b.disabled = true;
+      b.title = `${un} cards without implemented behavior — not selectable for bot games`;
+    }
+    list.appendChild(b);
+  });
+  if (!mine.length) list.appendChild(el("div", "hint", `No ${mySide} decks yet — fork one from the Library.`));
+};
+$("deck-sheet-close").onclick = () => { $("deck-sheet").style.display = "none"; };
+function renderDeckChip() {
+  $("deck-select-chip").textContent = "Deck: " + (selectedDeck ? selectedDeck.name : "Starter deck");
+}
+// Side toggle invalidates a picked deck of the other side (the server would
+// refuse it anyway; don't let the mismatch reach the socket).
+$("pick-runner").onclick = () => { pickSide("runner"); selectedDeck = null; renderDeckChip(); };
+$("pick-corp").onclick = () => { pickSide("corp"); selectedDeck = null; renderDeckChip(); };
+
+/* ── account screen ──────────────────────────────────────────────────── */
+function renderAccountScreen() {
+  if (!ME) return;
+  $("account-name").value = ME.display_name || "";
+  const status = $("account-status");
+  status.textContent = "";
+  if (ME.kind === "claimed") {
+    status.appendChild(el("div", "acc-claimed", `Signed in as ${ME.email}`));
+    $("account-claim").style.display = "none";
+  } else {
+    status.appendChild(el("div", "acc-anon", "Anonymous — your decks live in this browser's cookie"));
+    $("account-claim").style.display = "";
+  }
+}
+
+$("account-name").onblur = async () => {
+  const name = $("account-name").value.trim();
+  if (!ME || !name || name === ME.display_name) return;
+  try {
+    ME = await api("/api/profile", { method: "PUT", body: { display_name: name } });
+    renderAccountChip();
+    toast("Name saved");
+  } catch (e) { toast(e.message); }
+};
+
+$("account-claim-btn").onclick = async () => {
+  const email = $("account-email").value.trim();
+  if (!email) return;
+  $("account-claim-btn").disabled = true;
+  try {
+    await api("/api/auth/claim", { method: "POST", body: { email } });
+    toast("Check your inbox — the link works for 30 minutes");
+  } catch (e) { toast(e.message); }
+  finally { $("account-claim-btn").disabled = false; }
+};
+
+$("account-logout").onclick = async () => {
+  if (ME && ME.kind !== "claimed") {
+    const n = "This browser's cookie is the only key to your decks. Claim with an email first?";
+    if (!confirm(n + "\n\nLog out anyway and orphan them?")) return;
+  }
+  try { await api("/api/auth/logout", { method: "POST" }); } catch (e) {}
+  ME = null;
+  try { ME = await api("/api/me"); } catch (e) {}
+  renderAccountChip();
+  show("screen-home");
+  toast("Logged out");
+};

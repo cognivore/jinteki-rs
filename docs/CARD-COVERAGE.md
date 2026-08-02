@@ -69,7 +69,7 @@ jinteki.net pseudo-cards (basic actions and similar); they are engine-internal o
 
 ## How the pipeline works
 
-`tools/raw_data.edn` (official card data, vendored from [netrunner-data](https://raw.githubusercontent.com/NoahTheDuke/netrunner-data/master/edn/raw_data.edn)) is parsed by `tools/gen-carddata.py` (a small tolerant EDN reader), which emits:
+`tools/raw_data.edn` (official card data, vendored byte-for-byte from [netrunner-data](https://github.com/NoahTheDuke/netrunner-data) `edn/raw_data.edn` at the commit pinned in `tools/raw_data.edn.lock`; actualise/verify/re-fetch it with `rust-script tools/fetch-carddata.rs [verify|pinned]` — no argument moves the pin to the latest upstream commit) is parsed by `tools/gen-carddata.py` (a small tolerant EDN reader), which emits:
 
 - `crates/jinteki-core/carddata/cards.json` — printed data for every card (deduped by title; the printing with the highest numeric code wins);
 - `crates/jinteki-core/carddata/coverage.json` — per-title flags: does a reference `(defcard "Title" ...)` exist (`jnet_impl`), does it carry an `:implementation` caveat (`jnet_partial`), and does the Rust behavior table cover it (`rs_behavior`);

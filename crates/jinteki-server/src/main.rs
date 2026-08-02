@@ -1,17 +1,22 @@
 //! jinteki-server: serves the mobile UI, hosts local games against the
-//! random-walk bot, and bridges to a reference jinteki.net server for parity
-//! play. One WebSocket per session; all frames are JSON text with a `type`
-//! field — the UI is backend-agnostic between local and bridge modes.
+//! random-walk bot, bridges to a reference jinteki.net server for parity
+//! play, and carries the native account/deck subsystem (accounts, magic-link
+//! claims, decklists, library, NRDB import — ACCOUNTS-AND-DECKS.md).
+//!
+//! Games ride one WebSocket per session (JSON text frames with a `type`
+//! field); auth and decks ride plain HTTP JSON under /api/*.
 
-mod bridge;
-mod local;
+use jinteki_server::{api, auth, bridge, db, decks, guard, local, mail};
 
 use axum::{
     extract::ws::WebSocketUpgrade,
+    http::HeaderMap,
     response::IntoResponse,
     routing::{any, get},
     Router,
 };
+use std::path::PathBuf;
+use std::sync::Arc;
 use tower_http::services::ServeDir;
 
 #[tokio::main]
@@ -24,11 +29,60 @@ async fn main() {
         .and_then(|p| p.parse().ok())
         .unwrap_or(7787);
 
+    // Storage: one SQLite file under JINTEKI_DATA_DIR (the vacationvm state
+    // dir in deployment, ./data in development).
+    let data_dir = PathBuf::from(std::env::var("JINTEKI_DATA_DIR").unwrap_or_else(|_| "data".into()));
+    let db_path = data_dir.join("jinteki.db");
+    let db = Arc::new(db::Db::open(&db_path).expect("open jinteki.db"));
+    tracing::info!("database at {}", db_path.display());
+    {
+        let conn = db.lock().await;
+        auth::ensure_system_user(&conn).expect("system user");
+        decks::seed_starter_decks(&conn).expect("seed starter decks");
+    }
+
+    let http = reqwest::Client::new();
+    let state = api::AppState {
+        db: db.clone(),
+        mailer: Arc::new(mail::Mailer::from_env(http.clone())),
+        guard: Arc::new(guard::Guard::new()),
+        http,
+        secure_cookies: std::env::var("JINTEKI_SECURE_COOKIES")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false),
+    };
+
+    // Daily GC: expired sessions/claims + long-idle empty anonymous users
+    // (claim state is a GC veto — SYS-A-6).
+    {
+        let db = db.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(24 * 3600));
+            tick.tick().await; // first tick fires immediately; skip it
+            loop {
+                tick.tick().await;
+                let conn = db.lock().await;
+                match auth::gc_sweep(&conn) {
+                    Ok(n) if n > 0 => tracing::info!("anon GC pruned {n} users"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("gc sweep failed: {e}"),
+                }
+            }
+        });
+    }
+
     let app = Router::new()
         .route("/ws/local", any(ws_local))
         .route("/ws/bridge", any(ws_bridge))
         .route("/health", get(|| async { "ok" }))
-        .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true));
+        // Build id baked in by nix (env.JINTEKI_BUILD_REV); "dev" locally.
+        .route(
+            "/version",
+            get(|| async { option_env!("JINTEKI_BUILD_REV").unwrap_or("dev") }),
+        )
+        .merge(api::router())
+        .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true))
+        .with_state(state);
 
     // Deployment mode (vacationvm): serve over a Unix socket that Caddy fronts.
     if let Ok(sock) = std::env::var("JINTEKI_SOCKET") {
@@ -52,8 +106,23 @@ async fn main() {
     axum::serve(listener, app).await.expect("serve");
 }
 
-async fn ws_local(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(local::handle)
+/// The WS upgrade request carries the same-origin `jrs_session` cookie;
+/// resolve it here so game sessions can be attributed to the user (§8.3).
+/// No cookie / dead session = anonymous play, exactly today's behavior.
+async fn ws_local(
+    ws: WebSocketUpgrade,
+    axum::extract::State(st): axum::extract::State<api::AppState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let user = match api::cookie_value(&headers, api::COOKIE_NAME) {
+        Some(sid) => {
+            let conn = st.db.lock().await;
+            auth::validate_session(&conn, &sid).map(|su| su.user_id)
+        }
+        None => None,
+    };
+    let db = st.db.clone();
+    ws.on_upgrade(move |socket| local::handle(socket, db, user))
 }
 
 async fn ws_bridge(ws: WebSocketUpgrade) -> impl IntoResponse {

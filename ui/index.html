@@ -17,6 +17,7 @@
 <!-- ── Home screen ─────────────────────────────────────────────────────── -->
 <div id="screen-home" class="screen active">
   <div class="home-wrap">
+    <button id="account-chip" class="chip account-chip">…</button>
     <h1 class="logo">jinteki<span>-rs</span></h1>
     <p class="tagline">netrunner, faster</p>
 
@@ -28,6 +29,7 @@
           <button class="seg" data-side="runner" id="pick-runner">Runner</button>
           <button class="seg" data-side="corp" id="pick-corp">Corp</button>
         </div>
+        <button class="chip deck-chip" id="deck-select-chip">Deck: Starter deck</button>
         <input id="seed" type="text" inputmode="numeric" placeholder="seed (optional)">
         <button class="big go" id="btn-local">Jack in</button>
       </div>
@@ -41,7 +43,128 @@
         <button class="big go alt" id="btn-bridge">Connect</button>
       </div>
     </div>
-    <p class="hint">Landscape recommended. Long-press any card to read it.</p>
+    <div class="home-nav">
+      <button class="chip" id="nav-decks">Decks</button>
+      <button class="chip" id="nav-library">Library</button>
+    </div>
+    <p class="hint">Landscape recommended. Long-press any card to read it. · build <code id="build">…</code></p>
+  </div>
+</div>
+
+<!-- ── Deck-picker bottom sheet (Play vs Bot) ──────────────────────────── -->
+<div id="deck-sheet" class="bottom-sheet" style="display:none">
+  <div class="sheet-head">Pick a deck <button class="chip" id="deck-sheet-close">×</button></div>
+  <div id="deck-sheet-list"></div>
+</div>
+
+<!-- ── My decks ────────────────────────────────────────────────────────── -->
+<div id="screen-decks" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="decks-back">← Home</button>
+    <span>My decks</span>
+    <span>
+      <button class="chip" id="decks-import">Import</button>
+      <button class="chip go" id="decks-new">New</button>
+    </span>
+  </div>
+  <div id="decks-list" class="deck-rows"></div>
+</div>
+
+<!-- ── Deck editor ─────────────────────────────────────────────────────── -->
+<div id="screen-deck-edit" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="edit-back">← Decks</button>
+    <span id="edit-title-label">Deck</span>
+    <button class="chip go" id="edit-save">Save</button>
+  </div>
+  <div class="edit-body">
+    <input id="edit-name" type="text" placeholder="deck name" maxlength="120">
+    <div class="idline">
+      <span id="edit-identity">no identity</span>
+      <button class="chip" id="edit-pick-identity">Change</button>
+    </div>
+    <div id="edit-actions" class="edit-actions">
+      <button class="chip" id="edit-publish" style="display:none">Publish</button>
+      <button class="chip" id="edit-unpublish" style="display:none">Unpublish</button>
+      <button class="chip danger" id="edit-delete" style="display:none">Delete</button>
+    </div>
+    <div id="edit-cards" class="deck-rows"></div>
+    <div class="addrow">
+      <input id="edit-search" type="text" placeholder="add cards — search the pool" autocapitalize="off">
+    </div>
+    <div id="edit-results" class="deck-rows"></div>
+    <textarea id="edit-notes" placeholder="notes" rows="3"></textarea>
+  </div>
+  <div id="edit-valid" class="valid-strip"></div>
+</div>
+
+<!-- ── NRDB import ─────────────────────────────────────────────────────── -->
+<div id="screen-import" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="import-back">← Decks</button>
+    <span>Import from NetrunnerDB</span><span></span>
+  </div>
+  <div class="edit-body" id="import-form">
+    <p class="hint">Paste a decklist URL or id — e.g. netrunnerdb.com/en/decklist/81579/…</p>
+    <input id="import-input" type="text" placeholder="NRDB decklist URL or id" autocapitalize="off">
+    <button class="big go" id="import-go">Import</button>
+  </div>
+  <div class="edit-body" id="import-preview" style="display:none">
+    <div id="import-report"></div>
+    <div id="import-cards" class="deck-rows"></div>
+    <div class="row bottom-actions">
+      <button class="big" id="import-discard">Discard</button>
+      <button class="big go" id="import-save">Save deck</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Library ─────────────────────────────────────────────────────────── -->
+<div id="screen-library" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="library-back">← Home</button>
+    <span>Library</span>
+    <span class="row">
+      <button class="chip seg" data-lside="" id="lib-side-all">All</button>
+      <button class="chip seg" data-lside="corp" id="lib-side-corp">Corp</button>
+      <button class="chip seg" data-lside="runner" id="lib-side-runner">Runner</button>
+    </span>
+  </div>
+  <div class="addrow"><input id="library-q" type="text" placeholder="search published decks" autocapitalize="off"></div>
+  <div id="library-list" class="deck-rows"></div>
+</div>
+
+<!-- ── Library deck view ───────────────────────────────────────────────── -->
+<div id="screen-lib-deck" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="libdeck-back">← Library</button>
+    <span id="libdeck-title">Deck</span><span></span>
+  </div>
+  <div class="edit-body">
+    <div id="libdeck-meta"></div>
+    <div id="libdeck-cards" class="deck-rows"></div>
+    <div class="row bottom-actions">
+      <button class="big go" id="libdeck-fork">Fork to my decks</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Account ─────────────────────────────────────────────────────────── -->
+<div id="screen-account" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="account-back">← Home</button>
+    <span>Account</span><span></span>
+  </div>
+  <div class="edit-body">
+    <label class="fieldlabel">Display name</label>
+    <input id="account-name" type="text" maxlength="20" placeholder="display name">
+    <div id="account-status"></div>
+    <div id="account-claim">
+      <p class="hint">Add an email to keep your decks beyond this browser. No passwords — a sign-in link lands in your inbox.</p>
+      <input id="account-email" type="email" placeholder="you@example.com" autocapitalize="off">
+      <button class="big go" id="account-claim-btn">Email me a sign-in link</button>
+    </div>
+    <button class="chip danger" id="account-logout">Log out</button>
   </div>
 </div>
 
@@ -91,7 +214,7 @@
 
   <button id="log-tab" class="log-tab">☰</button>
   <div id="log-drawer" class="log-drawer">
-    <div class="log-head">Game log <button id="log-close" class="chip">×</button>
+    <div class="log-head">Game log <small style="color:var(--dim)" id="build-log"></small> <button id="log-close" class="chip">×</button>
       <button id="concede-btn" class="chip" style="border-color:var(--danger)">Concede</button>
       <div id="say-row" style="display:none"><input id="say-input" placeholder="say…"><button id="say-send" class="chip">➤</button></div>
     </div>

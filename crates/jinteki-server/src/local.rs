@@ -13,6 +13,8 @@
 //!     {"type":"state","state":{...jnet-shaped...},"actions":[...legal...]}
 //!     {"type":"error","error":"..."}
 
+use crate::db::Db;
+use crate::decks;
 use axum::extract::ws::{Message, WebSocket};
 use jinteki_core::state::{GameState, TurnState};
 use jinteki_core::view::{render_state, Viewer};
@@ -30,6 +32,8 @@ struct LocalGame {
     human: Side,
     bot_rng: ChaCha8Rng,
     last_seen: Instant,
+    /// Whether the game's outcome has been written to the `games` table yet.
+    outcome_recorded: bool,
 }
 
 type Registry = Arc<Mutex<HashMap<String, Arc<Mutex<LocalGame>>>>>;
@@ -59,7 +63,75 @@ async fn prune_and_insert(token: String, game: Arc<Mutex<LocalGame>>) {
     map.insert(token, game);
 }
 
-pub async fn handle(mut ws: WebSocket) {
+/// Titles for one side of a game: identity + deck list.
+struct SideDeck {
+    identity: String,
+    cards: Vec<String>,
+    deck_id: Option<String>,
+}
+
+fn demo_deck(side: Side) -> SideDeck {
+    match side {
+        Side::Corp => SideDeck {
+            identity: jinteki_core::carddb::CORP_ID.into(),
+            cards: jinteki_core::carddb::corp_deck().iter().map(|s| s.to_string()).collect(),
+            deck_id: None,
+        },
+        Side::Runner => SideDeck {
+            identity: jinteki_core::carddb::RUNNER_ID.into(),
+            cards: jinteki_core::carddb::runner_deck().iter().map(|s| s.to_string()).collect(),
+            deck_id: None,
+        },
+    }
+}
+
+/// Load a stored deck for the human side: must be owned by the connected
+/// user or published in the library (§8.3).
+async fn load_side_deck(
+    db: &Db,
+    user: Option<&str>,
+    deck_id: &str,
+    want_side: Side,
+) -> Result<SideDeck, String> {
+    let conn = db.lock().await;
+    let row = decks::get(&conn, deck_id).ok_or("no such deck")?;
+    let owned = user == Some(row.owner_id.as_str());
+    if !owned && row.published_at.is_none() {
+        return Err("no such deck".into());
+    }
+    let side = match row.side.as_str() {
+        "corp" => Side::Corp,
+        _ => Side::Runner,
+    };
+    if side != want_side {
+        return Err(format!("that deck is a {} deck", row.side));
+    }
+    let cards: Vec<decks::WireLine> = serde_json::from_str(&row.cards_json).unwrap_or_default();
+    Ok(SideDeck {
+        identity: row.identity_title,
+        cards: decks::expand_titles(&cards),
+        deck_id: Some(row.id),
+    })
+}
+
+/// If the game just ended, write the outcome onto its `games` row (§5.2:
+/// state stays in the registry; the table records existence + outcome).
+async fn record_outcome_if_over(db: &Db, token: &str, g: &mut LocalGame) {
+    if g.outcome_recorded || !g.st.game_over() {
+        return;
+    }
+    g.outcome_recorded = true;
+    let winner = g.st.winner.map(|w| w.as_str().to_string());
+    let reason = g.st.reason.clone();
+    let conn = db.lock().await;
+    let _ = conn.execute(
+        "UPDATE games SET finished_at = datetime('now'), winner = ?1, reason = ?2
+         WHERE id = ?3 AND finished_at IS NULL",
+        rusqlite::params![winner, reason, token],
+    );
+}
+
+pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
     // The session this connection is attached to, if any.
     let mut attached: Option<(String, Arc<Mutex<LocalGame>>)> = None;
 
@@ -76,26 +148,51 @@ pub async fn handle(mut ws: WebSocket) {
                     _ => Side::Runner,
                 };
                 let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
-                let runner_id = v["runner_id"]
-                    .as_str()
-                    .unwrap_or(jinteki_core::carddb::RUNNER_ID)
-                    .to_string();
-                let corp_deck = jinteki_core::carddb::corp_deck();
-                let runner_deck = jinteki_core::carddb::runner_deck();
+                // The human side's deck: a stored deck when deck_id is given
+                // (owned or published), else the built-in demo deck — the
+                // cookieless flow is exactly today's behavior (§8.3).
+                let human_deck = match v["deck_id"].as_str() {
+                    Some(deck_id) => {
+                        match load_side_deck(&db, user.as_deref(), deck_id, side).await {
+                            Ok(d) => d,
+                            Err(e) => {
+                                send_err(&mut ws, &e).await;
+                                continue;
+                            }
+                        }
+                    }
+                    None => {
+                        let mut d = demo_deck(side);
+                        // Legacy knob: bot games may pick another runner id.
+                        if side == Side::Runner {
+                            if let Some(rid) = v["runner_id"].as_str() {
+                                d.identity = rid.to_string();
+                            }
+                        }
+                        d
+                    }
+                };
+                let bot_deck = demo_deck(side.opponent());
+                let (corp, runner) = match side {
+                    Side::Corp => (&human_deck, &bot_deck),
+                    Side::Runner => (&bot_deck, &human_deck),
+                };
                 // NO silent vanilla play: refuse any deck containing a card
                 // whose behavior is not natively implemented, and say which.
-                let missing: Vec<&str> = corp_deck
+                let mut missing: Vec<&str> = corp
+                    .cards
                     .iter()
-                    .chain(runner_deck.iter())
-                    .chain([jinteki_core::carddb::CORP_ID, runner_id.as_str()].iter())
+                    .chain(runner.cards.iter())
+                    .map(String::as_str)
+                    .chain([corp.identity.as_str(), runner.identity.as_str()])
                     .filter(|t| {
                         !matches!(
                             jinteki_core::printed::impl_status(t),
                             jinteki_core::printed::ImplStatus::Behavior
                         )
                     })
-                    .copied()
                     .collect();
+                missing.dedup();
                 if !missing.is_empty() {
                     send_err(
                         &mut ws,
@@ -107,12 +204,14 @@ pub async fn handle(mut ws: WebSocket) {
                     .await;
                     continue;
                 }
+                let corp_cards: Vec<&str> = corp.cards.iter().map(String::as_str).collect();
+                let runner_cards: Vec<&str> = runner.cards.iter().map(String::as_str).collect();
                 let mut st = GameState::new_with_decks(
                     seed,
-                    jinteki_core::carddb::CORP_ID,
-                    &corp_deck,
-                    &runner_id,
-                    &runner_deck,
+                    &corp.identity,
+                    &corp_cards,
+                    &runner.identity,
+                    &runner_cards,
                 );
                 st.system_log(format!("Local game vs bot, seed {seed}."));
                 let token = format!(
@@ -120,11 +219,28 @@ pub async fn handle(mut ws: WebSocket) {
                     rand::random::<u64>(),
                     rand::random::<u64>()
                 );
+                // Attribute the game to the connected user (durable "my
+                // games" history); anonymous cookieless starts skip this.
+                if let Some(uid) = user.as_deref() {
+                    let conn = db.lock().await;
+                    let _ = conn.execute(
+                        "INSERT INTO games (id, owner_id, side, deck_id, seed, started_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
+                        rusqlite::params![
+                            token,
+                            uid,
+                            side.as_str(),
+                            human_deck.deck_id,
+                            seed as i64
+                        ],
+                    );
+                }
                 let game = Arc::new(Mutex::new(LocalGame {
                     st,
                     human: side,
                     bot_rng: ChaCha8Rng::seed_from_u64(seed ^ 0xB07),
                     last_seen: Instant::now(),
+                    outcome_recorded: false,
                 }));
                 prune_and_insert(token.clone(), game.clone()).await;
                 let _ = ws
@@ -138,6 +254,7 @@ pub async fn handle(mut ws: WebSocket) {
                     let mut g = game.lock().await;
                     bot_moves(&mut g, &mut ws).await;
                     push_state(&g, &mut ws).await;
+                    record_outcome_if_over(&db, &token, &mut g).await;
                 }
                 attached = Some((token, game));
             }
@@ -160,6 +277,7 @@ pub async fn handle(mut ws: WebSocket) {
                             // The bot may have been mid-move when the old tab died.
                             bot_moves(&mut g, &mut ws).await;
                             push_state(&g, &mut ws).await;
+                            record_outcome_if_over(&db, &token, &mut g).await;
                         }
                         attached = Some((token, game));
                     }
@@ -167,7 +285,7 @@ pub async fn handle(mut ws: WebSocket) {
                 }
             }
             Some("action") => {
-                let Some((_, game)) = attached.as_ref() else {
+                let Some((token, game)) = attached.as_ref() else {
                     send_err(&mut ws, "no game attached").await;
                     continue;
                 };
@@ -181,6 +299,7 @@ pub async fn handle(mut ws: WebSocket) {
                         }
                         push_state(&g, &mut ws).await;
                         bot_moves(&mut g, &mut ws).await;
+                        record_outcome_if_over(&db, token, &mut g).await;
                     }
                     Err(e) => send_err(&mut ws, &e).await,
                 }
