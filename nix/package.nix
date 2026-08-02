@@ -23,25 +23,18 @@ rustPlatform.buildRustPackage {
 
   cargoLock.lockFile = ../Cargo.lock;
 
+  # The build id travels IN the binary (compile-time env; the server exposes
+  # it at GET /version and the UI displays what the server reports). No
+  # artifact text-mangling: the UI ships verbatim. Response caching is
+  # handled where it belongs — the deploy's Caddy serves no-store, because
+  # nix-store mtimes are 1970 and Last-Modified revalidation is a trap.
+  env.JINTEKI_BUILD_REV = rev;
+
   # The UI is data, not a build artifact: ship it next to the binary and point
   # the service at it with JINTEKI_UI_DIR.
   postInstall = ''
     mkdir -p $out/share/jinteki-rs
     cp -r ui $out/share/jinteki-rs/ui
-    # Stamp the build id: visible in the UI and cache-busting the assets
-    # (nix-store mtimes are 1970, so Last-Modified revalidation is useless —
-    # the URL must change per build). Handles both HTML generations: with
-    # __BUILD__ markers (substitute) and without (inject).
-    ix=$out/share/jinteki-rs/ui/index.html
-    if grep -q "__BUILD__" "$ix"; then
-      substituteInPlace "$ix" --replace-quiet "__BUILD__" "${rev}"
-    else
-      sed -i \
-        -e 's|href="style.css"|href="style.css?v=${rev}"|' \
-        -e 's|src="app.js"|src="app.js?v=${rev}"|' \
-        -e 's|Long-press any card to read it\.|\0 · build ${rev}|' \
-        "$ix"
-    fi
   '';
 
   doCheck = false; # the engine suite runs in CI/dev, not on the deploy path
