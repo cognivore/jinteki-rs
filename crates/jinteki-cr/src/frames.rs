@@ -58,6 +58,9 @@ pub struct BreachCtx {
     pub accessed: Vec<ObjectId>,
     /// HQ/R&D: how many accesses from hand/deck remain (7.3.6).
     pub remaining_from_zone: u32,
+    /// CR 7.4.6a: root entries the Runner declared NON-candidates at
+    /// 10.3.1j — they cannot become candidates for the rest of the breach.
+    pub declined: Vec<ObjectId>,
 }
 
 /// Per-access state (§7.1-7.2).

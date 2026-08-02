@@ -27,6 +27,8 @@ pub enum GameChange {
     CardTrashed { obj: ObjectId, by: Side, was_zone: Zone },
     CardDiscarded { obj: ObjectId, side: Side },
     CardInstalled { obj: ObjectId, side: Side },
+    /// CR 8.5.13c/d: a card was revealed to verify an installation.
+    CardRevealed { obj: ObjectId },
     CardUninstalled { obj: ObjectId, was_zone: Zone },
     CardRezzed { obj: ObjectId },
     CardMoved { obj: ObjectId, from: Zone, to: Zone },

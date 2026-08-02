@@ -90,6 +90,10 @@ pub enum DecisionSpec {
     OptionalEffect { label: &'static str },
     /// CR 11.5 step 4a: the Runner chooses a candidate to access.
     ChooseCandidate { candidates: Vec<ObjectId> },
+    /// CR 10.3.1j / 7.4.6a: a card entered the breached server's root since
+    /// the previous checkpoint; the Runner declares whether it becomes a
+    /// candidate. Answer with `ResolveOptional(bool)`.
+    DeclareBreachCandidate { card: ObjectId },
     /// `step_jack_out_choice` (6.9.4c).
     JackOut,
     /// Discard down to hand size (5.5.4c): choose `count` cards.

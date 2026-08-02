@@ -137,6 +137,9 @@ pub struct PrintedCard {
     pub recurring_credits: Option<u32>,
     /// CR 1.16.10 printed additional cost to steal (Obokata class).
     pub additional_steal_cost: Option<crate::ability::Cost>,
+    /// CR 1.16.4c: an additional cost to rez (Archer class); declinable
+    /// during "install and rez" effects (8.5.13d).
+    pub additional_rez_cost: Option<crate::ability::Cost>,
     /// CR 1.10.3c: hosted credits on this card are spendable by its
     /// controller (Fencer Fueno class — drives bid legality, 10.14.3).
     pub hosted_credits_spendable: bool,
@@ -160,6 +163,7 @@ impl PrintedCard {
             console: false,
             recurring_credits: None,
             additional_steal_cost: None,
+            additional_rez_cost: None,
             hosted_credits_spendable: false,
             abilities: Vec::new(),
         }
@@ -189,6 +193,9 @@ pub struct Object {
     /// CR 9.5.5: temporarily set aside during a self-uninstalling trigger
     /// cost; invisible to other abilities, still "hosted" for that ability.
     pub set_aside_for_ability: bool,
+    /// CR 8.5.16a / 8.6.7a: placed into the play area as the first step of
+    /// installing/playing — "It is not yet installed or active."
+    pub staged: bool,
 }
 
 impl Object {
@@ -212,6 +219,12 @@ pub fn card_active(obj: &Object) -> bool {
     cite!("rule_active_cards");
     if obj.set_aside_for_ability {
         // CR 4.8.3: other abilities cannot interact with set-aside objects.
+        return false;
+    }
+    if obj.staged {
+        // CR 8.5.16a / 8.6.7a: not yet installed or active.
+        cite!("rule_steps_installing_place");
+        cite!("rule_steps_playing_place");
         return false;
     }
     match obj.zone {

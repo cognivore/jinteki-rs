@@ -80,6 +80,14 @@ pub enum TriggerCond {
     /// Interrupt trigger: "…would take tags during a run" (Jesminder class:
     /// `during_run` requires a run to be in progress).
     WouldTakeTags { during_run: bool },
+    /// "Whenever the Corp installs a card in the root of this server…"
+    /// (Tranquility Home Grid class; the 9.6.5b activity gate is the point).
+    CardInstalledInSourceServer,
+    /// "If the Runner is tagged when this card is accessed…" (Quantum
+    /// Predictive Model class): the tag requirement is PART OF the trigger
+    /// condition and must hold at the moment the condition would occur
+    /// (9.6.5c).
+    SelfAccessedIfRunnerTagged,
 }
 
 /// Static conditions (9.6.7) for repeat-while-true conditionals.
@@ -184,6 +192,12 @@ pub enum StaticDecl {
     /// "Cards cannot be hosted on this card." (Tithonium class; 10.3.1e
     /// hosting-illegality restriction.)
     CannotHost,
+    /// "This card can host N programs. The install cost of hosted programs
+    /// is lowered by M." (Dhegdheer class; 8.5.1a/1.13.4a makes such a card
+    /// an eligible installation destination.)
+    HostsPrograms { capacity: u32, install_discount: u32 },
+    /// "+N link" (Dyson Mem Chip class; the 9.6.5d link example).
+    LinkBonus(i32),
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -444,6 +458,25 @@ pub fn trigger_matches(
         }
         (TriggerCond::AdvancesCard { .. }, GameChange::CounterPlaced { kind, .. }) => {
             *kind == crate::object::CounterKind::Advancement
+        }
+        (
+            TriggerCond::CardInstalledInSourceServer,
+            GameChange::CardInstalled { obj, side: Side::Corp },
+        ) => {
+            // The installed card's server must be the source's server. The
+            // caller passes the source's server; the installed card's server
+            // is read through the same closure surface used for trash
+            // triggers, so we compare zones here via the source-server hook.
+            cite!("rule_condition_only_met_while_active");
+            let _ = obj;
+            // Server comparison happens in the checkpoint scan (it has state
+            // access); this arm only matches the change class.
+            true
+        }
+        (TriggerCond::SelfAccessedIfRunnerTagged, GameChange::CardAccessed { obj }) => {
+            // 9.6.5c: the tag requirement is checked by the checkpoint scan
+            // (it is part of the condition, not the effect).
+            *obj == source.id
         }
         _ => false,
     }

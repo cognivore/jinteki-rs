@@ -223,6 +223,29 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     {
                         continue;
                     }
+                    // THG class: the installed card's server must be the
+                    // source's server.
+                    if let (
+                        crate::ability::TriggerCond::CardInstalledInSourceServer,
+                        GameChange::CardInstalled { obj, .. },
+                    ) = (cond, c)
+                    {
+                        let sv = vm.server_of(obj_id);
+                        if sv.is_none() || vm.server_of(*obj) != sv {
+                            continue;
+                        }
+                    }
+                    // 9.6.5c: requirements listed in the trigger condition
+                    // must hold when the condition would occur (QPM class:
+                    // the Runner must already be tagged).
+                    if matches!(
+                        cond,
+                        crate::ability::TriggerCond::SelfAccessedIfRunnerTagged
+                    ) && vm.st.runner.tags == 0
+                    {
+                        cite!("rule_condition_requirements_part_of_condition");
+                        continue;
+                    }
                     if let Some(bound) = persisted_run {
                         let change_run = match c {
                             GameChange::RunEnded { run_id, .. } => Some(*run_id),
@@ -658,9 +681,12 @@ fn step_i_vacant_positions(vm: &mut Vm) {
 }
 
 /// 10.3.1j: cards that entered the breached server's root since the previous
-/// checkpoint — the Runner declares candidacy.
+/// checkpoint — for each, the Runner declares whether it becomes a candidate
+/// (7.4.6a). Declined cards cannot become candidates for the rest of the
+/// breach.
 fn step_j_breach_candidates(vm: &mut Vm) {
     cite!("step_checkpoint_card_entering_root_during_breach");
+    cite!("rule_candidates_entering_root");
     let Some(server) = vm.breach_server() else { return };
     let entered: Vec<ObjectId> = vm
         .last_scan_window
@@ -670,11 +696,30 @@ fn step_j_breach_candidates(vm: &mut Vm) {
             _ => None,
         })
         .collect();
-    // Kernel wave: newly-entered cards become candidates by default; the
-    // Runner's declaration Decision arrives with the card layer that can
-    // install mid-breach.
+    let mut fresh: Vec<ObjectId> = Vec::new();
     for obj in entered {
-        vm.add_breach_candidate(obj);
+        // Cards still in the root, not already candidates/accessed/declined.
+        let still_there = vm
+            .st
+            .root
+            .get(&server)
+            .map(|v| v.contains(&obj))
+            .unwrap_or(false);
+        if !still_there {
+            continue;
+        }
+        let b = vm.run_breach_bookkeeping(obj);
+        if b {
+            fresh.push(obj);
+        }
+    }
+    // One declaration Decision at a time; the answer chains the rest. The
+    // checkpoint's remaining steps (k)/(l) proceed before the Decision is
+    // answered — they only clean counters and cannot interact with
+    // candidacy (single-pass, as with the 10.3.1e minimal-set Decision).
+    if let Some(first) = fresh.pop() {
+        vm.pending_candidacy.extend(fresh);
+        vm.ask_breach_candidacy(first);
     }
 }
 

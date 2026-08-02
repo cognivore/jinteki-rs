@@ -75,6 +75,18 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_calculated_quantity_2",
     "example_rule_mandatory_choice_1",
     "example_rule_mandatory_choice_effects_can_be_modified_1",
+    // Wave 3a: install instructions (§8.5), 9.6.5b, 10.3.1j declaration.
+    "example_rule_install_one_at_a_time_1",
+    "example_rule_no_reveal_for_default_install_1",
+    "example_rule_no_reveal_for_default_install_2",
+    "example_rule_no_reveal_for_server_limitation_1",
+    "example_rule_reveal_for_ability_limitations_1",
+    "example_rule_reveal_for_install_and_rez_1",
+    "example_rule_reveal_for_install_and_rez_2",
+    "example_rule_install_to_invalid_destination_1",
+    "example_rule_condition_only_met_while_active_1",
+    "example_rule_condition_only_met_while_active_2",
+    "example_step_checkpoint_card_entering_root_during_breach_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -2813,6 +2825,503 @@ fn example_rule_mandatory_choice_effects_can_be_modified_1() {
         vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
         "9.12.3d: avoiding the chosen tag does not resurrect the end-the-run option"
     );
+}
+
+// ===========================================================================
+// §8.5 — installing (W3a): the 8.5.16 steps, reveal rules, 10.3.1j
+// ===========================================================================
+
+/// example_rule_install_one_at_a_time_1 (8.5.5): a Mass-Install-class effect
+/// installs three programs ONE AT A TIME, each a separate instruction. The
+/// Runner installs a Dhegdheer-class host first, then hosts the second
+/// program on it to reduce that program's install cost by 1.
+#[test]
+fn example_rule_install_one_at_a_time_1() {
+    let mut vm = Vm::empty(311);
+    let dheg = vm.new_object(tk::dhegdheer_like("Dhegdheer-like", 2), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(dheg);
+    let pa = vm.new_object(tk::program_cost("Prog-A", 3), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(pa);
+    let pb = vm.new_object(tk::program_cost("Prog-B", 3), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(pb);
+    tk::install_rig(&mut vm, tk::mass_install_button("MassInstall-like", 3));
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "mass-install", 100);
+    // Install order: Dhegdheer (to the rig), Prog-A (hosted on Dhegdheer),
+    // Prog-B (to the rig).
+    let mut picks = 0usize;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ChooseTargets { candidates, .. } if s == Side::Runner => {
+                if candidates.contains(&dheg) && picks == 0 {
+                    picks += 1;
+                    vm.answer(DecisionAnswer::Targets(vec![dheg]));
+                } else if candidates.contains(&pa) {
+                    picks += 1;
+                    vm.answer(DecisionAnswer::Targets(vec![pa]));
+                } else if candidates == &vec![dheg] {
+                    // Host choice for Prog-A: host it on Dhegdheer.
+                    vm.answer(DecisionAnswer::Targets(vec![dheg]));
+                } else if candidates.contains(&pb) {
+                    picks += 1;
+                    vm.answer(DecisionAnswer::Targets(vec![pb]));
+                } else {
+                    // Host choice for Prog-B: Dhegdheer is full — but if
+                    // offered, decline to the rig.
+                    vm.answer(DecisionAnswer::Targets(vec![]));
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(picks, 3, "three separate one-at-a-time picks (8.5.5)");
+    assert_eq!(vm.st.objects[&dheg].zone, Zone::Rig);
+    assert_eq!(vm.st.objects[&pa].zone, Zone::Rig);
+    assert_eq!(vm.st.objects[&pa].host, Some(dheg), "Prog-A hosted on Dhegdheer");
+    assert_eq!(vm.st.objects[&pb].zone, Zone::Rig);
+    // 10 - 2 (Dhegdheer) - 2 (Prog-A at 3-1 hosted discount) - 3 (Prog-B).
+    assert_eq!(vm.st.runner.credits, 3, "hosting reduced Prog-A's install cost");
+}
+
+/// example_rule_no_reveal_for_default_install_1 (8.5.13a): the Corp installs
+/// an asset into a root already holding a facedown asset. The old asset is
+/// trashed (8.5.6a must-trash), facedown into Archives (8.5.7), and NO card
+/// is revealed to verify card types.
+#[test]
+fn example_rule_no_reveal_for_default_install_1() {
+    let mut vm = Vm::empty(312);
+    let old = tk::install_root(&mut vm, tk::vanilla_asset("Old-Asset", 0, 3), ServerId::Remote(1), false);
+    let newc = vm.new_object(tk::vanilla_asset("New-Asset", 0, 3), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(newc);
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button("Install-Button", newc, jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1))),
+        ServerId::Remote(2),
+        true,
+    );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+    tk::take_labeled(&mut vm, Side::Corp, "corp-install", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Corp);
+
+    assert_eq!(vm.st.objects[&newc].zone, Zone::Root(ServerId::Remote(1)));
+    assert!(!vm.st.objects[&newc].faceup, "Corp cards install facedown (8.5.2)");
+    assert!(!vm.st.objects[&newc].staged);
+    assert_eq!(vm.st.objects[&old].zone, Zone::Discard(Side::Corp), "8.5.6a must-trash");
+    assert!(!vm.st.objects[&old].faceup, "8.5.7: trashed with its facedown status");
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { .. })),
+        "8.5.13a: no reveal to verify card types"
+    );
+}
+
+/// example_rule_no_reveal_for_default_install_2 (8.5.13a): a Brân-class
+/// subroutine installs ice from HQ directly inward. The installed card is
+/// not revealed to verify that it is a piece of ice.
+#[test]
+fn example_rule_no_reveal_for_default_install_2() {
+    let mut vm = Vm::empty(313);
+    let hq_ice = vm.new_object(tk::vanilla_ice("HQ-Ice", 0, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hq_ice);
+    let bran = tk::install_ice(&mut vm, tk::bran_like("Bran-like", hq_ice), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 3), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+    // Let the encounter resolve the install subroutine, then jack out.
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::JackOut => {
+                vm.answer(DecisionAnswer::JackOut(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(vm.st.objects[&hq_ice].zone, Zone::Ice(ServerId::Remote(1)));
+    assert_eq!(
+        vm.st.ice[&ServerId::Remote(1)],
+        vec![hq_ice, bran],
+        "installed directly inward of Brân (innermost-first order)"
+    );
+    assert!(!vm.st.objects[&hq_ice].faceup, "installed unrezzed");
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { .. })),
+        "8.5.13a: no reveal to verify the card is ice"
+    );
+}
+
+/// example_rule_no_reveal_for_server_limitation_1 (8.5.13b): installing a
+/// card into a root with a rezzed region does not reveal the new card to
+/// verify it is not a region.
+#[test]
+fn example_rule_no_reveal_for_server_limitation_1() {
+    let mut vm = Vm::empty(314);
+    let region = tk::install_root(&mut vm, tk::region_upgrade("Old-Region", 2), ServerId::Remote(1), true);
+    let newu = vm.new_object(tk::vanilla_upgrade("New-Upgrade", 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(newu);
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button("Install-Button", newu, jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1))),
+        ServerId::Remote(2),
+        true,
+    );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+    tk::take_labeled(&mut vm, Side::Corp, "corp-install", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Corp);
+
+    assert_eq!(vm.st.objects[&newu].zone, Zone::Root(ServerId::Remote(1)));
+    assert_eq!(
+        vm.st.objects[&region].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "a non-region upgrade does not force the region out"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { .. })),
+        "8.5.13b: no reveal to verify server limitations"
+    );
+}
+
+/// example_rule_reveal_for_ability_limitations_1 (8.5.13c): an Ob-class
+/// ability installs-and-rezzes a card from R&D subject to a printed-rez-cost
+/// requirement; the Corp declines the additional rez cost, so the card stays
+/// facedown and MUST be revealed to verify the installation.
+#[test]
+fn example_rule_reveal_for_ability_limitations_1() {
+    let mut vm = Vm::empty(315);
+    let mut archer = tk::vanilla_ice("Archer-like", 4, 6);
+    archer.additional_rez_cost = Some(jinteki_cr::ability::Cost::credits(1));
+    let archer = vm.new_object(archer, Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(archer);
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_rez_button(
+            "Ob-Button",
+            archer,
+            jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1)),
+            true,
+            Some(jinteki_cr::instr::RevealCheck::PrintedRezCostAtMost(4)),
+        ),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 5;
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+    tk::take_labeled(&mut vm, Side::Corp, "corp-install-rez", 100);
+    let mut declined = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { .. } if s == Side::Corp => {
+                declined = true;
+                vm.answer(DecisionAnswer::PayNestedCost(false));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(declined, "the additional rez cost was offered and declined (1.16.4c)");
+    assert_eq!(vm.st.objects[&archer].zone, Zone::Ice(ServerId::Remote(1)));
+    assert!(!vm.st.objects[&archer].faceup, "not rezzed after declining");
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == archer)).count(),
+        1,
+        "8.5.13c/d: the hidden-provenance card is revealed exactly once"
+    );
+}
+
+/// example_rule_reveal_for_install_and_rez_1 (8.5.13d): a Trust-Operation
+/// class effect installs an agenda with "install and rez". Agendas cannot be
+/// rezzed, so the Corp must reveal the installed agenda.
+#[test]
+fn example_rule_reveal_for_install_and_rez_1() {
+    let mut vm = Vm::empty(316);
+    let agenda = vm.new_object(tk::vanilla_agenda("Buried-Plans", 3, 1), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_rez_button(
+            "TrustOp-Button",
+            agenda,
+            jinteki_cr::instr::InstallDest::NewRemoteRoot,
+            false,
+            None,
+        ),
+        ServerId::Remote(1),
+        true,
+    );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+    tk::take_labeled(&mut vm, Side::Corp, "corp-install-rez", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Corp);
+
+    assert!(matches!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(_))));
+    assert!(!vm.st.objects[&agenda].faceup, "agendas cannot be rezzed (8.1.2c)");
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == agenda)).count(),
+        1,
+        "8.5.13d: the unrezzable install-and-rez target is revealed"
+    );
+}
+
+/// example_rule_reveal_for_install_and_rez_2 (8.5.13d): an Ad-Blitz-class
+/// "install and rez, if able" effect cannot choose cards the Corp is unable
+/// to rez — the agenda in hand is never a candidate, and nothing is
+/// revealed.
+#[test]
+fn example_rule_reveal_for_install_and_rez_2() {
+    let mut vm = Vm::empty(317);
+    let ice = vm.new_object(tk::vanilla_ice("Blitz-Ice", 3, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ice);
+    let agenda = vm.new_object(tk::vanilla_agenda("Hand-Agenda", 3, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::install_root(
+        &mut vm,
+        tk::ad_blitz_button("AdBlitz-Button", 2, ServerId::Remote(1)),
+        ServerId::Remote(1),
+        true,
+    );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+    tk::take_labeled(&mut vm, Side::Corp, "ad-blitz", 100);
+    let mut saw_choice = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ChooseTargets { candidates, .. } if s == Side::Corp => {
+                saw_choice = true;
+                assert!(
+                    !candidates.contains(&agenda),
+                    "8.5.13d 'if able': unrezzable cards cannot be chosen"
+                );
+                assert!(candidates.contains(&ice));
+                vm.answer(DecisionAnswer::Targets(vec![ice]));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(saw_choice);
+    assert_eq!(vm.st.objects[&ice].zone, Zone::Ice(ServerId::Remote(1)));
+    assert!(vm.st.objects[&ice].faceup, "installed and rezzed");
+    assert_eq!(vm.st.objects[&agenda].zone, Zone::Hand(Side::Corp));
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { .. })),
+        "nothing to reveal when every choice was rezzable"
+    );
+}
+
+/// example_rule_install_to_invalid_destination_1 (8.5.14): resolving a
+/// Brân-class subroutine on a copy in Archives — "directly inward" cannot be
+/// evaluated for ice that is not protecting a server, so the install has no
+/// effect.
+#[test]
+fn example_rule_install_to_invalid_destination_1() {
+    let mut vm = Vm::empty(318);
+    let hq_ice = vm.new_object(tk::vanilla_ice("HQ-Ice", 0, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hq_ice);
+    let bran = vm.new_object(tk::bran_like("Bran-Archives", hq_ice), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(bran);
+    vm.st.corp.credits = 5;
+    // Nanisivik-class driver: resolve Brân's subroutine while it sits in
+    // Archives.
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+vm.push_ability_frame(
+        jinteki_cr::frames::ResolutionKind::Subroutine,
+        jinteki_cr::ability::AbilityRef { obj: bran, index: 0 },
+        Side::Corp,
+        vec![jinteki_cr::instr::Instruction::InstallCard {
+            card: jinteki_cr::instr::TargetSpec::Objects(vec![hq_ice]),
+            dest: jinteki_cr::instr::InstallDest::InwardFromSource,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+        None,
+        Some(0),
+    );
+    let _ = tk::until_decision(&mut vm);
+
+    assert_eq!(
+        vm.st.objects[&hq_ice].zone,
+        Zone::Hand(Side::Corp),
+        "8.5.14: no installation takes place"
+    );
+    assert_eq!(vm.st.corp.credits, 5, "no cost was paid");
+}
+
+// ===========================================================================
+// §9.6.5b — conditions only met while active (rides on §8.5)
+// ===========================================================================
+
+/// example_rule_condition_only_met_while_active_1 (9.6.5b): while resolving
+/// "turn begins" abilities, the Corp trashes a Reaper-class card to install
+/// and rez a Nico-Campaign-class asset. Nico's own "turn begins" condition
+/// has already been processed — the Corp cannot take its credit this turn.
+#[test]
+fn example_rule_condition_only_met_while_active_1() {
+    let mut vm = Vm::empty(319);
+    let nico = vm.new_object(tk::nico_like("Nico-like", 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(nico);
+    tk::install_root(&mut vm, tk::reaper_like("Reaper-like", nico), ServerId::Remote(1), true);
+    vm.st.corp.credits = 10;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Corp);
+
+    let mut fired = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Corp && !fired => {
+                if let Some(opt) = tk::option_labeled(options, "reaper") {
+                    fired = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(fired, "the Reaper-class turn-begins ability was triggered");
+    assert!(matches!(vm.st.objects[&nico].zone, Zone::Root(ServerId::Remote(_))));
+    assert!(vm.st.objects[&nico].faceup, "installed and rezzed mid-window");
+    // 10 - 2 (Nico's rez cost), and NO +1 from Nico's ability: its trigger
+    // condition was already processed when it became active (9.6.5b).
+    assert_eq!(vm.st.corp.credits, 8, "Nico's turn-begins ability cannot fire this turn");
+}
+
+/// example_rule_condition_only_met_while_active_2 (9.6.5b): an ADT-class
+/// effect installs and rezzes THG "ignoring all costs". The rez-cost step
+/// still happens (1.16.5c) and is still followed by a checkpoint (1.16.3a);
+/// that checkpoint processes the CardInstalled change while THG is not yet
+/// active, so no instance of its ability is created. Once rezzed, a LATER
+/// install in its server does trigger it.
+#[test]
+fn example_rule_condition_only_met_while_active_2() {
+    let mut vm = Vm::empty(320);
+    let thg = vm.new_object(tk::thg_like("THG-like", 3), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(thg);
+    let other = vm.new_object(tk::vanilla_asset("Later-Asset", 0, 3), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(other);
+    tk::install_root(&mut vm, tk::adt_button("ADT-Button", thg), ServerId::Remote(1), true);
+    // ADT's NewRemoteRoot deterministically mints Remote(100) (the VM's
+    // remote counter starts there); the control-arm button installs into it.
+    let mut later = tk::corp_install_button(
+        "Later-Install",
+        other,
+        jinteki_cr::instr::InstallDest::Root(ServerId::Remote(100)),
+    );
+    later.abilities[0] = later.abilities[0].clone().labeled("later-install");
+    tk::install_root(&mut vm, later, ServerId::Remote(2), true);
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    tk::take_labeled(&mut vm, Side::Corp, "adt", 100);
+    // Let the install-and-rez frame resolve; the window then re-offers.
+    let _ = tk::until_decision(&mut vm);
+
+    assert!(vm.st.objects[&thg].faceup, "installed and rezzed");
+    assert_eq!(vm.st.objects[&thg].zone, Zone::Root(ServerId::Remote(100)));
+    // All costs ignored AND no self-trigger: exactly 5 credits.
+    assert_eq!(
+        vm.st.corp.credits, 5,
+        "9.6.5b: THG was not active when its own install was processed"
+    );
+    // The zero rez cost was still a real payment step (1.16.1d/1.16.3a).
+    assert!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CostPaid { credits: 0, .. })).count() >= 2,
+        "install- and rez-cost steps happened at cost 0"
+    );
+
+    // Control arm, same priority window: a later install into THG's server
+    // DOES pend its instance — THG is active when the change is processed.
+    tk::take_labeled(&mut vm, Side::Corp, "later-install", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Corp);
+    assert_eq!(
+        vm.st.corp.credits, 6,
+        "an install while THG is active pends its instance normally"
+    );
+}
+
+/// example_step_checkpoint_card_entering_root_during_breach_1 (10.3.1j): a
+/// Ganked-class access ability installs a card into the root of the server
+/// being breached. At the next checkpoint the Runner DECLARES whether the
+/// new card becomes a candidate; declaring yes lets them access it later in
+/// the same breach.
+#[test]
+fn example_step_checkpoint_card_entering_root_during_breach_1() {
+    let mut vm = Vm::empty(321);
+    let drafted = vm.new_object(tk::vanilla_asset("Drafted-Asset", 0, 3), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(drafted);
+    let ganked = tk::install_root(&mut vm, tk::ganked_like("Ganked-like", drafted), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+
+    let mut declared = false;
+    let mut triggered_install = false;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        let _ = s;
+        match &spec {
+            // The Ganked-class ability is the CORP's optional reaction.
+            DecisionSpec::ReactionWindow { options, .. } if !triggered_install => {
+                if let Some(opt) = tk::option_labeled(options, "ganked") {
+                    triggered_install = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::DeclareBreachCandidate { card } => {
+                assert_eq!(*card, drafted);
+                declared = true;
+                vm.answer(DecisionAnswer::ResolveOptional(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(triggered_install, "the Ganked-class install resolved mid-breach");
+    assert!(declared, "10.3.1j: the Runner declared candidacy");
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == drafted)),
+        "the declared candidate was accessed later in the breach"
+    );
+    assert_eq!(vm.st.objects[&drafted].zone, Zone::Root(ServerId::Remote(1)));
+    let _ = ganked;
 }
 
 // ===========================================================================

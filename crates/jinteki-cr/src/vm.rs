@@ -152,6 +152,36 @@ pub enum DecisionCtx {
     TraceSpend(Side),
     /// 10.14.6 sealed psi bids.
     PsiBid(Side),
+    /// 10.3.1j: the Runner declares candidacy of a mid-breach root entry.
+    BreachCandidacy(ObjectId),
+    /// 8.5.13d/1.16.4c: pay or decline the additional rez cost during an
+    /// "install and rez" effect.
+    RezAdditionalCost,
+}
+
+/// CR 8.5.16: one installation in progress. Installing is a procedure, not
+/// a timing structure (9.2.2e); the VM expands it into step instructions and
+/// this record carries the state between them.
+#[derive(Debug, Clone)]
+pub struct InstallProgress {
+    pub card: ObjectId,
+    pub dest: crate::instr::InstallDest,
+    pub and_rez: bool,
+    pub ignore_costs: bool,
+    pub reveal_check: Option<crate::instr::RevealCheck>,
+    /// The card came from a hidden/secret zone or was facedown (8.5.13
+    /// reveal relevance).
+    pub was_hidden: bool,
+    /// 8.5.14: the destination was invalid — remaining steps are no-ops.
+    pub aborted: bool,
+    /// 8.5.13d: the card cannot be rezzed — the rez steps are skipped.
+    pub rez_skipped: bool,
+    /// 8.5.13: the card has already been revealed (at most once).
+    pub revealed: bool,
+    /// Destination resolved at step 8.5.16b.
+    pub resolved_zone: Option<Zone>,
+    /// Ice-position insertion index (innermost-first) for inward installs.
+    pub ice_insert_at: Option<usize>,
 }
 
 /// An in-progress trace attempt (10.8.6): shared state across the expanded
@@ -198,6 +228,12 @@ pub struct Vm {
     pub set_aside_card_cleanup: Vec<ObjectId>,
     /// In-progress trace attempt (10.8; NOT a timing structure, 9.2.2e).
     pub trace: Option<TraceState>,
+    /// In-progress installations (8.5.16), innermost last. Installing is a
+    /// procedure (9.2.2e); nested installs stack.
+    pub installs: Vec<InstallProgress>,
+    /// 10.3.1j: mid-breach root entries awaiting the Runner's candidacy
+    /// declaration.
+    pub pending_candidacy: Vec<ObjectId>,
     /// Sealed first bid of an in-progress Psi Game (10.14.6).
     psi_first_bid: Option<u32>,
     pub pending_decision: Option<(Side, DecisionSpec, DecisionCtx)>,
@@ -213,6 +249,7 @@ pub struct Vm {
     next_lingering: u64,
     next_encounter: u64,
     next_run: u64,
+    next_remote: u32,
     /// Run context mirror for conditions when the run frame is deep in the
     /// stack: (run_id, server, reached_success) while a run is in progress.
     pub current_run: Option<(u64, ServerId, bool)>,
@@ -345,6 +382,8 @@ impl Vm {
             orphan_set_aside_counters: Vec::new(),
             set_aside_card_cleanup: Vec::new(),
             trace: None,
+            installs: Vec::new(),
+            pending_candidacy: Vec::new(),
             psi_first_bid: None,
             pending_decision: None,
             answer: None,
@@ -358,6 +397,7 @@ impl Vm {
             next_lingering: 1,
             next_encounter: 1,
             next_run: 1,
+            next_remote: 100,
             current_run: None,
             resolution_log: Vec::new(),
         }
@@ -381,6 +421,7 @@ impl Vm {
                 counters: BTreeMap::new(),
                 active_since: 0,
                 set_aside_for_ability: false,
+                staged: false,
             },
         );
         id
@@ -452,9 +493,31 @@ impl Vm {
         self.breach_ctx().map(|b| b.server)
     }
 
+    /// 10.3.1j support: is this root entry eligible for a candidacy
+    /// declaration (not already a candidate/accessed/declined)?
+    pub(crate) fn run_breach_bookkeeping(&self, obj: ObjectId) -> bool {
+        let Some(b) = self.breach_ctx() else { return false };
+        !(b.candidates.contains(&obj)
+            || b.accessed.contains(&obj)
+            || b.declined.contains(&obj))
+    }
+
+    /// 10.3.1j: suspend for the Runner's candidacy declaration.
+    pub(crate) fn ask_breach_candidacy(&mut self, card: ObjectId) {
+        self.ask(
+            Side::Runner,
+            DecisionSpec::DeclareBreachCandidate { card },
+            DecisionCtx::BreachCandidacy(card),
+        );
+    }
+
     pub fn add_breach_candidate(&mut self, obj: ObjectId) {
         if let Some(b) = self.breach_ctx_mut() {
-            if !b.candidates.contains(&obj) && !b.accessed.contains(&obj) {
+            // 7.4.6a: cards the Runner declared non-candidates stay out.
+            if !b.candidates.contains(&obj)
+                && !b.accessed.contains(&obj)
+                && !b.declined.contains(&obj)
+            {
                 b.candidates.push(obj);
             }
         }
@@ -1365,6 +1428,7 @@ impl Vm {
                 chosen: None,
                 accessed: Vec::new(),
                 remaining_from_zone: 0,
+                declined: Vec::new(),
             }),
         }));
     }
@@ -2490,8 +2554,118 @@ impl Vm {
                 af.controller,
                 DecisionSpec::OptionalEffect { label: "optional effect" },
             )),
+            // 8.5.5: multi-installs choose ONE card at a time.
+            Instruction::InstallCards {
+                count,
+                from_hand_of,
+                filter,
+                and_rez_if_able,
+                ..
+            } if *count > 0 => {
+                cite!("rule_install_one_at_a_time");
+                let candidates = self.install_pick_candidates(
+                    *from_hand_of,
+                    *filter,
+                    *and_rez_if_able,
+                );
+                if candidates.is_empty() {
+                    None
+                } else {
+                    Some((
+                        af.controller,
+                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true },
+                    ))
+                }
+            }
+            // 8.5.16b: the Runner declares a host or defaults to the rig.
+            Instruction::InstallCard {
+                card: TargetSpec::Choose { count, filter },
+                ..
+            } => {
+                let candidates = self.filter_candidates(*filter, af.controller);
+                Some((
+                    af.controller,
+                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false },
+                ))
+            }
+            Instruction::InstallCard {
+                dest: crate::instr::InstallDest::RunnerChoiceHostOrRig,
+                ..
+            } => {
+                cite!("rule_host_via_install");
+                let hosts = self.eligible_program_hosts();
+                if hosts.is_empty() {
+                    None
+                } else {
+                    Some((
+                        af.controller,
+                        DecisionSpec::ChooseTargets { candidates: hosts, count: 1, up_to: true },
+                    ))
+                }
+            }
             _ => None,
         }
+    }
+
+    /// Cards a multi-install effect may choose from (8.5.5); the Ad Blitz
+    /// "if able" stipulation excludes unrezzable cards (8.5.13d).
+    fn install_pick_candidates(
+        &self,
+        from_hand_of: Side,
+        filter: crate::instr::InstallFilter,
+        and_rez_if_able: bool,
+    ) -> Vec<ObjectId> {
+        use crate::instr::InstallFilter as F;
+        self.st.hand[&from_hand_of]
+            .iter()
+            .copied()
+            .filter(|id| {
+                let o = &self.st.objects[id];
+                let t = o.printed.card_type;
+                let class_ok = match filter {
+                    F::Program => t == CardType::Program,
+                    F::Ice => t == CardType::Ice,
+                    F::Any => true,
+                };
+                let rez_ok = !and_rez_if_able
+                    || matches!(t, CardType::Asset | CardType::Ice | CardType::Upgrade);
+                // 8.7.2b-adjacent: a player must be able to install what
+                // they choose — printed-cost affordability gate (hosting
+                // discounts are not anticipated here; the kernel's tests
+                // fund installs fully).
+                let afford = match t {
+                    CardType::Program | CardType::Hardware | CardType::Resource => {
+                        self.st.player(from_hand_of).credits >= o.printed.cost.unwrap_or(0)
+                    }
+                    _ => true,
+                };
+                class_ok && rez_ok && afford
+            })
+            .collect()
+    }
+
+    /// CR 8.5.1a / 1.13.4a: cards whose abilities describe what they can
+    /// host are eligible installation destinations, up to capacity.
+    fn eligible_program_hosts(&self) -> Vec<ObjectId> {
+        cite!("rule_host_via_install");
+        self.st
+            .objects
+            .values()
+            .filter(|o| {
+                card_active(o)
+                    && o.printed.abilities.iter().enumerate().any(|(i, a)| {
+                        a.kind == AbilityKind::Static
+                            && self.ability_present(o.id, i)
+                            && a.statics.iter().any(|d| match d {
+                                StaticDecl::HostsPrograms { capacity, .. } => {
+                                    (o.hosted.len() as u32) < *capacity
+                                }
+                                _ => false,
+                            })
+                    })
+            })
+            .map(|o| o.id)
+            .collect()
     }
 
     fn filter_candidates(&self, f: TargetFilter, _controller: Side) -> Vec<ObjectId> {
@@ -2516,6 +2690,20 @@ impl Vm {
     /// Make the current instruction imminent: compute expected effects, open
     /// the interrupt window if relevant.
     fn begin_imminence(&mut self, instr: Instruction) {
+        // §8.5: install instructions expand into the 8.5.16 step sequence
+        // (installing is a procedure, not a timing structure — 9.2.2e), the
+        // same way Trace expands into the 10.8.6 steps.
+        match &instr {
+            Instruction::InstallCard { .. } => {
+                self.expand_install_card(instr);
+                return;
+            }
+            Instruction::InstallCards { .. } => {
+                self.expand_install_cards(instr);
+                return;
+            }
+            _ => {}
+        }
         let (controller, targets) = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
             (af.controller, af.targets.clone())
@@ -2539,6 +2727,196 @@ impl Vm {
         }
         if !self.open_interrupt_window_if_relevant() {
             self.set_ability_phase(AbilityPhase::Resolve);
+        }
+    }
+
+    /// §8.5: expand an InstallCard into the 8.5.16 step sequence. The
+    /// announced targets carry either the chosen card (TargetSpec::Choose)
+    /// or the chosen host (InstallDest::RunnerChoiceHostOrRig).
+    fn expand_install_card(&mut self, instr: Instruction) {
+        let Instruction::InstallCard { card, dest, and_rez, ignore_costs, reveal_check } = instr
+        else {
+            unreachable!()
+        };
+        cite!("rule_installing");
+        cite!("sec_steps_installing");
+        let (announced, source_obj) = {
+            let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+            (af.targets.clone(), af.source.obj)
+        };
+        let picked: Option<ObjectId> = match &card {
+            TargetSpec::Choose { .. } => announced.first().copied(),
+            spec => self
+                .resolve_targets(spec, Some(source_obj), &announced)
+                .first()
+                .copied(),
+        };
+        let Some(c) = picked else {
+            // Nothing to install: the instruction completes with no effect.
+            self.set_ability_phase(AbilityPhase::Checkpoint);
+            return;
+        };
+        let dest = match dest {
+            crate::instr::InstallDest::RunnerChoiceHostOrRig => match announced.first() {
+                Some(&h) if h != c => crate::instr::InstallDest::HostedOn(h),
+                _ => crate::instr::InstallDest::Rig,
+            },
+            d => d,
+        };
+        let was_hidden = {
+            let o = &self.st.objects[&c];
+            matches!(o.zone, Zone::Hand(_) | Zone::Deck(_))
+                || (!o.faceup && matches!(o.zone, Zone::Discard(_)))
+        };
+        self.installs.push(InstallProgress {
+            card: c,
+            dest,
+            and_rez,
+            ignore_costs,
+            reveal_check,
+            was_hidden,
+            aborted: false,
+            rez_skipped: false,
+            revealed: false,
+            resolved_zone: None,
+            ice_insert_at: None,
+        });
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.instructions[af.idx] = Instruction::InstallStepPlace;
+            let mut at = af.idx + 1;
+            af.instructions.insert(at, Instruction::InstallStepPayCost);
+            at += 1;
+            af.instructions.insert(at, Instruction::InstallStepComplete);
+            at += 1;
+            if and_rez {
+                cite!("rule_install_and_rez");
+                af.instructions.insert(at, Instruction::InstallRezPayCost);
+                at += 1;
+                af.instructions.insert(at, Instruction::InstallRezFinish);
+            }
+            af.targets.clear();
+            // Phase stays Targets: the next tick makes InstallStepPlace
+            // imminent.
+        }
+    }
+
+    /// CR 8.5.5: an effect installing several cards — each chosen and
+    /// installed one at a time, as separate instructions (9.11.4b).
+    fn expand_install_cards(&mut self, instr: Instruction) {
+        let Instruction::InstallCards {
+            count,
+            from_hand_of,
+            filter,
+            dest,
+            and_rez,
+            and_rez_if_able,
+            ignore_costs,
+        } = instr
+        else {
+            unreachable!()
+        };
+        cite!("rule_install_one_at_a_time");
+        cite!("rule_split_up_instruction");
+        let announced = {
+            let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+            af.targets.clone()
+        };
+        let Some(&c) = announced.first().filter(|_| count > 0) else {
+            // Declined or exhausted: the multi-install completes.
+            self.set_ability_phase(AbilityPhase::Checkpoint);
+            return;
+        };
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.instructions[af.idx] = Instruction::InstallCard {
+                card: TargetSpec::Objects(vec![c]),
+                dest,
+                and_rez,
+                ignore_costs,
+                reveal_check: None,
+            };
+            af.instructions.insert(
+                af.idx + 1,
+                Instruction::InstallCards {
+                    count: count - 1,
+                    from_hand_of,
+                    filter,
+                    dest,
+                    and_rez,
+                    and_rez_if_able,
+                    ignore_costs,
+                },
+            );
+            af.targets.clear();
+            // Re-enter Targets: the InstallCard may itself need a
+            // destination choice before expanding.
+        }
+    }
+
+    /// CR 8.5.11: the install cost as evaluated at step 8.5.16d.
+    fn install_cost_of(&self, card: ObjectId, p: &InstallProgress) -> u32 {
+        cite!("sec_install_cost");
+        cite!("rule_install_cost_link");
+        let o = &self.st.objects[&card];
+        let base = match o.printed.card_type {
+            // 1 credit per ice already protecting the destination server.
+            CardType::Ice => match p.resolved_zone {
+                Some(Zone::Ice(s)) => self.ice_at(s).len() as u32,
+                _ => 0,
+            },
+            CardType::Program | CardType::Hardware | CardType::Resource => {
+                o.printed.cost.unwrap_or(0)
+            }
+            // Assets, agendas, upgrades have no install cost.
+            _ => 0,
+        };
+        let discount = match p.dest {
+            crate::instr::InstallDest::HostedOn(h) => self.host_install_discount(h),
+            _ => 0,
+        };
+        base.saturating_sub(discount)
+    }
+
+    /// Dhegdheer-class hosted-install discount.
+    fn host_install_discount(&self, host: ObjectId) -> u32 {
+        let Some(o) = self.st.objects.get(&host) else { return 0 };
+        if !card_active(o) {
+            return 0;
+        }
+        o.printed
+            .abilities
+            .iter()
+            .enumerate()
+            .filter(|(i, a)| a.kind == AbilityKind::Static && self.ability_present(host, *i))
+            .flat_map(|(_, a)| a.statics.iter())
+            .filter_map(|d| match d {
+                StaticDecl::HostsPrograms { install_discount, .. } => Some(*install_discount),
+                _ => None,
+            })
+            .sum()
+    }
+
+    /// 8.5.13: reveal the installing card once, if not already revealed.
+    fn install_reveal(&mut self, card: ObjectId) {
+        cite!("rule_install_from_hidden_or_secret_zone");
+        if let Some(p) = self.installs.last_mut() {
+            if p.revealed {
+                return;
+            }
+            p.revealed = true;
+        }
+        self.changes.record(GameChange::CardRevealed { obj: card });
+    }
+
+    /// Terminal 8.5.13c check: a hidden-provenance card that ends the
+    /// process facedown, installed by an ability imposing requirements, is
+    /// revealed to verify the installation.
+    fn install_terminal_reveal(&mut self, p: &InstallProgress) {
+        if p.aborted || p.revealed {
+            return;
+        }
+        if p.was_hidden && p.reveal_check.is_some() && !self.st.objects[&p.card].faceup {
+            cite!("rule_reveal_for_ability_limitations");
+            self.changes.record(GameChange::CardRevealed { obj: p.card });
         }
     }
 
@@ -3101,6 +3479,240 @@ impl Vm {
                 if !source_moved {
                     self.steal_agenda(source.obj);
                 }
+            }
+            Instruction::InstallCard { .. } | Instruction::InstallCards { .. } => {
+                // Expanded at imminence time (begin_imminence); unreachable
+                // here, but harmless.
+            }
+            Instruction::InstallStepPlace => {
+                cite!("rule_steps_installing_place");
+                cite!("rule_steps_installing_destination");
+                cite!("rule_steps_installing_trash_like_cards");
+                let Some(p) = self.installs.last().cloned() else { return };
+                if p.aborted {
+                    return;
+                }
+                let c = p.card;
+                // (b)-precondition: identify the destination. If it is
+                // invalid or cannot be identified, no installation can take
+                // place (8.5.14) — the card never even moves.
+                let resolved: Option<(Zone, Option<usize>)> = match p.dest {
+                    crate::instr::InstallDest::Root(s) => Some((Zone::Root(s), None)),
+                    crate::instr::InstallDest::NewRemoteRoot => {
+                        cite!("rule_corp_install_choose_destination_server");
+                        let s = ServerId::Remote(self.next_remote);
+                        self.next_remote += 1;
+                        Some((Zone::Root(s), None))
+                    }
+                    crate::instr::InstallDest::Protecting(s) => {
+                        cite!("rule_ice_outermost_position");
+                        Some((Zone::Ice(s), None))
+                    }
+                    crate::instr::InstallDest::InwardFromSource => {
+                        match self.st.objects.get(&source.obj).map(|o| o.zone) {
+                            Some(Zone::Ice(s)) => self
+                                .st
+                                .ice
+                                .get(&s)
+                                .and_then(|v| v.iter().position(|&i| i == source.obj))
+                                .map(|i| (Zone::Ice(s), Some(i))),
+                            // The source is not protecting a server: it has
+                            // no position from which "directly inward" can
+                            // be evaluated (8.5.14).
+                            _ => None,
+                        }
+                    }
+                    crate::instr::InstallDest::Rig
+                    | crate::instr::InstallDest::RunnerChoiceHostOrRig => {
+                        Some((Zone::Rig, None))
+                    }
+                    crate::instr::InstallDest::HostedOn(_) => Some((Zone::Rig, None)),
+                    crate::instr::InstallDest::BreachedServerRoot => {
+                        self.breach_server().map(|s| (Zone::Root(s), None))
+                    }
+                };
+                let Some((zone, ice_at)) = resolved else {
+                    cite!("rule_install_to_invalid_destination");
+                    if let Some(p) = self.installs.last_mut() {
+                        p.aborted = true;
+                    }
+                    return;
+                };
+                // (a) place into the play area with its final faceup status;
+                // not yet installed or active.
+                let side = self.st.objects[&c].printed.side;
+                self.move_card(c, Zone::PlayArea(side));
+                {
+                    let o = self.st.objects.get_mut(&c).unwrap();
+                    o.staged = true;
+                    o.faceup = side == Side::Runner;
+                }
+                if let Some(p) = self.installs.last_mut() {
+                    p.resolved_zone = Some(zone);
+                    p.ice_insert_at = ice_at;
+                }
+                // (c) trash like cards — the MUST component of 8.5.6a.
+                if let Zone::Root(s) = zone {
+                    let new_type = self.st.objects[&c].printed.card_type;
+                    let new_is_region =
+                        self.st.objects[&c].printed.subtypes.contains(&"region");
+                    let must_trash: Vec<ObjectId> = self
+                        .st
+                        .root
+                        .get(&s)
+                        .cloned()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|&other| {
+                            let ot = self.st.objects[&other].printed.card_type;
+                            let other_region =
+                                self.st.objects[&other].printed.subtypes.contains(&"region");
+                            (matches!(new_type, CardType::Asset | CardType::Agenda)
+                                && matches!(ot, CardType::Asset | CardType::Agenda))
+                                || (new_is_region && other_region)
+                        })
+                        .collect();
+                    for t in must_trash {
+                        cite!("rule_must_trash_cases_in_root_of_server");
+                        // 8.5.7: trashed with the same faceup/facedown
+                        // status they had while installed (trash_card keeps
+                        // the flag).
+                        cite!("rule_install_corp_cards_trashed_facedown_archives");
+                        self.trash_card(t, Side::Corp);
+                    }
+                }
+            }
+            Instruction::InstallStepPayCost => {
+                cite!("rule_steps_installing_pay_install_cost");
+                cite!("rule_install_cost_checkpoint");
+                let Some(p) = self.installs.last().cloned() else { return };
+                if p.aborted {
+                    return;
+                }
+                // 1.16.5c: "ignoring all costs" reduces the cost to 0, but
+                // the step still happens and is still followed by a
+                // checkpoint (1.16.3a — the 9.6.5b THG example).
+                cite!("rule_ignore_all_costs");
+                cite!("rule_cost_checkpoint_cost_zero");
+                let amount =
+                    if p.ignore_costs { 0 } else { self.install_cost_of(p.card, &p) };
+                let payer = self.st.objects[&p.card].printed.side;
+                self.pay_cost(payer, p.card, &Cost::credits(amount));
+            }
+            Instruction::InstallStepComplete => {
+                cite!("rule_steps_installing_become_installed");
+                cite!("rule_steps_installing_installed_condition");
+                let Some(p) = self.installs.last().cloned() else { return };
+                if p.aborted {
+                    if !p.and_rez {
+                        self.installs.pop();
+                    }
+                    return;
+                }
+                let c = p.card;
+                let zone = p.resolved_zone.expect("destination resolved at step (b)");
+                // (e) create the server if new, move the card into place; it
+                // becomes installed; if faceup, it becomes active.
+                self.move_card(c, zone);
+                if let (Zone::Ice(s), Some(at)) = (zone, p.ice_insert_at) {
+                    let v = self.st.ice.get_mut(&s).unwrap();
+                    v.retain(|&x| x != c);
+                    let at = at.min(v.len());
+                    v.insert(at, c);
+                }
+                if let crate::instr::InstallDest::HostedOn(h) = p.dest {
+                    cite!("rule_host_via_install");
+                    self.st.objects.get_mut(&c).unwrap().host = Some(h);
+                    self.st.objects.get_mut(&h).unwrap().hosted.push(c);
+                }
+                {
+                    self.st.active_seq += 1;
+                    let seq = self.st.active_seq;
+                    let o = self.st.objects.get_mut(&c).unwrap();
+                    o.staged = false;
+                    if o.faceup {
+                        o.active_since = seq;
+                    }
+                }
+                // (f) "when installed" conditions meet their trigger
+                // conditions; the install effect is complete.
+                let side = self.st.objects[&c].printed.side;
+                self.changes.record(GameChange::CardInstalled { obj: c, side });
+                if !p.and_rez {
+                    let done = self.installs.pop().unwrap();
+                    self.install_terminal_reveal(&done);
+                }
+            }
+            Instruction::InstallRezPayCost => {
+                cite!("rule_install_and_rez");
+                cite!("rule_inherent_rez_cost");
+                let Some(p) = self.installs.last().cloned() else { return };
+                if p.aborted {
+                    return;
+                }
+                let c = p.card;
+                let rezzable = matches!(
+                    self.st.objects[&c].printed.card_type,
+                    CardType::Asset | CardType::Ice | CardType::Upgrade
+                );
+                if !rezzable {
+                    // 8.5.13d: e.g. an agenda — it cannot be rezzed, so the
+                    // card must be revealed (Trust Operation example).
+                    cite!("rule_cannot_rez_agendas");
+                    cite!("rule_reveal_for_install_and_rez");
+                    self.install_reveal(c);
+                    if let Some(p) = self.installs.last_mut() {
+                        p.rez_skipped = true;
+                    }
+                    return;
+                }
+                // 1.16.4c: additional costs are NOT covered by "ignoring all
+                // costs" of the inherent kind and may be declined; declining
+                // means the card is not rezzed (8.5.13d, the Ob/Archer
+                // example).
+                let additional = self.st.objects[&c].printed.additional_rez_cost.clone();
+                if let Some(add) = additional {
+                    cite!("rule_inherent_and_additional_cost");
+                    let base = if p.ignore_costs {
+                        Cost::free()
+                    } else {
+                        Cost::credits(self.st.objects[&c].printed.cost.unwrap_or(0))
+                    };
+                    let total = base.plus(&add);
+                    self.ask(
+                        Side::Corp,
+                        DecisionSpec::NestedCost { cost: total },
+                        DecisionCtx::RezAdditionalCost,
+                    );
+                    return;
+                }
+                let amount = if p.ignore_costs {
+                    0
+                } else {
+                    self.st.objects[&c].printed.cost.unwrap_or(0)
+                };
+                // The cost-paid checkpoint that follows is the checkpoint
+                // that processes the CardInstalled change, while the card is
+                // still facedown (the 9.6.5b THG example).
+                cite!("rule_cost_checkpoint_cost_zero");
+                self.pay_cost(Side::Corp, c, &Cost::credits(amount));
+            }
+            Instruction::InstallRezFinish => {
+                let Some(p) = self.installs.pop() else { return };
+                if p.aborted {
+                    return;
+                }
+                let c = p.card;
+                if !p.rez_skipped {
+                    cite!("rule_install_and_rez");
+                    self.st.active_seq += 1;
+                    let seq = self.st.active_seq;
+                    let o = self.st.objects.get_mut(&c).unwrap();
+                    o.faceup = true;
+                    o.active_since = seq;
+                    self.changes.record(GameChange::CardRezzed { obj: c });
+                }
+                self.install_terminal_reveal(&p);
             }
             other => {
                 debug_assert!(
@@ -4244,6 +4856,60 @@ impl Vm {
                     }
                 }
                 self.last_minimal_sets = None;
+            }
+            (DecisionCtx::RezAdditionalCost, DecisionAnswer::PayNestedCost(pay)) => {
+                // 8.5.13d / 1.16.4c: pay the rez cost plus additional costs,
+                // or decline — declining reveals the card and skips the rez.
+                cite!("rule_inherent_and_additional_cost");
+                let Some(p) = self.installs.last().cloned() else { return };
+                let c = p.card;
+                if pay {
+                    let base = if p.ignore_costs {
+                        Cost::free()
+                    } else {
+                        Cost::credits(self.st.objects[&c].printed.cost.unwrap_or(0))
+                    };
+                    let add = self.st.objects[&c]
+                        .printed
+                        .additional_rez_cost
+                        .clone()
+                        .unwrap_or_default();
+                    let total = base.plus(&add);
+                    self.pay_cost(Side::Corp, c, &total);
+                } else {
+                    cite!("rule_reveal_for_install_and_rez");
+                    self.install_reveal(c);
+                    if let Some(p) = self.installs.last_mut() {
+                        p.rez_skipped = true;
+                    }
+                }
+                // The rez-cost step completes.
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    if af.phase == AbilityPhase::Resolve {
+                        af.phase = AbilityPhase::Checkpoint;
+                    }
+                }
+            }
+            (DecisionCtx::BreachCandidacy(card), DecisionAnswer::ResolveOptional(yes)) => {
+                // CR 10.3.1j / 7.4.6a: the Runner declares candidacy.
+                cite!("step_checkpoint_card_entering_root_during_breach");
+                cite!("rule_candidates_entering_root");
+                if yes {
+                    self.add_breach_candidate(card);
+                } else if let Some(b) = self.breach_ctx_mut() {
+                    // Declined: it cannot become a candidate for the rest of
+                    // this breach.
+                    b.declined.push(card);
+                }
+                // Further mid-breach entries from the same checkpoint are
+                // declared one at a time.
+                if let Some(next) = self.pending_candidacy.pop() {
+                    self.ask(
+                        Side::Runner,
+                        DecisionSpec::DeclareBreachCandidate { card: next },
+                        DecisionCtx::BreachCandidacy(next),
+                    );
+                }
             }
             (DecisionCtx::TraceSpend(side), DecisionAnswer::SpendCredits(n)) => {
                 // 10.8.2/10.8.3: openly spend credits; this is a payment, so

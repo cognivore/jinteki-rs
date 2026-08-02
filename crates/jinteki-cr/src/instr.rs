@@ -145,6 +145,51 @@ pub enum Instruction {
     TrashSelf,
     /// Steal the accessed agenda (7.1.4 via access step 7.2.3).
     StealSelfAgenda,
+    /// §8.5: install one card. The resolution loop expands this into the
+    /// 8.5.16 step sequence (installing is a procedure, NOT a timing
+    /// structure — 9.2.2e; its only explicitly-called-for checkpoint is the
+    /// cost-paid one at 8.5.16d).
+    InstallCard {
+        card: TargetSpec,
+        dest: InstallDest,
+        /// 8.5.15: rez directly after the installation is complete.
+        and_rez: bool,
+        /// 1.16.5c: "ignoring all costs".
+        ignore_costs: bool,
+        /// 8.5.13c: a requirement imposed by the installing ability that
+        /// must be verified by revealing a hidden card.
+        reveal_check: Option<RevealCheck>,
+    },
+    /// 8.5.5: an effect installing more than one card — the cards are chosen
+    /// and installed ONE AT A TIME, each as a separate instruction
+    /// (9.11.4b). `and_rez_if_able` is the Ad Blitz "if able" stipulation
+    /// (8.5.13d): unrezzable cards cannot be chosen.
+    InstallCards {
+        count: u32,
+        from_hand_of: Side,
+        filter: InstallFilter,
+        dest: InstallDest,
+        and_rez: bool,
+        and_rez_if_able: bool,
+        ignore_costs: bool,
+    },
+    /// 8.5.16a–c: place into the play area (not installed, not active),
+    /// declare the destination, trash like cards.
+    InstallStepPlace,
+    /// 8.5.16d: pay the install cost. (The post-instruction checkpoint IS
+    /// the 10.3.4 cost-paid checkpoint — 8.5.11c.)
+    InstallStepPayCost,
+    /// 8.5.16e–f: create the server if new, move the card, it becomes
+    /// installed (faceup → active); "when installed" conditions are met and
+    /// the install effect is complete.
+    InstallStepComplete,
+    /// 8.5.15 → 8.1.2d: pay the rez cost of the just-installed card. (The
+    /// post-instruction checkpoint is the cost-paid checkpoint; per the
+    /// 9.6.5b THG example this is the checkpoint that processes the
+    /// CardInstalled change, while the card is still facedown.)
+    InstallRezPayCost,
+    /// Finish rezzing: the card turns faceup and becomes active.
+    InstallRezFinish,
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.
@@ -244,4 +289,46 @@ pub enum TargetFilter {
     InstalledCorpCard,
     InstalledRunnerCard,
     InstalledResource,
+}
+
+/// CR 8.5.16b: the install destination, declared as part of installing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallDest {
+    /// Corp: the root of an existing server (8.5.2b/c).
+    Root(ServerId),
+    /// Corp: create a new remote server (8.5.2a).
+    NewRemoteRoot,
+    /// Corp: protecting a server, outermost position (8.5.2d).
+    Protecting(ServerId),
+    /// "directly inward" from the ability's source ice (Brân class). If the
+    /// source is not protecting a server, the destination cannot be
+    /// identified and no installation takes place (8.5.14).
+    InwardFromSource,
+    /// Runner: the rig (8.5.4).
+    Rig,
+    /// Hosted on a specific card (8.5.1a).
+    HostedOn(ObjectId),
+    /// The root of the server currently being breached (Ganked/Drafter
+    /// class; resolved when the destination is declared).
+    BreachedServerRoot,
+    /// Runner installs: choose an eligible host (8.5.1a — a card whose
+    /// ability describes what it can host is an eligible destination) or
+    /// default to the rig. The choice is announced with the targets.
+    RunnerChoiceHostOrRig,
+}
+
+/// Card-class filter for multi-install effects (8.5.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallFilter {
+    Program,
+    Ice,
+    Any,
+}
+
+/// CR 8.5.13c: a stipulation of the installing ability that must be
+/// verified by revealing the card when it is not otherwise visible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevealCheck {
+    /// "…with printed rez cost N or lower" (Ob Superheavy class).
+    PrintedRezCostAtMost(u32),
 }

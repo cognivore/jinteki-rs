@@ -1227,6 +1227,228 @@ pub fn data_raven_like(name: &'static str) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
+// §8.5 install shapes (W3)
+// ---------------------------------------------------------------------------
+
+/// A program with a printed install cost (install-example fodder).
+pub fn program_cost(name: &'static str, cost: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.cost = Some(cost);
+    c
+}
+
+/// A vanilla Corp upgrade.
+pub fn vanilla_upgrade(name: &'static str, rez: u32) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Upgrade);
+    c.cost = Some(rez);
+    c
+}
+
+/// A region upgrade (8.5.6a must-trash class).
+pub fn region_upgrade(name: &'static str, rez: u32) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, rez);
+    c.subtypes = vec!["region"];
+    c
+}
+
+/// Dhegdheer shape: a program that can host 1 program, lowering its install
+/// cost by 1 (8.5.1a eligible destination; the 8.5.5 example).
+pub fn dhegdheer_like(name: &'static str, cost: u32) -> PrintedCard {
+    let mut c = program_cost(name, cost);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::HostsPrograms {
+        capacity: 1,
+        install_discount: 1,
+    }])
+    .labeled("dhegdheer: hosts 1 program at -1c")];
+    c
+}
+
+/// Mass-Install shape: install up to `count` programs from the grip, one at
+/// a time (8.5.5), choosing hosts freely (8.5.16b).
+pub fn mass_install_button(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCards {
+            count,
+            from_hand_of: Side::Runner,
+            filter: crate::instr::InstallFilter::Program,
+            dest: crate::instr::InstallDest::RunnerChoiceHostOrRig,
+            and_rez: false,
+            and_rez_if_able: false,
+            ignore_costs: false,
+        }],
+    )
+    .labeled("mass-install: up to N programs")];
+    c
+}
+
+/// A Corp button installing one fixed card to a fixed destination.
+pub fn corp_install_button(
+    name: &'static str,
+    card: ObjectId,
+    dest: crate::instr::InstallDest,
+) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![card]),
+            dest,
+            and_rez: false,
+            ignore_costs: false,
+            reveal_check: None,
+        }],
+    )
+    .labeled("corp-install: fixed card")];
+    c
+}
+
+/// A Corp button installing AND rezzing one fixed card (8.5.15), with an
+/// optional 8.5.13c reveal requirement and 1.16.5c cost ignorance.
+pub fn corp_install_rez_button(
+    name: &'static str,
+    card: ObjectId,
+    dest: crate::instr::InstallDest,
+    ignore_costs: bool,
+    reveal_check: Option<crate::instr::RevealCheck>,
+) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![card]),
+            dest,
+            and_rez: true,
+            ignore_costs,
+            reveal_check,
+        }],
+    )
+    .labeled("corp-install-rez: fixed card")];
+    c
+}
+
+/// Brân shape: "[sub] Install a piece of ice from HQ directly inward from
+/// this ice." (8.5.13a: no reveal; 8.5.14: invalid from Archives.)
+pub fn bran_like(name: &'static str, installee: ObjectId) -> PrintedCard {
+    let mut c = vanilla_ice(name, 6, 4);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::InstallCard {
+        card: TargetSpec::Objects(vec![installee]),
+        dest: crate::instr::InstallDest::InwardFromSource,
+        and_rez: false,
+        ignore_costs: true,
+        reveal_check: None,
+    }])
+    .labeled("[sub] install ice directly inward")];
+    c
+}
+
+/// Ad-Blitz shape: "install and rez up to N pieces of ice, if able" —
+/// unrezzable cards cannot be chosen (8.5.13d).
+pub fn ad_blitz_button(name: &'static str, count: u32, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCards {
+            count,
+            from_hand_of: Side::Corp,
+            filter: crate::instr::InstallFilter::Any,
+            dest: crate::instr::InstallDest::Protecting(server),
+            and_rez: true,
+            and_rez_if_able: true,
+            ignore_costs: true,
+        }],
+    )
+    .labeled("ad-blitz: install and rez if able")];
+    c
+}
+
+/// Nico-Campaign shape: an asset with "When your turn begins, gain 1[c]."
+pub fn nico_like(name: &'static str, rez: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, rez, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::TurnBegins(Side::Corp),
+        vec![Instruction::GainCredits(Side::Corp, 1)],
+        false,
+    )
+    .labeled("nico: gain 1 when turn begins")];
+    c
+}
+
+/// Reaper-Function/Ob composite shape for the 9.6.5b example: "When your
+/// turn begins, you may trash this card to install and rez <card>."
+pub fn reaper_like(name: &'static str, installee: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::TurnBegins(Side::Corp),
+        vec![
+            Instruction::TrashSelf,
+            Instruction::InstallCard {
+                card: TargetSpec::Objects(vec![installee]),
+                dest: crate::instr::InstallDest::NewRemoteRoot,
+                and_rez: true,
+                ignore_costs: false,
+                reveal_check: None,
+            },
+        ],
+        true,
+    )
+    .labeled("reaper: trash to install and rez")];
+    c
+}
+
+/// Tranquility-Home-Grid shape: an upgrade with "Whenever the Corp installs
+/// a card in the root of this server, gain 1[c]." (9.6.5b activity gate.)
+pub fn thg_like(name: &'static str, rez: u32) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, rez);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::CardInstalledInSourceServer,
+        vec![Instruction::GainCredits(Side::Corp, 1)],
+        false,
+    )
+    .labeled("thg: gain 1 per install here")];
+    c
+}
+
+/// Architect-Deployment-Test shape: "install and rez a card, ignoring all
+/// costs." (1.16.5c/1.16.3a: the cost steps still happen, with checkpoints.)
+pub fn adt_button(name: &'static str, installee: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![installee]),
+            dest: crate::instr::InstallDest::NewRemoteRoot,
+            and_rez: true,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+    )
+    .labeled("adt: install and rez ignoring costs")];
+    c
+}
+
+/// Ganked/Drafter composite shape: a facedown root card with "When you
+/// access this card, you may install a card from HQ in the root of the
+/// server being breached." (drives 10.3.1j).
+pub fn ganked_like(name: &'static str, installee: ObjectId) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfAccessed,
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![installee]),
+            dest: crate::instr::InstallDest::BreachedServerRoot,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+        true,
+    )
+    .labeled("ganked: install into breached server")];
+    c
+}
+
+// ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------
 
@@ -1295,6 +1517,8 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::ChooseCandidate { candidates } => {
             DecisionAnswer::Candidate(candidates[0])
         }
+        // 10.3.1j: default drivers decline candidacy; tests opt in.
+        DecisionSpec::DeclareBreachCandidate { .. } => DecisionAnswer::ResolveOptional(false),
         DecisionSpec::JackOut => DecisionAnswer::JackOut(false),
         DecisionSpec::DiscardCards { count, hand } => {
             DecisionAnswer::Discard(hand.iter().take(*count as usize).copied().collect())
