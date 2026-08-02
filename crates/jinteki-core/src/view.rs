@@ -254,7 +254,21 @@ fn card_json(st: &GameState, cid: Cid, visible: bool) -> Value {
     let mut m = Map::new();
     m.insert("cid".into(), json!(cid));
     m.insert("title".into(), json!(def.title));
+    // Text and stats come from the printed database for every title;
+    // card_text falls back to the hand-written pool strings if needed.
     m.insert("text".into(), json!(crate::carddb::card_text(def.title)));
+    m.insert(
+        "implementation".into(),
+        match crate::printed::impl_status(def.title) {
+            crate::printed::ImplStatus::Behavior => Value::Null,
+            crate::printed::ImplStatus::JnetOnly => {
+                json!("rs-unimplemented: engine treats as vanilla")
+            }
+            crate::printed::ImplStatus::Unimplemented => {
+                json!("unimplemented everywhere: isolated")
+            }
+        },
+    );
     m.insert("type".into(), json!(def.kind.as_str()));
     m.insert("cost".into(), json!(def.cost));
     m.insert("subtypes".into(), json!(def.subtypes));

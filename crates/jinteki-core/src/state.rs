@@ -6,7 +6,7 @@
 //! - `run.position == ices.len()` at initiation; the approached ice is
 //!   `ices[position - 1]`; position 0 means approaching the server itself.
 
-use crate::carddb::{self, CARDS};
+use crate::carddb;
 use crate::types::*;
 use rand::seq::SliceRandom;
 use rand::Rng as _;
@@ -33,7 +33,7 @@ pub struct CardInstance {
 
 impl CardInstance {
     pub fn def(&self) -> &'static CardDef {
-        &CARDS[self.def]
+        carddb::def_at(self.def)
     }
     pub fn title(&self) -> &'static str {
         self.def().title
@@ -258,14 +258,17 @@ impl GameState {
             hq_success_this_turn: false,
             uuid_counter: 0,
         };
-        st.identity[0] = st.spawn(corp_id, Zone::Identity);
-        st.identity[1] = st.spawn(runner_id, Zone::Identity);
+        let must = |r: Result<Cid, String>| {
+            r.unwrap_or_else(|e| panic!("cannot start game: {e}"))
+        };
+        st.identity[0] = must(st.spawn(corp_id, Zone::Identity));
+        st.identity[1] = must(st.spawn(runner_id, Zone::Identity));
         for t in corp_deck {
-            let cid = st.spawn(t, Zone::Deck);
+            let cid = must(st.spawn(t, Zone::Deck));
             st.deck[0].push(cid);
         }
         for t in runner_deck {
-            let cid = st.spawn(t, Zone::Deck);
+            let cid = must(st.spawn(t, Zone::Deck));
             st.deck[1].push(cid);
         }
         st.shuffle_deck(Side::Corp);
@@ -289,9 +292,11 @@ impl GameState {
         st
     }
 
-    fn spawn(&mut self, title: &str, zone: Zone) -> Cid {
-        let def = carddb::def_index(title)
-            .unwrap_or_else(|| panic!("unknown card title: {title}"));
+    /// Create a card instance. Titles with a behavior row use it; any other
+    /// title known to the printed database gets a synthesized vanilla
+    /// definition (printed stats, no behavior). Unknown titles are an error.
+    fn spawn(&mut self, title: &str, zone: Zone) -> Result<Cid, String> {
+        let def = carddb::def_index_or_synth(title)?;
         let cid = self.cards.len() as Cid;
         self.cards.push(CardInstance {
             cid,
@@ -305,7 +310,7 @@ impl GameState {
             pump_run: 0,
             broken: Vec::new(),
         });
-        cid
+        Ok(cid)
     }
 
     // ── accessors ──────────────────────────────────────────────────────────

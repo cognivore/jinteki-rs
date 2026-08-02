@@ -16,6 +16,7 @@
 pub mod bot;
 pub mod carddb;
 pub mod engine;
+pub mod printed;
 pub mod runs;
 pub mod state;
 pub mod types;

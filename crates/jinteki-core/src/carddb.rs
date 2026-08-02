@@ -238,9 +238,18 @@ pub const CARDS: &[CardDef] = &[
     },
 ];
 
-/// Printed rules text for the zoom view. Kept out of `CardDef` so the
-/// behavioral table stays purely mechanical.
+/// Printed rules text for the zoom view, backed by the full card database
+/// (`printed::printed_text`); the hand-written strings below remain only as a
+/// fallback for pool cards should the printed data lack text.
 pub fn card_text(title: &str) -> &'static str {
+    if let Some(t) = crate::printed::printed_text(title) {
+        return t;
+    }
+    legacy_card_text(title)
+}
+
+/// Hand-written text for the original 28-card pool (fallback only).
+fn legacy_card_text(title: &str) -> &'static str {
     match title {
         "Weyland Consortium: Building a Better World" => "Whenever you play a transaction operation, gain 1[c].",
         "The Catalyst: Convention Breaker" => "Teaching identity. No special ability.",
@@ -280,6 +289,111 @@ pub fn def_index(title: &str) -> Option<usize> {
 
 pub fn def_by_title(title: &str) -> Option<&'static CardDef> {
     CARDS.iter().find(|c| c.title == title)
+}
+
+// ── vanilla runtime definitions for cards without a behavior row ───────────
+//
+// Mirrors the reference implementation's stance: a title without a defcard
+// body still exists in the game with its printed stats and an empty behavior
+// map. Here, any title known to `printed::printed` but absent from `CARDS`
+// gets a synthesized `CardDef` with correct printed stats and NO behavior
+// hooks (no on-play effect, zero subroutines, nothing to host or drip).
+// Definitions are interned once per title (`Box::leak`) so the existing
+// `&'static CardDef` API stays stable; the leak is bounded by the card pool.
+
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+#[derive(Default)]
+struct SynthRegistry {
+    by_title: HashMap<&'static str, usize>,
+    defs: Vec<&'static CardDef>,
+}
+
+static SYNTH: OnceLock<Mutex<SynthRegistry>> = OnceLock::new();
+
+fn synth_registry() -> &'static Mutex<SynthRegistry> {
+    SYNTH.get_or_init(Default::default)
+}
+
+/// The definition behind a `CardInstance::def` index: the hand-written
+/// behavior table first, then the synthesized-vanilla registry.
+pub fn def_at(index: usize) -> &'static CardDef {
+    if index < CARDS.len() {
+        &CARDS[index]
+    } else {
+        let reg = synth_registry().lock().unwrap();
+        reg.defs[index - CARDS.len()]
+    }
+}
+
+/// Index for a title, synthesizing a vanilla definition from printed data
+/// when the behavior table has no row. Errors (instead of panicking) for
+/// titles unknown even to the printed database, and for non-playable
+/// entries (e.g. "Rules Insert" pseudo-cards).
+pub fn def_index_or_synth(title: &str) -> Result<usize, String> {
+    if let Some(i) = def_index(title) {
+        return Ok(i);
+    }
+    let mut reg = synth_registry().lock().unwrap();
+    if let Some(&i) = reg.by_title.get(title) {
+        return Ok(CARDS.len() + i);
+    }
+    let p = crate::printed::printed(title)
+        .ok_or_else(|| format!("unknown card title: {title}"))?;
+    let def = synth_vanilla(p)?;
+    let leaked: &'static CardDef = Box::leak(Box::new(def));
+    let i = reg.defs.len();
+    reg.defs.push(leaked);
+    reg.by_title.insert(p.title.as_str(), i);
+    Ok(CARDS.len() + i)
+}
+
+/// A behavior-free `CardDef` carrying the printed stats: operations/events
+/// resolve with no effect, ice has zero subroutines, installables sit there.
+fn synth_vanilla(p: &'static crate::printed::PrintedCard) -> Result<CardDef, String> {
+    let title = p.title.as_str();
+    let side = match p.side.as_str() {
+        "Corp" => Corp,
+        "Runner" => Runner,
+        other => return Err(format!("{title}: unplayable side {other:?}")),
+    };
+    let kind = match p.card_type.as_str() {
+        "Identity" => Identity,
+        "Agenda" => Agenda,
+        "Asset" => Asset,
+        "Upgrade" => Upgrade,
+        "ICE" => Ice,
+        "Operation" => Operation,
+        "Event" => Event,
+        "Program" => Program,
+        "Hardware" => Hardware,
+        "Resource" => Resource,
+        other => return Err(format!("{title}: unplayable card type {other:?}")),
+    };
+    let subtypes: &'static [&'static str] =
+        Box::leak(p.subtypes.iter().map(|s| s.as_str()).collect::<Vec<_>>().into_boxed_slice());
+    let ice_subtype = if kind == Ice {
+        subtypes.iter().find_map(|s| match *s {
+            "Barrier" => Some(Barrier),
+            "Code Gate" => Some(CodeGate),
+            "Sentry" => Some(Sentry),
+            _ => None,
+        })
+    } else {
+        None
+    };
+    Ok(CardDef {
+        cost: p.cost.unwrap_or(0).max(0) as u32,
+        subtypes,
+        ice_subtype,
+        strength: p.strength.map(|s| s as i32),
+        trash_cost: p.trash_cost.map(|t| t.max(0) as u32),
+        mu_cost: p.memoryunits.unwrap_or(0).max(0) as u32,
+        advancement_requirement: p.advancement_requirement.map(|a| a.max(0) as u32),
+        agenda_points: p.agenda_points.map(|a| a.max(0) as u32),
+        ..CardDef::blank(title, side, kind)
+    })
 }
 
 /// Default playtest decklists.

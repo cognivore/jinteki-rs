@@ -277,7 +277,11 @@ fn play_card(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineError
                 );
             }
         },
-        None => {}
+        // No behavior row (vanilla card database entry): the cost is paid and
+        // the card is in the discard; nothing else happens.
+        None => {
+            st.system_log("(no implemented effect)".into());
+        }
     }
     Ok(())
 }
