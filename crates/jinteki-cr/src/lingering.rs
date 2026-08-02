@@ -63,6 +63,11 @@ pub enum Payload {
     /// CR 7.4.2: "the Runner cannot access any card other than <obj> for
     /// the remainder of the run" (Ash class).
     RestrictCandidatesTo(ObjectId),
+    /// CR 8.6.6c: a played card kept in the play area instead of being
+    /// trashed at 8.6.7g; when the indicated effect occurs (kernel wave: the
+    /// Runner steals an agenda), the effect expires at checkpoint step
+    /// 10.3.1b and the card is trashed as if completing its resolution.
+    PlayedTrashShield { card: ObjectId },
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary

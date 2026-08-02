@@ -29,6 +29,10 @@ pub enum GameChange {
     CardInstalled { obj: ObjectId, side: Side },
     /// CR 8.5.13c/d: a card was revealed to verify an installation.
     CardRevealed { obj: ObjectId },
+    /// CR 8.6.7d: conditions related to playing an event/operation are met.
+    CardPlayed { obj: ObjectId, side: Side },
+    /// CR 8.6.7h: conditions related to finishing resolving it are met.
+    CardPlayResolved { obj: ObjectId },
     CardUninstalled { obj: ObjectId, was_zone: Zone },
     CardRezzed { obj: ObjectId },
     CardMoved { obj: ObjectId, from: Zone, to: Zone },

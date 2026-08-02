@@ -87,6 +87,13 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_condition_only_met_while_active_1",
     "example_rule_condition_only_met_while_active_2",
     "example_step_checkpoint_card_entering_root_during_breach_1",
+    // Wave 3b: play instructions (§8.6), 9.6.5c/d.
+    "example_rule_playing_one_at_a_time_1",
+    "example_rule_playing_lingering_effects_1",
+    "example_rule_play_no_trash_left_play_area_1",
+    "example_step_checkpoint_duration_abilities_2",
+    "example_rule_condition_requirements_part_of_condition_1",
+    "example_rule_condition_requirements_part_of_effect_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -3322,6 +3329,291 @@ fn example_step_checkpoint_card_entering_root_during_breach_1() {
     );
     assert_eq!(vm.st.objects[&drafted].zone, Zone::Root(ServerId::Remote(1)));
     let _ = ganked;
+}
+
+// ===========================================================================
+// §8.6 — playing events and operations (W3b)
+// ===========================================================================
+
+/// example_rule_playing_one_at_a_time_1 (8.6.3): a Subcontract-class effect
+/// plays two operations ONE AT A TIME; the credits gained from the first
+/// (Hedge-Fund-class) pay for the second, which was unaffordable before.
+#[test]
+fn example_rule_playing_one_at_a_time_1() {
+    let mut vm = Vm::empty(331);
+    let hf = vm.new_object(
+        tk::operation("HedgeFund-like", 1, vec![jinteki_cr::instr::Instruction::GainCredits(Side::Corp, 4)]),
+        Zone::Hand(Side::Corp),
+    );
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hf);
+    let second = vm.new_object(
+        tk::operation("Second-Op", 3, vec![jinteki_cr::instr::Instruction::GainCredits(Side::Corp, 1)]),
+        Zone::Hand(Side::Corp),
+    );
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(second);
+    tk::install_root(&mut vm, tk::subcontract_button("Subcontract-Button", 2), ServerId::Remote(1), true);
+    vm.st.corp.credits = 1;
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    tk::take_labeled(&mut vm, Side::Corp, "subcontract", 100);
+    let mut picks: Vec<Vec<jinteki_cr::object::ObjectId>> = Vec::new();
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ChooseTargets { candidates, .. } if s == Side::Corp => {
+                picks.push(candidates.clone());
+                let pick = *candidates.first().unwrap();
+                vm.answer(DecisionAnswer::Targets(vec![pick]));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(picks.len(), 2, "two separate one-at-a-time picks (8.6.3)");
+    assert_eq!(picks[0], vec![hf], "the second op was unaffordable at the first pick");
+    assert_eq!(picks[1], vec![second], "Hedge Fund's credits made it affordable");
+    assert_eq!(vm.st.objects[&hf].zone, Zone::Discard(Side::Corp));
+    assert_eq!(vm.st.objects[&second].zone, Zone::Discard(Side::Corp));
+    // 1 - 1 + 4 - 3 + 1 = 2.
+    assert_eq!(vm.st.corp.credits, 2);
+}
+
+/// example_rule_playing_lingering_effects_1 (8.6.4): a Test-Run-class event
+/// creates a delayed conditional ability, then is fully resolved and
+/// trashed once it finishes installing a program — while the lingering
+/// effect lives on independently.
+#[test]
+fn example_rule_playing_lingering_effects_1() {
+    let mut vm = Vm::empty(332);
+    let prog = vm.new_object(tk::program_cost("Deck-Prog", 2), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(prog);
+    let test_run = vm.new_object(
+        tk::event(
+            "TestRun-like",
+            0,
+            vec![
+                jinteki_cr::instr::Instruction::InstallCard {
+                    card: jinteki_cr::instr::TargetSpec::Objects(vec![prog]),
+                    dest: jinteki_cr::instr::InstallDest::Rig,
+                    and_rez: false,
+                    ignore_costs: true,
+                    reveal_check: None,
+                },
+                jinteki_cr::instr::Instruction::CreateDelayedConditional {
+                    def: Box::new(jinteki_cr::ability::AbilityDef::conditional(
+                        jinteki_cr::ability::TriggerCond::TurnEnds(Side::Runner),
+                        vec![jinteki_cr::instr::Instruction::GainCredits(Side::Runner, 1)],
+                        false,
+                    )
+                    .labeled("testrun-delayed: at end of turn")),
+                    duration: jinteki_cr::lingering::WantedDuration::UntilResolved,
+                },
+            ],
+        ),
+        Zone::Hand(Side::Runner),
+    );
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(test_run);
+    tk::install_rig(&mut vm, tk::play_event_button("Play-Button", test_run));
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "play-event", 100);
+    let _ = tk::until_decision(&mut vm);
+
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Rig, "the program was installed");
+    assert_eq!(
+        vm.st.objects[&test_run].zone,
+        Zone::Discard(Side::Runner),
+        "8.6.4: the event is fully resolved and trashed once it finishes installing"
+    );
+    assert!(
+        vm.lingering
+            .iter()
+            .any(|l| matches!(l.payload, jinteki_cr::lingering::Payload::DelayedConditional { .. })),
+        "the lingering effect lives on, independent of the trashed event"
+    );
+}
+
+/// example_rule_play_no_trash_left_play_area_1 (8.6.6a): an Ashen-Epilogue
+/// class event removes itself from the game with its last play ability; it
+/// is no longer in the play area at 8.6.7g, so it is not trashed.
+#[test]
+fn example_rule_play_no_trash_left_play_area_1() {
+    let mut vm = Vm::empty(333);
+    let ashen = vm.new_object(
+        tk::event(
+            "Ashen-like",
+            0,
+            vec![
+                jinteki_cr::instr::Instruction::GainCredits(Side::Runner, 1),
+                jinteki_cr::instr::Instruction::RemoveSelfFromGame,
+            ],
+        ),
+        Zone::Hand(Side::Runner),
+    );
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(ashen);
+    tk::install_rig(&mut vm, tk::play_event_button("Play-Button", ashen));
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "play-event", 100);
+    let _ = tk::until_decision(&mut vm);
+
+    assert_eq!(
+        vm.st.objects[&ashen].zone,
+        Zone::RemovedFromGame,
+        "8.6.6a: a played card that left the play area is not trashed"
+    );
+}
+
+/// example_step_checkpoint_duration_abilities_2 (10.3.1b / 8.6.6c): a
+/// Targeted-Marketing-class operation stays in the play area after
+/// resolving. When the Runner steals an agenda, the next checkpoint
+/// recognizes the shield no longer applies and the Corp trashes it as if
+/// completing its resolution.
+#[test]
+fn example_step_checkpoint_duration_abilities_2() {
+    let mut vm = Vm::empty(334);
+    let tm = vm.new_object(tk::targeted_marketing_like("TM-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
+    tk::install_root(&mut vm, tk::play_operation_button("Play-Op", tm), ServerId::Remote(1), true);
+    let agenda = tk::install_root(&mut vm, tk::vanilla_agenda("Prize", 3, 1), ServerId::Remote(2), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    tk::take_labeled(&mut vm, Side::Corp, "play-op", 100);
+    let _ = tk::until_decision(&mut vm);
+    assert_eq!(
+        vm.st.objects[&tm].zone,
+        Zone::PlayArea(Side::Corp),
+        "8.6.6c: not trashed until the Runner steals an agenda"
+    );
+
+    // Run out the Corp turn; the Runner steals the agenda.
+    let _ = drive_to_action_window(&mut vm, Side::Corp);
+    for _ in 0..600 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::TakeAction { .. } if s == Side::Runner => {
+                vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+                    server: ServerId::Remote(2),
+                }));
+            }
+            _ => {
+                if vm.st.score_area[&Side::Runner].contains(&agenda)
+                    && vm.st.objects[&tm].zone == Zone::Discard(Side::Corp)
+                {
+                    break;
+                }
+                let a = tk::default_answer(&spec);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(vm.st.score_area[&Side::Runner].contains(&agenda), "the agenda was stolen");
+    assert_eq!(
+        vm.st.objects[&tm].zone,
+        Zone::Discard(Side::Corp),
+        "the checkpoint after the steal trashes the shielded operation (10.3.1b)"
+    );
+}
+
+// ===========================================================================
+// §9.6.5c/d — trigger-condition vs instruction requirements (W3b)
+// ===========================================================================
+
+/// example_rule_condition_requirements_part_of_condition_1 (9.6.5c): the QPM
+/// requirement "if the Runner is tagged when accessed" is PART OF the
+/// trigger condition — a Casting-Call-class rider granting tags on the same
+/// access can never make QPM's condition met, in any order.
+#[test]
+fn example_rule_condition_requirements_part_of_condition_1() {
+    // Arm 1: untagged at access time — QPM never pends even though the
+    // rider gives 2 tags during the same access.
+    let mut vm = Vm::empty(335);
+    let qpm = tk::install_root(&mut vm, tk::qpm_with_casting_call("QPM-like"), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    assert_eq!(vm.st.runner.tags, 2, "the Casting-Call rider fired");
+    assert_eq!(
+        vm.st.corp.credits, 0,
+        "9.6.5c: QPM cannot meet its condition — the tags came after the access occurred"
+    );
+
+    // Arm 2 (control): already tagged when accessed — QPM pends normally.
+    let mut vm = Vm::empty(336);
+    let qpm2 = tk::install_root(&mut vm, tk::qpm_with_casting_call("QPM-like"), ServerId::Remote(1), false);
+    vm.st.runner.tags = 1;
+    vm.start_turn(Side::Runner);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    assert_eq!(vm.st.corp.credits, 1, "tagged at access time: QPM's condition is met");
+    let _ = (qpm, qpm2);
+}
+
+/// example_rule_condition_requirements_part_of_effect_1 (9.6.5d): link
+/// requirements in Underworld Contact's INSTRUCTIONS are checked when they
+/// resolve. Both UC and The Supplier meet "turn begins" together; resolving
+/// The Supplier first installs the Dyson Mem Chip, so UC sees 2 link and
+/// pays out — even though the Runner had 1 link when UC became pending.
+#[test]
+fn example_rule_condition_requirements_part_of_effect_1() {
+    let mut vm = Vm::empty(337);
+    tk::install_rig(&mut vm, tk::dyson_like("Base-Link"));
+    let dyson2 = vm.new_object(tk::dyson_like("Dyson-Mem-Chip"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(dyson2);
+    tk::install_rig(&mut vm, tk::supplier_like("Supplier-like", dyson2));
+    tk::install_rig(&mut vm, tk::underworld_contact_like("UC-like"));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut took_supplier = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner && !took_supplier => {
+                if let Some(opt) = tk::option_labeled(options, "supplier") {
+                    took_supplier = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(took_supplier, "The Supplier resolved first");
+    assert_eq!(vm.st.objects[&dyson2].zone, Zone::Rig, "the Dyson was installed");
+    assert_eq!(vm.runner_link(), 2);
+    assert_eq!(
+        vm.st.runner.credits,
+        5 + 1,
+        "9.6.5d: UC's link requirement is checked at resolution, not at pend time"
+    );
 }
 
 // ===========================================================================

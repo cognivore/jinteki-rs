@@ -198,6 +198,11 @@ pub enum StaticDecl {
     HostsPrograms { capacity: u32, install_discount: u32 },
     /// "+N link" (Dyson Mem Chip class; the 9.6.5d link example).
     LinkBonus(i32),
+    /// "This operation is not trashed until the Runner steals an agenda."
+    /// (Targeted Marketing / current class — 8.6.6c: instead of trashing at
+    /// 8.6.7g, a lingering effect keeps it in the play area until the
+    /// indicated effect occurs.)
+    PlayedNotTrashedUntilAgendaSteal,
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -388,7 +393,9 @@ pub fn ability_active(
     // inactive (so "when accessed" fires on cards in R&D/HQ/Archives).
     if matches!(
         def.condition,
-        Some(Condition::Trigger(TriggerCond::SelfAccessed))
+        Some(Condition::Trigger(
+            TriggerCond::SelfAccessed | TriggerCond::SelfAccessedIfRunnerTagged
+        ))
     ) {
         cite!("rule_active_exception_access");
         return true;

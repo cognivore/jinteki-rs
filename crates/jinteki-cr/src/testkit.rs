@@ -1449,6 +1449,166 @@ pub fn ganked_like(name: &'static str, installee: ObjectId) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
+// §8.6 play shapes (W3b)
+// ---------------------------------------------------------------------------
+
+/// An operation with a play cost and given play-ability instructions.
+pub fn operation(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
+    c.cost = Some(cost);
+    if !instrs.is_empty() {
+        c.abilities = vec![AbilityDef {
+            kind: crate::ability::AbilityKind::Play,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: instrs,
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            label: "play ability",
+        }];
+    }
+    c
+}
+
+/// An event with a play cost and given play-ability instructions.
+pub fn event(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Event);
+    c.cost = Some(cost);
+    if !instrs.is_empty() {
+        c.abilities = vec![AbilityDef {
+            kind: crate::ability::AbilityKind::Play,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: instrs,
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            label: "play ability",
+        }];
+    }
+    c
+}
+
+/// Subcontract shape: play up to `count` operations from HQ, one at a time
+/// (8.6.3).
+pub fn subcontract_button(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PlayCards {
+            count,
+            from_hand_of: Side::Corp,
+            ignore_costs: false,
+        }],
+    )
+    .labeled("subcontract: play operations")];
+    c
+}
+
+/// A Runner button playing one fixed event.
+pub fn play_event_button(name: &'static str, card: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
+    )
+    .labeled("play-event: fixed card")];
+    c
+}
+
+/// A Corp button playing one fixed operation.
+pub fn play_operation_button(name: &'static str, card: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
+    )
+    .labeled("play-op: fixed card")];
+    c
+}
+
+/// Targeted-Marketing shape: an operation that is not trashed until the
+/// Runner steals an agenda (8.6.6c).
+pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
+    let mut c = operation(name, 0, vec![]);
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::PlayedNotTrashedUntilAgendaSteal,
+    ])
+    .labeled("tm: current-style trash shield")];
+    c
+}
+
+/// Quantum-Predictive-Model shape (9.6.5c): TWO access conditionals on one
+/// card — the QPM marker requires the Runner to be tagged AT ACCESS TIME
+/// (part of the trigger condition), while the Casting-Call rider gives tags
+/// on access.
+pub fn qpm_with_casting_call(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
+    c.trash_cost = Some(0);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfAccessedIfRunnerTagged,
+            vec![Instruction::GainCredits(Side::Corp, 1)],
+            false,
+        )
+        .labeled("qpm: if tagged when accessed"),
+        AbilityDef::conditional(
+            TriggerCond::SelfAccessed,
+            vec![Instruction::GainTags(2)],
+            false,
+        )
+        .labeled("casting-call: 2 tags on access"),
+    ];
+    c
+}
+
+/// Dyson-Mem-Chip shape: +1 link (static).
+pub fn dyson_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::LinkBonus(1)])
+        .labeled("dyson: +1 link")];
+    c
+}
+
+/// The-Supplier shape (9.6.5d): "When your turn begins, you may install a
+/// hosted card." Kernel form installs a fixed card, ignoring costs.
+pub fn supplier_like(name: &'static str, installee: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::TurnBegins(Side::Runner),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![installee]),
+            dest: crate::instr::InstallDest::Rig,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+        true,
+    )
+    .labeled("supplier: install hosted card")];
+    c
+}
+
+/// Underworld-Contact shape (9.6.5d): "When your turn begins, if you have at
+/// least 2 link, gain 1[c]." — the link requirement is in the INSTRUCTIONS.
+pub fn underworld_contact_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::TurnBegins(Side::Runner),
+        vec![Instruction::IfRunnerLinkAtLeast {
+            n: 2,
+            then: Box::new(Instruction::GainCredits(Side::Runner, 1)),
+        }],
+        false,
+    )
+    .labeled("uc: gain 1 at 2+ link")];
+    c
+}
+
+// ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------
 

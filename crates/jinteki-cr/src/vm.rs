@@ -184,6 +184,13 @@ pub struct InstallProgress {
     pub ice_insert_at: Option<usize>,
 }
 
+/// CR 8.6.7: one play (event/operation) in progress.
+#[derive(Debug, Clone)]
+pub struct PlayProgress {
+    pub card: ObjectId,
+    pub ignore_costs: bool,
+}
+
 /// An in-progress trace attempt (10.8.6): shared state across the expanded
 /// step instructions.
 #[derive(Debug, Clone)]
@@ -231,6 +238,8 @@ pub struct Vm {
     /// In-progress installations (8.5.16), innermost last. Installing is a
     /// procedure (9.2.2e); nested installs stack.
     pub installs: Vec<InstallProgress>,
+    /// In-progress plays (8.6.7), innermost last.
+    pub plays: Vec<PlayProgress>,
     /// 10.3.1j: mid-breach root entries awaiting the Runner's candidacy
     /// declaration.
     pub pending_candidacy: Vec<ObjectId>,
@@ -383,6 +392,7 @@ impl Vm {
             set_aside_card_cleanup: Vec::new(),
             trace: None,
             installs: Vec::new(),
+            plays: Vec::new(),
             pending_candidacy: Vec::new(),
             psi_first_bid: None,
             pending_decision: None,
@@ -2577,6 +2587,21 @@ impl Vm {
                     ))
                 }
             }
+            // 8.6.3: multi-plays choose ONE card at a time; affordability is
+            // evaluated per pick, so credits gained by the first play can
+            // fund the second (Subcontract).
+            Instruction::PlayCards { count, from_hand_of, ignore_costs } if *count > 0 => {
+                cite!("rule_playing_one_at_a_time");
+                let candidates = self.play_pick_candidates(*from_hand_of, *ignore_costs);
+                if candidates.is_empty() {
+                    None
+                } else {
+                    Some((
+                        af.controller,
+                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true },
+                    ))
+                }
+            }
             // 8.5.16b: the Runner declares a host or defaults to the rig.
             Instruction::InstallCard {
                 card: TargetSpec::Choose { count, filter },
@@ -2700,6 +2725,14 @@ impl Vm {
             }
             Instruction::InstallCards { .. } => {
                 self.expand_install_cards(instr);
+                return;
+            }
+            Instruction::PlayCard { .. } => {
+                self.expand_play_card(instr);
+                return;
+            }
+            Instruction::PlayCards { .. } => {
+                self.expand_play_cards(instr);
                 return;
             }
             _ => {}
@@ -2850,6 +2883,97 @@ impl Vm {
             // Re-enter Targets: the InstallCard may itself need a
             // destination choice before expanding.
         }
+    }
+
+    /// §8.6: expand a PlayCard into the 8.6.7 step sequence.
+    fn expand_play_card(&mut self, instr: Instruction) {
+        let Instruction::PlayCard { card, ignore_costs } = instr else { unreachable!() };
+        cite!("rule_playing");
+        cite!("sec_steps_playing");
+        let (announced, source_obj) = {
+            let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+            (af.targets.clone(), af.source.obj)
+        };
+        let picked: Option<ObjectId> = match &card {
+            TargetSpec::Choose { .. } => announced.first().copied(),
+            spec => self
+                .resolve_targets(spec, Some(source_obj), &announced)
+                .first()
+                .copied(),
+        };
+        let Some(c) = picked else {
+            self.set_ability_phase(AbilityPhase::Checkpoint);
+            return;
+        };
+        self.plays.push(PlayProgress { card: c, ignore_costs });
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.instructions[af.idx] = Instruction::PlayStepPlace;
+            af.instructions.insert(af.idx + 1, Instruction::PlayStepPayCost);
+            af.instructions.insert(af.idx + 2, Instruction::PlayStepActivate);
+            af.instructions.insert(af.idx + 3, Instruction::PlayStepResolve);
+            af.instructions.insert(af.idx + 4, Instruction::PlayStepFinish);
+            af.targets.clear();
+        }
+    }
+
+    /// CR 8.6.3: an effect playing several cards — one at a time, each as a
+    /// separate instruction; the state between plays is real (Subcontract:
+    /// credits from the first operation pay for the second).
+    fn expand_play_cards(&mut self, instr: Instruction) {
+        let Instruction::PlayCards { count, from_hand_of, ignore_costs } = instr else {
+            unreachable!()
+        };
+        cite!("rule_playing_one_at_a_time");
+        cite!("rule_split_up_instruction");
+        let announced = {
+            let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+            af.targets.clone()
+        };
+        let Some(&c) = announced.first().filter(|_| count > 0) else {
+            self.set_ability_phase(AbilityPhase::Checkpoint);
+            return;
+        };
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.instructions[af.idx] = Instruction::PlayCard {
+                card: TargetSpec::Objects(vec![c]),
+                ignore_costs,
+            };
+            af.instructions.insert(
+                af.idx + 1,
+                Instruction::PlayCards { count: count - 1, from_hand_of, ignore_costs },
+            );
+            af.targets.clear();
+        }
+    }
+
+    /// Cards a multi-play effect may choose from: events/operations in hand
+    /// whose play cost is affordable NOW (8.6.2; evaluated per pick).
+    fn play_pick_candidates(&self, from_hand_of: Side, ignore_costs: bool) -> Vec<ObjectId> {
+        self.st.hand[&from_hand_of]
+            .iter()
+            .copied()
+            .filter(|id| {
+                let o = &self.st.objects[id];
+                let playable_type = match from_hand_of {
+                    Side::Corp => o.printed.card_type == CardType::Operation,
+                    Side::Runner => o.printed.card_type == CardType::Event,
+                };
+                let afford = ignore_costs
+                    || self.st.player(from_hand_of).credits >= o.printed.cost.unwrap_or(0);
+                playable_type && afford
+            })
+            .collect()
+    }
+
+    /// CR 1.20-adjacent: the Runner's link strength (base + active statics).
+    pub fn runner_link(&self) -> i32 {
+        self.active_statics()
+            .iter()
+            .filter_map(|(_, d)| match d {
+                StaticDecl::LinkBonus(n) => Some(*n),
+                _ => None,
+            })
+            .sum()
     }
 
     /// CR 8.5.11: the install cost as evaluated at step 8.5.16d.
@@ -3713,6 +3837,139 @@ impl Vm {
                     self.changes.record(GameChange::CardRezzed { obj: c });
                 }
                 self.install_terminal_reveal(&p);
+            }
+            Instruction::PlayCard { .. } | Instruction::PlayCards { .. } => {
+                // Expanded at imminence time; unreachable here.
+            }
+            Instruction::PlayStepPlace => {
+                cite!("rule_steps_playing_place");
+                let Some(p) = self.plays.last().cloned() else { return };
+                let c = p.card;
+                let side = self.st.objects[&c].printed.side;
+                // (a) place faceup into the play area; not installed, not
+                // yet active.
+                self.move_card(c, Zone::PlayArea(side));
+                let o = self.st.objects.get_mut(&c).unwrap();
+                o.faceup = true;
+                o.staged = true;
+            }
+            Instruction::PlayStepPayCost => {
+                cite!("rule_steps_playing_play_cost");
+                cite!("rule_playing_play_cost");
+                cite!("rule_play_cost_checkpoint");
+                let Some(p) = self.plays.last().cloned() else { return };
+                let c = p.card;
+                let side = self.st.objects[&c].printed.side;
+                let amount =
+                    if p.ignore_costs { 0 } else { self.st.objects[&c].printed.cost.unwrap_or(0) };
+                self.pay_cost(side, c, &Cost::credits(amount));
+            }
+            Instruction::PlayStepActivate => {
+                cite!("rule_steps_playing_active");
+                cite!("rule_steps_playing_played_condition");
+                cite!("rule_steps_playing_played_checkpoint");
+                let Some(p) = self.plays.last().cloned() else { return };
+                let c = p.card;
+                let side = self.st.objects[&c].printed.side;
+                {
+                    self.st.active_seq += 1;
+                    let seq = self.st.active_seq;
+                    let o = self.st.objects.get_mut(&c).unwrap();
+                    o.staged = false;
+                    o.active_since = seq;
+                }
+                // (d) conditions related to playing the card are met. The
+                // post-instruction checkpoint IS the 8.6.7e checkpoint.
+                self.changes.record(GameChange::CardPlayed { obj: c, side });
+            }
+            Instruction::PlayStepResolve => {
+                cite!("rule_steps_playing_resolve_play_abilities");
+                let Some(p) = self.plays.last().cloned() else { return };
+                let c = p.card;
+                // (f) resolve the play abilities — a nested frame; the play
+                // steps resume after it completes (9.2.4d).
+                let instrs: Vec<Instruction> = self.st.objects[&c]
+                    .printed
+                    .abilities
+                    .iter()
+                    .filter(|a| a.kind == AbilityKind::Play)
+                    .flat_map(|a| a.instructions.iter().cloned())
+                    .collect();
+                if !instrs.is_empty() {
+                    let side = self.st.objects[&c].printed.side;
+                    self.push_ability_frame(
+                        ResolutionKind::Play,
+                        AbilityRef { obj: c, index: 0 },
+                        side,
+                        instrs,
+                        None,
+                        None,
+                    );
+                }
+            }
+            Instruction::PlayStepFinish => {
+                cite!("rule_steps_playing_trash_played_card");
+                cite!("rule_steps_playing_after_resolve_condition");
+                cite!("rule_steps_playing_complete");
+                let Some(p) = self.plays.pop() else { return };
+                let c = p.card;
+                let in_play_area = matches!(self.st.objects[&c].zone, Zone::PlayArea(_));
+                if in_play_area {
+                    // 8.6.6c: a "not trashed until <effect>" ability keeps
+                    // the card in the play area via a lingering effect.
+                    let shielded = self.st.objects[&c].printed.abilities.iter().any(|a| {
+                        a.statics.iter().any(|d| {
+                            matches!(d, StaticDecl::PlayedNotTrashedUntilAgendaSteal)
+                        })
+                    });
+                    if shielded {
+                        cite!("rule_play_not_trashed_until");
+                        let id = self.next_lingering;
+                        self.next_lingering += 1;
+                        self.lingering.push(LingeringEffect {
+                            id,
+                            source: c,
+                            payload: Payload::PlayedTrashShield { card: c },
+                            duration: Duration::UntilResolved,
+                            applied_to: Vec::new(),
+                        });
+                    } else {
+                        // (g) trash the card.
+                        let owner = self.st.objects[&c].owner;
+                        self.trash_card(c, owner);
+                    }
+                } else {
+                    // 8.6.6a: no longer in the play area — not trashed
+                    // (Ashen Epilogue).
+                    cite!("rule_play_no_trash_left_play_area");
+                }
+                // (h) conditions related to finishing resolution are met.
+                self.changes.record(GameChange::CardPlayResolved { obj: c });
+            }
+            Instruction::RemoveSelfFromGame => {
+                cite!("rule_play_no_trash_left_play_area");
+                if !source_moved {
+                    self.move_card(source.obj, Zone::RemovedFromGame);
+                }
+            }
+            Instruction::IfRunnerLinkAtLeast { n, then } => {
+                // 9.6.5d: requirements in the INSTRUCTIONS are checked when
+                // the relevant instructions resolve — not at trigger time.
+                cite!("rule_condition_requirements_part_of_effect");
+                if self.runner_link() >= *n as i32 {
+                    let atoms =
+                        self.expected_atoms(then, controller, &imm.targets, Some(source.obj));
+                    let inner = ImminentWrap {
+                        instr: (**then).clone(),
+                        atoms,
+                        controller,
+                        targets: imm.targets.clone(),
+                        run_ordinal: imm.run_ordinal.clone(),
+                        turn_ordinal: imm.turn_ordinal.clone(),
+                        seq: imm.seq,
+                    };
+                    self.apply_imminent(inner, controller, source, source_moved);
+                }
             }
             other => {
                 debug_assert!(

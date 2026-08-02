@@ -190,6 +190,32 @@ pub enum Instruction {
     InstallRezPayCost,
     /// Finish rezzing: the card turns faceup and becomes active.
     InstallRezFinish,
+    /// §8.6: play one event/operation. Expanded by the resolution loop into
+    /// the 8.6.7 step sequence.
+    PlayCard { card: TargetSpec, ignore_costs: bool },
+    /// 8.6.3: an effect playing more than one card — chosen and played one
+    /// at a time, each as a separate instruction (9.11.4b).
+    PlayCards { count: u32, from_hand_of: Side, ignore_costs: bool },
+    /// 8.6.7a: place the card faceup in the play area; not installed, not
+    /// yet active.
+    PlayStepPlace,
+    /// 8.6.7b: pay the play cost. (Post-instruction checkpoint = 10.3.4.)
+    PlayStepPayCost,
+    /// 8.6.7c–d: the card becomes active; conditions related to playing it
+    /// are met. (The post-instruction checkpoint is 8.6.7e.)
+    PlayStepActivate,
+    /// 8.6.7f: resolve the play abilities of the card (a nested frame).
+    PlayStepResolve,
+    /// 8.6.7g–i: trash the card if applicable (8.6.6); after-resolve
+    /// conditions are met; the play effect is complete.
+    PlayStepFinish,
+    /// "Remove this card from the game." (Ashen Epilogue class; 8.6.6a — a
+    /// played card no longer in the play area is not trashed.)
+    RemoveSelfFromGame,
+    /// "If you have at least N link, <effect>." — the requirement lives in
+    /// the INSTRUCTIONS, not the trigger condition (9.6.5d): it is checked
+    /// when this instruction resolves.
+    IfRunnerLinkAtLeast { n: u32, then: Box<Instruction> },
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.
