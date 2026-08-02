@@ -97,6 +97,9 @@ pub enum TriggerCond {
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples).
     RunnerStealsAgenda,
+    /// "Whenever the Runner avoids receiving a tag…" (Thunder Art Gallery
+    /// class — the 9.9.4c/d chain-reaction examples).
+    RunnerAvoidsTag,
 }
 
 /// Static conditions (9.6.7) for repeat-while-true conditionals.
@@ -215,6 +218,10 @@ pub enum StaticDecl {
     /// "As an additional cost to access a card in the root of a remote
     /// server, pay N." (Gagarin class — 7.4.3 example 2.)
     AdditionalAccessCost(Cost),
+    /// "This ice's strength is X, where X = `per` × the number of ice
+    /// protecting this server." (Surveyor class — 9.12.2e: while the
+    /// defining ability is inactive or lost, X is treated as 0.)
+    SelfStrengthPerServerIce { per: i32 },
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -503,6 +510,7 @@ pub fn trigger_matches(
             true
         }
         (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
+        (TriggerCond::RunnerAvoidsTag, GameChange::TagsAvoided { .. }) => true,
         _ => false,
     }
 }

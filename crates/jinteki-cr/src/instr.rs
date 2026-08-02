@@ -223,6 +223,14 @@ pub enum Instruction {
     CorpRearrangesRnd,
     /// "Add a card from Archives to the top of R&D." (Seidr class.)
     MoveToTopOfRnd { card: TargetSpec },
+    /// "Trace[X] — X = `per` × ice protecting this server" (Surveyor class,
+    /// 9.12.2e): evaluated when the trace initiates; if the ability defining
+    /// X is inactive or lost, X is treated as 0 (ZATO City Grid example).
+    TraceSurveyorX {
+        per: i64,
+        if_successful: Vec<Instruction>,
+        if_unsuccessful: Vec<Instruction>,
+    },
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.

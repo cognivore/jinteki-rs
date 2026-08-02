@@ -1804,6 +1804,75 @@ pub fn strongbox_like(name: &'static str) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
+// W3f shapes: 9.9.4c/d chains (No One Home) and 9.12.2e X-values (Surveyor)
+// ---------------------------------------------------------------------------
+
+/// A Corp button giving the Runner N tags at once.
+pub fn corp_tags_button(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(n)])
+        .labeled("give tags")];
+    c
+}
+
+/// Thunder-Art-Gallery shape: "Whenever you avoid a tag, you may install a
+/// card." (kernel: installs a fixed card, ignoring costs).
+pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerAvoidsTag,
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![installee]),
+            dest: crate::instr::InstallDest::Rig,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+        true,
+    )
+    .labeled("gallery: install on tag avoidance")];
+    c
+}
+
+/// No-One-Home shape: a CONDITIONAL interrupt "when you would take tags,
+/// avoid 1" — it can only act if it was pending when the interrupt window
+/// opened (9.9.4b/c).
+pub fn noh_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef {
+        kind: crate::ability::AbilityKind::Conditional,
+        flags: vec![AbilityFlag::Interrupt],
+        condition: Some(Condition::Trigger(TriggerCond::WouldTakeTags { during_run: false })),
+        cost: None,
+        instructions: vec![Instruction::AvoidTags(1)],
+        statics: Vec::new(),
+        optional: true,
+        timing: None,
+        label: "no-one-home: avoid 1 tag",
+    }];
+    c
+}
+
+/// Surveyor shape: ice whose strength is X (= 2 × ice protecting this
+/// server), with a subroutine tracing X (9.12.2e).
+pub fn surveyor_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Ice);
+    c.cost = Some(4);
+    c.strength = Some(0);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::SelfStrengthPerServerIce { per: 2 }])
+            .labeled("surveyor: strength X"),
+        AbilityDef::subroutine(vec![Instruction::TraceSurveyorX {
+            per: 2,
+            if_successful: vec![Instruction::GainTags(1)],
+            if_unsuccessful: vec![],
+        }])
+        .labeled("[sub] trace X"),
+    ];
+    c
+}
+
+// ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------
 

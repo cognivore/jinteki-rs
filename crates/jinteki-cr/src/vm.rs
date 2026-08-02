@@ -1298,6 +1298,22 @@ impl Vm {
                                 });
                             }
                         }
+                        StaticDecl::SelfStrengthPerServerIce { per } => {
+                            // 9.12.2e: X = per × ice protecting this server;
+                            // while the defining ability is lost (Hush) the
+                            // effect is skipped by the 9.12.1d pipeline and
+                            // X is treated as 0.
+                            cite!("rule_values_defined_by_x");
+                            if let Zone::Ice(s) = o.zone {
+                                let n =
+                                    self.st.ice.get(&s).map(|v| v.len()).unwrap_or(0) as i32;
+                                out.push(CharEffect {
+                                    source: o.id,
+                                    target: o.id,
+                                    op: CharOp::SetStrength(per * n),
+                                });
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -2599,6 +2615,54 @@ impl Vm {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                     af.instructions[idx].clone()
                 };
+                // 9.12.2e: an X-based trace evaluates X when the trace
+                // initiates; if the ability defining X is inactive (source
+                // in Archives — ZATO example) or lost, X = 0.
+                if let Instruction::TraceSurveyorX { per, if_successful, if_unsuccessful } = &instr
+                {
+                    cite!("rule_values_defined_by_x");
+                    let (per, isucc, iunsucc) =
+                        (*per, if_successful.clone(), if_unsuccessful.clone());
+                    let src = {
+                        let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+                        af.source.obj
+                    };
+                    let x = match self.st.objects.get(&src) {
+                        Some(o) if crate::object::card_active(o) => match o.zone {
+                            Zone::Ice(s) => {
+                                let present = o
+                                    .printed
+                                    .abilities
+                                    .iter()
+                                    .enumerate()
+                                    .any(|(i, a)| {
+                                        a.statics.iter().any(|d| {
+                                            matches!(
+                                                d,
+                                                StaticDecl::SelfStrengthPerServerIce { .. }
+                                            )
+                                        }) && self.ability_present(src, i)
+                                    });
+                                if present {
+                                    per * self.ice_at(s).len() as i64
+                                } else {
+                                    0
+                                }
+                            }
+                            _ => 0,
+                        },
+                        _ => 0,
+                    };
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        af.instructions[af.idx] = Instruction::Trace {
+                            base: x,
+                            if_successful: isucc,
+                            if_unsuccessful: iunsucc,
+                            determined_min: None,
+                        };
+                    }
+                    return; // re-enter Targets with the concrete trace
+                }
                 // 10.8.6: a Trace instruction expands into the step sequence
                 // of resolving a trace attempt (a procedure, not a timing
                 // structure — 9.2.2e; its checkpoints come from 10.8.6b and
@@ -3535,6 +3599,10 @@ impl Vm {
                         false
                     }
                 });
+                // Thunder-Art-Gallery-class conditions meet on tag
+                // avoidance; the chain reaction resolves while the interrupt
+                // window is still open (9.9.4c/d examples).
+                self.changes.record(GameChange::TagsAvoided { amount: *n });
             }
             Instruction::IncreaseImminentDamage { kind, amount } => {
                 self.modify_parent_imminent(|atom| {

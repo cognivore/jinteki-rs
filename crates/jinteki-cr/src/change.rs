@@ -23,6 +23,9 @@ pub enum GameChange {
     DamageSuffered { kind: DamageKind, amount: u32, cards: Vec<ObjectId> },
     TagsTaken { amount: u32 },
     TagRemoved,
+    /// CR 9.9.5-adjacent: the Runner AVOIDED receiving tags (Thunder Art
+    /// Gallery class conditions).
+    TagsAvoided { amount: u32 },
     /// A card was trashed. `by` is the player whose effect trashed it.
     CardTrashed { obj: ObjectId, by: Side, was_zone: Zone },
     CardDiscarded { obj: ObjectId, side: Side },

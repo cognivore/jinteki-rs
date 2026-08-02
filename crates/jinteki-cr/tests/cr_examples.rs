@@ -106,6 +106,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_candidates_already_accessed_2",
     "example_rule_rnd_topmost_eligibile_candidate_1",
     "example_rule_rnd_topmost_eligibile_candidate_2",
+    // Wave 3f: mid-window installs (9.9.4c/d), X-values (9.12.2e).
+    "example_rule_trigger_conditional_ability_interrupt_2",
+    "example_rule_trigger_paid_ability_interrupt_1",
+    "example_rule_values_defined_by_x_1",
+    "example_rule_values_defined_by_x_2",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -4066,6 +4071,193 @@ fn example_rule_rnd_topmost_eligibile_candidate_2() {
         "7.4.7a: candidates descend past already-chosen objects; new top cards slot in"
     );
     let _ = c4;
+}
+
+// ===========================================================================
+// §9.9.4c/d — mid-window installs (W3f, rides on §8.5)
+// ===========================================================================
+
+/// example_rule_trigger_conditional_ability_interrupt_2 (9.9.4c): 2 tags
+/// are imminent; Decoy avoids 1, a Thunder-Art-Gallery-class chain installs
+/// No One Home while the interrupt window is still open. NOH's conditional
+/// interrupt is RELEVANT (1 tag still expected) — but it was not active
+/// when the window opened, so it is not pending and cannot be triggered.
+#[test]
+fn example_rule_trigger_conditional_ability_interrupt_2() {
+    let mut vm = Vm::empty(371);
+    let noh = vm.new_object(tk::noh_like("NoOneHome-like"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(noh);
+    tk::install_rig(&mut vm, tk::decoy_like("Decoy-like"));
+    tk::install_rig(&mut vm, tk::gallery_like("Gallery-like", noh));
+    tk::install_root(&mut vm, tk::corp_tags_button("Tags-Button", 2), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    tk::take_labeled(&mut vm, Side::Corp, "give tags", 100);
+    let mut used_decoy = false;
+    let mut took_gallery = false;
+    let mut noh_never_offered = true;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::InterruptWindow { options, .. } => {
+                if tk::option_labeled(options, "no-one-home").is_some() {
+                    noh_never_offered = false;
+                }
+                if let (false, Some(opt)) = (used_decoy, tk::option_labeled(options, "decoy")) {
+                    used_decoy = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner && !took_gallery => {
+                if let Some(opt) = tk::option_labeled(options, "gallery") {
+                    took_gallery = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(used_decoy && took_gallery, "the chain reaction ran mid-window");
+    assert_eq!(vm.st.objects[&noh].zone, Zone::Rig, "NOH was installed mid-window");
+    assert!(
+        noh_never_offered,
+        "9.9.4b/c: a conditional interrupt activated after the window opened is not pending"
+    );
+    assert_eq!(vm.st.runner.tags, 1, "only Decoy's avoidance applied");
+}
+
+/// example_rule_trigger_paid_ability_interrupt_1 (9.9.4d): the same chain
+/// installs a SECOND Decoy instead. Paid-ability interrupts may be used
+/// even though they were not active when the window opened — the Runner
+/// avoids the other tag too.
+#[test]
+fn example_rule_trigger_paid_ability_interrupt_1() {
+    let mut vm = Vm::empty(372);
+    let decoy2 = vm.new_object(tk::decoy_like("Decoy-Two"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(decoy2);
+    tk::install_rig(&mut vm, tk::decoy_like("Decoy-One"));
+    tk::install_rig(&mut vm, tk::gallery_like("Gallery-like", decoy2));
+    tk::install_root(&mut vm, tk::corp_tags_button("Tags-Button", 2), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    tk::take_labeled(&mut vm, Side::Corp, "give tags", 100);
+    let mut decoys_used = 0;
+    let mut took_gallery = false;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::InterruptWindow { options, .. } => {
+                if let Some(opt) = tk::option_labeled(options, "decoy") {
+                    decoys_used += 1;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner && !took_gallery => {
+                if let Some(opt) = tk::option_labeled(options, "gallery") {
+                    took_gallery = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(took_gallery);
+    assert_eq!(
+        decoys_used, 2,
+        "9.9.4d: the mid-window-installed Decoy's paid interrupt may be used"
+    );
+    assert_eq!(vm.st.runner.tags, 0, "both tags avoided");
+}
+
+// ===========================================================================
+// §9.12.2e — values defined by X (W3f)
+// ===========================================================================
+
+/// example_rule_values_defined_by_x_1 (9.12.2e): a ZATO-class effect
+/// trashes Surveyor and resolves its subroutine. Surveyor is in Archives
+/// when the trace initiates, so the ability defining X is inactive and the
+/// base trace strength is 0.
+#[test]
+fn example_rule_values_defined_by_x_1() {
+    let mut vm = Vm::empty(373);
+    let other_ice = tk::install_ice(&mut vm, tk::vanilla_ice("Other-Ice", 0, 1), ServerId::Remote(1), true);
+    let surveyor = tk::install_ice(&mut vm, tk::surveyor_like("Surveyor-like"), ServerId::Remote(1), true);
+    assert_eq!(
+        vm.effective_strength(surveyor),
+        Some(4),
+        "sanity: X = 2 x 2 ice while installed and active"
+    );
+    // ZATO-class: trash Surveyor, then resolve its subroutine.
+    vm.trash_card(surveyor, Side::Corp);
+    vm.push_ability_frame(
+        jinteki_cr::frames::ResolutionKind::Subroutine,
+        jinteki_cr::ability::AbilityRef { obj: surveyor, index: 1 },
+        Side::Corp,
+        vec![jinteki_cr::instr::Instruction::TraceSurveyorX {
+            per: 2,
+            if_successful: vec![jinteki_cr::instr::Instruction::GainTags(1)],
+            if_unsuccessful: vec![],
+        }],
+        None,
+        Some(0),
+    );
+    let (side, spec) = tk::until_decision(&mut vm);
+    assert_eq!(side, Side::Corp);
+    match spec {
+        DecisionSpec::TraceSpend { strength_so_far, .. } => {
+            assert_eq!(
+                strength_so_far, 0,
+                "9.12.2e: the X-defining ability is inactive in Archives, so X = 0"
+            );
+        }
+        other => panic!("expected the Corp trace spend, got {other:?}"),
+    }
+    let _ = other_ice;
+}
+
+/// example_rule_values_defined_by_x_2 (9.12.2e): Hush hosted on Surveyor
+/// removes the ability defining X — Surveyor's strength is 0.
+#[test]
+fn example_rule_values_defined_by_x_2() {
+    let mut vm = Vm::empty(374);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Other-Ice", 0, 1), ServerId::Remote(1), true);
+    let surveyor = tk::install_ice(&mut vm, tk::surveyor_like("Surveyor-like"), ServerId::Remote(1), true);
+    assert_eq!(vm.effective_strength(surveyor), Some(4), "X = 2 x 2 without Hush");
+    // Hush: hosted program removing all host abilities.
+    let mut hush = tk::vanilla_runner_card("Hush-like", jinteki_cr::object::CardType::Program);
+    hush.abilities = vec![jinteki_cr::ability::AbilityDef::static_ability(vec![
+        jinteki_cr::ability::StaticDecl::RemoveHostAbilities,
+    ])
+    .labeled("hush: remove host abilities")];
+    let hush = tk::install_rig(&mut vm, hush);
+    tk::host_on(&mut vm, hush, surveyor);
+    assert_eq!(
+        vm.effective_strength(surveyor),
+        Some(0),
+        "9.12.2e: the ability defining X is lost, so X = 0"
+    );
 }
 
 // ===========================================================================
