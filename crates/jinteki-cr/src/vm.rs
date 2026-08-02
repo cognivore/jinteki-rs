@@ -1762,8 +1762,30 @@ impl Vm {
             | Instruction::CorpDiscards { .. }
             | Instruction::RestrictAccessToSelf
             | Instruction::CreateDelayedConditional { .. }
-            | Instruction::ReduceRunnerMemoryThisTurn(_) => {
+            | Instruction::ReduceRunnerMemoryThisTurn(_)
+            | Instruction::ChooseOne { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
+            }
+            Instruction::DamagePerCounter { kind, base, per, counter, responsible } => {
+                // 9.12.2b/c: damage is an aggregated class — one instance
+                // with the aggregated value ("2 net plus 1 per advancement"
+                // = a single 5-damage atom; Prāna-class interrupts apply
+                // once).
+                cite!("rule_calculated_quantity");
+                cite!("rule_aggregated_instructions");
+                let n = source
+                    .and_then(|s| self.st.objects.get(&s))
+                    .map(|o| o.counter(*counter))
+                    .unwrap_or(0);
+                let mut v = (*base + *per * n) as i64;
+                for (_, d) in self.active_statics() {
+                    if let StaticDecl::DamageBonus { kind: k, responsible: r, amount: b } = d {
+                        if k == *kind && r == *responsible {
+                            v += b;
+                        }
+                    }
+                }
+                vec![EffectAtom::new(EffectClass::Damage(*kind), v, Side::Runner)]
             }
             Instruction::GainAllottedClicks(side) => {
                 let n = self.st.player(*side).allotted_clicks as i64;
@@ -2318,6 +2340,54 @@ impl Vm {
                     }
                     _ => {}
                 }
+                if let Instruction::ChooseOne { options } = &instr {
+                    // 9.11.4g: the choice ends an instruction; 9.12.3c: a
+                    // "must" choice is restricted to fully-resolvable
+                    // options — if none is resolvable, nothing happens.
+                    cite!("rule_choice_instruction");
+                    cite!("rule_mandatory_choice");
+                    let controller = {
+                        let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+                        af.controller
+                    };
+                    let resolvable: Vec<usize> = options
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (_, instrs))| self.option_resolvable(instrs))
+                        .map(|(i, _)| i)
+                        .collect();
+                    match resolvable.len() {
+                        0 => {
+                            // "If none of the choices can be fully resolved,
+                            // the ability does nothing."
+                            self.set_ability_phase(AbilityPhase::Checkpoint);
+                            return;
+                        }
+                        1 => {
+                            let only = resolvable[0];
+                            let inject = options[only].1.clone();
+                            if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                                for (k, ins) in inject.into_iter().enumerate() {
+                                    af.instructions.insert(af.idx + 1 + k, ins);
+                                }
+                            }
+                            self.set_ability_phase(AbilityPhase::Checkpoint);
+                            return;
+                        }
+                        _ => {
+                            let labels: Vec<&'static str> = resolvable
+                                .iter()
+                                .map(|&i| options[i].0)
+                                .collect();
+                            self.ask(
+                                controller,
+                                DecisionSpec::ChooseOption { options: labels },
+                                DecisionCtx::Targets,
+                            );
+                            return;
+                        }
+                    }
+                }
                 if let Some((side, spec)) = self.targets_needed(&instr) {
                     self.ask(side, spec, DecisionCtx::Targets);
                     return;
@@ -2352,6 +2422,20 @@ impl Vm {
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.phase = p;
         }
+    }
+
+    /// 9.12.3c: can an option's effects be fully resolved right now?
+    fn option_resolvable(&self, instrs: &[Instruction]) -> bool {
+        instrs.iter().all(|i| match i {
+            Instruction::LoseCredits(side, n) => self.st.player(*side).credits >= *n,
+            Instruction::TrashCards(TargetSpec::Choose { count, filter }) => {
+                self.filter_candidates(*filter, Side::Runner).len() >= *count as usize
+            }
+            // Tag costs blocked by mandatory avoiders are unpayable
+            // (1.16.1b), mirrored for choice options.
+            Instruction::GainTags(_) => !self.tag_cost_blocked(),
+            _ => true,
+        })
     }
 
     /// The payer of a nested cost: tag/damage components are always paid by
@@ -2912,6 +2996,17 @@ impl Vm {
                     duration: Duration::Turn(self.st.turn_seq),
                     applied_to: Vec::new(),
                 });
+            }
+            Instruction::DamagePerCounter { responsible, .. } => {
+                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
+                    if let EffectClass::Damage(kind) = a.class {
+                        self.do_damage(kind, a.value as u32, *responsible);
+                    }
+                }
+            }
+            Instruction::ChooseOne { .. } => {
+                // Handled at answer time (the choice ends the instruction;
+                // the chosen effect is injected as the next instruction).
             }
             Instruction::PreventTrashOf(protected) => {
                 // Sacrificial-Construct class: remove the object from the
@@ -4022,6 +4117,33 @@ impl Vm {
                     b.candidates.retain(|&x| x != c);
                 }
                 self.set_structure_phase(StepPhase::Checkpoint);
+            }
+            (DecisionCtx::Targets, DecisionAnswer::Option(i)) => {
+                // 9.12.3d: the choice is its own instruction; the chosen
+                // effect becomes the next instruction and can still be
+                // interrupted as normal.
+                cite!("rule_mandatory_choice_effects_can_be_modified");
+                let (idx, instr) = {
+                    let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+                    (af.idx, af.instructions[af.idx].clone())
+                };
+                if let Instruction::ChooseOne { options } = instr {
+                    // The answer indexes the RESOLVABLE label list; map back.
+                    let resolvable: Vec<usize> = options
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (_, instrs))| self.option_resolvable(instrs))
+                        .map(|(k, _)| k)
+                        .collect();
+                    let chosen = resolvable.get(i).copied().unwrap_or(0);
+                    let inject = options[chosen].1.clone();
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        for (k, ins) in inject.into_iter().enumerate() {
+                            af.instructions.insert(idx + 1 + k, ins);
+                        }
+                        af.phase = AbilityPhase::Checkpoint;
+                    }
+                }
             }
             (DecisionCtx::Targets, DecisionAnswer::Targets(t)) => {
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {

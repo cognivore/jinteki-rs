@@ -1158,6 +1158,74 @@ pub fn mayfly_button(name: &'static str) -> PrintedCard {
     c
 }
 
+/// Ritual shape (9.12.2b): "Draw 3 cards." — one instance of drawing 3.
+pub fn ritual_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::Draw(Side::Runner, 3)])
+        .labeled("ritual: draw 3")];
+    c
+}
+
+/// Urtica-Cipher shape (9.12.2b): "When accessed, do 2 net damage plus 1
+/// net damage for each hosted advancement counter." — ONE aggregated
+/// damage instance.
+pub fn urtica_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
+    c.trash_cost = Some(0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfAccessed,
+        vec![Instruction::DamagePerCounter {
+            kind: DamageKind::Net,
+            base: 2,
+            per: 1,
+            counter: CounterKind::Advancement,
+            responsible: Side::Corp,
+        }],
+        false,
+    )
+    .labeled("urtica: 2 net + 1 per advancement")];
+    c
+}
+
+/// Fairchild-2.0-style subroutine ice (9.12.3c): each sub reads "The Runner
+/// must pay 2[c] or trash 1 of their installed cards."
+pub fn fairchild_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 5, 4);
+    let sub = AbilityDef::subroutine(vec![Instruction::ChooseOne {
+        options: vec![
+            ("pay 2", vec![Instruction::LoseCredits(Side::Runner, 2)]),
+            (
+                "trash installed",
+                vec![Instruction::TrashCards(TargetSpec::Choose {
+                    count: 1,
+                    filter: crate::instr::TargetFilter::InstalledRunnerCard,
+                })],
+            ),
+        ],
+    }])
+    .labeled("[sub] pay 2 or trash");
+    c.abilities = vec![sub.clone(), sub];
+    c
+}
+
+/// Data-Raven shape (9.12.3d): "When encountered, the Runner must take 1
+/// tag or end the run."
+pub fn data_raven_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 4, 4);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfEncountered,
+        vec![Instruction::ChooseOne {
+            options: vec![
+                ("take 1 tag", vec![Instruction::GainTags(1)]),
+                ("end the run", vec![Instruction::EndTheRun]),
+            ],
+        }],
+        false,
+    )
+    .labeled("data-raven: tag or ETR")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------

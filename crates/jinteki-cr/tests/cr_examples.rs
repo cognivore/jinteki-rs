@@ -69,6 +69,12 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_delayed_conditional_ability_specified_duration_1",
     "example_rule_delayed_conditional_ability_relevant_once_1",
     "example_rule_delayed_run_ends_condition_outside_run_1",
+    // Wave 2f: quantities & sets (9.12.2), must-choices (9.12.3).
+    "example_rule_act_on_multiple_cards_1",
+    "example_rule_calculated_quantity_1",
+    "example_rule_calculated_quantity_2",
+    "example_rule_mandatory_choice_1",
+    "example_rule_mandatory_choice_effects_can_be_modified_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -2574,6 +2580,238 @@ fn example_rule_delayed_run_ends_condition_outside_run_1() {
     assert!(
         vm.st.objects[&mayfly].zone.is_installed(),
         "Mayfly was not trashed by the later run"
+    );
+}
+
+// ===========================================================================
+// Wave 2f — 9.12.2 quantities / 9.12.3 must-choices
+// ===========================================================================
+
+/// example_rule_act_on_multiple_cards_1 (9.12.2a): trashing a Warroid-class
+/// and a Hostile-Infrastructure-class card simultaneously — HI's
+/// per-occurrence condition pends twice; Warroid's set-condition pends once.
+#[test]
+fn example_rule_act_on_multiple_cards_1() {
+    let mut vm = Vm::empty(90);
+    let hi = tk::install_root(&mut vm, tk::hostile_infra_like("HI-like"), ServerId::Remote(1), true);
+    let w = tk::install_root(&mut vm, tk::warroid_like("Warroid-like"), ServerId::Remote(2), true);
+    tk::install_rig(&mut vm, tk::trash_set_button("Singularity-like", vec![hi, w]));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut corp_first_offer: Option<Vec<WindowOption>> = None;
+    let mut fired = false;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner => {
+                match tk::option_labeled(options, "trash the set") {
+                    Some(opt) if !fired => {
+                        fired = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                    }
+                    _ => vm.answer(DecisionAnswer::Pass),
+                }
+            }
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Corp => {
+                if corp_first_offer.is_none() {
+                    corp_first_offer = Some(options.clone());
+                }
+                let a = tk::default_answer(&spec);
+                vm.answer(a);
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    let opts = corp_first_offer.expect("reaction window opened");
+    let hi_count = opts.iter().filter(|o| matches!(o, WindowOption::TriggerInstance { label, .. } if label.contains("hostile-infra"))).count();
+    let w_count = opts.iter().filter(|o| matches!(o, WindowOption::TriggerInstance { label, .. } if label.contains("warroid"))).count();
+    assert_eq!(hi_count, 2, "9.12.2a: HI sees both trashed cards");
+    assert_eq!(w_count, 1, "9.12.2a: Warroid sees one event");
+}
+
+/// example_rule_calculated_quantity_1 (9.12.2b): "draw 3 cards" is ONE
+/// instance of drawing 3 — a Class-Act-class would-draw interrupt gets one
+/// relevant imminence.
+#[test]
+fn example_rule_calculated_quantity_1() {
+    let mut vm = Vm::empty(91);
+    tk::install_rig(&mut vm, tk::ritual_button("Ritual-like"));
+    tk::install_rig(&mut vm, tk::class_act_like("ClassAct-like"));
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut class_act_offers = 0;
+    let mut fired = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner => {
+                match tk::option_labeled(options, "ritual") {
+                    Some(opt) if !fired => {
+                        fired = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                    }
+                    _ => vm.answer(DecisionAnswer::Pass),
+                }
+            }
+            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner => {
+                if let Some(opt) = tk::option_labeled(options, "class-act") {
+                    class_act_offers += 1;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(class_act_offers, 1, "9.12.2b: one instance of drawing 3");
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 3, "all three cards drawn together");
+}
+
+/// example_rule_calculated_quantity_2 (9.12.2b): Urtica-class "2 net plus 1
+/// per advancement counter" with 3 counters = a single 5-damage instance;
+/// a prevent-2 interrupt applies once, leaving 3.
+#[test]
+fn example_rule_calculated_quantity_2() {
+    let mut vm = Vm::empty(92);
+    let urtica = vm.new_object(tk::urtica_like("Urtica-like"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(urtica);
+    vm.st.objects.get_mut(&urtica).unwrap().counters.insert(CounterKind::Advancement, 3);
+    tk::install_rig(&mut vm, tk::biometric_like("Biometric-like", DamageKind::Net));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Rnd }));
+
+    let mut prevented = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !prevented => {
+                if let Some(opt) = tk::option_labeled(options, "biometric") {
+                    prevented = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(prevented);
+    let dmg: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::DamageSuffered { kind: DamageKind::Net, amount, .. } => Some(*amount),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(dmg, vec![3], "one aggregated instance: 2+3 = 5, minus 2 prevented");
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2);
+}
+
+/// example_rule_mandatory_choice_1 (9.12.3c): with 3[c] and no installed
+/// cards, the first "pay 2 or trash an installed card" sub forces the pay;
+/// the second, with 1[c] left and still nothing installed, does NOTHING.
+#[test]
+fn example_rule_mandatory_choice_1() {
+    let mut vm = Vm::empty(93);
+    tk::install_ice(&mut vm, tk::fairchild_like("Fairchild-like"), ServerId::Hq, true);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+    // No runner installed cards: empty the rig of incidental installs.
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut choice_decisions = 0;
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ChooseOption { .. } => {
+                choice_decisions += 1;
+                vm.answer(DecisionAnswer::Option(0));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(
+        choice_decisions, 0,
+        "9.12.3c: with exactly one resolvable option (or none) no choice is offered"
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        1,
+        "first sub forced the 2[c] payment; second sub could do nothing"
+    );
+}
+
+/// example_rule_mandatory_choice_effects_can_be_modified_1 (9.12.3d): the
+/// Runner chooses "take 1 tag" on a Data-Raven-class encounter, then avoids
+/// the tag with a Decoy-class interrupt — the run does NOT end.
+#[test]
+fn example_rule_mandatory_choice_effects_can_be_modified_1() {
+    let mut vm = Vm::empty(94);
+    tk::install_ice(&mut vm, tk::data_raven_like("DataRaven-like"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::decoy_like("Decoy-like"));
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut chose_tag = false;
+    let mut used_decoy = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ChooseOption { options } => {
+                let i = options.iter().position(|l| l.contains("tag")).unwrap();
+                chose_tag = true;
+                vm.answer(DecisionAnswer::Option(i));
+            }
+            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !used_decoy => {
+                if let Some(opt) = tk::option_labeled(options, "decoy") {
+                    used_decoy = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(chose_tag && used_decoy);
+    assert_eq!(vm.st.runner.tags, 0, "the tag was avoided AFTER the choice");
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "9.12.3d: avoiding the chosen tag does not resurrect the end-the-run option"
     );
 }
 

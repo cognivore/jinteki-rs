@@ -118,6 +118,20 @@ pub enum Instruction {
     },
     /// "The Runner loses N memory units until end of turn." (Bad Times.)
     ReduceRunnerMemoryThisTurn(u32),
+    /// "Do <base> + <per> × (counters on this card) <kind> damage." —
+    /// a calculated quantity aggregating into ONE instance (9.12.2b/c,
+    /// Urtica Cipher class).
+    DamagePerCounter {
+        kind: DamageKind,
+        base: u32,
+        per: u32,
+        counter: crate::object::CounterKind,
+        responsible: Side,
+    },
+    /// CR 9.11.4g / 9.12.3c-d: choose one of several optioned effects; the
+    /// choice ends an instruction and must select a fully-resolvable option
+    /// if any exists; the chosen effect is then separately interruptible.
+    ChooseOne { options: Vec<(&'static str, Vec<Instruction>)> },
     /// "Break up to N subroutines on the encountered ice." (first unbroken)
     BreakSubroutines { count: u32 },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).
