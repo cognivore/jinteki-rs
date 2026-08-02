@@ -353,6 +353,8 @@ function renderServers() {
       sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; zoomCard(c); }, 380); });
       sliver.addEventListener("pointerup", () => { clearTimeout(t); if (!fired) zoomCard(c); });
       sliver.addEventListener("pointerleave", () => clearTimeout(t));
+      sliver.addEventListener("pointercancel", () => clearTimeout(t));
+      sliver.addEventListener("contextmenu", (e) => e.preventDefault());
       stack.appendChild(sliver);
     });
     if (ices.length) {
@@ -508,6 +510,9 @@ function cardEl(c, opts) {
     if (!longFired) onCardTap(c, opts, el);
   });
   el.addEventListener("pointerleave", () => clearTimeout(pressTimer));
+  el.addEventListener("pointercancel", () => clearTimeout(pressTimer));
+  // Suppress the iOS long-press callout / selection so the read gesture is ours.
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
   if (hoverCapable) {
     el.addEventListener("mouseenter", () => showHoverPreview(c));
     el.addEventListener("mouseleave", hideHoverPreview);
