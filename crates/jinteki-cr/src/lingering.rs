@@ -54,6 +54,9 @@ pub enum Payload {
     MaintainedChoice { key: &'static str, choice: ChoiceValue },
     /// CR 9.6.13: a delayed conditional ability maintained by this effect.
     DelayedConditional { def: AbilityDef },
+    /// CR 9.12.5: a persistent ability persisting after its source was
+    /// trashed during an access; applicable only to the bound run (9.12.5d).
+    PersistedAbility { def: AbilityDef, run_id: u64 },
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary

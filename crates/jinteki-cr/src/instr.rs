@@ -66,6 +66,15 @@ pub enum Instruction {
     /// Interrupt-effect: prevent a specific object from being trashed
     /// (Sacrificial Construct class).
     PreventTrashOf(ObjectId),
+    /// "Do N <kind> damage. This damage cannot be prevented." (Flare class;
+    /// 9.3.3g/9.4.5: the restriction rides the value.)
+    DamageUnpreventable { kind: DamageKind, amount: u32, responsible: Side },
+    /// Interrupt-effect: replace the imminent damage's type (Tori Hanzō
+    /// class; 9.9.10: applies immediately when the interrupt resolves).
+    ReplaceImminentDamageKind { to: DamageKind },
+    /// "Run any server." / "make another run" (Doppelgänger class) — pushes
+    /// a nested run timing structure.
+    InitiateRun(ServerId),
     /// "Break up to N subroutines on the encountered ice." (first unbroken)
     BreakSubroutines { count: u32 },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).

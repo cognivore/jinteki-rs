@@ -40,6 +40,26 @@ pub fn run_checkpoint(vm: &mut Vm) -> Vec<u64> {
 /// 10.3.1a: each active conditional ability looks at the changes since the
 /// beginning of the last checkpoint; one pending instance per occurrence
 /// (9.6.4b), grouped for per-event triggers (9.12.2a).
+fn persisted_server_override(
+    vm: &Vm,
+    from_lingering: Option<u64>,
+    cond: &crate::ability::TriggerCond,
+    change: &GameChange,
+) -> bool {
+    // A persisted "run on this server ends" ability's source has left the
+    // server; the binding to its run substitutes for the server check.
+    if let (Some(lid), crate::ability::TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { run_id, .. }) =
+        (from_lingering, cond, change)
+    {
+        if let Some(l) = vm.lingering.iter().find(|l| l.id == lid) {
+            if let Payload::PersistedAbility { run_id: bound, .. } = &l.payload {
+                return run_id == bound;
+            }
+        }
+    }
+    false
+}
+
 fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     cite!("step_checkpoint_conditional_abilities");
     cite!("rule_condition_checked_in_checkpoints");
@@ -99,6 +119,25 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
         }
     }
     for l in &vm.lingering {
+        if let Payload::PersistedAbility { def, run_id } = &l.payload {
+            // CR 9.12.5b: the ability never becomes inactive while it
+            // persists; 9.12.5d: it is only applicable to the bound run —
+            // condition occurrences from any other run cannot pend it.
+            cite!("rule_persistent_continuous");
+            cite!("rule_persistent_applicability");
+            if def.kind == AbilityKind::Conditional && !def.is_interrupt() {
+                let controller = vm
+                    .st
+                    .objects
+                    .get(&l.source)
+                    .map(|o| o.controller)
+                    .unwrap_or(Side::Corp);
+                // Encode the run binding by filtering at match time below via
+                // the persisted marker: usize::MAX index + stored run.
+                sources.push((l.source, usize::MAX - 1, def.clone(), controller, Some(l.id)));
+                let _ = run_id;
+            }
+        }
         if let Payload::DelayedConditional { def } = &l.payload {
             if def.kind == AbilityKind::Conditional && !def.is_interrupt() {
                 let controller = vm
@@ -135,7 +174,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 // processes it — or if its own source's move to an inactive
                 // zone is the very change that met the condition.
                 cite!("rule_condition_only_met_while_active");
-                let active_now = from_lingering.is_some()
+                let active_now = from_lingering.is_some() // incl. 9.12.5b persist
                     || ability_active(
                         source_obj,
                         &def,
@@ -161,10 +200,30 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         .map(|x| is_corp_card(x.printed.card_type))
                         .unwrap_or(false)
                 };
+                // 9.12.5d: a persisted ability only sees occurrences from
+                // the run it is bound to.
+                let persisted_run: Option<u64> = from_lingering.and_then(|lid| {
+                    vm.lingering.iter().find(|l| l.id == lid).and_then(|l| match &l.payload {
+                        Payload::PersistedAbility { run_id, .. } => Some(*run_id),
+                        _ => None,
+                    })
+                });
                 let mut occurrences: Vec<u64> = Vec::new();
                 for (c, group) in &window {
-                    if !trigger_matches(cond, c, source_obj, vm.server_of(obj_id), is_corp) {
+                    if !trigger_matches(cond, c, source_obj, vm.server_of(obj_id), is_corp)
+                        && !persisted_server_override(vm, from_lingering, cond, c)
+                    {
                         continue;
+                    }
+                    if let Some(bound) = persisted_run {
+                        let change_run = match c {
+                            GameChange::RunEnded { run_id, .. } => Some(*run_id),
+                            _ => vm.current_run.map(|(r, _, _)| r),
+                        };
+                        if change_run != Some(bound) {
+                            cite!("rule_persistent_applicability");
+                            continue;
+                        }
                     }
                     // 9.6.6a "had"-requirements read the previous snapshot.
                     if let crate::ability::TriggerCond::AdvancesCard {
@@ -307,8 +366,37 @@ fn step_b_durations(vm: &mut Vm) {
     let current_encounter = vm.st.encounter.as_ref().map(|e| e.id);
     let current_run = vm.current_run.map(|(r, _, _)| r);
     let current_turn = vm.st.turn_seq;
+    // CR 9.12.5c: a persisted ability expires when the reaction window after
+    // its run's `step_run_complete` closes — observable as: the bound run is
+    // over, no window is open, and no instance of it is still pending or
+    // resolving.
+    let has_open_window = vm
+        .frames
+        .iter()
+        .any(|f| matches!(f, Frame::Window(_)));
+    let pending_from: std::collections::BTreeSet<u64> = vm
+        .instances
+        .values()
+        .filter_map(|i| i.from_lingering)
+        .collect();
+    let resolving_sources: std::collections::BTreeSet<crate::object::ObjectId> = vm
+        .frames
+        .iter()
+        .filter_map(|f| match f {
+            Frame::Ability(af) => Some(af.source.obj),
+            _ => None,
+        })
+        .collect();
     let objects = &vm.st.objects;
     vm.lingering.retain(|l| {
+        if let Payload::PersistedAbility { run_id, .. } = &l.payload {
+            cite!("rule_persistent_expiration");
+            let run_over = current_run != Some(*run_id);
+            let still_needed = has_open_window
+                || pending_from.contains(&l.id)
+                || resolving_sources.contains(&l.source);
+            return !(run_over && !still_needed);
+        }
         let source_active = objects.get(&l.source).map(card_active).unwrap_or(false);
         !l.expired(current_encounter, current_run, current_turn, source_active)
     });

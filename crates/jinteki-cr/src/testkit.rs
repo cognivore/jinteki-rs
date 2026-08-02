@@ -743,6 +743,146 @@ pub fn sol_like(name: &'static str) -> PrintedCard {
     c
 }
 
+/// Process-Automation shape: one instruction, "Gain 2[c] and draw 1 card."
+pub fn process_automation_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::Combined(vec![
+            Instruction::GainCredits(Side::Runner, 2),
+            Instruction::Draw(Side::Runner, 1),
+        ])],
+    )
+    .labeled("process-automation: gain 2 draw 1")];
+    c
+}
+
+/// Lockdown shape (as a static for the 9.9.2 example): "The Runner cannot
+/// draw cards."
+pub fn lockdown_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::CannotDraw(Side::Runner)])
+        .labeled("lockdown: runner cannot draw")];
+    c
+}
+
+/// The-Class-Act shape: "The first time each turn you would draw any number
+/// of cards…" — a conditional interrupt relevant to imminent draws (9.9.3d).
+pub fn class_act_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef {
+        kind: crate::ability::AbilityKind::Conditional,
+        flags: vec![AbilityFlag::Interrupt],
+        condition: Some(Condition::Trigger(TriggerCond::WouldDraw { first_each_turn: true })),
+        cost: None,
+        instructions: vec![Instruction::GainCredits(Side::Runner, 1)],
+        statics: Vec::new(),
+        optional: true,
+        timing: None,
+        label: "class-act: on first would-draw",
+    }];
+    c
+}
+
+/// Harbinger shape: a conditional interrupt with the condition "this card
+/// would be trashed" (9.9.4c relevance re-evaluation).
+pub fn harbinger_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(0);
+    c.abilities = vec![AbilityDef {
+        kind: crate::ability::AbilityKind::Conditional,
+        flags: vec![AbilityFlag::Interrupt],
+        condition: Some(Condition::Trigger(TriggerCond::SelfWouldBeTrashed)),
+        cost: None,
+        instructions: vec![Instruction::GainCredits(Side::Runner, 1)],
+        statics: Vec::new(),
+        optional: true,
+        timing: None,
+        label: "harbinger: when this would be trashed",
+    }];
+    c
+}
+
+/// A corp button trashing a fixed set (corp-side driver).
+pub fn corp_trash_button(name: &'static str, targets: Vec<ObjectId>) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::TrashCards(TargetSpec::Objects(targets))],
+    )
+    .labeled("corp-trash: trash the set")];
+    c
+}
+
+/// Flare shape: "Do 2 meat damage that cannot be prevented." (9.9.7e.)
+pub fn flare_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::DamageUnpreventable {
+            kind: DamageKind::Meat,
+            amount: 2,
+            responsible: Side::Corp,
+        }],
+    )
+    .labeled("flare: 2 unpreventable meat")];
+    c
+}
+
+/// The-Cleaners shape as printed: a STATIC "+1 to meat damage done by the
+/// Corp" (9.4.5/9.9.7e).
+pub fn cleaners_static_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Agenda);
+    c.agenda_points = Some(1);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::DamageBonus {
+        kind: DamageKind::Meat,
+        responsible: Side::Corp,
+        amount: 1,
+    }])
+    .labeled("cleaners-static: +1 meat")];
+    c
+}
+
+/// Tori-Hanzō's replacement form: "pay 2[c]: replace the imminent net
+/// damage with core damage" (9.9.10).
+pub fn tori_replace_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(2),
+        vec![Instruction::ReplaceImminentDamageKind { to: DamageKind::Core }],
+    )
+    .with_flag(AbilityFlag::Interrupt)
+    .labeled("tori-replace: net becomes core")];
+    c
+}
+
+/// AMAZE with the persistent flag armed (9.12.5).
+pub fn amaze_persistent_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Upgrade);
+    c.trash_cost = Some(3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunOnThisServerEnds,
+        vec![Instruction::GainTags(2)],
+        false,
+    )
+    .with_flag(AbilityFlag::Persistent)
+    .labeled("amaze: 2 tags when run on server ends")];
+    c
+}
+
+/// Doppelgänger shape: "When a run ends, you may make another run on
+/// <server>."
+pub fn doppel_like(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::InitiateRun(server)))],
+        true,
+    )
+    .labeled("doppel: run again")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------

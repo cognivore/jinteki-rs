@@ -206,8 +206,10 @@ mod imminent {
         pub atoms: Vec<EffectAtom>,
         pub controller: Side,
         pub targets: Vec<ObjectId>,
-        /// Ordinals per class at imminence time (9.9.5a).
+        /// Ordinals per class at imminence time (9.9.5a), per-run scope.
         pub run_ordinal: BTreeMap<u64, u32>,
+        /// Same, per-turn scope ("the first time each turn…").
+        pub turn_ordinal: BTreeMap<u64, u32>,
         /// Imminence sequence number (replacement once-per-effect keys).
         pub seq: u64,
     }
@@ -1494,7 +1496,27 @@ impl Vm {
                 vec![EffectAtom::new(EffectClass::LoseCredits, *n as i64, *side)]
             }
             Instruction::Draw(side, n) => {
-                vec![EffectAtom::new(EffectClass::Draw, *n as i64, *side)]
+                // 9.9.2: statics modify expected effects — a Lockdown-class
+                // "cannot draw" removes the draw entirely.
+                if self.draw_prohibited(*side) {
+                    vec![]
+                } else {
+                    vec![EffectAtom::new(EffectClass::Draw, *n as i64, *side)]
+                }
+            }
+            Instruction::DamageUnpreventable { kind, amount, responsible } => {
+                cite!("rule_static_modification_keep_restrictions");
+                let mut v = *amount as i64;
+                for (_, d) in self.active_statics() {
+                    if let StaticDecl::DamageBonus { kind: k, responsible: r, amount: b } = d {
+                        if k == *kind && r == *responsible {
+                            v += b;
+                        }
+                    }
+                }
+                let mut atom = EffectAtom::new(EffectClass::Damage(*kind), v, Side::Runner);
+                atom.unpreventable = true;
+                vec![atom]
             }
             Instruction::Damage { kind, amount, responsible } => {
                 let mut v = *amount as i64;
@@ -1607,7 +1629,14 @@ impl Vm {
                 vec![EffectAtom::new(EffectClass::StealAgenda, 1, controller)]
             }
             Instruction::MandatoryDraw => {
-                vec![EffectAtom::new(EffectClass::Draw, 1, Side::Corp)]
+                if self.draw_prohibited(Side::Corp) {
+                    vec![]
+                } else {
+                    vec![EffectAtom::new(EffectClass::Draw, 1, Side::Corp)]
+                }
+            }
+            Instruction::ReplaceImminentDamageKind { .. } | Instruction::InitiateRun(_) => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::GainAllottedClicks(side) => {
                 let n = self.st.player(*side).allotted_clicks as i64;
@@ -1616,6 +1645,14 @@ impl Vm {
             // Structure-internal instructions carry structural atoms.
             _ => vec![EffectAtom::new(EffectClass::Structural, 1, controller)],
         }
+    }
+
+    /// Lockdown-class static: "<side> cannot draw cards" (9.9.2 example 2).
+    pub fn draw_prohibited(&self, side: Side) -> bool {
+        cite!("rule_expected_effects");
+        self.active_statics()
+            .iter()
+            .any(|(_, d)| matches!(d, StaticDecl::CannotDraw(s) if *s == side))
     }
 
     fn trash_prohibited(&self, target: ObjectId) -> bool {
@@ -1664,12 +1701,17 @@ impl Vm {
         }
         // CR 9.9.5a: ordinal trackers count imminences.
         let mut run_ordinal = BTreeMap::new();
+        let mut turn_ordinal = BTreeMap::new();
         for a in &atoms {
             if a.expected() {
                 self.would.bump(a.class);
                 run_ordinal.insert(
                     class_key(a.class),
                     self.would.count(WouldScope::Run, a.class),
+                );
+                turn_ordinal.insert(
+                    class_key(a.class),
+                    self.would.count(WouldScope::Turn, a.class),
                 );
             }
         }
@@ -1679,6 +1721,7 @@ impl Vm {
             controller,
             targets,
             run_ordinal,
+            turn_ordinal,
             seq,
         });
     }
@@ -1712,7 +1755,7 @@ impl Vm {
                 if !self.ability_present(o.id, i) {
                     continue;
                 }
-                if self.interrupt_relevant(a, &atoms_snapshot, &ordinals) {
+                if self.interrupt_relevant(a, &atoms_snapshot, &ordinals, o.id) {
                     to_pend.push((o.id, i, a.clone(), o.controller));
                 }
             }
@@ -1775,6 +1818,7 @@ impl Vm {
         def: &AbilityDef,
         atoms: &[EffectAtom],
         run_ordinals: &BTreeMap<u64, u32>,
+        source: ObjectId,
     ) -> bool {
         cite!("sec_relevant_interrupts");
         // (d) "would" trigger conditions met by the expected effects.
@@ -1802,6 +1846,35 @@ impl Vm {
                         return ord == 1;
                     }
                     return true;
+                }
+                TriggerCond::WouldDraw { first_each_turn } => {
+                    cite!("rule_would_relevant");
+                    let hit = atoms
+                        .iter()
+                        .any(|a| a.expected() && a.class == EffectClass::Draw);
+                    if !hit {
+                        return false;
+                    }
+                    if *first_each_turn {
+                        // Turn-scope ordinal: only the first draw imminence.
+                        let ord = self
+                            .imminents
+                            .last()
+                            .and_then(|i| i.turn_ordinal.get(&class_key(EffectClass::Draw)))
+                            .copied()
+                            .unwrap_or(u32::MAX);
+                        return ord == 1;
+                    }
+                    return true;
+                }
+                TriggerCond::SelfWouldBeTrashed => {
+                    // Harbinger class: relevant while the expected effects
+                    // still include this source being trashed (9.9.4c).
+                    return atoms.iter().any(|a| {
+                        a.expected()
+                            && a.class == EffectClass::TrashCards
+                            && a.targets.contains(&source)
+                    });
                 }
                 TriggerCond::WouldTakeTags { during_run } => {
                     let hit = atoms
@@ -1852,6 +1925,14 @@ impl Vm {
                         .iter()
                         .any(|a| a.expected() && a.class == EffectClass::Damage(*kind))
                     {
+                        return true;
+                    }
+                }
+                Instruction::ReplaceImminentDamageKind { to } => {
+                    cite!("rule_replacement_effect_relevant");
+                    if atoms.iter().any(|a| {
+                        a.expected() && matches!(a.class, EffectClass::Damage(k) if k != *to)
+                    }) {
                         return true;
                     }
                 }
@@ -1911,7 +1992,7 @@ impl Vm {
                 {
                     continue;
                 }
-                if self.interrupt_relevant(a, atoms, ordinals) {
+                if self.interrupt_relevant(a, atoms, ordinals, o.id) {
                     out.push(WindowOption::TriggerPaid {
                         ability: AbilityRef { obj: o.id, index: i },
                         label: a.label,
@@ -2223,9 +2304,9 @@ impl Vm {
     fn resolve_current_instruction(&mut self) {
         let imm = self.imminents.pop().expect("imminent instruction to resolve");
         self.changes.bump_group();
-        let (controller, source, stamp) = {
+        let (frame_idx, controller, source, stamp) = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
-            (af.controller, af.source, af.source_move_stamp)
+            (self.frames.len() - 1, af.controller, af.source, af.source_move_stamp)
         };
         // CR 9.1.4: if the source changed zones after independence, the
         // ability cannot act on the source.
@@ -2234,10 +2315,10 @@ impl Vm {
             self.st.objects.get(&source.obj).map(|o| o.active_since).is_none()
                 || self.source_moved_since(source.obj, stamp);
         self.apply_imminent(imm, controller, source, source_moved);
-        // Determine whether an ETR unwound our frame; only advance phase if
-        // the frame is still on top.
-        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-            if af.phase == AbilityPhase::Resolve {
+        // Advance THIS frame's phase by index — resolution may have pushed
+        // frames above us (a nested run, 9.2.4d) or unwound us (ETR).
+        if let Some(Frame::Ability(af)) = self.frames.get_mut(frame_idx) {
+            if af.source == source && af.phase == AbilityPhase::Resolve {
                 af.phase = AbilityPhase::Checkpoint;
             }
         }
@@ -2377,6 +2458,7 @@ impl Vm {
                         controller,
                         targets: imm.targets.clone(),
                         run_ordinal: imm.run_ordinal.clone(),
+                        turn_ordinal: imm.turn_ordinal.clone(),
                         seq: imm.seq,
                     };
                     self.apply_imminent(inner_imm, controller, source, source_moved);
@@ -2463,6 +2545,34 @@ impl Vm {
                         false
                     }
                 });
+            }
+            Instruction::DamageUnpreventable { responsible, .. } => {
+                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
+                    if let EffectClass::Damage(kind) = a.class {
+                        self.do_damage(kind, a.value as u32, *responsible);
+                    }
+                }
+            }
+            Instruction::ReplaceImminentDamageKind { to } => {
+                // CR 9.9.10: the replacement applies immediately when the
+                // interrupt resolves; relevance is re-evaluated against the
+                // NEW expected effects afterwards.
+                cite!("rule_replace_imminent_effects");
+                let to = *to;
+                self.modify_parent_imminent(move |atom| {
+                    if matches!(atom.class, EffectClass::Damage(_)) {
+                        atom.class = EffectClass::Damage(to);
+                        true
+                    } else {
+                        false
+                    }
+                });
+            }
+            Instruction::InitiateRun(server) => {
+                cite!("rule_run_timing_structure");
+                self.initiate_run(*server);
+                // The nested run frame is now on top; this ability resumes
+                // after the run completes (9.2.4d LIFO nesting).
             }
             Instruction::PreventTrashOf(protected) => {
                 // Sacrificial-Construct class: remove the object from the
@@ -3045,7 +3155,7 @@ impl Vm {
         cite!("rule_trigger_conditional_ability_interrupt");
         for (id, inst) in &self.instances {
             if inst.window == Some(wid) && inst.controller == side {
-                if self.interrupt_relevant(&inst.def, &atoms, &ordinals) {
+                if self.interrupt_relevant(&inst.def, &atoms, &ordinals, inst.ability.obj) {
                     if inst.mandatory {
                         has_mandatory_relevant = true;
                     }
@@ -3223,6 +3333,9 @@ impl Vm {
 
     /// Draw cards; `mandatory` marks the Corp's required draws (1.7.2c).
     pub fn draw_cards(&mut self, side: Side, n: u32, mandatory: bool) {
+        if self.draw_prohibited(side) {
+            return;
+        }
         for _ in 0..n {
             if self.st.deck[&side].is_empty() {
                 if side == Side::Corp && mandatory {
@@ -3314,6 +3427,36 @@ impl Vm {
         cite!("rule_trashing");
         let was = self.st.objects[&id].zone;
         let owner = self.st.objects[&id].owner;
+        // CR 9.12.5a/b: when the Runner trashes a rezzed card they are
+        // accessing, its persistent abilities begin to persist via a
+        // lingering effect created simultaneously with the trash.
+        if by == Side::Runner
+            && self.st.accessed == Some(id)
+            && self.st.objects[&id].faceup
+        {
+            if let Some((run_id, _, _)) = self.current_run {
+                let defs: Vec<AbilityDef> = self.st.objects[&id]
+                    .printed
+                    .abilities
+                    .iter()
+                    .filter(|a| a.has_flag(AbilityFlag::Persistent))
+                    .cloned()
+                    .collect();
+                for def in defs {
+                    cite!("rule_persistent");
+                    cite!("rule_persistent_continuous");
+                    let lid = self.next_lingering;
+                    self.next_lingering += 1;
+                    self.lingering.push(LingeringEffect {
+                        id: lid,
+                        source: id,
+                        payload: Payload::PersistedAbility { def, run_id },
+                        duration: Duration::PersistUntilAfterRun(run_id),
+                        applied_to: Vec::new(),
+                    });
+                }
+            }
+        }
         self.changes.record(GameChange::CardTrashed { obj: id, by, was_zone: was });
         self.move_card(id, Zone::Discard(owner));
     }

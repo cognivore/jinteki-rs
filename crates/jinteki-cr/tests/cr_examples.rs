@@ -44,6 +44,14 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_paid_ability_refers_to_encountered_ice_1",
     "example_rule_paid_ability_refers_to_approached_ice_1",
     "example_rule_resolve_subroutines_run_ends_1",
+    // Wave 2b: interrupts & replacement effects (§9.9), persistent (9.12.5).
+    "example_rule_expected_effects_1",
+    "example_rule_expected_effects_2",
+    "example_rule_would_relevant_1",
+    "example_rule_trigger_conditional_ability_interrupt_1",
+    "example_rule_modified_values_retain_properties_1",
+    "example_rule_replace_imminent_effects_1",
+    "example_rule_persistent_applicability_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -1533,6 +1541,350 @@ fn example_rule_resolve_subroutines_run_ends_1() {
         .filter(|c| matches!(c, GameChange::SubroutineResolved { .. }))
         .count();
     assert_eq!(subs_resolved, 1, "only the first subroutine resolved");
+}
+
+// ===========================================================================
+// §9.9 — expected effects & replacements (wave 2b)
+// ===========================================================================
+
+/// example_rule_expected_effects_1 (9.9.2): "Gain 2[c] and draw 1 card." —
+/// the expected effects are exactly that, and both occur.
+#[test]
+fn example_rule_expected_effects_1() {
+    let mut vm = Vm::empty(50);
+    tk::install_rig(&mut vm, tk::process_automation_like("ProcAuto-like"));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "process-automation", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    assert_eq!(vm.st.runner.credits, 2);
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 1, "drew 1");
+}
+
+/// example_rule_expected_effects_2 (9.9.2): the same instruction while a
+/// Lockdown-class "cannot draw" static is active — the expected effect is
+/// only the 2 credits; no draw happens.
+#[test]
+fn example_rule_expected_effects_2() {
+    let mut vm = Vm::empty(51);
+    tk::install_rig(&mut vm, tk::process_automation_like("ProcAuto-like"));
+    tk::install_root(&mut vm, tk::lockdown_like("Lockdown-like"), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "process-automation", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    assert_eq!(vm.st.runner.credits, 2, "the credits still happen");
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 0, "9.9.2: the draw was never expected");
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardDrawn { side: Side::Runner, .. })),
+        "no draw occurred"
+    );
+}
+
+/// example_rule_would_relevant_1 (9.9.3d): a Class-Act-class "the first time
+/// each turn you would draw" interrupt is relevant to an instruction
+/// expected to draw cards, even though it does not modify the draw.
+#[test]
+fn example_rule_would_relevant_1() {
+    let mut vm = Vm::empty(52);
+    tk::install_rig(&mut vm, tk::process_automation_like("ProcAuto-like"));
+    tk::install_rig(&mut vm, tk::class_act_like("ClassAct-like"));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let mut fired = false;
+    let mut class_act_offered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner && !fired => {
+                if let Some(opt) = tk::option_labeled(options, "process-automation") {
+                    fired = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner => {
+                if let Some(opt) = tk::option_labeled(options, "class-act") {
+                    class_act_offered = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(
+        class_act_offered,
+        "9.9.3d: the would-draw trigger makes the ability relevant to the imminent draw"
+    );
+    assert_eq!(vm.st.runner.credits, 2 + 1, "its effect resolved too");
+}
+
+/// example_rule_trigger_conditional_ability_interrupt_1 (9.9.4c): once
+/// Sacrificial Construct prevents Harbinger's trash, Harbinger's pending
+/// interrupt is no longer relevant and cannot be triggered.
+#[test]
+fn example_rule_trigger_conditional_ability_interrupt_1() {
+    let mut vm = Vm::empty(53);
+    let harb = tk::install_rig(&mut vm, tk::harbinger_like("Harbinger-like"));
+    tk::install_rig(&mut vm, tk::sac_con_like("SacCon-like", harb));
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Trasher", vec![harb]),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.start_turn(Side::Runner);
+
+    let mut corp_fired = false;
+    let mut harbinger_offered_before = false;
+    let mut used_sac = false;
+    let mut harbinger_offered_after = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !corp_fired => {
+                if let Some(opt) = tk::option_labeled(options, "corp-trash") {
+                    corp_fired = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner => {
+                if !used_sac {
+                    if tk::option_labeled(options, "harbinger").is_some() {
+                        harbinger_offered_before = true;
+                    }
+                    if let Some(opt) = tk::option_labeled(options, "sac-con") {
+                        used_sac = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                if used_sac && tk::option_labeled(options, "harbinger").is_some() {
+                    harbinger_offered_after = true;
+                }
+                let a = tk::default_answer(&spec);
+                vm.answer(a);
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(used_sac);
+    assert!(harbinger_offered_before, "relevant while its trash was expected");
+    assert!(
+        !harbinger_offered_after,
+        "9.9.4c: still pending, but no longer relevant — cannot be triggered"
+    );
+    assert!(vm.st.objects[&harb].zone.is_installed(), "the trash was prevented");
+}
+
+/// example_rule_modified_values_retain_properties_1 (9.9.7e): unpreventable
+/// 2 meat damage increased to 3 by a Cleaners-class static — ALL of it stays
+/// unpreventable.
+#[test]
+fn example_rule_modified_values_retain_properties_1() {
+    let mut vm = Vm::empty(54);
+    tk::install_root(&mut vm, tk::flare_like("Flare-like"), ServerId::Remote(1), true);
+    let cl = vm.new_object(tk::cleaners_static_like("Cleaners-like"), Zone::ScoreArea(Side::Corp));
+    vm.st.score_area.get_mut(&Side::Corp).unwrap().push(cl);
+    tk::install_rig(&mut vm, tk::biometric_like("Biometric-like", DamageKind::Meat));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let mut fired = false;
+    let mut biometric_offered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        if let DecisionSpec::InterruptWindow { options, .. } = &spec {
+            if tk::option_labeled(options, "biometric").is_some() {
+                biometric_offered = true;
+            }
+        }
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !fired => {
+                if let Some(opt) = tk::option_labeled(options, "flare") {
+                    fired = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(fired);
+    assert!(
+        !biometric_offered,
+        "9.9.7e: the increased damage keeps the cannot-be-prevented property"
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "all 3 points landed (2 + 1)");
+}
+
+/// example_rule_replace_imminent_effects_1 (9.9.10): a Tori-class interrupt
+/// replaces the imminent net damage with core damage; the replacement
+/// applies immediately, and later relevance follows the NEW expected
+/// effects (the net-damage preventer can no longer be used).
+#[test]
+fn example_rule_replace_imminent_effects_1() {
+    let mut vm = Vm::empty(55);
+    tk::install_root(&mut vm, tk::net_damage_button("Zapper", 1), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::tori_replace_like("Tori-like"), ServerId::Remote(2), true);
+    vm.st.corp.credits = 2;
+    tk::install_rig(&mut vm, tk::biometric_like("Biometric-like", DamageKind::Net));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut corp_fired = false;
+    let mut used_tori = false;
+    let mut net_preventer_offered_after = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !corp_fired => {
+                if let Some(opt) = tk::option_labeled(options, "do net damage") {
+                    corp_fired = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::InterruptWindow { options, .. } => {
+                if s == Side::Corp && !used_tori {
+                    if let Some(opt) = tk::option_labeled(options, "tori-replace") {
+                        used_tori = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                if used_tori
+                    && s == Side::Runner
+                    && tk::option_labeled(options, "biometric").is_some()
+                {
+                    net_preventer_offered_after = true;
+                }
+                let a = tk::default_answer(&spec);
+                vm.answer(a);
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(used_tori);
+    assert!(
+        !net_preventer_offered_after,
+        "9.9.10: relevance follows the replaced (core) expected effects"
+    );
+    assert_eq!(vm.st.runner.core_damage, 1, "the damage resolved as core");
+    assert_eq!(vm.max_hand_size(Side::Runner), 4);
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 4);
+}
+
+// ===========================================================================
+// 9.12.5 — persistent (wave 2b)
+// ===========================================================================
+
+/// example_rule_persistent_applicability_1 (9.12.5d): AMAZE trashed during a
+/// run persists; when the run ends its instance pends; a Doppelgänger-class
+/// second run during that window CANNOT create new instances — the Runner
+/// ends at exactly 2 tags.
+#[test]
+fn example_rule_persistent_applicability_1() {
+    let mut vm = Vm::empty(56);
+    let amaze = tk::install_root(
+        &mut vm,
+        tk::amaze_persistent_like("AMAZE-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_rig(&mut vm, tk::doppel_like("Doppel-like", ServerId::Remote(1)));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+        server: ServerId::Remote(1),
+    }));
+
+    let mut trashed_amaze = false;
+    let mut ran_again = false;
+    for _ in 0..500 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::MidAccessWindow { options } if !trashed_amaze => {
+                if let Some(opt) = options
+                    .iter()
+                    .find(|o| matches!(o, WindowOption::BasicTrash { card, .. } if *card == amaze))
+                    .cloned()
+                {
+                    trashed_amaze = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner && !ran_again => {
+                if let Some(opt) = tk::option_labeled(options, "doppel") {
+                    ran_again = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::OptionalEffect { .. } => {
+                vm.answer(DecisionAnswer::ResolveOptional(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(trashed_amaze, "the persist began with the trash-during-access");
+    assert!(ran_again, "a second run happened during the reaction window");
+    assert_eq!(
+        vm.st.runner.tags, 2,
+        "9.12.5d: only the first run's instance resolved; the second run created none"
+    );
+    let amaze_resolutions = vm
+        .resolution_log
+        .iter()
+        .filter(|l| l.starts_with("AMAZE-like"))
+        .count();
+    assert_eq!(amaze_resolutions, 1);
+    let runs_ended = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::RunEnded { .. }))
+        .count();
+    assert_eq!(runs_ended, 2, "two runs actually ended");
 }
 
 // ===========================================================================
