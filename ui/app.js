@@ -182,6 +182,7 @@ function render() {
   renderRunControls();
   renderLog();
   renderPhasePill();
+  renderFocus();
   renderGameOver();
 }
 
@@ -262,19 +263,80 @@ function renderServers() {
       content.forEach((c) => col.appendChild(cardEl(c, { side: "corp" })));
     }
 
+    // Compact ice: MTGA aura-stack style slivers, innermost at top.
+    // "protected by ? ? Ice Wall ?" — unrezzed reads as ?, tap a sliver to
+    // inspect it (rezzed shows the real card; unrezzed zooms a facedown).
     const stack = document.createElement("div");
     stack.className = "ice-stack";
     const ices = srv.ices || [];
-    // outermost ice rendered closest to the runner (bottom of the stack).
     ices.forEach((c, i) => {
       const isCurrent = runServer === key && runPos != null && i === runPos - 1 &&
         S.run && (S.run.phase === "encounter-ice" || S.run.phase === "approach-ice");
-      stack.appendChild(cardEl(c, { side: "corp", ice: true, current: isCurrent }));
+      const sliver = document.createElement("div");
+      const rezzed = !!c.rezzed && c.title;
+      sliver.className = "ice-sliver" + (rezzed ? " rezzed" : "") + (isCurrent ? " current" : "");
+      const subsN = (c.subroutines || []).length;
+      sliver.innerHTML = `<span class="iname">${rezzed ? c.title : "?"}</span>` +
+        (rezzed ? `<span class="imeta">${c.strength ?? ""}${subsN ? " · " + "↳".repeat(subsN) : ""}</span>` : "");
+      let t = null, fired = false;
+      sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; zoomCard(c); }, 380); });
+      sliver.addEventListener("pointerup", () => { clearTimeout(t); if (!fired) zoomCard(c); });
+      sliver.addEventListener("pointerleave", () => clearTimeout(t));
+      stack.appendChild(sliver);
     });
+    if (ices.length) {
+      const n = document.createElement("div");
+      n.className = "sname";
+      n.textContent = "⛨ " + ices.length;
+      col.appendChild(n);
+    }
     col.appendChild(stack);
     wrap.appendChild(col);
   });
   wrap.scrollLeft = scroll;
+}
+
+/* Focused decision panel: when a run reaches ice, show exactly what the
+   decision is about — the current ice, its strength and subroutines — with
+   a peek toggle back to the global board (user-directed UX). */
+let focusPeek = false;
+function renderFocus() {
+  let panel = document.getElementById("focus-panel");
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "focus-panel";
+    panel.className = "focus-panel";
+    document.getElementById("screen-game").appendChild(panel);
+  }
+  const run = S.run;
+  const phase = run && String(run.phase || "").replace(":", "");
+  const wantFocus = run && (phase === "encounter-ice" || phase === "approach-ice");
+  if (!wantFocus || focusPeek) {
+    panel.style.display = "none";
+    return;
+  }
+  const key = String(run.server[0]).replace(":", "");
+  const srv = ((S.corp || {}).servers || {})[key] || {};
+  const ice = (srv.ices || [])[run.position - 1];
+  if (!ice) { panel.style.display = "none"; return; }
+  panel.style.display = "flex";
+  const rezzed = !!ice.rezzed && ice.title;
+  const subs = (ice.subroutines || [])
+    .map((s) => `<div class="fsub ${s.broken ? "fbroken" : ""}">↳ ${sym(s.label)}</div>`)
+    .join("");
+  panel.innerHTML = `
+    <div class="fhead">${phase === "encounter-ice" ? "ENCOUNTER" : "APPROACHING"}</div>
+    <div class="fcard">
+      <b>${rezzed ? ice.title : "Unrezzed ice"}</b>
+      ${rezzed && ice.strength != null ? `<span class="fstr">STR ${ice.strength}</span>` : ""}
+    </div>
+    ${rezzed ? subs : `<div class="fsub">The Corp may rez it as you approach.</div>`}
+    <button class="chip" id="focus-peek">Peek board</button>`;
+  document.getElementById("focus-peek").onclick = () => {
+    focusPeek = true;
+    renderFocus();
+    setTimeout(() => { focusPeek = false; renderFocus(); }, 2600);
+  };
 }
 
 function renderRig() {
@@ -338,8 +400,8 @@ function cardEl(c, opts) {
     if (eligible) el.classList.add("selectable");
   } else if (acts.length) {
     el.classList.add("legal");
-  } else if (mode === "bridge" && !facedown) {
-    el.classList.add(opts.hand ? "legal" : "");
+  } else if (mode === "bridge" && !facedown && opts.hand) {
+    el.classList.add("legal");
   }
 
   // tap + long-press

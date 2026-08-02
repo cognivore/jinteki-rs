@@ -223,7 +223,13 @@ async fn session(
                             sente_send!(encode_event("lobby/list", None, None));
                         }
                         "lobby/list" => ui_send!(json!({"type":"lobbies","list": data})),
-                        "lobby/state" => ui_send!(json!({"type":"lobby","lobby": data})),
+                        "lobby/state" => {
+                            // The creator learns its gameid from the lobby broadcast.
+                            if let Some(gid) = data.get("gameid").and_then(|g| g.as_str()) {
+                                gameid = Some(gid.to_string());
+                            }
+                            ui_send!(json!({"type":"lobby","lobby": data}));
+                        }
                         "lobby/notification" => {}
                         "lobby/toast" => ui_send!(json!({"type":"toast","toast": data})),
                         "game/start" | "game/resync" => {

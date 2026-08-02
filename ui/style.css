@@ -216,6 +216,28 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .gameover-overlay h1 { margin: 0; font-size: 40px; }
 .gameover-overlay .why { color: var(--dim); }
 
+/* compact ice slivers (MTGA aura-stack style) */
+.ice-sliver { width: 82px; min-height: 16px; border-radius: 4px; background: var(--bg2);
+  border: 1px solid var(--line); font-size: 9.5px; padding: 1px 5px; display: flex;
+  justify-content: space-between; align-items: center; color: var(--dim); cursor: pointer; }
+.ice-sliver .iname { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ice-sliver.rezzed { color: var(--text); border-color: #2c4a77; }
+.ice-sliver.current { border-color: var(--danger); color: var(--text);
+  box-shadow: 0 0 10px rgba(255,92,92,.6); animation: runpulse 1.2s infinite; }
+.ice-sliver .imeta { font-size: 8.5px; color: var(--gold); flex-shrink: 0; margin-left: 4px; }
+
+/* focused decision panel */
+.focus-panel { position: fixed; left: 12px; bottom: calc(150px + env(safe-area-inset-bottom, 0));
+  z-index: 65; background: rgba(16,22,38,.97); border: 1px solid var(--danger);
+  border-radius: 14px; padding: 12px; width: 230px; display: flex; flex-direction: column;
+  gap: 6px; animation: pop .2s; }
+.focus-panel .fhead { font-size: 11px; letter-spacing: 2px; color: var(--danger); font-weight: 800; }
+.focus-panel .fcard { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; }
+.focus-panel .fstr { color: var(--gold); font-weight: 800; font-size: 13px; }
+.focus-panel .fsub { font-size: 13px; color: var(--text); }
+.focus-panel .fbroken { text-decoration: line-through; opacity: .45; }
+.focus-panel .chip { margin-top: 4px; align-self: flex-start; padding: 6px 12px; min-height: 32px; font-size: 12px; }
+
 /* portrait nudge */
 @media (orientation: portrait) {
   .hand .card { width: 60px; height: 84px; margin: 0 -18px; }
