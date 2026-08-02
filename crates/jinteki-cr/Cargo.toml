@@ -1,0 +1,12 @@
+[package]
+name = "jinteki-cr"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Comprehensive-Rules virtual machine: the CR v26.03 implemented as a sans-IO coroutine kernel (SYS-F-9/F-10/F-11)"
+
+[dependencies]
+rand = "0.9"
+rand_chacha = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
