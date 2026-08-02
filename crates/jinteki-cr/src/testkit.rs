@@ -1005,6 +1005,26 @@ pub fn brainstorm_like(name: &'static str) -> PrintedCard {
     c
 }
 
+/// Inject a breach-replacement lingering effect (Security Testing / Account
+/// Siphon / Showing Off class), turn-bound.
+pub fn inject_breach_replacement(
+    vm: &mut Vm,
+    source: ObjectId,
+    transform: crate::lingering::ReplacementTransform,
+) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::ReplacementEffect {
+            applies_to: crate::effects::EffectClass::Breach,
+            replace_with: transform,
+        },
+        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
+        applied_to: Vec::new(),
+    });
+}
+
 /// Grant an external subroutine to a piece of ice ahead of time (Marker
 /// class): creates the lingering effect directly.
 pub fn grant_external_sub(

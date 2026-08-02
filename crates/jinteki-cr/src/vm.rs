@@ -157,6 +157,8 @@ pub enum DecisionCtx {
     /// 8.5.13d/1.16.4c: pay or decline the additional rez cost during an
     /// "install and rez" effect.
     RezAdditionalCost,
+    /// 9.9.11: choose the order in which replacement effects apply.
+    ReplacementOrder,
 }
 
 /// CR 8.5.16: one installation in progress. Installing is a procedure, not
@@ -630,12 +632,17 @@ impl Vm {
                     StepOp::Instr(k) | StepOp::InstrThenGoto(k, _) => {
                         let instr = self.step_instruction(k);
                         let atoms = self.expected_atoms(&instr, self.st.turn_side, &[], None);
-                        self.push_imminent(instr, self.st.turn_side, Vec::new(), atoms);
+                        let asked =
+                            self.push_imminent(instr, self.st.turn_side, Vec::new(), atoms);
+                        self.set_structure_phase(StepPhase::Exec);
+                        if asked {
+                            // 9.9.11 order Decision pending; the answer path
+                            // reopens the interrupt window before Exec runs.
+                            return;
+                        }
                         if self.open_interrupt_window_if_relevant() {
-                            self.set_structure_phase(StepPhase::Exec);
                             return; // window frame now on top
                         }
-                        self.set_structure_phase(StepPhase::Exec);
                     }
                     _ => {
                         // Window steps / branch steps: no imminence of their
@@ -1026,7 +1033,10 @@ impl Vm {
             }
             StepKind::BreachAttackedServer => {
                 let server = self.run_ctx().unwrap().server;
-                self.push_breach(server);
+                // A replaced breach (Security-Testing class, 9.9.11a) has
+                // its atom removed — the breach never happens.
+                self.resolve_atoms_then(imm, |vm, _| vm.push_breach(server));
+                return; // imm consumed by resolve_atoms_then
             }
             StepKind::CloseRunPriorityWindows => {
                 // 6.8.2: windows from before "end the run" were closed when
@@ -1822,6 +1832,11 @@ impl Vm {
             Instruction::ReplaceImminentDamageKind { .. } | Instruction::InitiateRun(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
+            Instruction::BreachServer(_) => {
+                // 6.9.5b as an expected effect: the Security-Testing class
+                // replaces it (9.9.11a).
+                vec![EffectAtom::new(EffectClass::Breach, 1, controller)]
+            }
             Instruction::TraceInitiate { base } => {
                 // 9.9.6d: the base trace strength is a modifiable value (it
                 // need not be positive).
@@ -1885,43 +1900,18 @@ impl Vm {
     }
 
     /// Push an imminence record; bump ordinal-would counters (9.9.5a) and
-    /// apply pre-existing replacement effects (9.9.9b).
+    /// apply pre-existing replacement effects (9.9.9b). Returns `true` if a
+    /// 9.9.11 order Decision was asked — the caller must suspend; the answer
+    /// path finishes replacement application and reopens the flow.
+    #[must_use]
     fn push_imminent(
         &mut self,
         instr: Instruction,
         controller: Side,
         targets: Vec<ObjectId>,
-        mut atoms: Vec<EffectAtom>,
-    ) {
-        // CR 9.9.9b: active replacement effects apply as the window opens,
-        // before pending interrupts are determined.
-        cite!("rule_replacement_effects_apply_as_interrupt_window_opens");
+        atoms: Vec<EffectAtom>,
+    ) -> bool {
         let seq = self.changes.next_group + 1_000_000; // distinct key-space
-        let mut applied: Vec<u64> = Vec::new();
-        for l in &mut self.lingering {
-            if let Payload::ReplacementEffect { applies_to, replace_with } = &l.payload {
-                // 9.9.9c: at most once per effect; 9.9.11a: must have
-                // something to replace.
-                cite!("rule_replacement_effect_only_applies_once_per_effect");
-                cite!("rule_replacement_effect_must_have_something_to_replace");
-                if l.applied_to.contains(&seq) {
-                    continue;
-                }
-                let target = atoms.iter_mut().find(|a| a.expected() && a.class == *applies_to);
-                if let Some(atom) = target {
-                    match replace_with {
-                        crate::lingering::ReplacementTransform::Suppress => atom.removed = true,
-                        crate::lingering::ReplacementTransform::ChangeDamageKind(k) => {
-                            if let EffectClass::Damage(_) = atom.class {
-                                atom.class = EffectClass::Damage(*k);
-                            }
-                        }
-                    }
-                    l.applied_to.push(seq);
-                    applied.push(l.id);
-                }
-            }
-        }
         // CR 9.9.5a: ordinal trackers count imminences.
         let mut run_ordinal = BTreeMap::new();
         let mut turn_ordinal = BTreeMap::new();
@@ -1947,6 +1937,107 @@ impl Vm {
             turn_ordinal,
             seq,
         });
+        // CR 9.9.9b: active replacement effects apply as the window opens,
+        // before pending interrupts are determined.
+        cite!("rule_replacement_effects_apply_as_interrupt_window_opens");
+        self.resolve_replacements_or_ask()
+    }
+
+    /// Replacement effects applicable to the top imminence RIGHT NOW:
+    /// unapplied for this effect (9.9.9c) and with their target effect still
+    /// expected (9.9.11a — a replacement cannot apply without something to
+    /// replace).
+    fn applicable_replacements(&self) -> Vec<u64> {
+        cite!("rule_replacement_effect_only_applies_once_per_effect");
+        cite!("rule_replacement_effect_must_have_something_to_replace");
+        let Some(imm) = self.imminents.last() else { return Vec::new() };
+        self.lingering
+            .iter()
+            .filter(|l| match &l.payload {
+                Payload::ReplacementEffect { applies_to, .. } => {
+                    !l.applied_to.contains(&imm.seq)
+                        && imm.atoms.iter().any(|a| a.expected() && a.class == *applies_to)
+                }
+                _ => false,
+            })
+            .map(|l| l.id)
+            .collect()
+    }
+
+    /// Apply one replacement effect to the top imminence (marks it applied
+    /// for this effect — 9.9.9c).
+    fn apply_replacement(&mut self, lid: u64) {
+        let Some(imm_seq) = self.imminents.last().map(|i| i.seq) else { return };
+        let Some(l) = self.lingering.iter_mut().find(|l| l.id == lid) else { return };
+        let Payload::ReplacementEffect { applies_to, replace_with } = &l.payload else { return };
+        let applies_to = *applies_to;
+        let replace_with = replace_with.clone();
+        l.applied_to.push(imm_seq);
+        let controller = self.imminents.last().map(|i| i.controller).unwrap_or(Side::Runner);
+        let Some(imm) = self.imminents.last_mut() else { return };
+        let Some(atom) = imm.atoms.iter_mut().find(|a| a.expected() && a.class == applies_to)
+        else {
+            return;
+        };
+        match replace_with {
+            crate::lingering::ReplacementTransform::Suppress => atom.removed = true,
+            crate::lingering::ReplacementTransform::ChangeDamageKind(k) => {
+                if let EffectClass::Damage(_) = atom.class {
+                    atom.class = EffectClass::Damage(k);
+                }
+            }
+            crate::lingering::ReplacementTransform::SuppressAndGainCredits(n) => {
+                atom.removed = true;
+                self.st.player_mut(controller).credits += n;
+                self.changes
+                    .record(GameChange::CreditsGained { side: controller, amount: n });
+            }
+            crate::lingering::ReplacementTransform::BreachFromBottom => {
+                // The breach is replaced but STILL EXPECTED — a later
+                // replacement can act on it (9.9.11a example 2). The atom
+                // stays in place.
+            }
+        }
+    }
+
+    /// Apply replacements one at a time; when several could apply, the order
+    /// is a Decision (9.9.11: the base effect's controller chooses).
+    /// Returns `true` if a Decision was asked.
+    fn resolve_replacements_or_ask(&mut self) -> bool {
+        loop {
+            let appl = self.applicable_replacements();
+            match appl.len() {
+                0 => return false,
+                1 => self.apply_replacement(appl[0]),
+                _ => {
+                    cite!("rule_order_of_replacement_effects");
+                    let labels: Vec<&'static str> = appl
+                        .iter()
+                        .map(|lid| {
+                            let src = self
+                                .lingering
+                                .iter()
+                                .find(|l| l.id == *lid)
+                                .map(|l| l.source)
+                                .unwrap_or(ObjectId(0));
+                            self.st
+                                .objects
+                                .get(&src)
+                                .map(|o| o.printed.name)
+                                .unwrap_or("replacement")
+                        })
+                        .collect();
+                    let chooser =
+                        self.imminents.last().map(|i| i.controller).unwrap_or(Side::Runner);
+                    self.ask(
+                        chooser,
+                        DecisionSpec::ChooseOption { options: labels },
+                        DecisionCtx::ReplacementOrder,
+                    );
+                    return true;
+                }
+            }
+        }
     }
 
     /// CR 9.9.4: as an interrupt window opens — expected effects were
@@ -2754,9 +2845,14 @@ impl Vm {
         // CR 9.6.12/9.8.8: independence at first-instruction imminence.
         cite!("rule_conditional_ability_independent");
         cite!("rule_subroutine_independent");
-        self.push_imminent(instr, controller, targets, atoms);
+        let asked = self.push_imminent(instr, controller, targets, atoms);
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.imminent_index = Some(0);
+        }
+        if asked {
+            // 9.9.11 order Decision pending; the answer path reopens the
+            // interrupt window (phase stays Imminent).
+            return;
         }
         if !self.open_interrupt_window_if_relevant() {
             self.set_ability_phase(AbilityPhase::Resolve);
@@ -5114,6 +5210,30 @@ impl Vm {
                 }
                 self.last_minimal_sets = None;
             }
+            (DecisionCtx::ReplacementOrder, DecisionAnswer::Option(i)) => {
+                // 9.9.11: apply the chosen replacement, then re-evaluate —
+                // later replacements only apply if their target effect is
+                // still expected (9.9.11a).
+                cite!("rule_order_of_replacement_effects");
+                let appl = self.applicable_replacements();
+                if let Some(&lid) = appl.get(i) {
+                    self.apply_replacement(lid);
+                }
+                if self.resolve_replacements_or_ask() {
+                    return; // another order Decision pending
+                }
+                // Replacement application complete: open the interrupt
+                // window (or continue).
+                if !self.open_interrupt_window_if_relevant() {
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        if af.phase == AbilityPhase::Imminent {
+                            af.phase = AbilityPhase::Resolve;
+                        }
+                    }
+                    // Structure steps already advanced to Exec; they
+                    // continue naturally.
+                }
+            }
             (DecisionCtx::RezAdditionalCost, DecisionAnswer::PayNestedCost(pay)) => {
                 // 8.5.13d / 1.16.4c: pay the rez cost plus additional costs,
                 // or decline — declining reveals the card and skips the rez.
@@ -5417,5 +5537,6 @@ fn class_key(c: EffectClass) -> u64 {
         EffectClass::Bypass => 12,
         EffectClass::StealAgenda => 13,
         EffectClass::Structural => 14,
+        EffectClass::Breach => 15,
     }
 }

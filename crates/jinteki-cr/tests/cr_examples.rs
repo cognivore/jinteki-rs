@@ -94,6 +94,9 @@ const IMPLEMENTED: &[&str] = &[
     "example_step_checkpoint_duration_abilities_2",
     "example_rule_condition_requirements_part_of_condition_1",
     "example_rule_condition_requirements_part_of_effect_1",
+    // Wave 3c: replacement-effect ordering (9.9.11a).
+    "example_rule_replacement_effect_must_have_something_to_replace_1",
+    "example_rule_replacement_effect_must_have_something_to_replace_2",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -3614,6 +3617,121 @@ fn example_rule_condition_requirements_part_of_effect_1() {
         5 + 1,
         "9.6.5d: UC's link requirement is checked at resolution, not at pend time"
     );
+}
+
+// ===========================================================================
+// §9.9.11 — replacement-effect ordering (W3c)
+// ===========================================================================
+
+/// example_rule_replacement_effect_must_have_something_to_replace_1
+/// (9.9.11a): Security-Testing and Account-Siphon class replacements both
+/// target the imminent breach. The Runner chooses which applies first; since
+/// neither creates a new breach, the one not chosen has nothing to replace
+/// and does not apply.
+#[test]
+fn example_rule_replacement_effect_must_have_something_to_replace_1() {
+    let mut vm = Vm::empty(341);
+    let sectest = tk::install_rig(&mut vm, tk::vanilla_runner_card("SecurityTesting-like", jinteki_cr::object::CardType::Resource));
+    let siphon = tk::install_rig(&mut vm, tk::vanilla_runner_card("AccountSiphon-like", jinteki_cr::object::CardType::Event));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.start_turn(Side::Runner);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    tk::inject_breach_replacement(
+        &mut vm,
+        sectest,
+        jinteki_cr::lingering::ReplacementTransform::SuppressAndGainCredits(2),
+    );
+    tk::inject_breach_replacement(
+        &mut vm,
+        siphon,
+        jinteki_cr::lingering::ReplacementTransform::SuppressAndGainCredits(3),
+    );
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut ordered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::ChooseOption { options } if s == Side::Runner && !ordered => {
+                assert_eq!(options.len(), 2, "9.9.11: both replacements offered for ordering");
+                ordered = true;
+                let i = options.iter().position(|l| l.contains("SecurityTesting")).unwrap();
+                vm.answer(DecisionAnswer::Option(i));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(ordered, "the order Decision was presented at imminence-open");
+    assert_eq!(
+        vm.st.runner.credits,
+        2,
+        "only the chosen replacement applied; the other had nothing to replace"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+        "the breach itself was replaced"
+    );
+}
+
+/// example_rule_replacement_effect_must_have_something_to_replace_2
+/// (9.9.11a): with Security-Testing and Showing-Off class replacements, the
+/// order matters mechanically but not in outcome: Showing Off REPLACES the
+/// breach with a bottom-up breach that is still expected, so Security
+/// Testing can still replace that; chosen the other way, Showing Off has
+/// nothing left to replace. Either way: gain 2, no breach.
+#[test]
+fn example_rule_replacement_effect_must_have_something_to_replace_2() {
+    for pick_showing_off_first in [true, false] {
+        let mut vm = Vm::empty(342);
+        let sectest = tk::install_rig(&mut vm, tk::vanilla_runner_card("SecurityTesting-like", jinteki_cr::object::CardType::Resource));
+        let showoff = tk::install_rig(&mut vm, tk::vanilla_runner_card("ShowingOff-like", jinteki_cr::object::CardType::Event));
+        tk::fill_deck(&mut vm, Side::Corp, 3);
+        vm.start_turn(Side::Runner);
+        let _ = drive_to_action_window(&mut vm, Side::Runner);
+        tk::inject_breach_replacement(
+            &mut vm,
+            sectest,
+            jinteki_cr::lingering::ReplacementTransform::SuppressAndGainCredits(2),
+        );
+        tk::inject_breach_replacement(
+            &mut vm,
+            showoff,
+            jinteki_cr::lingering::ReplacementTransform::BreachFromBottom,
+        );
+        vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Rnd }));
+
+        let mut ordered = false;
+        for _ in 0..300 {
+            let (s, spec) = decision(&mut vm);
+            match &spec {
+                DecisionSpec::ChooseOption { options } if s == Side::Runner && !ordered => {
+                    ordered = true;
+                    let needle =
+                        if pick_showing_off_first { "ShowingOff" } else { "SecurityTesting" };
+                    let i = options.iter().position(|l| l.contains(needle)).unwrap();
+                    vm.answer(DecisionAnswer::Option(i));
+                }
+                DecisionSpec::TakeAction { .. } => break,
+                other => {
+                    let a = tk::default_answer(other);
+                    vm.answer(a);
+                }
+            }
+        }
+        assert!(ordered);
+        assert_eq!(
+            vm.st.runner.credits, 2,
+            "either order: the Runner gains 2 and does not breach (pick_showing_off_first={pick_showing_off_first})"
+        );
+        assert!(
+            !vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+            "no breach either way"
+        );
+    }
 }
 
 // ===========================================================================

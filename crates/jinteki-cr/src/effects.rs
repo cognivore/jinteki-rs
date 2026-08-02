@@ -29,6 +29,9 @@ pub enum EffectClass {
     EndTheRun,
     Bypass,
     StealAgenda,
+    /// Breaching a server (6.9.5b / 7.5) — the replacement-effect target of
+    /// the Security Testing / Account Siphon class (9.9.11a).
+    Breach,
     /// Structure-internal effects with no modifiable value.
     Structural,
 }

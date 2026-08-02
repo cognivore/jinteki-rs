@@ -78,6 +78,15 @@ pub enum ReplacementTransform {
     Suppress,
     /// Replace damage kind (Tori Hanzō class).
     ChangeDamageKind(crate::effects::DamageKind),
+    /// "Instead of breaching, gain N[c]" (Security Testing / Account Siphon
+    /// class): removes the atom and pays out to the effect's controller.
+    SuppressAndGainCredits(u32),
+    /// "Breach, but access from the bottom of R&D" (Showing Off class,
+    /// 7.4.7b): the breach is REPLACED but still expected — a subsequent
+    /// replacement can still act on it (the 9.9.11a example 2). The kernel
+    /// keeps the atom in place; bottom-up candidate order arrives with the
+    /// card layer.
+    BreachFromBottom,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
