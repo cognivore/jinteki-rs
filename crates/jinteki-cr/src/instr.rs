@@ -29,10 +29,29 @@ pub enum Instruction {
     EndTheRun,
     /// An optional part its controller may decline (9.6.9c): "you may …".
     DeclineableChoice(Box<Instruction>),
-    /// CR 9.11.4f / 1.16.11: "you may pay [cost] to [effect]" — the pay/
+    /// CR 9.11.4f / 1.16.11a: "you may pay [cost] to [effect]" — the pay/
     /// decline choice ends an instruction; the paid-for branch becomes the
     /// next instruction.
-    NestedCostThen { credits: u32, effect: Box<Instruction> },
+    NestedCostThen {
+        cost: crate::ability::Cost,
+        effect: Box<Instruction>,
+        /// Who pays (None = the ability's controller). "…unless the Runner
+        /// pays" names the payer explicitly.
+        payer: Option<crate::object::Side>,
+    },
+    /// CR 1.16.11b: "[effect] unless [cost]" — paying suppresses the effect;
+    /// declining (or being unable to pay) makes it the next instruction.
+    NestedCostUnless {
+        cost: crate::ability::Cost,
+        effect: Box<Instruction>,
+        payer: Option<crate::object::Side>,
+    },
+    /// "Gain N[c] for each <counter> hosted on this card" — counts hosted
+    /// counters INCLUDING those set aside by a [trash] trigger cost (9.5.5).
+    GainCreditsPerCounter { kind: crate::object::CounterKind, per: u32 },
+    /// "Move the (set-aside) hosted counters to <target>" (Reconstruction
+    /// Contract class, 9.5.5).
+    MoveSetAsideCounters { kind: crate::object::CounterKind, target: TargetSpec },
     /// Combined-sentence instruction: several effects in ONE instruction
     /// (e.g. Snare!'s "Do 3 net damage and give the Runner 1 tag.").
     Combined(Vec<Instruction>),

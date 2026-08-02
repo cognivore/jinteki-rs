@@ -59,6 +59,12 @@ pub enum TriggerCond {
     EncounterBegins,
     /// "Whenever the Runner takes a tag." (Mr. Stone class)
     RunnerTakesTag,
+    /// "Whenever the Runner suffers damage." (per damage occurrence)
+    RunnerSuffersDamage,
+    /// Interrupt trigger: "…would draw any number of cards" (Class Act).
+    WouldDraw { first_each_turn: bool },
+    /// Interrupt trigger: "…this card would be trashed" (Harbinger class).
+    SelfWouldBeTrashed,
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
@@ -86,13 +92,18 @@ pub enum Condition {
     Static(StaticCond),
 }
 
-/// Trigger cost of a paid ability (1.16.8: trigger costs; paid all at once).
+/// A cost (1.16.1: anything spent, resolved, or met to use an ability or
+/// apply an effect; must be payable all at once).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Cost {
     pub credits: u32,
     pub clicks: u32,
     /// [trash]: trash this card as part of the cost.
     pub trash_self: bool,
+    /// "take N tags" as a cost (Funhouse class).
+    pub tags: u32,
+    /// "suffer N net damage" as a cost (Obokata class).
+    pub net_damage: u32,
 }
 
 impl Cost {
@@ -102,9 +113,39 @@ impl Cost {
     pub fn trash_self() -> Self {
         Cost { trash_self: true, ..Default::default() }
     }
+    pub fn tags(n: u32) -> Self {
+        Cost { tags: n, ..Default::default() }
+    }
+    pub fn net_damage(n: u32) -> Self {
+        Cost { net_damage: n, ..Default::default() }
+    }
     pub fn free() -> Self {
         Cost::default()
     }
+    pub fn is_free(&self) -> bool {
+        *self == Cost::default()
+    }
+    /// 1.16.10b: additional costs combine into one all-at-once payment.
+    pub fn plus(&self, other: &Cost) -> Cost {
+        Cost {
+            credits: self.credits + other.credits,
+            clicks: self.clicks + other.clicks,
+            trash_self: self.trash_self || other.trash_self,
+            tags: self.tags + other.tags,
+            net_damage: self.net_damage + other.net_damage,
+        }
+    }
+}
+
+/// CR 9.5.6: effect-based timing restrictions on paid abilities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimingRestriction {
+    /// 9.5.6a/c: usable only during an encounter (break abilities and
+    /// encountered-ice references).
+    EncounterOnly,
+    /// 9.5.6b: usable only during the Approach Ice Phase, with the
+    /// approached ice matching all stipulations used in referring to it.
+    ApproachOnly { required_subtype: Option<&'static str>, rezzed: bool },
 }
 
 /// Declarations of a static ability (kernel-wave subset). Statics never
@@ -125,6 +166,12 @@ pub enum StaticDecl {
     /// "+N to the amount of <kind> damage done by <responsible>."
     /// (The Cleaners class — modifies imminent damage values via statics.)
     DamageBonus { kind: DamageKind, responsible: Side, amount: i64 },
+    /// Additional cost to steal agendas (Ben Musashi / Predictive Algorithm
+    /// class; 1.16.10).
+    AdditionalStealCost(Cost),
+    /// "<side> cannot draw cards." (Lockdown class; 9.9.2 statics remove
+    /// parts of expected effects.)
+    CannotDraw(Side),
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -143,6 +190,8 @@ pub struct AbilityDef {
     /// CR 9.6.9: optional iff the ability could have no effects at all
     /// ("may"/"allows"/once-per-turn). Mandatory otherwise.
     pub optional: bool,
+    /// CR 9.5.6: effect-based timing restriction, if any.
+    pub timing: Option<TimingRestriction>,
     /// Human-readable tag for tests/logs.
     pub label: &'static str,
 }
@@ -157,6 +206,7 @@ impl AbilityDef {
             instructions: instrs,
             statics: Vec::new(),
             optional,
+            timing: None,
             label: "",
         }
     }
@@ -171,6 +221,7 @@ impl AbilityDef {
             instructions: instrs,
             statics: Vec::new(),
             optional: true,
+            timing: None,
             label: "",
         }
     }
@@ -184,6 +235,7 @@ impl AbilityDef {
             instructions: instrs,
             statics: Vec::new(),
             optional: false,
+            timing: None,
             label: "",
         }
     }
@@ -197,8 +249,14 @@ impl AbilityDef {
             instructions: Vec::new(),
             statics,
             optional: false,
+            timing: None,
             label: "",
         }
+    }
+
+    pub fn with_timing(mut self, t: TimingRestriction) -> Self {
+        self.timing = Some(t);
+        self
     }
 
     pub fn with_flag(mut self, f: AbilityFlag) -> Self {
@@ -224,7 +282,10 @@ impl AbilityDef {
             return true;
         }
         if let Some(Condition::Trigger(
-            TriggerCond::WouldDamage { .. } | TriggerCond::WouldTakeTags { .. },
+            TriggerCond::WouldDamage { .. }
+            | TriggerCond::WouldTakeTags { .. }
+            | TriggerCond::WouldDraw { .. }
+            | TriggerCond::SelfWouldBeTrashed,
         )) = self.condition
         {
             return true;
@@ -361,6 +422,7 @@ pub fn trigger_matches(
         }
         (TriggerCond::EncounterBegins, GameChange::EncounterBegan { .. }) => true,
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
+        (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
         (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {
             side == s
         }

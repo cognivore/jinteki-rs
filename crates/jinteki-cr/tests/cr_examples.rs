@@ -31,6 +31,19 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_not_unsuccessful_when_reached_success_phase_1",
     "example_step_checkpoint_duration_abilities_1",
     "example_rule_checkpoint_after_timing_structure_1",
+    // Wave 2a: the cost system (§1.16, §9.5) + 9.8.7c.
+    "example_rule_cost_zero_1",
+    "example_rule_cost_no_interrupt_1",
+    "example_rule_cost_interrupt_static_mandatory_2",
+    "example_rule_cost_restrictions_1",
+    "example_rule_decline_additional_cost_1",
+    "example_rule_additonal_cost_simultaenous_1",
+    "example_rule_nested_cost_unless_1",
+    "example_rule_trash_ability_keeps_track_of_hosted_objects_1",
+    "example_rule_trash_ability_keeps_track_of_hosted_objects_3",
+    "example_rule_paid_ability_refers_to_encountered_ice_1",
+    "example_rule_paid_ability_refers_to_approached_ice_1",
+    "example_rule_resolve_subroutines_run_ends_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -225,8 +238,8 @@ fn example_rule_reaction_window_closing_timing_structure_1() {
                     vm.answer(a);
                 }
             }
-            DecisionSpec::NestedCost { cost_credits } => {
-                assert_eq!(*cost_credits, 1);
+            DecisionSpec::NestedCost { cost } => {
+                assert_eq!(cost.credits, 1);
                 vm.answer(DecisionAnswer::PayNestedCost(true));
             }
             DecisionSpec::TakeAction { .. } => break,
@@ -939,6 +952,587 @@ fn example_rule_checkpoint_after_timing_structure_1() {
         !jesminder_offered,
         "the interrupt was never relevant (no run in progress)"
     );
+}
+
+// ===========================================================================
+// §1.16 — costs (wave 2a)
+// ===========================================================================
+
+/// example_rule_cost_zero_1 (1.16.1d): a Khumalo-class ability trashes an
+/// accessed 0-cost card by "spending" nothing — the zero cost is still
+/// really paid (a CostPaid event exists) and the trash happens.
+#[test]
+fn example_rule_cost_zero_1() {
+    let mut vm = Vm::empty(30);
+    let beanstalk = vm.new_object(tk::corp_filler("Beanstalk-like"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(beanstalk);
+    tk::install_rig(&mut vm, tk::khumalo_like("Khumalo-like"));
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Rnd }));
+
+    let mut used = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::MidAccessWindow { options } if s == Side::Runner && !used => {
+                if let Some(opt) = tk::option_labeled(options, "khumalo") {
+                    used = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(used, "the mid-access ability was offered and used");
+    assert_eq!(
+        vm.st.objects[&beanstalk].zone,
+        Zone::Discard(Side::Corp),
+        "the accessed card was trashed"
+    );
+    // 1.16.1d: the zero cost was really paid — a payment event exists.
+    assert!(vm.changes.log.iter().any(
+        |c| matches!(c, GameChange::CostPaid { side: Side::Runner, credits: 0, clicks: 0, .. })
+    ));
+}
+
+/// example_rule_cost_no_interrupt_1 (1.16.1a): trashing Clone Chip as its
+/// own trigger cost cannot be prevented — no interrupt window opens against
+/// a cost payment, so the LLDS-class preventer is never offered.
+#[test]
+fn example_rule_cost_no_interrupt_1() {
+    let mut vm = Vm::empty(31);
+    let chip = tk::install_rig(&mut vm, tk::clone_chip_like("CloneChip-like"));
+    tk::install_rig(&mut vm, tk::llds_like("LLDS-like", chip));
+    vm.start_turn(Side::Runner);
+
+    let mut triggered = false;
+    let mut llds_ever_offered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        if let DecisionSpec::InterruptWindow { options, .. } = &spec {
+            if tk::option_labeled(options, "llds").is_some() {
+                llds_ever_offered = true;
+            }
+        }
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner && !triggered => {
+                if let Some(opt) = tk::option_labeled(options, "clone-chip") {
+                    triggered = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(triggered);
+    assert_eq!(vm.st.objects[&chip].zone, Zone::Discard(Side::Runner));
+    assert!(
+        !llds_ever_offered,
+        "1.16.1a: cost payment cannot be interrupted or prevented"
+    );
+    assert_eq!(vm.st.runner.credits, 1, "the ability still resolved");
+}
+
+/// example_rule_cost_interrupt_static_mandatory_2 (1.16.1b): with a
+/// mandatory Jesminder-class tag-avoid active during a run, the Runner
+/// CANNOT take 1 tag to pay Funhouse's nested cost — so Funhouse ends the
+/// run.
+#[test]
+fn example_rule_cost_interrupt_static_mandatory_2() {
+    let mut vm = Vm::empty(32);
+    tk::install_ice(&mut vm, tk::funhouse_like("Funhouse-like"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::jesminder_like("Jesminder-like"));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut nested_cost_offered = false;
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { .. } => {
+                nested_cost_offered = true;
+                vm.answer(DecisionAnswer::PayNestedCost(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(
+        !nested_cost_offered,
+        "1.16.1b: the unpayable cost is never offered as a choice"
+    );
+    assert_eq!(vm.st.runner.tags, 0, "no tag was taken");
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "Funhouse ended the run"
+    );
+}
+
+/// example_rule_cost_restrictions_1 (1.16.1c): a Zer0-class once-per-turn
+/// ability with a damage component in its cost cannot even be ATTEMPTED a
+/// second time — no extra damage is suffered.
+#[test]
+fn example_rule_cost_restrictions_1() {
+    let mut vm = Vm::empty(33);
+    tk::install_rig(&mut vm, tk::zer0_like("Zer0-like"));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut uses = 0;
+    let mut offered_again_after_use = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner => {
+                match tk::option_labeled(options, "zer0") {
+                    Some(opt) if uses == 0 => {
+                        uses += 1;
+                        vm.answer(DecisionAnswer::Take(opt));
+                    }
+                    Some(_) => {
+                        offered_again_after_use = true;
+                        vm.answer(DecisionAnswer::Pass);
+                    }
+                    None => vm.answer(DecisionAnswer::Pass),
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(uses, 1);
+    assert!(
+        !offered_again_after_use,
+        "1.16.1c: the once-per-turn restriction forbids attempting the cost again"
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 4, "exactly 1 net damage suffered");
+    assert_eq!(vm.st.runner.credits, 1);
+}
+
+/// example_rule_decline_additional_cost_1 (1.16.10a): stealing is normally
+/// mandatory, but an agenda with an additional steal cost can be declined —
+/// the Runner suffers nothing and does not steal.
+#[test]
+fn example_rule_decline_additional_cost_1() {
+    let mut vm = Vm::empty(34);
+    let obokata = tk::install_root(
+        &mut vm,
+        tk::obokata_like("Obokata-like", 3),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+        server: ServerId::Remote(1),
+    }));
+
+    let mut offered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { cost } => {
+                assert_eq!(s, Side::Runner);
+                assert_eq!(cost.net_damage, 4);
+                offered = true;
+                vm.answer(DecisionAnswer::PayNestedCost(false));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(offered, "the pay-or-decline choice was presented");
+    assert_eq!(
+        vm.st.objects[&obokata].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "declined: the agenda was not stolen"
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "no damage suffered");
+}
+
+/// example_rule_additonal_cost_simultaenous_1 (1.16.10b): Obokata-class 4
+/// net + Musashi-class +2 net + Predictive-class +2[c] combine into ONE
+/// all-at-once payment; abilities triggered by the payment resolve after
+/// it, before the steal.
+#[test]
+fn example_rule_additonal_cost_simultaenous_1() {
+    let mut vm = Vm::empty(35);
+    let obokata = tk::install_root(
+        &mut vm,
+        tk::obokata_like("Obokata-like", 3),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::install_root(&mut vm, tk::musashi_like("Musashi-like"), ServerId::Remote(1), true);
+    let pred = vm.new_object(tk::predictive_like("Predictive-like"), Zone::PlayArea(Side::Corp));
+    vm.st.objects.get_mut(&pred).unwrap().faceup = true;
+    tk::install_rig(&mut vm, tk::sol_like("Sol-like"));
+    tk::fill_hand(&mut vm, Side::Runner, 6);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+        server: ServerId::Remote(1),
+    }));
+
+    for _ in 0..400 {
+        let (_, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { cost } => {
+                // One aggregated all-at-once payment (1.16.10b).
+                assert_eq!(cost.net_damage, 6);
+                assert_eq!(cost.credits, 2);
+                vm.answer(DecisionAnswer::PayNestedCost(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(
+        vm.st.objects[&obokata].zone,
+        Zone::ScoreArea(Side::Runner),
+        "paid in full: stolen"
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 0, "6 net damage as one payment");
+    // 3 - 2 (cost) + 1 (Sol-class trigger after payment) = 2.
+    assert_eq!(vm.st.runner.credits, 2);
+    // Ordering: the damage payment precedes the Sol-class gain, which
+    // precedes the steal (1.16.10b: triggers resolve after payment).
+    let log = &vm.changes.log;
+    let dmg = log.iter().position(|c| matches!(c, GameChange::DamageSuffered { amount: 6, .. }))
+        .expect("one aggregated damage payment");
+    let gain = log.iter().position(
+        |c| matches!(c, GameChange::CreditsGained { side: Side::Runner, amount: 1 }),
+    )
+    .expect("sol-class trigger resolved");
+    let steal = log.iter().position(|c| matches!(c, GameChange::AgendaStolen { .. })).unwrap();
+    assert!(dmg < gain && gain < steal);
+}
+
+/// example_rule_nested_cost_unless_1 (1.16.11b): "End the run unless the
+/// Runner pays 1[credit]." — paying suppresses the end-the-run.
+#[test]
+fn example_rule_nested_cost_unless_1() {
+    let mut vm = Vm::empty(36);
+    tk::install_ice(&mut vm, tk::etr_unless_pay_ice("Toll-like"), ServerId::Hq, true);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut paid = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { cost } => {
+                assert_eq!(s, Side::Runner);
+                assert_eq!(cost.credits, 1);
+                paid = true;
+                vm.answer(DecisionAnswer::PayNestedCost(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(paid);
+    assert_eq!(vm.st.runner.credits, 4);
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "paying the nested cost meant the subroutine did not end the run"
+    );
+}
+
+// ===========================================================================
+// §9.5 — paid abilities (wave 2a)
+// ===========================================================================
+
+/// example_rule_trash_ability_keeps_track_of_hosted_objects_1 (9.5.5): a
+/// Fermenter-class [trash] ability sets its 4 hosted virus counters aside as
+/// the cost is paid; the effect still counts them: the Runner gains 8.
+#[test]
+fn example_rule_trash_ability_keeps_track_of_hosted_objects_1() {
+    let mut vm = Vm::empty(37);
+    let ferm = tk::install_rig(&mut vm, tk::fermenter_like("Fermenter-like"));
+    vm.st
+        .objects
+        .get_mut(&ferm)
+        .unwrap()
+        .counters
+        .insert(CounterKind::Virus, 4);
+    vm.start_turn(Side::Runner);
+
+    let mut used = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner && !used => {
+                if let Some(opt) = tk::option_labeled(options, "fermenter") {
+                    used = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(used);
+    assert_eq!(vm.st.objects[&ferm].zone, Zone::Discard(Side::Runner));
+    assert_eq!(
+        vm.st.runner.credits, 8,
+        "9.5.5: the set-aside counters still counted as hosted"
+    );
+    assert_eq!(
+        vm.st.objects[&ferm].counter(CounterKind::Virus),
+        0,
+        "the counters were returned to the bank afterwards"
+    );
+}
+
+/// example_rule_trash_ability_keeps_track_of_hosted_objects_3 (9.5.5): the
+/// Reconstruction-Contract-class sequence in detail — pay the [trash] cost
+/// setting the advancement counters aside, checkpoint, choose the target,
+/// interrupt window, then move the set-aside counters to the target.
+#[test]
+fn example_rule_trash_ability_keeps_track_of_hosted_objects_3() {
+    let mut vm = Vm::empty(38);
+    let rc = tk::install_root(
+        &mut vm,
+        tk::reconstruction_like("Reconstruction-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st
+        .objects
+        .get_mut(&rc)
+        .unwrap()
+        .counters
+        .insert(CounterKind::Advancement, 3);
+    let wall = tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 0, 1), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let mut used = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !used => {
+                if let Some(opt) = tk::option_labeled(options, "reconstruction") {
+                    used = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::ChooseTargets { candidates, .. } => {
+                // 9.5.7c: the target is chosen after the cost-paid
+                // checkpoint, as the instruction becomes imminent.
+                assert!(candidates.contains(&wall));
+                vm.answer(DecisionAnswer::Targets(vec![wall]));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(used);
+    assert_eq!(vm.st.objects[&rc].zone, Zone::Discard(Side::Corp));
+    assert_eq!(
+        vm.st.objects[&wall].counter(CounterKind::Advancement),
+        3,
+        "9.5.5: the set-aside counters were moved to the target"
+    );
+}
+
+/// example_rule_paid_ability_refers_to_encountered_ice_1 (9.5.6c): an
+/// Arruaceiras-class ability cannot be triggered at an arbitrary time —
+/// only during an encounter.
+#[test]
+fn example_rule_paid_ability_refers_to_encountered_ice_1() {
+    let mut vm = Vm::empty(39);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 0, 1), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::arruaceiras_like("Arruaceiras-like"));
+    vm.start_turn(Side::Runner);
+
+    let mut offered_outside_encounter = false;
+    let mut offered_during_encounter = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        if let DecisionSpec::PaidWindow { options, .. } = &spec {
+            if s == Side::Runner && tk::option_labeled(options, "arruaceiras").is_some() {
+                if vm.st.encounter.is_some() {
+                    offered_during_encounter = true;
+                } else {
+                    offered_outside_encounter = true;
+                }
+            }
+        }
+        match &spec {
+            DecisionSpec::TakeAction { options, .. } => {
+                if !offered_during_encounter {
+                    assert!(options.iter().any(
+                        |o| matches!(o, ActionOption::BasicRun { server: ServerId::Hq })
+                    ));
+                    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+                        server: ServerId::Hq,
+                    }));
+                } else {
+                    break;
+                }
+            }
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(
+        !offered_outside_encounter,
+        "9.5.6c: not usable at an arbitrary time"
+    );
+    assert!(offered_during_encounter, "usable during the encounter");
+}
+
+/// example_rule_paid_ability_refers_to_approached_ice_1 (9.5.6b): a
+/// Wotan-class ability is usable only while the Runner is approaching a
+/// REZZED *bioroid* piece of ice.
+#[test]
+fn example_rule_paid_ability_refers_to_approached_ice_1() {
+    // Non-bioroid approach: never offered.
+    let mut vm = Vm::empty(40);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 0, 1), ServerId::Hq, true);
+    let w = vm.new_object(tk::wotan_like("Wotan-like"), Zone::ScoreArea(Side::Corp));
+    vm.st.score_area.get_mut(&Side::Corp).unwrap().push(w);
+    vm.start_turn(Side::Runner);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    let mut offered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        if let DecisionSpec::PaidWindow { options, .. } = &spec {
+            if s == Side::Corp && tk::option_labeled(options, "wotan").is_some() {
+                offered = true;
+            }
+        }
+        match &spec {
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(!offered, "9.5.6b: not offered while approaching non-bioroid ice");
+
+    // Rezzed bioroid approach: offered in the approach window.
+    let mut vm = Vm::empty(41);
+    let mut bio = tk::vanilla_ice("Eli-like", 0, 3);
+    bio.subtypes = vec!["bioroid", "barrier"];
+    tk::install_ice(&mut vm, bio, ServerId::Hq, true);
+    let w = vm.new_object(tk::wotan_like("Wotan-like"), Zone::ScoreArea(Side::Corp));
+    vm.st.score_area.get_mut(&Side::Corp).unwrap().push(w);
+    vm.start_turn(Side::Runner);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    let mut offered = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        if let DecisionSpec::PaidWindow { classes, options } = &spec {
+            if s == Side::Corp
+                && classes.rez_approached_ice
+                && tk::option_labeled(options, "wotan").is_some()
+            {
+                offered = true;
+            }
+        }
+        match &spec {
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(offered, "9.5.6b: offered while approaching rezzed bioroid ice");
+}
+
+// ===========================================================================
+// §9.8 — subroutines (wave 2a)
+// ===========================================================================
+
+/// example_rule_resolve_subroutines_run_ends_1 (9.8.7c): Little Engine's
+/// first subroutine ends the run; the encounter is over, so the second
+/// subroutine never resolves and the Runner does not gain 5[credit].
+#[test]
+fn example_rule_resolve_subroutines_run_ends_1() {
+    let mut vm = Vm::empty(42);
+    tk::install_ice(&mut vm, tk::little_engine_like("LittleEngine-like"), ServerId::Hq, true);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "9.8.7c: the encounter ended; the 5-credit subroutine never resolved"
+    );
+    let subs_resolved = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::SubroutineResolved { .. }))
+        .count();
+    assert_eq!(subs_resolved, 1, "only the first subroutine resolved");
 }
 
 // ===========================================================================

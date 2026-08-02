@@ -457,6 +457,23 @@ fn step_e_restrictions(vm: &mut Vm) {
 fn step_fg_hosted_orphans(vm: &mut Vm) {
     cite!("step_checkpoint_hosted_on_agenda");
     cite!("step_checkpoint_hosted_on_installed_cards");
+    // CR 9.5.5: objects still set aside after their ability finished
+    // resolving are trashed here; set-aside counters return to the bank.
+    if !vm.orphan_set_aside_counters.is_empty() {
+        cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+        vm.orphan_set_aside_counters.clear();
+    }
+    let leftover_cards: Vec<crate::object::ObjectId> =
+        vm.set_aside_card_cleanup.drain(..).collect();
+    for id in leftover_cards {
+        if let Some(o) = vm.st.objects.get_mut(&id) {
+            if o.set_aside_for_ability {
+                o.set_aside_for_ability = false;
+                let owner = o.owner;
+                vm.trash_card(id, owner);
+            }
+        }
+    }
     loop {
         let mut orphans: Vec<ObjectId> = Vec::new();
         for o in vm.st.objects.values() {

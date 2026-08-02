@@ -136,6 +136,8 @@ pub enum DecisionCtx {
     Discard(Side),
     Candidate,
     MinimalSet,
+    /// Additional-cost-to-steal decision for the accessed agenda (1.16.10).
+    StealCost(ObjectId),
 }
 
 /// Setup progress (§1.6 is a procedure, not a timing structure).
@@ -167,6 +169,11 @@ pub struct Vm {
     pub last_scan_window: Vec<(GameChange, u64)>,
     /// Sets offered by a suspended 10.3.1e minimal-set Decision.
     pub last_minimal_sets: Option<Vec<Vec<ObjectId>>>,
+    /// CR 9.5.5: set-aside counters left over after their ability finished —
+    /// returned to the bank at checkpoint step 10.3.1f/g.
+    pub orphan_set_aside_counters: Vec<(CounterKind, u32)>,
+    /// CR 9.5.5: set-aside cards left over — trashed at step 10.3.1g.
+    pub set_aside_card_cleanup: Vec<ObjectId>,
     pub pending_decision: Option<(Side, DecisionSpec, DecisionCtx)>,
     answer: Option<DecisionAnswer>,
     pub game_over: Option<GameResult>,
@@ -307,6 +314,8 @@ impl Vm {
             snapshot: None,
             last_scan_window: Vec::new(),
             last_minimal_sets: None,
+            orphan_set_aside_counters: Vec::new(),
+            set_aside_card_cleanup: Vec::new(),
             pending_decision: None,
             answer: None,
             game_over: None,
@@ -973,7 +982,20 @@ impl Vm {
                 cite!("rule_after_mid_access_agenda");
                 let card = self.access_card().unwrap();
                 if self.st.objects[&card].printed.card_type == CardType::Agenda {
-                    self.steal_agenda(card);
+                    let total = self.steal_cost_of(card);
+                    if total.is_free() {
+                        // 7.2.3/1.17.3: stealing is mandatory with no
+                        // additional cost.
+                        cite!("rule_decline_to_steal");
+                        self.steal_agenda(card);
+                    } else {
+                        // 1.16.10a: the Runner may pay or decline.
+                        self.ask(
+                            Side::Runner,
+                            DecisionSpec::NestedCost { cost: total },
+                            DecisionCtx::StealCost(card),
+                        );
+                    }
                 }
             }
         }
@@ -1001,6 +1023,23 @@ impl Vm {
             Frame::Structure(StructureFrame { ctx: StructCtx::Access(a), .. }) => Some(a.card),
             _ => None,
         })
+    }
+
+    /// CR 1.16.10: aggregate the additional costs to steal an agenda —
+    /// printed plus active statics — into one all-at-once payment.
+    pub fn steal_cost_of(&self, card: ObjectId) -> Cost {
+        cite!("rule_additional_cost");
+        let mut total = self.st.objects[&card]
+            .printed
+            .additional_steal_cost
+            .clone()
+            .unwrap_or_default();
+        for (_, d) in self.active_statics() {
+            if let StaticDecl::AdditionalStealCost(c) = d {
+                total = total.plus(&c);
+            }
+        }
+        total
     }
 
     fn run_success_prohibited(&self, server: ServerId) -> bool {
@@ -1507,8 +1546,38 @@ impl Vm {
                 }
                 out
             }
-            Instruction::NestedCostThen { .. } => {
+            Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 0, controller)]
+            }
+            Instruction::GainCreditsPerCounter { kind, per } => {
+                // CR 9.5.5: set-aside counters still count as hosted for
+                // this ability. 9.12.2b/c: credits aggregate into ONE atom.
+                cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+                cite!("rule_calculated_quantity");
+                let on_card = source
+                    .and_then(|s| self.st.objects.get(&s))
+                    .map(|o| o.counter(*kind))
+                    .unwrap_or(0);
+                let set_aside: u32 = self
+                    .frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(
+                            af.set_aside_counters
+                                .iter()
+                                .filter(|(k, _)| k == kind)
+                                .map(|(_, n)| *n)
+                                .sum::<u32>(),
+                        ),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                let total = (on_card + set_aside) as i64 * *per as i64;
+                vec![EffectAtom::new(EffectClass::GainCredits, total, controller)]
+            }
+            Instruction::MoveSetAsideCounters { .. } => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::PreventDamage { .. }
             | Instruction::PreventAllDamage { .. }
@@ -1903,6 +1972,8 @@ impl Vm {
             subroutine_index,
             declined: false,
             cost,
+            set_aside_counters: Vec::new(),
+            set_aside_cards: Vec::new(),
         }));
     }
 
@@ -1923,6 +1994,30 @@ impl Vm {
                     af.phase = AbilityPhase::Targets;
                     (af.source, af.controller, af.cost.clone().unwrap_or_default())
                 };
+                // CR 9.5.5: if the trigger cost uninstalls the source, set
+                // aside its hosted counters and cards as the cost is paid.
+                // They still count as "hosted" for this ability and are
+                // invisible to everything else (4.8.3).
+                if cost.trash_self {
+                    cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+                    let counters: Vec<(CounterKind, u32)> = self.st.objects[&source.obj]
+                        .counters
+                        .iter()
+                        .map(|(k, n)| (*k, *n))
+                        .collect();
+                    self.st.objects.get_mut(&source.obj).unwrap().counters.clear();
+                    let hosted: Vec<ObjectId> =
+                        self.st.objects[&source.obj].hosted.clone();
+                    for h in &hosted {
+                        let o = self.st.objects.get_mut(h).unwrap();
+                        o.set_aside_for_ability = true;
+                        o.zone = Zone::SetAside;
+                    }
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        af.set_aside_counters = counters;
+                        af.set_aside_cards = hosted;
+                    }
+                }
                 cite!("rule_paid_ability_used_condition");
                 self.changes.record(GameChange::AbilityUsed { source: source.obj });
                 self.pay_cost(controller, source.obj, &cost);
@@ -1952,6 +2047,38 @@ impl Vm {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                     af.instructions[idx].clone()
                 };
+                // Nested costs: an unpayable cost forces the branch without
+                // a decision (1.16.1b — the choice cannot be taken).
+                match &instr {
+                    Instruction::NestedCostThen { cost, .. } => {
+                        let (payer, source) = self.nested_cost_payer(&instr);
+                        if !self.cost_payable(payer, source, cost) {
+                            // Cannot pay: the effect never happens; the
+                            // choice-instruction completes with no effect.
+                            self.set_ability_phase(AbilityPhase::Checkpoint);
+                            return;
+                        }
+                    }
+                    Instruction::NestedCostUnless { cost, effect, .. } => {
+                        let (payer, source) = self.nested_cost_payer(&instr);
+                        if !self.cost_payable(payer, source, cost) {
+                            cite!("rule_cost_interrupt_static_mandatory");
+                            // Cannot pay: the "unless" effect is forced.
+                            let eff = (**effect).clone();
+                            let idx_now = {
+                                let Some(Frame::Ability(af)) = self.frames.last_mut() else {
+                                    unreachable!()
+                                };
+                                af.instructions.insert(af.idx + 1, eff);
+                                af.idx
+                            };
+                            let _ = idx_now;
+                            self.set_ability_phase(AbilityPhase::Checkpoint);
+                            return;
+                        }
+                    }
+                    _ => {}
+                }
                 if let Some((side, spec)) = self.targets_needed(&instr) {
                     self.ask(side, spec, DecisionCtx::Targets);
                     return;
@@ -1988,6 +2115,27 @@ impl Vm {
         }
     }
 
+    /// The payer of a nested cost: tag/damage components are always paid by
+    /// the Runner (they are things the Runner suffers); otherwise the
+    /// ability's controller pays.
+    fn nested_cost_payer(&self, instr: &Instruction) -> (Side, ObjectId) {
+        let Some(Frame::Ability(af)) = self.frames.last() else {
+            return (Side::Runner, ObjectId(0));
+        };
+        let (cost, explicit) = match instr {
+            Instruction::NestedCostThen { cost, payer, .. }
+            | Instruction::NestedCostUnless { cost, payer, .. } => (cost, *payer),
+            _ => return (af.controller, af.source.obj),
+        };
+        let payer = explicit.unwrap_or(if cost.tags > 0 || cost.net_damage > 0 {
+            // Tag/damage components are things the Runner suffers.
+            Side::Runner
+        } else {
+            af.controller
+        });
+        (payer, af.source.obj)
+    }
+
     /// Compute targets that need a Decision (9.3.4b).
     fn targets_needed(&self, instr: &Instruction) -> Option<(Side, DecisionSpec)> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
@@ -2003,10 +2151,18 @@ impl Vm {
                     },
                 ))
             }
-            Instruction::NestedCostThen { credits, .. } => Some((
-                af.controller,
-                DecisionSpec::NestedCost { cost_credits: *credits },
-            )),
+            Instruction::NestedCostThen { cost, .. }
+            | Instruction::NestedCostUnless { cost, .. } => {
+                let (payer, _) = self.nested_cost_payer(instr);
+                Some((payer, DecisionSpec::NestedCost { cost: cost.clone() }))
+            }
+            Instruction::MoveSetAsideCounters { target: TargetSpec::Choose { count, filter }, .. } => {
+                let candidates = self.filter_candidates(*filter, af.controller);
+                Some((
+                    af.controller,
+                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false },
+                ))
+            }
             Instruction::DeclineableChoice(_) => Some((
                 af.controller,
                 DecisionSpec::OptionalEffect { label: "optional effect" },
@@ -2226,10 +2382,47 @@ impl Vm {
                     self.apply_imminent(inner_imm, controller, source, source_moved);
                 }
             }
-            Instruction::NestedCostThen { .. } => {
+            Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } => {
                 // Handled at answer time (rule_nested_cost_instruction): the
-                // choice ended this instruction; if paid, the effect was
+                // choice ended this instruction; the appropriate branch was
                 // injected as the next instruction.
+            }
+            Instruction::GainCreditsPerCounter { .. } => {
+                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
+                    let n = a.value.max(0) as u32;
+                    self.st.player_mut(controller).credits += n;
+                    self.changes.record(GameChange::CreditsGained { side: controller, amount: n });
+                }
+            }
+            Instruction::MoveSetAsideCounters { kind, target } => {
+                // CR 9.5.5 (Reconstruction Contract): move the set-aside
+                // counters to the chosen target.
+                cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                let moved: u32 = {
+                    let Some(Frame::Ability(af)) = self.frames.last_mut() else { unreachable!() };
+                    let mut total = 0;
+                    af.set_aside_counters.retain(|(k, n)| {
+                        if k == kind {
+                            total += *n;
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                    total
+                };
+                if let Some(t) = targets.first() {
+                    if moved > 0 {
+                        let obj = self.st.objects.get_mut(t).unwrap();
+                        *obj.counters.entry(*kind).or_insert(0) += moved;
+                        self.changes.record(GameChange::CounterPlaced {
+                            obj: *t,
+                            kind: *kind,
+                            amount: moved,
+                        });
+                    }
+                }
             }
             Instruction::PreventDamage { kind, amount } => {
                 self.modify_parent_imminent(|atom| {
@@ -2413,6 +2606,14 @@ impl Vm {
         cite!("step_play_ability_complete");
         cite!("step_subroutine_complete");
         let Some(Frame::Ability(af)) = self.frames.pop() else { unreachable!() };
+        // CR 9.5.5: anything still set aside when the ability finishes is
+        // trashed/banked during step 10.3.1f/g of the next checkpoint.
+        if !af.set_aside_counters.is_empty() {
+            self.orphan_set_aside_counters.extend(af.set_aside_counters.iter().copied());
+        }
+        if !af.set_aside_cards.is_empty() {
+            self.set_aside_card_cleanup.extend(af.set_aside_cards.iter().copied());
+        }
         if !af.instructions.is_empty() {
             let label = self.st.objects.get(&af.source.obj)
                 .map(|o| o.printed.name)
@@ -2707,6 +2908,43 @@ impl Vm {
                 if !self.ability_present(o.id, i) {
                     continue;
                 }
+                // 9.5.6: effect-based timing restrictions.
+                match a.timing {
+                    Some(crate::ability::TimingRestriction::EncounterOnly) => {
+                        cite!("rule_paid_ability_refers_to_encountered_ice");
+                        if self.st.encounter.is_none() {
+                            continue;
+                        }
+                    }
+                    Some(crate::ability::TimingRestriction::ApproachOnly {
+                        required_subtype,
+                        rezzed,
+                    }) => {
+                        cite!("rule_paid_ability_refers_to_approached_ice");
+                        // Only during the Approach Ice Phase (this window has
+                        // the approach-ice rez class), with matching ice.
+                        if !classes.rez_approached_ice {
+                            continue;
+                        }
+                        let Some(r) = self.run_ctx() else { continue };
+                        let Some(ice) = self.approached_ice(r) else { continue };
+                        if rezzed && !self.st.objects[&ice].faceup {
+                            continue;
+                        }
+                        if let Some(sub) = required_subtype {
+                            let effects = self.char_effects();
+                            let eff = crate::object::compute_effective(
+                                &self.st.objects,
+                                &effects,
+                                ice,
+                            );
+                            if !eff.subtypes.contains(sub) {
+                                continue;
+                            }
+                        }
+                    }
+                    None => {}
+                }
                 // 9.5.6c: encountered-ice references only during an encounter;
                 // interface abilities also gated by strength (9.3.6c).
                 if a.has_flag(AbilityFlag::Interface) {
@@ -2882,7 +3120,43 @@ impl Vm {
         if cost.trash_self && !self.st.objects[&source].zone.is_installed() {
             return false;
         }
+        // CR 1.16.1b: if a static ability or a MANDATORY conditional
+        // interrupt would prevent the steps of payment, the cost cannot be
+        // paid (Jesminder vs Funhouse's take-a-tag nested cost).
+        if cost.tags > 0 && self.tag_cost_blocked() {
+            cite!("rule_cost_interrupt_static_mandatory");
+            return false;
+        }
         true
+    }
+
+    /// Would an active MANDATORY interrupt avoid a tag the Runner takes now?
+    fn tag_cost_blocked(&self) -> bool {
+        for o in self.st.objects.values() {
+            for (i, a) in o.printed.abilities.iter().enumerate() {
+                if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
+                    continue;
+                }
+                let Some(Condition::Trigger(TriggerCond::WouldTakeTags { during_run })) =
+                    &a.condition
+                else {
+                    continue;
+                };
+                if *during_run && self.current_run.is_none() {
+                    continue;
+                }
+                if !a.instructions.iter().any(|x| matches!(x, Instruction::AvoidTags(_))) {
+                    continue;
+                }
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                    || !self.ability_present(o.id, i)
+                {
+                    continue;
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// Pay a cost; CR 1.16.3/10.3.4: a checkpoint occurs immediately after —
@@ -2908,6 +3182,17 @@ impl Vm {
             self.trash_card(source, side);
             trashed.push(source);
             self.changes.record(GameChange::TrashAbilityUsed { source, side });
+        }
+        // CR 1.16.1a: paying a cost cannot be modified or interrupted — tag
+        // and damage components apply directly, with their changes recorded
+        // so conditions can meet AFTER payment (1.16.10b).
+        cite!("rule_cost_no_interrupt");
+        if cost.tags > 0 {
+            self.st.runner.tags += cost.tags;
+            self.changes.record(GameChange::TagsTaken { amount: cost.tags });
+        }
+        if cost.net_damage > 0 {
+            self.do_damage(DamageKind::Net, cost.net_damage, side);
         }
         for _ in 0..cost.clicks {
             self.changes.record(GameChange::ClickSpent { side });
@@ -3195,27 +3480,61 @@ impl Vm {
             (DecisionCtx::Targets, DecisionAnswer::PayNestedCost(pay)) => {
                 // The nested-cost choice ends an instruction (9.11.4f).
                 cite!("rule_nested_cost_instruction");
-                let (source, controller, idx) = {
+                let (source, idx) = {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
-                    (af.source, af.controller, af.idx)
+                    (af.source, af.idx)
                 };
                 let instr = {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                     af.instructions[idx].clone()
                 };
-                if let Instruction::NestedCostThen { credits, effect } = instr {
-                    if pay {
-                        cite!("rule_nested_cost");
-                        self.pay_cost(controller, source.obj, &Cost::credits(credits));
-                        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                let (payer, _) = self.nested_cost_payer(&instr);
+                match instr {
+                    Instruction::NestedCostThen { cost, effect, .. } => {
+                        if pay {
+                            cite!("rule_nested_cost_may");
+                            self.pay_cost(payer, source.obj, &cost);
+                            if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                                af.instructions.insert(idx + 1, (*effect).clone());
+                            }
+                            self.changes.record(GameChange::AbilityUsed { source: source.obj });
+                        }
+                    }
+                    Instruction::NestedCostUnless { cost, effect, .. } => {
+                        cite!("rule_nested_cost_unless");
+                        if pay {
+                            self.pay_cost(payer, source.obj, &cost);
+                        } else if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                             af.instructions.insert(idx + 1, (*effect).clone());
                         }
-                        self.changes.record(GameChange::AbilityUsed { source: source.obj });
                     }
-                    // The choice instruction itself resolves as a no-op.
-                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-                        af.phase = AbilityPhase::Checkpoint;
-                    }
+                    _ => unreachable!(),
+                }
+                // The choice instruction itself resolves as a no-op.
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    af.phase = AbilityPhase::Checkpoint;
+                }
+            }
+            (DecisionCtx::StealCost(card), DecisionAnswer::PayNestedCost(pay)) => {
+                // CR 1.16.10a/1.17.3d: an additional cost to steal may be
+                // declined; declining means the agenda is not stolen.
+                cite!("rule_decline_additional_cost");
+                if pay {
+                    // 1.16.10b: all additional costs are one all-at-once
+                    // payment; the frame's PayCost phase pays first, so the
+                    // cost-paid checkpoint's reactions resolve BEFORE the
+                    // steal becomes imminent.
+                    cite!("rule_additonal_cost_simultaenous");
+                    let total = self.steal_cost_of(card);
+                    self.push_ability_frame_cost(
+                        ResolutionKind::Conditional,
+                        AbilityRef { obj: card, index: usize::MAX },
+                        Side::Runner,
+                        vec![Instruction::StealSelfAgenda],
+                        None,
+                        None,
+                        Some(total),
+                    );
                 }
             }
             (DecisionCtx::Targets, DecisionAnswer::ResolveOptional(yes)) => {

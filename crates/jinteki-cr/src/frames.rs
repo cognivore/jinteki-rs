@@ -154,6 +154,11 @@ pub struct AbilityFrame {
     pub declined: bool,
     /// Paid abilities: the trigger cost to pay in the PayCost phase.
     pub cost: Option<crate::ability::Cost>,
+    /// CR 9.5.5: counters set aside as a [trash] trigger cost was paid —
+    /// still "hosted" for this ability, invisible to others.
+    pub set_aside_counters: Vec<(crate::object::CounterKind, u32)>,
+    /// CR 9.5.5: cards set aside the same way.
+    pub set_aside_cards: Vec<crate::object::ObjectId>,
 }
 
 /// A frame on the control stack.

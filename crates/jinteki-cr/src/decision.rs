@@ -84,8 +84,8 @@ pub enum DecisionSpec {
     /// CR 9.11.4g: choose between optioned effects; each option is its own
     /// instruction chain.
     ChooseOption { options: Vec<&'static str> },
-    /// CR 9.11.4f: pay a nested cost or decline.
-    NestedCost { cost_credits: u32 },
+    /// CR 9.11.4f / 1.16.10-11: pay a (nested or additional) cost or decline.
+    NestedCost { cost: crate::ability::Cost },
     /// Decline or resolve an optional part (9.6.9c).
     OptionalEffect { label: &'static str },
     /// CR 11.5 step 4a: the Runner chooses a candidate to access.

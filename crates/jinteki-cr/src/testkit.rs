@@ -3,11 +3,14 @@
 //! a later wave; these builders exist so kernel tests can express the CR's
 //! worked examples with faithful minimal cards.
 
-use crate::ability::{AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TriggerCond};
+use crate::ability::{
+    AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TimingRestriction,
+    TriggerCond,
+};
 use crate::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption, Yield};
 use crate::effects::DamageKind;
 use crate::instr::{Instruction, TargetSpec};
-use crate::object::{CardType, ObjectId, PrintedCard, ServerId, Side, Zone};
+use crate::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
 use crate::vm::Vm;
 
 // ---------------------------------------------------------------------------
@@ -361,6 +364,7 @@ pub fn tori_like(name: &'static str) -> PrintedCard {
         instructions: vec![Instruction::GainCredits(Side::Corp, 1)],
         statics: Vec::new(),
         optional: true,
+        timing: None,
         label: "tori: first net damage each run",
     }];
     c
@@ -390,7 +394,8 @@ pub fn jesminder_like(name: &'static str) -> PrintedCard {
         cost: None,
         instructions: vec![Instruction::AvoidTags(1)],
         statics: Vec::new(),
-        optional: true,
+        optional: false, // the printed ability is mandatory
+        timing: None,
         label: "jesminder: avoid a tag during a run",
     }];
     c
@@ -440,8 +445,9 @@ pub fn femme_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::EncounterBegins,
         vec![Instruction::NestedCostThen {
-            credits: 1,
+            cost: Cost::credits(1),
             effect: Box::new(Instruction::BypassEncounteredIce),
+            payer: None,
         }],
         true,
     )
@@ -490,6 +496,7 @@ pub fn parasite_like(name: &'static str) -> PrintedCard {
         instructions: vec![Instruction::TrashCards(TargetSpec::HostOfSource)],
         statics: Vec::new(),
         optional: false,
+        timing: None,
         label: "parasite: trash 0-strength host",
     }];
     c
@@ -542,6 +549,197 @@ pub fn advance_button_card(name: &'static str, target: ObjectId) -> PrintedCard 
         }],
     )
     .labeled("advance target")];
+    c
+}
+
+/// Freedom-Khumalo shape: an access-flagged paid ability with a zero cost
+/// that trashes the accessed card (1.16.1d: zero costs are really paid).
+pub fn khumalo_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::TrashCards(TargetSpec::AccessedCard)],
+    )
+    .with_flag(AbilityFlag::Access)
+    .labeled("khumalo: trash accessed for 0")];
+    c
+}
+
+/// Clone-Chip shape: "[trash]: gain 1 credit." (the effect is irrelevant;
+/// the [trash] trigger cost is the point — 1.16.1a).
+pub fn clone_chip_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![Instruction::GainCredits(Side::Runner, 1)],
+    )
+    .labeled("clone-chip: [trash] for value")];
+    c
+}
+
+/// LLDS-Energy-Regulator shape: a paid interrupt that could prevent a
+/// hardware trash — never offered against trigger-cost payment (1.16.1a).
+pub fn llds_like(name: &'static str, protects: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PreventTrashOf(protects)],
+    )
+    .with_flag(AbilityFlag::Interrupt)
+    .labeled("llds: prevent hardware trash")];
+    c
+}
+
+/// Zer0 shape: "once per turn — suffer 1 net damage as part of the cost:
+/// gain 1 credit." (1.16.1c: the restriction forbids even attempting the
+/// cost again.)
+pub fn zer0_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::net_damage(1),
+        vec![Instruction::GainCredits(Side::Runner, 1)],
+    )
+    .with_flag(AbilityFlag::OncePerTurn)
+    .labeled("zer0: damage-cost value")];
+    c
+}
+
+/// Funhouse shape: "When the Runner encounters this ice, end the run unless
+/// they take 1 tag." (1.16.1b / 1.16.11b).
+pub fn funhouse_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 5, 4);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfEncountered,
+        vec![Instruction::NestedCostUnless {
+            cost: Cost::tags(1),
+            effect: Box::new(Instruction::EndTheRun),
+            payer: Some(Side::Runner),
+        }],
+        false,
+    )
+    .labeled("funhouse: ETR unless 1 tag")];
+    c
+}
+
+/// A subroutine reading "End the run unless the Runner pays 1[credit]."
+/// (1.16.11b).
+pub fn etr_unless_pay_ice(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::NestedCostUnless {
+        cost: Cost::credits(1),
+        effect: Box::new(Instruction::EndTheRun),
+        payer: Some(Side::Runner),
+    }])
+    .labeled("[sub] ETR unless 1c")];
+    c
+}
+
+/// Fermenter shape: "[click], [trash]: gain 2[credit] for each hosted virus
+/// counter." (9.5.5: set-aside counters still count.)
+pub fn fermenter_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![Instruction::GainCreditsPerCounter { kind: CounterKind::Virus, per: 2 }],
+    )
+    .labeled("fermenter: cash out virus counters")];
+    c
+}
+
+/// Reconstruction-Contract shape: "[trash]: move the hosted advancement
+/// counters to another installed card." (9.5.5 example 3.)
+pub fn reconstruction_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![Instruction::MoveSetAsideCounters {
+            kind: CounterKind::Advancement,
+            target: TargetSpec::Choose {
+                count: 1,
+                filter: crate::instr::TargetFilter::InstalledCorpCard,
+            },
+        }],
+    )
+    .labeled("reconstruction: move counters")];
+    c
+}
+
+/// Arruaceiras-Crew shape: a paid ability usable only during an encounter
+/// (9.5.6c).
+pub fn arruaceiras_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(1)])
+        .with_timing(TimingRestriction::EncounterOnly)
+        .labeled("arruaceiras: take 1 tag (encounter only)")];
+    c
+}
+
+/// Project-Wotan shape: a Corp paid ability usable only while the Runner is
+/// approaching a rezzed *bioroid* piece of ice (9.5.6b).
+pub fn wotan_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Agenda);
+    c.agenda_points = Some(1);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Corp, 1)])
+        .with_timing(TimingRestriction::ApproachOnly {
+            required_subtype: Some("bioroid"),
+            rezzed: true,
+        })
+        .labeled("wotan: approach-only ability")];
+    c
+}
+
+/// Little-Engine shape: "[sub] End the run. [sub] The Runner gains 5[c]."
+pub fn little_engine_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 6, 4);
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
+        AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Runner, 5)])
+            .labeled("[sub] Runner gains 5"),
+    ];
+    c
+}
+
+/// Obokata shape: an agenda with "as an additional cost to steal, suffer 4
+/// net damage" (1.16.10a).
+pub fn obokata_like(name: &'static str, points: i32) -> PrintedCard {
+    let mut c = vanilla_agenda(name, 4, points);
+    c.additional_steal_cost = Some(Cost::net_damage(4));
+    c
+}
+
+/// Ben-Musashi shape: a rezzed upgrade adding +2 net damage to steal costs.
+pub fn musashi_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Upgrade);
+    c.trash_cost = Some(2);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalStealCost(
+        Cost::net_damage(2),
+    )])
+    .labeled("musashi: +2 net to steal")];
+    c
+}
+
+/// Predictive-Algorithm shape: +2[credit] additional cost to steal.
+pub fn predictive_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
+    // Modeled as an active play-area static for the test's purposes.
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalStealCost(
+        Cost::credits(2),
+    )])
+    .labeled("predictive: +2c to steal")];
+    c
+}
+
+/// Order-of-Sol-adjacent observability card: "Whenever you suffer damage,
+/// gain 1 credit." (mandatory; used to observe 1.16.10b trigger timing.)
+pub fn sol_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerSuffersDamage,
+        vec![Instruction::GainCredits(Side::Runner, 1)],
+        false,
+    )
+    .labeled("sol: gain 1 on damage")];
     c
 }
 

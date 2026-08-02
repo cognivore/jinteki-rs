@@ -135,6 +135,8 @@ pub struct PrintedCard {
     pub console: bool,
     /// Recurring credits refilled at the refill steps.
     pub recurring_credits: Option<u32>,
+    /// CR 1.16.10 printed additional cost to steal (Obokata class).
+    pub additional_steal_cost: Option<crate::ability::Cost>,
     pub abilities: Vec<AbilityDef>,
 }
 
@@ -154,6 +156,7 @@ impl PrintedCard {
             unique: false,
             console: false,
             recurring_credits: None,
+            additional_steal_cost: None,
             abilities: Vec::new(),
         }
     }
