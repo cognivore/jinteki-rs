@@ -190,6 +190,14 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 if !active_now && !hangover_eligible {
                     continue;
                 }
+                // 9.3.6g: a once-per-turn ability already USED this turn
+                // does not become pending again.
+                if def.has_flag(crate::ability::AbilityFlag::OncePerTurn)
+                    && vm.once_per_turn_used.contains(&aref)
+                {
+                    cite!("rule_once_per_turn_flag");
+                    continue;
+                }
 
                 // Occurrence counting: per matching record, or one per group
                 // for per-event conditions (9.12.2a).
@@ -474,6 +482,34 @@ fn step_d_uniqueness(vm: &mut Vm) {
 /// kernel wave enforces the Runner's memory limit (1.20) and illegal hosting.
 fn step_e_restrictions(vm: &mut Vm) {
     cite!("step_checkpoint_card_restrictions");
+    // Hosting illegality (Tithonium class): objects hosted on a host that
+    // prohibits hosting are in an illegal location; each such object is in
+    // every appropriate set, so all are trashed (no choice arises).
+    let illegal_hosted: Vec<ObjectId> = vm
+        .st
+        .objects
+        .values()
+        .filter(|o| {
+            o.zone.is_installed()
+                && o.host.is_some_and(|h| {
+                    vm.st.objects.get(&h).is_some_and(|host| {
+                        card_active(host)
+                            && host.printed.abilities.iter().enumerate().any(|(i, a)| {
+                                a.kind == AbilityKind::Static
+                                    && vm.ability_present(h, i)
+                                    && a.statics
+                                        .iter()
+                                        .any(|d| matches!(d, crate::ability::StaticDecl::CannotHost))
+                            })
+                    })
+                })
+        })
+        .map(|o| o.id)
+        .collect();
+    for id in illegal_hosted {
+        let owner = vm.st.objects[&id].owner;
+        vm.trash_card(id, owner);
+    }
     // Memory limit: installed programs' total memory cost must fit.
     cite!("rule_memory_limit");
     let limit = vm.memory_limit().max(0) as u32;

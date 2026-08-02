@@ -109,6 +109,15 @@ pub enum Instruction {
     /// "The Runner cannot access cards other than this one for the
     /// remainder of the run." (Ash class, 7.4.2.)
     RestrictAccessToSelf,
+    /// Create a delayed conditional ability (9.6.13) with the given
+    /// duration request; "when this run ends" with no run → never created
+    /// (9.6.13d).
+    CreateDelayedConditional {
+        def: Box<crate::ability::AbilityDef>,
+        duration: crate::lingering::WantedDuration,
+    },
+    /// "The Runner loses N memory units until end of turn." (Bad Times.)
+    ReduceRunnerMemoryThisTurn(u32),
     /// "Break up to N subroutines on the encountered ice." (first unbroken)
     BreakSubroutines { count: u32 },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).

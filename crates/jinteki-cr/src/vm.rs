@@ -1760,7 +1760,9 @@ impl Vm {
             | Instruction::PsiGame { .. }
             | Instruction::GrantSubroutinesToSelf { .. }
             | Instruction::CorpDiscards { .. }
-            | Instruction::RestrictAccessToSelf => {
+            | Instruction::RestrictAccessToSelf
+            | Instruction::CreateDelayedConditional { .. }
+            | Instruction::ReduceRunnerMemoryThisTurn(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::GainAllottedClicks(side) => {
@@ -2605,9 +2607,12 @@ impl Vm {
                     af.declined
                 };
                 if !declined {
-                    // 9.6.9d: an optional component was carried out — used.
+                    // 9.6.9d: an optional component was carried out — used;
+                    // this expends once-per-turn restrictions (9.3.6g).
                     cite!("rule_optional_conditional_ability_use");
+                    cite!("rule_once_per_turn_flag");
                     self.changes.record(GameChange::AbilityUsed { source: source.obj });
+                    self.once_per_turn_used.insert(source);
                     let inner_imm = ImminentWrap {
                         instr: (**inner).clone(),
                         atoms: imm.atoms.clone(),
@@ -2861,6 +2866,50 @@ impl Vm {
                     source: source.obj,
                     payload: Payload::RestrictCandidatesTo(source.obj),
                     duration: dur,
+                    applied_to: Vec::new(),
+                });
+            }
+            Instruction::CreateDelayedConditional { def, duration } => {
+                cite!("rule_delayed_conditional_ability");
+                // 9.6.13d: "when this run ends" with no run in progress —
+                // the lingering effect is not created.
+                if matches!(
+                    def.condition,
+                    Some(crate::ability::Condition::Trigger(TriggerCond::RunEnds { .. }))
+                ) && self.current_run.is_none()
+                {
+                    cite!("rule_delayed_run_ends_condition_outside_run");
+                } else {
+                    // 9.6.13b: an explicit duration allows repeated
+                    // triggering; 9.6.13c: otherwise until first resolution.
+                    cite!("rule_delayed_conditional_ability_specified_duration");
+                    cite!("rule_delayed_conditional_ability_relevant_once");
+                    let dur = crate::lingering::bind_duration(
+                        *duration,
+                        self.st.encounter.as_ref().map(|e| e.id),
+                        self.current_run.map(|(r, _, _)| r),
+                        self.st.turn_seq,
+                    );
+                    let id = self.next_lingering;
+                    self.next_lingering += 1;
+                    self.lingering.push(LingeringEffect {
+                        id,
+                        source: source.obj,
+                        payload: Payload::DelayedConditional { def: (**def).clone() },
+                        duration: dur,
+                        applied_to: Vec::new(),
+                    });
+                }
+            }
+            Instruction::ReduceRunnerMemoryThisTurn(n) => {
+                cite!("rule_memory_limit");
+                let id = self.next_lingering;
+                self.next_lingering += 1;
+                self.lingering.push(LingeringEffect {
+                    id,
+                    source: source.obj,
+                    payload: Payload::MemoryLimitMod { delta: -(*n as i32) },
+                    duration: Duration::Turn(self.st.turn_seq),
                     applied_to: Vec::new(),
                 });
             }

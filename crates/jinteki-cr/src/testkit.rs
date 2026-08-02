@@ -1049,6 +1049,115 @@ pub fn ash_like(name: &'static str) -> PrintedCard {
     c
 }
 
+/// Zahya shape (9.3.6g): "once per turn — when a run ends, you may gain 1
+/// credit." Declining does not use it.
+pub fn zahya_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::GainCredits(Side::Runner, 1)))],
+        true,
+    )
+    .with_flag(AbilityFlag::OncePerTurn)
+    .labeled("zahya: may gain 1 when run ends")];
+    c
+}
+
+/// Tithonium shape: ice that prohibits hosting (10.3.1e).
+pub fn tithonium_like(name: &'static str, rez: u32) -> PrintedCard {
+    let mut c = vanilla_ice(name, rez, 5);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::CannotHost])
+        .labeled("tithonium: cannot host")];
+    c
+}
+
+/// Chisel shape: a hosted program (the hosting side of the 10.3.1e test).
+pub fn chisel_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c
+}
+
+/// Bad-Times shape: "The Runner loses 2[mu] until end of turn."
+pub fn bad_times_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::ReduceRunnerMemoryThisTurn(2)],
+    )
+    .labeled("bad-times: -2 mu this turn")];
+    c
+}
+
+/// A program with a given memory cost (10.3.1e minimal-set fodder).
+pub fn program_mu(name: &'static str, mu: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(mu);
+    c
+}
+
+/// In-the-Groove shape (9.6.13b): create a delayed conditional with an
+/// explicit "this turn" duration — "whenever the Runner takes a tag, gain
+/// 1 credit."
+pub fn groove_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateDelayedConditional {
+            def: Box::new(AbilityDef::conditional(
+                TriggerCond::RunnerTakesTag,
+                vec![Instruction::GainCredits(Side::Runner, 1)],
+                false,
+            )
+            .labeled("groove-delayed: gain 1 per tag")),
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled("groove: install the delayed trigger")];
+    c
+}
+
+/// Joshua-B shape (9.6.13c): create a delayed conditional with NO stated
+/// duration — "when this turn ends, gain 1 credit" — one-shot.
+pub fn joshua_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateDelayedConditional {
+            def: Box::new(AbilityDef::conditional(
+                TriggerCond::TurnEnds(Side::Runner),
+                vec![Instruction::GainCredits(Side::Runner, 1)],
+                false,
+            )
+            .labeled("joshua-delayed: gain 1 at turn end")),
+            duration: crate::lingering::WantedDuration::UntilResolved,
+        }],
+    )
+    .labeled("joshua: install the turn-end trigger")];
+    c
+}
+
+/// Mayfly shape (9.6.13d): try to create a "when this run ends, trash this"
+/// delayed conditional.
+pub fn mayfly_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateDelayedConditional {
+            def: Box::new(AbilityDef::conditional(
+                TriggerCond::RunEnds { successful_only: false },
+                vec![Instruction::TrashSelf],
+                false,
+            )
+            .labeled("mayfly-delayed: trash at run end")),
+            duration: crate::lingering::WantedDuration::UntilResolved,
+        }],
+    )
+    .labeled("mayfly: arm the run-end trash")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------

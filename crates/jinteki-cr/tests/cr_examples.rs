@@ -61,6 +61,14 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_subroutine_origin_static_after_2",
     "example_rule_subroutine_origin_external_after_1",
     "example_rule_prohibiting_access_1",
+    // Wave 2e: once-per-turn (9.3.6g), delayed durations (9.6.13),
+    // restriction sets (10.3.1e).
+    "example_rule_once_per_turn_flag_1",
+    "example_step_checkpoint_card_restrictions_1",
+    "example_step_checkpoint_card_restrictions_2",
+    "example_rule_delayed_conditional_ability_specified_duration_1",
+    "example_rule_delayed_conditional_ability_relevant_once_1",
+    "example_rule_delayed_run_ends_condition_outside_run_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -2284,6 +2292,289 @@ fn example_rule_prohibiting_access_1() {
         .log
         .iter()
         .any(|c| matches!(c, GameChange::TraceDetermined { success: true, .. })));
+}
+
+// ===========================================================================
+// Wave 2e — 9.3.6g / 9.6.13 / 10.3.1e
+// ===========================================================================
+
+/// example_rule_once_per_turn_flag_1 (9.3.6g): declining the optional part
+/// of a Zahya-class once-per-turn ability does not "use" it; a later run
+/// the same turn can still gain the credit, and after actually using it,
+/// no further instance pends.
+#[test]
+fn example_rule_once_per_turn_flag_1() {
+    let mut vm = Vm::empty(80);
+    tk::install_rig(&mut vm, tk::zahya_like("Zahya-like"));
+    vm.start_turn(Side::Runner);
+
+    let mut offers = 0;
+    let mut runs = 0;
+    for _ in 0..600 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::TakeAction { .. } if runs < 3 => {
+                runs += 1;
+                vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+                    server: ServerId::Archives,
+                }));
+            }
+            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner => {
+                if let Some(opt) = tk::option_labeled(options, "zahya") {
+                    offers += 1;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    let a = tk::default_answer(&spec);
+                    vm.answer(a);
+                }
+            }
+            DecisionSpec::OptionalEffect { .. } => {
+                // Run 1: decline (not "used"); run 2: accept.
+                vm.answer(DecisionAnswer::ResolveOptional(offers >= 2));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(runs, 3);
+    assert_eq!(
+        offers, 2,
+        "9.3.6g: pended after runs 1 and 2; after actually using it, never again"
+    );
+    assert_eq!(vm.st.runner.credits, 1, "gained exactly once");
+}
+
+/// example_step_checkpoint_card_restrictions_1 (10.3.1e): rezzing a
+/// Tithonium-class ice makes the hosted Chisel-class program illegal — it
+/// is trashed at the next checkpoint.
+#[test]
+fn example_step_checkpoint_card_restrictions_1() {
+    let mut vm = Vm::empty(81);
+    let tith = tk::install_ice(&mut vm, tk::tithonium_like("Tithonium-like", 3), ServerId::Hq, false);
+    let chisel = tk::install_rig(&mut vm, tk::chisel_like("Chisel-like"));
+    tk::host_on(&mut vm, chisel, tith);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut rezzed = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { classes, options } if s == Side::Corp && !rezzed => {
+                if classes.rez_approached_ice {
+                    if let Some(opt) = options
+                        .iter()
+                        .find(|o| matches!(o, WindowOption::RezApproachedIce { .. }))
+                        .cloned()
+                    {
+                        rezzed = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                vm.answer(DecisionAnswer::Pass);
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(rezzed);
+    assert_eq!(
+        vm.st.objects[&chisel].zone,
+        Zone::Discard(Side::Runner),
+        "10.3.1e: hosted in an illegal location — trashed at the checkpoint"
+    );
+}
+
+/// example_step_checkpoint_card_restrictions_2 (10.3.1e): Bad Times drops
+/// the memory limit by 2 with 4[mu] installed. The appropriate sets are
+/// exactly {the 2[mu] program} and {the two 1[mu] programs}; no set may
+/// contain the 0[mu] program.
+#[test]
+fn example_step_checkpoint_card_restrictions_2() {
+    let mut vm = Vm::empty(82);
+    let p1 = tk::install_rig(&mut vm, tk::program_mu("One-A", 1));
+    let p2 = tk::install_rig(&mut vm, tk::program_mu("One-B", 1));
+    let p3 = tk::install_rig(&mut vm, tk::program_mu("Two", 2));
+    let p0 = tk::install_rig(&mut vm, tk::program_mu("Zero", 0));
+    tk::install_root(&mut vm, tk::bad_times_button("BadTimes-like"), ServerId::Remote(1), true);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let mut fired = false;
+    let mut offered_sets: Option<Vec<Vec<jinteki_cr::ObjectId>>> = None;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !fired => {
+                if let Some(opt) = tk::option_labeled(options, "bad-times") {
+                    fired = true;
+                    vm.answer(DecisionAnswer::Take(opt));
+                } else {
+                    vm.answer(DecisionAnswer::Pass);
+                }
+            }
+            DecisionSpec::MinimalSet { sets } => {
+                offered_sets = Some(sets.clone());
+                // Choose the {2mu} singleton.
+                let idx = sets.iter().position(|s| s == &vec![p3]).expect("2mu set offered");
+                vm.answer(DecisionAnswer::ChooseSet(idx));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    let sets = offered_sets.expect("a minimal-set choice was demanded");
+    assert_eq!(sets.len(), 2, "exactly two appropriate sets");
+    assert!(sets.contains(&vec![p3]), "the single 2[mu] program");
+    assert!(
+        sets.iter().any(|s| {
+            s.len() == 2 && s.contains(&p1) && s.contains(&p2)
+        }),
+        "the two 1[mu] programs together"
+    );
+    assert!(
+        sets.iter().all(|s| !s.contains(&p0)),
+        "10.3.1e: the 0[mu] program can never be part of a minimal set"
+    );
+    assert_eq!(vm.st.objects[&p3].zone, Zone::Discard(Side::Runner));
+    assert!(vm.st.objects[&p1].zone.is_installed());
+    assert!(vm.st.objects[&p2].zone.is_installed());
+}
+
+/// example_rule_delayed_conditional_ability_specified_duration_1 (9.6.13b):
+/// a delayed conditional with an explicit "this turn" duration triggers
+/// EVERY time its condition is met, expiring only at end of turn.
+#[test]
+fn example_rule_delayed_conditional_ability_specified_duration_1() {
+    let mut vm = Vm::empty(83);
+    tk::install_rig(&mut vm, tk::groove_button("Groove-like"));
+    tk::install_rig(&mut vm, tk::take_tag_button("TagMe"));
+    vm.start_turn(Side::Runner);
+
+    let mut armed = false;
+    let mut tags_taken = 0;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner => {
+                if !armed {
+                    if let Some(opt) = tk::option_labeled(options, "groove:") {
+                        armed = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                if armed && tags_taken < 2 {
+                    if let Some(opt) = tk::option_labeled(options, "take 1 tag") {
+                        tags_taken += 1;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                vm.answer(DecisionAnswer::Pass);
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert_eq!(tags_taken, 2);
+    assert_eq!(
+        vm.st.runner.credits, 2,
+        "9.6.13b: the delayed conditional resolved on BOTH occurrences"
+    );
+}
+
+/// example_rule_delayed_conditional_ability_relevant_once_1 (9.6.13c): a
+/// delayed conditional with no stated duration resolves once — at turn end
+/// — and is then no longer maintained.
+#[test]
+fn example_rule_delayed_conditional_ability_relevant_once_1() {
+    let mut vm = Vm::empty(84);
+    tk::install_rig(&mut vm, tk::joshua_button("Joshua-like"));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "joshua:", 100);
+    // Drain the runner turn (spend all clicks on credits) into the corp
+    // turn, then let the next runner turn end too.
+    let mut runner_turn_ends = 0;
+    for _ in 0..800 {
+        match vm.step() {
+            Yield::Decision(_, spec) => match &spec {
+                DecisionSpec::TakeAction { .. } => {
+                    vm.answer(DecisionAnswer::Action(ActionOption::BasicCredit));
+                }
+                other => {
+                    let a = tk::default_answer(other);
+                    vm.answer(a);
+                }
+            },
+            Yield::Progressed => continue,
+            Yield::GameOver(r) => panic!("game over {r:?}"),
+        }
+        runner_turn_ends = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::TurnEnded { side: Side::Runner }))
+            .count();
+        if runner_turn_ends >= 2 {
+            break;
+        }
+    }
+    assert!(runner_turn_ends >= 2, "two runner turns ended");
+    let gains = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CreditsGained { side: Side::Runner, amount: 1 }))
+        .count();
+    // 4 clicks/turn × 2 turns of basic credits = 8 one-credit gains, plus
+    // exactly ONE from the delayed conditional (9.6.13c).
+    assert_eq!(gains, 8 + 1, "the turn-end trigger fired exactly once");
+}
+
+/// example_rule_delayed_run_ends_condition_outside_run_1 (9.6.13d): arming
+/// a "when this run ends" delayed conditional with NO run in progress
+/// creates nothing — a later run does not trash the Mayfly-class source.
+#[test]
+fn example_rule_delayed_run_ends_condition_outside_run_1() {
+    let mut vm = Vm::empty(85);
+    let mayfly = tk::install_rig(&mut vm, tk::mayfly_button("Mayfly-like"));
+    vm.start_turn(Side::Runner);
+
+    // Use the button OUTSIDE any run.
+    tk::take_labeled(&mut vm, Side::Runner, "mayfly:", 100);
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    assert!(
+        vm.lingering.is_empty(),
+        "9.6.13d: the lingering effect was never created"
+    );
+    // A later run ends — nothing fires.
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Archives }));
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    assert!(
+        vm.st.objects[&mayfly].zone.is_installed(),
+        "Mayfly was not trashed by the later run"
+    );
 }
 
 // ===========================================================================

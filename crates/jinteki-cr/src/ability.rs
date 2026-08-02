@@ -67,6 +67,8 @@ pub enum TriggerCond {
     SelfWouldBeTrashed,
     /// "Whenever the Runner breaches this server…" (Ash class).
     ThisServerBreached,
+    /// "When this turn ends." (Joshua B. class delayed conditionals.)
+    TurnEnds(Side),
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
@@ -179,6 +181,9 @@ pub enum StaticDecl {
     /// "This ice gains '[sub] …' for each card in HQ." (Ashigaru class;
     /// category 9.8.3d — self-static, after printed, lose last-first.)
     GainSubroutinePerHqCard { sub: Box<AbilityDef> },
+    /// "Cards cannot be hosted on this card." (Tithonium class; 10.3.1e
+    /// hosting-illegality restriction.)
+    CannotHost,
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -431,6 +436,7 @@ pub fn trigger_matches(
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
             server_of_source == Some(*server)
         }
+        (TriggerCond::TurnEnds(side), GameChange::TurnEnded { side: s }) => side == s,
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
         (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
         (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {
