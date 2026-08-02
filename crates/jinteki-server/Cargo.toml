@@ -1,0 +1,23 @@
+[package]
+name = "jinteki-server"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "jinteki-rs game server: local play vs bot + bridge to the reference server"
+
+[dependencies]
+jinteki-core = { path = "../jinteki-core" }
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.9"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+rmpv = "1"
+url = "2"

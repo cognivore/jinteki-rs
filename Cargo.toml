@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = ["crates/jinteki-core", "crates/jinteki-server"]
+
+[workspace.package]
+edition = "2021"
+license = "WTFPL"
+
+[profile.release]
+opt-level = 2
