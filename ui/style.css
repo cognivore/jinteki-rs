@@ -331,6 +331,37 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .zoom-card .ztext { font-size: 13px; }
 }
 
+/* ── iPhone camera cutout & home indicator: every edge-pinned element
+      shifts inward by the safe-area inset. In landscape, iOS reports the
+      notch side (left OR right, per rotation) automatically. Declared last
+      so these win the cascade over both the base and phone layouts. ── */
+:root {
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+}
+.side-bar { left: calc(6px + var(--sal)); }
+.side-bar.top { top: calc(6px + var(--sat)); }
+#board { inset: calc(4px + var(--sat)) calc(58px + var(--sar)) 124px calc(128px + var(--sal)); }
+.action-bar { left: calc(132px + var(--sal)); }
+.focus-panel { left: calc(132px + var(--sal)); }
+#turn-btn-wrap { right: calc(12px + var(--sar)); }
+.run-controls { right: calc(12px + var(--sar)); }
+.log-tab { right: var(--sar); }
+.log-drawer.open { right: var(--sar); }
+.hand { bottom: calc(-26px + var(--sab)); }
+@media (max-height: 640px) {
+  #board { inset: calc(2px + var(--sat)) calc(50px + var(--sar)) 92px calc(104px + var(--sal)); }
+  .action-bar { left: calc(106px + var(--sal)); bottom: calc(94px + var(--sab)); }
+  .focus-panel { left: calc(106px + var(--sal)); bottom: calc(94px + var(--sab)); }
+  #turn-btn-wrap { right: calc(8px + var(--sar)); }
+  .run-controls { right: calc(8px + var(--sar)); bottom: calc(100px + var(--sab)); }
+  .side-bar.bottom { bottom: calc(88px + var(--sab)); }
+  .hand { bottom: calc(-16px + var(--sab)); }
+  .prompt-sheet { bottom: calc(96px + var(--sab)); }
+}
+
 /* portrait nudge */
 @media (orientation: portrait) {
   .hand .card { width: 60px; height: 84px; margin: 0 -18px; }

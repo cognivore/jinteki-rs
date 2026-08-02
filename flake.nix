@@ -11,8 +11,12 @@
     {
       # The deployable artifact: the server binary with the UI beside it.
       packages = forAll (pkgs: {
-        default = pkgs.callPackage ./nix/package.nix { };
-        jinteki-rs = pkgs.callPackage ./nix/package.nix { };
+        default = pkgs.callPackage ./nix/package.nix {
+          rev = self.shortRev or self.dirtyShortRev or "dev";
+        };
+        jinteki-rs = pkgs.callPackage ./nix/package.nix {
+          rev = self.shortRev or self.dirtyShortRev or "dev";
+        };
       });
 
       # The headline output for a vacationvm fleet (see nix/vacationvm-module.nix).
@@ -27,6 +31,7 @@
             clippy
             rustfmt
             rust-analyzer
+            rust-script # tools/fetch-carddata.rs (card data actualiser)
             # Reference-server oracle tooling (docker-compose against colima VM).
             colima
             docker-client
