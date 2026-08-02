@@ -371,20 +371,25 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 @media (orientation: landscape) {
   .zoom-overlay .zoom-card {
     display: grid;
-    grid-template-columns: minmax(200px, 42%) minmax(220px, 1fr);
+    /* Art column is sized BY the image, and the image is sized BY viewport
+       height — so the card never forces a vertical scroll on account of art.
+       Text gets whatever width remains. */
+    grid-template-columns: auto minmax(200px, 1fr);
     column-gap: 16px;
     align-items: start;
     align-content: start;
-    width: min(92vw, 760px);
-    max-height: 86vh;
-    padding: 16px;
+    width: min(92vw, 720px);
+    max-height: 90vh;
+    padding: 14px 16px;
   }
   .zoom-overlay .zoom-card .zart {
     grid-column: 1;
     grid-row: 1 / span 40;
-    width: 100%;
-    height: auto;
+    height: min(74vh, 460px);
+    width: auto;
+    max-width: 44vw;
     max-height: none;
+    object-fit: contain;
     margin: 0;
     border-radius: 10px;
   }
@@ -393,12 +398,14 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 }
 @media (orientation: landscape) and (max-height: 640px) {
   .zoom-overlay .zoom-card {
-    width: min(94vw, 660px);
-    max-height: 94vh;
-    padding: 12px;
+    width: auto;
+    max-width: 94vw;
+    max-height: 96vh;
+    padding: 10px 12px;
     column-gap: 12px;
     row-gap: 4px;
   }
+  .zoom-overlay .zoom-card .zart { height: min(80vh, 460px); }
   .zoom-overlay .zoom-card h3 { font-size: 17px; }
   .zoom-overlay .zoom-card .ztext { font-size: 12.5px; line-height: 1.35; }
   .zoom-overlay .zoom-card .zline { font-size: 11px; }
