@@ -8,7 +8,7 @@
 - Implemented by the reference (jinteki.net defcard exists): **2054**
 - Reference implementations flagged partial (`:implementation` caveat): **56**
 - Not implemented anywhere — the ISOLATED set needing fresh behavior work: **11**
-- Rust behavior overlay (carddb.rs): **28**
+- Rust behavior overlay (carddb.rs): **43**
 
 ### Isolated titles (no implementation even in jinteki.net)
 
@@ -37,10 +37,10 @@ jinteki.net pseudo-cards (basic actions and similar); they are engine-internal o
 |---|---:|---:|---:|
 | Draft (`draft`) | 9 | 9 | 0 |
 | Core (`core`) | 32 | 32 | 0 |
-| Genesis (`genesis`) | 69 | 69 | 0 |
+| Genesis (`genesis`) | 69 | 69 | 1 |
 | Creation and Control (`creation-and-control`) | 46 | 45 | 0 |
 | Spin (`spin`) | 90 | 90 | 0 |
-| Honor and Profit (`honor-and-profit`) | 50 | 50 | 0 |
+| Honor and Profit (`honor-and-profit`) | 50 | 50 | 1 |
 | Lunar (`lunar`) | 102 | 102 | 0 |
 | Order and Chaos (`order-and-chaos`) | 55 | 55 | 0 |
 | SanSan (`sansan`) | 109 | 109 | 0 |
@@ -50,17 +50,17 @@ jinteki.net pseudo-cards (basic actions and similar); they are engine-internal o
 | Red Sand (`red-sand`) | 120 | 120 | 0 |
 | Terminal Directive (`terminal-directive`) | 71 | 71 | 0 |
 | Unreleased (`unreleased`) | 2 | 2 | 0 |
-| Revised Core (`revised-core`) | 39 | 39 | 0 |
+| Revised Core (`revised-core`) | 39 | 39 | 1 |
 | Kitara (`kitara`) | 120 | 120 | 0 |
 | Reign and Reverie (`reign-and-reverie`) | 56 | 56 | 0 |
 | Magnum Opus (`magnum-opus`) | 2 | 2 | 0 |
 | NAPD Multiplayer (`napd-multiplayer`) | 1 | 0 | 0 |
-| System Core 2019 (`system-core-2019`) | 84 | 84 | 7 |
-| Ashes (`ashes`) | 130 | 130 | 0 |
+| System Core 2019 (`system-core-2019`) | 84 | 84 | 16 |
+| Ashes (`ashes`) | 130 | 130 | 1 |
 | Magnum Opus Reprint (`magnum-opus-reprint`) | 6 | 6 | 0 |
 | Salvaged Memories (`salvaged-memories`) | 15 | 15 | 0 |
 | System Gateway (`system-gateway`) | 77 | 77 | 7 |
-| System Update 2021 (`system-update-2021`) | 82 | 82 | 13 |
+| System Update 2021 (`system-update-2021`) | 82 | 82 | 15 |
 | Borealis (`borealis`) | 128 | 128 | 0 |
 | Liberation (`liberation`) | 130 | 130 | 0 |
 | Elevation (`elevation`) | 82 | 82 | 0 |

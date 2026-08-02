@@ -1,6 +1,7 @@
 //! Command processing: turns, economy, installs, plays, scores, prompts.
-//! Run-specific logic lives in `runs.rs`.
+//! Run-specific logic lives in `runs.rs`; the ability-IR pipeline in `ir.rs`.
 
+use crate::ir::{self, Event};
 use crate::runs;
 use crate::state::*;
 use crate::types::*;
@@ -52,6 +53,8 @@ pub fn process_command(st: &mut GameState, side: Side, cmd: Command) -> Result<(
         Command::Continue => runs::continue_run(st, side)?,
         Command::JackOut => runs::jack_out(st, side)?,
         Command::RemoveTag => remove_tag(st, side)?,
+        Command::TrashResource => trash_resource(st, side)?,
+        Command::Purge => purge(st, side)?,
         Command::TrashAccessed { .. } => return Err(EngineError::InvalidCommand("trash".into())),
         Command::Choice { .. } | Command::Select { .. } | Command::Concede => unreachable!(),
     }
@@ -112,26 +115,16 @@ fn start_turn(st: &mut GameState, side: Side) -> Result<(), EngineError> {
     st.system_log(format!("{name} started [their] turn {turn}."));
     st.clicks[if side == Side::Corp { 0 } else { 1 }] =
         if side == Side::Corp { 3 } else { 4 };
-    st.hq_success_this_turn = false;
+    st.fired_this_turn.clear();
     st.turn_state = TurnState::Acting;
 
+    // Start-of-turn triggered abilities (PAD Campaign, Adonis Campaign).
+    ir::fire_event(st, Event::TurnBegins(side));
+    if st.game_over() {
+        return Ok(());
+    }
+
     if side == Side::Corp {
-        // Start-of-turn drips (PAD Campaign).
-        let drippers: Vec<Cid> = st
-            .servers
-            .iter()
-            .flat_map(|(_, s)| s.content.iter().copied())
-            .filter(|&cid| {
-                let c = st.card(cid);
-                c.rezzed && c.def().drip_corp_turn > 0
-            })
-            .collect();
-        for cid in drippers {
-            let n = st.card(cid).def().drip_corp_turn as i64;
-            let title = st.card(cid).title();
-            st.gain_credits(Side::Corp, n);
-            st.side_log(Side::Corp, format!("uses {title} to gain {n} [Credits]"));
-        }
         // Mandatory draw; corp loses if it cannot draw.
         if st.deck(Side::Corp).is_empty() {
             st.declare_winner(Side::Runner, "Decked");
@@ -169,6 +162,12 @@ pub(crate) fn finish_end_turn(st: &mut GameState, side: Side) {
     let name = st.username(side).to_string();
     st.system_log(format!("{name} is ending [their] turn."));
     st.clicks[if side == Side::Corp { 0 } else { 1 }] = 0;
+    ir::fire_event(st, Event::TurnEnds(side));
+    if side == Side::Runner {
+        // Shift the successful-run register (SEA Source's "last turn").
+        st.runner_run_last_turn = st.runner_run_this_turn;
+        st.runner_run_this_turn = false;
+    }
     st.active = side.opponent();
     st.turn_state = TurnState::AwaitingStart;
 }
@@ -214,6 +213,58 @@ fn remove_tag(st: &mut GameState, side: Side) -> Result<(), EngineError> {
     Ok(())
 }
 
+/// Corp basic action: [click] + 2 credits — trash 1 resource if tagged.
+fn trash_resource(st: &mut GameState, side: Side) -> Result<(), EngineError> {
+    if side != Side::Corp {
+        return Err(EngineError::InvalidCommand("corp action".into()));
+    }
+    require_action_window(st, side)?;
+    if st.tags == 0 {
+        return Err(EngineError::InvalidCommand("the runner is not tagged".into()));
+    }
+    if st.rig.resources.is_empty() {
+        return Err(EngineError::InvalidCommand("no resources installed".into()));
+    }
+    if st.clicks(side) < 1 || st.spendable(side) < 2 {
+        return Err(EngineError::CantAfford);
+    }
+    st.spend_click(side, 1);
+    st.pay_credits(side, 2);
+    st.side_log(
+        side,
+        "spends [Click] and 2 [Credits] to trash a resource".into(),
+    );
+    st.prompt_select(
+        Side::Corp,
+        "Choose a resource to trash".into(),
+        SelectKind::InstalledRunnerResource,
+        PromptContext::TrashResourcePick,
+    );
+    Ok(())
+}
+
+/// Corp basic action: [click][click][click] — purge virus counters.
+fn purge(st: &mut GameState, side: Side) -> Result<(), EngineError> {
+    if side != Side::Corp {
+        return Err(EngineError::InvalidCommand("corp action".into()));
+    }
+    require_action_window(st, side)?;
+    if st.clicks(side) < 3 {
+        return Err(EngineError::NoClicks);
+    }
+    st.spend_click(side, 3);
+    let installed: Vec<Cid> = st
+        .all_installed_corp()
+        .into_iter()
+        .chain(st.all_installed_runner())
+        .collect();
+    for cid in installed {
+        st.card_mut(cid).counters.virus = 0;
+    }
+    st.side_log(side, "spends [Click][Click][Click] to purge all virus counters".into());
+    Ok(())
+}
+
 // ── playing operations and events ──────────────────────────────────────────
 
 fn play_card(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineError> {
@@ -226,6 +277,17 @@ fn play_card(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineError
     if !is_instant || def.side != side {
         return Err(EngineError::InvalidCard);
     }
+    // "Play only if ..." gates (SEA Source).
+    if let Some(cond) = def.play_condition {
+        let ok = match cond {
+            Condition::RunnerSuccessfulRunLastTurn => st.runner_run_last_turn,
+            Condition::Always => true,
+            _ => false,
+        };
+        if !ok {
+            return Err(EngineError::InvalidCommand("play condition not met".into()));
+        }
+    }
     if st.clicks(side) < 1 || st.spendable(side) < def.cost as i64 {
         return Err(EngineError::CantAfford);
     }
@@ -235,31 +297,32 @@ fn play_card(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineError
     let cost = def.cost;
     st.side_log(side, format!("spends [Click] and {cost} [Credits] to play {title}"));
 
-    // Weyland BABW: gain 1 when the corp plays a transaction.
-    if side == Side::Corp
-        && def.is_transaction()
-        && st.card(st.identity(Side::Corp)).def().identity_ability
-            == Some(IdentityAbility::GainOnTransaction)
-    {
-        st.gain_credits(Side::Corp, 1);
-        let id_title = st.card(st.identity(Side::Corp)).title();
-        st.side_log(side, format!("uses {id_title} to gain 1 [Credits]"));
+    // Identity/active-card hooks that watch operations being played (BABW).
+    if def.kind == CardType::Operation {
+        ir::fire_event(st, Event::PlayedOperation(cid));
     }
 
     // The card goes to the discard pile; effects resolve after.
     st.trash(cid, true);
 
-    match def.on_play {
-        Some(OnPlay::GainCredits(n)) => {
-            st.gain_credits(side, n as i64);
-            st.side_log(side, format!("gains {n} [Credits]"));
-        }
-        Some(OnPlay::Draw(n)) => {
-            let drawn = st.draw_n(side, n as usize);
-            st.side_log(side, format!("draws {drawn} cards"));
-        }
-        Some(OnPlay::RunEvent { target, access_bonus, success_credits }) => match target {
-            Some(server) => runs::initiate_run(st, server, access_bonus, success_credits, Some(cid)),
+    // No behavior row (vanilla card database entry): the cost is paid and
+    // the card is in the discard; nothing else happens.
+    let has_on_play = def
+        .triggered
+        .iter()
+        .any(|t| t.trigger == crate::types::Trigger::OnPlaySelf)
+        || def.run_event.is_some();
+    if !has_on_play {
+        st.system_log("(no implemented effect)".into());
+    }
+
+    // Printed on-play effects through the IR (Hedge Fund, Diesel, SEA Source).
+    ir::fire_event(st, Event::PlayedSelf(cid));
+
+    // Run events initiate their run after any on-play effects queue up.
+    if let Some(run_ev) = def.run_event {
+        match run_ev.target {
+            Some(server) => runs::initiate_run(st, server, Some(cid)),
             None => {
                 let mut labels: Vec<String> =
                     vec!["HQ".into(), "R&D".into(), "Archives".into()];
@@ -273,14 +336,9 @@ fn play_card(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineError
                     side,
                     "Choose a server".into(),
                     &refs,
-                    PromptContext::ChooseRunServer { success_credits, access_bonus },
+                    PromptContext::ChooseRunServer { source: Some(cid) },
                 );
             }
-        },
-        // No behavior row (vanilla card database entry): the cost is paid and
-        // the card is in the discard; nothing else happens.
-        None => {
-            st.system_log("(no implemented effect)".into());
         }
     }
     Ok(())
@@ -310,9 +368,6 @@ fn install_corp(st: &mut GameState, side: Side, cid: Cid, server: &str) -> Resul
 
     // Resolve target server; "New remote" creates one.
     let server_id = if server == "New remote" {
-        if def.kind == CardType::Ice {
-            // Ice on a brand-new remote is legal.
-        }
         let id = ServerId::Remote(st.next_remote);
         st.next_remote += 1;
         st.servers.push((id, Server::default()));
@@ -394,7 +449,6 @@ fn install_runner(st: &mut GameState, side: Side, cid: Cid) -> Result<(), Engine
     c.zone = Zone::Rig;
     c.faceup = true;
     c.rezzed = true; // runner installs are active
-    c.credits = def.start_credits; // Armitage's 12
     match def.kind {
         CardType::Program => st.rig.programs.push(cid),
         CardType::Hardware => st.rig.hardware.push(cid),
@@ -404,6 +458,8 @@ fn install_runner(st: &mut GameState, side: Side, cid: Cid) -> Result<(), Engine
     let title = def.title;
     let cost = def.cost;
     st.side_log(side, format!("spends [Click] and {cost} [Credits] to install {title}"));
+    // When-installed abilities (Armitage loading its 12 credits).
+    ir::fire_event(st, Event::Installed(cid));
     Ok(())
 }
 
@@ -437,13 +493,12 @@ fn score_agenda(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineEr
         return Err(EngineError::InvalidCommand("only the corp scores".into()));
     }
     require_action_window(st, side)?;
-    let (ok, req) = {
+    let ok = {
         let c = st.card(cid);
         let installed = matches!(c.zone, Zone::InServer { ice: false, .. });
         let req = c.def().advancement_requirement.unwrap_or(u32::MAX);
-        (installed && c.is_agenda() && c.advancement >= req, req)
+        installed && c.is_agenda() && c.advancement >= req
     };
-    let _ = req;
     if !ok {
         return Err(EngineError::InvalidCard);
     }
@@ -451,49 +506,9 @@ fn score_agenda(st: &mut GameState, side: Side, cid: Cid) -> Result<(), EngineEr
     let points = st.card(cid).def().agenda_points.unwrap_or(0);
     st.to_score_area(cid, Side::Corp);
     st.side_log(side, format!("scores {title} and gains {points} agenda points"));
-    resolve_on_score(st, cid);
+    ir::fire_event(st, Event::AgendaScored(cid));
     st.check_agenda_win();
     Ok(())
-}
-
-fn resolve_on_score(st: &mut GameState, cid: Cid) {
-    match st.card(cid).def().on_score {
-        Some(OnScore::GainCredits(n)) => {
-            st.gain_credits(Side::Corp, n as i64);
-            st.side_log(Side::Corp, format!("gains {n} [Credits]"));
-        }
-        Some(OnScore::GainCreditsAndBadPub(n)) => {
-            st.gain_credits(Side::Corp, n as i64);
-            st.bad_pub += 1;
-            st.side_log(
-                Side::Corp,
-                format!("gains {n} [Credits] and takes 1 bad publicity"),
-            );
-        }
-        Some(OnScore::OptionalRezIceFree) => {
-            let any_target = st
-                .all_installed_ice()
-                .iter()
-                .any(|&i| !st.card(i).rezzed);
-            if any_target {
-                st.prompt_select(
-                    Side::Corp,
-                    "Choose a piece of ice to rez, ignoring all costs".into(),
-                    SelectKind::UnrezzedInstalledIce,
-                    PromptContext::PriorityReqRez,
-                );
-            }
-        }
-        Some(OnScore::DrawUpTo(_)) => {
-            st.prompt_buttons(
-                Side::Corp,
-                "Draw 2 cards?".into(),
-                &["Yes", "No"],
-                PromptContext::HubDraw,
-            );
-        }
-        None => {}
-    }
 }
 
 // ── rezzing ────────────────────────────────────────────────────────────────
@@ -519,18 +534,17 @@ pub(crate) fn rez_card(
         }
         st.pay_credits(side, cost);
     }
-    let def = st.card(cid).def();
-    let start_credits = def.start_credits;
-    let title = def.title;
+    let title = st.card(cid).def().title;
     let c = st.card_mut(cid);
     c.rezzed = true;
     c.faceup = true;
-    c.credits = start_credits; // Regolith's 15
     if free {
         st.side_log(side, format!("rezzes {title}, ignoring all costs"));
     } else {
         st.side_log(side, format!("rezzes {title} paying {cost} [Credits]"));
     }
+    // When-rezzed abilities (Regolith/Adonis loading credits).
+    ir::fire_event(st, Event::Rezzed(cid));
     Ok(())
 }
 
@@ -545,38 +559,106 @@ fn use_ability(st: &mut GameState, side: Side, cid: Cid, index: usize) -> Result
         }
         return runs::breaker_ability(st, cid, bd, index);
     }
-    // Click abilities (Armitage, Regolith).
+    // Click abilities (Armitage, Regolith) occupy index 0 when present.
     if let Some(ClickAbility::TakeCredits(per)) = def.click_ability {
-        if index != 0 || def.side != side {
-            return Err(EngineError::InvalidCommand("no such ability".into()));
-        }
-        require_action_window(st, side)?;
-        let active = match side {
-            Side::Runner => st.rig.resources.contains(&cid) || st.rig.programs.contains(&cid),
-            Side::Corp => {
-                matches!(st.card(cid).zone, Zone::InServer { ice: false, .. })
-                    && st.card(cid).rezzed
+        if index == 0 {
+            if def.side != side {
+                return Err(EngineError::InvalidCommand("no such ability".into()));
             }
-        };
-        if !active {
-            return Err(EngineError::InvalidCard);
+            require_action_window(st, side)?;
+            let active = match side {
+                Side::Runner => {
+                    st.rig.resources.contains(&cid) || st.rig.programs.contains(&cid)
+                }
+                Side::Corp => {
+                    matches!(st.card(cid).zone, Zone::InServer { ice: false, .. })
+                        && st.card(cid).rezzed
+                }
+            };
+            if !active {
+                return Err(EngineError::InvalidCard);
+            }
+            if st.clicks(side) < 1 {
+                return Err(EngineError::NoClicks);
+            }
+            st.spend_click(side, 1);
+            let take = per.min(st.card(cid).counters.credit);
+            st.card_mut(cid).counters.credit -= take;
+            st.gain_credits(side, take as i64);
+            let title = def.title;
+            st.side_log(side, format!("spends [Click] to use {title} to gain {take} [Credits]"));
+            if st.card(cid).counters.credit == 0 {
+                st.trash(cid, true);
+                st.side_log(side, format!("trashes {title}"));
+            }
+            return Ok(());
         }
-        if st.clicks(side) < 1 {
-            return Err(EngineError::NoClicks);
-        }
-        st.spend_click(side, 1);
-        let take = per.min(st.card(cid).credits);
-        st.card_mut(cid).credits -= take;
-        st.gain_credits(side, take as i64);
-        let title = def.title;
-        st.side_log(side, format!("spends [Click] to use {title} to gain {take} [Credits]"));
-        if st.card(cid).credits == 0 {
-            st.trash(cid, true);
-            st.side_log(side, format!("trashes {title}"));
-        }
-        return Ok(());
     }
-    Err(EngineError::InvalidCommand("no such ability".into()))
+    // Hosted-counter paid abilities (Data Raven, Nisei MK II, Datasucker).
+    // Index space: click ability (if any) takes index 0; counter abilities
+    // follow. A click-ability index 0 was handled above, so `index >= base`.
+    let base = if def.click_ability.is_some() { 1 } else { 0 };
+    let Some(ab) = index
+        .checked_sub(base)
+        .and_then(|i| def.counter_abilities.get(i))
+    else {
+        return Err(EngineError::InvalidCommand("no such ability".into()));
+    };
+    use_counter_ability(st, side, cid, ab)
+}
+
+fn use_counter_ability(
+    st: &mut GameState,
+    side: Side,
+    cid: Cid,
+    ab: &'static CounterAbility,
+) -> Result<(), EngineError> {
+    let def = st.card(cid).def();
+    if def.side != side {
+        return Err(EngineError::InvalidCommand("not your card".into()));
+    }
+    if st.any_prompt_open() {
+        return Err(EngineError::PromptOpen);
+    }
+    // The card must be active for its side.
+    let active = match side {
+        Side::Corp => match st.card(cid).zone {
+            Zone::InServer { .. } => st.card(cid).rezzed,
+            Zone::Scored(Side::Corp) => true,
+            _ => false,
+        },
+        Side::Runner => matches!(st.card(cid).zone, Zone::Rig),
+    };
+    if !active {
+        return Err(EngineError::InvalidCard);
+    }
+    // Timing windows (coarse-grained paid windows: the acting player's action
+    // window, or during a run; see PARITY notes on paid-ability timing).
+    let in_run = st.run.is_some();
+    let in_encounter = in_run
+        && st.run.as_ref().map(|r| r.phase) == Some(RunPhase::EncounterIce)
+        && runs::encountered_ice(st).map(|i| st.card(i).rezzed) == Some(true);
+    let action_window =
+        st.turn_state == TurnState::Acting && st.active == side && !in_run && st.breach.is_none();
+    let timing_ok = match ab.timing {
+        AbilityTiming::Anytime => action_window || in_run,
+        AbilityTiming::DuringRun => in_run,
+        AbilityTiming::DuringEncounter => in_encounter,
+    };
+    if !timing_ok {
+        return Err(EngineError::InvalidCommand("wrong timing".into()));
+    }
+    let (kind, n) = ab.cost;
+    if st.card(cid).counters.get(kind) < n {
+        return Err(EngineError::CantAfford);
+    }
+    *st.card_mut(cid).counters.get_mut(kind) -= n;
+    let title = def.title;
+    let label = ab.label;
+    st.side_log(side, format!("uses {title} to {label}"));
+    ir::queue_effects_back(st, cid, ab.effects);
+    ir::run_effects(st);
+    Ok(())
 }
 
 // ── prompt resolution ──────────────────────────────────────────────────────
@@ -625,6 +707,10 @@ fn resolve_choice(st: &mut GameState, side: Side, uuid: &str) -> Result<(), Engi
                 Side::Runner,
                 format!("steals {title} and gains {points} agenda points"),
             );
+            if let Some(b) = &mut st.breach {
+                b.current = None;
+            }
+            ir::fire_event(st, Event::AgendaStolen(cid));
             st.check_agenda_win();
             runs::breach_continue(st);
         }
@@ -640,30 +726,83 @@ fn resolve_choice(st: &mut GameState, side: Side, uuid: &str) -> Result<(), Engi
                     format!("pays {trash_cost} [Credits] to trash {title}"),
                 );
             }
+            if let Some(b) = &mut st.breach {
+                b.current = None;
+            }
             runs::breach_continue(st);
         }
         PromptContext::AccessNoAction { cid: _ } => {
+            if let Some(b) = &mut st.breach {
+                b.current = None;
+            }
             runs::breach_continue(st);
         }
-        PromptContext::ChooseRunServer { success_credits, access_bonus } => {
+        PromptContext::ChooseRunServer { source } => {
             let server =
                 ServerId::from_key(&label).ok_or(EngineError::BadChoice)?;
             if st.server(server).is_none() {
                 return Err(EngineError::BadChoice);
             }
-            runs::initiate_run(st, server, access_bonus, success_credits, None);
-        }
-        PromptContext::HubDraw => {
-            if label == "Yes" {
-                let n = st.draw_n(Side::Corp, 2);
-                st.side_log(Side::Corp, format!("draws {n} cards"));
-            }
+            runs::initiate_run(st, server, source);
         }
         PromptContext::BreakChooseSub { breaker, ice } => {
             runs::resolve_break_choice(st, breaker, ice, &label)?;
         }
-        PromptContext::PriorityReqRez
+        PromptContext::EffectOptional { source, cost, yes, no } => {
+            let who = st.card(source).def().side;
+            if label == "Yes" {
+                if !st.pay_credits(who, cost as i64) {
+                    return Err(EngineError::CantAfford);
+                }
+                if cost > 0 {
+                    let title = st.card(source).title().to_string();
+                    st.side_log(who, format!("pays {cost} [Credits] to use {title}"));
+                }
+                ir::queue_effects_front(st, source, yes);
+            } else {
+                let title = st.card(source).title().to_string();
+                st.side_log(who, format!("declines to use {title}"));
+                ir::queue_effects_front(st, source, no);
+            }
+            ir::run_effects(st);
+        }
+        PromptContext::EffectChoose { source, options } => {
+            let opt = options
+                .iter()
+                .find(|o| o.label == label)
+                .ok_or(EngineError::BadChoice)?;
+            ir::queue_effects_front(st, source, opt.effects);
+            ir::run_effects(st);
+        }
+        PromptContext::TraceBoostCorp { source, base, on_success, on_fail } => {
+            let boost: u32 = label.parse().map_err(|_| EngineError::BadChoice)?;
+            if st.spendable(Side::Corp) < boost as i64 {
+                return Err(EngineError::CantAfford);
+            }
+            ir::resolve_trace_corp_boost(st, source, base, boost, on_success, on_fail);
+        }
+        PromptContext::TraceBoostRunner { source, corp_strength, on_success, on_fail } => {
+            let boost: u32 = label.parse().map_err(|_| EngineError::BadChoice)?;
+            if st.spendable(Side::Runner) < boost as i64 {
+                return Err(EngineError::CantAfford);
+            }
+            ir::resolve_trace_runner_boost(st, source, corp_strength, boost, on_success, on_fail);
+        }
+        PromptContext::PsiBid { source, on_equal, on_differ } => {
+            let bid: u32 = label
+                .split(' ')
+                .next()
+                .and_then(|s| s.parse().ok())
+                .ok_or(EngineError::BadChoice)?;
+            if st.spendable(side) < bid as i64 || bid > 2 {
+                return Err(EngineError::BadChoice);
+            }
+            ir::resolve_psi_bid(st, side, bid, source, on_equal, on_differ);
+        }
+        PromptContext::RezIceFree { .. }
+        | PromptContext::ExposePick { .. }
         | PromptContext::RototurretTrash { .. }
+        | PromptContext::TrashResourcePick
         | PromptContext::DiscardDown => {
             return Err(EngineError::BadChoice); // these are select prompts
         }
@@ -680,7 +819,11 @@ fn resolve_select(st: &mut GameState, side: Side, target: Cid) -> Result<(), Eng
         SelectKind::UnrezzedInstalledIce => {
             st.all_installed_ice().contains(&target) && !st.card(target).rezzed
         }
+        SelectKind::UnrezzedInstalledCorpCard => {
+            st.all_installed_corp().contains(&target) && !st.card(target).rezzed
+        }
         SelectKind::InstalledRunnerProgram => st.rig.programs.contains(&target),
+        SelectKind::InstalledRunnerResource => st.rig.resources.contains(&target),
         SelectKind::OwnHandCard(s) => st.hand(s).contains(&target),
     };
     if !valid {
@@ -689,14 +832,24 @@ fn resolve_select(st: &mut GameState, side: Side, target: Cid) -> Result<(), Eng
     st.pop_prompt(side);
 
     match context {
-        PromptContext::PriorityReqRez => {
+        PromptContext::RezIceFree { .. } => {
             rez_card(st, Side::Corp, target, true)?;
+            ir::run_effects(st);
+        }
+        PromptContext::ExposePick { source } => {
+            ir::expose_card(st, Some(source), target);
+            ir::run_effects(st);
         }
         PromptContext::RototurretTrash { ice, resume_index } => {
             let title = st.card(target).title().to_string();
             st.trash(target, true);
             st.side_log(Side::Corp, format!("trashes {title}"));
             runs::fire_subs_from(st, ice, resume_index);
+        }
+        PromptContext::TrashResourcePick => {
+            let title = st.card(target).title().to_string();
+            st.trash(target, true);
+            st.side_log(Side::Corp, format!("trashes {title}"));
         }
         PromptContext::DiscardDown => {
             let title = st.card(target).title().to_string();
@@ -717,26 +870,4 @@ fn resolve_select(st: &mut GameState, side: Side, target: Cid) -> Result<(), Eng
         _ => return Err(EngineError::BadChoice),
     }
     Ok(())
-}
-
-// ── damage ─────────────────────────────────────────────────────────────────
-
-pub(crate) fn net_damage(st: &mut GameState, n: u32) {
-    let hand = st.hand(Side::Runner).clone();
-    if (hand.len() as u32) < n {
-        st.side_log(Side::Runner, format!("suffers {n} net damage"));
-        st.declare_winner(Side::Corp, "Flatline");
-        return;
-    }
-    let victims = st.pick_random(hand, n as usize);
-    let mut names = Vec::new();
-    for cid in victims {
-        names.push(st.card(cid).title().to_string());
-        st.trash(cid, true);
-    }
-    let list = names.join(", ");
-    st.side_log(
-        Side::Runner,
-        format!("suffers {n} net damage, trashing {list}"),
-    );
 }

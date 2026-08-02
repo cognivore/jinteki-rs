@@ -12,6 +12,38 @@ use rand::seq::SliceRandom;
 use rand::Rng as _;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use std::collections::VecDeque;
+
+/// Hosted counters, one slot per kind (jnet's per-card counter map).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Counters {
+    pub credit: u32,
+    pub power: u32,
+    pub virus: u32,
+    pub agenda: u32,
+}
+
+impl Counters {
+    pub fn get(&self, kind: CounterKind) -> u32 {
+        match kind {
+            CounterKind::Credit => self.credit,
+            CounterKind::Power => self.power,
+            CounterKind::Virus => self.virus,
+            CounterKind::Agenda => self.agenda,
+        }
+    }
+    pub fn get_mut(&mut self, kind: CounterKind) -> &mut u32 {
+        match kind {
+            CounterKind::Credit => &mut self.credit,
+            CounterKind::Power => &mut self.power,
+            CounterKind::Virus => &mut self.virus,
+            CounterKind::Agenda => &mut self.agenda,
+        }
+    }
+    pub fn any(&self) -> bool {
+        self.credit > 0 || self.power > 0 || self.virus > 0 || self.agenda > 0
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CardInstance {
@@ -22,11 +54,13 @@ pub struct CardInstance {
     /// Face-up / seen (agendas in score areas, cards in archives, accessed cards).
     pub faceup: bool,
     pub advancement: u32,
-    /// Hosted credit counters (Armitage, Regolith).
-    pub credits: u32,
+    /// Hosted counters (credit/power/virus/agenda).
+    pub counters: Counters,
     /// Strength pumps active this encounter / this run (breakers).
     pub pump_encounter: i32,
     pub pump_run: i32,
+    /// Ice strength modifier for the current encounter (Datasucker's -1).
+    pub strength_mod_encounter: i32,
     /// Broken flags per subroutine, live during an encounter.
     pub broken: Vec<bool>,
 }
@@ -79,10 +113,6 @@ pub struct RunState {
     pub position: usize,
     pub phase: RunPhase,
     pub successful: bool,
-    /// Credits gained if the run ends successful (Dirty Laundry).
-    pub success_credits: u32,
-    /// Extra accesses granted for this run's breach (Legwork, Maker's Eye).
-    pub access_bonus: u32,
     /// Bad-publicity pseudo-credits available this run (spent before real credits).
     pub run_credits: u32,
     /// Cid of the run event that made this run, if any.
@@ -94,6 +124,26 @@ pub struct BreachState {
     pub server: ServerId,
     /// Cards remaining to access, front = next.
     pub queue: Vec<Cid>,
+    /// The card currently being accessed (on-access effects may be resolving
+    /// before its steal/trash prompt is shown).
+    pub current: Option<Cid>,
+}
+
+/// One suspended-or-queued effect step (defunctionalized ability execution).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingEffect {
+    pub source: Cid,
+    pub effect: Effect,
+}
+
+/// What to do when the pending-effect queue drains.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AfterEffects {
+    /// Resume firing subroutines on `ice` at `index` (mid-encounter ability).
+    ResumeSubs { ice: Cid, index: usize },
+    /// Show the steal/trash/no-action prompt for the accessed card
+    /// (on-access abilities resolve before it).
+    PresentAccess { cid: Cid },
 }
 
 /// What answering the current prompt means. Defunctionalized continuations:
@@ -109,12 +159,8 @@ pub enum PromptContext {
     AccessTrashOrNo { cid: Cid, trash_cost: u32 },
     /// Accessed card, nothing to do: ["No action"].
     AccessNoAction { cid: Cid },
-    /// Dirty Laundry: choose which server to run.
-    ChooseRunServer { success_credits: u32, access_bonus: u32 },
-    /// Priority Requisition: select an unrezzed installed ice to rez for free.
-    PriorityReqRez,
-    /// Superconducting Hub: "Draw 2 cards?" Yes/No.
-    HubDraw,
+    /// Run event: choose which server to run.
+    ChooseRunServer { source: Option<Cid> },
     /// Rototurret subroutine: corp selects an installed program to trash;
     /// afterwards subroutine firing resumes at `resume_index`.
     RototurretTrash { ice: Cid, resume_index: usize },
@@ -123,6 +169,44 @@ pub enum PromptContext {
     /// Choose which subroutine to break (breaker ability): one choice per
     /// breakable unbroken subroutine plus "Done".
     BreakChooseSub { breaker: Cid, ice: Cid },
+    /// IR `Effect::Optional`: pay `cost` on Yes, then run the chosen branch.
+    EffectOptional {
+        source: Cid,
+        cost: u32,
+        yes: &'static [Effect],
+        no: &'static [Effect],
+    },
+    /// IR `Effect::Choose`: run the branch matching the clicked label.
+    EffectChoose {
+        source: Cid,
+        options: &'static [ChoiceOption],
+    },
+    /// IR `Effect::RezIceIgnoringCosts`: select an unrezzed ice (Priority Req).
+    RezIceFree { source: Cid },
+    /// IR `Effect::ExposeSelect`: runner selects an unrezzed corp card.
+    ExposePick { source: Cid },
+    /// Trace step 1: corp picks a boost amount (number choices).
+    TraceBoostCorp {
+        source: Cid,
+        base: u32,
+        on_success: &'static [Effect],
+        on_fail: &'static [Effect],
+    },
+    /// Trace step 2: runner picks a link boost (number choices).
+    TraceBoostRunner {
+        source: Cid,
+        corp_strength: u32,
+        on_success: &'static [Effect],
+        on_fail: &'static [Effect],
+    },
+    /// Psi game bid ("0 [Credits]".."2 [Credits]"); both sides get one.
+    PsiBid {
+        source: Cid,
+        on_equal: &'static [Effect],
+        on_differ: &'static [Effect],
+    },
+    /// Corp basic action: select the resource to trash.
+    TrashResourcePick,
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +219,10 @@ pub struct PromptChoice {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectKind {
     UnrezzedInstalledIce,
+    /// Any unrezzed installed corp card, ice or content (expose targets).
+    UnrezzedInstalledCorpCard,
     InstalledRunnerProgram,
+    InstalledRunnerResource,
     OwnHandCard(Side),
 }
 
@@ -189,13 +276,27 @@ pub struct GameState {
     pub mulliganed: [bool; 2],
     pub bad_pub: u32,
     pub tags: u32,
+    /// Cumulative core (brain) damage: permanent -1 max hand size each.
+    pub brain_damage: u32,
     pub run: Option<RunState>,
     pub breach: Option<BreachState>,
+    /// Queued IR effect steps (front = next).
+    pub pending: VecDeque<PendingEffect>,
+    /// Continuation once `pending` drains.
+    pub after_effects: Option<AfterEffects>,
+    /// Secret psi bids awaiting resolution ([corp, runner]).
+    pub psi_bids: [Option<u32>; 2],
+    /// (cid, ability-index) pairs that fired their once-per-turn this turn.
+    pub fired_this_turn: Vec<(Cid, usize)>,
+    /// Extra accesses granted for the imminent breach (AccessBonus effects).
+    pub access_bonus_accum: u32,
+    /// Runner successful-run registers (SEA Source's "last turn" check).
+    pub runner_run_this_turn: bool,
+    pub runner_run_last_turn: bool,
     pub prompts: Vec<Prompt>,
     pub log: Vec<LogEntry>,
     pub winner: Option<Side>,
     pub reason: Option<String>,
-    pub hq_success_this_turn: bool,
     uuid_counter: u64,
 }
 
@@ -249,13 +350,20 @@ impl GameState {
             mulliganed: [false, false],
             bad_pub: 0,
             tags: 0,
+            brain_damage: 0,
             run: None,
             breach: None,
+            pending: VecDeque::new(),
+            after_effects: None,
+            psi_bids: [None, None],
+            fired_this_turn: Vec::new(),
+            access_bonus_accum: 0,
+            runner_run_this_turn: false,
+            runner_run_last_turn: false,
             prompts: Vec::new(),
             log: Vec::new(),
             winner: None,
             reason: None,
-            hq_success_this_turn: false,
             uuid_counter: 0,
         };
         let must = |r: Result<Cid, String>| {
@@ -305,9 +413,10 @@ impl GameState {
             rezzed: false,
             faceup: false,
             advancement: 0,
-            credits: 0,
+            counters: Counters::default(),
             pump_encounter: 0,
             pump_run: 0,
+            strength_mod_encounter: 0,
             broken: Vec::new(),
         });
         Ok(cid)
@@ -429,6 +538,9 @@ impl GameState {
                 }
             }
         }
+        if side == Side::Runner {
+            n -= self.brain_damage as i32;
+        }
         n
     }
     pub fn agenda_points(&self, side: Side) -> u32 {
@@ -437,13 +549,21 @@ impl GameState {
             .filter_map(|&cid| self.card(cid).def().agenda_points)
             .sum()
     }
+    /// The runner's link strength (printed base link of the identity).
+    pub fn link(&self) -> u32 {
+        let id = self.card(self.identity(Side::Runner));
+        crate::printed::printed(id.title())
+            .and_then(|p| p.base_link)
+            .unwrap_or(0)
+            .max(0) as u32
+    }
     pub fn ice_strength(&self, cid: Cid) -> i32 {
         let c = self.card(cid);
         let mut s = c.def().strength.unwrap_or(0);
         if c.def().advanceable {
             s += c.advancement as i32;
         }
-        s
+        s + c.strength_mod_encounter
     }
     pub fn breaker_strength(&self, cid: Cid) -> i32 {
         let c = self.card(cid);
@@ -476,9 +596,10 @@ impl GameState {
         c.rezzed = false;
         c.faceup = faceup || side == Side::Runner;
         c.advancement = 0;
-        c.credits = 0;
+        c.counters = Counters::default();
         c.pump_encounter = 0;
         c.pump_run = 0;
+        c.strength_mod_encounter = 0;
         c.broken.clear();
         self.discard[idx(side)].push(cid);
         self.prune_empty_remotes();
@@ -660,6 +781,8 @@ impl GameState {
         self.reason = Some(reason.to_string());
         self.turn_state = TurnState::GameOver;
         self.prompts.clear();
+        self.pending.clear();
+        self.after_effects = None;
         let name = self.username(side).to_string();
         self.system_log(format!("{name} wins the game ({reason})."));
     }
@@ -682,6 +805,23 @@ impl GameState {
         self.servers
             .iter()
             .flat_map(|(_, s)| s.ices.iter().copied())
+            .collect()
+    }
+    /// All installed corp cards: ice and content, in server order.
+    pub fn all_installed_corp(&self) -> Vec<Cid> {
+        self.servers
+            .iter()
+            .flat_map(|(_, s)| s.ices.iter().chain(s.content.iter()).copied())
+            .collect()
+    }
+    /// All installed runner cards, rig order.
+    pub fn all_installed_runner(&self) -> Vec<Cid> {
+        self.rig
+            .programs
+            .iter()
+            .chain(self.rig.hardware.iter())
+            .chain(self.rig.resources.iter())
+            .copied()
             .collect()
     }
     pub fn installed_programs(&self) -> Vec<Cid> {

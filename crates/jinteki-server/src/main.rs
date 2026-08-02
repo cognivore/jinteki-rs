@@ -30,7 +30,23 @@ async fn main() {
         .route("/health", get(|| async { "ok" }))
         .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true));
 
-    let addr = format!("0.0.0.0:{port}");
+    // Deployment mode (vacationvm): serve over a Unix socket that Caddy fronts.
+    if let Ok(sock) = std::env::var("JINTEKI_SOCKET") {
+        let _ = std::fs::remove_file(&sock);
+        if let Some(dir) = std::path::Path::new(&sock).parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let listener = tokio::net::UnixListener::bind(&sock).expect("bind unix socket");
+        // World-writable so the reverse proxy in its own group can connect.
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o666));
+        tracing::info!("jinteki-rs server on unix:{sock}");
+        axum::serve(listener, app).await.expect("serve");
+        return;
+    }
+
+    let bind = std::env::var("JINTEKI_BIND").unwrap_or_else(|_| "0.0.0.0".into());
+    let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
     tracing::info!("jinteki-rs server on http://localhost:{port} (LAN: http://<your-ip>:{port})");
     axum::serve(listener, app).await.expect("serve");

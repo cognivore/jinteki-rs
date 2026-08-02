@@ -278,8 +278,20 @@ fn card_json(st: &GameState, cid: Cid, visible: bool) -> Value {
     m.insert("rezzed".into(), json!(c.rezzed));
     m.insert("facedown".into(), json!(false));
     m.insert("advance-counter".into(), json!(c.advancement));
-    if c.credits > 0 {
-        m.insert("counter".into(), json!({"credit": c.credits}));
+    if c.counters.any() {
+        let mut counters = Map::new();
+        for kind in [
+            crate::types::CounterKind::Credit,
+            crate::types::CounterKind::Power,
+            crate::types::CounterKind::Virus,
+            crate::types::CounterKind::Agenda,
+        ] {
+            let n = c.counters.get(kind);
+            if n > 0 {
+                counters.insert(kind.as_str().into(), json!(n));
+            }
+        }
+        m.insert("counter".into(), Value::Object(counters));
     }
     if def.kind == CardType::Ice {
         m.insert("strength".into(), json!(st.ice_strength(cid)));
@@ -321,6 +333,18 @@ fn card_json(st: &GameState, cid: Cid, visible: bool) -> Value {
     }
     if let Some(ClickAbility::TakeCredits(n)) = def.click_ability {
         abilities.push(json!({"label": format!("[Click]: Take {n} [Credits]")}));
+    }
+    for ab in def.counter_abilities {
+        let (kind, n) = ab.cost;
+        let kind_name = match kind {
+            crate::types::CounterKind::Credit => "credit",
+            crate::types::CounterKind::Power => "power",
+            crate::types::CounterKind::Virus => "virus",
+            crate::types::CounterKind::Agenda => "agenda",
+        };
+        abilities.push(json!({
+            "label": format!("Hosted {kind_name} counter ({n}): {}", ab.label)
+        }));
     }
     if !abilities.is_empty() {
         m.insert("abilities".into(), Value::Array(abilities));

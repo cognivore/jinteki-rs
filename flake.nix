@@ -9,6 +9,15 @@
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
+      # The deployable artifact: the server binary with the UI beside it.
+      packages = forAll (pkgs: {
+        default = pkgs.callPackage ./nix/package.nix { };
+        jinteki-rs = pkgs.callPackage ./nix/package.nix { };
+      });
+
+      # The headline output for a vacationvm fleet (see nix/vacationvm-module.nix).
+      nixosModules.default = import ./nix/vacationvm-module.nix self;
+
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [

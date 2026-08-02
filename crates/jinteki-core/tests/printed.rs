@@ -88,7 +88,7 @@ fn synthesized_vanilla_defs_carry_printed_stats_and_no_behavior() {
     assert_eq!(def.strength, Some(2));
     assert_eq!(def.ice_subtype, Some(IceSubtype::Barrier));
     assert!(def.subroutines.is_empty(), "vanilla ice has zero subroutines");
-    assert!(def.on_play.is_none());
+    assert!(def.triggered.is_empty(), "vanilla defs register no abilities");
 
     // Interned: same index on the second request.
     assert_eq!(carddb::def_index_or_synth("Palisade").unwrap(), idx);

@@ -102,14 +102,14 @@ fn armitage_codebusting_takes_2_and_self_trashes() {
     let mut st = new_test_game(9, &[], &["Armitage Codebusting"]);
     take_credits(&mut st, Side::Corp);
     let arm = runner_install(&mut st, "Armitage Codebusting");
-    assert_eq!(st.card(arm).credits, 12);
+    assert_eq!(st.card(arm).counters.credit, 12);
     let mut taken = 0;
     for _ in 0..6 {
-        while st.clicks(Side::Runner) > 0 && st.card(arm).credits > 0 {
+        while st.clicks(Side::Runner) > 0 && st.card(arm).counters.credit > 0 {
             cmd(&mut st, Side::Runner, Command::Ability { cid: arm, index: 0 });
             taken += 2;
         }
-        if st.card(arm).credits == 0 {
+        if st.card(arm).counters.credit == 0 {
             break;
         }
         cmd(&mut st, Side::Runner, Command::EndTurn);
@@ -125,11 +125,11 @@ fn regolith_takes_3_per_click() {
     let mut st = new_test_game(10, &["Regolith Mining License"], &[]);
     let reg = corp_install(&mut st, "Regolith Mining License", "New remote");
     cmd(&mut st, Side::Corp, Command::Rez { cid: reg });
-    assert_eq!(st.card(reg).credits, 15);
+    assert_eq!(st.card(reg).counters.credit, 15);
     let before = st.credits(Side::Corp);
     cmd(&mut st, Side::Corp, Command::Ability { cid: reg, index: 0 });
     assert_eq!(st.credits(Side::Corp), before + 3);
-    assert_eq!(st.card(reg).credits, 12);
+    assert_eq!(st.card(reg).counters.credit, 12);
 }
 
 #[test]

@@ -3,7 +3,7 @@
 //! prompts (rez windows, access) or commands (continue, jack out, breaker
 //! abilities); everything else auto-advances in `advance_auto`.
 
-use crate::engine;
+use crate::ir::{self, Event};
 use crate::state::*;
 use crate::types::*;
 
@@ -26,17 +26,11 @@ pub fn click_run(st: &mut GameState, side: Side, server: ServerId) -> Result<(),
     st.spend_click(side, 1);
     let disp = server.display();
     st.side_log(side, format!("spends [Click] to make a run on {disp}"));
-    initiate_run(st, server, 0, 0, None);
+    initiate_run(st, server, None);
     Ok(())
 }
 
-pub fn initiate_run(
-    st: &mut GameState,
-    server: ServerId,
-    access_bonus: u32,
-    success_credits: u32,
-    source: Option<Cid>,
-) {
+pub fn initiate_run(st: &mut GameState, server: ServerId, source: Option<Cid>) {
     let position = st.server(server).map(|s| s.ices.len()).unwrap_or(0);
     let phase = if position > 0 {
         RunPhase::ApproachIce
@@ -55,8 +49,6 @@ pub fn initiate_run(
         position,
         phase,
         successful: false,
-        success_credits,
-        access_bonus,
         run_credits,
         source,
     });
@@ -67,7 +59,7 @@ pub fn initiate_run(
 }
 
 /// The ice currently being approached/encountered.
-fn current_ice(st: &GameState) -> Option<Cid> {
+pub fn encountered_ice(st: &GameState) -> Option<Cid> {
     let run = st.run.as_ref()?;
     let srv = st.server(run.server)?;
     if run.position == 0 || run.position > srv.ices.len() {
@@ -78,6 +70,10 @@ fn current_ice(st: &GameState) -> Option<Cid> {
 
 /// One step of decision-free progress. Returns true if progress was made.
 pub fn advance_auto(st: &mut GameState) -> bool {
+    if !st.pending.is_empty() {
+        // Suspended effects always wait on a prompt; nothing to auto-do.
+        return false;
+    }
     if st.breach.is_some() {
         breach_continue(st);
         return false; // breach_continue either prompted or finished
@@ -87,7 +83,7 @@ pub fn advance_auto(st: &mut GameState) -> bool {
     };
     match run.phase {
         RunPhase::ApproachIce => {
-            let Some(ice) = current_ice(st) else {
+            let Some(ice) = encountered_ice(st) else {
                 // Ice disappeared (trashed): treat as passed.
                 pass_ice(st);
                 return true;
@@ -127,6 +123,8 @@ pub fn begin_encounter(st: &mut GameState, ice: Cid) {
     }
     let title = st.card(ice).title().to_string();
     st.side_log(Side::Runner, format!("encounters {title}"));
+    // On-encounter abilities (Data Raven's tag-or-end-the-run).
+    ir::fire_event(st, Event::Encountered(ice));
 }
 
 /// Approached ice was not rezzed (or vanished): go to movement.
@@ -139,6 +137,7 @@ pub fn pass_ice(st: &mut GameState) {
 fn leave_encounter(st: &mut GameState) {
     for c in st.cards.iter_mut() {
         c.pump_encounter = 0;
+        c.strength_mod_encounter = 0;
         c.broken.clear();
     }
     if let Some(run) = &mut st.run {
@@ -158,7 +157,7 @@ pub fn continue_run(st: &mut GameState, side: Side) -> Result<(), EngineError> {
     };
     match run.phase {
         RunPhase::EncounterIce => {
-            let Some(ice) = current_ice(st) else {
+            let Some(ice) = encountered_ice(st) else {
                 leave_encounter(st);
                 return Ok(());
             };
@@ -201,8 +200,11 @@ pub fn jack_out(st: &mut GameState, side: Side) -> Result<(), EngineError> {
 }
 
 /// Fire unbroken subroutines starting at `start` (resume point after a
-/// mid-firing prompt like Rototurret's trash-a-program).
+/// mid-firing prompt like Rototurret's trash-a-program or a trace).
 pub fn fire_subs_from(st: &mut GameState, ice: Cid, start: usize) {
+    if st.game_over() || st.run.is_none() {
+        return; // the run already ended mid-firing (ETR effect, flatline)
+    }
     let subs = st.card(ice).def().subroutines;
     let ice_title = st.card(ice).title().to_string();
     for i in start..subs.len() {
@@ -223,7 +225,7 @@ pub fn fire_subs_from(st: &mut GameState, ice: Cid, start: usize) {
                 }
             }
             SubEffect::NetDamage(n) => {
-                engine::net_damage(st, n);
+                ir::damage(st, DamageKind::Net, n);
                 if st.game_over() {
                     return;
                 }
@@ -241,6 +243,12 @@ pub fn fire_subs_from(st: &mut GameState, ice: Cid, start: usize) {
                     );
                     return; // firing resumes when the prompt resolves
                 }
+            }
+            SubEffect::Ability { effects, .. } => {
+                st.after_effects = Some(AfterEffects::ResumeSubs { ice, index: i + 1 });
+                ir::queue_effects_back(st, ice, effects);
+                ir::run_effects(st);
+                return; // run_effects resumes firing when the queue drains
             }
         }
     }
@@ -264,7 +272,7 @@ pub fn breaker_ability(
     if run.phase != RunPhase::EncounterIce {
         return Err(EngineError::InvalidCommand("not encountering ice".into()));
     }
-    let Some(ice) = current_ice(st) else {
+    let Some(ice) = encountered_ice(st) else {
         return Err(EngineError::InvalidCommand("no encountered ice".into()));
     };
     match index {
@@ -376,16 +384,12 @@ fn do_success(st: &mut GameState) {
     let server = run.server;
     let disp = server.display();
     st.side_log(Side::Runner, format!("makes a successful run on {disp}"));
+    st.runner_run_this_turn = true;
 
-    if server == ServerId::Hq && !st.hq_success_this_turn {
-        st.hq_success_this_turn = true;
-        let gabe = st.card(st.identity(Side::Runner)).def().identity_ability
-            == Some(IdentityAbility::GabrielHq);
-        if gabe {
-            st.gain_credits(Side::Runner, 2);
-            let id = st.card(st.identity(Side::Runner)).title();
-            st.side_log(Side::Runner, format!("uses {id} to gain 2 [Credits]"));
-        }
+    // Successful-run abilities (Gabriel's HQ credits, Datasucker's virus).
+    ir::fire_event(st, Event::SuccessfulRun(server));
+    if st.game_over() {
+        return;
     }
     breach_start(st);
 }
@@ -393,7 +397,13 @@ fn do_success(st: &mut GameState) {
 fn breach_start(st: &mut GameState) {
     let Some(run) = st.run.clone() else { return };
     let server = run.server;
-    let n_access = 1 + run.access_bonus as usize;
+    // Breach-window abilities contribute bonus accesses (Legwork, Maker's Eye).
+    st.access_bonus_accum = 0;
+    ir::fire_event(st, Event::BreachServer { server, source: run.source });
+    if st.game_over() {
+        return;
+    }
+    let n_access = 1 + std::mem::take(&mut st.access_bonus_accum) as usize;
     let queue: Vec<Cid> = match server {
         ServerId::Rd => {
             let deck = st.deck(Side::Corp).clone();
@@ -425,19 +435,40 @@ fn breach_start(st: &mut GameState) {
     };
     let disp = server.display();
     st.side_log(Side::Runner, format!("breaches {disp}"));
-    st.breach = Some(BreachState { server, queue });
+    st.breach = Some(BreachState { server, queue, current: None });
     breach_continue(st);
 }
 
-/// Pop the next card to access and prompt for it; finish the run when done.
+/// Pop the next card to access; on-access abilities (ambushes) resolve
+/// before its steal/trash prompt. Finish the run when the queue empties.
 pub fn breach_continue(st: &mut GameState) {
     let Some(breach) = &mut st.breach else { return };
+    if let Some(cid) = breach.current {
+        // An access is already in flight (shouldn't normally re-enter here).
+        present_access_prompt(st, cid);
+        return;
+    }
     if breach.queue.is_empty() {
         st.breach = None;
         end_run(st, true);
         return;
     }
     let cid = breach.queue.remove(0);
+    breach.current = Some(cid);
+    let title = st.card(cid).title().to_string();
+    st.side_log(Side::Runner, format!("accesses {title}"));
+    // On-access triggers (Snare!, Ghost Branch, Project Junebug, Psychic
+    // Field) fire now; the steal/trash prompt follows when they finish.
+    st.after_effects = Some(AfterEffects::PresentAccess { cid });
+    ir::fire_event(st, Event::Accessed(cid));
+}
+
+/// The steal / trash / no-action decision for an accessed card.
+pub fn present_access_prompt(st: &mut GameState, cid: Cid) {
+    if st.game_over() {
+        return;
+    }
+    let Some(breach) = &st.breach else { return };
     let in_archives = breach.server == ServerId::Archives;
     let title = st.card(cid).title().to_string();
     let msg = format!("You accessed {title}.");
@@ -475,17 +506,14 @@ pub fn breach_continue(st: &mut GameState) {
 }
 
 pub fn end_run(st: &mut GameState, successful: bool) {
-    let (success_credits, server) = match &st.run {
-        Some(r) => (r.success_credits, r.server),
+    let (server, source) = match &st.run {
+        Some(r) => (r.server, r.source),
         None => return,
     };
-    if successful && success_credits > 0 {
-        st.gain_credits(Side::Runner, success_credits as i64);
-        st.side_log(Side::Runner, format!("gains {success_credits} [Credits]"));
-    }
     for c in st.cards.iter_mut() {
         c.pump_encounter = 0;
         c.pump_run = 0;
+        c.strength_mod_encounter = 0;
         c.broken.clear();
     }
     st.run = None;
@@ -496,5 +524,7 @@ pub fn end_run(st: &mut GameState, successful: bool) {
     } else {
         st.system_log("The run ends.".into());
     }
+    // Run-ends abilities (Dirty Laundry's payout).
+    ir::fire_event(st, Event::RunEnds { server, successful, source });
     st.prune_empty_remotes();
 }

@@ -127,3 +127,27 @@ fn selfplay_is_deterministic() {
     assert_eq!(s1, s2);
     assert_eq!(log1, log2, "same seed must produce identical logs");
 }
+
+/// The default decks carry every W0 mechanic; the bots must actually reach
+/// them (deterministic across this fixed seed set, so this cannot flake).
+#[test]
+fn selfplay_exercises_w0_mechanics() {
+    let mut all = String::new();
+    for seed in 0..80 {
+        let (_, _, log) = play_game(seed, 4000);
+        all.push_str(&log);
+        all.push('\n');
+    }
+    for needle in [
+        "initiate a trace",           // traces (Caduceus/Hunter/Data Raven/SEA)
+        "reveals a bid",              // psi games (Snowflake, Psychic Field)
+        "tag",                        // tag economy
+        "purge all virus counters",   // corp purge action
+        "to expose",                  // expose (Infiltration)
+    ] {
+        assert!(
+            all.contains(needle),
+            "self-play never exercised mechanic: {needle:?}"
+        );
+    }
+}

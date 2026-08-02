@@ -131,6 +131,232 @@ pub enum Zone {
     Rfg,
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Ability IR: triggers × effect sequences.
+//
+// Cards register `TriggeredAbility` rows; the engine dispatches every game
+// event through one pipeline (`ir::fire_event`), gathering the registrations
+// of active cards in a deterministic order (active player's cards first,
+// mirroring the reference's `gather-events`). Suspended decisions live in
+// the prompt queue as `PromptContext` data, never as host continuations.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Kinds of counters a card can host (mirrors the reference's counter map).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CounterKind {
+    Credit,
+    Power,
+    Virus,
+    Agenda,
+}
+
+impl CounterKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CounterKind::Credit => "credit",
+            CounterKind::Power => "power",
+            CounterKind::Virus => "virus",
+            CounterKind::Agenda => "agenda",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DamageKind {
+    Net,
+    Meat,
+    Brain,
+}
+
+impl DamageKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DamageKind::Net => "net",
+            DamageKind::Meat => "meat",
+            DamageKind::Brain => "core",
+        }
+    }
+}
+
+/// Dynamic effect magnitudes, resolved against the source card at fire time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Amount {
+    Fixed(u32),
+    /// n × hosted advancement counters (Junebug's 2×, Ghost Branch's 1×).
+    PerAdvancement(u32),
+    /// Cards in the runner's grip (Psychic Field).
+    RunnerHandSize,
+}
+
+/// Server filters for run-related triggers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerFilter {
+    Any,
+    Central,
+    Hq,
+    Rd,
+    Archives,
+}
+
+impl ServerFilter {
+    pub fn matches(&self, server: ServerId) -> bool {
+        match self {
+            ServerFilter::Any => true,
+            ServerFilter::Central => server.is_central(),
+            ServerFilter::Hq => server == ServerId::Hq,
+            ServerFilter::Rd => server == ServerId::Rd,
+            ServerFilter::Archives => server == ServerId::Archives,
+        }
+    }
+}
+
+/// Preconditions checked when an ability would trigger (the reference's `:req`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Condition {
+    Always,
+    /// Hosted advancement counters > 0 (advanceable ambushes).
+    AdvancementPositive,
+    /// The runner made a successful run during their last turn (SEA Source).
+    RunnerSuccessfulRunLastTurn,
+    /// The ending run was successful (Dirty Laundry's run-ends hook).
+    RunSuccessful,
+}
+
+/// What starts an ability. `...Self` triggers fire only for the card the
+/// event happened to; the rest are global and fire for every active
+/// registration that matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trigger {
+    TurnBegins(Side),
+    TurnEnds(Side),
+    SuccessfulRun(ServerFilter),
+    RunEnds,
+    /// Fired when the breach of a server begins (access-count window).
+    BreachServer(ServerFilter),
+    AgendaScored,
+    AgendaStolen,
+    /// This agenda was scored.
+    OnScoreSelf,
+    /// The runner accessed this card. `installed_only` restricts to installed
+    /// cards (advanceable ambushes); otherwise anywhere except Archives
+    /// (Snare!'s "anywhere except in Archives").
+    OnAccessSelf { installed_only: bool },
+    OnExposeSelf,
+    OnRezSelf,
+    OnInstallSelf,
+    /// The runner encounters this ice (Data Raven).
+    OnEncounterSelf,
+    /// This operation/event was played (its printed effect).
+    OnPlaySelf,
+    /// The controller played an operation with this subtype (BABW).
+    PlayOperationWithSubtype(&'static str),
+}
+
+/// One selectable branch inside `Effect::Choose`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChoiceOption {
+    pub label: &'static str,
+    pub effects: &'static [Effect],
+}
+
+/// Composable effect steps. Sequences run left to right through one queue;
+/// prompt-bearing steps suspend the queue as `PromptContext` data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    GainCredits(Side, u32),
+    LoseCredits(Side, u32),
+    Draw(Side, u32),
+    Damage(DamageKind, Amount),
+    /// Give the runner tags.
+    GainTags(Amount),
+    /// Remove runner tags.
+    LoseTags(u32),
+    GainBadPub(u32),
+    /// Place counters on the source card.
+    PlaceCounters(CounterKind, u32),
+    /// Take up to n hosted credits onto the controller's pool; trash the
+    /// source when it empties (Adonis Campaign).
+    TakeCreditsFromSelf(u32),
+    TrashSelf,
+    EndTheRun,
+    /// Runner selects an unrezzed installed corp card to expose (Infiltration).
+    ExposeSelect,
+    /// Corp selects a piece of ice to rez ignoring all costs (Priority Req).
+    RezIceIgnoringCosts,
+    /// Access additional cards from this breach (Legwork, The Maker's Eye).
+    AccessBonus(u32),
+    /// Modify the currently encountered ice's strength until the encounter
+    /// ends (Datasucker).
+    ModIceStrengthThisEncounter(i32),
+    /// "You may pay N to ..." — the source's controller decides; the cost is
+    /// paid on Yes (Snare!'s pay-4, Junebug's pay-1; cost 0 = plain yes/no).
+    Optional {
+        prompt: &'static str,
+        cost: u32,
+        yes: &'static [Effect],
+        no: &'static [Effect],
+    },
+    /// A button choice between effect branches.
+    Choose {
+        who: Side,
+        options: &'static [ChoiceOption],
+    },
+    /// Trace: corp reveals base, openly boosts with credits; runner then
+    /// boosts link with credits; corp strength > runner strength = success.
+    Trace {
+        base: u32,
+        on_success: &'static [Effect],
+        on_fail: &'static [Effect],
+    },
+    /// Psi game: both players secretly bid 0-2 credits, pay them, then the
+    /// equal/differ branch runs.
+    Psi {
+        on_equal: &'static [Effect],
+        on_differ: &'static [Effect],
+    },
+}
+
+/// A trigger → effect-sequence registration on a card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TriggeredAbility {
+    pub trigger: Trigger,
+    pub condition: Condition,
+    pub once_per_turn: bool,
+    pub effects: &'static [Effect],
+}
+
+impl TriggeredAbility {
+    pub const fn when(trigger: Trigger, effects: &'static [Effect]) -> TriggeredAbility {
+        TriggeredAbility {
+            trigger,
+            condition: Condition::Always,
+            once_per_turn: false,
+            effects,
+        }
+    }
+}
+
+/// When a hosted-counter paid ability may be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AbilityTiming {
+    /// The controller's action window, or any time during a run.
+    Anytime,
+    /// Only while a run is in progress (Nisei MK II).
+    DuringRun,
+    /// Only while encountering a rezzed piece of ice (Datasucker).
+    DuringEncounter,
+}
+
+/// A paid ability whose cost is hosted counters (Data Raven's power counter,
+/// Nisei MK II's agenda counter, Datasucker's virus counter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CounterAbility {
+    pub label: &'static str,
+    pub cost: (CounterKind, u32),
+    pub timing: AbilityTiming,
+    pub effects: &'static [Effect],
+}
+
 /// Subroutine effects present in the playable pool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SubEffect {
@@ -139,6 +365,11 @@ pub enum SubEffect {
     NetDamage(u32),
     CorpGainCredits(u32),
     TrashProgram,
+    /// A general IR effect sequence (traces, psi games, ...).
+    Ability {
+        label: &'static str,
+        effects: &'static [Effect],
+    },
 }
 
 impl SubEffect {
@@ -149,33 +380,16 @@ impl SubEffect {
             SubEffect::NetDamage(n) => format!("Do {n} net damage"),
             SubEffect::CorpGainCredits(n) => format!("Gain {n} [Credits]"),
             SubEffect::TrashProgram => "Trash 1 installed program".into(),
+            SubEffect::Ability { label, .. } => (*label).into(),
         }
     }
 }
 
-/// Declarative on-play effects (operations and events).
+/// Run events: play = initiate a run. `target: None` prompts for any server
+/// (Dirty Laundry). Success/breach effects live in `triggered`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OnPlay {
-    GainCredits(u32),
-    Draw(u32),
-    /// Run event. `target: None` = prompt to choose any server (Dirty Laundry).
-    RunEvent {
-        target: Option<ServerId>,
-        access_bonus: u32,
-        /// Credits gained when the run ends successfully (Dirty Laundry).
-        success_credits: u32,
-    },
-}
-
-/// Declarative when-scored effects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OnScore {
-    GainCredits(u32),
-    GainCreditsAndBadPub(u32),
-    /// "You may rez 1 piece of ice, ignoring all costs." (Priority Requisition)
-    OptionalRezIceFree,
-    /// Superconducting Hub: draw up to N; +2 max hand size handled statically.
-    DrawUpTo(u32),
+pub struct RunEventDef {
+    pub target: Option<ServerId>,
 }
 
 /// Click abilities on installed cards.
@@ -191,15 +405,6 @@ pub enum StaticMod {
     MemoryUnits(i32),
     /// While in a score area (Superconducting Hub).
     MaxHandSize(i32),
-}
-
-/// Identity abilities in the pool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdentityAbility {
-    /// Weyland BABW: gain 1 credit whenever you play a transaction.
-    GainOnTransaction,
-    /// Gabriel Santiago: gain 2 credits on first successful HQ run each turn.
-    GabrielHq,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,18 +435,19 @@ pub struct CardDef {
     pub mu_cost: u32,
     pub advancement_requirement: Option<u32>,
     pub agenda_points: Option<u32>,
-    /// Starting counters placed when installed (Armitage 12, Regolith 15).
-    pub start_credits: u32,
     pub advanceable: bool,
     pub subroutines: &'static [SubEffect],
-    pub on_play: Option<OnPlay>,
-    pub on_score: Option<OnScore>,
-    /// Corp drip at start of corp turn while rezzed (PAD Campaign).
-    pub drip_corp_turn: u32,
+    /// Playing this event initiates a run.
+    pub run_event: Option<RunEventDef>,
+    /// Play legality gate for operations/events (SEA Source's "play only if").
+    pub play_condition: Option<Condition>,
+    /// Event-driven abilities (the IR registrations).
+    pub triggered: &'static [TriggeredAbility],
     pub click_ability: Option<ClickAbility>,
+    /// Paid abilities costing hosted counters.
+    pub counter_abilities: &'static [CounterAbility],
     pub statics: &'static [StaticMod],
     pub breaker: Option<BreakerDef>,
-    pub identity_ability: Option<IdentityAbility>,
 }
 
 impl CardDef {
@@ -258,20 +464,16 @@ impl CardDef {
             mu_cost: 0,
             advancement_requirement: None,
             agenda_points: None,
-            start_credits: 0,
             advanceable: false,
             subroutines: &[],
-            on_play: None,
-            on_score: None,
-            drip_corp_turn: 0,
+            run_event: None,
+            play_condition: None,
+            triggered: &[],
             click_ability: None,
+            counter_abilities: &[],
             statics: &[],
             breaker: None,
-            identity_ability: None,
         }
-    }
-    pub fn is_transaction(&self) -> bool {
-        self.subtypes.contains(&"Transaction")
     }
 }
 
@@ -292,7 +494,8 @@ pub enum Command {
     Score { cid: Cid },
     Rez { cid: Cid },
     Run { server: ServerId },
-    /// Paid ability on an installed card (breakers, Armitage/Regolith).
+    /// Paid ability on an installed card (breakers, Armitage/Regolith,
+    /// hosted-counter abilities).
     Ability { cid: Cid, index: usize },
     /// Answer the open prompt by choice uuid.
     Choice { uuid: String },
@@ -301,6 +504,10 @@ pub enum Command {
     Continue,
     JackOut,
     RemoveTag,
+    /// Corp basic action: [click] + 2 credits, trash 1 resource if tagged.
+    TrashResource,
+    /// Corp basic action: [click][click][click], purge virus counters.
+    Purge,
     /// Runner pays trash cost during access (also reachable as a Choice).
     TrashAccessed { cid: Cid },
     Concede,

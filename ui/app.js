@@ -57,8 +57,8 @@ function showDisconnected() {
   const o = $("gameover-overlay");
   o.style.display = "flex";
   o.innerHTML = `<h1>DISCONNECTED</h1>
-    <div class="why">The connection dropped (dev server restart?). Local games live in memory — start a new one.</div>
-    <button class="big go" onclick="location.reload()">Back to base</button>`;
+    <div class="why">The connection dropped. Your game is saved server-side — reconnect to resume.</div>
+    <button class="big go" onclick="location.reload()">Reconnect</button>`;
 }
 function send(obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
@@ -68,6 +68,10 @@ function act(command, args) { send({ type: "action", command, args: args || {} }
 
 function handle(m) {
   switch (m.type) {
+    case "session":
+      localStorage.setItem("jinteki_local", JSON.stringify({ token: m.token, side: m.side }));
+      if (m.side) mySide = m.side;
+      break;
     case "state":
       S = m.state;
       ACTIONS = m.actions || [];
@@ -90,7 +94,15 @@ function handle(m) {
       if (m.purpose === "deck") $("lobby-status").textContent = "deck selected — waiting for start";
       break;
     case "toast": toast(sym(m.toast && (m.toast.message || m.toast["message"]) || "…")); break;
-    case "error": toast("⚠ " + m.error); break;
+    case "error":
+      if (m.error === "session expired") {
+        localStorage.removeItem("jinteki_local");
+        show("screen-home");
+        toast("Previous game expired — start a new one");
+      } else {
+        toast("⚠ " + m.error);
+      }
+      break;
     case "disconnected": toast("Disconnected from reference server"); show("screen-home"); break;
     default: break;
   }
@@ -117,15 +129,32 @@ $("btn-bridge").onclick = () => {
   mode = "bridge";
   show("screen-lobby");
   $("lobby-status").textContent = "connecting…";
+  const creds = {
+    host: $("ref-host").value.trim(),
+    username: $("ref-user").value.trim(),
+    password: $("ref-pass").value,
+  };
+  localStorage.setItem("jinteki_bridge", JSON.stringify(creds));
   connect("/ws/bridge", () => {
-    send({
-      type: "connect",
-      host: $("ref-host").value.trim(),
-      username: $("ref-user").value.trim(),
-      password: $("ref-pass").value,
-    });
+    send({ type: "connect", ...creds });
   });
 };
+
+/* ── session restore on load ─────────────────────────────────────────── */
+(function restore() {
+  const bridge = JSON.parse(localStorage.getItem("jinteki_bridge") || "null");
+  if (bridge) {
+    $("ref-host").value = bridge.host || "http://localhost:1042";
+    $("ref-user").value = bridge.username || "";
+    $("ref-pass").value = bridge.password || "";
+  }
+  const saved = JSON.parse(localStorage.getItem("jinteki_local") || "null");
+  if (saved && saved.token) {
+    mode = "local";
+    if (saved.side) mySide = saved.side;
+    connect("/ws/local", () => send({ type: "resume", token: saved.token }));
+  }
+})();
 
 $("lobby-back").onclick = () => { if (ws) ws.close(); show("screen-home"); };
 $("lobby-refresh").onclick = () => send({ type: "lobbies" });
@@ -267,6 +296,17 @@ function renderServers() {
   const servers = corp.servers || {};
   const runServer = S.run && S.run.server ? String(S.run.server[0]).replace(":", "") : null;
   const runPos = S.run ? S.run.position : null;
+  // Corp identity gets its own column (the runner's lives in the rig).
+  if (corp.identity) {
+    const idcol = document.createElement("div");
+    idcol.className = "server";
+    const nm = document.createElement("div");
+    nm.className = "sname";
+    nm.textContent = "Identity";
+    idcol.appendChild(nm);
+    idcol.appendChild(cardEl(corp.identity, { side: "corp", identity: true }));
+    wrap.appendChild(idcol);
+  }
   Object.keys(servers).sort((a, b) => SERVER_ORDER(a) - SERVER_ORDER(b)).forEach((key) => {
     const srv = servers[key];
     const col = document.createElement("div");
@@ -724,6 +764,10 @@ function renderPhasePill() {
 /* ── log ─────────────────────────────────────────────────────────────── */
 $("log-tab").onclick = () => $("log-drawer").classList.add("open");
 $("log-close").onclick = () => $("log-drawer").classList.remove("open");
+$("concede-btn").onclick = () => {
+  if (confirm("Concede the game?")) act("concede");
+  $("log-drawer").classList.remove("open");
+};
 $("say-send").onclick = () => { send({ type: "say", msg: $("say-input").value }); $("say-input").value = ""; };
 
 function renderLog() {
@@ -764,6 +808,7 @@ function renderGameOver() {
   const o = $("gameover-overlay");
   if (!S.winner) { o.style.display = "none"; return; }
   const iWon = S.winner === mySide;
+  localStorage.removeItem("jinteki_local");
   o.style.display = "flex";
   o.innerHTML = `<h1>${iWon ? "VICTORY" : "DEFEAT"}</h1>
     <div class="why">${S.winner} wins — ${S.reason || ""}</div>

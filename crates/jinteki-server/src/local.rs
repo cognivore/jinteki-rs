@@ -1,14 +1,17 @@
-//! Local mode: one game per WebSocket, human vs the random-walk bot.
+//! Local mode: human vs the random-walk bot, with sessions that survive
+//! refreshes and closed tabs.
 //!
+//! Games live in a server-side registry keyed by an opaque token; the client
+//! stores its token in localStorage and resumes over any fresh WebSocket.
 //! Wire protocol (JSON text frames):
 //!   client → server:
-//!     {"type":"start","side":"runner"|"corp","seed":123?,"runner_id"?,"corp_id"?}
+//!     {"type":"start","side":"runner"|"corp","seed":123?,"runner_id"?}
+//!     {"type":"resume","token":"..."}
 //!     {"type":"action","command":"<jnet command>","args":{...}}
 //!   server → client:
+//!     {"type":"session","token":"...","side":"runner"|"corp"}
 //!     {"type":"state","state":{...jnet-shaped...},"actions":[...legal...]}
 //!     {"type":"error","error":"..."}
-//! Legal actions ride with every state so the UI can glow exactly what is
-//! playable (MTGA lesson: affordances, not error toasts).
 
 use axum::extract::ws::{Message, WebSocket};
 use jinteki_core::state::{GameState, TurnState};
@@ -17,17 +20,53 @@ use jinteki_core::{enumerate_actions, process_command, random_walk_step, Command
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+
+struct LocalGame {
+    st: GameState,
+    human: Side,
+    bot_rng: ChaCha8Rng,
+    last_seen: Instant,
+}
+
+type Registry = Arc<Mutex<HashMap<String, Arc<Mutex<LocalGame>>>>>;
+
+fn registry() -> Registry {
+    static REG: OnceLock<Registry> = OnceLock::new();
+    REG.get_or_init(|| Arc::new(Mutex::new(HashMap::new()))).clone()
+}
+
+/// Sessions idle longer than this are pruned (phones sleep; give them days).
+const SESSION_TTL: Duration = Duration::from_secs(72 * 3600);
+
+async fn prune_and_insert(token: String, game: Arc<Mutex<LocalGame>>) {
+    let reg = registry();
+    let mut map = reg.lock().await;
+    let mut dead = Vec::new();
+    for (t, g) in map.iter() {
+        if let Ok(g) = g.try_lock() {
+            if g.last_seen.elapsed() > SESSION_TTL {
+                dead.push(t.clone());
+            }
+        }
+    }
+    for t in dead {
+        map.remove(&t);
+    }
+    map.insert(token, game);
+}
 
 pub async fn handle(mut ws: WebSocket) {
-    let mut game: Option<Game> = None;
+    // The session this connection is attached to, if any.
+    let mut attached: Option<(String, Arc<Mutex<LocalGame>>)> = None;
+
     while let Some(Ok(msg)) = ws.recv().await {
         let Message::Text(text) = msg else { continue };
         let Ok(v) = serde_json::from_str::<Value>(&text) else {
-            let _ = ws
-                .send(Message::Text(
-                    json!({"type":"error","error":"bad json"}).to_string().into(),
-                ))
-                .await;
+            send_err(&mut ws, "bad json").await;
             continue;
         };
         match v["type"].as_str() {
@@ -58,19 +97,14 @@ pub async fn handle(mut ws: WebSocket) {
                     .copied()
                     .collect();
                 if !missing.is_empty() {
-                    let _ = ws
-                        .send(Message::Text(
-                            json!({
-                                "type": "error",
-                                "error": format!(
-                                    "deck contains cards without implemented behavior: {}",
-                                    missing.join(", ")
-                                ),
-                            })
-                            .to_string()
-                            .into(),
-                        ))
-                        .await;
+                    send_err(
+                        &mut ws,
+                        &format!(
+                            "deck contains cards without implemented behavior: {}",
+                            missing.join(", ")
+                        ),
+                    )
+                    .await;
                     continue;
                 }
                 let mut st = GameState::new_with_decks(
@@ -81,38 +115,74 @@ pub async fn handle(mut ws: WebSocket) {
                     &runner_deck,
                 );
                 st.system_log(format!("Local game vs bot, seed {seed}."));
-                let bot_rng = ChaCha8Rng::seed_from_u64(seed ^ 0xB07);
-                let mut g = Game { st, human: side, bot_rng };
-                // Bot answers its mulligan immediately if it can.
-                g.bot_moves(&mut ws).await;
-                g.push_state(&mut ws).await;
-                game = Some(g);
+                let token = format!(
+                    "{:016x}{:016x}",
+                    rand::random::<u64>(),
+                    rand::random::<u64>()
+                );
+                let game = Arc::new(Mutex::new(LocalGame {
+                    st,
+                    human: side,
+                    bot_rng: ChaCha8Rng::seed_from_u64(seed ^ 0xB07),
+                    last_seen: Instant::now(),
+                }));
+                prune_and_insert(token.clone(), game.clone()).await;
+                let _ = ws
+                    .send(Message::Text(
+                        json!({"type":"session","token": token, "side": side.as_str()})
+                            .to_string()
+                            .into(),
+                    ))
+                    .await;
+                {
+                    let mut g = game.lock().await;
+                    bot_moves(&mut g, &mut ws).await;
+                    push_state(&g, &mut ws).await;
+                }
+                attached = Some((token, game));
             }
-            Some("action") => {
-                if let Some(g) = game.as_mut() {
-                    match parse_command(&v) {
-                        Ok(cmd) => {
-                            let side = g.human;
-                            if let Err(e) = process_command(&mut g.st, side, cmd) {
-                                let _ = ws
-                                    .send(Message::Text(
-                                        json!({"type":"error","error": e.to_string()})
-                                            .to_string()
-                                            .into(),
-                                    ))
-                                    .await;
-                            }
-                            g.push_state(&mut ws).await;
-                            g.bot_moves(&mut ws).await;
-                        }
-                        Err(e) => {
+            Some("resume") => {
+                let token = v["token"].as_str().unwrap_or("").to_string();
+                let found = registry().lock().await.get(&token).cloned();
+                match found {
+                    Some(game) => {
+                        {
+                            let mut g = game.lock().await;
+                            g.last_seen = Instant::now();
+                            let side = g.human.as_str();
                             let _ = ws
                                 .send(Message::Text(
-                                    json!({"type":"error","error": e}).to_string().into(),
+                                    json!({"type":"session","token": token, "side": side})
+                                        .to_string()
+                                        .into(),
                                 ))
                                 .await;
+                            // The bot may have been mid-move when the old tab died.
+                            bot_moves(&mut g, &mut ws).await;
+                            push_state(&g, &mut ws).await;
                         }
+                        attached = Some((token, game));
                     }
+                    None => send_err(&mut ws, "session expired").await,
+                }
+            }
+            Some("action") => {
+                let Some((_, game)) = attached.as_ref() else {
+                    send_err(&mut ws, "no game attached").await;
+                    continue;
+                };
+                match parse_command(&v) {
+                    Ok(cmd) => {
+                        let mut g = game.lock().await;
+                        g.last_seen = Instant::now();
+                        let side = g.human;
+                        if let Err(e) = process_command(&mut g.st, side, cmd) {
+                            send_err(&mut ws, &e.to_string()).await;
+                        }
+                        push_state(&g, &mut ws).await;
+                        bot_moves(&mut g, &mut ws).await;
+                    }
+                    Err(e) => send_err(&mut ws, &e).await,
                 }
             }
             _ => {}
@@ -120,45 +190,44 @@ pub async fn handle(mut ws: WebSocket) {
     }
 }
 
-struct Game {
-    st: GameState,
-    human: Side,
-    bot_rng: ChaCha8Rng,
+async fn send_err(ws: &mut WebSocket, e: &str) {
+    let _ = ws
+        .send(Message::Text(
+            json!({"type":"error","error": e}).to_string().into(),
+        ))
+        .await;
 }
 
-impl Game {
-    async fn push_state(&self, ws: &mut WebSocket) {
-        let state = render_state(&self.st, Viewer::Side(self.human));
-        let actions = actions_json(&self.st, self.human);
-        let msg = json!({"type":"state","state": state, "actions": actions});
-        let _ = ws.send(Message::Text(msg.to_string().into())).await;
-    }
+async fn push_state(g: &LocalGame, ws: &mut WebSocket) {
+    let state = render_state(&g.st, Viewer::Side(g.human));
+    let actions = actions_json(&g.st, g.human);
+    let msg = json!({"type":"state","state": state, "actions": actions});
+    let _ = ws.send(Message::Text(msg.to_string().into())).await;
+}
 
-    /// Let the bot act until it has no decision; push a state after each move
-    /// with a small delay so the human can watch it happen.
-    async fn bot_moves(&mut self, ws: &mut WebSocket) {
-        let bot = self.human.opponent();
-        let mut guard = 0;
-        while !self.st.game_over() {
-            // The bot also auto-starts its turn and never idles at AwaitingStart.
-            let Some(cmd) = random_walk_step(&self.st, bot, &mut self.bot_rng) else {
-                break;
-            };
-            let pace = match self.st.turn_state {
-                TurnState::Setup => 0,
-                _ => 350,
-            };
-            if pace > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(pace)).await;
-            }
-            if process_command(&mut self.st, bot, cmd).is_err() {
-                break; // enumerator/executor mismatch would be a bug; stop looping
-            }
-            self.push_state(ws).await;
-            guard += 1;
-            if guard > 500 {
-                break;
-            }
+/// Let the bot act until it has no decision; push a state after each move
+/// with a small delay so the human can watch it happen.
+async fn bot_moves(g: &mut LocalGame, ws: &mut WebSocket) {
+    let bot = g.human.opponent();
+    let mut guard = 0;
+    while !g.st.game_over() {
+        let Some(cmd) = random_walk_step(&g.st, bot, &mut g.bot_rng) else {
+            break;
+        };
+        let pace = match g.st.turn_state {
+            TurnState::Setup => 0,
+            _ => 350,
+        };
+        if pace > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(pace)).await;
+        }
+        if process_command(&mut g.st, bot, cmd).is_err() {
+            break; // enumerator/executor mismatch would be a bug; stop looping
+        }
+        push_state(g, ws).await;
+        guard += 1;
+        if guard > 500 {
+            break;
         }
     }
 }
@@ -181,6 +250,8 @@ fn parse_command(v: &Value) -> Result<Command, String> {
         "jack-out" => Command::JackOut,
         "concede" => Command::Concede,
         "remove-tag" => Command::RemoveTag,
+        "purge" => Command::Purge,
+        "trash-resource" => Command::TrashResource,
         "play" => Command::Play { cid: cid()? },
         "corp-install" => Command::InstallCorp {
             cid: cid()?,
@@ -223,6 +294,8 @@ fn actions_json(st: &GameState, side: Side) -> Value {
                 Command::Continue => json!({"command":"continue"}),
                 Command::JackOut => json!({"command":"jack-out"}),
                 Command::RemoveTag => json!({"command":"remove-tag"}),
+                Command::Purge => json!({"command":"purge"}),
+                Command::TrashResource => json!({"command":"trash-resource"}),
                 Command::Concede => json!({"command":"concede"}),
                 Command::Keep => json!({"command":"keep"}),
                 Command::Mulligan => json!({"command":"mulligan"}),

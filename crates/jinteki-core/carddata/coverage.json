@@ -164,7 +164,7 @@
   "Adonis Campaign": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Adrian Seis": {
    "jnet_impl": true,
@@ -1369,7 +1369,7 @@
   "Caduceus": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Caldera": {
    "jnet_impl": true,
@@ -1509,7 +1509,7 @@
   "Cerebral Overwriter": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Cerebral Static": {
    "jnet_impl": true,
@@ -2279,7 +2279,7 @@
   "Data Raven": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Data Ward": {
    "jnet_impl": true,
@@ -2294,7 +2294,7 @@
   "Datasucker": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Day Job": {
    "jnet_impl": true,
@@ -3654,7 +3654,7 @@
   "Ghost Branch": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Ghost Runner": {
    "jnet_impl": true,
@@ -4214,7 +4214,7 @@
   "Hunter": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Hunter Seeker": {
    "jnet_impl": true,
@@ -4444,7 +4444,7 @@
   "Infiltration": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Info Bounty": {
    "jnet_impl": true,
@@ -6254,7 +6254,7 @@
   "Neural Katana": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Neurospike": {
    "jnet_impl": true,
@@ -6349,7 +6349,7 @@
   "Nisei MK II": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "No Free Lunch": {
    "jnet_impl": true,
@@ -7139,7 +7139,7 @@
   "Project Junebug": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Project Kusanagi": {
    "jnet_impl": true,
@@ -7189,7 +7189,7 @@
   "Psychic Field": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Psychographics": {
    "jnet_impl": true,
@@ -7834,7 +7834,7 @@
   "SEA Source": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "SIU": {
    "jnet_impl": true,
@@ -8444,7 +8444,7 @@
   "Snare!": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Snatch and Grab": {
    "jnet_impl": true,
@@ -8484,7 +8484,7 @@
   "Snowflake": {
    "jnet_impl": true,
    "jnet_partial": false,
-   "rs_behavior": false
+   "rs_behavior": true
   },
   "Social Engineering": {
    "jnet_impl": true,

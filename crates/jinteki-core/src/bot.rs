@@ -36,6 +36,9 @@ pub fn enumerate_actions(st: &GameState, side: Side) -> Vec<Command> {
 
     // 3. Run decision points.
     if let Some(run) = &st.run {
+        // Hosted-counter paid abilities usable during a run (Data Raven,
+        // Nisei MK II, Datasucker).
+        push_counter_abilities(st, side, &mut out);
         if side != Side::Runner {
             return out;
         }
@@ -84,7 +87,7 @@ pub fn enumerate_actions(st: &GameState, side: Side) -> Vec<Command> {
 
     out.push(Command::EndTurn);
 
-    // Zero-click actions: scoring and rezzing (corp).
+    // Zero-click actions: scoring, rezzing, hosted-counter abilities (corp).
     if side == Side::Corp {
         for (_, srv) in &st.servers {
             for &cid in &srv.content {
@@ -100,6 +103,7 @@ pub fn enumerate_actions(st: &GameState, side: Side) -> Vec<Command> {
             }
         }
     }
+    push_counter_abilities(st, side, &mut out);
 
     if clicks < 1 {
         return out;
@@ -114,7 +118,12 @@ pub fn enumerate_actions(st: &GameState, side: Side) -> Vec<Command> {
         let def = st.card(cid).def();
         match def.kind {
             CardType::Operation | CardType::Event if def.side == side => {
-                if credits >= def.cost as i64 {
+                let cond_ok = match def.play_condition {
+                    None | Some(Condition::Always) => true,
+                    Some(Condition::RunnerSuccessfulRunLastTurn) => st.runner_run_last_turn,
+                    Some(_) => false,
+                };
+                if cond_ok && credits >= def.cost as i64 {
                     out.push(Command::Play { cid });
                 }
             }
@@ -172,7 +181,7 @@ pub fn enumerate_actions(st: &GameState, side: Side) -> Vec<Command> {
     for cid in installed {
         let c = st.card(cid);
         if c.def().click_ability.is_some()
-            && c.credits > 0
+            && c.counters.credit > 0
             && (side == Side::Runner || c.rezzed)
         {
             out.push(Command::Ability { cid, index: 0 });
@@ -188,7 +197,57 @@ pub fn enumerate_actions(st: &GameState, side: Side) -> Vec<Command> {
         }
     }
 
+    if side == Side::Corp {
+        if st.tags > 0 && !st.rig.resources.is_empty() && clicks >= 1 && credits >= 2 {
+            out.push(Command::TrashResource);
+        }
+        if clicks >= 3 {
+            out.push(Command::Purge);
+        }
+    }
+
     out
+}
+
+/// Hosted-counter paid abilities whose timing window is open right now.
+/// Mirrors `engine::use_counter_ability`'s gating exactly (DP-3 soundness).
+fn push_counter_abilities(st: &GameState, side: Side, out: &mut Vec<Command>) {
+    let in_run = st.run.is_some();
+    let in_encounter = in_run
+        && st.run.as_ref().map(|r| r.phase) == Some(RunPhase::EncounterIce)
+        && encounter_ice(st).map(|i| st.card(i).rezzed) == Some(true);
+    let action_window =
+        st.turn_state == TurnState::Acting && st.active == side && !in_run && st.breach.is_none();
+    let mut candidates: Vec<Cid> = Vec::new();
+    match side {
+        Side::Corp => {
+            candidates.extend(
+                st.all_installed_corp()
+                    .into_iter()
+                    .filter(|&c| st.card(c).rezzed),
+            );
+            candidates.extend(st.scored(Side::Corp).iter().copied());
+        }
+        Side::Runner => candidates.extend(st.all_installed_runner()),
+    }
+    for cid in candidates {
+        let def = st.card(cid).def();
+        if def.side != side {
+            continue;
+        }
+        let base = if def.click_ability.is_some() { 1 } else { 0 };
+        for (i, ab) in def.counter_abilities.iter().enumerate() {
+            let timing_ok = match ab.timing {
+                AbilityTiming::Anytime => action_window || in_run,
+                AbilityTiming::DuringRun => in_run,
+                AbilityTiming::DuringEncounter => in_encounter,
+            };
+            let (kind, n) = ab.cost;
+            if timing_ok && st.card(cid).counters.get(kind) >= n {
+                out.push(Command::Ability { cid, index: base + i });
+            }
+        }
+    }
 }
 
 fn encounter_ice(st: &GameState) -> Option<Cid> {
@@ -212,7 +271,13 @@ fn select_targets(st: &GameState, kind: SelectKind) -> Vec<Cid> {
             .into_iter()
             .filter(|&c| !st.card(c).rezzed)
             .collect(),
+        SelectKind::UnrezzedInstalledCorpCard => st
+            .all_installed_corp()
+            .into_iter()
+            .filter(|&c| !st.card(c).rezzed)
+            .collect(),
         SelectKind::InstalledRunnerProgram => st.rig.programs.clone(),
+        SelectKind::InstalledRunnerResource => st.rig.resources.clone(),
         SelectKind::OwnHandCard(side) => st.hand(side).clone(),
     }
 }
@@ -242,6 +307,7 @@ pub fn random_walk_step<R: Rng>(st: &GameState, side: Side, rng: &mut R) -> Opti
                 Command::Continue => 12,
                 Command::Ability { .. } => 14,
                 Command::Score { .. } => 60,
+                Command::Purge => 1,
                 Command::Choice { .. } | Command::Select { .. } => 10,
                 _ => 10,
             };
