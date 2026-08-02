@@ -4,11 +4,20 @@
 
 | | |
 |---|---|
-| Version | 0.1.0 — DRAFT FOR RATIFICATION |
+| Version | 0.2.0 — Amendment 1 (rules-conformance pivot) |
 | Date | 2026-08-02 |
 | Author | cognivore <jm@memorici.de>, drafted with Claude |
-| Conformance baseline | `jinteki-reference` @ `40547303934e95aa9db4406f4d922bc48dca10bf` (2026-07-31) |
+| **Rules baseline (normative)** | NSG *Netrunner Comprehensive Rules* **v26.03**, reproduced in `docs/rules/` |
+| Wire baseline (compatibility) | `jinteki-reference` @ `40547303934e95aa9db4406f4d922bc48dca10bf` (2026-07-31) |
 | License | WTFPL |
+
+**Amendment 1 — 2026-08-02 — the conformance baseline splits in two.** Version 0.1.0 had ONE baseline: jinteki.net as-implemented, bugs included (old SYS-F-1). That is the correct target for the **wire** — the unmodified frontend must not be able to tell the difference — and the wrong target for the **rules**, because it caps our correctness at another implementation's defects and makes "complete and faithful" unmeasurable. This amendment splits the baseline:
+
+- **Rules:** the Comprehensive Rules are the specification. They are authored, versioned, and *numbered*, so every engine primitive can cite the rule it implements and every conformance claim is auditable (SYS-F-1, SYS-F-9, SYS-F-10, DP-7).
+- **Wire:** the pinned reference remains the compatibility baseline for the protocol, the ICD (Appendix B), and the persistence shapes. Unchanged.
+- **Cards:** behavior is derived from printed oracle text, never from another implementation's source (SYS-D-10, SYS-D-11).
+- **Consequence for DP-4:** jinteki.net is demoted from *definition* to *diagnostic oracle*. Where the two disagree, the CR decides, and the disagreement is recorded as an upstream defect rather than as our allowlisted divergence.
+- **Added scope:** player identity, deck storage, a public decklist library, and NetrunnerDB import (§5.7) — a game nobody can bring a deck to is a tech demo.
 
 **INCOSE conformance note.** This document tailors the INCOSE Systems Engineering Handbook (5th ed.) technical processes: Stakeholder Needs & Requirements Definition (§1–§4), System Requirements Definition (§5), Verification & Validation planning (§6), traceability (§7), risk & open-items register (§8), and a mandated project plan (§9). Requirement statements follow the INCOSE Guide to Writing Requirements: each has a unique ID, a singular **shall** statement, rationale, trace, and a verification method — **T**est, **D**emonstration, **A**nalysis, **I**nspection, plus **CT** for compile-time negative tests, which is a method this project gets to add because the type system is one of our verification instruments. Architecture ("how") lives in Appendix A and ONLY where we are already sure; everything else is a documented open item in §8. That is deliberate — this document mandates a plan and a contract, not an implementation.
 
@@ -127,8 +136,8 @@ The reference frontend is the conformance client. If it works unmodified, we are
 
 ### 5.2 Functional requirements (the engine)
 
-**SYS-F-1 (P1→).** The SoI shall reproduce reference game-rules behavior such that identical action scripts produce observationally equivalent client-visible outcomes (DP-4); divergences shall exist only as entries in a public allowlist, each with a rationale and an upstream issue link.
-*Rationale:* parity is with jinteki-as-implemented, bugs included, because the frontend and the players' expectations are calibrated to it; the allowlist is the honest ledger of deliberate disagreement. *Verify:* T + I.
+**SYS-F-1 (P1→, REVISED by Amendment 1).** The SoI shall implement the game rules as specified by the NSG *Netrunner Comprehensive Rules* v26.03 (the "CR"), reproduced normatively in `docs/rules/`. Where observed jinteki.net behavior contradicts the CR, the CR governs, and the difference shall be recorded in the divergence ledger as an upstream defect — not as a deviation of ours.
+*Rationale:* v0.1.0 targeted parity-with-jnet-as-implemented because the frontend is calibrated to it. That reasoning holds for the wire and fails for the rules: it makes another implementation's bugs our ceiling and leaves "faithful" undefined. The CR is numbered and citable, so conformance becomes a property we can trace and test rule by rule. *Verify:* T (DP-7) + I (ledger).
 
 **SYS-F-2 (P2).** For any reachable state and viewpoint, the SoI shall enumerate exactly the set of commands (with targets) that the executor would accept — sound and complete per DP-3 — and shall expose, per action, what it requires, what it targets, and whether it is currently satisfiable.
 *Rationale:* interpret an action not as a state transition but as a constraint set. This kills MOE-3 (no "try it and get a toast" round-trips), powers UI affordances, and the reference already gropes toward it with the `:change-in-game-state` guard (`engine.clj:336-345`) — we promote the grope to a semantics. *Verify:* T (property: enumerator ⇔ executor).
@@ -150,6 +159,15 @@ The reference frontend is the conformance client. If it works unmodified, we are
 
 **SYS-F-8 (P1).** The test interpreter shall provide seeded randomness, `stack-deck` semantics, and injectable access-order functions reproducing the reference test-harness determinism model.
 *Rationale:* the reference corpus is deterministic by *content*, not order — decks genuinely shuffle; only 12 `stack-deck` sites and the `:hq-access-fn`/`:rd-access-fn` indirections (`player.clj:134-135`) are order-load-bearing. Reproduce those hooks and the 3,731-test corpus ports. *Verify:* T.
+
+**SYS-F-9 (P1.5, NEW — Amendment 1).** The SoI shall implement a rules virtual machine whose primitives correspond to the CR's own constructs: the checkpoint procedure (§10.3), the ability taxonomy and resolution model (§9.4–§9.10), priority and paid-ability windows (§9.2, §9.5), and the timing structures of the Corp turn, Runner turn, run, breach, and access (§11.2–§11.6) represented as ordered, data-driven step tables rather than control flow.
+*Rationale:* the CR is already a virtual-machine specification — it defines states, an instruction set, an event loop, and an ordering discipline, down to lettered sub-steps. Implementing it *as such* makes conformance checkable step by step and makes new cards configuration rather than special cases. Implementing it ad hoc is how the reference ended up with two coexisting event pipelines (R-6). *Verify:* I (structure) + T (DP-7).
+
+**SYS-F-10 (P1.5, NEW — Amendment 1).** Every VM primitive, timing step, and ability-resolution branch shall cite the CR rule id it implements, and a traceability test shall assert that every cited id exists in the extracted rule index.
+*Rationale:* a conformance claim that cannot be traced is a claim of vibes. Citations make the engine auditable against a numbered document and turn a CR version bump into a diff instead of an archaeology project. *Verify:* T + A.
+
+**SYS-F-11 (P1.5, NEW — Amendment 1).** The SoI shall model the CR's interrupt and replacement-effect layer (§9.9) as a first-class resolution stage, not as special cases inside individual abilities.
+*Rationale:* replacement effects ("instead of", prevent/avoid, run redirection) are where ad-hoc engines break irrecoverably, because they must intercept resolution that has already begun. Modeling them once, where the CR puts them, is the difference between implementing 2,000 cards and fighting them. *Verify:* I + T.
 
 ### 5.3 Data & card DSL requirements
 
@@ -181,6 +199,31 @@ Here is the empirical situation, and it is the strongest argument in this docume
 
 **SYS-D-9 (P2).** The DSL shall represent printed-text errata and behavioral implementation gaps as distinct annotations.
 *Rationale:* upstream mixes both into one `:implementation` key (56 uses); they have different audiences and lifecycles. *Verify:* I.
+
+**SYS-D-10 (P1.5→, NEW — Amendment 1).** Card behavior shall be derived from the card's printed oracle text as published by NSG, and every implemented card shall carry, in-repo, the exact text it was implemented from.
+*Rationale:* implementing from another implementation propagates that implementation's misreadings silently; implementing from text is auditable by any player holding the card. Storing the text next to the behavior turns "is this card right?" into a diff a human can win. *Verify:* T (text-vs-behavior review corpus) + A.
+
+**SYS-D-11 (P2, NEW — Amendment 1).** The DSL's instruction vocabulary shall be derived from the CR's own instruction taxonomy (§9.11, "Identifying Instructions"), such that encoding a card is transcription of its printed text into VM instructions rather than reinterpretation of it.
+*Rationale:* the CR already specifies how to *read* a card — where an instruction begins, what is a cost versus an effect, how conditionals scope. A DSL shaped like that taxonomy makes encoding mechanical, which is precisely what makes it approachable to a non-programmer designer (STK-3, SYS-D-2). *Verify:* A + the D-2 usability trial.
+
+**SYS-D-12 (P1.5, NEW — Amendment 1).** No card shall be playable in a game unless its behavior is implemented; unimplemented cards shall remain visible and inspectable everywhere else (browser, deck builder, library) with explicit status.
+*Rationale:* silent vanilla-fallback play is a correctness lie — the game looks legal and isn't. Visibility without playability is honest and keeps the coverage gap measurable. *Verify:* T.
+
+### 5.7 Players, decks, and libraries (NEW — Amendment 1)
+
+A rules engine nobody can bring a deck to is a tech demo. These requirements cover the smallest identity and deck subsystem that makes the thing a product, and they are deliberately password-free.
+
+**SYS-I-12 (P2).** A player shall receive a durable pseudonymous identity on first visit with no registration step, sufficient to own decks and to resume games across refreshes, closed tabs, and devices-of-one.
+*Rationale:* the fastest game is the one you didn't have to sign up for (NEED-1, MOE-2). *Verify:* T + D.
+
+**SYS-I-13 (P2).** A player shall be able to upgrade a pseudonymous identity into an email-identified account via a single-use, expiring emailed link; the SoI shall never collect or store a password; and all content created while pseudonymous shall transfer to the claimed account.
+*Rationale:* proven in the author's own `draftroom` and `north-london-cube-community`; passwordless removes the entire credential-breach class, and adoption-on-claim means nobody loses work by having started before signing in. *Verify:* T + I (threat model).
+
+**SYS-I-14 (P2).** The SoI shall provide a public decklist library and per-player deck storage, with deck validation against CR §1.4 deck construction (identity, minimum deck size, influence, agenda points).
+*Rationale:* players arrive with a deck in mind; a library makes the first game reachable in one tap (MOE-2). Validation belongs to the rules layer, not the UI. *Verify:* T.
+
+**SYS-I-15 (P2).** The SoI shall import decklists from NetrunnerDB by URL or id, reporting per-card implementation status on import rather than failing opaquely.
+*Rationale:* NRDB is where the community's decks already live; strict-mode play (SYS-D-12) is only tolerable if the deck builder tells you *which* cards are missing and why. *Verify:* T.
 
 ### 5.4 Quality requirements
 
@@ -222,7 +265,7 @@ Here is the empirical situation, and it is the strongest argument in this docume
 **SYS-C-3.** Engine capabilities shall be partitioned into narrow algebras per Appendix A.1; no interpreter instance shall contain `unreachable!()`, `panic!()`, or equivalent on honest input. Presence of such is a defect of the algebra factoring, not of the interpreter, and CI shall lint for it.
 *Rationale:* none of this works with a monolithic MonadCardGame. The pretty-printer has nothing sensible to say about `persistEvent`, and the legality checker has nothing sensible to say about `shuffle`. The moment you write "unreachable" in an instance, the algebra is wrong. *Verify:* I + A.
 
-**SYS-C-4.** Conformance shall be defined against the pinned reference commit; a scheduled job shall regenerate the ICD against upstream master and report deltas; the cross-test oracle shall be a locally-hosted reference instance, and the SoI's test tooling shall NEVER direct load at production jinteki.net.
+**SYS-C-4 (REVISED by Amendment 1).** *Rules* conformance shall be defined against the CR version named in the header, reproduced in-repo and regenerable when NSG publishes a new version; *wire* conformance shall be defined against the pinned reference commit, with a scheduled job regenerating the ICD against upstream master and reporting deltas. The cross-test oracle shall be a locally-hosted reference instance, and the SoI's test tooling shall NEVER direct load at production jinteki.net.
 *Rationale:* "automatically and gently" — the reference repo ships its own docker-compose; we test against that, at home, like polite people. *Verify:* I.
 
 **SYS-C-5.** The scope register shall phase-tag: angel-arena EXCLUDED (dead upstream), quick-draft/turmoil/chimera/preconstructed formats P4, admin/tournament/prizes event families P4 (stub-with-correct-shape earlier).
@@ -239,7 +282,10 @@ Without these properties you don't have multiple interpreters of one algebra, yo
 | DP-1 | Pure ≍ production | Same action script through the in-memory interpreter stack and through the production stack (temp DB, loopback transport) yields observationally equal states — all viewpoint projections AND the full-knowledge projection. | Q-2 |
 | DP-2 | Record/replay | Run production, capture the event log, replay through the replay interpreter: identical state stream. | F-4, I-9 |
 | DP-3 | Legality coherence | Enumerator says yes ⇒ executor accepts; enumerator says no ⇒ executor rejects. Property-tested over generated states plus a corpus distilled from real games. | F-2 |
-| DP-4 | Cross-implementation | Scripted games driven over the wire into jinteki-rs and the dockerized reference at the pin; client-visible streams compared byte-wise modulo the allowlist. | I-1..9, F-1 |
+| DP-4 | Cross-implementation (REVISED) | Scripted games driven over the wire into jinteki-rs and the dockerized reference at the pin; client-visible streams compared modulo the divergence ledger. Protocol differences are OUR defects; rules differences are adjudicated against the CR, and whichever side contradicts it is the defect. | I-1..9, F-1 |
+| DP-7a | CR worked examples (NEW) | EVERY example situation printed in the CR (~438 marked-up examples) is an executable regression test asserting the outcome the rules authors state. These are authored conformance cases — the specification's own test suite — and they are non-negotiable: the suite runs green or the engine is wrong. | F-1, F-9, F-11 |
+| DP-7b | CR rule citations (NEW) | For each CR rule and timing step the VM cites, a test drives the engine through the situation that rule governs and asserts the specified outcome. Indexed by rule id; coverage against the extracted rule index is published as a number. | F-9, F-10 |
+| DP-7c | Card-interaction regression (NEW) | The reference's card-interaction corpus (3,731 tests) ported as regression tests against OUR engine. A ported test that fails is triaged against the CR: our defect, or an upstream defect recorded in the divergence ledger — never silently skipped. | F-1, D-10, Q-6 |
 | DP-5 | No-leak | For every emitted client payload: payload ⊆ viewpoint-permitted knowledge. Fuzzed across mid-run, mid-access, psi, traces, `view-deck`, spectators, reconnect resync. | F-3, S-1..3 |
 | DP-6 | Seed determinism | (seed, script) ⇒ byte-identical logs, cross-platform. | Q-5 |
 | CT | Negative compile tests | The speculative interpreter cannot name ground-truth hidden state; the client serializer cannot accept an unredacted state type. Committed as compile-fail tests. | F-6, S-1 |
@@ -303,6 +349,20 @@ Five phases. Each phase has a gate; a gate is a list of green things, and we do 
 4. DSL v0 (data format + compiler to algebras) with ~20 canonical cards; Q-6 fixture transpiler translating the reference core-engine test set.
 5. Full basic game via unmodified frontend (I-4, I-5 complete).
 *Gate:* DP-1/2/3/6 in CI; ported core fixtures 100%; Q-3 baseline measured (TBC-3 ratified); demo: complete game with ice and breaches from the pinned frontend.
+
+**P1.5 — The rules VM & the oracle-text card layer (NEW — Amendment 1).**
+The playable milestone built in P0/P1 (local play vs bot, deployed, sessions) STAYS LIVE throughout: the VM is built alongside as its own crate and cards migrate onto it, then the old path is cut over and deleted. No flag day, no dark period.
+1. Extract the CR into a normative in-repo reference with stable rule ids and machine-readable timing structures (`docs/rules/`), regenerable for future CR versions.
+2. VM kernel: zones and objects (§1, §4), the checkpoint procedure (§10.3), ability taxonomy and resolution (§9.4–§9.10) including the interrupt/replacement stage (F-11), priority and paid-ability windows (§9.2, §9.5), costs (§1.16), and §11's timing structures as data-driven step tables (F-9). Every primitive cites its rule id (F-10).
+3. Card layer: the CR §9.11 instruction taxonomy becomes the DSL vocabulary (D-11); cards are transcribed from printed oracle text and carry that text (D-10). Migrate the existing implemented pool onto the VM; strict play enforced (D-12).
+4. **The verification ladder, climbed in this order — each rung green before the next is attempted:**
+   a. **DP-7a — the CR's own examples.** Every worked example in the document becomes an executable test. These are authored by the rules authors and adjudicate themselves; they are the first and hardest gate on the VM.
+   b. **DP-7b — rule citations.** Every VM primitive's cited rule gets a test; coverage published.
+   c. **DP-7c — the card-interaction corpus.** The reference's 3,731 tests ported and run against our engine. Failures are triaged against the CR: ours to fix, or an upstream defect filed in the ledger. Nothing is skipped silently.
+   d. DP-1/2/3/6 re-greened on the VM; DP-4 re-run with rules disagreements adjudicated per the revised SYS-F-1.
+5. Identity, decks, library, NRDB import (§5.7) so real decks can be brought to the real rules.
+6. **Then, and only then, the priority decks** (`tools/priority-decks.json`): estrike Andromeda and Gauntlet first, each card transcribed from oracle text onto the verified VM.
+*Gate:* DP-7a 100% green; DP-7b covering 100% of cited rules with a published coverage number; DP-7c ported with every failure either fixed or filed; the priority decks legal, loadable, and playable end-to-end under strict mode; old engine path deleted, not merely bypassed.
 
 **P2 — Card pool & the safety interpreters.**
 1. Standard-format pool through the DSL (D-1..D-9), escape-hatch registry live (D-4).

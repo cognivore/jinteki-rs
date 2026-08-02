@@ -1,5 +1,5 @@
 {
-  "_comment": "Campaign priority targets (user-supplied netrunnerdb meta decks). A wave is DONE when its deck loads under strict mode (every card natively implemented) and plays. Order: W1 estrike-andromeda, W2 gauntlet-ntm, W3 wack-valencia, W4 postflood-asa.",
+  "_comment": "Campaign priority targets (user-supplied netrunnerdb meta decks). A wave is DONE when its deck loads under strict mode (every card natively implemented from printed oracle text) and plays. IMMEDIATE FOCUS after the rules VM and its verification ladder (DP-7a CR examples, DP-7b rule citations, DP-7c ported card corpus) are green: W1 estrike-andromeda, then W2 gauntlet-ntm. W3 wack-valencia and W4 postflood-asa follow. Per DESIGN.md Amendment 1, cards are transcribed from printed text and validated against the Comprehensive Rules, NOT ported from jinteki.net.",
   "decks": [
     {
       "wave": "W1",

@@ -1,19 +1,43 @@
 # CAMPAIGN.md — the full-fidelity port of every card
 
-Mandate: ALL cards ported COMPLETELY and FAITHFULLY to the reference
-implementation. No vanilla fallback in real games — the local server refuses
-decks containing unimplemented cards, loudly, by title. The fallback plumbing
-exists solely so the browser/deckbuilder can show any card and so coverage is
-measurable; it is not a way to play.
+Mandate: ALL cards implemented COMPLETELY and FAITHFULLY **from printed oracle
+text**, on top of a rules VM that implements the NSG Comprehensive Rules. No
+vanilla fallback in real games — the server refuses decks containing
+unimplemented cards, loudly, by title. The fallback plumbing exists solely so
+the browser/deckbuilder can show any card and so coverage is measurable; it is
+not a way to play.
+
+> **Amendment 1 (2026-08-02) changed the source of truth.** This campaign
+> originally ported jinteki.net's `defcard` forms. It no longer does. The
+> Comprehensive Rules (v26.03, `docs/rules/`) are the specification, cards come
+> from their printed text, and jinteki.net is a diagnostic oracle whose
+> disagreements are adjudicated against the CR. See DESIGN.md Amendment 1,
+> SYS-F-1/F-9/F-10/F-11 and SYS-D-10/D-11/D-12.
+
+## The order of work (do not skip rungs)
+
+0. **The VM first.** No card work proceeds on an unverified kernel.
+1. **DP-7a — the CR's worked examples.** Every example situation printed in
+   the Comprehensive Rules (~438 of them) becomes an executable regression
+   test. The rules authors wrote our conformance suite; it runs green before
+   anything else is trusted.
+2. **DP-7b — rule-citation tests.** Every VM primitive cites a CR rule id and
+   is tested against it; coverage is published.
+3. **DP-7c — the card-interaction corpus.** jinteki-reference's card tests
+   (3,731 of them, `test/clj/game/cards/*_test.clj`) ported and run against
+   our engine. Every failure is triaged against the CR — our defect (fix it)
+   or an upstream defect (file it in the ledger). None are skipped silently.
+4. **Then the priority decks** (`tools/priority-decks.json`), in order.
 
 ## Fidelity bar (non-negotiable, per card)
 
-1. Behavior mirrors the reference defcard at the pinned commit (`DESIGN.md`
-   Appendix B pin), including its jank, unless the divergence ledger in
-   PARITY.md says otherwise with a reason.
+1. Behavior is transcribed from the card's PRINTED ORACLE TEXT (NSG corpus),
+   and the implementation carries that text in-repo next to it (SYS-D-10).
+   The reference implementation may be consulted as a hint about intent — it
+   is never the authority, and where it contradicts the CR it is wrong.
 2. Every card with a reference test gets that test ported (same assertions,
    our harness vocabulary). Cards without reference tests get at least one
-   behavior test written from the card text + defcard.
+   behavior test written from the card text.
 3. No `unreachable!()`, no silent no-ops. If the IR can't express a card,
    grow the IR (preferred) or use a registered Rust escape hatch (tracked,
    budgeted per DESIGN.md SYS-D-4).
