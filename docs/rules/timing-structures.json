@@ -1,0 +1,627 @@
+{
+ "source_url": "https://rules.nullsignal.games/",
+ "version": "26.03",
+ "generator": "tools/extract-cr.py",
+ "structures": [
+  {
+   "structure": "corp_turn",
+   "source_section": "11.2",
+   "source_section_id": "sec_appendix_timing_structure_corps_turn",
+   "title": "Timing Structure of The Corp's Turn (Section 5.6)",
+   "prose_section": "5.6",
+   "prose_section_id": "sec_steps_corp_turn",
+   "steps": [
+    {
+     "number": "1",
+     "id": "subsec_corp_draw_phase",
+     "text": "Draw Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_corp_turn_allotted_clicks",
+       "text": "The Corp gains allotted clicks.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_corp_turn_draw_phase_paw",
+       "text": "Paid ability window: (P) (R) (S).",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_corp_turn_recurring_credits_refill",
+       "text": "The Corp's recurring credits refill.",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_corp_turn_turn_formal_begin",
+       "text": "The Corp's turn begins.",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_corp_turn_mandatory_draw",
+       "text": "The Corp draws 1 card.",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "2",
+     "id": "subsec_corp_action_phase",
+     "text": "Action Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_corp_turn_action_phase_paw",
+       "text": "Paid ability window: (P) (R) (S).",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_corp_turn_action",
+       "text": "Does the Corp have unspent clicks?",
+       "substeps": [
+        {
+         "number": "i",
+         "id": null,
+         "text": "If no, go to (d).",
+         "substeps": []
+        },
+        {
+         "number": "ii",
+         "id": null,
+         "text": "If yes, the Corp takes an action.",
+         "substeps": []
+        }
+       ]
+      },
+      {
+       "number": "c",
+       "id": "step_corp_turn_action_phase_loop",
+       "text": "Return to (a).",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_corp_turn_action_phase_end",
+       "text": "The Corp's action phase ends.",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "3",
+     "id": "subsec_corp_discard_phase",
+     "text": "Discard Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_corp_turn_discard",
+       "text": "The Corp discards cards.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_corp_turn_discard_phase_paw",
+       "text": "Paid ability window: (P) (R).",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_corp_turn_lose_unspent_clicks",
+       "text": "The Corp loses unspent [click].",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_corp_turn_formal_end",
+       "text": "The Corp's turn ends.",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_corp_turn_complete",
+       "text": "The Corp's turn is complete, and the game moves to the Runner's turn.",
+       "substeps": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "structure": "runner_turn",
+   "source_section": "11.3",
+   "source_section_id": "sec_appendix_timing_structure_runners_turn",
+   "title": "Timing Structure of The Runner's Turn (Section 5.7)",
+   "prose_section": "5.7",
+   "prose_section_id": "sec_steps_runner_turn",
+   "steps": [
+    {
+     "number": "1",
+     "id": "subsec_runner_action_phase",
+     "text": "Action Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_runner_turn_allotted_clicks",
+       "text": "The Runner gains allotted clicks.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_runner_turn_action_phase_paw",
+       "text": "Paid ability window: (P) (R).",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_runner_turn_recurring_credits_refill",
+       "text": "The Runner's recurring credits refill.",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_runner_turn_recurring_formal_begin",
+       "text": "The Runner's turn begins.",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_runner_turn_loop_paw",
+       "text": "Paid ability window: (P) (R).",
+       "substeps": []
+      },
+      {
+       "number": "f",
+       "id": "step_runner_turn_action",
+       "text": "Does the Runner have unspent clicks?",
+       "substeps": [
+        {
+         "number": "i",
+         "id": null,
+         "text": "If no, go to (h).",
+         "substeps": []
+        },
+        {
+         "number": "ii",
+         "id": null,
+         "text": "If yes, the Runner takes an action.",
+         "substeps": []
+        }
+       ]
+      },
+      {
+       "number": "g",
+       "id": "step_runner_turn_action_loop",
+       "text": "Return to (e).",
+       "substeps": []
+      },
+      {
+       "number": "h",
+       "id": "step_runner_turn_action_phase_end",
+       "text": "The Runner's action phase ends.",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "2",
+     "id": "subsec_runner_discard_phase",
+     "text": "Discard Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_runner_turn_discard",
+       "text": "The Runner discards cards.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_runner_turn_discard_phase_paw",
+       "text": "Paid ability window: (P) (R).",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_runner_turn_lose_unspent_clicks",
+       "text": "The Runner loses unspent [click].",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_runner_turn_formal_end",
+       "text": "The Runner's turn ends.",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_runner_turn_complete",
+       "text": "The Runner's turn is complete, and the game moves to the Corp's turn.",
+       "substeps": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "structure": "run",
+   "source_section": "11.4",
+   "source_section_id": "sec_appendix_timing_structure_of_a_run",
+   "title": "Timing Structure of a Run (Section 6.9)",
+   "prose_section": "6.9",
+   "prose_section_id": "sec_steps_of_a_run",
+   "steps": [
+    {
+     "number": "1",
+     "id": "rule_sec_run_initiation_phase",
+     "text": "Initiation Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_initiation_announce",
+       "text": "The Runner announces the attacked server.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_initiation_bad_publicity",
+       "text": "The Runner fills their bad publicity fund.",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_initiation_formal_begin",
+       "text": "The run begins.",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_runner_position",
+       "text": "The Runner's position is set to the outermost ice, if any.",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_initiation_paw",
+       "text": "Paid ability window: (P) (R).",
+       "substeps": []
+      },
+      {
+       "number": "f",
+       "id": "step_initiation_complete",
+       "text": "Does the Runner have a position corresponding to a piece of ice?",
+       "substeps": [
+        {
+         "number": "i",
+         "id": null,
+         "text": "If yes, go to (2).",
+         "substeps": []
+        },
+        {
+         "number": "ii",
+         "id": null,
+         "text": "If no, go to (4).",
+         "substeps": []
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "number": "2",
+     "id": "rule_sec_run_approach_ice_phase",
+     "text": "Approach Ice Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_approach_begins",
+       "text": "The Runner approaches ice.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_approach_paw",
+       "text": "Paid ability window: (P) (R) and ice can be rezzed.",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_approach_complete",
+       "text": "Is the approached ice rezzed?",
+       "substeps": [
+        {
+         "number": "i",
+         "id": null,
+         "text": "If yes, go to (3).",
+         "substeps": []
+        },
+        {
+         "number": "ii",
+         "id": null,
+         "text": "If no, go to (4).",
+         "substeps": []
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "number": "3",
+     "id": "rule_sec_run_encounter_ice_phase",
+     "text": "Encounter Ice Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_encounter_begins",
+       "text": "The Runner encounters ice.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_encounter_paw",
+       "text": "Paid ability window: (P) and subroutines can be broken.",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_resolve_subroutine",
+       "text": "Are there unbroken subroutines to resolve?",
+       "substeps": [
+        {
+         "number": "i",
+         "id": null,
+         "text": "If yes, the Corp resolves the next one.",
+         "substeps": []
+        },
+        {
+         "number": "ii",
+         "id": null,
+         "text": "If no, go to (e).",
+         "substeps": []
+        }
+       ]
+      },
+      {
+       "number": "d",
+       "id": "step_resolve_subroutine_loop",
+       "text": "Return to (c).",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_encounter_complete",
+       "text": "Go to (4).",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "4",
+     "id": "rule_sec_run_movement_phase",
+     "text": "Movement Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_pass_ice",
+       "text": "If the run got here from (2) or (3), the Runner passes ice.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_before_jack_out_paw",
+       "text": "Paid ability window: (P).",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_jack_out_choice",
+       "text": "The Runner may jack out.",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_move_position",
+       "text": "The Runner moves 1 position inward, if possible.",
+       "substeps": []
+      },
+      {
+       "number": "e",
+       "id": "step_after_jack_out_paw",
+       "text": "Paid ability window: (P) (R).",
+       "substeps": []
+      },
+      {
+       "number": "f",
+       "id": "step_approach_new_ice",
+       "text": "Did the Runner move to a new position?",
+       "substeps": [
+        {
+         "number": "i",
+         "id": null,
+         "text": "If yes, go to (2).",
+         "substeps": []
+        },
+        {
+         "number": "ii",
+         "id": null,
+         "text": "If no, go to (g).",
+         "substeps": []
+        }
+       ]
+      },
+      {
+       "number": "g",
+       "id": "step_approach_server",
+       "text": "The Runner approaches the server.",
+       "substeps": []
+      },
+      {
+       "number": "h",
+       "id": "step_movement_complete",
+       "text": "Go to (5).",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "5",
+     "id": "rule_sec_run_success_phase",
+     "text": "Success Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_run_declared_successful",
+       "text": "The run is declared successful.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_breach",
+       "text": "The Runner breaches the attacked server.",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_success_complete",
+       "text": "Go to (6).",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "6",
+     "id": "rule_sec_run_run_ends_phase",
+     "text": "Run Ends Phase",
+     "substeps": [
+      {
+       "number": "a",
+       "id": "step_open_priority_windows_closed",
+       "text": "Close or resolve priority windows from before \"end the run\".",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": "step_run_ends_bad_publicity",
+       "text": "The Runner empties their bad publicity fund.",
+       "substeps": []
+      },
+      {
+       "number": "c",
+       "id": "step_run_declared_unsuccessful",
+       "text": "If applicable, the run is declared unsuccessful.",
+       "substeps": []
+      },
+      {
+       "number": "d",
+       "id": "step_run_complete",
+       "text": "The run is complete.",
+       "substeps": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "structure": "breach",
+   "source_section": "11.5",
+   "source_section_id": "sec_appendix_timing_structure_of_breaching_a_server",
+   "title": "Timing Structure of Breaching a Server (Section 7.5)",
+   "prose_section": "7.5",
+   "prose_section_id": "sec_breaching_steps",
+   "steps": [
+    {
+     "number": "1",
+     "id": "step_breaching_begins",
+     "text": "The breach begins.",
+     "substeps": []
+    },
+    {
+     "number": "2",
+     "id": "step_flip_archives",
+     "text": "If breaching Archives, facedown cards in Archives are turned faceup.",
+     "substeps": []
+    },
+    {
+     "number": "3",
+     "id": "step_determine_candidates_limit",
+     "text": "If breaching HQ or R&D, determine how many accesses from Corp's hand or deck.",
+     "substeps": []
+    },
+    {
+     "number": "4",
+     "id": "step_choose_candidate",
+     "text": "Are there candidate cards remaining to access?",
+     "substeps": [
+      {
+       "number": "a",
+       "id": null,
+       "text": "If yes, the Runner chooses a candidate.",
+       "substeps": []
+      },
+      {
+       "number": "b",
+       "id": null,
+       "text": "If no, go to (7).",
+       "substeps": []
+      }
+     ]
+    },
+    {
+     "number": "5",
+     "id": "step_access_candidate",
+     "text": "The Runner accesses the chosen card.",
+     "substeps": []
+    },
+    {
+     "number": "6",
+     "id": "step_repeat_candidate_selection",
+     "text": "Return to (4).",
+     "substeps": []
+    },
+    {
+     "number": "7",
+     "id": "step_breach_complete",
+     "text": "Breaching the server is complete.",
+     "substeps": []
+    }
+   ]
+  },
+  {
+   "structure": "access",
+   "source_section": "11.6",
+   "source_section_id": "sec_appendix_timing_structure_of_accessing_a_card",
+   "title": "Timing Structure of Accessing a Card (Section 7.2)",
+   "prose_section": "7.2",
+   "prose_section_id": "sec_steps_accessing_card",
+   "steps": [
+    {
+     "number": "1",
+     "id": "step_card_accessed",
+     "text": "The card is accessed.",
+     "substeps": []
+    },
+    {
+     "number": "2",
+     "id": "step_mid_access_ability",
+     "text": "The Runner may trash the card or use another mid-access ability.",
+     "substeps": []
+    },
+    {
+     "number": "3",
+     "id": "step_access_agenda",
+     "text": "If the card is an agenda, the Runner steals it.",
+     "substeps": []
+    },
+    {
+     "number": "4",
+     "id": "step_access_complete",
+     "text": "Access is complete.",
+     "substeps": []
+    }
+   ]
+  }
+ ]
+}

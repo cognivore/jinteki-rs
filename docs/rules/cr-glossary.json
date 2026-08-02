@@ -1,0 +1,1346 @@
+{
+ "source_url": "https://rules.nullsignal.games/",
+ "version": "26.03",
+ "generator": "tools/extract-cr.py",
+ "glossary": [
+  {
+   "term": "Accessing",
+   "rule_ids": [
+    "rule_accessing"
+   ]
+  },
+  {
+   "term": "Advancement counters",
+   "rule_ids": [
+    "rule_type_advancement_counter"
+   ]
+  },
+  {
+   "term": "Agenda counters",
+   "rule_ids": [
+    "rule_type_agenda_counter"
+   ]
+  },
+  {
+   "term": "Archives",
+   "rule_ids": [
+    "rule_archives_name"
+   ]
+  },
+  {
+   "term": "Bad publicity counters",
+   "rule_ids": [
+    "rule_type_bad_pub_counter"
+   ]
+  },
+  {
+   "term": "Breaching",
+   "rule_ids": [
+    "rule_breaching_servers"
+   ]
+  },
+  {
+   "term": "Candidates",
+   "rule_ids": [
+    "rule_candidates"
+   ]
+  },
+  {
+   "term": "Click counters",
+   "rule_ids": [
+    "rule_type_click_counter"
+   ]
+  },
+  {
+   "term": "Condition counters",
+   "rule_ids": [
+    "rule_type_condition_counter"
+   ]
+  },
+  {
+   "term": "Core damage counters",
+   "rule_ids": [
+    "rule_type_core_damage_counter"
+   ]
+  },
+  {
+   "term": "Counters",
+   "rule_ids": [
+    "rule_counters_cards"
+   ]
+  },
+  {
+   "term": "Credit counters",
+   "rule_ids": [
+    "rule_type_credit_counter"
+   ]
+  },
+  {
+   "term": "Dividends",
+   "rule_ids": [
+    "rule_dividends"
+   ]
+  },
+  {
+   "term": "HQ",
+   "rule_ids": [
+    "rule_hq_name"
+   ]
+  },
+  {
+   "term": "Installing",
+   "rule_ids": [
+    "rule_installing"
+   ]
+  },
+  {
+   "term": "Jacking out",
+   "rule_ids": [
+    "rule_jacking_out"
+   ]
+  },
+  {
+   "term": "Playing",
+   "rule_ids": [
+    "rule_playing"
+   ]
+  },
+  {
+   "term": "Power counters",
+   "rule_ids": [
+    "rule_type_power_counter"
+   ]
+  },
+  {
+   "term": "Priority",
+   "rule_ids": [
+    "rule_priority"
+   ]
+  },
+  {
+   "term": "Psi Game",
+   "rule_ids": [
+    "rule_psi_game"
+   ]
+  },
+  {
+   "term": "R&D",
+   "rule_ids": [
+    "rule_rnd_name"
+   ]
+  },
+  {
+   "term": "Random Access Limit",
+   "rule_ids": [
+    "rule_random_access_limit"
+   ]
+  },
+  {
+   "term": "Recurring Credits",
+   "rule_ids": [
+    "rule_recurring_credits"
+   ]
+  },
+  {
+   "term": "Tag counters",
+   "rule_ids": [
+    "rule_type_tag_counter"
+   ]
+  },
+  {
+   "term": "Trashing",
+   "rule_ids": [
+    "rule_trashing"
+   ]
+  },
+  {
+   "term": "Virus counters",
+   "rule_ids": [
+    "rule_type_virus_counter"
+   ]
+  },
+  {
+   "term": "ability",
+   "rule_ids": [
+    "rule_ability"
+   ]
+  },
+  {
+   "term": "ability flag",
+   "rule_ids": [
+    "rule_ability_flag"
+   ]
+  },
+  {
+   "term": "action",
+   "rule_ids": [
+    "rule_action_definition",
+    "rule_action"
+   ]
+  },
+  {
+   "term": "action phase",
+   "rule_ids": [
+    "rule_corp_turn_phases",
+    "rule_runner_turn_phases"
+   ]
+  },
+  {
+   "term": "action window",
+   "rule_ids": [
+    "rule_action_window"
+   ]
+  },
+  {
+   "term": "active",
+   "rule_ids": [
+    "rule_active_cards",
+    "rule_ability_active"
+   ]
+  },
+  {
+   "term": "active player",
+   "rule_ids": [
+    "rule_active_player"
+   ]
+  },
+  {
+   "term": "additional cost",
+   "rule_ids": [
+    "rule_additional_cost"
+   ]
+  },
+  {
+   "term": "advance",
+   "rule_ids": [
+    "rule_advance"
+   ]
+  },
+  {
+   "term": "advancement requirement",
+   "rule_ids": [
+    "rule_advancement_requirement"
+   ]
+  },
+  {
+   "term": "announces",
+   "rule_ids": [
+    "rule_announce_targets"
+   ]
+  },
+  {
+   "term": "approach ice phase",
+   "rule_ids": [
+    "rule_approach_ice_phase"
+   ]
+  },
+  {
+   "term": "arrange",
+   "rule_ids": [
+    "movement_arrange",
+    "rule_arrange_rearrange"
+   ]
+  },
+  {
+   "term": "attacked server",
+   "rule_ids": [
+    "rule_attacked_server"
+   ]
+  },
+  {
+   "term": "avoid",
+   "rule_ids": [
+    "sec_prevent_avoid"
+   ]
+  },
+  {
+   "term": "bad publicity",
+   "rule_ids": [
+    "rule_bad_publicity"
+   ]
+  },
+  {
+   "term": "bad publicity fund",
+   "rule_ids": [
+    "rule_bad_publicity_fund"
+   ]
+  },
+  {
+   "term": "bank",
+   "rule_ids": [
+    "rule_bank",
+    "rule_bank_counter_supply"
+   ]
+  },
+  {
+   "term": "base trace strength",
+   "rule_ids": [
+    "rule_trace_attempt_and_base_trace_strength"
+   ]
+  },
+  {
+   "term": "basic actions",
+   "rule_ids": [
+    "rule_corp_basic_actions",
+    "rule_runner_basic_actions"
+   ]
+  },
+  {
+   "term": "basic trash ability",
+   "rule_ids": [
+    "rule_basic_trash_ability"
+   ]
+  },
+  {
+   "term": "bid",
+   "rule_ids": [
+    "rule_bidding"
+   ]
+  },
+  {
+   "term": "break",
+   "rule_ids": [
+    "rule_break_subroutine"
+   ]
+  },
+  {
+   "term": "broken",
+   "rule_ids": [
+    "rule_subroutines_status"
+   ]
+  },
+  {
+   "term": "bypass",
+   "rule_ids": [
+    "rule_bypass"
+   ]
+  },
+  {
+   "term": "central servers",
+   "rule_ids": [
+    "rule_three_central_servers"
+   ]
+  },
+  {
+   "term": "charge",
+   "rule_ids": [
+    "rule_charge"
+   ]
+  },
+  {
+   "term": "checkpoint",
+   "rule_ids": [
+    "rule_checkpoints"
+   ]
+  },
+  {
+   "term": "click",
+   "rule_ids": [
+    "rule_click"
+   ]
+  },
+  {
+   "term": "closes",
+   "rule_ids": [
+    "rule_priority_window"
+   ]
+  },
+  {
+   "term": "condition",
+   "rule_ids": [
+    "rule_condition"
+   ]
+  },
+  {
+   "term": "conditional ability",
+   "rule_ids": [
+    "rule_conditional_ability"
+   ]
+  },
+  {
+   "term": "controller of an ability",
+   "rule_ids": [
+    "rule_controller_ability"
+   ]
+  },
+  {
+   "term": "controller of an object",
+   "rule_ids": [
+    "rule_controller_object"
+   ]
+  },
+  {
+   "term": "core damage",
+   "rule_ids": [
+    "rule_core_damage"
+   ]
+  },
+  {
+   "term": "cost condition",
+   "rule_ids": [
+    "rule_cost_condition"
+   ]
+  },
+  {
+   "term": "credit",
+   "rule_ids": [
+    "rule_credit"
+   ]
+  },
+  {
+   "term": "credit pool",
+   "rule_ids": [
+    "rule_credit_pool"
+   ]
+  },
+  {
+   "term": "declaration",
+   "rule_ids": [
+    "rule_declaration"
+   ]
+  },
+  {
+   "term": "delayed conditional ability",
+   "rule_ids": [
+    "rule_delayed_conditional_ability"
+   ]
+  },
+  {
+   "term": "depends on",
+   "rule_ids": [
+    "rule_dependent_effects"
+   ]
+  },
+  {
+   "term": "derez",
+   "rule_ids": [
+    "sec_derez"
+   ]
+  },
+  {
+   "term": "destination",
+   "rule_ids": [
+    "rule_location"
+   ]
+  },
+  {
+   "term": "discard phase",
+   "rule_ids": [
+    "rule_corp_turn_phases",
+    "rule_runner_turn_phases"
+   ]
+  },
+  {
+   "term": "discard pile",
+   "rule_ids": [
+    "rule_discard_pile"
+   ]
+  },
+  {
+   "term": "discard step",
+   "rule_ids": [
+    "rule_discard_step"
+   ]
+  },
+  {
+   "term": "discarding",
+   "rule_ids": [
+    "rule_discard_phase_discarding"
+   ]
+  },
+  {
+   "term": "draw",
+   "rule_ids": [
+    "rule_card_draw",
+    "movement_draw"
+   ]
+  },
+  {
+   "term": "draw phase",
+   "rule_ids": [
+    "rule_corp_turn_phases"
+   ]
+  },
+  {
+   "term": "drawing",
+   "rule_ids": [
+    "rule_drawing"
+   ]
+  },
+  {
+   "term": "effect",
+   "rule_ids": [
+    "rule_effect"
+   ]
+  },
+  {
+   "term": "empty",
+   "rule_ids": [
+    "rule_load_and_empty"
+   ]
+  },
+  {
+   "term": "encounter ice phase",
+   "rule_ids": [
+    "rule_encounter_ice_phase"
+   ]
+  },
+  {
+   "term": "end the run",
+   "rule_ids": [
+    "rule_end_the_run"
+   ]
+  },
+  {
+   "term": "expected effects",
+   "rule_ids": [
+    "rule_expected_effects"
+   ]
+  },
+  {
+   "term": "expose",
+   "rule_ids": [
+    "rule_expose"
+   ]
+  },
+  {
+   "term": "facedown",
+   "rule_ids": [
+    "rule_faceup_facedown"
+   ]
+  },
+  {
+   "term": "faceup",
+   "rule_ids": [
+    "rule_faceup_facedown"
+   ]
+  },
+  {
+   "term": "find",
+   "rule_ids": [
+    "rule_find"
+   ]
+  },
+  {
+   "term": "flatlined",
+   "rule_ids": [
+    "rule_flatline"
+   ]
+  },
+  {
+   "term": "flavor text",
+   "rule_ids": [
+    "rule_flavor_text"
+   ]
+  },
+  {
+   "term": "forced encounter",
+   "rule_ids": [
+    "rule_forced_encounter"
+   ]
+  },
+  {
+   "term": "forfeit",
+   "rule_ids": [
+    "movement_forfeit"
+   ]
+  },
+  {
+   "term": "fully breaks",
+   "rule_ids": [
+    "rule_fully_break",
+    "rule_object_fully_break"
+   ]
+  },
+  {
+   "term": "gains",
+   "rule_ids": [
+    "rule_gain_credits",
+    "rule_gain_clicks"
+   ]
+  },
+  {
+   "term": "grip",
+   "rule_ids": [
+    "rule_grip_name"
+   ]
+  },
+  {
+   "term": "hand",
+   "rule_ids": [
+    "rule_hand"
+   ]
+  },
+  {
+   "term": "heap",
+   "rule_ids": [
+    "rule_heap_name"
+   ]
+  },
+  {
+   "term": "hidden",
+   "rule_ids": [
+    "rule_hidden_zone"
+   ]
+  },
+  {
+   "term": "hidden information",
+   "rule_ids": [
+    "rule_hidden_or_open_information",
+    "rule_hidden_information"
+   ]
+  },
+  {
+   "term": "host",
+   "rule_ids": [
+    "rule_placed_loaded"
+   ]
+  },
+  {
+   "term": "hosted",
+   "rule_ids": [
+    "rule_placed_loaded"
+   ]
+  },
+  {
+   "term": "hosting",
+   "rule_ids": [
+    "rule_installed_onto_cards"
+   ]
+  },
+  {
+   "term": "imminent",
+   "rule_ids": [
+    "rule_instruction_link"
+   ]
+  },
+  {
+   "term": "inactive",
+   "rule_ids": [
+    "rule_inactive_cards",
+    "rule_ability_active"
+   ]
+  },
+  {
+   "term": "inactive player",
+   "rule_ids": [
+    "rule_active_player"
+   ]
+  },
+  {
+   "term": "independent",
+   "rule_ids": [
+    "rule_independent_effects"
+   ]
+  },
+  {
+   "term": "initiation phase",
+   "rule_ids": [
+    "rule_run_initiation_phase"
+   ]
+  },
+  {
+   "term": "install",
+   "rule_ids": [
+    "movement_install"
+   ]
+  },
+  {
+   "term": "install cost",
+   "rule_ids": [
+    "rule_install_cost"
+   ]
+  },
+  {
+   "term": "instances",
+   "rule_ids": [
+    "rule_pending_instances"
+   ]
+  },
+  {
+   "term": "instruction",
+   "rule_ids": [
+    "rule_instruction"
+   ]
+  },
+  {
+   "term": "instructions",
+   "rule_ids": [
+    "rule_instruction_link"
+   ]
+  },
+  {
+   "term": "interface",
+   "rule_ids": [
+    "rule_icebreaker_interface"
+   ]
+  },
+  {
+   "term": "interrupt",
+   "rule_ids": [
+    "rule_interrupt_definition"
+   ]
+  },
+  {
+   "term": "interrupt window",
+   "rule_ids": [
+    "rule_interrupt_window"
+   ]
+  },
+  {
+   "term": "lingering effects",
+   "rule_ids": [
+    "rule_effect_beyond_resolution",
+    "rule_lingering_effect"
+   ]
+  },
+  {
+   "term": "link strength",
+   "rule_ids": [
+    "rule_link_strength"
+   ]
+  },
+  {
+   "term": "link value",
+   "rule_ids": [
+    "rule_link_value"
+   ]
+  },
+  {
+   "term": "load",
+   "rule_ids": [
+    "rule_load_and_empty"
+   ]
+  },
+  {
+   "term": "location",
+   "rule_ids": [
+    "rule_location"
+   ]
+  },
+  {
+   "term": "looks",
+   "rule_ids": [
+    "rule_look"
+   ]
+  },
+  {
+   "term": "lose",
+   "rule_ids": [
+    "rule_lose_credits"
+   ]
+  },
+  {
+   "term": "loses",
+   "rule_ids": [
+    "rule_lose_spend_clicks"
+   ]
+  },
+  {
+   "term": "mandatory conditional ability",
+   "rule_ids": [
+    "rule_optional_conditional_ability"
+   ]
+  },
+  {
+   "term": "mandatory draw",
+   "rule_ids": [
+    "rule_mandatory_draw"
+   ]
+  },
+  {
+   "term": "mark",
+   "rule_ids": [
+    "rule_mark"
+   ]
+  },
+  {
+   "term": "maximum hand size",
+   "rule_ids": [
+    "rule_max_hand_size"
+   ]
+  },
+  {
+   "term": "meat damage",
+   "rule_ids": [
+    "rule_meat_net_damage"
+   ]
+  },
+  {
+   "term": "memory cost",
+   "rule_ids": [
+    "rule_memory_cost"
+   ]
+  },
+  {
+   "term": "memory limit",
+   "rule_ids": [
+    "rule_memory_limit"
+   ]
+  },
+  {
+   "term": "memory unit",
+   "rule_ids": [
+    "rule_memory_unit"
+   ]
+  },
+  {
+   "term": "mid-access ability window",
+   "rule_ids": [
+    "rule_mid_access_window"
+   ]
+  },
+  {
+   "term": "modal abilities",
+   "rule_ids": [
+    "rule_mode_definition"
+   ]
+  },
+  {
+   "term": "mode",
+   "rule_ids": [
+    "rule_mode_definition"
+   ]
+  },
+  {
+   "term": "movement",
+   "rule_ids": [
+    "sec_movement"
+   ]
+  },
+  {
+   "term": "movement phase",
+   "rule_ids": [
+    "rule_movement_phase"
+   ]
+  },
+  {
+   "term": "name",
+   "rule_ids": [
+    "rule_card_name_definition"
+   ]
+  },
+  {
+   "term": "nested cost",
+   "rule_ids": [
+    "rule_nested_cost"
+   ]
+  },
+  {
+   "term": "net damage",
+   "rule_ids": [
+    "rule_meat_net_damage"
+   ]
+  },
+  {
+   "term": "object",
+   "rule_ids": [
+    "rule_object"
+   ]
+  },
+  {
+   "term": "open",
+   "rule_ids": [
+    "rule_priority_window"
+   ]
+  },
+  {
+   "term": "open information",
+   "rule_ids": [
+    "rule_hidden_or_open_information",
+    "rule_open_information"
+   ]
+  },
+  {
+   "term": "optional conditional ability",
+   "rule_ids": [
+    "rule_optional_conditional_ability"
+   ]
+  },
+  {
+   "term": "owner",
+   "rule_ids": [
+    "rule_owner"
+   ]
+  },
+  {
+   "term": "paid ability",
+   "rule_ids": [
+    "rule_paid_ability"
+   ]
+  },
+  {
+   "term": "paid ability window",
+   "rule_ids": [
+    "rule_paid_ability_window"
+   ]
+  },
+  {
+   "term": "pass",
+   "rule_ids": [
+    "rule_pass"
+   ]
+  },
+  {
+   "term": "pay",
+   "rule_ids": [
+    "rule_spend_credits"
+   ]
+  },
+  {
+   "term": "pending",
+   "rule_ids": [
+    "rule_pending_instances"
+   ]
+  },
+  {
+   "term": "persist",
+   "rule_ids": [
+    "rule_persistent"
+   ]
+  },
+  {
+   "term": "persistent",
+   "rule_ids": [
+    "rule_persistent"
+   ]
+  },
+  {
+   "term": "play",
+   "rule_ids": [
+    "movement_play"
+   ]
+  },
+  {
+   "term": "play ability",
+   "rule_ids": [
+    "rule_play_ability"
+   ]
+  },
+  {
+   "term": "play area",
+   "rule_ids": [
+    "rule_play_area"
+   ]
+  },
+  {
+   "term": "play cost",
+   "rule_ids": [
+    "rule_play_cost"
+   ]
+  },
+  {
+   "term": "positions",
+   "rule_ids": [
+    "rule_position"
+   ]
+  },
+  {
+   "term": "prevent",
+   "rule_ids": [
+    "sec_prevent_avoid"
+   ]
+  },
+  {
+   "term": "priority window",
+   "rule_ids": [
+    "rule_priority_window"
+   ]
+  },
+  {
+   "term": "public",
+   "rule_ids": [
+    "rule_public_zone"
+   ]
+  },
+  {
+   "term": "purge virus counters",
+   "rule_ids": [
+    "rule_purge"
+   ]
+  },
+  {
+   "term": "reaction window",
+   "rule_ids": [
+    "rule_reaction_window"
+   ]
+  },
+  {
+   "term": "rearrange",
+   "rule_ids": [
+    "rule_arrange_rearrange"
+   ]
+  },
+  {
+   "term": "relevant",
+   "rule_ids": [
+    "sec_relevant_interrupts"
+   ]
+  },
+  {
+   "term": "reminder text",
+   "rule_ids": [
+    "rule_reminder_text"
+   ]
+  },
+  {
+   "term": "remote server",
+   "rule_ids": [
+    "rule_remote_server"
+   ]
+  },
+  {
+   "term": "removed-from-game zone",
+   "rule_ids": [
+    "rule_removed_from_game_zone"
+   ]
+  },
+  {
+   "term": "replacement effect",
+   "rule_ids": [
+    "sec_replacement_effects"
+   ]
+  },
+  {
+   "term": "resolve an ability",
+   "rule_ids": [
+    "rule_resolve_ability"
+   ]
+  },
+  {
+   "term": "resolve an instruction",
+   "rule_ids": [
+    "rule_resolve_ability"
+   ]
+  },
+  {
+   "term": "resolving",
+   "rule_ids": [
+    "rule_instruction_link"
+   ]
+  },
+  {
+   "term": "restriction",
+   "rule_ids": [
+    "rule_restriction"
+   ]
+  },
+  {
+   "term": "reveal",
+   "rule_ids": [
+    "rule_reveal"
+   ]
+  },
+  {
+   "term": "rez",
+   "rule_ids": [
+    "sec_rez"
+   ]
+  },
+  {
+   "term": "rez cost",
+   "rule_ids": [
+    "rule_rez_cost"
+   ]
+  },
+  {
+   "term": "rezzed",
+   "rule_ids": [
+    "rule_rezzed_unrezzed"
+   ]
+  },
+  {
+   "term": "root",
+   "rule_ids": [
+    "rule_server_root"
+   ]
+  },
+  {
+   "term": "run",
+   "rule_ids": [
+    "rule_run"
+   ]
+  },
+  {
+   "term": "run ends phase",
+   "rule_ids": [
+    "rule_run_ends_phase"
+   ]
+  },
+  {
+   "term": "sabotage",
+   "rule_ids": [
+    "rule_sabotage"
+   ]
+  },
+  {
+   "term": "score",
+   "rule_ids": [
+    "rule_score",
+    "movement_score"
+   ]
+  },
+  {
+   "term": "score area",
+   "rule_ids": [
+    "rule_score_area"
+   ]
+  },
+  {
+   "term": "scoring",
+   "rule_ids": [
+    "rule_score_steal"
+   ]
+  },
+  {
+   "term": "search",
+   "rule_ids": [
+    "movement_search",
+    "rule_search"
+   ]
+  },
+  {
+   "term": "secret",
+   "rule_ids": [
+    "rule_secret_zone"
+   ]
+  },
+  {
+   "term": "server",
+   "rule_ids": [
+    "rule_server"
+   ]
+  },
+  {
+   "term": "set-aside zone",
+   "rule_ids": [
+    "rule_set_aside_zone"
+   ]
+  },
+  {
+   "term": "source",
+   "rule_ids": [
+    "rule_source"
+   ]
+  },
+  {
+   "term": "spend",
+   "rule_ids": [
+    "rule_spend_credits"
+   ]
+  },
+  {
+   "term": "spends",
+   "rule_ids": [
+    "rule_lose_spend_clicks"
+   ]
+  },
+  {
+   "term": "stack",
+   "rule_ids": [
+    "rule_stack_name"
+   ]
+  },
+  {
+   "term": "static ability",
+   "rule_ids": [
+    "rule_static_ability"
+   ]
+  },
+  {
+   "term": "static condition",
+   "rule_ids": [
+    "rule_static_condition"
+   ]
+  },
+  {
+   "term": "steal",
+   "rule_ids": [
+    "movement_steal"
+   ]
+  },
+  {
+   "term": "stealing",
+   "rule_ids": [
+    "rule_score_steal"
+   ]
+  },
+  {
+   "term": "subroutine",
+   "rule_ids": [
+    "rule_subroutine"
+   ]
+  },
+  {
+   "term": "success phase",
+   "rule_ids": [
+    "rule_success_phase"
+   ]
+  },
+  {
+   "term": "successful run",
+   "rule_ids": [
+    "rule_successful_run"
+   ]
+  },
+  {
+   "term": "suffers",
+   "rule_ids": [
+    "rule_suffer_or_take_damage"
+   ]
+  },
+  {
+   "term": "swap",
+   "rule_ids": [
+    "movement_swap",
+    "rule_swap"
+   ]
+  },
+  {
+   "term": "tag",
+   "rule_ids": [
+    "rule_tag"
+   ]
+  },
+  {
+   "term": "tagged",
+   "rule_ids": [
+    "rule_tagged"
+   ]
+  },
+  {
+   "term": "take",
+   "rule_ids": [
+    "rule_take_credits"
+   ]
+  },
+  {
+   "term": "takes",
+   "rule_ids": [
+    "rule_suffer_or_take_damage"
+   ]
+  },
+  {
+   "term": "target",
+   "rule_ids": [
+    "rule_target"
+   ]
+  },
+  {
+   "term": "text box",
+   "rule_ids": [
+    "rule_text_box_definition"
+   ]
+  },
+  {
+   "term": "threat level",
+   "rule_ids": [
+    "rule_threat_level"
+   ]
+  },
+  {
+   "term": "timing structure",
+   "rule_ids": [
+    "rule_timing_structure"
+   ]
+  },
+  {
+   "term": "tokens",
+   "rule_ids": [
+    "rule_counters_cards"
+   ]
+  },
+  {
+   "term": "trace",
+   "rule_ids": [
+    "rule_trace_attempt_and_base_trace_strength"
+   ]
+  },
+  {
+   "term": "trace attempt",
+   "rule_ids": [
+    "rule_trace_attempt_and_base_trace_strength"
+   ]
+  },
+  {
+   "term": "trace strength",
+   "rule_ids": [
+    "rule_trace_strength"
+   ]
+  },
+  {
+   "term": "trash",
+   "rule_ids": [
+    "movement_trash"
+   ]
+  },
+  {
+   "term": "trigger condition",
+   "rule_ids": [
+    "rule_trigger_condition"
+   ]
+  },
+  {
+   "term": "trigger cost",
+   "rule_ids": [
+    "rule_trigger_cost",
+    "rule_paid_ability"
+   ]
+  },
+  {
+   "term": "triggering",
+   "rule_ids": [
+    "rule_triggering"
+   ]
+  },
+  {
+   "term": "turn",
+   "rule_ids": [
+    "rule_turn"
+   ]
+  },
+  {
+   "term": "unbroken",
+   "rule_ids": [
+    "rule_subroutines_status"
+   ]
+  },
+  {
+   "term": "uninstalled",
+   "rule_ids": [
+    "rule_uninstalled"
+   ]
+  },
+  {
+   "term": "unique",
+   "rule_ids": [
+    "rule_unique_symbol",
+    "rule_uniqueness"
+   ]
+  },
+  {
+   "term": "unrezzed",
+   "rule_ids": [
+    "rule_rezzed_unrezzed"
+   ]
+  },
+  {
+   "term": "unsuccessful run",
+   "rule_ids": [
+    "rule_unsuccessful_run"
+   ]
+  },
+  {
+   "term": "using",
+   "rule_ids": [
+    "rule_using"
+   ]
+  },
+  {
+   "term": "zone",
+   "rule_ids": [
+    "rule_zone"
+   ]
+  }
+ ]
+}

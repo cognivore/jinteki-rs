@@ -1,0 +1,3562 @@
+{
+ "source_url": "https://rules.nullsignal.games/",
+ "version": "26.03",
+ "generator": "tools/extract-cr.py",
+ "examples": [
+  {
+   "id": "example_rule_influence_by_copy_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_influence_by_copy",
+   "rule_number": "1.4.5.a.",
+   "section_id": "sec_deck_construction",
+   "section_number": "1.4",
+   "section_title": "Deck Construction",
+   "text": "Example: Including a single copy of Diesel in a non-Shaper deck adds 2 to the total influence in that deck, while including two copies of Diesel in a non-Shaper deck adds 4 to the total influence in that deck.",
+   "cards_referenced": [
+    "Diesel"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_54+_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_54+",
+   "rule_number": "1.4.6.d.",
+   "section_id": "sec_deck_construction",
+   "section_number": "1.4",
+   "section_title": "Deck Construction",
+   "text": "Example: A 66 card deck requires 6 additional agenda points, since it includes 3 sets of 5 cards beyond 50. This gives a final requirement of either 28 or 29 agenda points.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_lose_credits_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_lose_credits",
+   "rule_number": "1.10.3.b.",
+   "section_id": "sec_credits",
+   "section_number": "1.10",
+   "section_title": "Credits",
+   "text": "Example: If a subroutine on DNA Tracker resolves, the Runner must lose 2[credit] from their credit pool, or 1[credit] if that is all they have. If the Runner's credit pool is empty, the effect does nothing.",
+   "cards_referenced": [
+    "DNA Tracker"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_spend_credits_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_spend_credits",
+   "rule_number": "1.10.3.c.",
+   "section_id": "sec_credits",
+   "section_number": "1.10",
+   "section_title": "Credits",
+   "text": "Example: The Runner may use the credit from Cyberfeeder to pay for Atman's first ability.",
+   "cards_referenced": [
+    "Cyberfeeder",
+    "Atman"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_spend_credits_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_spend_credits",
+   "rule_number": "1.10.3.c.",
+   "section_id": "sec_credits",
+   "section_number": "1.10",
+   "section_title": "Credits",
+   "text": "Example: The Runner may use credits from Ghost Runner when secretly spending credits to resolve a Psi ability (such as The Future Perfect).",
+   "cards_referenced": [
+    "Ghost Runner",
+    "The Future Perfect"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_spend_credits_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_spend_credits",
+   "rule_number": "1.10.3.c.",
+   "section_id": "sec_credits",
+   "section_number": "1.10",
+   "section_title": "Credits",
+   "text": "Example: The Runner must use credits from Ghost Runner if this is the only way for them to pay 3[credit] when resolving the \"when encountered\" ability on Tollbooth.",
+   "cards_referenced": [
+    "Ghost Runner",
+    "Tollbooth"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_recurring_credits_do_not_accumulate_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_recurring_credits_do_not_accumulate",
+   "rule_number": "1.10.5.d.",
+   "section_id": "sec_credits",
+   "section_number": "1.10",
+   "section_title": "Credits",
+   "text": "Example: The Runner installs Spinal Modem, which has 2[recurring]. 2 credits are placed on Spinal Modem now. The Runner spends 1 of those credits later in their turn. At the beginning of the Runner's next turn, the credits on Spinal Modem should be replenished up to 2[credit], so 1 more credit is placed on it.",
+   "cards_referenced": [
+    "Spinal Modem"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_no_memory_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_no_memory",
+   "rule_number": "1.12.2.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Corp uses the first ability on Vaporframe Fabricator, which specifies that it can only be used once per turn, and trashes Vaporframe Fabricator during the installation process. Then the Corp plays Restore, reinstalling the same copy of Vaporframe Fabricator from Archives. Even though it is the same physical card, the reinstalled Vaporframe Fabricator is a new object, and its \"once per turn\" ability is available to be used this turn.",
+   "cards_referenced": [
+    "Vaporframe Fabricator"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_identify_object_after_move_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_identify_object_after_move",
+   "rule_number": "1.12.2.a.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Corp plays Priority Construction, installing a piece of ice from HQ. That ice is now a new object in the play area, but Priority Construction's second instruction can still find it and place advancement counters on it.",
+   "cards_referenced": [
+    "Priority Construction"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_object_move_location_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_object_move_location",
+   "rule_number": "1.12.3.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Corp scores Accelerated Beta Test, looks at the top 3 cards of R&D, and installs and rezzes a piece of ice from among them. As a chain reaction, the Corp then uses The Foundry: Refining the Process to search R&D, with the result that the other cards currently being looked at by Accelerated Beta Test are shuffled along with the rest of R&D. Since the cards were moved to an unknown location in R&D, Accelerated Beta Test can no longer act on them, so those cards can no longer be looked at and will not be installed or trashed.",
+   "cards_referenced": [
+    "Accelerated Beta Test",
+    "The Foundry: Refining the Process"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_object_move_location_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_object_move_location",
+   "rule_number": "1.12.3.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The top card of R&D in the current game state is an object. So is the 2nd card from the top of R&D, the 3rd card, and so on. If the Corp plays Precognition and rearranges the top 5 cards of R&D, the Runner will not know which cards correspond to which objects in the previous order, so the cards become new objects under their new order.",
+   "cards_referenced": [
+    "Precognition"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_object_move_known_location_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_object_move_known_location",
+   "rule_number": "1.12.4.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Runner has chosen a piece of ice with Femme Fatale, and the Corp uses Thimblerig's ability to move that ice to another location. But the ice has not left the play area, so it is still the same object and the Runner can still use Femme Fatale's ability to bypass it.",
+   "cards_referenced": [
+    "Femme Fatale",
+    "Thimblerig"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_object_turn_faceup_facedown_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_object_turn_faceup_facedown",
+   "rule_number": "1.12.5.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Corp uses Vaporframe Fabricator, installing a piece of ice at no cost, and then plays Divert Power to derez Vaporframe Fabricator and rez their newly-installed ice at a discount. The Corp can rez Vaporframe Fabricator again, but since it is still the same object, its \"once per turn\" ability cannot be used again this turn.",
+   "cards_referenced": [
+    "Vaporframe Fabricator"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_previous_object_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_previous_object",
+   "rule_number": "1.12.6.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Runner plays Bravado. During the run, a piece of ice that the Runner has already passed is trashed. When the run ends, Bravado's ability must determine how many pieces of ice the Runner passed during that run. It does this by reviewing the game history and counting each distinct ice object that the Runner passed. Even though the object corresponding to the trashed ice no longer exists in the present game state, Bravado can still count it.",
+   "cards_referenced": [
+    "Bravado"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_previous_object_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_previous_object",
+   "rule_number": "1.12.6.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Runner trashes the top card of R&D while accessing it. The object corresponding to that card in its location on top of R&D ceases to exist, but still counts against the number of cards the Runner can access from R&D during this breach.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_previous_object_source_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_previous_object_source",
+   "rule_number": "1.12.6.a.",
+   "section_id": "sec_objects",
+   "section_number": "1.12",
+   "section_title": "Objects",
+   "text": "Example: The Runner runs a server, steals an agenda, and accesses a rezzed copy of AMAZE Amusements. The Runner trashes AMAZE Amusements, and the object they had accessed ceases to exist, while the trashed card becomes a new object in Archives. The source of the persistent ability created by the trashing is the original object in the root of the server, so the reference to \"this server\" in the persistent ability still refers to the attacked server, and the Runner will take 2 tags when the run ends.",
+   "cards_referenced": [
+    "AMAZE Amusements"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_hosted_counters_not_on_player_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_hosted_counters_not_on_player",
+   "rule_number": "1.13.3.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Corp resolves the first subroutine on Whitespace, forcing the Runner to lose 3[credit]. The Runner cannot lose credits hosted on their cards, even if they do not have 3[credit] in their credit pool.",
+   "cards_referenced": [
+    "Whitespace"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_hosted_counters_not_on_player_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_hosted_counters_not_on_player",
+   "rule_number": "1.13.3.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Corp has a rezzed Superdeep Borehole with hosted bad publicity counters. When the Runner fills their bad publicity fund in step 6.9.1b, they do not receive credits for the hosted bad publicity.",
+   "cards_referenced": [
+    "Superdeep Borehole"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_hosted_counters_not_on_player_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_hosted_counters_not_on_player",
+   "rule_number": "1.13.3.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Corp plays Scapegoat to remove 2 bad publicity. They cannot remove bad publicity counters hosted on Superdeep Borehole.",
+   "cards_referenced": [
+    "Scapegoat",
+    "Superdeep Borehole"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_host_via_install_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_host_via_install",
+   "rule_number": "1.13.6.a.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: Off-Campus Apartment has the ability, \"Off-Campus Apartment can host any number of connections.\" This means that whenever the Runner installs a connection card, they can choose to install that card into the play area hosted on Off-Campus Apartment or as normal directly into the play area.",
+   "cards_referenced": [
+    "Off-Campus Apartment"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_host_via_ability_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_host_via_ability",
+   "rule_number": "1.13.6.b.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: Glenn Station reads, \"Glenn Station can host a single card\", but also has a paid ability that hosts a card on itself. Therefore, Glenn Station only lets the Corp host cards through that paid ability, not through an install action.",
+   "cards_referenced": [
+    "Glenn Station"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_host_on_ability_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_host_on_ability",
+   "rule_number": "1.13.6.c.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: Egret states, \"Install only on a rezzed piece of ice.\" The Runner can only install Egret if there is an installed, rezzed piece of ice available before the installation process begins; otherwise, it is illegal for the Runner to install Egret.",
+   "cards_referenced": [
+    "Egret"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_host_transitivity_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_host_transitivity",
+   "rule_number": "1.13.9.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: If the Runner installs a Leprechaun hosted on a Dhegdheer, programs hosted on Leprechaun do not have their install costs reduced because they are hosted on Leprechaun and not on Dhegdheer.",
+   "cards_referenced": [
+    "Leprechaun",
+    "Dhegdheer"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_hosted_object_same_zone_as_host_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_hosted_object_same_zone_as_host",
+   "rule_number": "1.13.12.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Runner uses the action on Madani, choosing 2 programs in their grip to host on Madani. The chosen cards change zones, moving from the Runner's grip to the play area.",
+   "cards_referenced": [
+    "Madani"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_hosted_objects_when_host_trashed_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_hosted_objects_when_host_trashed",
+   "rule_number": "1.13.13.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Runner has an installed copy of Detente with Corp cards hosted on it. They play Rejig, adding Detente to their grip. The hosted Corp cards are trashed.",
+   "cards_referenced": [
+    "Detente",
+    "Rejig"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_hosted_objects_when_host_trashed_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_hosted_objects_when_host_trashed",
+   "rule_number": "1.13.13.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Runner has Next Big Thing in their score area with a hosted agenda counter. The Corp plays IP Enforcement to install that agenda. The hosted agenda counter will be trashed after step 8.5.16d of the installation.",
+   "cards_referenced": [
+    "Next Big Thing",
+    "IP Enforcement"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_hosted_objects_when_host_trashed_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_hosted_objects_when_host_trashed",
+   "rule_number": "1.13.13.",
+   "section_id": "sec_host",
+   "section_number": "1.13",
+   "section_title": "Host, Hosted, and Hosting",
+   "text": "Example: The Runner has Next Big Thing in their score area with a hosted agenda counter. The Corp plays Exchange of Information to swap that agenda to their own score area. The agenda counter remains hosted on Next Big Thing.",
+   "cards_referenced": [
+    "Next Big Thing",
+    "Exchange of Information"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_controller_choices_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_controller_choices",
+   "rule_number": "1.14.5.",
+   "section_id": "sec_ownership",
+   "section_number": "1.14",
+   "section_title": "Ownership and Control",
+   "text": "Example: Rototurret's first subroutine reads, \"Trash 1 installed program.\" Since Rototurret is a Corp card, the Corp chooses which installed program to trash. Conversely, Bulwark's first subroutine reads, \"The Runner trashes 1 installed program.\" Since the Runner is specified to be carrying out this effect, they choose which of their installed programs to trash.",
+   "cards_referenced": [
+    "Rototurret",
+    "Bulwark"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trigger_condition_effect_by_player_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trigger_condition_effect_by_player",
+   "rule_number": "1.14.5.a.",
+   "section_id": "sec_ownership",
+   "section_number": "1.14",
+   "section_title": "Ownership and Control",
+   "text": "Example: The Corp has a rezzed Hostile Infrastructure. Apocalypse does not specify who trashes the cards, so the Runner is responsible for the trashing and Hostile Infrastructure meets its trigger condition.",
+   "cards_referenced": [
+    "Hostile Infrastructure"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trigger_condition_effect_by_player_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trigger_condition_effect_by_player",
+   "rule_number": "1.14.5.a.",
+   "section_id": "sec_ownership",
+   "section_number": "1.14",
+   "section_title": "Ownership and Control",
+   "text": "Example: Alice Merchant states that \"the Corp must trash 1 card from HQ\", so the Corp carries out this effect even though Alice Merchant is a Runner card, and therefore Hostile Infrastructure does not meet its trigger condition.",
+   "cards_referenced": [
+    "Alice Merchant",
+    "Hostile Infrastructure"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_target_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_target",
+   "rule_number": "1.15.1.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: Top Hat reads in part, \"you may choose 1 of the top 5 cards of R&D and access it.\" The target of this instruction is the card in R&D the Runner chooses.",
+   "cards_referenced": [
+    "Top Hat"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_target_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_target",
+   "rule_number": "1.15.1.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: One of the subroutines on Colossus reads in part, \"Trash 1 installed program and 1 installed resource.\" The targets of this subroutine are the two cards that will be trashed.",
+   "cards_referenced": [
+    "Colossus"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_target_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_target",
+   "rule_number": "1.15.1.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: Trick of Light reads, \"Choose 1 installed card you can advance. Move up to 2 advancement counters from 1 other card to the chosen card.\" The targets of this operation are the advancement counters to be moved and the destination card. If 2 tokens are chosen, they must be hosted on the same card.",
+   "cards_referenced": [
+    "Trick of Light"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_target_4",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_target",
+   "rule_number": "1.15.1.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: The Runner is encountering a barrier and uses Cleaver to break subroutines. The targets of Cleaver's' interface ability are the 1 or 2 subroutines that it will break.",
+   "cards_referenced": [
+    "Cleaver"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_targets_must_be_in_play_area_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_targets_must_be_in_play_area",
+   "rule_number": "1.15.2.c.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: The Corp resolves a subroutine that says \"[subroutine] The Runner trashes 1 program.\" The Runner must trash 1 of their installed programs and may not trash a program from their grip or stack.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_distinct_targets_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_distinct_targets",
+   "rule_number": "1.15.2.e.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: The Runner accesses an Aggressive Secretary with three advancement counters on it. The Runner only has two installed programs, so the Corp chooses both of those programs for Aggressive Secretary. After the programs have been chosen, they are both trashed simultaneously.",
+   "cards_referenced": [
+    "Aggressive Secretary"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_target_beyond_move_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_target_beyond_move",
+   "rule_number": "1.15.4.",
+   "section_id": "sec_targets",
+   "section_number": "1.15",
+   "section_title": "Targets",
+   "text": "Example: Howler's ability targets a card in HQ. Its first instruction installs that card, and its second instruction creates a delayed conditional ability that refers to that card in the play area. The latter ability can find and act on the card as long as it is still installed.",
+   "cards_referenced": [
+    "Howler"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_no_interrupt_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_no_interrupt",
+   "rule_number": "1.16.1.a.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner can trash Clone Chip to trigger its paid ability, but cannot use LLDS Energy Regulator to prevent Clone Chip from being trashed this way.",
+   "cards_referenced": [
+    "Clone Chip",
+    "LLDS Energy Regulator"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_interrupt_static_mandatory_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_interrupt_static_mandatory",
+   "rule_number": "1.16.1.b.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner cannot pay the additional cost to steal Obokata Protocol while Guru Davinder is installed, because the Runner could not currently take 4 damage if instructed to: Guru Davinder's first ability would prevent the damage.",
+   "cards_referenced": [
+    "Obokata Protocol",
+    "Guru Davinder"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_interrupt_static_mandatory_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_interrupt_static_mandatory",
+   "rule_number": "1.16.1.b.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner is playing as Jesminder Sareen and encounters Funhouse, without any other tag-related effects resolving earlier in the run. Since Jesminder Sareen's ability would prevent taking 1 tag, the Runner cannot take 1 tag to pay the nested cost in Funhouse's ability. Funhouse will end the run.",
+   "cards_referenced": [
+    "Jesminder Sareen",
+    "Funhouse"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_restrictions_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_restrictions",
+   "rule_number": "1.16.1.c.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner controls Zer0 and Clan Vengeance, and wants to accumulate more power counters on Clan Vengeance. Zer0's ability has the restriction \"Use this ability only once per turn.\" If the Runner has already used the ability this turn, they cannot suffer additional net damage by attempting (even unsuccessfully) to use the ability again.",
+   "cards_referenced": [
+    "Zer0",
+    "Clan Vengeance"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_restrictions_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_restrictions",
+   "rule_number": "1.16.1.c.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Corp installs Azef Protocol in the root of a server with a rezzed SanSan City Grid and advances Azef Protocol twice. Since SanSan City Grid reduces Azef Protocol's advancement requirement to 2, the Corp now meets the restriction necessary to score Azef Protocol, but must also pay its additional cost to score. The Corp cannot trash the SanSan City Grid to pay this cost, because paying the cost this way would return Azef Protocol's advancement requirement to 3, and the restriction to score it would no longer be met.",
+   "cards_referenced": [
+    "Azef Protocol",
+    "SanSan City Grid"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_zero_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_zero",
+   "rule_number": "1.16.1.d.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner accesses a Beanstalk Royalties from R&D and announces that they are using the ability of Freedom Khumalo: Crypto-Anarchist to trash the Beanstalk Royalties. Even though the Runner does not remove any virus counters from any cards, they have still paid the cost.",
+   "cards_referenced": [
+    "Beanstalk Royalties",
+    "Freedom Khumalo: Crypto-Anarchist"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_quantities_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_quantities",
+   "rule_number": "1.16.2.b.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner approaches a server protected by 3 advanced pieces of ice and with a rezzed Cayambe Grid in its root. They pay the nested cost in Cayambe Grid's ability. This cost is 1 payment of 6[credit], not 3 payments of 2[credit], so this only meets the trigger condition for 1 instance of GameNET's ability.",
+   "cards_referenced": [
+    "Cayambe Grid",
+    "GameNET"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cost_x_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cost_x",
+   "rule_number": "1.16.2.c.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: Psychographics is an operation with a play cost of X. It also has the ability, \"X must be equal to or less than the number of tags the Runner has.\" If the Runner has 3 tags, the Corp can choose 0, 1, 2, or 3 as the value for X when they play Psychographics.",
+   "cards_referenced": [
+    "Psychographics"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_alternate_payment_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_alternate_payment",
+   "rule_number": "1.16.2.e.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Corp rezzes Biawak, which has the ability \"You can forfeit 1 agenda as you rez this ice to pay for 10[credit] of its rez cost.\" and a rez cost of 14[credit]. The Corp chooses to pay Biawak's rez cost by spending 2[credit] from their credit pool, spending 2[credit] from a Mahkota Langit Grid, and forfeiting 1 agenda.",
+   "cards_referenced": [
+    "Biawak",
+    "Mahkota Langit Grid"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_install_and_rez_reducing_total_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_install_and_rez_reducing_total",
+   "rule_number": "1.16.2.f.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Corp uses the ability on Tucana to install and rez a copy of Logjam from R&D, paying a total of 3[credit] less. They install the Logjam protecting a server that already has 1 piece of ice protecting it, meaning that without the \"total of 3[credit] less\" modifier, the install cost would be 1[credit] and the rez cost would be 6[credit]. The Corp applies 1[credit] of the discount to the install cost and 2[credit] to the rez cost, leaving a final install cost of 0[credit] and a final rez cost of 4[credit].",
+   "cards_referenced": [
+    "Tucana",
+    "Logjam"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_inherent_cost_aggregates_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_inherent_cost_aggregates",
+   "rule_number": "1.16.4.d.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Corp has Jeeves Model Bioroids rezzed, and uses the basic action \"[click]: Play an operation.\" to play Blue Level Clearance. Both the click spent for the cost of the basic action and the click spent for Blue Level Clearance's additional cost count as clicks spent to take the \"[click]: Play an operation.\" action.",
+   "cards_referenced": [
+    "Jeeves Model Bioroids",
+    "Blue Level Clearance"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_decline_additional_cost_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_decline_additional_cost",
+   "rule_number": "1.16.10.a.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner accesses Obokata Protocol. Normally the Runner must steal agendas that they access, but because Obokata Protocol has an additional cost to steal, the Runner can decline to suffer the net damage and not steal the agenda.",
+   "cards_referenced": [
+    "Obokata Protocol"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_additonal_cost_simultaenous_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_additonal_cost_simultaenous",
+   "rule_number": "1.16.10.b.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Runner accesses Obokata Protocol while Ben Musashi and Predictive Algorithm are both active. The Runner must be able to pay 2 credits and suffer 6 net damage all at once in order to steal the Obokata Protocol, even though each of the three costs are from different card abilities. After all costs have been paid, abilities that meet their trigger conditions from the paying of any of those costs, such as I've Had Worse or Order of Sol, can then resolve as applicable.",
+   "cards_referenced": [
+    "Obokata Protocol",
+    "Ben Musashi",
+    "Predictive Algorithm",
+    "I've Had Worse",
+    "Order of Sol"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_additional_cost_checkpoint_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_additional_cost_checkpoint",
+   "rule_number": "1.16.10.c.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: The Corp is playing Ob Superheavy Logistics and initiates scoring Azef Protocol, which has an additional cost to score of \"trash one of your other installed cards.\" If the Corp trashes a rezzed card, meeting the trigger condition for Ob Superheavy Logistics's ability, this ability will resolve following the checkpoint associated with paying the cost. This happens before Azef Protocol is added to the Corp's score area or any trigger conditions related to scoring an agenda are met.",
+   "cards_referenced": [
+    "Ob Superheavy Logistics",
+    "Azef Protocol"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_nested_cost_unless_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_nested_cost_unless",
+   "rule_number": "1.16.11.b.",
+   "section_id": "sec_costs",
+   "section_number": "1.16",
+   "section_title": "Costs",
+   "text": "Example: A subroutine reading \"End the run unless the Runner pays 1[credit].\" contains a nested cost. If the Runner chooses to pay 1[credit], the subroutine will not end the run.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_threat_level_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_threat_level",
+   "rule_number": "1.17.1.a.",
+   "section_id": "sec_score_scoring_steal",
+   "section_number": "1.17",
+   "section_title": "Score, Scoring and Stealing",
+   "text": "Example: If the Runner's score is 4 agenda points, and the Corp's score is 3 agenda points, the threat level is 4.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_placing_advancement_counter_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_placing_advancement_counter",
+   "rule_number": "1.18.2.",
+   "section_id": "sec_advancing_cards",
+   "section_number": "1.18",
+   "section_title": "Advancing Cards",
+   "text": "Example: The Corp plays Mushin No Shin, choosing to install an Oaktown Renovation. Because the three advancement counters were placed on the card directly, the Corp does not gain any credits from the ability on Oaktown Renovation.",
+   "cards_referenced": [
+    "Mushin No Shin",
+    "Oaktown Renovation"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_symbol_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_symbol",
+   "rule_number": "1.19.4.",
+   "section_id": "sec_trashing",
+   "section_number": "1.19",
+   "section_title": "Trashing",
+   "text": "Example: Fall Guy's last ability reads \"[trash]: Gain 2[credit].\" The cost to trigger this ability is to trash Fall Guy.",
+   "cards_referenced": [
+    "Fall Guy"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_memory_limit_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_memory_limit",
+   "rule_number": "1.20.2.",
+   "section_id": "sec_memory",
+   "section_number": "1.20",
+   "section_title": "Memory",
+   "text": "Example: The Runner is playing an identity with a starting memory limit of 4[mu]. They have an installed copy of T400 Memory Diamond, which has the ability \"+1[mu]\". The Runner can therefore have up to 5[mu] worth of programs installed.",
+   "cards_referenced": [
+    "T400 Memory Diamond"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_add_remove_subtypes_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_add_remove_subtypes",
+   "rule_number": "2.16.5.",
+   "section_id": "sec_subtypes",
+   "section_number": "2.16",
+   "section_title": "Subtypes",
+   "text": "Example: The Runner plays Tinkering on a Lycan hosting 1 advancement counter. Lycan has two instances of sentry, one printed and one from Tinkering, and has lost one instance of sentry from its own ability. Thus it is still a sentry.",
+   "cards_referenced": [
+    "Tinkering",
+    "Lycan"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ice_strength_modification_duration_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ice_strength_modification_duration",
+   "rule_number": "3.4.4.a.",
+   "section_id": "sec_ice",
+   "section_number": "3.4",
+   "section_title": "Ice",
+   "text": "Example: The Runner accesses and encounters an Archangel in HQ with Gang Sign. The Runner uses Devil Charm to lower the strength of Archangel. That strength reduction would normally last for the remainder of the current run, but since no run is in progress, it instead lasts for the remainder of the encounter.",
+   "cards_referenced": [
+    "Archangel",
+    "Gang Sign",
+    "Devil Charm"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_icebreaker_strength_increase_implicit_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_icebreaker_strength_increase_implicit",
+   "rule_number": "3.9.5.b.",
+   "section_id": "sec_programs",
+   "section_number": "3.9",
+   "section_title": "Programs",
+   "text": "Example: Corroder has the ability \"1[credit]: +1 strength.\"\" Since no duration is specified, this strength increase applies until the end of the current encounter.",
+   "cards_referenced": [
+    "Corroder"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_icebreaker_strength_increase_specified_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_icebreaker_strength_increase_specified",
+   "rule_number": "3.9.5.c.",
+   "section_id": "sec_programs",
+   "section_number": "3.9",
+   "section_title": "Programs",
+   "text": "Example: Gordian Blade has the ability \"1[credit]: +1 strength for the remainder of this run.\" This ability applies until the end of the current run, whether it is triggered during an encounter or another step of the run. If the ability is triggered during an encounter that takes place outside of a run, the strength increase applies for the duration of that encounter.",
+   "cards_referenced": [
+    "Gordian Blade"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_icebreaker_strength_increase_outside_of_encounter_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_icebreaker_strength_increase_outside_of_encounter",
+   "rule_number": "3.9.5.d.",
+   "section_id": "sec_programs",
+   "section_number": "3.9",
+   "section_title": "Programs",
+   "text": "Example: If the Runner uses Corroder's ability to increase its strength outside of an encounter, it applies only until the next checkpoint.",
+   "cards_referenced": [
+    "Corroder"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_reveal_from_hidden_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_reveal_from_hidden",
+   "rule_number": "4.1.2.a.",
+   "section_id": "sec_game_zones_general",
+   "section_number": "4.1",
+   "section_title": "General",
+   "text": "Example: When resolving Clone Suffrage Movement, the Corp chooses a facedown Fast Break in Archives. The Corp must reveal the Fast Break before adding it to HQ, to demonstrate that it is indeed an operation, meeting Clone Suffrage Movement's requirement.",
+   "cards_referenced": [
+    "Clone Suffrage Movement",
+    "Fast Break"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_this_server_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_this_server",
+   "rule_number": "4.6.6.i.",
+   "section_id": "sec_play_area",
+   "section_number": "4.6",
+   "section_title": "Play Area",
+   "text": "Example: The Runner trashes a rezzed Warroid Tracker. This meets the trigger condition of Warroid Tracker's ability, but by the time a checkpoint is resolved and an instance of the ability would become pending, Warroid Tracker itself is no longer installed. The use of \"this server\" in the trigger condition still refers to the server from which Warroid Tracker was trashed, not to the server of Warroid Tracker's new location in Archives.",
+   "cards_referenced": [
+    "Warroid Tracker"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_this_server_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_this_server",
+   "rule_number": "4.6.6.i.",
+   "section_id": "sec_play_area",
+   "section_number": "4.6",
+   "section_title": "Play Area",
+   "text": "Example: The Corp uses the ability granted by ZATO City Grid to trash Border Control and resolve its first subroutine. The phrase \"this server\" in that subroutine refers to the server from which the Border Control was trashed. However, Border Control is no longer protecting that server, so it is not included in the number of ice counted.",
+   "cards_referenced": [
+    "ZATO City Grid",
+    "Border Control"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_this_server_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_this_server",
+   "rule_number": "4.6.6.i.",
+   "section_id": "sec_play_area",
+   "section_number": "4.6",
+   "section_title": "Play Area",
+   "text": "Example: The Corp uses Nanisivik Grid to turn a facedown Border Control in Archives faceup and resolve its first subroutine. Border Control was not moved between servers, so \"this server\" in that subroutine refers to Archives.",
+   "cards_referenced": [
+    "Nanisivik Grid",
+    "Border Control"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_limit_remote_servers_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_limit_remote_servers",
+   "rule_number": "4.6.8.f.",
+   "section_id": "sec_play_area",
+   "section_number": "4.6",
+   "section_title": "Play Area",
+   "text": "Example: The Corp's identity is Earth Station: SEA Headquarters, which has the ability \"Limit 1 remote server.\" If any remote servers exist, the Corp cannot create a new remote server.",
+   "cards_referenced": [
+    "Earth Station: SEA Headquarters"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_set_aside_zone_passthrough_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_set_aside_zone_passthrough",
+   "rule_number": "4.8.3.",
+   "section_id": "sec_set_aside",
+   "section_number": "4.8",
+   "section_title": "Set Aside",
+   "text": "Example: The Runner is playing as Exile and plays Test Run, searching their heap for a program. Although the program is set aside before being installed, Exile's ability treats it as though it were installed directly from the heap, and so Exile will draw a card.",
+   "cards_referenced": [
+    "Exile"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_facedown_set_aside_distinct_groups_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_facedown_set_aside_distinct_groups",
+   "rule_number": "4.8.7.",
+   "section_id": "sec_set_aside",
+   "section_number": "4.8",
+   "section_title": "Set Aside",
+   "text": "Example: The Runner accesses the top card of R&D and does not steal or trash it. On the next turn, the Corp uses Daily Business Show to draw that card and 1 other card simultaneously, but must put 1 of the drawn cards on the bottom of R&D. While resolving the draw, the cards are set aside facedown, so the Corp can shuffle them. They do not have to tell the Runner whether the previously-accessed card ends up in HQ or on the bottom of R&D.",
+   "cards_referenced": [
+    "Daily Business Show"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_costs_with_click_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_costs_with_click",
+   "rule_number": "5.2.1.a.",
+   "section_id": "sec_actions",
+   "section_number": "5.2",
+   "section_title": "Actions",
+   "text": "Example: The ability \"[click]: Gain 1[credit] and draw 1 card.\" on Professional Contacts is an action. The ability \"Lose [click]: Break 1 subroutine on this ice. Only the Runner can use this ability.\" on Eli 1.0 is not an action and is used during a paid ability window.",
+   "cards_referenced": [
+    "Professional Contacts",
+    "Eli 1.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_action_timing_structure_completion_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_action_timing_structure_completion",
+   "rule_number": "5.2.2.b.",
+   "section_id": "sec_actions",
+   "section_number": "5.2",
+   "section_title": "Actions",
+   "text": "Example: The Runner takes the action \"play an event\", playing Stimhack. The action is not complete until the run initiated by Stimhack ends, the Runner suffers core damage, and Stimhack is trashed following its resolution.",
+   "cards_referenced": [
+    "Stimhack"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_defferent_actions_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_defferent_actions",
+   "rule_number": "5.2.5.b.",
+   "section_id": "sec_actions",
+   "section_number": "5.2",
+   "section_title": "Actions",
+   "text": "Example: The Corp, playing MirrorMorph: Endless Iteration, plays Hedge Fund as the first action of their turn, then plays Lateral Growth. Even though two different cards were played, both times the Corp used the basic action to \"Play 1 operation from HQ\". Since their first two actions were the same, the Corp will not be able to trigger the ability on MirrorMorph this turn.",
+   "cards_referenced": [
+    "MirrorMorph: Endless Iteration",
+    "Hedge Fund",
+    "Lateral Growth"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_change_attacked_server_directly_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_change_attacked_server_directly",
+   "rule_number": "6.1.2.d.",
+   "section_id": "sec_run_general",
+   "section_number": "6.1",
+   "section_title": "General",
+   "text": "Example: Sneakdoor Beta's ability changes the attacked server from Archives to HQ. The Runner does not need to encounter ice protecting HQ after resolving this ability.",
+   "cards_referenced": [
+    "Sneakdoor Beta"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_run_phase_after_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_run_phase_after",
+   "rule_number": "6.1.3.e.",
+   "section_id": "sec_run_general",
+   "section_number": "6.1",
+   "section_title": "General",
+   "text": "Example: The Runner uses Inversificator to break the subroutine on a Mirāju that is protecting Archives. When the encounter ends, Mirāju's ability creates a replacement effect so that the Runner moves to the outermost position of Archives instead of passing Mirāju. Because the ice is not passed, Inversificator's ability does not meet its trigger condition. Later, the Runner encounters the same Mirāju again and does not break its subroutine. When this encounter ends, the Runner passes Mirāju. Even though the Runner has used Inversificator to fully break Mirāju during an encounter earlier in the run, Inversificator's trigger condition is not met when the Runner passes Mirāju because the Runner is not passing it after the relevant encounter.",
+   "cards_referenced": [
+    "Inversificator",
+    "Mirāju"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_end_encounter_outside_run_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_end_encounter_outside_run",
+   "rule_number": "6.1.4.b.",
+   "section_id": "sec_run_general",
+   "section_number": "6.1",
+   "section_title": "General",
+   "text": "Example: The Runner uses Detente to access a card in HQ while there is no run in progress. They access Ganked! and are forced to encounter Loot Box. The Runner chooses to neither break any subroutines nor spend credits for Loot Box's first subroutine, so that subroutine tries to end the run. There is no run to end, but this effect still ends the encounter. The second subroutine on Loot Box will not resolve.",
+   "cards_referenced": [
+    "Detente",
+    "Ganked!",
+    "Loot Box"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_end_run_no_run_or_encounter_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_end_run_no_run_or_encounter",
+   "rule_number": "6.1.4.c.",
+   "section_id": "sec_run_general",
+   "section_number": "6.1",
+   "section_title": "General",
+   "text": "Example: The Corp plays Unleash and resolves the last subroutine on Lycian Multi-Munition. The Corp will gain 1[credit], but there is no further effect.",
+   "cards_referenced": [
+    "Unleash",
+    "Lycian Multi-Munition"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_count_positions_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_count_positions",
+   "rule_number": "6.2.3.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: A server has 2 pieces of ice protecting it, and a copy of Rook is hosted on the outermost of those 2 pieces of ice. Rook's ability can move it to the 2nd piece of ice protecting any server, counted starting from the innermost piece of ice and moving outward. The Rook cannot be moved to a server protected by only 1 piece of ice.",
+   "cards_referenced": [
+    "Rook"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_count_positions_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_count_positions",
+   "rule_number": "6.2.3.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: The Runner passes a piece of ice in the innermost position protecting a server, and uses Slipstream to move to another server. Since positions are compared working from the innermost position, the Runner will be able to approach the innermost ice protecting any server, regardless of how many other pieces of ice are outward from that ice.",
+   "cards_referenced": [
+    "Slipstream"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_no_position_after_approach_server_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_no_position_after_approach_server",
+   "rule_number": "6.2.5.d.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: The Corp uses Ganked! to force the Runner to encounter Cell Portal in the middle of breaching a server. Since the run is already successful, resolving Cell Portal's subroutine will have no meaningful effect except to derez Cell Portal.",
+   "cards_referenced": [
+    "Ganked!",
+    "Cell Portal"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ice_change_outward_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ice_change_outward",
+   "rule_number": "6.2.6.a.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: The Runner runs a server protected by 2 pieces of ice. The Runner approaches the outermost ice, and the Corp rezzes Drafter. During the subsequent encounter, the Corp resolves Drafter's second subroutine, installing a new piece of ice protecting the attacked server and trashing both of the other pieces of ice in the process. The new ice is installed to the outermost position protecting the server, which is outward from the Runner's current position, so the Runner will not approach the new piece of ice. This is true even though the number of positions between the new ice and the server is less than the number of positions that were previously between the Runner and the server.",
+   "cards_referenced": [
+    "Drafter"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ice_change_inward_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ice_change_inward",
+   "rule_number": "6.2.6.b.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: The Runner encounters Brân 1.0 and breaks its last two subroutines. Brân 1.0's first subroutine resolves and the Corp installs a new piece of ice in the next inward position protecting the server. The Runner will have to approach that new piece of ice later in this run because its position is inward from their current position.",
+   "cards_referenced": [
+    "Brân 1.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ice_change_encounter_move_swap_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ice_change_encounter_move_swap",
+   "rule_number": "6.2.7.d.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: The Runner encounters Bullfrog as the innermost piece of ice protecting a remote server. Bullfrog's subroutine resolves and it is moved to be the outermost piece of ice protecting Archives. The Runner is now running on Archives and continues the run from Bullfrog's new position.",
+   "cards_referenced": [
+    "Bullfrog"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ice_change_during_movement_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ice_change_during_movement",
+   "rule_number": "6.2.7.e.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: A run begins, and before the Runner approaches the outermost piece of ice protecting the attacked server, the Corp uses Project Yagi-Uda to swap that ice with another piece of ice. The Runner will approach the new ice.",
+   "cards_referenced": [
+    "Project Yagi-Uda"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ice_change_during_movement_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ice_change_during_movement",
+   "rule_number": "6.2.7.e.",
+   "section_id": "sec_position",
+   "section_number": "6.2",
+   "section_title": "Position",
+   "text": "Example: The Runner passes a piece of ice, and in step 6.9.4b, the Corp uses Project Yagi-Uda to swap that ice with another piece of ice. The Runner has still passed their position (but has not passed the new ice occupying that position) and will proceed to the next position in step 6.9.4d. They will not approach or encounter the new ice.",
+   "cards_referenced": [
+    "Project Yagi-Uda"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cannot_run_abilities_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cannot_run_abilities",
+   "rule_number": "6.3.2.a.",
+   "section_id": "sec_run_initiation",
+   "section_number": "6.3",
+   "section_title": "Initiation",
+   "text": "Example: Off the Grid states in part, \"The Runner cannot initiate a run on this server.\" This only prohibits the Runner from announcing this particular remote server as the attacked server at the beginning of the run. If an ability changes the attacked server while a run is in progress, Off the Grid does not interfere with that ability.",
+   "cards_referenced": [
+    "Off the Grid"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_abilities_during_a_run_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_abilities_during_a_run",
+   "rule_number": "6.3.4.",
+   "section_id": "sec_run_initiation",
+   "section_number": "6.3",
+   "section_title": "Initiation",
+   "text": "Example: The Runner initiates a run against a server with a rezzed Heinlein Grid while the Corp has Enhanced Login Protocol in play. They do not lose any credits to Heinlein Grid's ability, as the additional click Enhanced Login Protocol requires them to spend is spent to initiate the run, and is not spent during the run.",
+   "cards_referenced": [
+    "Heinlein Grid",
+    "Enhanced Login Protocol"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_bypass_during_encounter_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_bypass_during_encounter",
+   "rule_number": "6.5.8.c.",
+   "section_id": "sec_encounter_ice_phase",
+   "section_number": "6.5",
+   "section_title": "Encounter Ice",
+   "text": "Example: The Runner plays Forked and encounters a Troll that they can bypass with Femme Fatale. The Runner pays 0[credit] to bypass the Troll with Femme Fatale. Forked does not meet its trigger condition, and Troll is not trashed, because the opportunity to break subroutines was never reached.",
+   "cards_referenced": [
+    "Forked",
+    "Troll",
+    "Femme Fatale"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_forced_encounter_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_forced_encounter",
+   "rule_number": "6.5.9.a.",
+   "section_id": "sec_encounter_ice_phase",
+   "section_number": "6.5",
+   "section_title": "Encounter Ice",
+   "text": "Example: If Shiro causes Chrysalis to be accessed, resolve the encounter with Chrysalis and then return to resolving subroutines on Shiro.",
+   "cards_referenced": [
+    "Shiro",
+    "Chrysalis"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_forced_encounter_during_run_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_forced_encounter_during_run",
+   "rule_number": "6.5.9.b.",
+   "section_id": "sec_encounter_ice_phase",
+   "section_number": "6.5",
+   "section_title": "Encounter Ice",
+   "text": "Example: The Corp uses The Twins to force the Runner to encounter a piece of ice again when they pass it. If a subroutine directs the Corp to end the run during the extra encounter, both that encounter and the original Movement Phase are aborted, and the game proceeds to the Run Ends phase.",
+   "cards_referenced": [
+    "The Twins"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_if_successful_tied_to_server_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_if_successful_tied_to_server",
+   "rule_number": "6.7.4.a.",
+   "section_id": "sec_success_phase",
+   "section_number": "6.7",
+   "section_title": "Success",
+   "text": "Example: The Runner plays Because I Can, which directs them to make a run on a remote server. If an effect moves the run to a central server, the \"If successful\" effect on Because I Can will not apply. However, if the run is moved instead to another remote server, the \"If successful\" effect is still applied, since Because I Can would have allowed a run on the second remote server to begin with.",
+   "cards_referenced": [
+    "Because I Can"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_if_successful_ability_optional_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_if_successful_ability_optional",
+   "rule_number": "6.7.4.c.",
+   "section_id": "sec_success_phase",
+   "section_number": "6.7",
+   "section_title": "Success",
+   "text": "Example: The Runner plays Account Siphon while Ash 2X3ZB9CY is installed in the root of HQ, and the run is successful. The Runner can wait until after the trace from Ash 2X3ZB9CY completes before deciding to access cards normally or force the Corp to lose credits.",
+   "cards_referenced": [
+    "Account Siphon",
+    "Ash 2X3ZB9CY"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_run_ends_close_paws_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_run_ends_close_paws",
+   "rule_number": "6.8.2.a.",
+   "section_id": "sec_run_ends_phase",
+   "section_number": "6.8",
+   "section_title": "Run Ends Phase",
+   "text": "Example: The Corp spends a counter from a scored Nisei MK II to end the run. Once this happens, the Runner does not have an opportunity to use their bad publicity credits from this run to pay for using Self-modifying Code.",
+   "cards_referenced": [
+    "Nisei MK II",
+    "Self-modifying Code"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_run_ends_close_reaction_window_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_run_ends_close_reaction_window",
+   "rule_number": "6.8.2.b.",
+   "section_id": "sec_run_ends_phase",
+   "section_number": "6.8",
+   "section_title": "Run Ends Phase",
+   "text": "Example: The Runner uses the ability on Security Nexus during a reaction window at the beginning of the Encounter Ice Phase. The trace is successful, so the ability ends the run. If Tollbooth's ability is also pending in this reaction window, it will not be resolved, since the encounter has ended.",
+   "cards_referenced": [
+    "Security Nexus",
+    "Tollbooth"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_run_ends_other_priority_windows_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_run_ends_other_priority_windows",
+   "rule_number": "6.8.2.c.",
+   "section_id": "sec_run_ends_phase",
+   "section_number": "6.8",
+   "section_title": "Run Ends Phase",
+   "text": "Example: The run is ended during the reaction window following step 6.9.4g, while Formicary's ability is still pending. The Corp can rez Formicary and move it to the approached server, but the Runner's position cannot be moved and an encounter cannot be initiated.",
+   "cards_referenced": [
+    "Formicary"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_not_unsuccessful_when_reached_success_phase_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_not_unsuccessful_when_reached_success_phase",
+   "rule_number": "6.8.4.a.",
+   "section_id": "sec_run_ends_phase",
+   "section_number": "6.8",
+   "section_title": "Run Ends Phase",
+   "text": "Example: The Runner reaches a server with Crisium Grid rezzed. Crisium Grid's ability stops the run from being declared successful, but the run is not declared unsuccessful either.",
+   "cards_referenced": [
+    "Crisium Grid"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_run_ends_condition_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_run_ends_condition",
+   "rule_number": "6.8.5.",
+   "section_id": "sec_run_ends_phase",
+   "section_number": "6.8",
+   "section_title": "Run Ends Phase",
+   "text": "Example: The Runner plays The Noble Path to make a run in which they prevent all damage. During the run, the subroutine on Chum resolves, and then the Runner encounters Wall of Static and does not break its subroutine. When the \"end the run\" ability resolves, the encounter also ends, so the trigger condition on Chum's delayed conditional ability is met. The ability will resolve and fail to damage the Runner during the Run Ends Phase, because The Noble Path's effect still applies. Similarly, Georgia Emelyov's first ability meets its trigger condition at step 6.9.6c, which is still before the run is over, so the damage will be prevented.",
+   "cards_referenced": [
+    "The Noble Path",
+    "Wall of Static",
+    "Chum",
+    "Georgia Emelyov"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_run_ends_condition_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_run_ends_condition",
+   "rule_number": "6.8.5.",
+   "section_id": "sec_run_ends_phase",
+   "section_number": "6.8",
+   "section_title": "Run Ends Phase",
+   "text": "Example: The Runner plays The Noble Path to make a run in which they prevent all damage. The run is successful but the Runner takes a tag during the run. When the run ends, Dedicated Response Team's ability meets its trigger condition at the same time that The Noble Path's effect expires, so the Runner will suffer 2 meat damage.",
+   "cards_referenced": [
+    "The Noble Path",
+    "Dedicated Response Team"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_visibility_after_access_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_visibility_after_access",
+   "rule_number": "7.3.1.a.",
+   "section_id": "sec_breaching_servers",
+   "section_number": "7.3",
+   "section_title": "Breaching Servers",
+   "text": "Example: The Runner breaches HQ and accesses Scatter Field, Palisade, and Offworld Office, in that order. When the Runner steals Offworld Office, the Corp uses Poétrï Luxury Brands to install a card from HQ. The Runner will know whether the Corp installs the Scatter Field, the Palisade, or an unknown card from the rest of HQ.",
+   "cards_referenced": [
+    "Scatter Field",
+    "Palisade",
+    "Offworld Office",
+    "Poétrï Luxury Brands"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_number_of_accesses_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_number_of_accesses",
+   "rule_number": "7.3.6.",
+   "section_id": "sec_breaching_servers",
+   "section_number": "7.3",
+   "section_title": "Breaching Servers",
+   "text": "Example: The Runner uses Hades Shard to breach Archives during a run on HQ. For 1 of the accesses in that breach, after choosing a candidate, they use Archives Interface to apply a replacement effect, removing the chosen candidate from the game instead of accessing it. When the run ends, the Runner uses Zahya Sadeghi: Versatile Smuggler to gain 1[credit] for each time they accessed a card during the run. The access that was replaced does not contribute to the number of credits the Runner gains.",
+   "cards_referenced": [
+    "Hades Shard",
+    "Archives Interface",
+    "Zahya Sadeghi: Versatile Smuggler"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_number_of_accesses_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_number_of_accesses",
+   "rule_number": "7.3.6.",
+   "section_id": "sec_breaching_servers",
+   "section_number": "7.3",
+   "section_title": "Breaching Servers",
+   "text": "Example: The Runner plays Immolation Script, and the subroutine on Hudson 1.0 resolves before Archives is breached. When the Runner breaches Archives, the first candidate they choose is a piece of ice, and they apply the replacement effect from Immolation Script to trash a rezzed copy of the chosen ice instead of accessing the candidate copy. No card was actually accessed, so the Runner can proceed to choose another candidate. However, if the Runner had first accessed a card without applying Immolation Script's replacement effect, they would then be prohibited from accessing any more cards, so there would be no more candidates to choose and they could not apply a replacement effect afterward.",
+   "cards_referenced": [
+    "Immolation Script",
+    "Hudson 1.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_consecutive_breaches_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_consecutive_breaches",
+   "rule_number": "7.3.8.",
+   "section_id": "sec_breaching_servers",
+   "section_number": "7.3",
+   "section_title": "Breaching Servers",
+   "text": "Example: The Runner steals Clone Retirement during a breach of HQ, causing the Corp to take bad publicity. The Runner must complete the current breach before beginning the breach granted from Raymond Flint's first ability.",
+   "cards_referenced": [
+    "Clone Retirement",
+    "Raymond Flint"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_prohibiting_access_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_prohibiting_access",
+   "rule_number": "7.4.2.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Corp performs a successful trace with the ability on Ash 2X3ZB9CY, prohibiting the Runner from accessing any card other than Ash for the remainder of the current run. When the server is breached, Ash will be the only candidate for the Runner's first selection, and then there will be no candidates remaining, so the breach will end.",
+   "cards_referenced": [
+    "Ash 2X3ZB9CY"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_prohibition_removed_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_prohibition_removed",
+   "rule_number": "7.4.2.a.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Runner breaches HQ during a run on HQ while Flagship is rezzed in the root of HQ. They have an installed copy of Docklands Pass, so the random access limit is set to 2. The Runner accesses a card in HQ, meaning that Flagship's restriction applies and all the other cards in HQ cease to be candidates. The Runner then accesses Flagship and uses Cupellation's ability to host Flagship on Cupellation, thereby uninstalling it without its persistent ability remaining active (see section 9.12.5). Since the restriction on accessing cards other than Flagship no longer applies, the cards in HQ become candidates again, except for the card the Runner previously accessed.",
+   "cards_referenced": [
+    "Flagship",
+    "Docklands Pass",
+    "Cupellation"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_prohibiting_access_to_1_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_prohibiting_access_to_1",
+   "rule_number": "7.4.2.b.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Runner breaches HQ during a run on HQ while Flagship is rezzed in the root of HQ, and they have an installed copy of Docklands Pass, but they have previously accessed a card during that run because of Otoroshi's ability. The random access limit is still set to 2, but since the Runner is not allowed to access any cards other than Flagship, none of the cards in the Corp's hand will be candidates. If Flagship's ability becomes inactive before the breach ends, the cards in the Corp's hand will become candidates and the Runner will be able to access 2 of them.",
+   "cards_referenced": [
+    "Flagship",
+    "Docklands Pass",
+    "Otoroshi"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_candidates_already_accessed_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_candidates_already_accessed",
+   "rule_number": "7.4.3.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Runner is breaching Archives during a run made with Immolation Script. They choose a piece of ice from the set of candidates, and apply Immolation Script's replacement effect to trash another card instead of accessing the chosen ice. After resolving this, the chosen ice is no longer a candidate and cannot be accessed again this breach. (The newly-trashed card, however, could be a candidate.)",
+   "cards_referenced": [
+    "Immolation Script"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_candidates_already_accessed_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_candidates_already_accessed",
+   "rule_number": "7.4.3.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Corp is playing Gagarin Deep Space: Expanding the Horizon, and the Runner breaches a remote server. When the Runner chooses a candidate from the root of that server, an additional cost to access is imposed. The Runner declines to pay the cost and therefore does not perform the access. That card still ceases to be a candidate.",
+   "cards_referenced": [
+    "Gagarin Deep Space: Expanding the Horizon"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_candidates_leaving_server_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_candidates_leaving_server",
+   "rule_number": "7.4.5.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Runner trashes an installed upgrade during a breach of Archives. That card moves to the Corp's discard pile. The new object for the upgrade's existence in the Corp's discard pile becomes a candidate, so the Runner will access the same physical card twice during this breach.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_rnd_topmost_eligibile_candidate_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_rnd_topmost_eligibile_candidate",
+   "rule_number": "7.4.7.a.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Runner plays The Maker's Eye and breaches R&D, accessing 2 additional cards. They access Celebrity Gift and then access and steal Bacterial Programming. The Corp uses Bacterial Programming's ability to rearrange cards in R&D, but they leave Celebrity Gift as the top card of R&D. The cards returned to the top of R&D are new objects, so the Runner must continue the breach from the top of R&D and will access Celebrity Gift again.",
+   "cards_referenced": [
+    "The Maker's Eye",
+    "Celebrity Gift",
+    "Bacterial Programming"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_rnd_topmost_eligibile_candidate_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_rnd_topmost_eligibile_candidate",
+   "rule_number": "7.4.7.a.",
+   "section_id": "sec_determining_candidates",
+   "section_number": "7.4",
+   "section_title": "Determining Candidates",
+   "text": "Example: The Corp is playing Seidr Laboratories and has Strongbox rezzed in the root of R&D. The Runner breaches R&D with a random access limit of 4. They first access the top card of the Corp's deck and leave it in place. The 2nd card from the top now becomes a candidate, and turns out to be an agenda, which the Runner steals by spending [click] to pay the additional cost imposed by Strongbox. The Corp then uses Seidr Laboratories to add 1 card from Archives to the top of R&D. The 3rd candidate presented to the Runner is the card newly added to the top of R&D. After accessing that card, the next card down is still the object that was accessed first, so the card below that (currently 3rd from the top) becomes the 4th and final candidate.",
+   "cards_referenced": [
+    "Seidr Laboratories",
+    "Strongbox"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_sec_replacing_movements_1",
+   "example_number_or_label": "Example",
+   "rule_id": "sec_replacing_movements",
+   "rule_number": "8.2.2.",
+   "section_id": "sec_card_movements",
+   "section_number": "8.2",
+   "section_title": "Card Movements",
+   "text": "Example: Harbinger's ability modifies the effects of trashing it by replacing adding Harbinger to the heap with turning it facedown. Harbinger is still trashed when the modified effect resolves. If this is the first time this turn that the Runner trashed one of their installed cards, they will be able to resolve Wasteland's ability.",
+   "cards_referenced": [
+    "Harbinger",
+    "Wasteland"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cancelled_movement_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cancelled_movement",
+   "rule_number": "8.2.2.a.",
+   "section_id": "sec_card_movements",
+   "section_number": "8.2",
+   "section_title": "Card Movements",
+   "text": "Example: The Corp is resolving the first subroutine on Rototurret to trash an installed program. The Runner uses Sacrificial Construct to prevent the program from being trashed. Since trashing did not occur, the Runner does not place a power counter on District 99, and District 99 can still meet its trigger condition if a program or piece of hardware is successfully trashed later in the turn.",
+   "cards_referenced": [
+    "Rototurret",
+    "Sacrificial Construct",
+    "District 99"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_arrange_and_other_effect_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_arrange_and_other_effect",
+   "rule_number": "8.3.3.b.",
+   "section_id": "sec_arranging_rearranging",
+   "section_number": "8.3",
+   "section_title": "Arranging and Rearranging Cards",
+   "text": "Example: The Corp plays Cultivate, acting on the top 5 cards of R&D by trashing 1 card, adding 1 card to HQ, and arranging the rest in any order. They do not tell the Runner what location in R&D the trashed card came from, nor what location the card added to HQ came from.",
+   "cards_referenced": [
+    "Cultivate"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_drawn_card_swapped_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_drawn_card_swapped",
+   "rule_number": "8.4.3.b.",
+   "section_id": "sec_drawing_cards",
+   "section_number": "8.4",
+   "section_title": "Drawing Cards",
+   "text": "Example: The Corp takes their mandatory draw while they have Daily Business Show and Raman Rai rezzed. They set aside Wraparound and Enigma from the top of R&D. After looking at those cards and the cards in Archives, the Corp uses Raman Rai to reveal the Enigma and a Tollbooth from Archives and swap them. Then, the corp uses Daily Business Show to add Tollbooth to the bottom of the deck. Finally, the Corp adds Wraparound to HQ.",
+   "cards_referenced": [
+    "Daily Business Show",
+    "Raman Rai",
+    "Wraparound",
+    "Enigma",
+    "Tollbooth"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_install_one_at_a_time_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_install_one_at_a_time",
+   "rule_number": "8.5.5.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Runner uses Mass Install to install three programs. The Runner can install Dhegdheer first, and then host one of the other two programs on Dhegdheer in order to reduce the install cost.",
+   "cards_referenced": [
+    "Mass Install",
+    "Dhegdheer"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_no_reveal_for_default_install_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_no_reveal_for_default_install",
+   "rule_number": "8.5.13.a.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp controls a remote server with a facedown card in its root, and uses a basic action to install another card into that root. To satisfy the rules, the new card must be an asset, upgrade, or agenda, since those are the only card types that can normally be installed in the root of a remote server. Additionally, at least one of the two cards must be an upgrade, since there can only be at most 1 asset or agenda in the root of a server. However, the Corp does not reveal cards to verify either of these properties.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_no_reveal_for_default_install_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_no_reveal_for_default_install",
+   "rule_number": "8.5.13.a.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp resolves the first subroutine on Brân 1.0. They do not reveal the card they install to verify that it is a piece of ice as stipulated in the text of the subroutine, nor do they reveal the card to verify that it is a piece of ice as necessitated from installing it protecting a server.",
+   "cards_referenced": [
+    "Brân 1.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_no_reveal_for_server_limitation_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_no_reveal_for_server_limitation",
+   "rule_number": "8.5.13.b.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp installs a card in the root of a server with a rezzed region upgrade. The new card cannot also be a region upgrade (unless the old one is trashed as part of the installation), as per section 3.6.5. They do not reveal the installed card to verify this.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_reveal_for_ability_limitations_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_reveal_for_ability_limitations",
+   "rule_number": "8.5.13.c.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp triggers the ability on Ob Superheavy Logistics by trashing a card with printed rez cost 5. They search R&D for Archer and install it, but decline to pay the additional cost to rez Archer. Since the ability requires the installed card to have printed rez cost 4, and the card is not otherwise visible to the Runner at any point in this process, the Corp must reveal Archer to verify that the installation is legal.",
+   "cards_referenced": [
+    "Ob Superheavy Logistics",
+    "Archer"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_reveal_for_install_and_rez_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_reveal_for_install_and_rez",
+   "rule_number": "8.5.13.d.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp plays Trust Operation and installs an agenda from Archives with its \"install and rez\" effect. Since agendas cannot be rezzed, the Corp must reveal the installed agenda.",
+   "cards_referenced": [
+    "Trust Operation"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_reveal_for_install_and_rez_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_reveal_for_install_and_rez",
+   "rule_number": "8.5.13.d.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp plays Ad Blitz. Since the \"install and rez\" effect on this card stipulates \"if able\", the Corp cannot choose to install cards they are unable to rez, nor can they decline additional costs if any apply.",
+   "cards_referenced": [
+    "Ad Blitz"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_install_to_invalid_destination_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_install_to_invalid_destination",
+   "rule_number": "8.5.14.",
+   "section_id": "sec_install_uninstall",
+   "section_number": "8.5",
+   "section_title": "Installing and Uninstalling Cards",
+   "text": "Example: The Corp uses Nanisivik Grid to resolve the first subroutine on a copy of Brân 1.0 in Archives. This subroutine attempts to install ice \"directly inward\" from Brân 1.0, but this copy of Brân 1.0 is not protecting a server and therefore does not have a position from which \"directly inward\" can be evaluated. There is no legal way to install a card as directed, so the subroutine will have no effect.",
+   "cards_referenced": [
+    "Nanisivik Grid",
+    "Brân 1.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_playing_one_at_a_time_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_playing_one_at_a_time",
+   "rule_number": "8.6.3.",
+   "section_id": "sec_playing_events_and_operations",
+   "section_number": "8.6",
+   "section_title": "Playing Events and Operations",
+   "text": "Example: The Corp uses Subcontract to play Hedge Fund and another operation. The Corp can use the credits gained from Hedge Fund to pay for the second operation.",
+   "cards_referenced": [
+    "Subcontract",
+    "Hedge Fund"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_playing_lingering_effects_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_playing_lingering_effects",
+   "rule_number": "8.6.4.",
+   "section_id": "sec_playing_events_and_operations",
+   "section_number": "8.6",
+   "section_title": "Playing Events and Operations",
+   "text": "Example: Test Run creates a delayed conditional ability that will resolve at the end of the turn, but Test Run itself is considered fully resolved and is trashed once it finishes installing a program.",
+   "cards_referenced": [
+    "Test Run"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_play_no_trash_left_play_area_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_play_no_trash_left_play_area",
+   "rule_number": "8.6.6.a.",
+   "section_id": "sec_playing_events_and_operations",
+   "section_number": "8.6",
+   "section_title": "Playing Events and Operations",
+   "text": "Example: The Runner plays Ashen Epilogue and resolves its play abilities. Its last ability removes it from the game.",
+   "cards_referenced": [
+    "Ashen Epilogue"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_valid_search_target_install_play_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_valid_search_target_install_play",
+   "rule_number": "8.7.2.b.",
+   "section_id": "sec_searching_cards",
+   "section_number": "8.7",
+   "section_title": "Searching for Cards",
+   "text": "Example: The Runner uses Artist Colony to search for a card and install it. They cannot find an event with the search because events can never be installed. They also cannot find a program, hardware, or resource that they cannot afford to install.",
+   "cards_referenced": [
+    "Artist Colony"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_valid_search_target_install_play_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_valid_search_target_install_play",
+   "rule_number": "8.7.2.b.",
+   "section_id": "sec_searching_cards",
+   "section_number": "8.7",
+   "section_title": "Searching for Cards",
+   "text": "Example: The Runner uses Self-modifying Code to search for a program and install it. They have no more credits after using the ability of Self-modifying Code, but they have an installed copy of Patchwork. They can search for Imp and install it, but they must use Patchwork by trashing a card from their grip to install Imp. If the Runner does not have a card in their grip, they cannot find and install Imp.",
+   "cards_referenced": [
+    "Self-modifying Code",
+    "Patchwork",
+    "Imp"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_valid_search_target_install_play_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_valid_search_target_install_play",
+   "rule_number": "8.7.2.b.",
+   "section_id": "sec_searching_cards",
+   "section_number": "8.7",
+   "section_title": "Searching for Cards",
+   "text": "Example: The Corp uses Tucana to search for Pharos while they have 0 credits. They are allowed to find and install Pharos, even though they cannot afford to rez it. The Corp must reveal Pharos to show that it cannot be rezzed. See rule 8.5.13d.",
+   "cards_referenced": [
+    "Tucana",
+    "Pharos"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_shuffle_deck_after_search_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_shuffle_deck_after_search",
+   "rule_number": "8.7.3.",
+   "section_id": "sec_searching_cards",
+   "section_number": "8.7",
+   "section_title": "Searching for Cards",
+   "text": "Example: The Corp is playing Near-Earth Hub and uses the ability on Tech Startup to search their deck for an asset and install it. After finding the asset, R&D must be immediately shuffled before the Corp installs the asset or triggers Near-Earth Hub's ability.",
+   "cards_referenced": [
+    "Near-Earth Hub",
+    "Tech Startup"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_swap_only_to_valid_location_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_swap_only_to_valid_location",
+   "rule_number": "8.8.2.",
+   "section_id": "sec_swapping_cards",
+   "section_number": "8.8",
+   "section_title": "Swapping Cards",
+   "text": "Example: When the subroutine on Metamorph resolves, the Corp cannot choose to swap an agenda and an upgrade such that the agenda would end up in the same remote server as an asset.",
+   "cards_referenced": [
+    "Metamorph"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_swap_installed_cards_preserves_hosting_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_swap_installed_cards_preserves_hosting",
+   "rule_number": "8.8.3.a.",
+   "section_id": "sec_swapping_cards",
+   "section_number": "8.8",
+   "section_title": "Swapping Cards",
+   "text": "Example: The Corp uses Thimblerig's ability to swap it with a Palisade hosting Botulus. The Botulus remains hosted on the Palisade throughout this process.",
+   "cards_referenced": [
+    "Thimblerig",
+    "Palisade",
+    "Botulus"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_swap_become_installed_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_swap_become_installed",
+   "rule_number": "8.8.4.b.",
+   "section_id": "sec_swapping_cards",
+   "section_number": "8.8",
+   "section_title": "Swapping Cards",
+   "text": "Example: The Corp is playing A Teia: IP Recovery and has Tatu-Bola protecting a remote server. The Runner runs that server and passes Tatu-Bola. The Corp swaps it with a piece of ice from HQ. After the swap, the Corp can use A Teia's ability to install a card in the root of another remote server. They then continue resolving the next instruction of Tatu-Bola's ability, gaining 4[credit].",
+   "cards_referenced": [
+    "A Teia: IP Recovery",
+    "Tatu-Bola",
+    "A Teia"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_chain_reaction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_chain_reaction",
+   "rule_number": "9.1.2.a.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Runner's identity is Armand \"Geist\" Walker. They access a Snare! from R&D with only 2 cards in their grip. Before taking a tag or suffering any net damage, the Runner triggers Decoy's ability in order to avoid the tag. Using the Decoy meets the trigger condition of Armand \"Geist\" Walker's ability. As this is the most recent ability to meet its trigger condition, Armand \"Geist\" Walker's ability must resolve first, before Decoy avoids the tag and before Snare! finishes resolving. The Runner draws a card from Armand \"Geist\" Walker, avoids the tag from Snare! with Decoy, and then finally suffers (and survives) the 3 net damage from Snare!.",
+   "cards_referenced": [
+    "Armand \"Geist\" Walker",
+    "Snare!",
+    "Decoy"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_is_resolving_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_is_resolving",
+   "rule_number": "9.1.2.b.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Corp resolves a subroutine on Attini while its first ability is active. The subroutine is resolving during the interrupt window for its instruction, so the Runner cannot spend credits during that window and will not be able to use Caldera's ability to prevent net damage.",
+   "cards_referenced": [
+    "Attini",
+    "Caldera"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_is_resolving_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_is_resolving",
+   "rule_number": "9.1.2.b.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Runner is playing Zahya Sadeghi: Versatile Smuggler and plays Direct Access to run HQ. The static ability on Direct Access removes Zahya Sadeghi's ability while it is resolving. Normally, that ability would meet its trigger condition and resolve immediately after the \"Run any server.\" instruction. This reaction window is outside of the run, but it is still part of Direct Access resolving, so the ability is not present at the needed time and cannot be triggered or resolved.",
+   "cards_referenced": [
+    "Zahya Sadeghi: Versatile Smuggler",
+    "Direct Access",
+    "Zahya Sadeghi"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_abilities_resolution_independent_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_abilities_resolution_independent",
+   "rule_number": "9.1.4.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The runner plays Compile, uses it to install Mayfly during the resulting run, and breaks subroutines with Mayfly during that run. When the run ends, delayed conditional abilities from both Mayfly and Compile become pending. The Runner decides to resolve Compile first, adding Mayfly to the bottom of their stack. The Runner then resolves the ability from Mayfly, which instructs them to trash its source program. Because Mayfly has changed zones, the copy of it on the bottom of the stack is a new object. With nothing to trash, the ability from Mayfly does nothing.",
+   "cards_referenced": [
+    "Compile",
+    "Mayfly"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_hosted_counter_used_condition_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_hosted_counter_used_condition",
+   "rule_number": "9.1.6.c.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Runner spends the credit hosted on Cyberfeeder to pay the trigger cost of Mimic's ability. Because the Runner triggered Mimic's paid ability and Cyberfeeder's ability allowed the credit to be spent, both Mimic and Cyberfeeder have been used.",
+   "cards_referenced": [
+    "Cyberfeeder",
+    "Mimic"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_active_exception_catchall_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_active_exception_catchall",
+   "rule_number": "9.1.8.b.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: I've Had Worse has an ability that meets its trigger condition when it is trashed due to damage. Normally, this can only occur by moving I've Had Worse from the grip to the heap. Therefore, this ability is active in the heap. However, if I've Had Worse is trashed, but the Corp uses Skorpios Defense Systems to remove it from the game instead of adding it to the heap, the ability is not active.",
+   "cards_referenced": [
+    "I've Had Worse",
+    "Skorpios Defense Systems"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_active_exception_conditional_move_to_inactive_zone_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_active_exception_conditional_move_to_inactive_zone",
+   "rule_number": "9.1.8.g.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Runner uses Singularity to simultaneously trash a rezzed Hostile Infrastructure and 2 upgrades. Those cards are moved to Archives and become inactive, but Hostile Infrastructure's ability remains active, and 3 instances will become pending, each doing 1 net damage when it resolves. Once all those instances are resolved, Hostile Infrastructure's ability stops being active.",
+   "cards_referenced": [
+    "Singularity",
+    "Hostile Infrastructure"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_active_exception_conditional_move_to_inactive_zone_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_active_exception_conditional_move_to_inactive_zone",
+   "rule_number": "9.1.8.g.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Runner plays Test Run to install Nanuq. When their turn ends, Test Run's delayed conditional ability adds Nanuq to the top of the Runner's stack. This meets the trigger condition of Nanuq's first ability, which remains active until it resolves even though Nanuq itself is inactive in the stack. The ability will move Nanuq from the top of the stack to the removed-from-game zone.",
+   "cards_referenced": [
+    "Test Run",
+    "Nanuq"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_active_exception_encounter_not_installed_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_active_exception_encounter_not_installed",
+   "rule_number": "9.1.8.h.",
+   "section_id": "sec_abilities_general",
+   "section_number": "9.1",
+   "section_title": "General",
+   "text": "Example: The Runner accesses Archangel from HQ, and the Corp uses its ability to force the Runner to encounter it. Archangel's subroutine is active and can resolve during that encounter.",
+   "cards_referenced": [
+    "Archangel"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_reaction_window_closing_timing_structure_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_reaction_window_closing_timing_structure",
+   "rule_number": "9.2.8.f.",
+   "section_id": "sec_timing_and_priority",
+   "section_number": "9.2",
+   "section_title": "Timing and Priority",
+   "text": "Example: The Runner has a Femme Fatale installed and chose a Tollbooth with its \"when installed\" ability. When the Runner encounters the Tollbooth, they pay 1[credit] to bypass the Tollbooth with Femme Fatale. Because the resolution of Femme Fatale's ability causes the encounter to end, the pending ability from Tollbooth cannot be triggered. The Runner does not pay 3[credit], and the run does not end.",
+   "cards_referenced": [
+    "Femme Fatale",
+    "Tollbooth"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_variable_restriction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_variable_restriction",
+   "rule_number": "9.3.3.f.",
+   "section_id": "sec_interpreting_card_text",
+   "section_number": "9.3",
+   "section_title": "Interpreting Card Text",
+   "text": "Example: Some abilities dictate a value for X, such as \"X is the number of rezzed NEXT ice.\" Some abilities with X in their cost constrain the value that can be chosen for X, such as \"X must be equal to or less than the number of tags the Runner has.\" These statements are restrictions.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_once_per_turn_flag_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_once_per_turn_flag",
+   "rule_number": "9.3.6.g.",
+   "section_id": "sec_interpreting_card_text",
+   "section_number": "9.3",
+   "section_title": "Interpreting Card Text",
+   "text": "Example: The Runner is playing as Zahya Sadeghi and finishes a run on HQ, having accessed 1 card. They choose not to gain 1[credit] with Zahya's ability. The ability was not \"used\", so its \"once per turn\" restriction has not been expended, even though the ability was able to resolve. The Runner can make another run later in the turn and gain credits with the ability.",
+   "cards_referenced": [
+    "Zahya Sadeghi"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_static_no_lingering_effects_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_static_no_lingering_effects",
+   "rule_number": "9.4.4.",
+   "section_id": "sec_static_abilities",
+   "section_number": "9.4",
+   "section_title": "Static Abilities",
+   "text": "Example: The runner controls Puffer with a hosted Gebrselassie. Gebrselassie changes the durations of abilities affecting its host's strength, so if the Runner uses Puffer's paid ability to give it +1 strength, that increase will last for the remainder of the turn. Gebrselassie does not affect Puffer's static ability that increases its strength for each hosted power counter, so if the Runner spends [click] to remove a power counter, then the increase in strength from Puffer's static ability will immediately be lost.",
+   "cards_referenced": [
+    "Puffer",
+    "Gebrselassie"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_static_modification_keep_restrictions_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_static_modification_keep_restrictions",
+   "rule_number": "9.4.5.",
+   "section_id": "sec_static_abilities",
+   "section_number": "9.4",
+   "section_title": "Static Abilities",
+   "text": "Example: The Cleaners has a static ability that gives every instance of meat damage done by the Corp +1 to the amount of the damage. Part of Flare's effect does 2 meat damage that can't be prevented. If this effect resolves while The Cleaners is active, then all 3 points of meat damage are unpreventable.",
+   "cards_referenced": [
+    "The Cleaners",
+    "Flare"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_forced_mid_access_ability_optional_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_forced_mid_access_ability_optional",
+   "rule_number": "9.5.3.a.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: The Corp resolves the subroutine on Wendigo, prohibiting the Runner from using their installed Imp for the remainder of the run. Later, the Runner accesses an installed Mumbad Virtual Tour. Even though Mumbad Virtual Tour forces the Runner to trash it if able, Imp's ability is still optional for purposes of Wendigo's prohibition. Since Imp's ability cannot be used at all this run, Mumbad Virtual Tour cannot compel the Runner to spend one of its hosted virus counters. If the Runner can pay the cost of another mid-access ability, such as the basic trash ability, the Runner must use that ability. If not, the Runner will not be able to trash Mumbad Virtual Tour at all.",
+   "cards_referenced": [
+    "Wendigo",
+    "Imp",
+    "Mumbad Virtual Tour"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_ability_keeps_track_of_hosted_objects_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_ability_keeps_track_of_hosted_objects",
+   "rule_number": "9.5.5.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: The Runner has Fermenter installed with 4 hosted virus counters. They use its paid ability, which has a cost that includes trashing Fermenter. As the Runner pays this cost, they set aside the 4 counters. When the ability resolves and refers to the number of hosted virus counters, it includes the counters that were set aside, so the Runner gains 8 credits. When the ability is finished resolving, the counters are returned to the bank.",
+   "cards_referenced": [
+    "Fermenter"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_ability_keeps_track_of_hosted_objects_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_ability_keeps_track_of_hosted_objects",
+   "rule_number": "9.5.5.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: The Runner uses the [trash] ability on Street Peddler. They pay the trigger cost and set the 3 hosted cards aside. When the ability resolves, the Runner installs one of the set-aside cards. Since the other two cards are still set aside, the next checkpoint trashes them just as in any other case of cards that were hosted on a card that is no longer installed. No other abilities are able to tell that the cards were set aside: they are treated as having been installed or trashed from their previous location in the play area.",
+   "cards_referenced": [
+    "Street Peddler"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trash_ability_keeps_track_of_hosted_objects_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trash_ability_keeps_track_of_hosted_objects",
+   "rule_number": "9.5.5.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: This example describes a situation similar to the previous examples, but covers the sequence of steps the game carries out in a higher level of detail. The Corp has priority in a paid ability window, and chooses to trigger the [trash] ability on Reconstruction Contract. As they pay the trigger cost, moving Reconstruction Contract to Archives, they set aside the advancement counters hosted on Reconstruction Contract. Next, a checkpoint occurs following the cost having been paid. After that checkpoint and any corresponding reaction window, the [trash] ability's instruction is ready to become imminent. The Corp chooses a card they can advance to be the instruction's target, and an interrupt window opens. After the interrupt window (assuming the effects of the instruction are not prevented), the Corp moves the set-aside counters to the target card.",
+   "cards_referenced": [
+    "Reconstruction Contract"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_paid_ability_refers_to_approached_ice_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_paid_ability_refers_to_approached_ice",
+   "rule_number": "9.5.6.b.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: The Corp can only use the paid ability on Project Wotan while the Runner is approaching a rezzed piece of bioroid ice.",
+   "cards_referenced": [
+    "Project Wotan"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_paid_ability_refers_to_encountered_ice_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_paid_ability_refers_to_encountered_ice",
+   "rule_number": "9.5.6.c.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: The Runner cannot trigger the first ability on Arruaceiras Crew at an arbitrary time to give themself a tag. They can only use this ability during an encounter.",
+   "cards_referenced": [
+    "Arruaceiras Crew"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_paid_ability_refers_to_encountered_ice_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_paid_ability_refers_to_encountered_ice",
+   "rule_number": "9.5.6.c.",
+   "section_id": "sec_paid_abilities",
+   "section_number": "9.5",
+   "section_title": "Paid Abilities",
+   "text": "Example: The Runner can use the [trash] ability on Abagnale during an encounter with a code gate. They can only use the interface ability on Abagnale during an encounter with a code gate that Abagnale has sufficient strength to interface with.",
+   "cards_referenced": [
+    "Abagnale"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_condition_met_multiple_times_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_condition_met_multiple_times",
+   "rule_number": "9.6.4.b.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Runner plays Singularity, trashing 3 Corp cards simultaneously. Since Hostile Infrastructure's trigger condition is met separately for each card trashed, the next checkpoint handles all of those occurrences, and 3 instances of the ability become pending in the same reaction window.",
+   "cards_referenced": [
+    "Singularity",
+    "Hostile Infrastructure"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_condition_met_multiple_times_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_condition_met_multiple_times",
+   "rule_number": "9.6.4.b.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Runner controls Blackguard and plays Satellite Uplink, exposing 2 cards in a single instruction. In the next checkpoint, two instances of Blackguard's ability become pending, one corresponding to each card that was exposed.",
+   "cards_referenced": [
+    "Blackguard",
+    "Satellite Uplink"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_condition_only_met_while_active_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_condition_only_met_while_active",
+   "rule_number": "9.6.5.b.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Corp is resolving their \"turn begins\" abilities, and they trash Reaper Function to do 2 net damage. This trashing allows the Corp to use the ability on Ob Superheavy Logistics to install and rez Nico Campaign. The Corp cannot take credits from Nico Campaign this turn because the \"turn begins\" trigger condition has already been processed.",
+   "cards_referenced": [
+    "Reaper Function",
+    "Ob Superheavy Logistics",
+    "Nico Campaign"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_condition_only_met_while_active_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_condition_only_met_while_active",
+   "rule_number": "9.6.5.b.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Corp uses Architect Deployment Test to install and rez a copy of Tranquility Home Grid, which is the first card installed this turn. After completing the installation from this effect, the Corp pays the rez cost of Tranquility Home Grid. Since Architect Deployment Test specified that all costs are ignored, the rez cost is reduced to 0 (see rule 1.16.5c), but this step still happens and is still followed by a checkpoint (see rule 1.16.3a). This is the checkpoint that processes that a card was installed, but Tranquility Home Grid is not yet active and an instance of its ability cannot be created. After the checkpoint and any corresponding reaction window, the Corp finishes rezzing Tranquility Home Grid and it becomes active.",
+   "cards_referenced": [
+    "Architect Deployment Test",
+    "Tranquility Home Grid"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_condition_requirements_part_of_condition_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_condition_requirements_part_of_condition",
+   "rule_number": "9.6.5.c.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The entire trigger condition on Quantum Predictive Model is \"If the Runner is tagged when Quantum Predictive Model is accessed\". Quantum Predictive Model can only meet its trigger condition if the Runner is tagged at the time the access occurs. Even if Casting Call is hosted on Quantum Predictive Model, the tag will be given after the access begins, and no ordering of the abilities will allow Quantum Predictive Model to meet its trigger condition.",
+   "cards_referenced": [
+    "Quantum Predictive Model",
+    "Casting Call"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_condition_requirements_part_of_effect_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_condition_requirements_part_of_effect",
+   "rule_number": "9.6.5.d.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: If a Runner with 1 link has both Underworld Contact installed and The Supplier installed hosting a Dyson Mem Chip, both Underworld Contact and The Supplier meet their trigger conditions at the same time. The Runner can trigger The Supplier first, installing the Dyson Mem Chip, thus allowing Underworld Contact to recognize that the Runner has 2 link and give them 1 credit, even though the Runner did not have 2 link at the time the Underworld Contact became pending.",
+   "cards_referenced": [
+    "Underworld Contact",
+    "The Supplier",
+    "Dyson Mem Chip"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_instruction_requirements_past_state_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_instruction_requirements_past_state",
+   "rule_number": "9.6.6.a.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The ability of Weyland Consortium: Built to Last only causes the Corp to gain 2[credit] when they advance a card that \"had no advancement counters\". This ability becomes pending immediately after an instruction resolves in which the Corp advances a card, and the requirement is checked against the state of the game at the previous checkpoint, before that advancement took place.",
+   "cards_referenced": [
+    "Weyland Consortium: Built to Last"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_conditional_ability_static_condition_no_effect_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_conditional_ability_static_condition_no_effect",
+   "rule_number": "9.6.7.d.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: Parasite is hosted on a piece of ice with 0 strength. Parasite's ability tries to trash that ice. If the effect of an interrupt ability prevents the ice from being trashed without increasing its strength, the condition is still true, so the ability will become pending again. But this does not occur while the previous instance of the ability is still pending or resolving. Conversely, if a static ability (such as the one on Architect) prohibits Parasite from trashing the ice, there are no effects Parasite's ability can perform, and therefore the ability resolves only once per timing structure step.",
+   "cards_referenced": [
+    "Parasite",
+    "Architect"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_conditional_ability_lose_pending_when_ability_becomes_inactive_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_conditional_ability_lose_pending_when_ability_becomes_inactive",
+   "rule_number": "9.6.10.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Runner has both Aesop's Pawnshop and Drug Dealer installed. Both cards have abilities that meet their trigger conditions when the Runner's turn begins. If the Runner chooses to trigger Aesop's Pawnshop first, and then uses it to trash Drug Dealer, Drug Dealer's pending ability can never be triggered, so the Runner does not lose a credit.",
+   "cards_referenced": [
+    "Aesop's Pawnshop",
+    "Drug Dealer"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_delayed_conditional_ability_specified_duration_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_delayed_conditional_ability_specified_duration",
+   "rule_number": "9.6.13.b.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: In the Groove creates a delayed conditional ability that specifies a duration of \"this turn\". Since a duration is specified, it is not limited to only being triggered once. The ability becomes pending and can resolve every time its trigger condition is met, and its existence only expires at the end of the turn.",
+   "cards_referenced": [
+    "In the Groove"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_delayed_conditional_ability_relevant_once_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_delayed_conditional_ability_relevant_once",
+   "rule_number": "9.6.13.c.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: Joshua B.'s ability allows the Runner to gain [click]. If they do, it creates a delayed conditional ability that is independent of Joshua B. itself, which will meet its trigger condition only once, when that turn ends. After that ability resolves, the game no longer maintains the lingering effect creating the ability.",
+   "cards_referenced": [
+    "Joshua B."
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_delayed_run_ends_condition_outside_run_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_delayed_run_ends_condition_outside_run",
+   "rule_number": "9.6.13.d.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Runner encounters a piece of ice outside of a run, and uses Mayfly to break its subroutines. Since there is no run in progress, the delayed conditional ability inside Mayfly's interface ability cannot be created, and Mayfly will not be trashed.",
+   "cards_referenced": [
+    "Mayfly"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_instructed_to_resolve_conditional_ability_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_instructed_to_resolve_conditional_ability",
+   "rule_number": "9.6.14.d.",
+   "section_id": "sec_conditional_abilities",
+   "section_number": "9.6",
+   "section_title": "Conditional Abilities",
+   "text": "Example: The Corp has scored AstroScript Pilot Program and Market Research. They forfeit one of those agendas to play 24/7 News Cycle and resolve the \"when scored\" ability of the other agenda, even though neither agenda was actually scored at this time. The Corp can forfeit Market Research to resolve AstroScript Pilot Program's ability and put an agenda counter on it, with no other stipulations. If the Runner is tagged, the Corp could instead forfeit AstroScript Pilot Program to put an agenda counter on Market Research. However, if the Runner is not tagged, the additional requirement of Market Research's trigger condition will not be met, so its \"when scored\" ability cannot become pending or resolve.",
+   "cards_referenced": [
+    "AstroScript Pilot Program",
+    "Market Research",
+    "24/7 News Cycle"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_play_ability_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_play_ability",
+   "rule_number": "9.7.1.",
+   "section_id": "sec_play_abilities",
+   "section_number": "9.7",
+   "section_title": "Play Abilities",
+   "text": "Example: The operation card Oppo Research has several abilities of different types. The first ability reads \"Play only if the Runner stole or trashed a Corp card during their last turn.\" This is a static ability that contains a restriction and no declarations. The second ability (\"After you resolve this operation, your action phase ends.\") is a conditional ability that meets its trigger condition and resolves after the Corp finishes playing and resolving Oppo Research. The third and fourth abilities contain instructions with no trigger conditions or paid ability trigger costs, so they are both play abilities. They resolve in sequence while Oppo Research is being played.",
+   "cards_referenced": [
+    "Oppo Research"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_gain_subroutines_in_any_order_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_gain_subroutines_in_any_order",
+   "rule_number": "9.8.2.c.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Runner encounters a copy of Lancelot hosting a condition counter from Sub Boost. The Corp reveals a copy of Merlin in HQ to add a \"[subroutine] Do 2 net damage.\" subroutine to Lancelot. The Corp declares whether the subroutine from Merlin will be added before Lancelot's printed \"[subroutine] Trash 1 installed program.\" subroutine, between the printed subroutine and the \"[subroutine] End the run.\" subroutine granted by the condition counter, or after the \"[subroutine] End the run.\" subroutine.",
+   "cards_referenced": [
+    "Lancelot",
+    "Sub Boost",
+    "Merlin"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_subroutine_origin_external_before_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_subroutine_origin_external_before",
+   "rule_number": "9.8.3.a.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Runner encounters a copy of Loki while Stick and Poke is installed and Warden Fatuma is rezzed. Since Warden Fatuma's ability is a static ability, the subroutine it grants is already present when the encounter begins. The Runner resolves the ability from Stick and Poke, then the Corp resolves the ability from Loki, choosing a copy of Tithe. The subroutines on Loki are, in order: \"[subroutine] Do 1 net damage.\", \"[subroutine] Gain 1[credit].\", \"[subroutine] Do 1 net damage. The Runner draws 1 card.\", \"[subroutine] The Runner loses [click].\", and \"[subroutine] End the run unless the Runner shuffles all cards from the grip into the stack.\"",
+   "cards_referenced": [
+    "Loki",
+    "Stick and Poke",
+    "Warden Fatuma",
+    "Tithe"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_subroutine_origin_static_after_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_subroutine_origin_static_after",
+   "rule_number": "9.8.3.d.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Corp has 3 cards in HQ while the Runner is encountering Ashigaru. After the Runner breaks Ashigaru's 3 subroutines, the Corp uses Panic Button to draw another card. The new subroutine is added after the previous 3, so the Runner can use Gbahali to break it.",
+   "cards_referenced": [
+    "Ashigaru",
+    "Panic Button",
+    "Gbahali"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_subroutine_origin_static_after_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_subroutine_origin_static_after",
+   "rule_number": "9.8.3.d.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Corp has 3 cards in HQ while the Runner is encountering Ashigaru. The Runner breaks the first subroutine, then uses Utopia Shard to force the Corp to discard 2 cards. Ashigaru correspondingly loses its last 2 subroutines, leaving behind the subroutine that was already broken.",
+   "cards_referenced": [
+    "Ashigaru",
+    "Utopia Shard"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_subroutine_origin_external_after_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_subroutine_origin_external_after",
+   "rule_number": "9.8.3.e.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Runner encounters Marker, and its subroutine resolves. The next ice the Runner encounters is Brainstorm. When the encounter begins, the lingering effect from Marker gives Brainstorm an \"[subroutine] End the run.\" subroutine. Then, Brainstorm's conditional ability resolves, giving it the appropriate number of \"[subroutine] Do 1 core damage.\" subroutines. The \"[subroutine] Do 1 core damage.\" subroutines are all ordered after the \"[subroutine] End the run.\" subroutine.",
+   "cards_referenced": [
+    "Marker",
+    "Brainstorm"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_break_all_but_x_subroutines_targets_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_break_all_but_x_subroutines_targets",
+   "rule_number": "9.8.6.b.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Runner uses two copies of Grappling Hook to break all of the subroutines on Heimdall 1.0. For the first Grappling Hook, the Runner chooses the unbroken \"[subroutine] Do 1 core damage.\" subroutine as the target, and Grappling Hook breaks both \"[subroutine] End the run.\" subroutines. For the second Grappling Hook, the Runner chooses one of the already-broken \"[subroutine] End the run.\" subroutines as the target. They can choose the broken subroutine as Grappling Hook's target because Grappling Hook will not attempt to break the chosen subroutine. When the ability resolves, Grappling Hook breaks the \"[subroutine] Do 1 core damage.\" subroutine, but does nothing to the other \"[subroutine] End the run.\" subroutine, because it is already broken.",
+   "cards_referenced": [
+    "Grappling Hook",
+    "Heimdall 1.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_resolve_subroutines_run_ends_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_resolve_subroutines_run_ends",
+   "rule_number": "9.8.7.c.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Runner encounters Little Engine and does not break any subroutines. Little Engine's first subroutine resolves and ends the run. Since the run and therefore the encounter have ended, no more subroutines resolve. The Runner will not gain 5[credit].",
+   "cards_referenced": [
+    "Little Engine"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_replace_subroutine_resolution_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_replace_subroutine_resolution",
+   "rule_number": "9.8.9.",
+   "section_id": "sec_subroutines",
+   "section_number": "9.8",
+   "section_title": "Subroutines",
+   "text": "Example: The Runner encounters Bloop while Tsakhia \"Bankhar\" Gantulga's replacement effect applies. All 3 of Bloop's subroutines would resolve, but are replaced by \"[subroutine] Do 1 net damage.\" by the replacement effect. These subroutines count as resolving from Bloop, so when the Runner passes Bloop after the encounter, the Runner can use Persephone to trash the top card of their stack and the top 3 cards of R&D.",
+   "cards_referenced": [
+    "Bloop",
+    "Tsakhia \"Bankhar\" Gantulga",
+    "Persephone"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_expected_effects_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_expected_effects",
+   "rule_number": "9.9.2.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner plays Process Automation and the instruction \"Gain 2[credit] and draw 1 card.\" becomes imminent. The expected effects of this instruction are that the Runner will gain 2[credit] and draw 1 card.",
+   "cards_referenced": [
+    "Process Automation"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_expected_effects_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_expected_effects",
+   "rule_number": "9.9.2.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner plays Process Automation after Lockdown's subroutine resolves. The instruction \"Gain 2[credit] and draw 1 card.\" becomes imminent, but the Runner cannot draw cards. The expected effect of this instruction is that the Runner will gain 2[credit].",
+   "cards_referenced": [
+    "Process Automation",
+    "Lockdown"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_would_relevant_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_would_relevant",
+   "rule_number": "9.9.3.d.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The trigger condition on The Class Act's second ability is \"The first time each turn you would draw any number of cards\". Even though this ability's effects do not directly modify the imminent instruction's effects, the ability is relevant to an instruction that is expected to draw cards.",
+   "cards_referenced": [
+    "The Class Act"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trigger_conditional_ability_interrupt_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trigger_conditional_ability_interrupt",
+   "rule_number": "9.9.4.c.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: An instruction is imminent that would trash an installed copy of Harbinger. The Runner uses Sacrificial Construct to prevent Harbinger from being trashed. The Runner can no longer trigger Harbinger's interrupt ability, even though it is still pending, because the expected effects of the instruction no longer include Harbinger being trashed and therefore the ability is no longer relevant.",
+   "cards_referenced": [
+    "Harbinger",
+    "Sacrificial Construct"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trigger_conditional_ability_interrupt_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trigger_conditional_ability_interrupt",
+   "rule_number": "9.9.4.c.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: An instruction is imminent that would give the Runner 2 tags. The Runner trashes Decoy to use its ability to avoid 1 of the tags, which meets the trigger condition for Thunder Art Gallery's ability. The latter resolves as a chain reaction (see rule 9.1.2a) while the interrupt window is still open, allowing the Runner to install No One Home, which has a conditional ability interrupt that is relevant since the instruction is still expected to give the Runner 1 tag. However, No One Home was not active when the interrupt window opened, so its ability is not pending and cannot be triggered.",
+   "cards_referenced": [
+    "Decoy",
+    "Thunder Art Gallery",
+    "No One Home"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trigger_paid_ability_interrupt_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trigger_paid_ability_interrupt",
+   "rule_number": "9.9.4.d.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: An instruction is imminent that would give the Runner 2 tags. The Runner trashes Decoy to use its ability to avoid 1 of the tags, which meets the trigger condition for Thunder Art Gallery's ability. The latter resolves as a chain reaction (see rule 9.1.2a) while the interrupt window is still open, allowing the Runner to install another copy of Decoy. The Runner receives priority again in the original interrupt window and uses the second Decoy's ability to avoid the other imminent tag.",
+   "cards_referenced": [
+    "Decoy",
+    "Thunder Art Gallery"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_ordinal_would_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_ordinal_would",
+   "rule_number": "9.9.5.a.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: Tori Hanzō's interrupt can only be used \"the first time you would do net damage\" during a run. If the first net damage that becomes imminent is prevented by the Runner using Feedback Filter, Tori Hanzō cannot be used on any other instances of net damage for the remainder of the run, as the next imminent net damage is the second time the Corp \"would\" deal net damage, not the first time.",
+   "cards_referenced": [
+    "Tori Hanzō",
+    "Feedback Filter"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_modifiable_value_cost_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_modifiable_value_cost",
+   "rule_number": "9.9.6.c.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: Patchwork's interrupt modifies a play cost or install cost, so it is relevant to any instruction where a card will be played or installed and the corresponding cost paid.",
+   "cards_referenced": [
+    "Patchwork"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_negative_values_imminent_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_negative_values_imminent",
+   "rule_number": "9.9.7.a.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner takes a tag on their turn, allowing the Corp to trigger Mr. Stone. While the 1 meat damage from Mr. Stone's ability is imminent, both players can trigger interrupts to modify the damage effect. Since it is the Runner's turn, they receive priority first and use Biometric Spoofing to prevent 2 damage. The imminent effect is now expected to do -1 damage. When the Corp receives priority, they trigger two copies of The Cleaners that each add 1 to the expected damage, increasing the total to 0 and then to 1. The ability will resolve with 1 damage even though the amount of damage was temporarily 0 or less while the effect was imminent.",
+   "cards_referenced": [
+    "Mr. Stone",
+    "Biometric Spoofing",
+    "The Cleaners"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_prevent_all_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_prevent_all",
+   "rule_number": "9.9.7.b.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner installs Net-Ready Eyes and uses Chrome Parlor to prevent all of the damage from its first ability. There is no longer an imminent damage effect, so the Corp cannot use The Cleaners.",
+   "cards_referenced": [
+    "Net-Ready Eyes",
+    "Chrome Parlor",
+    "The Cleaners"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_negative_values_resolution_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_negative_values_resolution",
+   "rule_number": "9.9.7.d.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner accesses Breached Dome. While the instruction from its \"when accessed\" ability is imminent, the Runner uses Biometric Spoofing to prevent 2 damage. When the ability resolves, the value for the amount of damage is -1, which is less than or equal to 0, so the damage effect cannot occur and the Corp only trashes the top card of the stack.",
+   "cards_referenced": [
+    "Breached Dome",
+    "Biometric Spoofing"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_modified_values_retain_properties_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_modified_values_retain_properties",
+   "rule_number": "9.9.7.e.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: While the result of a successful trace from Flare is imminent, the Corp triggers The Cleaners to increase the imminent meat damage by 1. Even though the damage from Flare has been increased from 2 to 3, none of that meat damage can be prevented.",
+   "cards_referenced": [
+    "Flare",
+    "The Cleaners"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_prevent_as_trigger_condition_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_prevent_as_trigger_condition",
+   "rule_number": "9.9.7.f.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner accesses Angelique Garza Correa and the Corp pays 2[credit], making the \"Do 2 meat damage\" instruction imminent. The Runner uses Plascrete Carapace to prevent 2 meat damage, leaving the imminent instruction with the expected effect \"Do 0 meat damage.\". At this point, the 0 value for the damage can still be modified by abilities like The Cleaners. But then the Runner resolves the interrupt ability on Guru Davinder, which removes the damage effect altogether. Since the value for the damage was 0, Guru Davinder's second ability does not meet its trigger condition and the Runner does not have to trash Guru Davinder or pay 4[credit]. There is no longer an imminent damage effect, so the Corp cannot use The Cleaners.",
+   "cards_referenced": [
+    "Angelique Garza Correa",
+    "Plascrete Carapace",
+    "The Cleaners",
+    "Guru Davinder"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_replacement_on_static_ability_must_remain_active_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_replacement_on_static_ability_must_remain_active",
+   "rule_number": "9.9.9.a.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: Gebrselassie's static ability replaces the durations of certain lingering effects affecting its host with a duration of \"for the remainder of the turn.\" If Gebrselassie is uninstalled or moved to a different host, its replacement effect no longer applies to those lingering effects, so they revert to their normal durations. If any of those durations have already expired, the corresponding effects will end at the next checkpoint.",
+   "cards_referenced": [
+    "Gebrselassie"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_replacement_effect_only_applies_once_per_effect_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_replacement_effect_only_applies_once_per_effect",
+   "rule_number": "9.9.9.c.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner accesses Project Vacheron and its interrupt ability resolves. The interrupt creates a replacement effect that will override adding the agenda to the Runner's score area. The Runner will still steal Project Vacheron, but they will do so by adding it to their score area with hosted agenda counters. Even though the modified effect still includes adding Project Vacheron to the Runner's score area, there is no way for the replacement effect to apply again to its own results.",
+   "cards_referenced": [
+    "Project Vacheron"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_replace_imminent_effects_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_replace_imminent_effects",
+   "rule_number": "9.9.10.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: An instruction is imminent with an expected effect of the Corp doing net damage to the Runner. The Corp uses Tori Hanzō's ability, creating a replacement effect replacing net damage with core damage. The replacement effect applies immediately, so after Tori Hanzō's ability resolves, the expected effect is now to do 1 core damage. When players get priority again, their interrupts are relevant or not based on the new expected effects.",
+   "cards_referenced": [
+    "Tori Hanzō"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_replacement_effect_must_have_something_to_replace_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_replacement_effect_must_have_something_to_replace",
+   "rule_number": "9.9.11.a.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner chooses HQ with Security Testing when their turn begins, then plays Account Siphon. When the run becomes successful, both Security Testing and Account Siphon create replacement effects. When step 6.9.5b of the run becomes imminent, the Runner must choose to apply either the replacement effect from Security Testing or the one from Account Siphon. Since neither effect creates a new instance of breaching the server, the effect not chosen to apply first has nothing to replace and does not apply.",
+   "cards_referenced": [
+    "Security Testing",
+    "Account Siphon"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_replacement_effect_must_have_something_to_replace_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_replacement_effect_must_have_something_to_replace",
+   "rule_number": "9.9.11.a.",
+   "section_id": "sec_interrupts_replacements",
+   "section_number": "9.9",
+   "section_title": "Interrupts and Replacement Effects",
+   "text": "Example: The Runner chooses R&D with Security Testing when their turn begins, then plays Showing Off. When a run on R&D becomes successful, both Security Testing and Showing Off create replacement effects. When step 6.9.5b of the run becomes imminent, the Runner must choose to apply either the replacement effect from Security Testing or the one from Showing Off. If they choose to apply Security Testing first, Showing Off's effect has nothing to replace and does not apply. If they choose to apply Showing Off first, the expected effects still include breaching R&D, albeit not in the usual way. Security Testing can still replace this breach, so it applies next. Either way, the Runner will gain 2[credit] and will not breach the server.",
+   "cards_referenced": [
+    "Security Testing",
+    "Showing Off"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_lingering_effect_maintaining_choice_default_duration_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_lingering_effect_maintaining_choice_default_duration",
+   "rule_number": "9.10.3.a.",
+   "section_id": "sec_lingering_effects",
+   "section_number": "9.10",
+   "section_title": "Lingering Effects",
+   "text": "Example: The Runner resolves Pelangi's paid ability and chooses an ice subtype. The ability then creates a lingering effect adding the chosen subtype to the encountered ice. Both the choice of subtype and the effect adding it to the ice expire at the end of the encounter.",
+   "cards_referenced": [
+    "Pelangi"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_lingering_effect_maintaining_choice_turn_begins_duration_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_lingering_effect_maintaining_choice_turn_begins_duration",
+   "rule_number": "9.10.3.b.",
+   "section_id": "sec_lingering_effects",
+   "section_number": "9.10",
+   "section_title": "Lingering Effects",
+   "text": "Example: Security Testing's first ability reads, \"When your turn begins, you may choose a server.\" The choice made when resolving this ability on a particular turn should be maintained only until that turn ends. The trigger condition of Security Testing's second ability refers to the chosen server, and it will always look for the server chosen this turn. A successful run on a server that was not chosen this turn will never meet that trigger condition, even if no server was chosen this turn.",
+   "cards_referenced": [
+    "Security Testing"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_lingering_effect_maintaining_choice_duration_other_cases_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_lingering_effect_maintaining_choice_duration_other_cases",
+   "rule_number": "9.10.3.c.",
+   "section_id": "sec_lingering_effects",
+   "section_number": "9.10",
+   "section_title": "Lingering Effects",
+   "text": "Example: Femme Fatale's first conditional ability directs the Runner to choose an installed piece of ice. Which ice was chosen is maintained as a lingering effect for as long as Femme Fatale remains active, and its last ability refers to the object that is being remembered by that lingering effect.",
+   "cards_referenced": [
+    "Femme Fatale"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_modify_duration_of_lingering_effect_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_modify_duration_of_lingering_effect",
+   "rule_number": "9.10.5.",
+   "section_id": "sec_lingering_effects",
+   "section_number": "9.10",
+   "section_title": "Lingering Effects",
+   "text": "Example: The Runner controls Gebrselassie hosted on Na'Not'K. They run a server protected by 3 pieces of ice, and use Na'Not'K's last ability to raise its strength to a total of 6. When the run ends, Na'Not'K's static ability will no longer provide +3 strength, but the lingering effect of +2 strength from its paid ability will be maintained by Gebrselassie until the turn ends or Gebrselassie stops being hosted on Na'Not'K. If the Runner makes another run on a server protected by only 1 piece of ice, Na'Not'K will have 4 strength when that run begins.",
+   "cards_referenced": [
+    "Gebrselassie",
+    "Na'Not'K"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_step_sequences_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_step_sequences",
+   "rule_number": "9.11.2.a.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: The steps of installing a card are not separate instructions. Installing a card usually happens in its entirety as part of a single instruction. The only checkpoint that occurs during the procedure of installing a card is at step 8.5.16d, immediately after the install cost is paid.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_step_sequences_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_step_sequences",
+   "rule_number": "9.11.2.a.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: The steps of a checkpoint are not instructions. No checkpoints take place in the middle of another checkpoint.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_use_restrictions_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_use_restrictions",
+   "rule_number": "9.11.4.a.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: A sentence reading \"Use this ability only by spending credits from a stealth card.\" is not an instruction or part of any instruction. It is a restriction that applies to the entire ability.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_rule_split_up_instruction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_split_up_instruction",
+   "rule_number": "9.11.4.b.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: The Corp plays Shipment from MirrorMorph, which has a single sentence directing them to install up to 3 cards from HQ. This is treated as though it said, \"You may install a card from HQ. You may install a card from HQ. You may install a card from HQ.\", or equivalently, \"You may install a card from HQ. Repeat this process 2 more times.\"",
+   "cards_referenced": [
+    "Shipment from MirrorMorph"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_choose_instruction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_choose_instruction",
+   "rule_number": "9.11.4.c.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: Tinkering's play ability reads, \"Choose a piece of ice. That ice gains sentry, code gate, and barrier until the end of the turn.\" The first sentence does nothing except direct the Runner to select a target, so it forms a single instruction with the second sentence. The target is chosen as the instruction becomes imminent, and the card gains the subtypes when the instruction resolves.",
+   "cards_referenced": [
+    "Tinkering"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_search_instruction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_search_instruction",
+   "rule_number": "9.11.4.d.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: The Runner uses Djinn to search for a program while the Corp has Personality Profiles in their score area. The Runner finds and sets aside a copy of Datasucker and shuffles the stack. This ends an instruction, and since the search has occurred, Personality Profiles's ability meets its trigger condition. The Corp resolves the ability during a reaction window before the next instruction becomes imminent, forcing the Runner to trash a random card from their grip. Finally, the second instruction resolves and the Runner adds the set-aside Datasucker to their grip.",
+   "cards_referenced": [
+    "Djinn",
+    "Personality Profiles",
+    "Datasucker"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_look_reveal_instruction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_look_reveal_instruction",
+   "rule_number": "9.11.4.e.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: The Corp is resolving the first subroutine on Architect, which, in one sentence, allows the Corp to look at cards in R&D and install one of them. Looking at the top 5 cards of R&D ends the ability's first instruction. Once the Corp is able to see those cards, they can choose a target for the second instruction, which will install it. Since the install is optional, the Corp can also decline to choose a target, and the second instruction will have no effect. After the second instruction resolves, the ability is complete, and the Corp's permission to look at cards in R&D ends.",
+   "cards_referenced": [
+    "Architect"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_choice_instruction_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_choice_instruction",
+   "rule_number": "9.11.4.g.",
+   "section_id": "sec_identifying_instructions",
+   "section_number": "9.11",
+   "section_title": "Identifying Instructions",
+   "text": "Example: The Runner encounters Data Raven and is forced by its first ability to resolve either \"take 1 tag\" or \"end the run.\" Making this choice ends the first instruction, and the option the Runner chooses will become imminent after a checkpoint.",
+   "cards_referenced": [
+    "Data Raven"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_modify_ability_with_choice_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_modify_ability_with_choice",
+   "rule_number": "9.12.1.c.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: If Chronos Protocol and Titanium Ribs are both active, both players are instructed to choose the card trashed by the first net damage each turn. Since this is impossible, only the active player chooses that card. Since Chronos Protocol also instructs the Corp to look at the Runner's grip and this is not prevented or contradicted by any other ability, this part of the effect happens on either player's turn.",
+   "cards_referenced": [
+    "Chronos Protocol",
+    "Titanium Ribs"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_independent_effects_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_independent_effects",
+   "rule_number": "9.12.1.e.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: Mother Goddess, Ansel 1.0, and Warden Fatuma are rezzed, and Hush is hosted on Mother Goddess. Mother Goddess, Warden Fatuma, and Hush all produce effects that could modify the characteristics of Mother Goddess, so in order to determine Mother Goddess's true characteristics, we must examine how those effects depend on each other. Mother Goddess's effect grants it the subtypes of Ansel 1.0, including the bioroid subtype, which affects whether Warden Fatuma's ability applies to Mother Goddess, so Warden Fatuma's effect depends on Mother Goddess's effect. Hush's effect removes Mother Goddess's ability, so Mother Goddess's effect depends on Hush's effect. No other effects change how Hush's effect behaves. Since Hush's effect is independent, it must be applied first. When it is applied, Mother Goddess's ability no longer exists, so Warden Fatuma's effect is now independent. It is applied next and grants a subroutine to Ansel 1.0, but not to Mother Goddess, which does not have the bioroid subtype.",
+   "cards_referenced": [
+    "Mother Goddess",
+    "Ansel 1.0",
+    "Warden Fatuma",
+    "Hush"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_independent_effects_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_independent_effects",
+   "rule_number": "9.12.1.e.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: Hush is hosted on Magnet. Hush's ability creates an effect that removes abilities from Magnet, and Magnet's ability creates an effect that removes an ability from Hush. The dependencies of these effects form a loop, so the hosting relationship of their source objects is considered, and the effect from Hush's ability ignores its dependence on the effect from Magnet's ability. Hush's effect is therefore treated as independent and applied first. Magnet's ability and the resulting effect no longer exist, so they are never applied.",
+   "cards_referenced": [
+    "Hush",
+    "Magnet"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_act_on_multiple_cards_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_act_on_multiple_cards",
+   "rule_number": "9.12.2.a.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner uses Singularity to simultaneously trash a rezzed Warroid Tracker and a rezzed Hostile Infrastructure. Hostile Infrastructure has a trigger condition of \"Whenever the Runner trashes a Corp card\", so it sees both trashed cards and becomes pending twice. By contrast, Warroid Tracker has a trigger condition of \"Whenever the Runner trashes at least 1 card…\", so it sees only a single event that trashed multiple cards. Warroid Tracker's ability becomes pending only once.",
+   "cards_referenced": [
+    "Singularity",
+    "Warroid Tracker",
+    "Hostile Infrastructure"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_calculated_quantity_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_calculated_quantity",
+   "rule_number": "9.12.2.b.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner plays Ritual while they have 3 [click] remaining and an installed copy of The Class Act. Ritual's instruction will have the Runner perform 1 instance of drawing 3 cards, so The Class Act's interrupt ability will first have the Runner look at the top 4 cards of their stack and add 1 to the bottom.",
+   "cards_referenced": [
+    "Ritual",
+    "The Class Act"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_calculated_quantity_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_calculated_quantity",
+   "rule_number": "9.12.2.b.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner accesses Urtica Cipher with 3 hosted advancement counters. The Corp resolves the instruction \"do 2 net damage plus 1 net damage for each hosted advancement counter\", doing a single instance of 5 net damage. They can only apply the interrupt ability from Prāna Condenser to the damage once.",
+   "cards_referenced": [
+    "Urtica Cipher",
+    "Prāna Condenser"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_calculated_quantity_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_calculated_quantity",
+   "rule_number": "9.12.2.b.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Corp has a rezzed copy of NASX and plays realloc(). Its ability has the Corp gain credits based on a \"for each\", but it also has the Corp derez cards based on the same \"for each\". Since derezzing cards is not an aggregated effect, none of the effects are aggregated, and the Corp will be able to resolve 2 separate instances of the second ability on NASX.",
+   "cards_referenced": [
+    "NASX",
+    "realloc()"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_vacuous_truth_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_vacuous_truth",
+   "rule_number": "9.12.2.d.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner plays Forked, initiating a run on a server. The first piece of ice that the Runner encounters is Troll. If Troll's \"when encountered\" ability does not end the run, the Runner is automatically considered to have broken all of the zero subroutines on Troll as soon as step 6.9.3b of the encounter begins, and Troll is trashed by Forked.",
+   "cards_referenced": [
+    "Forked",
+    "Troll"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_values_defined_by_x_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_values_defined_by_x",
+   "rule_number": "9.12.2.e.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Corp uses the ability granted by ZATO City Grid to trash Surveyor and resolve one of its subroutines. Since Surveyor is in Archives when the trace on the subroutine initiates, the ability defining X is inactive, so the base trace strength is 0.",
+   "cards_referenced": [
+    "ZATO City Grid",
+    "Surveyor"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_values_defined_by_x_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_values_defined_by_x",
+   "rule_number": "9.12.2.e.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: Hush is hosted on Surveyor. The ability defining X is lost, so Surveyor's strength is 0.",
+   "cards_referenced": [
+    "Hush",
+    "Surveyor"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_must_with_choice_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_must_with_choice",
+   "rule_number": "9.12.3.a.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner has an Imp and a Scrubber installed and accesses Mumbad Virtual Tour. If the Runner only has 4[credit], they must still choose to either spend a counter from Imp to trash Mumbad Virtual Tour if they are able to do so or spend recurring credits on Scrubber to help pay the trash cost of the Mumbad Virtual Tour.",
+   "cards_referenced": [
+    "Imp",
+    "Scrubber",
+    "Mumbad Virtual Tour"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_must_without_choice_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_must_without_choice",
+   "rule_number": "9.12.3.b.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner has Imp and Neutralize All Threats installed when they access a card with a trash cost greater than the number of credits they have available to spend. Because they are unable to trash the card by paying its trash cost, they are not required to spend a counter from Imp in order to trash it.",
+   "cards_referenced": [
+    "Imp",
+    "Neutralize All Threats"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_mandatory_choice_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_mandatory_choice",
+   "rule_number": "9.12.3.c.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: If the first subroutine on Fairchild 2.0 resolves while the Runner has no installed cards but 3[credit], then the Runner must choose to pay 2[credit]. When the second subroutine on Fairchild 2.0 resolves, the Runner can neither pay 2[credit] nor trash an installed card, so nothing happens.",
+   "cards_referenced": [
+    "Fairchild 2.0"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_mandatory_choice_effects_can_be_modified_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_mandatory_choice_effects_can_be_modified",
+   "rule_number": "9.12.3.d.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: If the Runner encounters Data Raven, they must choose to either take a tag or end the run. The Runner can choose to take the tag, then avoid the tag with Decoy. This does not cause the run to end, as the decision to take the tag has already been made.",
+   "cards_referenced": [
+    "Data Raven",
+    "Decoy"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_must_cannot_force_additional_cost_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_must_cannot_force_additional_cost",
+   "rule_number": "9.12.3.e.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: If Service Outage is active and the Runner has Always Be Running installed, the Runner can decline to pay the additional 1[credit] to make a run with their first [click], thus satisfying the \"must\" of Always Be Running and allowing them to spend their first click on a different action. However, if a Runner has a False Echo installed and passes an unrezzed Archer, the Corporation cannot choose to rez the Archer but decline to forfeit an agenda; the Corp must either pay 4[credit] and forfeit an agenda to rez the Archer or add the Archer to HQ.",
+   "cards_referenced": [
+    "Service Outage",
+    "Always Be Running",
+    "False Echo"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_persistent_applicability_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_persistent_applicability",
+   "rule_number": "9.12.5.d.",
+   "section_id": "sec_other_rules_and_terminology",
+   "section_number": "9.12",
+   "section_title": "Other Rules and Terminology",
+   "text": "Example: The Runner trashes AMAZE Amusements, causing its \"Whenever a run on this server ends\" ability to persist. When the run ends, the Runner uses Doppelgänger to make another run while the persisting ability is still pending. The ability remains active so that its existing pending instance can resolve, but another instance cannot be created even if the Runner steals an agenda during the second run.",
+   "cards_referenced": [
+    "AMAZE Amusements",
+    "Doppelgänger"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_sec_old_self_reference_rules_1",
+   "example_number_or_label": "Example",
+   "rule_id": "sec_old_self_reference_rules",
+   "rule_number": "10.1.5.",
+   "section_id": "sec_additional_general",
+   "section_number": "10.1",
+   "section_title": "General",
+   "text": "Example: The subroutine on the original printing of Kitsune includes the phrase \"trash Kitsune.\" This phrase means \"trash this ice.\".",
+   "cards_referenced": [
+    "Kitsune"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_sec_old_self_reference_rules_2",
+   "example_number_or_label": "Example",
+   "rule_id": "sec_old_self_reference_rules",
+   "rule_number": "10.1.5.",
+   "section_id": "sec_additional_general",
+   "section_number": "10.1",
+   "section_title": "General",
+   "text": "Example: Boomerang's text refers to \"a copy of Boomerang\". This is not self-referential language and refers to any card named Boomerang.",
+   "cards_referenced": [
+    "Boomerang"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_mandatory_infinite_loop_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_mandatory_infinite_loop",
+   "rule_number": "10.1.6.a.",
+   "section_id": "sec_additional_general",
+   "section_number": "10.1",
+   "section_title": "General",
+   "text": "Example: The Runner runs into a rezzed Wormhole. The only other piece of ice that is rezzed is a Wormhole, and so a mandatory infinite loop is created where each of the Wormholes' subroutines resolves the other. The Corp chooses how many times this loop occurs, say 2,157 times, and then the Runner continues the run.",
+   "cards_referenced": [
+    "Wormhole"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_bluffing_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_bluffing",
+   "rule_number": "10.2.2.b.",
+   "section_id": "sec_information",
+   "section_number": "10.2",
+   "section_title": "Information",
+   "text": "Example: The Runner uses Indexing. While rearranging cards, the Runner places Braintrust on top of R&D, followed by Snare!. The Corp draws at the beginning of their next turn, then spends their first click to draw a card. For their second click, the Corp installs a card in an empty remote server, telling the Runner that they should run it because it is a Braintrust.",
+   "cards_referenced": [
+    "Indexing",
+    "Braintrust",
+    "Snare!"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_cannot_hide_open_info_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_cannot_hide_open_info",
+   "rule_number": "10.2.3.b.",
+   "section_id": "sec_information",
+   "section_number": "10.2",
+   "section_title": "Information",
+   "text": "Example: The Runner installs Femme Fatale, choosing a piece of ice protecting HQ with Femme's ability. The Runner must explicitly state to the Corp which ice has been chosen and must continue to do so if the Corp asks for Femme Fatale's target during a later turn.",
+   "cards_referenced": [
+    "Femme Fatale"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_step_checkpoint_duration_abilities_1",
+   "example_number_or_label": "Example",
+   "rule_id": "step_checkpoint_duration_abilities",
+   "rule_number": "10.3.1.b.",
+   "section_id": "sec_checkpoints",
+   "section_number": "10.3",
+   "section_title": "Checkpoints",
+   "text": "Example: During the checkpoint that follows the end of an encounter, abilities that increased the strength of an icebreaker during that encounter expire and the icebreaker's strength is correspondingly lowered.",
+   "cards_referenced": [],
+   "terms": []
+  },
+  {
+   "id": "example_step_checkpoint_duration_abilities_2",
+   "example_number_or_label": "Example",
+   "rule_id": "step_checkpoint_duration_abilities",
+   "rule_number": "10.3.1.b.",
+   "section_id": "sec_checkpoints",
+   "section_number": "10.3",
+   "section_title": "Checkpoints",
+   "text": "Example: The Corp has Targeted Marketing in the play area when the Runner steals an agenda. In the next checkpoint, the game recognizes that the ability on Targeted Marketing that was preventing the operation from being trashed no longer applies, and so the Corp trashes Targeted Marketing as if it were completing its resolution.",
+   "cards_referenced": [
+    "Targeted Marketing"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_step_checkpoint_card_restrictions_1",
+   "example_number_or_label": "Example",
+   "rule_id": "step_checkpoint_card_restrictions",
+   "rule_number": "10.3.1.e.",
+   "section_id": "sec_checkpoints",
+   "section_number": "10.3",
+   "section_title": "Checkpoints",
+   "text": "Example: The Runner controls a Chisel hosted on an unrezzed piece of ice. The Corp rezzes that ice, revealing it to be Tithonium. Since Tithonium has an ability prohibiting cards from being hosted on it, Chisel is now installed in an illegal location and must be trashed.",
+   "cards_referenced": [
+    "Chisel",
+    "Tithonium"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_step_checkpoint_card_restrictions_2",
+   "example_number_or_label": "Example",
+   "rule_id": "step_checkpoint_card_restrictions",
+   "rule_number": "10.3.1.e.",
+   "section_id": "sec_checkpoints",
+   "section_number": "10.3",
+   "section_title": "Checkpoints",
+   "text": "Example: The Runner has installed programs with total memory cost equal to their memory limit when the Corp plays Bad Times, reducing the memory limit by 2[mu]. The Runner can trash any two programs with a memory cost of 1[mu] each, or any one program with a memory cost of 2[mu] or greater. They cannot trash any 0[mu] programs, nor can they trash any set of more than one program with a greater total memory cost than 2[mu], since those objects can be removed from the trashed set while maintaining that the result will be a legal game state.",
+   "cards_referenced": [
+    "Bad Times"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_step_checkpoint_card_entering_root_during_breach_1",
+   "example_number_or_label": "Example",
+   "rule_id": "step_checkpoint_card_entering_root_during_breach",
+   "rule_number": "10.3.1.j.",
+   "section_id": "sec_checkpoints",
+   "section_number": "10.3",
+   "section_title": "Checkpoints",
+   "text": "Example: The Runner accesses Ganked! and encounters Drafter in the middle of breaching a server. The second subroutine on Drafter resolves, and the Corp uses its effect to install a card in the root of the server being breached. When the installation is completed, the Runner declares whether or not the installed card becomes a candidate. If it does become a candidate, the Runner will select it for access later in the breach.",
+   "cards_referenced": [
+    "Ganked!",
+    "Drafter"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_checkpoint_after_timing_structure_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_checkpoint_after_timing_structure",
+   "rule_number": "10.3.6.",
+   "section_id": "sec_checkpoints",
+   "section_number": "10.3",
+   "section_title": "Checkpoints",
+   "text": "Example: The Runner, playing as Jesminder Sareen: Girl Behind the Curtain, steals an agenda during a run on a server with AMAZE Amusements rezzed in its root. Since AMAZE Amusements's ability meets its trigger condition when the run ends, it will become pending in the reaction window following step 6.9.6d and attempt to give the Runner 2 tags. During this window, the run timing structure has closed, and Jesminder's interrupt ability cannot apply to those tags.",
+   "cards_referenced": [
+    "Jesminder Sareen: Girl Behind the Curtain",
+    "AMAZE Amusements"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_suffer_or_take_damage_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_suffer_or_take_damage",
+   "rule_number": "10.4.1.",
+   "section_id": "sec_damage",
+   "section_number": "10.4",
+   "section_title": "Damage",
+   "text": "Example: The Corp, playing as Argus Security: Protection Guaranteed, has scored The Cleaners. The Runner makes a run on R&D and steals Hostile Takeover. Argus Security's ability triggers and the Runner chooses to suffer 2 meat damage. As The Cleaners only adds additional damage to damage done by the Corp, its ability does not apply. When the Corp plays Punitive Counterstrike on their next turn, The Cleaners does increase the amount of damage done by Punitive Counterstrike.",
+   "cards_referenced": [
+    "Argus Security: Protection Guaranteed",
+    "The Cleaners",
+    "Hostile Takeover",
+    "Punitive Counterstrike"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_multiple_damage_taken_simultaneously_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_multiple_damage_taken_simultaneously",
+   "rule_number": "10.4.3.",
+   "section_id": "sec_damage",
+   "section_number": "10.4",
+   "section_title": "Damage",
+   "text": "Example: The Runner has 2 tags and four cards in their grip, one of which is I've Had Worse. The Corp plays BOOM!, dealing 7 meat damage to the Runner. If the Runner cannot or does not prevent at least 3 of the incoming damage, they immediately flatline as they have suffered more damage than they have cards in grip, and I've Had Worse does not have the opportunity to resolve. If the Runner does prevent enough of the damage to survive, the Runner randomly trashes as many cards as the remaining amount of damage. After all the cards have been randomly selected and placed in the heap, I've Had Worse meets its trigger condition if it is among those cards trashed by the damage.",
+   "cards_referenced": [
+    "I've Had Worse",
+    "BOOM!"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_multiple_damage_selected_sequentially_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_multiple_damage_selected_sequentially",
+   "rule_number": "10.4.3.a.",
+   "section_id": "sec_damage",
+   "section_number": "10.4",
+   "section_title": "Damage",
+   "text": "Example: The Corp is playing as Chronos Protocol: Selective Mind-mapping when the Runner accesses a Snare! before taking any other damage during this turn. The Corp looks at the grip and selects a card to be trashed as the first point of net damage for the turn, then two other cards are randomly selected. All 3 cards are trashed simultaneously.",
+   "cards_referenced": [
+    "Chronos Protocol: Selective Mind-mapping",
+    "Snare!"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_trace_conditional_abilities_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_trace_conditional_abilities",
+   "rule_number": "10.8.5.",
+   "section_id": "sec_traces",
+   "section_number": "10.8",
+   "section_title": "Traces",
+   "text": "Example: Gemini's subroutine initiates a trace attempt with two associated conditional abilities. The first is \"If successful, do 1 net damage.\" and the second is \"When the trace is determined to be successful or unsuccessful, if your trace strength is 5 or greater, do 1 net damage.\" Both of these will become pending (if appropriate) after step 10.8.6e below.",
+   "cards_referenced": [
+    "Gemini"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_empty_requires_loading_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_empty_requires_loading",
+   "rule_number": "10.9.2.",
+   "section_id": "sec_load_and_empty",
+   "section_number": "10.9",
+   "section_title": "Load and Empty",
+   "text": "Example: The Runner installs Crowdfunding, and its first ability becomes pending. Even though there are no credits hosted on Crowdfunding until that ability resolves, the following \"When it is empty, ...\" ability does not meet its trigger condition because the card has not yet been loaded.",
+   "cards_referenced": [
+    "Crowdfunding"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_mark_designated_condition_check_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_mark_designated_condition_check",
+   "rule_number": "10.11.5.",
+   "section_id": "sec_mark",
+   "section_number": "10.11",
+   "section_title": "Mark",
+   "text": "Example: The Runner has no mark and plays Jailbreak to make a run on HQ. When the run is successful, they draw Virtuoso with Jailbreak's ability. The Runner continues their turn by installing Virtuoso and playing Carpe Diem. If Carpe Diem's instruction to \"identify your mark\" results in HQ becoming the mark, the subsequent run it allows will meet the trigger condition for Virtuoso's third ability if it is successful. Even though there was a successful run on HQ earlier in the turn, HQ was not designated as the mark at that time, so the run made with Carpe Diem is the first time the Runner makes a successful run on their mark this turn. The Runner will access 1 additional card when they breach HQ.",
+   "cards_referenced": [
+    "Jailbreak",
+    "Virtuoso",
+    "Carpe Diem"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_sabotage_all_remaining_cards_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_sabotage_all_remaining_cards",
+   "rule_number": "10.12.3.b.",
+   "section_id": "sec_sabotage",
+   "section_number": "10.12",
+   "section_title": "Sabotage",
+   "text": "Example: The Runner uses Esâ Afontov: Eco-Insurrectionist's ability to sabotage 2. The Corp has 2 cards in HQ and 30 cards in R&D. The Corp can choose not to trash any cards from HQ and trash 2 cards from the top of R&D; choose 1 of the 2 cards in HQ and trash that card and the top card of R&D; or choose and trash both cards from HQ.",
+   "cards_referenced": [
+    "Esâ Afontov: Eco-Insurrectionist"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_sabotage_all_remaining_cards_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_sabotage_all_remaining_cards",
+   "rule_number": "10.12.3.b.",
+   "section_id": "sec_sabotage",
+   "section_number": "10.12",
+   "section_title": "Sabotage",
+   "text": "Example: The Runner uses Chastushka's ability to sabotage 4. The Corp has 5 cards in HQ and 2 cards in R&D. The Corp must choose at least 2 cards in HQ to be trashed, so that the total number of cards trashed is 4.",
+   "cards_referenced": [
+    "Chastushka"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_sabotage_all_remaining_cards_3",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_sabotage_all_remaining_cards",
+   "rule_number": "10.12.3.b.",
+   "section_id": "sec_sabotage",
+   "section_number": "10.12",
+   "section_title": "Sabotage",
+   "text": "Example: The Runner uses Chastushka's ability to sabotage 4. The Corp has 2 cards in HQ and 1 card in R&D. The Corp must trash all cards from HQ and R&D.",
+   "cards_referenced": [
+    "Chastushka"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_dividends_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_dividends",
+   "rule_number": "10.13.1.",
+   "section_id": "sec_dividends",
+   "section_number": "10.13",
+   "section_title": "Dividends",
+   "text": "Example: The Corp scores Embedded Reporting with 5 advancement counters on it. The Corp will put 4 agenda counters on the agenda in their score area, 2 agenda counters for each of the 2 excess advancement counters.",
+   "cards_referenced": [
+    "Embedded Reporting"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_dividends_timing_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_dividends_timing",
+   "rule_number": "10.13.2.",
+   "section_id": "sec_dividends",
+   "section_number": "10.13",
+   "section_title": "Dividends",
+   "text": "Example: The Corp has Project Ingatan and a rezzed SanSan City Grid in the root of a server. The Corp advances Project Ingatan 3 times and scores it. Once Project Ingatan moves to the Corp's score area, its hosted advancement counters are all removed, and the modifier from SanSan City Grid no longer applies. But it did have 3 hosted advancement counters and an advancement requirement of 2 at the time it was scored, so the Corp places 1 agenda counter on it with its dividends 1 ability.",
+   "cards_referenced": [
+    "Project Ingatan",
+    "SanSan City Grid"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_bid_possible_1",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_bid_possible",
+   "rule_number": "10.14.3.",
+   "section_id": "sec_bidding",
+   "section_number": "10.14",
+   "section_title": "Bidding",
+   "text": "Example: The Runner has no credits in their credit pool and 1 credit hosted on Fencer Fueno when they make a successful run on a server with Adrian Seis rezzed in its root. When the ability on Adrian Seis resolves, the players play a Psi Game, which requires them both to bid 0, 1, or 2[credit]. In this case, the Runner cannot bid 2[credit], as they are not able to spend that number of credits. They can, however, bid 1[credit], as they will be able to spend the credit from Fencer Fueno to pay for that bid.",
+   "cards_referenced": [
+    "Fencer Fueno",
+    "Adrian Seis"
+   ],
+   "terms": []
+  },
+  {
+   "id": "example_rule_bid_possible_2",
+   "example_number_or_label": "Example",
+   "rule_id": "rule_bid_possible",
+   "rule_number": "10.14.3.",
+   "section_id": "sec_bidding",
+   "section_number": "10.14",
+   "section_title": "Bidding",
+   "text": "Example: The Runner encounters RSVP and its subroutine resolves. Later in that run, they are required to bid credits by another ability. Since the effect of RSVP's subroutine prohibits the Runner from spending credits, they must bid 0[credit].",
+   "cards_referenced": [
+    "RSVP"
+   ],
+   "terms": []
+  }
+ ]
+}
