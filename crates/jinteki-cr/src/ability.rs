@@ -198,9 +198,10 @@ pub enum StaticDecl {
     CannotDraw(Side),
     /// "<side> cannot spend credits." (RSVP class; forces 0 bids, 10.14.3.)
     CannotSpendCredits(Side),
-    /// "This ice gains '[sub] …' for each card in HQ." (Ashigaru class;
-    /// category 9.8.3d — self-static, after printed, lose last-first.)
-    GainSubroutinePerHqCard { sub: Box<AbilityDef> },
+    /// "This ice gains N copies of '[sub] …'" where N is a quantity selector
+    /// (Ashigaru class: N = count of cards in HQ; category 9.8.3d —
+    /// self-static, after printed, lose last-first as the count shrinks).
+    GainSubroutines { sub: Box<AbilityDef>, count: crate::instr::Quantity },
     /// "Cards cannot be hosted on this card." (Tithonium class; 10.3.1e
     /// hosting-illegality restriction.)
     CannotHost,
@@ -218,10 +219,12 @@ pub enum StaticDecl {
     /// "As an additional cost to access a card in the root of a remote
     /// server, pay N." (Gagarin class — 7.4.3 example 2.)
     AdditionalAccessCost(Cost),
-    /// "This ice's strength is X, where X = `per` × the number of ice
-    /// protecting this server." (Surveyor class — 9.12.2e: while the
-    /// defining ability is inactive or lost, X is treated as 0.)
-    SelfStrengthPerServerIce { per: i32 },
+    /// "This ice's strength is X" where X is a quantity selector (Surveyor
+    /// class: X = 2 × ice protecting this server). Evaluated through the
+    /// characteristics pipeline; while the defining ability is lost (Hush)
+    /// the 9.12.1d pipeline skips the effect and X is treated as 0
+    /// (9.12.2e).
+    SelfStrength(crate::instr::Quantity),
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).

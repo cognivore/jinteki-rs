@@ -1298,21 +1298,19 @@ impl Vm {
                                 });
                             }
                         }
-                        StaticDecl::SelfStrengthPerServerIce { per } => {
-                            // 9.12.2e: X = per × ice protecting this server;
-                            // while the defining ability is lost (Hush) the
-                            // effect is skipped by the 9.12.1d pipeline and
-                            // X is treated as 0.
+                        StaticDecl::SelfStrength(q) => {
+                            // 9.12.2e: the strength-X selector, evaluated
+                            // continuously through the characteristics
+                            // pipeline; while the defining ability is lost
+                            // (Hush) the 9.12.1d pipeline skips the effect
+                            // and X is treated as 0.
                             cite!("rule_values_defined_by_x");
-                            if let Zone::Ice(s) = o.zone {
-                                let n =
-                                    self.st.ice.get(&s).map(|v| v.len()).unwrap_or(0) as i32;
-                                out.push(CharEffect {
-                                    source: o.id,
-                                    target: o.id,
-                                    op: CharOp::SetStrength(per * n),
-                                });
-                            }
+                            let x = self.eval_quantity(q, Some(o.id));
+                            out.push(CharEffect {
+                                source: o.id,
+                                target: o.id,
+                                op: CharOp::SetStrength(x as i32),
+                            });
                         }
                         _ => {}
                     }
@@ -1432,8 +1430,8 @@ impl Vm {
                 continue;
             }
             for d in &a.statics {
-                if let StaticDecl::GainSubroutinePerHqCard { sub } = d {
-                    let n = self.st.hand[&Side::Corp].len() as u32;
+                if let StaticDecl::GainSubroutines { sub, count } = d {
+                    let n = self.eval_quantity(count, Some(ice)).max(0) as u32;
                     for k in 0..n {
                         out.push((SubKey { category: 4, src: 0, ord: k }, (**sub).clone()));
                     }
@@ -1793,6 +1791,84 @@ impl Vm {
     // Imminence, expected effects, interrupt windows (§9.9)
     // ------------------------------------------------------------------
 
+    /// Evaluate a quantity selector (§12 rule 5) against the current state.
+    /// This is THE evaluation point for calculated quantities (9.12.2):
+    /// callers choose WHEN to evaluate (imminence for effect values, trace
+    /// initiation for X-traces, continuously for characteristics), and the
+    /// selector says WHAT is counted.
+    pub fn eval_quantity(&self, q: &crate::instr::Quantity, source: Option<ObjectId>) -> i64 {
+        use crate::instr::Quantity as Q;
+        cite!("rule_calculated_quantity");
+        match q {
+            Q::Const(n) => *n,
+            Q::Count(f) => self.count_filter(*f, source),
+            Q::CountersOnSource(kind) => {
+                // CR 9.5.5: counters set aside by a [trash] trigger cost
+                // still count as hosted for this ability.
+                cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+                let on_card = source
+                    .and_then(|s| self.st.objects.get(&s))
+                    .map(|o| o.counter(*kind))
+                    .unwrap_or(0);
+                let set_aside: u32 = self
+                    .frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) if Some(af.source.obj) == source => Some(
+                            af.set_aside_counters
+                                .iter()
+                                .filter(|(k, _)| k == kind)
+                                .map(|(_, n)| *n)
+                                .sum::<u32>(),
+                        ),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                (on_card + set_aside) as i64
+            }
+            Q::Plus(a, b) => self.eval_quantity(a, source) + self.eval_quantity(b, source),
+            Q::Times(n, inner) => n * self.eval_quantity(inner, source),
+            Q::XOfSource(inner) => {
+                // CR 9.12.2e: X is defined by an ability of the source; while
+                // that defining ability is inactive (source in Archives —
+                // the ZATO example) or lost, X is treated as 0.
+                cite!("rule_values_defined_by_x");
+                let defined = source.is_some_and(|s| {
+                    self.st.objects.get(&s).is_some_and(|o| {
+                        card_active(o)
+                            && o.printed.abilities.iter().enumerate().any(|(i, a)| {
+                                a.statics.iter().any(|d| {
+                                    matches!(d, StaticDecl::SelfStrength(_))
+                                }) && self.ability_present(s, i)
+                            })
+                    })
+                });
+                if defined {
+                    self.eval_quantity(inner, source)
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
+    /// Count objects matching a filter of the shared filter language,
+    /// relative to `source` where the filter is source-relative.
+    fn count_filter(&self, f: TargetFilter, source: Option<ObjectId>) -> i64 {
+        match f {
+            TargetFilter::IceProtectingSourceServer => source
+                .and_then(|s| self.st.objects.get(&s))
+                .and_then(|o| match o.zone {
+                    Zone::Ice(sv) => Some(self.ice_at(sv).len() as i64),
+                    _ => None,
+                })
+                .unwrap_or(0),
+            TargetFilter::CardsInHandOf(side) => self.st.hand[&side].len() as i64,
+            other => self.filter_candidates(other, Side::Corp).len() as i64,
+        }
+    }
+
     /// CR 9.9.2: compute the initial expected effects of an instruction,
     /// modified by active static abilities.
     pub fn expected_atoms(
@@ -1804,8 +1880,11 @@ impl Vm {
     ) -> Vec<EffectAtom> {
         cite!("rule_expected_effects");
         match instr {
-            Instruction::GainCredits(side, n) => {
-                vec![EffectAtom::new(EffectClass::GainCredits, *n as i64, *side)]
+            Instruction::GainCredits(side, q) => {
+                // 9.12.2b/c: credits are an aggregated class — one atom with
+                // the aggregated value.
+                let n = self.eval_quantity(q, source);
+                vec![EffectAtom::new(EffectClass::GainCredits, n, *side)]
             }
             Instruction::LoseCredits(side, n) => {
                 vec![EffectAtom::new(EffectClass::LoseCredits, *n as i64, *side)]
@@ -1821,7 +1900,7 @@ impl Vm {
             }
             Instruction::DamageUnpreventable { kind, amount, responsible } => {
                 cite!("rule_static_modification_keep_restrictions");
-                let mut v = *amount as i64;
+                let mut v = self.eval_quantity(amount, source);
                 for (_, d) in self.active_statics() {
                     if let StaticDecl::DamageBonus { kind: k, responsible: r, amount: b } = d {
                         if k == *kind && r == *responsible {
@@ -1841,7 +1920,13 @@ impl Vm {
                     cite!("rule_run_ends_condition");
                     return vec![];
                 }
-                let mut v = *amount as i64;
+                // 9.12.2b/c: damage is an aggregated class — a computed
+                // selector ("2 net plus 1 per advancement counter") yields
+                // ONE atom with the aggregated value, so Prāna-class
+                // interrupts apply once.
+                cite!("rule_calculated_quantity");
+                cite!("rule_aggregated_instructions");
+                let mut v = self.eval_quantity(amount, source);
                 // 9.9.2: statics modify expected effects (The Cleaners as a
                 // static formulation).
                 for (_, d) in self.active_statics() {
@@ -1892,33 +1977,6 @@ impl Vm {
             }
             Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 0, controller)]
-            }
-            Instruction::GainCreditsPerCounter { kind, per } => {
-                // CR 9.5.5: set-aside counters still count as hosted for
-                // this ability. 9.12.2b/c: credits aggregate into ONE atom.
-                cite!("rule_trash_ability_keeps_track_of_hosted_objects");
-                cite!("rule_calculated_quantity");
-                let on_card = source
-                    .and_then(|s| self.st.objects.get(&s))
-                    .map(|o| o.counter(*kind))
-                    .unwrap_or(0);
-                let set_aside: u32 = self
-                    .frames
-                    .iter()
-                    .rev()
-                    .find_map(|f| match f {
-                        Frame::Ability(af) => Some(
-                            af.set_aside_counters
-                                .iter()
-                                .filter(|(k, _)| k == kind)
-                                .map(|(_, n)| *n)
-                                .sum::<u32>(),
-                        ),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-                let total = (on_card + set_aside) as i64 * *per as i64;
-                vec![EffectAtom::new(EffectClass::GainCredits, total, controller)]
             }
             Instruction::MoveSetAsideCounters { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
@@ -1987,31 +2045,6 @@ impl Vm {
             | Instruction::ReduceRunnerMemoryThisTurn(_)
             | Instruction::ChooseOne { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
-            }
-            Instruction::DamagePerCounter { kind, base, per, counter, responsible } => {
-                if self.damage_shield_active() {
-                    cite!("rule_run_ends_condition");
-                    return vec![];
-                }
-                // 9.12.2b/c: damage is an aggregated class — one instance
-                // with the aggregated value ("2 net plus 1 per advancement"
-                // = a single 5-damage atom; Prāna-class interrupts apply
-                // once).
-                cite!("rule_calculated_quantity");
-                cite!("rule_aggregated_instructions");
-                let n = source
-                    .and_then(|s| self.st.objects.get(&s))
-                    .map(|o| o.counter(*counter))
-                    .unwrap_or(0);
-                let mut v = (*base + *per * n) as i64;
-                for (_, d) in self.active_statics() {
-                    if let StaticDecl::DamageBonus { kind: k, responsible: r, amount: b } = d {
-                        if k == *kind && r == *responsible {
-                            v += b;
-                        }
-                    }
-                }
-                vec![EffectAtom::new(EffectClass::Damage(*kind), v, Side::Runner)]
             }
             Instruction::GainAllottedClicks(side) => {
                 let n = self.st.player(*side).allotted_clicks as i64;
@@ -2615,65 +2648,24 @@ impl Vm {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                     af.instructions[idx].clone()
                 };
-                // 9.12.2e: an X-based trace evaluates X when the trace
-                // initiates; if the ability defining X is inactive (source
-                // in Archives — ZATO example) or lost, X = 0.
-                if let Instruction::TraceSurveyorX { per, if_successful, if_unsuccessful } = &instr
-                {
-                    cite!("rule_values_defined_by_x");
-                    let (per, isucc, iunsucc) =
-                        (*per, if_successful.clone(), if_unsuccessful.clone());
-                    let src = {
-                        let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
-                        af.source.obj
-                    };
-                    let x = match self.st.objects.get(&src) {
-                        Some(o) if crate::object::card_active(o) => match o.zone {
-                            Zone::Ice(s) => {
-                                let present = o
-                                    .printed
-                                    .abilities
-                                    .iter()
-                                    .enumerate()
-                                    .any(|(i, a)| {
-                                        a.statics.iter().any(|d| {
-                                            matches!(
-                                                d,
-                                                StaticDecl::SelfStrengthPerServerIce { .. }
-                                            )
-                                        }) && self.ability_present(src, i)
-                                    });
-                                if present {
-                                    per * self.ice_at(s).len() as i64
-                                } else {
-                                    0
-                                }
-                            }
-                            _ => 0,
-                        },
-                        _ => 0,
-                    };
-                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-                        af.instructions[af.idx] = Instruction::Trace {
-                            base: x,
-                            if_successful: isucc,
-                            if_unsuccessful: iunsucc,
-                            determined_min: None,
-                        };
-                    }
-                    return; // re-enter Targets with the concrete trace
-                }
                 // 10.8.6: a Trace instruction expands into the step sequence
                 // of resolving a trace attempt (a procedure, not a timing
                 // structure — 9.2.2e; its checkpoints come from 10.8.6b and
-                // the cost payments in (c)/(d)).
+                // the cost payments in (c)/(d)). The base quantity selector
+                // is evaluated HERE, when the trace initiates (9.12.2e:
+                // X-based traces read X at initiation; an orphaned XOfSource
+                // selector yields 0 — the ZATO example).
                 if let Instruction::Trace { base, if_successful, if_unsuccessful, determined_min } =
                     &instr
                 {
                     cite!("rule_steps_of_resolving_trace_attempt");
                     cite!("rule_not_timing_structures");
+                    let src = {
+                        let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+                        af.source.obj
+                    };
                     let (b, isucc, iunsucc, dmin) = (
-                        *base,
+                        self.eval_quantity(base, Some(src)),
                         if_successful.clone(),
                         if_unsuccessful.clone(),
                         determined_min.clone(),
@@ -3019,6 +3011,9 @@ impl Vm {
                 TargetFilter::InstalledResource => {
                     o.zone == Zone::Rig && o.printed.card_type == CardType::Resource
                 }
+                // Counting-only filters (Quantity::Count) never enumerate
+                // announce-time candidates.
+                TargetFilter::IceProtectingSourceServer | TargetFilter::CardsInHandOf(_) => false,
             })
             .map(|o| o.id)
             .collect()
@@ -3533,13 +3528,6 @@ impl Vm {
                 // choice ended this instruction; the appropriate branch was
                 // injected as the next instruction.
             }
-            Instruction::GainCreditsPerCounter { .. } => {
-                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
-                    let n = a.value.max(0) as u32;
-                    self.st.player_mut(controller).credits += n;
-                    self.changes.record(GameChange::CreditsGained { side: controller, amount: n });
-                }
-            }
             Instruction::MoveSetAsideCounters { kind, target } => {
                 // CR 9.5.5 (Reconstruction Contract): move the set-aside
                 // counters to the chosen target.
@@ -3819,13 +3807,6 @@ impl Vm {
                     duration: Duration::Turn(self.st.turn_seq),
                     applied_to: Vec::new(),
                 });
-            }
-            Instruction::DamagePerCounter { responsible, .. } => {
-                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
-                    if let EffectClass::Damage(kind) = a.class {
-                        self.do_damage(kind, a.value as u32, *responsible);
-                    }
-                }
             }
             Instruction::ChooseOne { .. } => {
                 // Handled at answer time (the choice ends the instruction;

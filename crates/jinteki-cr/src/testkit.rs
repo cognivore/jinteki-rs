@@ -9,7 +9,7 @@ use crate::ability::{
 };
 use crate::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption, Yield};
 use crate::effects::DamageKind;
-use crate::instr::{Instruction, TargetSpec};
+use crate::instr::{Instruction, Quantity, TargetSpec};
 use crate::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
 use crate::vm::Vm;
 
@@ -150,7 +150,7 @@ pub fn hostile_infra_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 5);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunnerTrashesCorpCard,
-        vec![Instruction::Damage { kind: DamageKind::Net, amount: 1, responsible: Side::Corp }],
+        vec![Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(1), responsible: Side::Corp }],
         false,
     )
     .labeled("hostile-infra: 1 net per trash")];
@@ -163,7 +163,7 @@ pub fn warroid_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 5);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunnerTrashesAtLeastOneCorpCard,
-        vec![Instruction::GainCredits(Side::Corp, 1)],
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
     .labeled("warroid: once per trash-event")];
@@ -181,7 +181,7 @@ pub fn aesops_like(name: &'static str) -> PrintedCard {
                 count: 1,
                 filter: crate::instr::TargetFilter::InstalledResource,
             }),
-            Instruction::GainCredits(Side::Runner, 3),
+            Instruction::GainCredits(Side::Runner, Quantity::c(3)),
         ],
         true,
     )
@@ -209,7 +209,7 @@ pub fn snare_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::SelfAccessed,
         vec![Instruction::Combined(vec![
-            Instruction::Damage { kind: DamageKind::Net, amount: 3, responsible: Side::Corp },
+            Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(3), responsible: Side::Corp },
             Instruction::GainTags(1),
         ])],
         false,
@@ -282,7 +282,7 @@ pub fn mr_stone_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunnerTakesTag,
-        vec![Instruction::Damage { kind: DamageKind::Meat, amount: 1, responsible: Side::Corp }],
+        vec![Instruction::Damage { kind: DamageKind::Meat, amount: Quantity::c(1), responsible: Side::Corp }],
         false,
     )
     .labeled("mr-stone: 1 meat per tag")];
@@ -302,7 +302,11 @@ pub fn meat_damage_button(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
-        vec![Instruction::Damage { kind: DamageKind::Meat, amount: n, responsible: Side::Corp }],
+        vec![Instruction::Damage {
+            kind: DamageKind::Meat,
+            amount: Quantity::c(n as i64),
+            responsible: Side::Corp,
+        }],
     )
     .labeled("do meat damage")];
     c
@@ -316,7 +320,7 @@ pub fn breached_dome_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::SelfAccessed,
         vec![Instruction::Combined(vec![
-            Instruction::Damage { kind: DamageKind::Net, amount: 1, responsible: Side::Corp },
+            Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(1), responsible: Side::Corp },
             Instruction::TrashCards(TargetSpec::TopOfDeck(Side::Runner, 1)),
         ])],
         false,
@@ -330,7 +334,11 @@ pub fn net_damage_button(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
-        vec![Instruction::Damage { kind: DamageKind::Net, amount: n, responsible: Side::Corp }],
+        vec![Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(n as i64),
+            responsible: Side::Corp,
+        }],
     )
     .labeled("do net damage")];
     c
@@ -361,7 +369,7 @@ pub fn tori_like(name: &'static str) -> PrintedCard {
             first_each_run: true,
         })),
         cost: None,
-        instructions: vec![Instruction::GainCredits(Side::Corp, 1)],
+        instructions: vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         statics: Vec::new(),
         optional: true,
         timing: None,
@@ -529,7 +537,7 @@ pub fn built_to_last_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::AdvancesCard { had_no_advancement: true },
-        vec![Instruction::GainCredits(Side::Corp, 2)],
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(2))],
         false,
     )
     .labeled("btl: gain 2 on fresh advance")];
@@ -571,7 +579,7 @@ pub fn clone_chip_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Hardware);
     c.abilities = vec![AbilityDef::paid(
         Cost::trash_self(),
-        vec![Instruction::GainCredits(Side::Runner, 1)],
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
     )
     .labeled("clone-chip: [trash] for value")];
     c
@@ -597,7 +605,7 @@ pub fn zer0_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Hardware);
     c.abilities = vec![AbilityDef::paid(
         Cost::net_damage(1),
-        vec![Instruction::GainCredits(Side::Runner, 1)],
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
     )
     .with_flag(AbilityFlag::OncePerTurn)
     .labeled("zer0: damage-cost value")];
@@ -641,7 +649,10 @@ pub fn fermenter_like(name: &'static str) -> PrintedCard {
     c.memory_cost = Some(1);
     c.abilities = vec![AbilityDef::paid(
         Cost::trash_self(),
-        vec![Instruction::GainCreditsPerCounter { kind: CounterKind::Virus, per: 2 }],
+        vec![Instruction::GainCredits(
+            Side::Runner,
+            Quantity::Times(2, Box::new(Quantity::CountersOnSource(CounterKind::Virus))),
+        )],
     )
     .labeled("fermenter: cash out virus counters")];
     c
@@ -680,7 +691,7 @@ pub fn arruaceiras_like(name: &'static str) -> PrintedCard {
 pub fn wotan_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Agenda);
     c.agenda_points = Some(1);
-    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Corp, 1)])
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))])
         .with_timing(TimingRestriction::ApproachOnly {
             required_subtype: Some("bioroid"),
             rezzed: true,
@@ -694,7 +705,7 @@ pub fn little_engine_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 6, 4);
     c.abilities = vec![
         AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
-        AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Runner, 5)])
+        AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Runner, Quantity::c(5))])
             .labeled("[sub] Runner gains 5"),
     ];
     c
@@ -736,7 +747,7 @@ pub fn sol_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunnerSuffersDamage,
-        vec![Instruction::GainCredits(Side::Runner, 1)],
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
     .labeled("sol: gain 1 on damage")];
@@ -749,7 +760,7 @@ pub fn process_automation_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
         vec![Instruction::Combined(vec![
-            Instruction::GainCredits(Side::Runner, 2),
+            Instruction::GainCredits(Side::Runner, Quantity::c(2)),
             Instruction::Draw(Side::Runner, 1),
         ])],
     )
@@ -775,7 +786,7 @@ pub fn class_act_like(name: &'static str) -> PrintedCard {
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldDraw { first_each_turn: true })),
         cost: None,
-        instructions: vec![Instruction::GainCredits(Side::Runner, 1)],
+        instructions: vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         statics: Vec::new(),
         optional: true,
         timing: None,
@@ -794,7 +805,7 @@ pub fn harbinger_like(name: &'static str) -> PrintedCard {
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::SelfWouldBeTrashed)),
         cost: None,
-        instructions: vec![Instruction::GainCredits(Side::Runner, 1)],
+        instructions: vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         statics: Vec::new(),
         optional: true,
         timing: None,
@@ -821,7 +832,7 @@ pub fn flare_like(name: &'static str) -> PrintedCard {
         Cost::free(),
         vec![Instruction::DamageUnpreventable {
             kind: DamageKind::Meat,
-            amount: 2,
+            amount: Quantity::c(2),
             responsible: Side::Corp,
         }],
     )
@@ -891,10 +902,10 @@ pub fn gemini_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
         vec![Instruction::Trace {
-            base: 3,
+            base: Quantity::c(3),
             if_successful: vec![Instruction::Damage {
                 kind: DamageKind::Net,
-                amount: 1,
+                amount: Quantity::c(1),
                 responsible: Side::Corp,
             }],
             if_unsuccessful: vec![],
@@ -902,7 +913,7 @@ pub fn gemini_like(name: &'static str) -> PrintedCard {
                 5,
                 vec![Instruction::Damage {
                     kind: DamageKind::Net,
-                    amount: 1,
+                    amount: Quantity::c(1),
                     responsible: Side::Corp,
                 }],
             )),
@@ -919,7 +930,7 @@ pub fn psi_button(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
         vec![Instruction::PsiGame {
-            on_match: vec![Instruction::GainCredits(Side::Corp, 1)],
+            on_match: vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
             on_differ: vec![Instruction::GainTags(1)],
         }],
     )
@@ -949,8 +960,9 @@ pub fn rsvp_like(name: &'static str) -> PrintedCard {
 /// HQ." (category 9.8.3d).
 pub fn ashigaru_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 9, 4);
-    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GainSubroutinePerHqCard {
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GainSubroutines {
         sub: Box::new(AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] ETR")),
+        count: Quantity::Count(crate::instr::TargetFilter::CardsInHandOf(Side::Corp)),
     }])
     .labeled("ashigaru: sub per HQ card")];
     c
@@ -992,7 +1004,7 @@ pub fn brainstorm_like(name: &'static str) -> PrintedCard {
             sub: Box::new(
                 AbilityDef::subroutine(vec![Instruction::Damage {
                     kind: DamageKind::Core,
-                    amount: 1,
+                    amount: Quantity::c(1),
                     responsible: Side::Corp,
                 }])
                 .labeled("[sub] 1 core"),
@@ -1058,7 +1070,7 @@ pub fn ash_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::ThisServerBreached,
         vec![Instruction::Trace {
-            base: 4,
+            base: Quantity::c(4),
             if_successful: vec![Instruction::RestrictAccessToSelf],
             if_unsuccessful: vec![],
             determined_min: None,
@@ -1075,7 +1087,7 @@ pub fn zahya_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunEnds { successful_only: false },
-        vec![Instruction::DeclineableChoice(Box::new(Instruction::GainCredits(Side::Runner, 1)))],
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::GainCredits(Side::Runner, Quantity::c(1))))],
         true,
     )
     .with_flag(AbilityFlag::OncePerTurn)
@@ -1126,7 +1138,7 @@ pub fn groove_button(name: &'static str) -> PrintedCard {
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(AbilityDef::conditional(
                 TriggerCond::RunnerTakesTag,
-                vec![Instruction::GainCredits(Side::Runner, 1)],
+                vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
                 false,
             )
             .labeled("groove-delayed: gain 1 per tag")),
@@ -1146,7 +1158,7 @@ pub fn joshua_button(name: &'static str) -> PrintedCard {
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(AbilityDef::conditional(
                 TriggerCond::TurnEnds(Side::Runner),
-                vec![Instruction::GainCredits(Side::Runner, 1)],
+                vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
                 false,
             )
             .labeled("joshua-delayed: gain 1 at turn end")),
@@ -1194,11 +1206,9 @@ pub fn urtica_like(name: &'static str) -> PrintedCard {
     c.trash_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::SelfAccessed,
-        vec![Instruction::DamagePerCounter {
+        vec![Instruction::Damage {
             kind: DamageKind::Net,
-            base: 2,
-            per: 1,
-            counter: CounterKind::Advancement,
+            amount: Quantity::base_plus_per_counter(2, 1, CounterKind::Advancement),
             responsible: Side::Corp,
         }],
         false,
@@ -1388,7 +1398,7 @@ pub fn nico_like(name: &'static str, rez: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, rez, 3);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::TurnBegins(Side::Corp),
-        vec![Instruction::GainCredits(Side::Corp, 1)],
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
     .labeled("nico: gain 1 when turn begins")];
@@ -1423,7 +1433,7 @@ pub fn thg_like(name: &'static str, rez: u32) -> PrintedCard {
     let mut c = vanilla_upgrade(name, rez);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::CardInstalledInSourceServer,
-        vec![Instruction::GainCredits(Side::Corp, 1)],
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
     .labeled("thg: gain 1 per install here")];
@@ -1571,7 +1581,7 @@ pub fn qpm_with_casting_call(name: &'static str) -> PrintedCard {
     c.abilities = vec![
         AbilityDef::conditional(
             TriggerCond::SelfAccessedIfRunnerTagged,
-            vec![Instruction::GainCredits(Side::Corp, 1)],
+            vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
             false,
         )
         .labeled("qpm: if tagged when accessed"),
@@ -1620,7 +1630,7 @@ pub fn underworld_contact_like(name: &'static str) -> PrintedCard {
         TriggerCond::TurnBegins(Side::Runner),
         vec![Instruction::IfRunnerLinkAtLeast {
             n: 2,
-            then: Box::new(Instruction::GainCredits(Side::Runner, 1)),
+            then: Box::new(Instruction::GainCredits(Side::Runner, Quantity::c(1))),
         }],
         false,
     )
@@ -1677,7 +1687,7 @@ pub fn drt_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunEnds { successful_only: false },
-        vec![Instruction::Damage { kind: DamageKind::Meat, amount: 2, responsible: Side::Corp }],
+        vec![Instruction::Damage { kind: DamageKind::Meat, amount: Quantity::c(2), responsible: Side::Corp }],
         false,
     )
     .labeled("drt: 2 meat when the run ends")];
@@ -1696,7 +1706,7 @@ pub fn inject_chum_delayed(vm: &mut Vm, source: ObjectId) {
                 TriggerCond::EncounterEnds,
                 vec![Instruction::Damage {
                     kind: DamageKind::Net,
-                    amount: 3,
+                    amount: Quantity::c(3),
                     responsible: Side::Corp,
                 }],
                 false,
@@ -1859,13 +1869,18 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Ice);
     c.cost = Some(4);
     c.strength = Some(0);
+    let x = Quantity::Times(
+        2,
+        Box::new(Quantity::Count(crate::instr::TargetFilter::IceProtectingSourceServer)),
+    );
     c.abilities = vec![
-        AbilityDef::static_ability(vec![StaticDecl::SelfStrengthPerServerIce { per: 2 }])
+        AbilityDef::static_ability(vec![StaticDecl::SelfStrength(x.clone())])
             .labeled("surveyor: strength X"),
-        AbilityDef::subroutine(vec![Instruction::TraceSurveyorX {
-            per: 2,
+        AbilityDef::subroutine(vec![Instruction::Trace {
+            base: Quantity::XOfSource(Box::new(x)),
             if_successful: vec![Instruction::GainTags(1)],
             if_unsuccessful: vec![],
+            determined_min: None,
         }])
         .labeled("[sub] trace X"),
     ];

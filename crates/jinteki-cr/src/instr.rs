@@ -8,19 +8,65 @@
 use crate::effects::DamageKind;
 use crate::object::{ObjectId, ServerId, Side};
 
+/// The ONE selector language for quantity positions (ARCHITECTURE §12
+/// rule 5): a pure data expression evaluated against world state, returning
+/// an integer. Calculated quantities (9.12.2) are these expressions; their
+/// dependencies are readable from the expression itself, which is what lets
+/// the characteristics pipeline (9.12.1) and calculated-quantity timing
+/// (9.12.2) re-evaluate them reactively. Never a closure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Quantity {
+    /// A printed constant.
+    Const(i64),
+    /// "…for each <object matching the filter>" — the count of matching
+    /// objects (9.12.2a).
+    Count(TargetFilter),
+    /// "…for each <kind> counter hosted on this card" — counts hosted
+    /// counters INCLUDING those set aside by a [trash] trigger cost (9.5.5).
+    CountersOnSource(crate::object::CounterKind),
+    /// Sum of two quantities ("2 plus 1 for each …").
+    Plus(Box<Quantity>, Box<Quantity>),
+    /// Scale ("N for each …").
+    Times(i64, Box<Quantity>),
+    /// CR 9.12.2e: a value defined by X, where the ability defining X lives
+    /// on the source (the Surveyor class shares one X between a strength
+    /// definition and a trace). While the defining ability is inactive or
+    /// lost, X is treated as 0.
+    XOfSource(Box<Quantity>),
+}
+
+impl Quantity {
+    /// Shorthand for a printed constant.
+    pub fn c(n: i64) -> Quantity {
+        Quantity::Const(n)
+    }
+    /// "base plus per × (counters of `kind` on this card)" — the common
+    /// calculated-quantity shape (9.12.2b, Urtica/Fermenter classes).
+    pub fn base_plus_per_counter(base: i64, per: i64, kind: crate::object::CounterKind) -> Quantity {
+        Quantity::Plus(
+            Box::new(Quantity::Const(base)),
+            Box::new(Quantity::Times(per, Box::new(Quantity::CountersOnSource(kind)))),
+        )
+    }
+}
+
 /// A single instruction: the atomic unit of ability resolution (9.3.4c).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     // ---- card-text vocabulary -------------------------------------------
-    /// "Gain N credits."
-    GainCredits(Side, u32),
+    /// "Gain N credits." — N is a quantity position (9.12.2: "…for each" is
+    /// the same instruction with a computed selector).
+    GainCredits(Side, Quantity),
     /// "Lose N credits." (loses as much as possible if short)
     LoseCredits(Side, u32),
     /// "Draw N cards."
     Draw(Side, u32),
     /// "Do N <kind> damage." / "Suffer N <kind> damage."
-    /// `responsible` per 10.4.1 (Corp "does", Runner "suffers").
-    Damage { kind: DamageKind, amount: u32, responsible: Side },
+    /// `responsible` per 10.4.1 (Corp "does", Runner "suffers"). The amount
+    /// is a quantity position: "2 net plus 1 per advancement counter" is one
+    /// instruction whose selector aggregates into a single instance
+    /// (9.12.2b/c, Urtica class).
+    Damage { kind: DamageKind, amount: Quantity, responsible: Side },
     /// "Take N tags." (the Runner)
     GainTags(u32),
     /// "Trash <targets>." — one effect acting on the whole set (9.12.2a).
@@ -46,9 +92,6 @@ pub enum Instruction {
         effect: Box<Instruction>,
         payer: Option<crate::object::Side>,
     },
-    /// "Gain N[c] for each <counter> hosted on this card" — counts hosted
-    /// counters INCLUDING those set aside by a [trash] trigger cost (9.5.5).
-    GainCreditsPerCounter { kind: crate::object::CounterKind, per: u32 },
     /// "Move the (set-aside) hosted counters to <target>" (Reconstruction
     /// Contract class, 9.5.5).
     MoveSetAsideCounters { kind: crate::object::CounterKind, target: TargetSpec },
@@ -68,7 +111,7 @@ pub enum Instruction {
     PreventTrashOf(ObjectId),
     /// "Do N <kind> damage. This damage cannot be prevented." (Flare class;
     /// 9.3.3g/9.4.5: the restriction rides the value.)
-    DamageUnpreventable { kind: DamageKind, amount: u32, responsible: Side },
+    DamageUnpreventable { kind: DamageKind, amount: Quantity, responsible: Side },
     /// Interrupt-effect: replace the imminent damage's type (Tori Hanzō
     /// class; 9.9.10: applies immediately when the interrupt resolves).
     ReplaceImminentDamageKind { to: DamageKind },
@@ -76,9 +119,14 @@ pub enum Instruction {
     /// a nested run timing structure.
     InitiateRun(ServerId),
     /// "Trace [N] — if successful, …; if unsuccessful, …" (10.8). Expanded
-    /// by the resolution loop into the 10.8.6 step sequence.
+    /// by the resolution loop into the 10.8.6 step sequence. The base is a
+    /// quantity position: Trace[3] is a constant selector; "Trace[X], X = 2
+    /// per ice protecting this server" (Surveyor class) is
+    /// `XOfSource(Times(2, Count(IceProtectingSourceServer)))` — evaluated
+    /// when the trace initiates (9.12.2e), 0 if the defining ability is
+    /// inactive or lost.
     Trace {
-        base: i64,
+        base: Quantity,
         if_successful: Vec<Instruction>,
         if_unsuccessful: Vec<Instruction>,
         /// "When the trace is determined…, if your trace strength is N or
@@ -118,16 +166,6 @@ pub enum Instruction {
     },
     /// "The Runner loses N memory units until end of turn." (Bad Times.)
     ReduceRunnerMemoryThisTurn(u32),
-    /// "Do <base> + <per> × (counters on this card) <kind> damage." —
-    /// a calculated quantity aggregating into ONE instance (9.12.2b/c,
-    /// Urtica Cipher class).
-    DamagePerCounter {
-        kind: DamageKind,
-        base: u32,
-        per: u32,
-        counter: crate::object::CounterKind,
-        responsible: Side,
-    },
     /// CR 9.11.4g / 9.12.3c-d: choose one of several optioned effects; the
     /// choice ends an instruction and must select a fully-resolvable option
     /// if any exists; the chosen effect is then separately interruptible.
@@ -223,14 +261,6 @@ pub enum Instruction {
     CorpRearrangesRnd,
     /// "Add a card from Archives to the top of R&D." (Seidr class.)
     MoveToTopOfRnd { card: TargetSpec },
-    /// "Trace[X] — X = `per` × ice protecting this server" (Surveyor class,
-    /// 9.12.2e): evaluated when the trace initiates; if the ability defining
-    /// X is inactive or lost, X is treated as 0 (ZATO City Grid example).
-    TraceSurveyorX {
-        per: i64,
-        if_successful: Vec<Instruction>,
-        if_unsuccessful: Vec<Instruction>,
-    },
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.
@@ -326,12 +356,19 @@ pub enum TargetSpec {
     TopOfDeck(Side, u32),
 }
 
-/// Announce-time target filters (kernel-wave subset).
+/// The shared object-filter language: announce-time target filters, and the
+/// counting filters `Quantity::Count` evaluates (§12 rule 5 — one filter
+/// vocabulary for choosing and for counting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetFilter {
     InstalledCorpCard,
     InstalledRunnerCard,
     InstalledResource,
+    /// Ice protecting the server the source is protecting (Surveyor-class
+    /// counting; empty when the source is not protecting a server).
+    IceProtectingSourceServer,
+    /// Cards in a player's hand (Ashigaru-class counting).
+    CardsInHandOf(Side),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

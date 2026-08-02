@@ -8,6 +8,7 @@
 use jinteki_cr::change::GameChange;
 use jinteki_cr::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption, Yield};
 use jinteki_cr::effects::DamageKind;
+use jinteki_cr::instr::Quantity;
 use jinteki_cr::object::{CounterKind, ServerId, Side, Zone};
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::Vm;
@@ -3359,12 +3360,12 @@ fn example_step_checkpoint_card_entering_root_during_breach_1() {
 fn example_rule_playing_one_at_a_time_1() {
     let mut vm = Vm::empty(331);
     let hf = vm.new_object(
-        tk::operation("HedgeFund-like", 1, vec![jinteki_cr::instr::Instruction::GainCredits(Side::Corp, 4)]),
+        tk::operation("HedgeFund-like", 1, vec![jinteki_cr::instr::Instruction::GainCredits(Side::Corp, Quantity::c(4))]),
         Zone::Hand(Side::Corp),
     );
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(hf);
     let second = vm.new_object(
-        tk::operation("Second-Op", 3, vec![jinteki_cr::instr::Instruction::GainCredits(Side::Corp, 1)]),
+        tk::operation("Second-Op", 3, vec![jinteki_cr::instr::Instruction::GainCredits(Side::Corp, Quantity::c(1))]),
         Zone::Hand(Side::Corp),
     );
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(second);
@@ -3423,7 +3424,7 @@ fn example_rule_playing_lingering_effects_1() {
                 jinteki_cr::instr::Instruction::CreateDelayedConditional {
                     def: Box::new(jinteki_cr::ability::AbilityDef::conditional(
                         jinteki_cr::ability::TriggerCond::TurnEnds(Side::Runner),
-                        vec![jinteki_cr::instr::Instruction::GainCredits(Side::Runner, 1)],
+                        vec![jinteki_cr::instr::Instruction::GainCredits(Side::Runner, Quantity::c(1))],
                         false,
                     )
                     .labeled("testrun-delayed: at end of turn")),
@@ -3465,7 +3466,7 @@ fn example_rule_play_no_trash_left_play_area_1() {
             "Ashen-like",
             0,
             vec![
-                jinteki_cr::instr::Instruction::GainCredits(Side::Runner, 1),
+                jinteki_cr::instr::Instruction::GainCredits(Side::Runner, Quantity::c(1)),
                 jinteki_cr::instr::Instruction::RemoveSelfFromGame,
             ],
         ),
@@ -4215,10 +4216,16 @@ fn example_rule_values_defined_by_x_1() {
         jinteki_cr::frames::ResolutionKind::Subroutine,
         jinteki_cr::ability::AbilityRef { obj: surveyor, index: 1 },
         Side::Corp,
-        vec![jinteki_cr::instr::Instruction::TraceSurveyorX {
-            per: 2,
+        vec![jinteki_cr::instr::Instruction::Trace {
+            base: Quantity::XOfSource(Box::new(Quantity::Times(
+                2,
+                Box::new(Quantity::Count(
+                    jinteki_cr::instr::TargetFilter::IceProtectingSourceServer,
+                )),
+            ))),
             if_successful: vec![jinteki_cr::instr::Instruction::GainTags(1)],
             if_unsuccessful: vec![],
+            determined_min: None,
         }],
         None,
         Some(0),
