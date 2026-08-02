@@ -74,11 +74,21 @@ impl PlayerState {
 pub struct EncounterState {
     pub id: u64,
     pub ice: ObjectId,
-    /// CR 9.8.4: per-encounter broken/unbroken status, parallel to the
-    /// ice's subroutine list.
-    pub broken: Vec<bool>,
-    /// Next subroutine index to consider at `step_resolve_subroutine`.
-    pub cursor: usize,
+    /// CR 9.8.4: per-encounter broken status, keyed by stable subroutine
+    /// identity so gains/losses mid-encounter preserve statuses.
+    pub broken: std::collections::BTreeSet<SubKey>,
+    /// Subroutines already resolved this encounter (6.9.3c loop).
+    pub resolved: std::collections::BTreeSet<SubKey>,
+}
+
+/// Stable identity of one subroutine on a piece of ice: (category rank per
+/// 9.8.2/9.8.3, source key, ordinal within that source). Category-d counts
+/// shrink last-first (9.8.3d), which is exactly highest-ordinal-first here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SubKey {
+    pub category: u8,
+    pub src: u64,
+    pub ord: u32,
 }
 
 /// The pure game state (cloneable for the 9.6.6a snapshot).
@@ -422,6 +432,12 @@ impl Vm {
         id
     }
 
+    pub fn next_lingering_id(&mut self) -> u64 {
+        let id = self.next_lingering;
+        self.next_lingering += 1;
+        id
+    }
+
     /// 10.3.1e: multiple appropriate sets — the choice is a Decision.
     pub fn suspend_for_minimal_set(&mut self, chooser: Side, sets: Vec<Vec<ObjectId>>) {
         self.last_minimal_sets = Some(sets.clone());
@@ -676,7 +692,7 @@ impl Vm {
             }
             BranchPred::CandidatesRemain => self
                 .breach_ctx()
-                .map(|b| !b.candidates.is_empty())
+                .map(|b| !self.restrict_candidates(b.candidates.clone()).is_empty())
                 .unwrap_or(false),
         }
     }
@@ -1181,12 +1197,11 @@ impl Vm {
         cite!("rule_subroutines_initial_status_in_encounter");
         let id = self.next_encounter;
         self.next_encounter += 1;
-        let n_subs = self.subroutines_of(ice).len();
         self.st.encounter = Some(EncounterState {
             id,
             ice,
-            broken: vec![false; n_subs],
-            cursor: 0,
+            broken: std::collections::BTreeSet::new(),
+            resolved: std::collections::BTreeSet::new(),
         });
         self.changes.record(GameChange::EncounterBegan { ice, encounter_id: id });
     }
@@ -1200,48 +1215,107 @@ impl Vm {
         }
     }
 
-    /// Ability indexes of the subroutines on a piece of ice, in order
-    /// (9.8.2; kernel wave: printed order, category (c)).
-    pub fn subroutines_of(&self, ice: ObjectId) -> Vec<usize> {
-        cite!("rule_subroutine_origin_printed");
-        self.st.objects[&ice]
-            .printed
-            .abilities
+    /// The ordered subroutine list of a piece of ice (9.8.2), computed from
+    /// the 9.8.3 origin categories:
+    /// (a) external "before" grants, newest first; (b) self-static "before"
+    /// (none in the vocabulary yet); (c) printed, in printed order;
+    /// (d) self-static "after"/unspecified (count-linked, lose last-first);
+    /// (e) external "after"/unspecified grants, oldest first.
+    pub fn current_subs(&self, ice: ObjectId) -> Vec<(SubKey, AbilityDef)> {
+        cite!("rule_subroutines_ordered");
+        let mut out: Vec<(SubKey, AbilityDef)> = Vec::new();
+        // (a) external before, newest first (9.8.3a).
+        cite!("rule_subroutine_origin_external_before");
+        let mut befores: Vec<(u64, AbilityDef)> = self
+            .lingering
             .iter()
-            .enumerate()
-            .filter(|(_, a)| a.kind == AbilityKind::Subroutine)
-            .map(|(i, _)| i)
-            .collect()
+            .filter_map(|l| match &l.payload {
+                Payload::GrantedSubroutine { to, sub, before: true, seq } if *to == ice => {
+                    Some((*seq, sub.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        befores.sort_by(|x, y| y.0.cmp(&x.0));
+        for (seq, def) in befores {
+            out.push((SubKey { category: 1, src: seq, ord: 0 }, def));
+        }
+        // (c) printed, in printed order (9.8.3c), honoring 9.1.9 losses.
+        cite!("rule_subroutine_origin_printed");
+        for (i, a) in self.st.objects[&ice].printed.abilities.iter().enumerate() {
+            if a.kind == AbilityKind::Subroutine && self.ability_present(ice, i) {
+                out.push((SubKey { category: 3, src: 0, ord: i as u32 }, a.clone()));
+            }
+        }
+        // (d) self-static count-linked (9.8.3d): Ashigaru class.
+        cite!("rule_subroutine_origin_static_after");
+        for a in &self.st.objects[&ice].printed.abilities {
+            if a.kind != AbilityKind::Static {
+                continue;
+            }
+            if !crate::object::card_active(&self.st.objects[&ice]) {
+                continue;
+            }
+            for d in &a.statics {
+                if let StaticDecl::GainSubroutinePerHqCard { sub } = d {
+                    let n = self.st.hand[&Side::Corp].len() as u32;
+                    for k in 0..n {
+                        out.push((SubKey { category: 4, src: 0, ord: k }, (**sub).clone()));
+                    }
+                }
+            }
+        }
+        // (e) external after/unspecified, oldest first (9.8.3e).
+        cite!("rule_subroutine_origin_external_after");
+        let mut afters: Vec<(u64, AbilityDef)> = self
+            .lingering
+            .iter()
+            .filter_map(|l| match &l.payload {
+                Payload::GrantedSubroutine { to, sub, before: false, seq } if *to == ice => {
+                    Some((*seq, sub.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        afters.sort_by(|x, y| x.0.cmp(&y.0));
+        for (seq, def) in afters {
+            out.push((SubKey { category: 5, src: seq, ord: 0 }, def));
+        }
+        out
     }
 
-    fn next_unbroken_sub(&self) -> Option<usize> {
+    /// The next unbroken, unresolved subroutine in order (6.9.3c).
+    fn next_unbroken_sub(&self) -> Option<(SubKey, AbilityDef, usize)> {
         let e = self.st.encounter.as_ref()?;
-        e.broken.iter().enumerate().skip(e.cursor).find(|(_, b)| !**b).map(|(i, _)| i)
+        // 9.8.4b: newly gained subroutines arrive unbroken.
+        cite!("rule_new_subroutines_during_encounter");
+        self.current_subs(e.ice)
+            .into_iter()
+            .enumerate()
+            .find(|(_, (k, _))| !e.broken.contains(k) && !e.resolved.contains(k))
+            .map(|(pos, (k, d))| (k, d, pos))
     }
 
     fn resolve_next_subroutine_body(&mut self) {
         cite!("rule_resolve_subroutines_mandatory");
         cite!("rule_resolve_subroutines_in_order");
-        let Some(sub_pos) = self.next_unbroken_sub() else {
+        let Some((key, def, pos)) = self.next_unbroken_sub() else {
             self.set_structure_phase(StepPhase::Checkpoint);
             return;
         };
-        let (ice, ability_index) = {
-            let e = self.st.encounter.as_ref().unwrap();
-            (e.ice, self.subroutines_of(e.ice)[sub_pos])
-        };
+        let ice = self.st.encounter.as_ref().unwrap().ice;
         if let Some(e) = self.st.encounter.as_mut() {
-            e.cursor = sub_pos + 1;
+            e.resolved.insert(key);
         }
-        let def = self.st.objects[&ice].printed.abilities[ability_index].clone();
-        self.changes.record(GameChange::SubroutineResolved { ice, index: sub_pos });
+        let ability_index = if key.category == 3 { key.ord as usize } else { usize::MAX };
+        self.changes.record(GameChange::SubroutineResolved { ice, index: pos });
         self.push_ability_frame(
             ResolutionKind::Subroutine,
             AbilityRef { obj: ice, index: ability_index },
             Side::Corp,
             def.instructions,
             None,
-            Some(sub_pos),
+            Some(pos),
         );
     }
 
@@ -1330,10 +1404,28 @@ impl Vm {
         }
     }
 
+    /// CR 7.4.2: apply active access prohibitions to a candidate list.
+    fn restrict_candidates(&self, list: Vec<ObjectId>) -> Vec<ObjectId> {
+        let only: Vec<ObjectId> = self
+            .lingering
+            .iter()
+            .filter_map(|l| match &l.payload {
+                Payload::RestrictCandidatesTo(x) => Some(*x),
+                _ => None,
+            })
+            .collect();
+        if only.is_empty() {
+            list
+        } else {
+            cite!("rule_prohibiting_access");
+            list.into_iter().filter(|c| only.contains(c)).collect()
+        }
+    }
+
     fn choose_candidate_body(&mut self) {
         cite!("step_choose_candidate");
         let b = self.breach_ctx().unwrap();
-        let candidates = b.candidates.clone();
+        let candidates = self.restrict_candidates(b.candidates.clone());
         if candidates.len() == 1 {
             let only = candidates[0];
             if let Some(b) = self.breach_ctx_mut() {
@@ -1665,7 +1757,10 @@ impl Vm {
             Instruction::TraceCorpSpend
             | Instruction::TraceRunnerSpend
             | Instruction::TraceDetermine { .. }
-            | Instruction::PsiGame { .. } => {
+            | Instruction::PsiGame { .. }
+            | Instruction::GrantSubroutinesToSelf { .. }
+            | Instruction::CorpDiscards { .. }
+            | Instruction::RestrictAccessToSelf => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::GainAllottedClicks(side) => {
@@ -2713,6 +2808,62 @@ impl Vm {
                     DecisionCtx::PsiBid(Side::Corp),
                 );
             }
+            Instruction::GrantSubroutinesToSelf { count, sub, before } => {
+                // 9.8.3a/e: externally-granted subroutines, ordered by grant
+                // time within their category; they arrive unbroken (9.8.4b).
+                cite!("rule_subroutine_origins");
+                let dur = crate::lingering::bind_duration(
+                    crate::lingering::WantedDuration::ThisEncounter,
+                    self.st.encounter.as_ref().map(|e| e.id),
+                    self.current_run.map(|(r, _, _)| r),
+                    self.st.turn_seq,
+                );
+                for _ in 0..*count {
+                    let id = self.next_lingering;
+                    self.next_lingering += 1;
+                    self.lingering.push(LingeringEffect {
+                        id,
+                        source: source.obj,
+                        payload: Payload::GrantedSubroutine {
+                            to: source.obj,
+                            sub: (**sub).clone(),
+                            before: *before,
+                            seq: id,
+                        },
+                        duration: dur,
+                        applied_to: Vec::new(),
+                    });
+                }
+            }
+            Instruction::CorpDiscards { count } => {
+                let n = (*count as usize).min(self.st.hand[&Side::Corp].len());
+                let cards: Vec<ObjectId> =
+                    self.st.hand[&Side::Corp].iter().take(n).copied().collect();
+                for c in cards {
+                    self.move_card(c, Zone::Discard(Side::Corp));
+                    self.changes.record(GameChange::CardDiscarded { obj: c, side: Side::Corp });
+                }
+            }
+            Instruction::RestrictAccessToSelf => {
+                // 7.4.2: prohibit access to everything except the source for
+                // the remainder of the run.
+                cite!("rule_prohibiting_access");
+                let dur = crate::lingering::bind_duration(
+                    crate::lingering::WantedDuration::ThisRun,
+                    self.st.encounter.as_ref().map(|e| e.id),
+                    self.current_run.map(|(r, _, _)| r),
+                    self.st.turn_seq,
+                );
+                let id = self.next_lingering;
+                self.next_lingering += 1;
+                self.lingering.push(LingeringEffect {
+                    id,
+                    source: source.obj,
+                    payload: Payload::RestrictCandidatesTo(source.obj),
+                    duration: dur,
+                    applied_to: Vec::new(),
+                });
+            }
             Instruction::PreventTrashOf(protected) => {
                 // Sacrificial-Construct class: remove the object from the
                 // imminent trash effect; the effect may become empty (9.9.7b
@@ -2772,15 +2923,20 @@ impl Vm {
             }
             Instruction::BreakSubroutines { count } => {
                 cite!("rule_break_subroutine");
-                let mut left = *count;
-                if let Some(e) = self.st.encounter.as_mut() {
-                    for b in e.broken.iter_mut() {
-                        if left == 0 {
-                            break;
-                        }
-                        if !*b {
-                            *b = true;
-                            left -= 1;
+                cite!("rule_unbroken_subroutines_target_for_break_abilities");
+                if let Some(ice) = self.st.encounter.as_ref().map(|e| e.ice) {
+                    let subs = self.current_subs(ice);
+                    let broken_now: Vec<SubKey> = {
+                        let e = self.st.encounter.as_ref().unwrap();
+                        subs.iter()
+                            .filter(|(k, _)| !e.broken.contains(k))
+                            .take(*count as usize)
+                            .map(|(k, _)| *k)
+                            .collect()
+                    };
+                    if let Some(e) = self.st.encounter.as_mut() {
+                        for k in broken_now {
+                            e.broken.insert(k);
                         }
                     }
                 }

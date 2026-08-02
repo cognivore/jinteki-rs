@@ -57,6 +57,12 @@ pub enum Payload {
     /// CR 9.12.5: a persistent ability persisting after its source was
     /// trashed during an access; applicable only to the bound run (9.12.5d).
     PersistedAbility { def: AbilityDef, run_id: u64 },
+    /// CR 9.8.3a/e: a subroutine granted to a piece of ice by an external
+    /// ability; ordering inside its category is by grant sequence.
+    GrantedSubroutine { to: ObjectId, sub: AbilityDef, before: bool, seq: u64 },
+    /// CR 7.4.2: "the Runner cannot access any card other than <obj> for
+    /// the remainder of the run" (Ash class).
+    RestrictCandidatesTo(ObjectId),
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary

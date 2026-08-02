@@ -945,6 +945,110 @@ pub fn rsvp_like(name: &'static str) -> PrintedCard {
     c
 }
 
+/// Ashigaru shape: "This ice gains '[sub] End the run.' for each card in
+/// HQ." (category 9.8.3d).
+pub fn ashigaru_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 9, 4);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GainSubroutinePerHqCard {
+        sub: Box::new(AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] ETR")),
+    }])
+    .labeled("ashigaru: sub per HQ card")];
+    c
+}
+
+/// Panic-Button shape: a Corp paid ability drawing 1 (usable mid-encounter).
+pub fn panic_button_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::Draw(Side::Corp, 1)])
+        .labeled("panic-button: corp draws 1")];
+    c
+}
+
+/// Utopia-Shard shape: force the Corp to discard 2 from HQ.
+pub fn utopia_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::CorpDiscards { count: 2 }])
+        .labeled("utopia: corp discards 2")];
+    c
+}
+
+/// A generic "break 1 subroutine" button (encounter-only, 9.5.6a).
+pub fn break_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::BreakSubroutines { count: 1 }])
+        .with_timing(TimingRestriction::EncounterOnly)
+        .labeled("break: 1 subroutine")];
+    c
+}
+
+/// Brainstorm shape: "When the Runner encounters this ice, it gains 2
+/// '[sub] Do 1 core damage.' subroutines." (category 9.8.3e.)
+pub fn brainstorm_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 9, 4);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfEncountered,
+        vec![Instruction::GrantSubroutinesToSelf {
+            count: 2,
+            sub: Box::new(
+                AbilityDef::subroutine(vec![Instruction::Damage {
+                    kind: DamageKind::Core,
+                    amount: 1,
+                    responsible: Side::Corp,
+                }])
+                .labeled("[sub] 1 core"),
+            ),
+            before: false,
+        }],
+        false,
+    )
+    .labeled("brainstorm: gain core subs")];
+    c
+}
+
+/// Grant an external subroutine to a piece of ice ahead of time (Marker
+/// class): creates the lingering effect directly.
+pub fn grant_external_sub(
+    vm: &mut Vm,
+    ice: ObjectId,
+    sub: AbilityDef,
+    before: bool,
+    run_bound: bool,
+) {
+    let id = vm.next_lingering_id();
+    let duration = if run_bound {
+        crate::lingering::Duration::Run(vm.current_run.map(|(r, _, _)| r).unwrap_or(0))
+    } else {
+        crate::lingering::Duration::Turn(vm.st.turn_seq)
+    };
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source: ice,
+        payload: crate::lingering::Payload::GrantedSubroutine { to: ice, sub, before, seq: id },
+        duration,
+        applied_to: Vec::new(),
+    });
+}
+
+/// Ash shape (7.4.2): "Whenever the Runner breaches this server, trace 4 —
+/// if successful, the Runner cannot access any card other than this one for
+/// the remainder of the run."
+pub fn ash_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Upgrade);
+    c.trash_cost = Some(2);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::ThisServerBreached,
+        vec![Instruction::Trace {
+            base: 4,
+            if_successful: vec![Instruction::RestrictAccessToSelf],
+            if_unsuccessful: vec![],
+            determined_min: None,
+        }],
+        false,
+    )
+    .labeled("ash: lock access on trace")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------

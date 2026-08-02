@@ -56,6 +56,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_trace_conditional_abilities_1",
     "example_rule_bid_possible_1",
     "example_rule_bid_possible_2",
+    // Wave 2d: subroutine origin categories (9.8.3) and candidates (7.4).
+    "example_rule_subroutine_origin_static_after_1",
+    "example_rule_subroutine_origin_static_after_2",
+    "example_rule_subroutine_origin_external_after_1",
+    "example_rule_prohibiting_access_1",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -2058,6 +2063,227 @@ fn example_rule_bid_possible_2() {
     );
     assert_eq!(vm.st.runner.credits, 5, "nothing was spent");
     assert_eq!(vm.st.corp.credits, 3, "bids matched at 0: the match branch ran (+1)");
+}
+
+// ===========================================================================
+// §9.8.3 / §7.4 — subroutine origins and candidates (wave 2d)
+// ===========================================================================
+
+/// example_rule_subroutine_origin_static_after_1 (9.8.3d): Ashigaru with 3
+/// cards in HQ has 3 subs; the Runner breaks all 3; the Corp draws a 4th
+/// card mid-encounter — the new subroutine is added AFTER the previous 3,
+/// arrives unbroken, and the Runner can break it.
+#[test]
+fn example_rule_subroutine_origin_static_after_1() {
+    let mut vm = Vm::empty(70);
+    let ash = tk::install_ice(&mut vm, tk::ashigaru_like("Ashigaru-like"), ServerId::Hq, true);
+    tk::install_root(&mut vm, tk::panic_button_like("Panic-like"), ServerId::Remote(1), true);
+    tk::install_rig(&mut vm, tk::break_button("Breaker"));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut breaks = 0;
+    let mut corp_drew = false;
+    let mut subs_after_draw = 0;
+    for _ in 0..500 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. } if vm.st.encounter.is_some() => {
+                if s == Side::Runner {
+                    if breaks < 3 || (corp_drew && breaks < 4) {
+                        if let Some(opt) = tk::option_labeled(options, "break") {
+                            breaks += 1;
+                            vm.answer(DecisionAnswer::Take(opt));
+                            continue;
+                        }
+                    }
+                    vm.answer(DecisionAnswer::Pass);
+                } else {
+                    // Corp: after the 3 breaks, draw with the panic button.
+                    if breaks >= 3 && !corp_drew {
+                        if let Some(opt) = tk::option_labeled(options, "panic-button") {
+                            corp_drew = true;
+                            vm.answer(DecisionAnswer::Take(opt));
+                            subs_after_draw = 0; // measured next priority
+                            continue;
+                        }
+                    }
+                    vm.answer(DecisionAnswer::Pass);
+                }
+                if corp_drew && subs_after_draw == 0 {
+                    subs_after_draw = vm.current_subs(ash).len();
+                }
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(corp_drew);
+    assert_eq!(breaks, 4, "the 4th (new, unbroken) subroutine could be broken too");
+    assert_eq!(subs_after_draw, 4, "9.8.3d: the new sub was added after the previous 3");
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        0,
+        "everything was broken; nothing resolved"
+    );
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })));
+}
+
+/// example_rule_subroutine_origin_static_after_2 (9.8.3d): with 3 subs, the
+/// Runner breaks the FIRST, then forces the Corp to discard 2 — Ashigaru
+/// loses its LAST 2 subroutines, leaving exactly the already-broken one.
+#[test]
+fn example_rule_subroutine_origin_static_after_2() {
+    let mut vm = Vm::empty(71);
+    let ash = tk::install_ice(&mut vm, tk::ashigaru_like("Ashigaru-like"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::break_button("Breaker"));
+    tk::install_rig(&mut vm, tk::utopia_button("Utopia-like"));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+
+    let mut broke_first = false;
+    let mut used_utopia = false;
+    for _ in 0..500 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::PaidWindow { options, .. }
+                if s == Side::Runner && vm.st.encounter.is_some() =>
+            {
+                if !broke_first {
+                    if let Some(opt) = tk::option_labeled(options, "break") {
+                        broke_first = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                if broke_first && !used_utopia {
+                    if let Some(opt) = tk::option_labeled(options, "utopia") {
+                        used_utopia = true;
+                        vm.answer(DecisionAnswer::Take(opt));
+                        continue;
+                    }
+                }
+                if used_utopia {
+                    // 9.8.3d: lost last-first — only the broken sub remains.
+                    assert_eq!(vm.current_subs(ash).len(), 1);
+                }
+                vm.answer(DecisionAnswer::Pass);
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(broke_first && used_utopia);
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 1);
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        0,
+        "the surviving subroutine was the broken one; nothing resolved"
+    );
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })));
+}
+
+/// example_rule_subroutine_origin_external_after_1 (9.8.3e): an ETR sub
+/// granted by an older external effect (Marker class) orders BEFORE the
+/// core-damage subs a Brainstorm-class ability grants at encounter start —
+/// so the ETR resolves first and the cores never do.
+#[test]
+fn example_rule_subroutine_origin_external_after_1() {
+    let mut vm = Vm::empty(72);
+    let brain = tk::install_ice(&mut vm, tk::brainstorm_like("Brainstorm-like"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    // The Marker-class lingering exists before the encounter begins.
+    tk::grant_external_sub(
+        &mut vm,
+        brain,
+        jinteki_cr::ability::AbilityDef::subroutine(vec![
+            jinteki_cr::instr::Instruction::EndTheRun,
+        ])
+        .labeled("[sub] ETR (marker)"),
+        false,
+        false, // turn-bound: the lingering exists before the run begins
+    );
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        1,
+        "only the first (oldest-granted) subroutine resolved"
+    );
+    assert_eq!(vm.st.runner.core_damage, 0, "the newer core subs never resolved");
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })));
+}
+
+/// example_rule_prohibiting_access_1 (7.4.2): a successful Ash-class trace
+/// prohibits accessing anything else — Ash is the only candidate, then no
+/// candidates remain and the breach ends; the agenda beside it is safe.
+#[test]
+fn example_rule_prohibiting_access_1() {
+    let mut vm = Vm::empty(73);
+    let ash = tk::install_root(&mut vm, tk::ash_like("Ash-like"), ServerId::Remote(1), true);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::vanilla_agenda("Vitruvius-like", 3, 2),
+        ServerId::Remote(1),
+        false,
+    );
+    vm.st.corp.credits = 0;
+    vm.st.runner.credits = 1; // cannot pay Ash's 2[c] trash cost
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
+        server: ServerId::Remote(1),
+    }));
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == ash)));
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == agenda)),
+        "7.4.2: nothing but Ash could be accessed"
+    );
+    assert_eq!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(1)));
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::TraceDetermined { success: true, .. })));
 }
 
 // ===========================================================================

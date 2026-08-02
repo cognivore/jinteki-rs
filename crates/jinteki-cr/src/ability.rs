@@ -65,6 +65,8 @@ pub enum TriggerCond {
     WouldDraw { first_each_turn: bool },
     /// Interrupt trigger: "…this card would be trashed" (Harbinger class).
     SelfWouldBeTrashed,
+    /// "Whenever the Runner breaches this server…" (Ash class).
+    ThisServerBreached,
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
@@ -174,6 +176,9 @@ pub enum StaticDecl {
     CannotDraw(Side),
     /// "<side> cannot spend credits." (RSVP class; forces 0 bids, 10.14.3.)
     CannotSpendCredits(Side),
+    /// "This ice gains '[sub] …' for each card in HQ." (Ashigaru class;
+    /// category 9.8.3d — self-static, after printed, lose last-first.)
+    GainSubroutinePerHqCard { sub: Box<AbilityDef> },
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -423,6 +428,9 @@ pub fn trigger_matches(
             *ice == source.id
         }
         (TriggerCond::EncounterBegins, GameChange::EncounterBegan { .. }) => true,
+        (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
+            server_of_source == Some(*server)
+        }
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
         (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
         (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {

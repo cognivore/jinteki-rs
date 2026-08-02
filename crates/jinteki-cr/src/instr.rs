@@ -101,6 +101,14 @@ pub enum Instruction {
     /// "Play a Psi Game." — one instruction: sealed bids, reveal, immediate
     /// spend, branch (10.14.6).
     PsiGame { on_match: Vec<Instruction>, on_differ: Vec<Instruction> },
+    /// "This ice gains N copies of <sub> …" (Brainstorm class; category
+    /// 9.8.3e — external, after, ordered oldest-first by grant time).
+    GrantSubroutinesToSelf { count: u32, sub: Box<crate::ability::AbilityDef>, before: bool },
+    /// "The Corp discards N cards from HQ." (Utopia Shard class driver.)
+    CorpDiscards { count: u32 },
+    /// "The Runner cannot access cards other than this one for the
+    /// remainder of the run." (Ash class, 7.4.2.)
+    RestrictAccessToSelf,
     /// "Break up to N subroutines on the encountered ice." (first unbroken)
     BreakSubroutines { count: u32 },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).
