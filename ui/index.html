@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<title>jinteki-rs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Home screen ─────────────────────────────────────────────────────── -->
+<div id="screen-home" class="screen active">
+  <div class="home-wrap">
+    <h1 class="logo">jinteki<span>-rs</span></h1>
+    <p class="tagline">netrunner, faster</p>
+
+    <div class="home-cards">
+      <div class="home-card">
+        <h2>Play vs Bot</h2>
+        <p>Local engine, random-walk opponent.</p>
+        <div class="row">
+          <button class="seg" data-side="runner" id="pick-runner">Runner</button>
+          <button class="seg" data-side="corp" id="pick-corp">Corp</button>
+        </div>
+        <input id="seed" type="text" inputmode="numeric" placeholder="seed (optional)">
+        <button class="big go" id="btn-local">Jack in</button>
+      </div>
+
+      <div class="home-card">
+        <h2>Reference Server</h2>
+        <p>Play on a real jinteki.net-protocol server — parity by playing.</p>
+        <input id="ref-host" type="text" value="http://localhost:1042" placeholder="host">
+        <input id="ref-user" type="text" placeholder="username" autocapitalize="off">
+        <input id="ref-pass" type="password" placeholder="password">
+        <button class="big go alt" id="btn-bridge">Connect</button>
+      </div>
+    </div>
+    <p class="hint">Landscape recommended. Long-press any card to read it.</p>
+  </div>
+</div>
+
+<!-- ── Bridge lobby screen ─────────────────────────────────────────────── -->
+<div id="screen-lobby" class="screen">
+  <div class="lobby-bar">
+    <button id="lobby-back" class="chip">← Home</button>
+    <span id="lobby-status">connecting…</span>
+    <button id="lobby-refresh" class="chip">Refresh</button>
+  </div>
+  <div class="lobby-create">
+    <input id="new-title" type="text" placeholder="game title" value="jinteki-rs parity game">
+    <button class="chip" id="create-corp">Create as Corp</button>
+    <button class="chip" id="create-runner">Create as Runner</button>
+    <button class="chip go" id="lobby-start" style="display:none">Start game</button>
+  </div>
+  <div id="deck-picker" class="deck-picker" style="display:none"></div>
+  <div id="lobby-list" class="lobby-list"></div>
+</div>
+
+<!-- ── Game board ──────────────────────────────────────────────────────── -->
+<div id="screen-game" class="screen">
+  <div id="opp-bar" class="side-bar top"></div>
+
+  <div id="board">
+    <div id="corp-zone" class="zone-half">
+      <div id="servers" class="servers"></div>
+    </div>
+    <div id="mid-strip">
+      <div id="phase-pill" class="phase-pill" style="display:none"></div>
+      <div id="toast" class="toast" style="display:none"></div>
+    </div>
+    <div id="runner-zone" class="zone-half">
+      <div id="rig" class="rig"></div>
+    </div>
+  </div>
+
+  <div id="my-bar" class="side-bar bottom"></div>
+  <div id="action-bar" class="action-bar"></div>
+  <div id="turn-btn-wrap"><button id="turn-btn" style="display:none"></button></div>
+  <div id="run-controls" class="run-controls" style="display:none"></div>
+
+  <div id="hand" class="hand"></div>
+
+  <div id="prompt-sheet" class="prompt-sheet" style="display:none"></div>
+  <div id="action-sheet" class="action-sheet" style="display:none"></div>
+
+  <button id="log-tab" class="log-tab">☰</button>
+  <div id="log-drawer" class="log-drawer">
+    <div class="log-head">Game log <button id="log-close" class="chip">×</button>
+      <div id="say-row" style="display:none"><input id="say-input" placeholder="say…"><button id="say-send" class="chip">➤</button></div>
+    </div>
+    <div id="log-lines" class="log-lines"></div>
+  </div>
+
+  <div id="zoom-overlay" class="zoom-overlay" style="display:none"></div>
+  <div id="gameover-overlay" class="gameover-overlay" style="display:none"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

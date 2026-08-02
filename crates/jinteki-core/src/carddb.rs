@@ -238,6 +238,42 @@ pub const CARDS: &[CardDef] = &[
     },
 ];
 
+/// Printed rules text for the zoom view. Kept out of `CardDef` so the
+/// behavioral table stays purely mechanical.
+pub fn card_text(title: &str) -> &'static str {
+    match title {
+        "Weyland Consortium: Building a Better World" => "Whenever you play a transaction operation, gain 1[c].",
+        "The Catalyst: Convention Breaker" => "Teaching identity. No special ability.",
+        "Gabriel Santiago: Consummate Professional" => "The first time each turn you make a successful run on HQ, gain 2[c].",
+        "Hedge Fund" => "Gain 9[c].",
+        "Beanstalk Royalties" => "Gain 3[c].",
+        "PAD Campaign" => "When your turn begins, gain 1[c].",
+        "Regolith Mining License" => "When rezzed, load 15[c]. When empty, trash it. [click]: Take 3[c] from this asset.",
+        "Offworld Office" => "When you score this agenda, gain 7[c].",
+        "Hostile Takeover" => "When you score this agenda, gain 7[c] and take 1 bad publicity.",
+        "Priority Requisition" => "When you score this agenda, you may rez 1 piece of ice, ignoring all costs.",
+        "Superconducting Hub" => "You get +2 maximum hand size. When you score this agenda, you may draw 2 cards.",
+        "Ice Wall" => "You can advance this ice. It gets +1 strength for each hosted advancement counter.\n[sub] End the run.",
+        "Vanilla" => "[sub] End the run.",
+        "Wall of Static" => "[sub] End the run.",
+        "Enigma" => "[sub] The Runner loses [click], if able.\n[sub] End the run.",
+        "Tithe" => "[sub] Do 1 net damage.\n[sub] Gain 1[c].",
+        "Rototurret" => "[sub] Trash 1 installed program.\n[sub] End the run.",
+        "Sure Gamble" => "Gain 9[c].",
+        "Easy Mark" => "Gain 3[c].",
+        "Dirty Laundry" => "Run any server. When that run ends, if it was successful, gain 5[c].",
+        "Diesel" => "Draw 3 cards.",
+        "Legwork" => "Run HQ. If successful, access 2 additional cards when you breach HQ.",
+        "The Maker's Eye" => "Run R&D. If successful, access 2 additional cards when you breach R&D.",
+        "Armitage Codebusting" => "When installed, load 12[c]. When empty, trash it. [click]: Take 2[c] from this resource.",
+        "Akamatsu Mem Chip" => "+1 memory unit.",
+        "Corroder" => "Interface — 1[c]: Break 1 barrier subroutine. 1[c]: +1 strength.",
+        "Gordian Blade" => "Interface — 1[c]: Break 1 code gate subroutine. 1[c]: +1 strength for the remainder of this run.",
+        "Mimic" => "Interface — 1[c]: Break 1 sentry subroutine.",
+        _ => "",
+    }
+}
+
 pub fn def_index(title: &str) -> Option<usize> {
     CARDS.iter().position(|c| c.title == title)
 }
