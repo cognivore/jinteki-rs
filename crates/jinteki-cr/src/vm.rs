@@ -163,6 +163,9 @@ pub enum DecisionCtx {
     RezAdditionalCost,
     /// 9.9.11: choose the order in which replacement effects apply.
     ReplacementOrder,
+    /// 7.4.3 example 2 (Gagarin class): pay or decline an additional cost
+    /// to access the chosen candidate.
+    AccessCost(ObjectId),
 }
 
 /// CR 8.5.16: one installation in progress. Installing is a procedure, not
@@ -779,10 +782,9 @@ impl Vm {
             BranchPred::MovedToNewPosition => {
                 self.run_ctx().map(|r| r.moved_to_new_position).unwrap_or(false)
             }
-            BranchPred::CandidatesRemain => self
-                .breach_ctx()
-                .map(|b| !self.restrict_candidates(b.candidates.clone()).is_empty())
-                .unwrap_or(false),
+            BranchPred::CandidatesRemain => {
+                !self.restrict_candidates(self.breach_candidates_now()).is_empty()
+            }
         }
     }
 
@@ -1086,10 +1088,18 @@ impl Vm {
             StepKind::DetermineAccessLimit => {
                 cite!("rule_number_of_accesses");
                 let server = self.breach_ctx().unwrap().server;
-                let n = match server {
+                let mut n = match server {
                     ServerId::Hq | ServerId::Rnd => 1,
                     _ => 0,
                 };
+                // Maker's-Eye-class additional accesses.
+                for l in &self.lingering {
+                    if let Payload::AdditionalAccess { server: s, extra } = l.payload {
+                        if s == server {
+                            n += extra;
+                        }
+                    }
+                }
                 if let Some(b) = self.breach_ctx_mut() {
                     b.remaining_from_zone = n;
                 }
@@ -1098,6 +1108,39 @@ impl Vm {
             }
             StepKind::AccessChosenCandidate => {
                 let card = self.breach_ctx().unwrap().chosen.expect("candidate chosen");
+                // 7.4.3 example 1: a replaced access never happens — but the
+                // chosen candidate stays consumed.
+                let suppressed = imm
+                    .as_ref()
+                    .map(|im| {
+                        !im.atoms.is_empty()
+                            && !im.atoms.iter().any(|a| a.occurs_at_resolution())
+                    })
+                    .unwrap_or(false);
+                if suppressed {
+                    cite!("rule_candidates_already_accessed");
+                    if let Some(b) = self.breach_ctx_mut() {
+                        b.chosen = None;
+                        if b.remaining_from_zone > 0 {
+                            b.remaining_from_zone -= 1;
+                        }
+                    }
+                    self.refresh_candidates_after_access();
+                    return;
+                }
+                // 7.4.3 example 2 (Gagarin class): an additional cost to
+                // access — declining means the access does not occur, but
+                // the card still ceased to be a candidate.
+                let access_cost = self.additional_access_cost(card);
+                if !access_cost.is_free() {
+                    cite!("rule_candidates_already_accessed");
+                    self.ask(
+                        Side::Runner,
+                        DecisionSpec::NestedCost { cost: access_cost },
+                        DecisionCtx::AccessCost(card),
+                    );
+                    return;
+                }
                 self.push_access(card);
             }
             StepKind::CardBecomesAccessed => {
@@ -1482,6 +1525,7 @@ impl Vm {
                 accessed: Vec::new(),
                 remaining_from_zone: 0,
                 declined: Vec::new(),
+                chosen_ever: Vec::new(),
             }),
         }));
     }
@@ -1539,14 +1583,37 @@ impl Vm {
         }
     }
 
+    /// The candidates as of RIGHT NOW. Archives candidates derive
+    /// continuously from the discard pile (7.4.6d: cards entering Archives
+    /// during the breach become candidates), excluding everything already
+    /// chosen (7.4.3) or declined (7.4.6a); other servers track a
+    /// maintained list.
+    fn breach_candidates_now(&self) -> Vec<ObjectId> {
+        let Some(b) = self.breach_ctx() else { return Vec::new() };
+        match b.server {
+            ServerId::Archives => {
+                cite!("rule_candidates_entering_archives");
+                self.st.discard[&Side::Corp]
+                    .iter()
+                    .copied()
+                    .filter(|c| !b.chosen_ever.contains(c) && !b.declined.contains(c))
+                    .collect()
+            }
+            _ => b.candidates.clone(),
+        }
+    }
+
     fn choose_candidate_body(&mut self) {
         cite!("step_choose_candidate");
-        let b = self.breach_ctx().unwrap();
-        let candidates = self.restrict_candidates(b.candidates.clone());
+        let candidates = self.restrict_candidates(self.breach_candidates_now());
         if candidates.len() == 1 {
             let only = candidates[0];
             if let Some(b) = self.breach_ctx_mut() {
                 b.chosen = Some(only);
+                // 7.4.3: a chosen candidate ceases to be one for the
+                // remainder of the breach, accessed or not.
+                cite!("rule_candidates_already_accessed");
+                b.chosen_ever.push(only);
                 b.candidates.retain(|&c| c != only);
             }
             self.set_structure_phase(StepPhase::Checkpoint);
@@ -1560,40 +1627,45 @@ impl Vm {
         }
     }
 
-    /// Candidates are recomputed as accesses happen: R&D reveals the next
-    /// top card; HQ picks at random (CONVENTION → RNG per the digest §13).
-    fn refresh_candidates_after_access(&mut self) {
+    /// Candidates are recomputed as accesses happen: R&D presents the
+    /// TOPMOST ELIGIBLE card (7.4.7a — eligible = not already chosen, not
+    /// prohibited); HQ picks at random (CONVENTION → RNG per the digest
+    /// §13).
+    pub fn refresh_candidates_after_access(&mut self) {
         let server = match self.breach_ctx() {
             Some(b) => b.server,
             None => return,
         };
         match server {
             ServerId::Rnd => {
+                cite!("rule_rnd_candidates_1_at_a_time");
                 cite!("rule_rnd_topmost_eligibile_candidate");
-                let (remaining, accessed) = {
+                let (remaining, chosen_ever) = {
                     let b = self.breach_ctx().unwrap();
-                    (b.remaining_from_zone, b.accessed.clone())
+                    (b.remaining_from_zone, b.chosen_ever.clone())
                 };
                 if remaining > 0 {
+                    // All deck cards cease to be candidates, then the
+                    // topmost eligible one becomes the candidate.
                     let top = self.st.deck[&Side::Corp]
-                        .first()
+                        .iter()
                         .copied()
-                        .filter(|c| !accessed.contains(c));
+                        .find(|c| !chosen_ever.contains(c));
                     if let Some(b) = self.breach_ctx_mut() {
                         b.candidates = top.into_iter().collect();
                     }
                 }
             }
             ServerId::Hq => {
-                let (remaining, accessed) = {
+                let (remaining, chosen_ever) = {
                     let b = self.breach_ctx().unwrap();
-                    (b.remaining_from_zone, b.accessed.clone())
+                    (b.remaining_from_zone, b.chosen_ever.clone())
                 };
                 if remaining > 0 {
                     let pool: Vec<ObjectId> = self.st.hand[&Side::Corp]
                         .iter()
                         .copied()
-                        .filter(|c| !accessed.contains(c))
+                        .filter(|c| !chosen_ever.contains(c))
                         .collect();
                     let pick = if pool.is_empty() {
                         None
@@ -1877,6 +1949,11 @@ impl Vm {
                 // replaces it (9.9.11a).
                 vec![EffectAtom::new(EffectClass::Breach, 1, controller)]
             }
+            Instruction::AccessChosenCandidate => {
+                // 7.5.5 as an expected effect: the Immolation-Script class
+                // replaces it (7.4.3 example 1).
+                vec![EffectAtom::new(EffectClass::AccessCard, 1, controller)]
+            }
             Instruction::TraceInitiate { base } => {
                 // 9.9.6d: the base trace strength is a modifiable value (it
                 // need not be positive).
@@ -1927,6 +2004,25 @@ impl Vm {
             // Structure-internal instructions carry structural atoms.
             _ => vec![EffectAtom::new(EffectClass::Structural, 1, controller)],
         }
+    }
+
+    /// Gagarin class: total additional cost to access an installed card in
+    /// a remote server's root.
+    fn additional_access_cost(&self, card: ObjectId) -> Cost {
+        let in_remote_root = matches!(
+            self.st.objects.get(&card).map(|o| o.zone),
+            Some(Zone::Root(ServerId::Remote(_)))
+        );
+        if !in_remote_root {
+            return Cost::free();
+        }
+        let mut total = Cost::free();
+        for (_, d) in self.active_statics() {
+            if let StaticDecl::AdditionalAccessCost(c) = d {
+                total = total.plus(&c);
+            }
+        }
+        total
     }
 
     /// The Noble Path class: a live prevent-all-damage lingering effect.
@@ -2048,7 +2144,17 @@ impl Vm {
                 // replacement can act on it (9.9.11a example 2). The atom
                 // stays in place.
             }
+            crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(t) => {
+                cite!("rule_candidates_already_accessed");
+                atom.removed = true;
+                self.trash_card(t, Side::Runner);
+            }
         }
+        // Kernel-wave replacements are one-shot effects (Security Testing,
+        // Account Siphon, Showing Off, Immolation Script): applying consumes
+        // the lingering effect. Multi-application replacement durations
+        // arrive with the card layer.
+        self.lingering.retain(|l| l.id != lid);
     }
 
     /// Apply replacements one at a time; when several could apply, the order
@@ -4102,6 +4208,32 @@ impl Vm {
                     self.move_card(source.obj, Zone::RemovedFromGame);
                 }
             }
+            Instruction::CorpRearrangesRnd => {
+                // 1.12.3 / 7.4.7a example 1: cards returned to R&D are NEW
+                // OBJECTS — the breach's already-chosen bookkeeping forgets
+                // them, and the topmost eligible card is recomputed.
+                cite!("rule_object_move_location");
+                cite!("rule_rnd_topmost_eligibile_candidate");
+                let deck: Vec<ObjectId> = self.st.deck[&Side::Corp].clone();
+                if let Some(b) = self.breach_ctx_mut() {
+                    b.chosen_ever.retain(|c| !deck.contains(c));
+                    b.accessed.retain(|c| !deck.contains(c));
+                }
+                self.refresh_candidates_after_access();
+            }
+            Instruction::MoveToTopOfRnd { card } => {
+                cite!("rule_rnd_topmost_eligibile_candidate");
+                let targets = self.resolve_targets(card, Some(source.obj), &imm.targets);
+                if let Some(&t) = targets.first() {
+                    self.move_card(t, Zone::Deck(Side::Corp));
+                    let deck = self.st.deck.get_mut(&Side::Corp).unwrap();
+                    deck.retain(|&x| x != t);
+                    deck.insert(0, t);
+                    // Cards entered/reordered: recompute the topmost
+                    // eligible candidate (7.4.7a).
+                    self.refresh_candidates_after_access();
+                }
+            }
             Instruction::IfRunnerLinkAtLeast { n, then } => {
                 // 9.6.5d: requirements in the INSTRUCTIONS are checked when
                 // the relevant instructions resolve — not at trigger time.
@@ -5136,6 +5268,9 @@ impl Vm {
             (DecisionCtx::Candidate, DecisionAnswer::Candidate(c)) => {
                 if let Some(b) = self.breach_ctx_mut() {
                     b.chosen = Some(c);
+                    // 7.4.3: chosen → never a candidate again this breach.
+                    cite!("rule_candidates_already_accessed");
+                    b.chosen_ever.push(c);
                     b.candidates.retain(|&x| x != c);
                 }
                 self.set_structure_phase(StepPhase::Checkpoint);
@@ -5266,6 +5401,27 @@ impl Vm {
                     }
                 }
                 self.last_minimal_sets = None;
+            }
+            (DecisionCtx::AccessCost(card), DecisionAnswer::PayNestedCost(pay)) => {
+                // 7.4.3 example 2: declining the additional access cost
+                // means no access occurs — but the chosen card already
+                // ceased to be a candidate.
+                cite!("rule_candidates_already_accessed");
+                if pay {
+                    let cost = self.additional_access_cost(card);
+                    self.pay_cost(Side::Runner, card, &cost);
+                    self.push_access(card);
+                } else {
+                    if let Some(b) = self.breach_ctx_mut() {
+                        b.chosen = None;
+                        if b.remaining_from_zone > 0 {
+                            b.remaining_from_zone -= 1;
+                        }
+                    }
+                    self.refresh_candidates_after_access();
+                }
+                // The breach step's Exec already advanced to Checkpoint;
+                // a paid access pushed its structure frame on top.
             }
             (DecisionCtx::ReplacementOrder, DecisionAnswer::Option(i)) => {
                 // 9.9.11: apply the chosen replacement, then re-evaluate —
@@ -5595,5 +5751,6 @@ fn class_key(c: EffectClass) -> u64 {
         EffectClass::StealAgenda => 13,
         EffectClass::Structural => 14,
         EffectClass::Breach => 15,
+        EffectClass::AccessCard => 16,
     }
 }

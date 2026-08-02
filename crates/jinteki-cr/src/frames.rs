@@ -61,6 +61,10 @@ pub struct BreachCtx {
     /// CR 7.4.6a: root entries the Runner declared NON-candidates at
     /// 10.3.1j — they cannot become candidates for the rest of the breach.
     pub declined: Vec<ObjectId>,
+    /// CR 7.4.3: every candidate the Runner has CHOSEN this breach —
+    /// whether or not it was actually accessed, it cannot become a
+    /// candidate again (and 7.4.7a's "already chosen" eligibility test).
+    pub chosen_ever: Vec<ObjectId>,
 }
 
 /// Per-access state (§7.1-7.2).

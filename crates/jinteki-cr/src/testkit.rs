@@ -1723,6 +1723,87 @@ pub fn inject_run_damage_shield(vm: &mut Vm, source: ObjectId) {
 }
 
 // ---------------------------------------------------------------------------
+// W3e shapes: candidates (7.4.3, 7.4.7a)
+// ---------------------------------------------------------------------------
+
+/// Inject an Immolation-Script-class access replacement: "instead of
+/// accessing the chosen card, trash <victim>" (turn-bound).
+pub fn inject_access_replacement(vm: &mut Vm, source: ObjectId, victim: ObjectId) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::ReplacementEffect {
+            applies_to: crate::effects::EffectClass::AccessCard,
+            replace_with: crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(
+                victim,
+            ),
+        },
+        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
+        applied_to: Vec::new(),
+    });
+}
+
+/// Inject a Maker's-Eye-class additional-access effect (turn-bound).
+pub fn inject_additional_access(vm: &mut Vm, server: ServerId, extra: u32) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source: ObjectId(0),
+        payload: crate::lingering::Payload::AdditionalAccess { server, extra },
+        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
+        applied_to: Vec::new(),
+    });
+}
+
+/// Gagarin shape: an additional 1[c] cost to access cards in remote roots.
+pub fn gagarin_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalAccessCost(
+        Cost::credits(1),
+    )])
+    .labeled("gagarin: 1c to access remote cards")];
+    c
+}
+
+/// Bacterial-Programming shape: an agenda; when stolen, the Corp rearranges
+/// R&D (returned cards are new objects — 7.4.7a example 1).
+pub fn bacterial_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_agenda(name, 3, 1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerStealsAgenda,
+        vec![Instruction::CorpRearrangesRnd],
+        false,
+    )
+    .labeled("bacterial: rearrange R&D on steal")];
+    c
+}
+
+/// Seidr-Laboratories shape: when the Runner steals an agenda, add a fixed
+/// card from Archives to the top of R&D (7.4.7a example 2).
+pub fn seidr_like(name: &'static str, card: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerStealsAgenda,
+        vec![Instruction::MoveToTopOfRnd { card: TargetSpec::Objects(vec![card]) }],
+        false,
+    )
+    .labeled("seidr: add a card to the top of R&D")];
+    c
+}
+
+/// Strongbox shape: [click] as an additional cost to steal.
+pub fn strongbox_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Upgrade);
+    c.trash_cost = Some(3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalStealCost(
+        Cost { clicks: 1, ..Default::default() },
+    )])
+    .labeled("strongbox: click to steal")];
+    c
+}
+
+// ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------
 

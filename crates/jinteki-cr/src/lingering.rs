@@ -74,6 +74,9 @@ pub enum Payload {
     /// run frame pops), which is exactly when Dedicated-Response-Team-class
     /// run-ends damage resolves unshielded.
     DamagePreventionAll,
+    /// "Access N additional cards" (The Maker's Eye / Seidr class; adds to
+    /// the 7.3.6 random access limit at step 7.5.3).
+    AdditionalAccess { server: ServerId, extra: u32 },
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary
@@ -93,6 +96,11 @@ pub enum ReplacementTransform {
     /// keeps the atom in place; bottom-up candidate order arrives with the
     /// card layer.
     BreachFromBottom,
+    /// "Instead of accessing the chosen card, trash <target>" (Immolation
+    /// Script class, 7.4.3): the access is suppressed and another card is
+    /// trashed. The chosen candidate stays chosen (7.4.3: it ceases to be a
+    /// candidate whether or not it was accessed).
+    SuppressAccessAndTrashOther(ObjectId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

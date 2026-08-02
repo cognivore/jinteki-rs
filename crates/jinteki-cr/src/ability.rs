@@ -94,6 +94,9 @@ pub enum TriggerCond {
     /// condition and must hold at the moment the condition would occur
     /// (9.6.5c).
     SelfAccessedIfRunnerTagged,
+    /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
+    /// Seidr class drivers for the 7.4.7a examples).
+    RunnerStealsAgenda,
 }
 
 /// Static conditions (9.6.7) for repeat-while-true conditionals.
@@ -209,6 +212,9 @@ pub enum StaticDecl {
     /// 8.6.7g, a lingering effect keeps it in the play area until the
     /// indicated effect occurs.)
     PlayedNotTrashedUntilAgendaSteal,
+    /// "As an additional cost to access a card in the root of a remote
+    /// server, pay N." (Gagarin class — 7.4.3 example 2.)
+    AdditionalAccessCost(Cost),
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -496,6 +502,7 @@ pub fn trigger_matches(
             cite!("rule_vacuous_truth");
             true
         }
+        (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
         _ => false,
     }
 }

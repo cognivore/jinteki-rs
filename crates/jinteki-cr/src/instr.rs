@@ -216,6 +216,13 @@ pub enum Instruction {
     /// the INSTRUCTIONS, not the trigger condition (9.6.5d): it is checked
     /// when this instruction resolves.
     IfRunnerLinkAtLeast { n: u32, then: Box<Instruction> },
+    /// The Corp rearranges (or looks at and returns) cards in R&D
+    /// (Bacterial Programming class). The returned cards are NEW OBJECTS
+    /// (1.12.3), so 7.4.7a's "already chosen" bookkeeping forgets them and
+    /// the breach continues from the top of R&D.
+    CorpRearrangesRnd,
+    /// "Add a card from Archives to the top of R&D." (Seidr class.)
+    MoveToTopOfRnd { card: TargetSpec },
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.

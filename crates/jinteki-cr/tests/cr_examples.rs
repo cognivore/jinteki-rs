@@ -101,6 +101,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_vacuous_truth_1",
     "example_rule_run_ends_condition_1",
     "example_rule_run_ends_condition_2",
+    // Wave 3e: candidates (7.4.3, 7.4.7a).
+    "example_rule_candidates_already_accessed_1",
+    "example_rule_candidates_already_accessed_2",
+    "example_rule_rnd_topmost_eligibile_candidate_1",
+    "example_rule_rnd_topmost_eligibile_candidate_2",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -3880,6 +3885,187 @@ fn example_rule_run_ends_condition_2() {
         )),
         "the 2 meat damage was suffered"
     );
+}
+
+// ===========================================================================
+// §7.4 — candidates (W3e): chosen-ever, access replacement/costs, R&D order
+// ===========================================================================
+
+/// example_rule_candidates_already_accessed_1 (7.4.3): during an Archives
+/// breach made with an Immolation-Script-class effect, the Runner chooses a
+/// piece of ice and applies a replacement to trash another card INSTEAD of
+/// accessing it. The chosen ice is no longer a candidate — but the
+/// newly-trashed card becomes one.
+#[test]
+fn example_rule_candidates_already_accessed_1() {
+    let mut vm = Vm::empty(361);
+    let dead_ice = vm.new_object(tk::vanilla_ice("Dead-Ice", 0, 1), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(dead_ice);
+    let victim = tk::install_root(&mut vm, tk::vanilla_asset("Victim", 0, 0), ServerId::Remote(1), true);
+    let script = tk::install_rig(&mut vm, tk::vanilla_runner_card("ImmolationScript-like", jinteki_cr::object::CardType::Event));
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    tk::inject_access_replacement(&mut vm, script, victim);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Archives }));
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == dead_ice)),
+        "7.4.3: the chosen ice was never accessed and cannot be chosen again"
+    );
+    assert_eq!(vm.st.objects[&victim].zone, Zone::Discard(Side::Corp), "trashed instead");
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == victim)),
+        "the newly-trashed card became a candidate and was accessed"
+    );
+}
+
+/// example_rule_candidates_already_accessed_2 (7.4.3): a Gagarin-class
+/// additional cost to access is declined — the access does not occur, but
+/// the chosen card still ceases to be a candidate and the breach ends.
+#[test]
+fn example_rule_candidates_already_accessed_2() {
+    let mut vm = Vm::empty(362);
+    let bait = tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 0), ServerId::Remote(1), false);
+    tk::install_root(&mut vm, tk::gagarin_like("Gagarin-like"), ServerId::Remote(2), true);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+    let mut declined = false;
+    for _ in 0..300 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { .. } if s == Side::Runner => {
+                declined = true;
+                vm.answer(DecisionAnswer::PayNestedCost(false));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(declined, "the additional access cost was offered and declined");
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { .. })),
+        "no access was performed"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachEnded { .. })),
+        "the card ceased to be a candidate, so the breach completed"
+    );
+    assert_eq!(vm.st.objects[&bait].zone, Zone::Root(ServerId::Remote(1)));
+}
+
+/// example_rule_rnd_topmost_eligibile_candidate_1 (7.4.7a): a Maker's-Eye
+/// class breach of R&D accesses 3 cards. After the 2nd is stolen, a
+/// Bacterial-Programming-class ability "rearranges" R&D leaving the same
+/// top card — the returned cards are NEW OBJECTS, so the Runner continues
+/// from the top and accesses the first card AGAIN.
+#[test]
+fn example_rule_rnd_topmost_eligibile_candidate_1() {
+    let mut vm = Vm::empty(363);
+    let cg = vm.new_object(tk::corp_filler("CelebrityGift-like"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(cg);
+    let bp = vm.new_object(tk::bacterial_like("Bacterial-like"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(bp);
+    let c3 = vm.new_object(tk::corp_filler("Third-Card"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(c3);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    tk::inject_additional_access(&mut vm, ServerId::Rnd, 2);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Rnd }));
+    for _ in 0..400 {
+        let (_, spec) = decision(&mut vm);
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    assert!(vm.st.score_area[&Side::Runner].contains(&bp), "the agenda was stolen");
+    let cg_accesses = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == cg))
+        .count();
+    assert_eq!(
+        cg_accesses, 2,
+        "7.4.7a: after the rearrange, the same physical top card is a NEW object and is accessed again"
+    );
+    let _ = c3;
+}
+
+/// example_rule_rnd_topmost_eligibile_candidate_2 (7.4.7a): with a random
+/// access limit of 4, the Runner accesses the top card (leaving it), steals
+/// the 2nd (paying a Strongbox-class click), a Seidr-class ability adds an
+/// Archives card to the top (3rd candidate), and the 4th candidate is the
+/// card now third from the top — skipping the already-chosen ones.
+#[test]
+fn example_rule_rnd_topmost_eligibile_candidate_2() {
+    let mut vm = Vm::empty(364);
+    let c1 = vm.new_object(tk::corp_filler("First-Card"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(c1);
+    let agenda2 = vm.new_object(tk::vanilla_agenda("Deck-Agenda", 3, 1), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(agenda2);
+    let c3 = vm.new_object(tk::corp_filler("Third-Card"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(c3);
+    let c4 = vm.new_object(tk::corp_filler("Fourth-Card"), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(c4);
+    let arc = vm.new_object(tk::corp_filler("Archives-Card"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(arc);
+    tk::install_root(&mut vm, tk::strongbox_like("Strongbox-like"), ServerId::Rnd, true);
+    tk::install_root(&mut vm, tk::seidr_like("Seidr-like", arc), ServerId::Remote(1), true);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    tk::inject_additional_access(&mut vm, ServerId::Rnd, 3);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Rnd }));
+    let mut paid_steal = false;
+    for _ in 0..400 {
+        let (s, spec) = decision(&mut vm);
+        match &spec {
+            DecisionSpec::NestedCost { cost } if s == Side::Runner => {
+                assert_eq!(cost.clicks, 1, "the Strongbox-class click cost");
+                paid_steal = true;
+                vm.answer(DecisionAnswer::PayNestedCost(true));
+            }
+            DecisionSpec::TakeAction { .. } => break,
+            other => {
+                let a = tk::default_answer(other);
+                vm.answer(a);
+            }
+        }
+    }
+    assert!(paid_steal, "the additional steal cost was paid");
+    assert!(vm.st.score_area[&Side::Runner].contains(&agenda2));
+    let accessed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CardAccessed { obj } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        accessed,
+        vec![c1, agenda2, arc, c3],
+        "7.4.7a: candidates descend past already-chosen objects; new top cards slot in"
+    );
+    let _ = c4;
 }
 
 // ===========================================================================
