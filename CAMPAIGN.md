@@ -29,7 +29,18 @@ measurable; it is not a way to play.
   generalization of hardcoded hooks into an event-driven ability IR
   (trigger × effect-sequence). Migrate the existing 28 behaviors onto the IR;
   prove each new mechanic with 12–18 reference-faithful cards + ported tests.
-- **W1..Wn — card batches:** ~30 cards per wave, one reference file at a
+- **W1–W4 — PRIORITY DECKS (user-directed):** the four netrunnerdb meta
+  decks in `tools/priority-decks.json`, one per wave, in order:
+  W1 "estrike Regular Andromeda" (Andromeda), W2 "Gauntlet" (Nebula Talent
+  Management), W3 "Wack" (Valencia), W4 "post flood asa" (Asa Group).
+  A wave is DONE when its whole deck — identity included — loads under
+  strict mode and plays: every card natively implemented at the fidelity
+  bar, tests ported. These decks force currents, heap breakers, damage
+  prevention, hosting, recurring credits, upgrades + access rules,
+  encounter events, bioroids, and variable subs — the engine grows its real
+  vocabulary here. On completion, register each deck as a selectable
+  decklist in the local UI.
+- **W5..Wn — remaining pool:** ~30 cards per wave, one reference file at a
   time in file order (agendas → assets → ice → operations → upgrades →
   events → hardware → programs → resources → identities). Each wave: extend
   IR only as its cards demand; port tests; regenerate coverage; commit.
