@@ -267,6 +267,70 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .focus-panel .fbroken { text-decoration: line-through; opacity: .45; }
 .focus-panel .chip { margin-top: 4px; align-self: flex-start; padding: 6px 12px; min-height: 32px; font-size: 12px; }
 
+/* ── MTGA-style corner clusters: stats live on the LEFT RAIL, board owns
+      the screen. Bars become vertical stacks; identity art is the anchor. */
+.side-bar { flex-direction: column; align-items: flex-start; gap: 4px;
+  left: 6px; right: auto; width: max-content; max-width: 118px; }
+.side-bar.top { top: calc(6px + env(safe-area-inset-top, 0)); }
+.side-bar.bottom { bottom: calc(120px + env(safe-area-inset-bottom, 0)); }
+.side-bar .stat { padding: 2px 8px; font-size: 11.5px; }
+.idchip { pointer-events: auto; display: flex; align-items: center; gap: 6px;
+  cursor: pointer; background: rgba(20,28,46,.85); border: 1px solid var(--line);
+  border-radius: 8px; padding: 3px 8px 3px 3px; }
+.idthumb { width: 36px; height: 26px; border-radius: 4px; flex-shrink: 0;
+  background: var(--bg2); background-size: cover; background-position: center 15%;
+  border: 1px solid var(--line); }
+.side-bar .who { font-size: 11.5px; max-width: 70px; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; }
+#board { inset: 4px 58px 124px 128px; }
+.action-bar { left: 132px; }
+.focus-panel { left: 132px; }
+
+/* ── phone landscape: everything smaller, denser, closer to the edges ── */
+@media (max-height: 640px) {
+  .card { width: 52px; height: 72px; font-size: 8.5px; border-radius: 6px; }
+  .card .cost, .card .cstr { width: 16px; height: 16px; font-size: 9.5px; }
+  .card.ice { width: 72px; height: 46px; }
+  .server { min-width: 72px; gap: 2px; }
+  .server .central { width: 62px; height: 42px; font-size: 10px; }
+  .server .central b { font-size: 13px; }
+  .ice-sliver { width: 66px; min-height: 14px; font-size: 8.5px; }
+  .identity-col { display: none !important; }
+  .rig .rowlabel { display: none; }
+  .rig-row { min-height: 48px; }
+  #mid-strip { height: 20px; }
+  .phase-pill { font-size: 11px; padding: 2px 10px; }
+  #board { inset: 2px 50px 92px 104px; }
+  .side-bar { max-width: 98px; gap: 3px; }
+  .side-bar .stat { padding: 1px 6px; font-size: 10.5px; border-width: 1px; }
+  .side-bar.bottom { bottom: calc(88px + env(safe-area-inset-bottom, 0)); }
+  .idthumb { width: 30px; height: 22px; }
+  .side-bar .who { font-size: 10px; max-width: 56px; }
+  .hand { height: 92px; bottom: calc(-16px + env(safe-area-inset-bottom, 0)); }
+  .hand .card { width: 60px; height: 84px; margin: 0 -16px; font-size: 9px; }
+  .hand .card.raised { transform: translateY(-38px) scale(1.5) !important; }
+  .action-bar { bottom: calc(94px + env(safe-area-inset-bottom, 0)); left: 106px;
+    gap: 5px; max-width: 52vw; }
+  .action-bar .chip { padding: 5px 10px; min-height: 30px; font-size: 12px; }
+  #turn-btn { width: 60px; height: 60px; font-size: 10px; border-width: 2px; }
+  #turn-btn-wrap { right: 8px; }
+  .run-controls { right: 8px; bottom: calc(100px + env(safe-area-inset-bottom, 0)); gap: 6px; }
+  .run-controls .chip { padding: 9px 14px; font-size: 13px; min-height: 40px; }
+  .prompt-sheet { bottom: calc(96px + env(safe-area-inset-bottom, 0));
+    padding: 8px 10px; gap: 6px; max-width: min(72vw, 420px); border-radius: 12px; }
+  .prompt-sheet .pmsg { font-size: 13px; }
+  .prompt-sheet .pbtns { gap: 6px; }
+  .prompt-sheet .pbtns .chip { font-size: 13px; padding: 8px 14px; min-height: 40px; }
+  .focus-panel { left: 106px; bottom: calc(94px + env(safe-area-inset-bottom, 0));
+    width: 168px; padding: 8px; gap: 4px; }
+  .focus-panel .fsub, .focus-panel .fcard { font-size: 12px; }
+  .log-tab { top: 6px; padding: 7px 6px; }
+  .log-drawer { width: 260px; }
+  .hover-preview { display: none; }
+  .zoom-card { width: 230px; min-height: 0; padding: 12px; }
+  .zoom-card .ztext { font-size: 13px; }
+}
+
 /* portrait nudge */
 @media (orientation: portrait) {
   .hand .card { width: 60px; height: 84px; margin: 0 -18px; }

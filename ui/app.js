@@ -77,6 +77,7 @@ function handle(m) {
       ACTIONS = m.actions || [];
       if (m.mode === "bridge" && m.side && m.side !== "spect") mySide = m.side;
       show("screen-game");
+      enterGameChrome();
       render();
       break;
     case "connected":
@@ -273,17 +274,28 @@ function renderBars() {
 }
 
 function barHtml(st, side, isOpp) {
-  const id = st.identity ? st.identity.title : side;
+  const idt = st.identity || {};
+  const name = (idt.title || side).split(":")[0];
   const s = sideStats(st, side);
   const clicks = "●".repeat(Math.max(0, st.click || 0)) || "–";
+  const art = idt.code ? ` style="background-image:url(${cardImgUrl(idt.code)})"` : "";
+  // MTGA-style corner cluster: tappable identity art + compact stat chips.
   return `
-    <span class="stat who">${(id || side).split(":")[0]}</span>
+    <span class="idchip" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
     <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
     <span class="stat" title="clicks remaining">${clicks}</span>
     <span class="stat" title="cards in hand">Hand ${st["hand-count"] ?? (st.hand || []).length}</span>
     <span class="stat" title="cards in deck">Deck ${st["deck-count"] ?? 0}</span>
     <span class="stat" title="agenda points">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
 }
+
+// Tap an identity thumb to read the identity card.
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest(".idchip");
+  if (!chip || !S) return;
+  const st = S[chip.dataset.side];
+  if (st && st.identity) zoomCard(st.identity);
+});
 
 const SERVER_ORDER = (k) => ({ archives: 0, rd: 1, hq: 2 }[k] ?? 10 + parseInt(k.replace("remote", ""), 10));
 const SERVER_NAME = (k) => (k === "hq" ? "HQ" : k === "rd" ? "R&D" : k === "archives" ? "Archives" : "Server " + k.replace("remote", ""));
@@ -299,7 +311,7 @@ function renderServers() {
   // Corp identity gets its own column (the runner's lives in the rig).
   if (corp.identity) {
     const idcol = document.createElement("div");
-    idcol.className = "server";
+    idcol.className = "server identity-col";
     const nm = document.createElement("div");
     nm.className = "sname";
     nm.textContent = "Identity";
@@ -428,7 +440,11 @@ function renderRig() {
     row.className = "rig-row";
     row.innerHTML = `<span class="rowlabel">${label}</span>`;
     (rig[k] || []).forEach((c) => row.appendChild(cardEl(c, { side: "runner" })));
-    if (k === "program" && runner.identity) row.appendChild(cardEl(runner.identity, { side: "runner", identity: true }));
+    if (k === "program" && runner.identity) {
+      const idEl = cardEl(runner.identity, { side: "runner", identity: true });
+      idEl.classList.add("identity-col");
+      row.appendChild(idEl);
+    }
     rigEl.appendChild(row);
   });
 }
@@ -818,6 +834,25 @@ function renderGameOver() {
   o.innerHTML = `<h1>${iWon ? "VICTORY" : "DEFEAT"}</h1>
     <div class="why">${S.winner} wins — ${S.reason || ""}</div>
     <button class="big go" onclick="location.reload()">New game</button>`;
+}
+
+/* Fullscreen-ish chrome: lock landscape where the platform allows it
+   (Android PWA), and teach iOS users the one real path to fullscreen —
+   Add to Home Screen (standalone mode hides all Safari chrome). */
+let chromeHinted = false;
+function enterGameChrome() {
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock("landscape").catch(() => {});
+  }
+  if (chromeHinted) return;
+  chromeHinted = true;
+  const iOS = /iPhone|iPad/.test(navigator.userAgent);
+  const standalone = window.navigator.standalone === true ||
+    window.matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches;
+  if (iOS && !standalone && !localStorage.getItem("jinteki_a2hs_hinted")) {
+    localStorage.setItem("jinteki_a2hs_hinted", "1");
+    setTimeout(() => toast("Fullscreen: Share → Add to Home Screen, then launch from there"), 1200);
+  }
 }
 
 function toast(msg) {
