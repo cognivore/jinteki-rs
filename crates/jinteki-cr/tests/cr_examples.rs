@@ -97,6 +97,10 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 3c: replacement-effect ordering (9.9.11a).
     "example_rule_replacement_effect_must_have_something_to_replace_1",
     "example_rule_replacement_effect_must_have_something_to_replace_2",
+    // Wave 3d: vacuous truth (9.12.2d) and run-ends conditions (6.8.5).
+    "example_rule_vacuous_truth_1",
+    "example_rule_run_ends_condition_1",
+    "example_rule_run_ends_condition_2",
 ];
 
 fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
@@ -3732,6 +3736,150 @@ fn example_rule_replacement_effect_must_have_something_to_replace_2() {
             "no breach either way"
         );
     }
+}
+
+// ===========================================================================
+// §9.12.2d vacuous truth and §6.8.5 run-ends conditions (W3d)
+// ===========================================================================
+
+/// example_rule_vacuous_truth_1 (9.12.2d): a Forked-class effect trashes
+/// encountered ice whose subroutines were ALL broken. Troll has zero
+/// subroutines: if its "when encountered" ability does not end the run, the
+/// Runner is automatically considered to have broken all zero subroutines
+/// as soon as step 6.9.3b begins — and Troll is trashed.
+#[test]
+fn example_rule_vacuous_truth_1() {
+    let mut vm = Vm::empty(351);
+    let troll = tk::install_ice(&mut vm, tk::troll_like("Troll-like"), ServerId::Remote(1), true);
+    tk::install_rig(&mut vm, tk::forked_button("Forked-like", ServerId::Remote(1)));
+    vm.start_turn(Side::Runner);
+
+    tk::take_labeled(&mut vm, Side::Runner, "forked", 100);
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        // Corp declines Troll's optional end-the-run; everything else
+        // defaults.
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::AllSubsBroken { ice } if *ice == troll)),
+        "9.12.2d: zero subroutines are vacuously all-broken at step 6.9.3b"
+    );
+    assert_eq!(
+        vm.st.objects[&troll].zone,
+        Zone::Discard(Side::Corp),
+        "Forked trashes the fully-broken ice"
+    );
+}
+
+/// example_rule_run_ends_condition_1 (6.8.5): during a Noble-Path-class
+/// run, a Chum-class delayed conditional meets its condition when the
+/// encounter ends (via "end the run") and resolves during the Run Ends
+/// Phase — where The Noble Path's effect STILL applies, so the damage
+/// fails. Durations bound to the run expire only at step 6.9.6d.
+#[test]
+fn example_rule_run_ends_condition_1() {
+    let mut vm = Vm::empty(352);
+    let wall = tk::install_ice(&mut vm, tk::etr_ice("WallOfStatic-like", 3, 3), ServerId::Remote(1), false);
+    let marker = tk::install_root(&mut vm, tk::vanilla_asset("Chum-Marker", 0, 3), ServerId::Remote(2), true);
+    let noble = tk::install_rig(&mut vm, tk::vanilla_runner_card("NoblePath-like", jinteki_cr::object::CardType::Event));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+    let mut injected = false;
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        if let DecisionSpec::PaidWindow { options, .. } = &spec {
+            if let Some(rez) = options
+                .iter()
+                .find(|o| matches!(o, WindowOption::RezApproachedIce { .. }))
+                .cloned()
+            {
+                if !injected {
+                    // The run has formally begun: bind the Noble-Path
+                    // shield to it and arm the Chum-class delayed
+                    // conditional.
+                    tk::inject_run_damage_shield(&mut vm, noble);
+                    tk::inject_chum_delayed(&mut vm, marker);
+                    injected = true;
+                }
+                vm.answer(DecisionAnswer::Take(rez));
+                continue;
+            }
+        }
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    let _ = wall;
+    assert!(injected);
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "the run completed"
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        3,
+        "6.8.5: the Run Ends Phase damage was prevented — the shield lives until 6.9.6d"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::DamageSuffered { .. })),
+        "no damage was suffered during the run"
+    );
+}
+
+/// example_rule_run_ends_condition_2 (6.8.5): a Dedicated-Response-Team
+/// class ability meets its "run ends" condition at the same time The Noble
+/// Path's run-bound effect expires (both at step 6.9.6d) — so the Runner
+/// suffers the 2 meat damage.
+#[test]
+fn example_rule_run_ends_condition_2() {
+    let mut vm = Vm::empty(353);
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 0), ServerId::Remote(1), false);
+    tk::install_root(&mut vm, tk::drt_like("DRT-like"), ServerId::Remote(2), true);
+    let noble = tk::install_rig(&mut vm, tk::vanilla_runner_card("NoblePath-like", jinteki_cr::object::CardType::Event));
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.start_turn(Side::Runner);
+
+    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Remote(1) }));
+    let mut injected = false;
+    for _ in 0..300 {
+        let (_, spec) = decision(&mut vm);
+        if !injected && matches!(spec, DecisionSpec::MidAccessWindow { .. }) {
+            // Mid-run injection point: the shield binds to the run in
+            // progress.
+            tk::inject_run_damage_shield(&mut vm, noble);
+            injected = true;
+        }
+        if matches!(spec, DecisionSpec::TakeAction { .. }) {
+            break;
+        }
+        let a = tk::default_answer(&spec);
+        vm.answer(a);
+    }
+    assert!(injected);
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "6.8.5: DRT's damage resolves after the shield expired at 6.9.6d"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::DamageSuffered { kind: DamageKind::Meat, amount: 2, .. }
+        )),
+        "the 2 meat damage was suffered"
+    );
 }
 
 // ===========================================================================

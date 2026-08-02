@@ -83,6 +83,12 @@ pub enum TriggerCond {
     /// "Whenever the Corp installs a card in the root of this server…"
     /// (Tranquility Home Grid class; the 9.6.5b activity gate is the point).
     CardInstalledInSourceServer,
+    /// "When that encounter ends…" (Chum-class delayed conditionals).
+    EncounterEnds,
+    /// "…if all of its subroutines were broken during that encounter"
+    /// (Forked class). 9.12.2d vacuous truth: ice with ZERO subroutines
+    /// satisfies this as soon as step 6.9.3b of the encounter begins.
+    AllSubsBrokenOnEncounteredIce,
     /// "If the Runner is tagged when this card is accessed…" (Quantum
     /// Predictive Model class): the tag requirement is PART OF the trigger
     /// condition and must hold at the moment the condition would occur
@@ -484,6 +490,11 @@ pub fn trigger_matches(
             // 9.6.5c: the tag requirement is checked by the checkpoint scan
             // (it is part of the condition, not the effect).
             *obj == source.id
+        }
+        (TriggerCond::EncounterEnds, GameChange::EncounterEnded { .. }) => true,
+        (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
+            cite!("rule_vacuous_truth");
+            true
         }
         _ => false,
     }

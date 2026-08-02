@@ -303,6 +303,8 @@ pub enum TargetSpec {
     HostOfSource,
     /// The card currently being accessed.
     AccessedCard,
+    /// The ice currently being encountered (Forked class).
+    EncounteredIce,
     /// Chosen by the controller at announce time from a filter.
     Choose { count: u32, filter: TargetFilter },
     /// The top N cards of a deck (Breached Dome-style).

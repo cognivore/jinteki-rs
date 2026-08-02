@@ -65,6 +65,10 @@ pub enum GameChange {
     BreachEnded { server: ServerId },
     CardEnteredRoot { obj: ObjectId, server: ServerId },
     SubroutineResolved { ice: ObjectId, index: usize },
+    /// CR 9.12.2d: "all subroutines broken" became satisfied for this
+    /// encounter — including vacuously, for ice with zero subroutines, as
+    /// soon as step 6.9.3b begins.
+    AllSubsBroken { ice: ObjectId },
     /// 10.8.6a: a trace initiated.
     TraceInitiated { base: i64 },
     /// 10.8.6e: the trace was determined.

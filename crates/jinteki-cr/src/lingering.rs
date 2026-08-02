@@ -68,6 +68,12 @@ pub enum Payload {
     /// Runner steals an agenda), the effect expires at checkpoint step
     /// 10.3.1b and the card is trashed as if completing its resolution.
     PlayedTrashShield { card: ObjectId },
+    /// "Prevent all damage." for a duration (The Noble Path class; 6.8.5) —
+    /// removes damage from expected effects while it lives. Run-bound
+    /// durations expire at step 6.9.6d (10.3.1b of the checkpoint after the
+    /// run frame pops), which is exactly when Dedicated-Response-Team-class
+    /// run-ends damage resolves unshielded.
+    DamagePreventionAll,
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary

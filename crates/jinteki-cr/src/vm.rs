@@ -79,6 +79,10 @@ pub struct EncounterState {
     pub broken: std::collections::BTreeSet<SubKey>,
     /// Subroutines already resolved this encounter (6.9.3c loop).
     pub resolved: std::collections::BTreeSet<SubKey>,
+    /// CR 9.12.2d: "all subroutines broken" has been noted for this
+    /// encounter (at most once) — vacuously true for zero-sub ice as soon
+    /// as step 6.9.3b begins.
+    pub all_broken_noted: bool,
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -669,6 +673,11 @@ impl Vm {
                     self.set_structure_phase_at(me, StepPhase::Checkpoint);
                 }
                 StepOp::Paw(classes) => {
+                    // 9.12.2d: for zero-sub ice, "all subroutines broken"
+                    // is satisfied as soon as step 6.9.3b begins.
+                    if self.st.encounter.is_some() {
+                        self.check_all_subs_broken();
+                    }
                     self.open_paid_window(classes);
                     // Window frames run above; when the window closes the
                     // structure resumes in Checkpoint phase.
@@ -1285,8 +1294,32 @@ impl Vm {
             ice,
             broken: std::collections::BTreeSet::new(),
             resolved: std::collections::BTreeSet::new(),
+            all_broken_noted: false,
         });
         self.changes.record(GameChange::EncounterBegan { ice, encounter_id: id });
+    }
+
+    /// CR 9.12.2d: note "all subroutines broken" for this encounter as soon
+    /// as it could be satisfied — vacuously for zero-sub ice (checked when
+    /// step 6.9.3b begins), or when the last subroutine is broken.
+    fn check_all_subs_broken(&mut self) {
+        let Some(e) = self.st.encounter.as_ref() else { return };
+        if e.all_broken_noted {
+            return;
+        }
+        let ice = e.ice;
+        let subs = self.current_subs(ice);
+        let all = {
+            let e = self.st.encounter.as_ref().unwrap();
+            subs.iter().all(|(k, _)| e.broken.contains(k))
+        };
+        if all {
+            cite!("rule_vacuous_truth");
+            if let Some(e) = self.st.encounter.as_mut() {
+                e.all_broken_noted = true;
+            }
+            self.changes.record(GameChange::AllSubsBroken { ice });
+        }
     }
 
     fn end_encounter(&mut self) {
@@ -1713,6 +1746,13 @@ impl Vm {
                 vec![atom]
             }
             Instruction::Damage { kind, amount, responsible } => {
+                // 6.8.5 / The Noble Path: a prevent-all-damage lingering
+                // effect removes damage from the expected effects entirely
+                // while it lives (its run-bound duration expires at 6.9.6d).
+                if self.damage_shield_active() {
+                    cite!("rule_run_ends_condition");
+                    return vec![];
+                }
                 let mut v = *amount as i64;
                 // 9.9.2: statics modify expected effects (The Cleaners as a
                 // static formulation).
@@ -1856,6 +1896,10 @@ impl Vm {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::DamagePerCounter { kind, base, per, counter, responsible } => {
+                if self.damage_shield_active() {
+                    cite!("rule_run_ends_condition");
+                    return vec![];
+                }
                 // 9.12.2b/c: damage is an aggregated class — one instance
                 // with the aggregated value ("2 net plus 1 per advancement"
                 // = a single 5-damage atom; Prāna-class interrupts apply
@@ -1883,6 +1927,13 @@ impl Vm {
             // Structure-internal instructions carry structural atoms.
             _ => vec![EffectAtom::new(EffectClass::Structural, 1, controller)],
         }
+    }
+
+    /// The Noble Path class: a live prevent-all-damage lingering effect.
+    fn damage_shield_active(&self) -> bool {
+        self.lingering
+            .iter()
+            .any(|l| matches!(l.payload, Payload::DamagePreventionAll))
     }
 
     /// Lockdown-class static: "<side> cannot draw cards" (9.9.2 example 2).
@@ -3681,6 +3732,9 @@ impl Vm {
                             e.broken.insert(k);
                         }
                     }
+                    // 9.12.2d: breaking the last subroutine satisfies
+                    // "all subroutines broken".
+                    self.check_all_subs_broken();
                 }
             }
             Instruction::PlaceCounters { target, kind, amount } => {
@@ -4105,6 +4159,9 @@ impl Vm {
                 .into_iter()
                 .collect(),
             TargetSpec::AccessedCard => self.st.accessed.into_iter().collect(),
+            TargetSpec::EncounteredIce => {
+                self.st.encounter.as_ref().map(|e| e.ice).into_iter().collect()
+            }
             TargetSpec::Choose { .. } => announced.to_vec(),
             TargetSpec::TopOfDeck(side, n) => self.st.deck[side]
                 .iter()

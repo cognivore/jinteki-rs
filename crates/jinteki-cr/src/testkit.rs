@@ -1629,6 +1629,100 @@ pub fn underworld_contact_like(name: &'static str) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
+// W3d shapes: vacuous truth (9.12.2d) and run-ends conditions (6.8.5)
+// ---------------------------------------------------------------------------
+
+/// Troll shape for 9.12.2d: ice with ZERO subroutines and a "when
+/// encountered, you may end the run" ability the Corp can decline.
+pub fn troll_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 2, 4);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfEncountered,
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::EndTheRun))],
+        true,
+    )
+    .labeled("troll: may end the run on encounter")];
+    c
+}
+
+/// Forked shape: run a server; if all subroutines on an encountered piece
+/// of ice are broken during the encounter (vacuously for zero-sub ice —
+/// 9.12.2d), trash that ice.
+pub fn forked_button(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Event);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::CreateDelayedConditional {
+                def: Box::new(
+                    AbilityDef::conditional(
+                        TriggerCond::AllSubsBrokenOnEncounteredIce,
+                        vec![Instruction::TrashCards(TargetSpec::EncounteredIce)],
+                        false,
+                    )
+                    .labeled("forked-delayed: trash fully-broken ice"),
+                ),
+                duration: crate::lingering::WantedDuration::UntilResolved,
+            },
+            Instruction::InitiateRun(server),
+        ],
+    )
+    .labeled("forked: run and trash fully-broken ice")];
+    c
+}
+
+/// Dedicated-Response-Team shape (6.8.5 example 2): "Whenever a run ends,
+/// do 2 meat damage." (mandatory).
+pub fn drt_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::Damage { kind: DamageKind::Meat, amount: 2, responsible: Side::Corp }],
+        false,
+    )
+    .labeled("drt: 2 meat when the run ends")];
+    c
+}
+
+/// Inject a Chum-class delayed conditional: "when this encounter ends, do 3
+/// net damage." (one-shot).
+pub fn inject_chum_delayed(vm: &mut Vm, source: ObjectId) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::DelayedConditional {
+            def: AbilityDef::conditional(
+                TriggerCond::EncounterEnds,
+                vec![Instruction::Damage {
+                    kind: DamageKind::Net,
+                    amount: 3,
+                    responsible: Side::Corp,
+                }],
+                false,
+            )
+            .labeled("chum-delayed: 3 net when encounter ends"),
+        },
+        duration: crate::lingering::Duration::UntilResolved,
+        applied_to: Vec::new(),
+    });
+}
+
+/// Inject a Noble-Path-class prevent-all-damage shield bound to the current
+/// run (6.8.5: expires at step 6.9.6d).
+pub fn inject_run_damage_shield(vm: &mut Vm, source: ObjectId) {
+    let run_id = vm.current_run.map(|(r, _, _)| r).expect("a run in progress");
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::DamagePreventionAll,
+        duration: crate::lingering::Duration::Run(run_id),
+        applied_to: Vec::new(),
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Script drivers
 // ---------------------------------------------------------------------------
 
