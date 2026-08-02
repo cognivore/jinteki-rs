@@ -263,3 +263,15 @@ the design.
    DP-7a suite must pass unchanged. Divergence means harvested overfit —
    either the example test is wrong or the kernel is, and the CR decides
    which.
+5. **Quantity positions never get bespoke variants.** Everywhere card text
+   computes a number (strength X, damage per something, credits per
+   something, trace base, "for each" counts) there is ONE `Quantity`
+   selector language: a pure data expression evaluated against world state
+   returning an int, with its dependencies readable from the expression
+   itself — which is what makes reactive re-evaluation through the
+   characteristics pipeline (9.12.1) and calculated-quantity timing
+   (9.12.2) possible. Selectors are data, not closures, for the same
+   auditability reasons as everything else in this section.
+   `SelfStrengthPerServerIce { per }`-style variants are the named defect
+   class: the variant should be the *position* (`SelfStrength(Quantity)`),
+   the selector should be the *content*.
