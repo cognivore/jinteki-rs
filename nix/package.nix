@@ -18,7 +18,12 @@ rustPlatform.buildRustPackage {
         "Cargo.lock"
         "crates"
         "ui"
-      ];
+      ]
+      # jinteki-cr compiles the extracted CR tables into the binary
+      # (include_str! of docs/rules/*.json), so they are build inputs — the
+      # rest of docs/ stays out of the closure.
+      || rel == "docs"
+      || lib.hasPrefix "docs/rules" rel;
   };
 
   cargoLock.lockFile = ../Cargo.lock;
