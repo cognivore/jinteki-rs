@@ -8,7 +8,7 @@ truth.
 
 ## Odometers (during W5)
 
-- **DP-7a: 122/243** CR examples as example-named passing tests (50.2%).
+- **DP-7a: 123/243** CR examples as example-named passing tests (50.6%).
   Unfrozen since FT-0 landed; the climb to 243/243 has resumed.
 - **DP-7b: 454/1420** distinct rules cited (32.0%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
@@ -89,7 +89,8 @@ prefer a slightly larger honest primitive and note it here.
 | `9d1d5c3` | W5b | §1.13 hosting: `StaticDecl::{CanHost, HostedInstallDiscount, InstallOnlyHostedOn}`, `Instruction::{HostCards, SwapCards, RemoveCountersFromPlayer}`; the 8.5.16b destination declaration now offers every eligible host (1.13.6a) and refuses the ones that host only through their own abilities (1.13.6b); 1.13.6c install-legality gate; 1.13.12 zone-following + 1.13.2a/b hosted-not-installed; 1.13.13 rebuilt as a change-driven checkpoint rule with the score-area→score-area exception (8.8.4c); 1.13.3 hosted counters (`CounterKind::BadPublicity`); 9.1.6c hosted-credit spending marks both cards used | 99 |
 | `7074e36` | W6a | small rules with real machinery: §1.10 credits (1.10.3b lose-as-much-as-possible, 1.10.3c hosted-credit spending incl. psi bids, 1.10.5a/b/d recurring credits placed on becoming active and refilled UP TO the printed number), 1.14.5 `Instruction::PerformedBy` — the player named to carry an effect out makes its choices and is the one attributed (1.14.5a), 1.17.1 `Vm::score` + 1.17.1a `threat_level` with the 9.3.6f threat-flag activity gate, 1.19.4 [trash] costs, 1.20.2 memory limit, 10.4.1 suffer-vs-do attribution, 10.4.3 simultaneous damage trashes | 112 |
 | `aec481c` | W6b | strength modifications and durations: `PumpStrengthSelf` generalised to `Instruction::ModifyStrength { target, amount, duration }` (the target and the duration are both positions), 3.9.5b/d implicit encounter duration and its next-checkpoint expiry, 3.9.5c/3.4.4a stated-plus-implicit durations via `LingeringEffect::also` (expires when BOTH have), 9.10.5 duration replacement as `StaticDecl::ExtendStrengthDurations` rewriting an expiring effect's duration at step 10.3.1b, 9.9.9a's "only while the replacement is active", 9.4.4 statics make no lingering effects; `TargetFilter::IceProtectingAttackedServer`, `Vm::has_subtype` | 118 |
-| _(this)_ | W6c | §10.12 sabotage as `Instruction::Sabotage { count }`: the Corp's HQ choice at resolution (10.12.2, not a target announcement — 1.15.1b), the 10.12.3a floor and 10.12.3b everything-goes case carried by a new `min` on `DecisionSpec::ChooseTargets`, simultaneous facedown trashing (10.12.2a); 9.4.5 a static value modification keeps the original value's restrictions (The Cleaners' +1 on Flare's unpreventable damage) | 122 |
+| `f86061b` | W6c | §10.12 sabotage as `Instruction::Sabotage { count }`: the Corp's HQ choice at resolution (10.12.2, not a target announcement — 1.15.1b), the 10.12.3a floor and 10.12.3b everything-goes case carried by a new `min` on `DecisionSpec::ChooseTargets`, simultaneous facedown trashing (10.12.2a); 9.4.5 a static value modification keeps the original value's restrictions (The Cleaners' +1 on Flare's unpreventable damage) | 122 |
+| _(this)_ | W6d | 9.5.6c stipulations on encountered-ice references: `TimingRestriction::EncounterOnly { required_subtype }` — an ability referring to "this code gate" is unusable during any other encounter — alongside the 9.3.6c interface strength gate | 123 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -156,6 +157,17 @@ prefer a slightly larger honest primitive and note it here.
     hosted credits that are the only way to pay), so no example distinguishes
     them; a real choice means suspending payment, which `pay_cost` cannot do
     (see deviation 11).
+
+19. **The 10.12.3a sabotage floor is completed, not refused** (W6c,
+    `DecisionCtx::Sabotage`) — the Decision carries `min`, and a Corp answer
+    below it is topped up from the front of HQ instead of being rejected as
+    illegal. The kernel has no "your answer was illegal, choose again" path
+    anywhere; every other Decision clamps the same way.
+20. **`Instruction::Sabotage` trashes without a Decision per card** (W6c) —
+    10.12.2b ("the Corp cannot look at cards trashed from R&D until after
+    making all decisions") is satisfied trivially because the R&D cards are
+    never shown to the answering side; the kernel has no per-side visibility
+    model to violate yet. §10.2 information rules are their own wave.
 
 12. **Plan-driver approximations** (W4, all annotated in `src/plan.rs`):
     `Reply::Pass` in a window where 9.2.8e forbids passing discharges the
@@ -245,11 +257,10 @@ New card shapes go in `testkit.rs` and are built EXCLUSIVELY through
 shape is annotated in its doc comment and is legitimate only while
 orthogonal to every example using it.
 
-## Next targets — resume the odometer (144 examples left, cluster-ordered)
+## Next targets — resume the odometer (120 examples left, cluster-ordered)
 
-Measured from `docs/rules/examples.json` minus the `IMPLEMENTED` ledger. The
-remaining examples are scattered; these are the clusters big enough to pay
-for their machinery, largest first. Re-run the count before choosing:
+Measured from `docs/rules/examples.json` minus the `IMPLEMENTED` ledger.
+Re-run the count before choosing a cluster:
 
 ```
 python3 - <<'EOF'
@@ -263,47 +274,75 @@ print(len(missing)); [print(m) for m in missing]
 EOF
 ```
 
-1. **§8.9 / §9.3.4b targets** (~7): `example_rule_target_1..4`,
-   `distinct_targets_1`, `targets_must_be_in_play_area_1`,
-   `target_beyond_move_1`. Announce-time targeting is already half-built
-   (`TargetSpec::Choose`, `targets_needed`); this makes the target RULES
-   explicit — legality at announce, re-checking at resolution, targets that
-   left the play area.
-2. **Object identity and movement** (~8): `object_move_location_1/2`,
+Remaining by section: 1.12 Objects 9 · 1.16 Costs 8 · 6.2 Position 8 ·
+1.15 Targets 7 · 9.11 Instructions 7 · 9.12 Other 7 · 9.1 General 6 ·
+4.6 Play Area 4 · 6.1 General 4 · 7.3 Breaching 4 · 9.8 Subroutines 4 ·
+5.2 Actions 3 · 6.5 Encounters 3 · 7.4 Candidates 3 · 8.8 Swaps 3 ·
+9.9 Interrupts 3 · 9.10 Lingering 3 · 10.1 General 3 · rest ≤ 2.
+
+1. **§1.15 targets + §9.8.6 subroutine targets** (~8): `target_1..4`,
+   `targets_must_be_in_play_area_1`, `distinct_targets_1`,
+   `target_beyond_move_1`, `break_all_but_x_subroutines_targets_1`. The
+   machinery is scoped and half-built (W6a already added the 1.14.5 chooser
+   the "The Runner trashes 1 program" example needs, and W6c added `min` to
+   `ChooseTargets` for 1.15.2e's "as many distinct targets as possible"):
+   - `TargetSpec::Choose { count }` should take a `Quantity` (§12 rule 6) —
+     Aggressive Secretary's X is advancement counters on the source;
+   - several announcements per instruction (1.15.2, Colossus's "1 program
+     and 1 resource") — a slot counter on `AbilityFrame` plus a
+     `TargetSpec` combinator, since `targets_needed` asks exactly once now;
+   - 1.15.2c: `filter_candidates` must restrict to INSTALLED cards unless a
+     criterion names a zone (`CardsInHandOf`, `InScoreAreaOf`);
+   - 1.15.3: re-validate announced targets at resolution;
+   - 1.15.4: bind already-chosen targets into instructions that follow
+     (Howler's delayed conditional);
+   - subroutine targets need a `DecisionSpec` over `SubKey`, which
+     `Grappling Hook` (9.8.6b) needs too.
+2. **§1.12 object identity and movement** (~9): `object_move_location_1/2`,
    `object_move_known_location_1`, `previous_object_1/2`,
    `previous_object_source_1`, `identify_object_after_move_1`,
-   `cancelled_movement_1`, `sec_replacing_movements_1`. §1.12's "a card that
-   changes zone becomes a NEW object" is already relied on by 7.4.7a
-   (Bacterial); these examples pin it, and `source_moved_since` (still a stub
-   in vm.rs — see deviation list) is the same machinery.
-3. **§6.2 ice position changes** (~5): `ice_change_during_movement_1/2`,
-   `ice_change_inward_1`, `ice_change_outward_1`,
-   `ice_change_encounter_move_swap_1` — plus **§8.8 swaps** (~4:
+   `no_memory_1`, `object_turn_faceup_facedown_1`. A card that changes zone
+   becomes a NEW object (1.12.3) — the kernel keeps one `ObjectId` and fakes
+   the consequence in two places (`CorpRearrangesRnd`, `source_moved_since`).
+   This cluster wants a real object generation stamp; `previous_object`
+   (1.12.6) then falls out as "the game history says these two objects are
+   the same card".
+3. **§6.2 positions + §8.8 swaps** (~11): `count_positions_1/2`,
+   `ice_change_inward_1`, `_outward_1`, `_during_movement_1/2`,
+   `_encounter_move_swap_1`, `no_position_after_approach_server_1`,
    `swap_become_installed_1`, `swap_installed_cards_preserves_hosting_1`,
-   `swap_only_to_valid_location_1`, `drawn_card_swapped_1`), which shares the
-   position-preservation machinery and retires deviation 15's
-   `SwapCards` slice.
-4. **Icebreaker strength / lingering durations** (~5):
-   `icebreaker_strength_increase_implicit_1`, `_specified_1`,
-   `_outside_of_encounter_1`, `ice_strength_modification_duration_1`,
-   `modify_duration_of_lingering_effect_1` — §9.10.4a is implemented but
-   untested by its own examples.
-5. **Credit spending and pools** (~5): `spend_credits_1..3`,
-   `lose_credits_1`, `recurring_credits_do_not_accumulate_1`,
-   `alternate_payment_1` — §1.16/§10.2, and W5b's hosted-pool-first payment
-   is the same code path.
-6. **Basic actions** — deviation 17: there are still no basic install/play
-   ACTIONS (5.2.6d/5.2.7a/d); every example so far installs and plays through
-   card abilities. Several remaining examples (`defferent_actions_1`,
-   `costs_with_click_1`, `action_timing_structure_completion_1`) need them,
-   and they are cheap now that §8.5/§8.6 are complete.
+   `swap_only_to_valid_location_1`, `drawn_card_swapped_1`. Positions are
+   counted from the innermost outward (6.2.3) and the Runner's position
+   survives ice appearing/disappearing/moving; the swap examples share the
+   machinery and retire deviation 15.
+4. **§1.16 costs** (~8): `cost_x_1`, `cost_quantities_1`, `cost_restrictions_2`,
+   `alternate_payment_1`, `inherent_cost_aggregates_1`,
+   `additional_cost_checkpoint_1`, `install_and_rez_reducing_total_1`,
+   `cost_interrupt_static_mandatory_1`. X-costs chosen at announce (1.16.2c)
+   and alternate payments (1.16.2e) are the two new mechanisms.
+5. **Forced encounters outside a run** (~4): `forced_encounter_1`,
+   `forced_encounter_during_run_1`, `end_encounter_outside_run_1`,
+   `active_exception_encounter_not_installed_1` — plus
+   `ice_strength_modification_duration_1`, which W6b implemented the
+   duration half of and could not test for want of a standalone encounter
+   (the union-of-durations model already gives the right answer; it needs an
+   encounter with no run in progress to observe). An encounter is currently
+   a phase of the run structure, not a structure of its own.
+6. **§9.11 instruction identification** (~7): `step_sequences_1/2`,
+   `use_restrictions_1`, `split_up_instruction_1`, `choose_instruction_1`,
+   `choice_instruction_1`, `look_reveal_instruction_1`. Note that
+   `step_sequences_1` contradicts deviation 4 head-on (it says the ONLY
+   checkpoint while installing is 8.5.16d) — taking this cluster means
+   retiring that deviation, which is worth doing before the §8.5 surface
+   grows further.
 
-Singletons worth taking opportunistically while their machinery is warm:
-`look_reveal_instruction_1` and `reveal_from_hidden_1` (next to §8.7's
-search), `split_up_instruction_1` / `choice_instruction_1` /
-`choose_instruction_1` (§9.11 segmentation), `sabotage_all_remaining_cards_*`
-(3, one mechanism), `this_server_*` (3), `hosted_counters`/`trash_hosted`
-follow-ons now that §1.13 is done.
+Singletons worth taking opportunistically: `this_server_1/2/3` (3, one
+mechanism), `dividends_1`/`dividends_timing_1` (2), `lingering_effect_
+maintaining_choice_*` (3 — `Payload::MaintainedChoice` exists but nothing
+creates one yet), `multiple_damage_selected_sequentially_1`,
+`suffer_or_take_damage`-adjacent `mandatory_infinite_loop_1` (hard),
+`influence_by_copy_1` + `54+_1` (§1.4 deck construction — two pure
+arithmetic functions, no kernel involvement).
 
 ## Discipline (unchanged, binding)
 

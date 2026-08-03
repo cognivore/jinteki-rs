@@ -159,6 +159,7 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_sabotage_all_remaining_cards_2",
     "example_rule_sabotage_all_remaining_cards_3",
     "example_rule_static_modification_keep_restrictions_1",
+    "example_rule_paid_ability_refers_to_encountered_ice_2",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5527,6 +5528,80 @@ fn example_rule_static_modification_keep_restrictions_1() {
         "all 3 points are unpreventable — the modification kept the \
          restriction the original value carried"
     );
+}
+
+/// example_rule_paid_ability_refers_to_encountered_ice_2 (9.5.6c / 9.3.6c):
+/// an Abagnale-class icebreaker's [trash] ability is usable during any
+/// encounter with a code gate; its [interface] ability additionally requires
+/// the breaker's strength to reach the encountered ice's.
+#[test]
+fn example_rule_paid_ability_refers_to_encountered_ice_2() {
+    // Strength 2 against a strength-4 code gate: only the [trash] ability.
+    let mut weak = Vm::empty(634);
+    tk::install_ice(
+        &mut weak,
+        tk::subtyped_etr_ice("CodeGate-like", "code gate", 0, 4),
+        ServerId::Hq,
+        true,
+    );
+    tk::install_rig(&mut weak, tk::abagnale_like("Abagnale-like", 2));
+    weak.st.runner.credits = 5;
+    weak.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut weak,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Hq).when(Match::jack_out().once(), Reply::Halt),
+    );
+    let enc: Vec<&plan::Entry> = t
+        .entries
+        .iter()
+        .filter(|e| e.step.as_deref() == Some("step_encounter_paw") && e.side == Side::Runner)
+        .collect();
+    assert!(!enc.is_empty(), "the Runner had priority during the encounter: {}", t.tail(6));
+    assert!(
+        enc.iter().any(|e| e.offered("[trash] bypass")),
+        "the [trash] ability is usable during an encounter with a code gate"
+    );
+    assert!(
+        !enc.iter().any(|e| e.offered("interface break")),
+        "the interface ability is not — strength 2 cannot interface with 4"
+    );
+
+    // Strength 4 against the same ice: both.
+    let mut strong = Vm::empty(635);
+    tk::install_ice(
+        &mut strong,
+        tk::subtyped_etr_ice("CodeGate-like", "code gate", 0, 4),
+        ServerId::Hq,
+        true,
+    );
+    tk::install_rig(&mut strong, tk::abagnale_like("Abagnale-like", 4));
+    strong.st.runner.credits = 5;
+    strong.start_turn(Side::Runner);
+    let t2 = plan::play(
+        &mut strong,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Hq).when(Match::jack_out().once(), Reply::Halt),
+    );
+    assert!(t2.ever_offered_to(Side::Runner, "interface break"));
+
+    // A sentry instead of a code gate: neither ability refers to it.
+    let mut wrong = Vm::empty(636);
+    tk::install_ice(
+        &mut wrong,
+        tk::subtyped_etr_ice("Sentry-like", "sentry", 0, 1),
+        ServerId::Hq,
+        true,
+    );
+    tk::install_rig(&mut wrong, tk::abagnale_like("Abagnale-like", 4));
+    wrong.st.runner.credits = 5;
+    wrong.start_turn(Side::Runner);
+    let t3 = plan::play(
+        &mut wrong,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Hq).when(Match::jack_out().once(), Reply::Halt),
+    );
+    assert!(!t3.ever_offered("abagnale"), "9.5.6c: the ice must meet every stipulation");
 }
 
 // ===========================================================================

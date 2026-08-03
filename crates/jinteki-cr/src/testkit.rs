@@ -695,7 +695,7 @@ pub fn reconstruction_like(name: &'static str) -> PrintedCard {
 pub fn arruaceiras_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(1)])
-        .with_timing(TimingRestriction::EncounterOnly)
+        .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
         .labeled("arruaceiras: take 1 tag (encounter only)")];
     c
 }
@@ -1002,7 +1002,7 @@ pub fn utopia_button(name: &'static str) -> PrintedCard {
 pub fn break_button(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::BreakSubroutines { count: 1 }])
-        .with_timing(TimingRestriction::EncounterOnly)
+        .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
         .labeled("break: 1 subroutine")];
     c
 }
@@ -2718,5 +2718,38 @@ pub fn sabotage_button(name: &'static str, n: i64) -> PrintedCard {
         AbilityDef::paid(Cost::free(), vec![Instruction::Sabotage { count: Quantity::c(n) }])
             .labeled("sabotage"),
     ];
+    c
+}
+
+/// Abagnale shape (9.5.6c / 9.3.6c): an icebreaker with a [trash] ability
+/// usable during an encounter with a CODE GATE whatever its strength, and an
+/// [interface] break ability usable only when the breaker's strength reaches
+/// the encountered ice's.
+pub fn abagnale_like(name: &'static str, strength: i32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.strength = Some(strength);
+    c.memory_cost = Some(1);
+    c.subtypes = vec!["icebreaker"];
+    c.abilities = vec![
+        AbilityDef::paid(Cost::trash_self(), vec![Instruction::BypassEncounteredIce])
+            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate") })
+            .labeled("abagnale: [trash] bypass this code gate"),
+        AbilityDef::paid(Cost::credits(1), vec![Instruction::BreakSubroutines { count: 1 }])
+            .with_flag(AbilityFlag::Interface)
+            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate") })
+            .labeled("abagnale: interface break 1"),
+    ];
+    c
+}
+
+/// A piece of ice with a subtype and one ETR subroutine.
+pub fn subtyped_etr_ice(
+    name: &'static str,
+    subtype: &'static str,
+    cost: u32,
+    strength: i32,
+) -> PrintedCard {
+    let mut c = etr_ice(name, cost, strength);
+    c.subtypes = vec![subtype];
     c
 }

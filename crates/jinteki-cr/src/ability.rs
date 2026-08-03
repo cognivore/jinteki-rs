@@ -181,9 +181,10 @@ impl Cost {
 /// CR 9.5.6: effect-based timing restrictions on paid abilities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimingRestriction {
-    /// 9.5.6a/c: usable only during an encounter (break abilities and
-    /// encountered-ice references).
-    EncounterOnly,
+    /// 9.5.6a/c: usable only during an encounter — and, where the ability
+    /// refers to the encountered ice with a stipulation ("this code gate"),
+    /// only during an encounter with a piece of ice that meets it.
+    EncounterOnly { required_subtype: Option<&'static str> },
     /// 9.5.6b: usable only during the Approach Ice Phase, with the
     /// approached ice matching all stipulations used in referring to it.
     ApproachOnly { required_subtype: Option<&'static str>, rezzed: bool },

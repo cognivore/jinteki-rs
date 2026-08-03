@@ -5602,10 +5602,15 @@ impl Vm {
                 }
                 // 9.5.6: effect-based timing restrictions.
                 match a.timing {
-                    Some(crate::ability::TimingRestriction::EncounterOnly) => {
+                    Some(crate::ability::TimingRestriction::EncounterOnly {
+                        required_subtype,
+                    }) => {
                         cite!("rule_paid_ability_refers_to_encountered_ice");
-                        if self.st.encounter.is_none() {
-                            continue;
+                        let Some(e) = self.st.encounter.as_ref().map(|e| e.ice) else { continue };
+                        if let Some(sub) = required_subtype {
+                            if !self.has_subtype(e, sub) {
+                                continue;
+                            }
                         }
                     }
                     Some(crate::ability::TimingRestriction::ApproachOnly {
