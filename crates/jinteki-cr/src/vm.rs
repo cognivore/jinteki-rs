@@ -2918,6 +2918,7 @@ impl Vm {
             | Instruction::ModifyStrength { .. }
             | Instruction::ModifySubtypes { .. }
             | Instruction::Derez { .. }
+            | Instruction::ExposeCards { .. }
             | Instruction::RezCard { .. }
             | Instruction::ResolveAbilityOf { .. }
             | Instruction::BreakSubroutines { .. } => {
@@ -3912,6 +3913,7 @@ impl Vm {
             | Instruction::MoveIce { ice: spec, .. }
             | Instruction::ForceEncounter { ice: spec }
             | Instruction::RezCard { target: spec, .. }
+            | Instruction::ExposeCards { cards: spec }
             | Instruction::ResolveAbilityOf { source: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
@@ -6113,6 +6115,21 @@ impl Vm {
                             self.pending_from_effect.extend(ids);
                         }
                     }
+                }
+            }
+            Instruction::ExposeCards { cards } => {
+                // CR 1.21.4: exposing is revealing, restricted to installed
+                // UNREZZED cards. 9.12.2 does not aggregate exposing, so each
+                // card exposed is its own occurrence (9.6.4b, Blackguard).
+                cite!("rule_expose");
+                cite!("rule_look_reveal_expose_access_distinct");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                for t in targets {
+                    let Some(o) = self.st.objects.get(&t) else { continue };
+                    if o.faceup || !self.is_installed(o) {
+                        continue;
+                    }
+                    self.changes.record(GameChange::CardExposed { obj: t });
                 }
             }
             Instruction::Derez { target } => {

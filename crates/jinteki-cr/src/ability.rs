@@ -129,6 +129,16 @@ pub enum TriggerCond {
     /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
     /// at run step 6.9.4a (`rule_pass_ice`).
     SelfPassed,
+    /// "Whenever a card is exposed…" (Blackguard class). CR 9.6.4b: exposing
+    /// several cards in ONE instruction meets this condition once per card,
+    /// because exposing is not one of 9.12.2c's aggregated effect classes.
+    CardExposed,
+    /// "Whenever an installed <side> card is trashed…" (District 99 /
+    /// Wasteland class). `of_types` narrows the description the way the
+    /// printed text does ("a program or piece of hardware"); empty is any
+    /// card type. CR 8.2.2a: a trash that was PREVENTED never happened, so
+    /// this condition is not met by it.
+    InstalledCardTrashed { side: Side, of_types: Vec<CardType> },
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
     /// condition once however many "for each" terms the calculation had.
@@ -763,6 +773,20 @@ pub fn trigger_matches(
             // access); this arm only matches the change class.
             true
         }
+        (TriggerCond::CardExposed, GameChange::CardExposed { .. }) => {
+            cite!("rule_expose");
+            true
+        }
+        (
+            TriggerCond::InstalledCardTrashed { side, .. },
+            GameChange::CardTrashed { obj, was_zone, .. },
+        ) => {
+            // 8.2.2a: only a trash that actually happened records this change.
+            // The `of_types` narrowing is applied by the checkpoint scan,
+            // which can read the trashed card's type.
+            cite!("rule_cancelled_movement");
+            was_zone.is_installed() && is_corp_card_side(trashed_is_corp(*obj)) == *side
+        }
         (TriggerCond::EncounterEnds, GameChange::EncounterEnded { .. }) => true,
         (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
             cite!("rule_vacuous_truth");
@@ -850,6 +874,15 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
 pub fn trigger_per_event(cond: &TriggerCond) -> bool {
     cite!("rule_act_on_multiple_cards");
     matches!(cond, TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. })
+}
+
+/// Map the trash-trigger filter's Corp-ness back to a side.
+fn is_corp_card_side(is_corp: bool) -> Side {
+    if is_corp {
+        Side::Corp
+    } else {
+        Side::Runner
+    }
 }
 
 /// Is a card a Corp card by printed side (for trash-trigger filters)?

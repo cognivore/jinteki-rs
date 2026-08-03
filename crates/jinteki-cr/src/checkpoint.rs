@@ -292,6 +292,21 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             continue;
                         }
                     }
+                    // The District 99 class narrows the description to some
+                    // card types; the scan has the state access to read the
+                    // trashed card's type.
+                    if let (
+                        crate::ability::TriggerCond::InstalledCardTrashed { of_types, .. },
+                        GameChange::CardTrashed { obj, .. },
+                    ) = (cond, c)
+                    {
+                        if !of_types.is_empty() {
+                            let ty = vm.st.objects.get(obj).map(|o| o.printed.card_type);
+                            if !ty.map(|t| of_types.contains(&t)).unwrap_or(false) {
+                                continue;
+                            }
+                        }
+                    }
                     // 9.6.5c: requirements listed in the trigger condition
                     // must hold when the condition would occur (QPM class:
                     // the Runner must already be tagged).

@@ -4207,3 +4207,100 @@ pub fn compile_like(name: &'static str, program: ObjectId) -> PrintedCard {
     .labeled("compile: arm the run-end move")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W11c shapes: exposing (1.21.4), trashes that did not happen (8.2.2a),
+// ending the run from a paid window (6.8.2a)
+// ---------------------------------------------------------------------------
+
+/// Satellite Uplink shape (9.6.4b): "Expose up to 2 cards." — ONE instruction
+/// exposing several cards, which is what makes the occurrence count the point.
+pub fn satellite_uplink_like(name: &'static str, count: i64) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::ExposeCards {
+            cards: TargetSpec::Choose {
+                count: Quantity::c(count),
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
+            },
+        }],
+    )
+    .labeled("satellite-uplink: expose cards")];
+    c
+}
+
+/// Blackguard shape (9.6.4b): "Whenever a card is exposed, …" — one instance
+/// per exposed card.
+pub fn blackguard_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::CardExposed,
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        false,
+    )
+    .labeled("blackguard: react to an exposed card")];
+    c
+}
+
+/// District 99 / Wasteland shape (8.2.2a): "Whenever an installed program or
+/// piece of hardware is trashed, place 1 power counter on this card." A trash
+/// that was PREVENTED never happened, so the counter is not placed.
+pub fn trash_counter_like(name: &'static str, of: Side) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::InstalledCardTrashed {
+            side: of,
+            of_types: vec![CardType::Program, CardType::Hardware],
+        },
+        vec![Instruction::PlaceCounters {
+            target: TargetSpec::SelfSource,
+            kind: CounterKind::Power,
+            amount: Quantity::c(1),
+        }],
+        false,
+    )
+    .labeled("district99: count trashed installed cards")];
+    c
+}
+
+/// Rototurret shape: "[subroutine] Trash 1 installed program."
+pub fn rototurret_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 3);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::TrashCards(
+        TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![
+                crate::instr::TargetFilter::InstalledRunnerCard,
+                crate::instr::TargetFilter::CardTypeIs(CardType::Program),
+            ],
+        },
+    )])
+    .labeled("[sub] trash 1 installed program")];
+    c
+}
+
+/// Nisei MK II shape (6.8.2a): a scored agenda whose paid ability spends an
+/// agenda counter to end the run.
+pub fn nisei_like(name: &'static str, req: u32, points: i32) -> PrintedCard {
+    let mut c = vanilla_agenda(name, req, points);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::spend_counters(CounterKind::Agenda, 1),
+        vec![Instruction::EndTheRun],
+    )
+    .labeled("nisei: spend an agenda counter to end the run")];
+    c
+}
+
+/// Self-modifying Code shape (6.8.2a): a Runner paid ability with a credit
+/// cost, used to show which windows the Runner still has to spend in.
+pub fn smc_credit_button(name: &'static str, cost: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(cost),
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(0))],
+    )
+    .labeled("smc: a credit-costed paid ability")];
+    c
+}

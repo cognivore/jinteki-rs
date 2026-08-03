@@ -152,6 +152,12 @@ pub enum Instruction {
     /// 8.1.2d: the rez cost is paid first unless the ability states that it
     /// is ignored (1.16.5c), which is what `ignore_costs` says.
     RezCard { target: TargetSpec, ignore_costs: bool },
+    /// CR 1.21.4: "Expose <cards>." — the named cards are revealed, except
+    /// that only INSTALLED, UNREZZED cards can be exposed. 1.21.5 keeps
+    /// exposing distinct from looking, revealing and accessing, and 9.12.2
+    /// does not list it among the aggregated effect classes, so exposing two
+    /// cards in one instruction is two occurrences (9.6.4b).
+    ExposeCards { cards: TargetSpec },
     /// "Derez <targets>." (§8.1.2) — a rezzed card is turned facedown.
     /// CR 1.12.5: turning a card faceup or facedown does not make it a new
     /// object, since it does not change zones.

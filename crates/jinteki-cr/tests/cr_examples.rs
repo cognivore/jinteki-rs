@@ -246,6 +246,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_abilities_resolution_independent_1",
     "example_rule_is_resolving_1",
     "example_rule_is_resolving_2",
+    // Wave 11c: exposing (1.21.4/9.6.4b), cancelled movements (8.2.2a),
+    // paid windows closed by the run ending (6.8.2a).
+    "example_rule_condition_met_multiple_times_2",
+    "example_rule_cancelled_movement_1",
+    "example_rule_run_ends_close_paws_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -8859,4 +8864,155 @@ fn example_rule_is_resolving_2() {
             assert_eq!(vm.st.runner.credits, 1);
         }
     }
+}
+
+// ===========================================================================
+// W11c — exposing (1.21.4/9.6.4b), trashes that did not happen (8.2.2a),
+// ending the run from a paid window (6.8.2a)
+// ===========================================================================
+
+/// example_rule_condition_met_multiple_times_2 (9.6.4b): a Satellite-Uplink-
+/// class instruction exposes 2 cards. Exposing is not one of 9.12.2c's
+/// aggregated effect classes, so the condition of a Blackguard-class ability
+/// is met once per exposed card and TWO instances become pending in the next
+/// checkpoint.
+#[test]
+fn example_rule_condition_met_multiple_times_2() {
+    let mut vm = Vm::empty(936);
+    let a = tk::install_root(&mut vm, tk::vanilla_asset("Facedown-A", 0, 3), ServerId::Remote(1), false);
+    let b = tk::install_root(&mut vm, tk::vanilla_asset("Facedown-B", 0, 3), ServerId::Remote(2), false);
+    tk::install_rig(&mut vm, tk::blackguard_like("Blackguard-like"));
+    tk::install_rig(&mut vm, tk::satellite_uplink_like("SatelliteUplink-like", 2));
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("satellite-uplink"))
+            .when(Match::targets().once(), Reply::Targets(vec![a, b]))
+            .when(Match::reaction(), Reply::take("blackguard"))
+            .stop_at_action(),
+    );
+    assert!(t.took("satellite-uplink"), "the expose instruction resolved: {}", t.tail(10));
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardExposed { .. })).count(),
+        2,
+        "1.21.4: both installed unrezzed cards were exposed"
+    );
+    assert_eq!(
+        t.first_window(Kind::Reaction, Side::Runner).count("blackguard"),
+        2,
+        "9.6.4b: two instances, one per exposed card: {}",
+        t.tail(10)
+    );
+    assert_eq!(vm.st.runner.credits, 2, "…and both resolved");
+}
+
+/// example_rule_cancelled_movement_1 (8.2.2a): a Rototurret-class subroutine
+/// would trash an installed program; the Runner uses a Sacrificial-Construct-
+/// class prevention. Trashing did not occur, so a District-99-class "whenever
+/// an installed Runner card is trashed" ability does not meet its trigger
+/// condition — and is still able to meet it later.
+#[test]
+fn example_rule_cancelled_movement_1() {
+    for prevented in [true, false] {
+        let mut vm = Vm::empty(937);
+        tk::install_ice(&mut vm, tk::rototurret_like("Rototurret-like"), ServerId::Hq, true);
+        let prog = tk::install_rig(&mut vm, tk::program_cost("Program", 0));
+        let d99 = tk::install_rig(&mut vm, tk::trash_counter_like("District99-like", Side::Runner));
+        if prevented {
+            tk::install_rig(&mut vm, tk::sac_con_like("SacCon-like", prog));
+        }
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .runs(ServerId::Hq)
+                .when(Match::interrupt(), Reply::take("sac-con"))
+                .when(Match::reaction(), Reply::take("district99"))
+                .when(Match::jack_out(), Reply::JackOut(true))
+                .stop_at_action(),
+        );
+        if prevented {
+            assert!(t.took("sac-con"), "the prevention was used: {}", t.tail(12));
+            assert_eq!(vm.st.objects[&prog].zone, Zone::Rig, "the program is still installed");
+            assert_eq!(
+                vm.st.objects[&d99].counter(CounterKind::Power),
+                0,
+                "8.2.2a: trashing did not occur, so the condition was not met: {}",
+                t.tail(12)
+            );
+            assert!(
+                !t.ever_offered("district99"),
+                "…and no instance was ever pending"
+            );
+        } else {
+            assert_eq!(vm.st.objects[&prog].zone, Zone::Discard(Side::Runner));
+            assert_eq!(
+                vm.st.objects[&d99].counter(CounterKind::Power),
+                1,
+                "…while a trash that DID occur meets it: {}",
+                t.tail(12)
+            );
+        }
+    }
+}
+
+/// example_rule_run_ends_close_paws_1 (6.8.2a): the Corp spends a counter from
+/// a scored Nisei-MK-II-class agenda to end the run, from inside a paid ability
+/// window. That window closes: the Runner gets no further opportunity in it to
+/// spend the bad publicity credits from this run.
+#[test]
+fn example_rule_run_ends_close_paws_1() {
+    let mut vm = Vm::empty(938);
+    let nisei = tk::put_in_score_area(&mut vm, tk::nisei_like("Nisei-like", 3, 2), Side::Corp);
+    tk::place_counters(&mut vm, nisei, CounterKind::Agenda, 1);
+    tk::install_ice(&mut vm, tk::vanilla_ice("HQ-Ice", 0, 1), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::smc_credit_button("SMC-like", 2));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    // The run's bad publicity fund is the only thing the Runner could pay with
+    // (6.4.2: 1 credit per bad publicity, for this run only).
+    vm.st.corp.bad_publicity = 2;
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(
+            Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+            Reply::take("nisei"),
+        ),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::jack_out(), Reply::JackOut(true))
+            .stop_at_action(),
+    );
+    let nisei_at = t
+        .entries
+        .iter()
+        .find(|e| e.took("nisei"))
+        .expect("the Corp ended the run from a paid window")
+        .seq;
+    assert!(
+        t.entries.iter().any(|e| e.seq < nisei_at && e.offered("smc")),
+        "the Runner could spend the fund BEFORE the run was ended: {}",
+        t.tail(14)
+    );
+    assert!(
+        t.entries.iter().all(|e| e.seq <= nisei_at || !e.offered("smc")),
+        "6.8.2a: the paid window that was open when the run ended closes — the \
+         Runner gets no further opportunity to spend the fund: {}",
+        t.tail(14)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "the run ended"
+    );
+    assert_eq!(vm.st.bp_fund, 0, "6.9.6b: the fund is emptied when the run ends");
+    assert_eq!(vm.st.runner.credits, 0, "…and nothing was spent from it");
 }

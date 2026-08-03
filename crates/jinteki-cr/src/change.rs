@@ -32,6 +32,9 @@ pub enum GameChange {
     CardInstalled { obj: ObjectId, side: Side },
     /// CR 8.5.13c/d: a card was revealed to verify an installation.
     CardRevealed { obj: ObjectId },
+    /// CR 1.21.4: a card was EXPOSED — revealed, except that only installed
+    /// unrezzed cards can be exposed. 1.21.5 keeps it distinct from a reveal.
+    CardExposed { obj: ObjectId },
     /// CR 8.6.7d: conditions related to playing an event/operation are met.
     CardPlayed { obj: ObjectId, side: Side },
     /// CR 8.6.7h: conditions related to finishing resolving it are met.
