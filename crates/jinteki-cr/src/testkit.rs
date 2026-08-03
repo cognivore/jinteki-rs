@@ -5116,3 +5116,58 @@ pub fn successful_run_trace_upgrade(name: &'static str, base: i64) -> PrintedCar
     .labeled("ash: trace when the run is successful")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W13c shapes: additional costs on the basic run action (§6.3.4, §9.12.3e)
+// ---------------------------------------------------------------------------
+
+/// Enhanced Login Protocol / Service Outage shape (6.3.4 / 1.16.10): "the
+/// Runner must pay [cost] as an additional cost to make a run."
+pub fn run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost(
+        extra,
+    )])
+    .labeled("surcharge: additional cost to make a run")];
+    c
+}
+
+/// Heinlein Grid shape (6.3.4): "whenever the Runner spends [click] during a
+/// run, they lose all of their credits." The additional [click] charged to
+/// MAKE a run is spent before the run formally begins, so it never meets this.
+pub fn heinlein_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerSpendsClick { side: Side::Runner, during_run: true },
+        vec![Instruction::LoseCredits(Side::Runner, 99)],
+        false,
+    )
+    .labeled("heinlein: lose all credits")];
+    c
+}
+
+/// Always Be Running shape (9.12.3a/e): "You must make a run with your first
+/// [click] each turn."
+pub fn always_be_running_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::MustRunWithFirstClick(
+        Side::Runner,
+    )])
+    .labeled("abr: you must run with your first click")];
+    c
+}
+
+/// CR 5.2.1a: a nested cost containing a [click] symbol without denoting an
+/// action — "End the run unless the Runner spends [click]". This is how a
+/// [click] actually gets spent DURING a run, since an action (5.2.1) cannot
+/// be taken inside one.
+pub fn etr_unless_click_ice(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::NestedCostUnless {
+        cost: Cost { clicks: 1, ..Cost::free() },
+        effect: Box::new(Instruction::EndTheRun),
+        payer: Some(Side::Runner),
+    }])
+    .labeled("[sub] ETR unless the runner spends a click")];
+    c
+}

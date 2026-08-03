@@ -25,6 +25,8 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 /// Example ids implemented as tests in this file (the DP-7a ledger).
 const IMPLEMENTED: &[&str] = &[
     "example_rule_alternate_payment_1",
+    "example_rule_abilities_during_a_run_1",
+    "example_rule_must_cannot_force_additional_cost_1",
     "example_rule_if_successful_tied_to_server_1",
     "example_rule_if_successful_ability_optional_1",
     "example_rule_cost_restrictions_2",
@@ -10807,4 +10809,134 @@ fn example_rule_if_successful_ability_optional_1() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// W13c: additional costs on the basic run action (§6.3.4, §9.12.3e)
+// ---------------------------------------------------------------------------
+
+/// example_rule_abilities_during_a_run_1 (6.3.4): the Runner initiates a run
+/// against a server with a rezzed Heinlein-Grid-class upgrade while an
+/// Enhanced-Login-Protocol-class card is in play. They do not lose credits to
+/// the grid's ability, because the additional [click] the surcharge requires
+/// is spent to INITIATE the run and is not spent during it — the run formally
+/// begins only after the attacked server is announced and any costs are paid.
+#[test]
+fn example_rule_abilities_during_a_run_1() {
+    let mut vm = Vm::empty(1363);
+    tk::install_root(
+        &mut vm,
+        tk::run_surcharge_asset("ELP-like", jinteki_cr::ability::Cost { clicks: 1, ..jinteki_cr::ability::Cost::free() }),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(&mut vm, tk::heinlein_like("Heinlein-like"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunBegan { .. })),
+        "the run happened: {}",
+        t.tail(10)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 7,
+        "6.3.4: both clicks were spent to MAKE the run, before it formally \
+         began, so the Heinlein-class condition was never met"
+    );
+
+    // The control: a [click] actually spent DURING the run does meet it.
+    let mut vm = Vm::empty(1364);
+    tk::install_root(&mut vm, tk::heinlein_like("Heinlein-like"), ServerId::Hq, true);
+    tk::install_ice(&mut vm, tk::etr_unless_click_ice("ClickTax-ice"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::ClickSpent { side: Side::Runner })),
+        "the click was spent: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "6.3.4: a [click] spent while the run is in progress DOES meet the condition"
+    );
+}
+
+/// example_rule_must_cannot_force_additional_cost_1 (9.12.3e): with a
+/// Service-Outage-class surcharge active and an Always-Be-Running-class card
+/// installed, the Runner can decline to pay the additional 1[credit] to make a
+/// run with their first [click] — satisfying the "must" and leaving that click
+/// free for a different action.
+#[test]
+fn example_rule_must_cannot_force_additional_cost_1() {
+    let mut vm = Vm::empty(1365);
+    tk::install_root(
+        &mut vm,
+        tk::run_surcharge_asset("ServiceOutage-like", jinteki_cr::ability::Cost::credits(1)),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_rig(&mut vm, tk::always_be_running_like("ABR-like"));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            // 9.12.3e: decline the additional cost.
+            .when(Match::nested_cost().once(), Reply::PayCost(false))
+            .when(Match::action().once(), Reply::credit())
+            .stop_at_action(),
+    );
+
+    let first = t
+        .windows(Kind::Action, Side::Runner)
+        .first()
+        .copied()
+        .expect("the Runner's first action window");
+    assert!(
+        first.actions().iter().all(|a| matches!(a, ActionOption::BasicRun { .. })),
+        "9.12.3a: while the requirement holds, only runs are offered: {:?}",
+        first.actions()
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunBegan { .. })),
+        "1.16.10a: declining the additional cost means no run happens: {}",
+        t.tail(10)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 6,
+        "…the credit was not paid, and the click went on the basic credit action"
+    );
+    let second = t
+        .windows(Kind::Action, Side::Runner)
+        .get(1)
+        .copied()
+        .expect("the click was not spent, so the action window re-opens");
+    assert!(
+        second.actions().iter().any(|a| matches!(a, ActionOption::BasicCredit)),
+        "9.12.3e: the 'must' is satisfied, so every action is available again: {:?}",
+        second.actions()
+    );
 }

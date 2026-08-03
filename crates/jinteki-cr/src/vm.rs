@@ -121,6 +121,10 @@ pub struct CoreState {
     /// replaced by another effect never reaches `CardBecomesAccessed` and so
     /// never counts, which is the whole of the rule.
     pub run_accesses: Option<(u64, u32)>,
+    /// CR 9.12.3e: the "must make a run with your first [click]" requirement
+    /// has been discharged this turn — by making the run, or by being offered
+    /// its additional cost and declining it.
+    pub run_requirement_discharged: bool,
     /// CR 1.12.6: where in the change log the run in progress (or the one
     /// that just ended) began — the window a history query about "this run"
     /// reviews.
@@ -162,6 +166,8 @@ pub enum DecisionCtx {
     StealCost(ObjectId),
     /// CR 1.16.10c: pay or decline the additional cost to SCORE this agenda.
     ScoreCost(ObjectId),
+    /// CR 6.3.4 / 1.16.10a: pay or decline the additional cost to make a run.
+    RunActionCost(ServerId),
     /// 10.8.6c/d trace spends.
     TraceSpend(Side),
     /// CR 9.8.2c: the granting player declares where the subroutines just
@@ -537,6 +543,7 @@ impl Vm {
                 accessed: None,
                 run_accesses: None,
                 run_log_start: 0,
+            run_requirement_discharged: false,
                 move_seq: 0,
                 active_seq: 0,
             },
@@ -769,6 +776,8 @@ impl Vm {
         self.st.turn_side = side;
         self.st.turn_seq += 1;
         self.once_per_turn_used.clear();
+        // 9.12.3a: a "first [click] each turn" requirement is fresh each turn.
+        self.st.run_requirement_discharged = false;
         self.would.reset_scope(WouldScope::Turn);
         let id = self.next_structure;
         self.next_structure += 1;
@@ -8245,6 +8254,15 @@ impl Vm {
                 out.push(ActionOption::BasicRemoveTag);
             }
         }
+        // CR 9.12.3a: a "must make a run with your first [click]" requirement
+        // leaves the player no other action while it holds — the requirement
+        // is stated over the DECISION, so it removes the options that would
+        // not satisfy it rather than resolving anything.
+        if self.must_run_with_first_click(side) {
+            cite!("rule_must_with_choice");
+            out.retain(|o| matches!(o, ActionOption::BasicRun { .. }));
+            return out;
+        }
         // Card actions ([click]-cost paid abilities, 5.2.1).
         let threat = self.threat_level();
         for o in self.st.objects.values() {
@@ -8575,6 +8593,36 @@ impl Vm {
     /// CR 1.16.2b: the credit component of a cost, calculated now.
     pub fn cost_credits(&self, cost: &Cost, source: ObjectId) -> u32 {
         self.eval_quantity(&cost.credits, Some(source)).max(0) as u32
+    }
+
+    /// CR 1.16.10 / 6.3.4: the additional cost to make a run, aggregated from
+    /// every active declaration into ONE all-at-once payment (1.16.10b).
+    pub fn run_action_cost(&self) -> Cost {
+        cite!("rule_additional_cost");
+        let mut total = Cost::free();
+        for (_, d) in self.active_statics() {
+            if let StaticDecl::AdditionalRunActionCost(c) = d {
+                total = total.plus(&c);
+            }
+        }
+        total
+    }
+
+    /// CR 9.12.3a/e: is this player required to spend their first [click] of
+    /// the turn making a run? The requirement is discharged by making the run
+    /// — or by being offered its additional cost and declining it (9.12.3e).
+    pub fn must_run_with_first_click(&self, side: Side) -> bool {
+        cite!("rule_must_with_choice");
+        if self.st.run_requirement_discharged || side != self.st.turn_side {
+            return false;
+        }
+        let p = self.st.player(side);
+        if p.clicks < p.allotted_clicks {
+            return false;
+        }
+        self.active_statics()
+            .iter()
+            .any(|(_, d)| matches!(d, StaticDecl::MustRunWithFirstClick(s) if *s == side))
     }
 
     /// CR 8.1.2d: can the Corp pay to rez this card? The rez cost is payable
@@ -10011,6 +10059,23 @@ impl Vm {
                     }
                 }
             }
+            (DecisionCtx::RunActionCost(server), DecisionAnswer::PayNestedCost(pay)) => {
+                // CR 9.12.3e: "a singular 'must' ability cannot force a player
+                // to pay an additional cost they wish to decline." Being
+                // offered the cost is enough to satisfy the requirement, so
+                // the player may then spend the click on anything.
+                cite!("rule_must_cannot_force_additional_cost");
+                self.st.run_requirement_discharged = true;
+                if pay {
+                    // 6.3.4: the [click] and the additional cost are both paid
+                    // to MAKE the run; the run formally begins afterwards.
+                    cite!("rule_abilities_during_a_run");
+                    let extra = self.run_action_cost();
+                    self.spend_click(Side::Runner);
+                    self.pay_cost(Side::Runner, ObjectId(0), &extra);
+                    self.initiate_run(server);
+                }
+            }
             (DecisionCtx::ScoreCost(card), DecisionAnswer::PayNestedCost(pay)) => {
                 // CR 1.16.10a: the Corp may decline the additional cost, and
                 // declining means the agenda is not scored.
@@ -10396,6 +10461,21 @@ impl Vm {
             }
             ActionOption::BasicRun { server } => {
                 cite!("runner_basic_action_run");
+                // 1.16.10a: an additional cost to make a run may be declined,
+                // and declining means the action is not taken at all — the
+                // [click] is not spent either (1.16.4c's shape).
+                let extra = self.run_action_cost();
+                if !extra.is_free() {
+                    cite!("rule_additional_cost");
+                    cite!("rule_decline_additional_cost");
+                    self.ask(
+                        side,
+                        DecisionSpec::NestedCost { cost: extra },
+                        DecisionCtx::RunActionCost(server),
+                    );
+                    return;
+                }
+                self.st.run_requirement_discharged = true;
                 self.spend_click(side);
                 self.initiate_run(server);
             }

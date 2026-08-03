@@ -264,6 +264,19 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             continue;
                         }
                     }
+                    // 6.3.4: "during a run" is a game-state test the scan can
+                    // make, and the run is in progress only once it has
+                    // formally begun — the clicks and credits paid to MAKE
+                    // the run are spent before that.
+                    if let crate::ability::TriggerCond::PlayerSpendsClick {
+                        during_run: true, ..
+                    } = cond
+                    {
+                        cite!("rule_abilities_during_a_run");
+                        if vm.current_run.is_none() {
+                            continue;
+                        }
+                    }
                     // 10.11.5: the run must be on the MARK, and the "first
                     // time each turn" ordinal is counted only from the moment
                     // that server was designated — an earlier successful run

@@ -110,6 +110,11 @@ pub enum TriggerCond {
     /// interrupt can modify it; the relevance test is whether the imminent
     /// instruction carries such a value.
     WouldPayCost,
+    /// CR 6.3.4: "whenever the Runner spends [click] during a run…"
+    /// (Heinlein Grid class). The additional [click] an ability charges to
+    /// MAKE a run is spent before the run formally begins, so it is not spent
+    /// during the run and this condition is not met by it.
+    PlayerSpendsClick { side: Side, during_run: bool },
     /// CR 9.12.2b: "whenever you gain credits…" (NASX class). One instance
     /// per OCCURRENCE (9.6.4b): an unaggregated group of effects gains the
     /// credits several times over, and this condition sees each of them.
@@ -467,6 +472,19 @@ pub enum StaticDecl {
     /// pay it, covering `covers` credits of whatever cost is being paid FOR
     /// THIS SOURCE in exchange for `instead`.
     AlternatePaymentForSelf { label: &'static str, covers: u32, instead: Cost },
+    /// CR 1.16.10 / 6.3.4: "The Runner must pay [cost] as an additional cost
+    /// to make a run." (Service Outage / Enhanced Login Protocol class.) It
+    /// is an additional cost to the basic run ACTION, paid to initiate the
+    /// run — 6.3.4: the run formally begins only after the attacked server is
+    /// announced and any costs are paid, so nothing paid here is paid
+    /// "during a run".
+    AdditionalRunActionCost(Cost),
+    /// CR 9.12.3a/e: "You must make a run with your first [click] each turn."
+    /// (Always Be Running class.) A requirement on the action window, not an
+    /// effect: while it holds, the only actions offered are runs. 9.12.3e:
+    /// declining the additional cost of a run SATISFIES the requirement, so
+    /// the "must" cannot force the player to pay it.
+    MustRunWithFirstClick(Side),
     /// CR 10.4.3a: a declaration modifying the damage procedure so that the
     /// named player SELECTS up to `count` of the cards trashed, instead of
     /// their being chosen at random. The cards are still trashed
@@ -813,6 +831,12 @@ pub fn trigger_matches(
     match (cond, change) {
         (TriggerCond::TurnBegins(side), GameChange::TurnBegan { side: s }) => side == s,
         (TriggerCond::RunEnds { .. }, GameChange::RunEnded { .. }) => true,
+        (TriggerCond::PlayerSpendsClick { side, .. }, GameChange::ClickSpent { side: s }) => {
+            // 6.3.4: the "during a run" half is a game-state test, applied by
+            // the checkpoint scan, which can see whether a run is in progress.
+            cite!("rule_abilities_during_a_run");
+            side == s
+        }
         (
             TriggerCond::SuccessfulRunOnServer,
             GameChange::RunDeclaredSuccessful { server },
