@@ -9,7 +9,7 @@ truth.
 ## Odometers (after W11f)
 
 - **DP-7a: 199/243** CR examples as example-named passing tests (81.9%).
-- **DP-7b: 552/1420** distinct rules cited (38.9%); traceability test fails
+- **DP-7b: 551/1420** distinct rules cited (38.8%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
