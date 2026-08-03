@@ -300,11 +300,8 @@ pub fn paperclip() -> Card {
 ///  Interface → 1[credit]: Break 1 code gate subroutine.
 ///  2[credit]: +2 strength."
 ///
-/// UNIMPLEMENTED: the threat sentence. It is written correctly with
-/// `.declares_at_threat(4, …)` — but `Vm::char_effects` gathers characteristic
-/// declarations behind `card_active` alone and never consults
-/// `ability_active`, so 9.3.6f is ignored for strength and the −2 would apply
-/// at threat 0. A wrong card is worse than a partial one (SYS-D-12).
+/// The threat sentence is 9.3.6f: the ability is active only once a player has
+/// 4 or more agenda points, which `Vm::char_effects` honours as of W16d.
 pub fn shibboleth() -> Card {
     card("Shibboleth")
         .runner()
@@ -316,11 +313,11 @@ pub fn shibboleth() -> Card {
         .text("Threat 4 → This program gets −2 strength. (This ability is active if any player has 4 or more agenda points.)")
         .text("Interface → 1[credit]: Break 1 code gate subroutine.")
         .text("2[credit]: +2 strength.")
+        .declares_at_threat(4, [strength_mod(-2)])
         .paid_interface(credits(1), Some("Code Gate"), [break_subroutines(1)])
         .named("interface: break 1 code gate subroutine")
         .paid(credits(2), [pump(2)])
         .named("pump: +2 strength")
-        .unimplemented("Threat 4 → This program gets −2 strength.")
         .build()
 }
 

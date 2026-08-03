@@ -507,14 +507,22 @@ fn archangel_subroutine_bounces_an_installed_card() {
 // Programs
 // ---------------------------------------------------------------------------
 
+/// "Threat 4 → This program gets −2 strength."
 /// "Interface → 1[credit]: Break 1 code gate subroutine."
 /// "2[credit]: +2 strength."
-/// (The `[threat 4]` sentence is on the gap list — see the card file.)
 #[test]
 fn shibboleth() {
     let mut vm = Vm::empty(24);
-    let shib = tk::install_rig(&mut vm, card_partial("Shibboleth"));
-    assert_eq!(vm.effective_strength(shib), Some(3), "printed strength");
+    let shib = tk::install_rig(&mut vm, card("Shibboleth"));
+    assert_eq!(vm.effective_strength(shib), Some(3), "printed strength at threat 0");
+
+    // 9.3.6f: the [threat 4] ability becomes active once ANY player has 4
+    // agenda points, and stops again if that stops being true.
+    let scored = vm.new_object(tk::vanilla_agenda("Big Deal", 5, 4), Zone::ScoreArea(Side::Corp));
+    vm.st.score_area.get_mut(&Side::Corp).unwrap().push(scored);
+    assert_eq!(vm.effective_strength(shib), Some(1), "threat 4: −2 strength");
+    vm.st.score_area.get_mut(&Side::Corp).unwrap().clear();
+    assert_eq!(vm.effective_strength(shib), Some(3), "and inactive again below 4");
 
     // A code gate of strength 3 can be interfaced with (9.3.6c); the break
     // ability is usable only during that encounter (9.5.6a/c).
@@ -559,7 +567,7 @@ fn shibboleth() {
 #[test]
 fn shibboleth_break_is_encounter_only() {
     let mut vm = Vm::empty(25);
-    tk::install_rig(&mut vm, card_partial("Shibboleth"));
+    tk::install_rig(&mut vm, card("Shibboleth"));
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -863,7 +871,10 @@ fn builder_calls_denote_into_the_right_ability_kinds() {
     assert_eq!(kinds("Crisium Grid"), vec![AbilityKind::Static]);
     assert_eq!(kinds("Gold Farmer"), vec![AbilityKind::Subroutine, AbilityKind::Subroutine]);
     assert_eq!(kinds("Hedge Fund"), vec![AbilityKind::Play]);
-    assert_eq!(kinds("Shibboleth"), vec![AbilityKind::Paid, AbilityKind::Paid]);
+    assert_eq!(
+        kinds("Shibboleth"),
+        vec![AbilityKind::Static, AbilityKind::Paid, AbilityKind::Paid]
+    );
     assert_eq!(kinds("Rebirth"), vec![AbilityKind::Static]);
     assert_eq!(kinds("Tomorrow's Headline"), vec![AbilityKind::Conditional; 2]);
     assert_eq!(kinds("Resistor"), vec![AbilityKind::Static, AbilityKind::Subroutine]);

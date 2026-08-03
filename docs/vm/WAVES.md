@@ -850,7 +850,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W16d it is **50 cards, 16 complete, 34 partial, 53
+prints the count. At W16d it is **50 cards, 17 complete, 33 partial, 52
 printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -868,7 +868,7 @@ together — and `tests/decks.rs` ratchets the count, so it cannot quietly grow.
 characteristic declarations behind `card_active(o)` alone…~~ — **fixed,
 W16d**: `char_effects` now filters through `ability_active` (and honours a
 9.6.7 static condition), so `[threat N]` and every 9.1.8 exception reach
-strength and subtype modification. Shibboleth can be un-marked.
+strength and subtype modification. Shibboleth is complete.
 
 *Instructions with no variant at all:*
 
@@ -948,7 +948,17 @@ scan of its instructions.
 
 - ~~**"When a discard phase ends"** (5.5.4)~~ — **done, W16d**:
   `TriggerCond::DiscardPhaseEnds(Side)`, met where 5.1.4b says it is met (the
-  formal end of the turn). Breaking News, The Class Act, Citadel Sanctuary.
+  formal end of the turn). **It unblocks none of its three cards yet**, and
+  the reason is one shared shortfall rather than three: each pairs the
+  condition with a state requirement, and `ability::trigger_requirements`
+  reaches only `SelfAccessed`/`SelfScored`, so a `TriggerCond` variant with no
+  `requires` field cannot carry one at all.
+  - "…while you are tagged" (Citadel Sanctuary) needs NO new predicate —
+    `RunnerTagged` already exists — only somewhere on this condition to put
+    it. Cheapest of the three by far.
+  - "…if you scored this agenda this turn" (Breaking News) and "…if you
+    installed this resource this turn" (The Class Act) need a predicate that
+    reads what a player did this turn.
 - "Whenever the Runner breaks a printed subroutine on this ice" (Gold
   Farmer), and "the first time each turn this program fully breaks a piece of
   ice" (Bukhgalter) — `PassedIceAfterFullyBreaking` is the PASS, not the
@@ -971,10 +981,19 @@ scan of its instructions.
 - ~~**"Play only if <state>"**~~ — **done, W16d**:
   `StaticDecl::PlayOnlyIf(Vec<TriggerRequirement>)` (9.1.8c) with
   `TriggerRequirement::{RunnerTagged, RunnerMadeRunLastTurn}` as the shared
-  state-predicate vocabulary. BOOM!, Closed Accounts, Hard-Hitting News,
-  Petty Cash, Self-Growth Program. (Predictive Planogram's "if the Runner is
-  tagged, you may resolve both instead" is a different sentence — a
-  requirement on an OPTION, not on the play — and is still unsayable.)
+  state-predicate vocabulary, enforced by `Vm::play_permitted`. Hard-Hitting
+  News and Self-Growth Program are COMPLETE; Closed Accounts carries its
+  restriction. Three cards still wait, and each wants one more PREDICATE
+  rather than more machinery:
+  - "Play only if the Runner has **at least 2 tags**" (BOOM!). The vocabulary
+    counts tags only as "tagged" (≥ 1), so `RunnerTagged` would make BOOM!
+    playable at 1 tag — a wrong card, so the marker stays. A
+    `RunnerTagsAtLeast(n)` requirement closes it, and would subsume
+    `RunnerTagged`.
+  - "Play only if you have not finished an action yet this turn" (Petty Cash).
+  - Predictive Planogram's "if the Runner is tagged, you may resolve both
+    instead" is a different sentence — a requirement on an OPTION, not on the
+    play — and is still unsayable.
 - "The advancement requirement of all agendas is increased by 1" (The
   Source); `ScoreRequirementModInSourceServer` is scoped to one server.
 - `PlayedNotTrashedUntilAgendaSteal` ends only on a steal, so a Runner
