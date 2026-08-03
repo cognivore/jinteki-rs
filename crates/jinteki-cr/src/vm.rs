@@ -3116,6 +3116,13 @@ impl Vm {
                 let n = self.eval_quantity(amount, source);
                 vec![EffectAtom::new(EffectClass::Structural, n, *side)]
             }
+            // 9.9.6c: the install/play cost payment step carries a VALUE —
+            // the credits that would be paid — which an interrupt can modify.
+            Instruction::InstallStepPayCost | Instruction::PlayStepPayCost => {
+                cite!("rule_modifiable_value_cost");
+                let n = self.imminent_cost_credits();
+                vec![EffectAtom::new(EffectClass::PayCost, n, controller)]
+            }
             Instruction::TraceCorpSpend
             | Instruction::TraceRunnerSpend
             | Instruction::TraceDetermine { .. }
@@ -3481,6 +3488,16 @@ impl Vm {
                     }
                     return true;
                 }
+                TriggerCond::WouldPayCost => {
+                    // 9.9.6c's example: the interrupt modifies a play cost or
+                    // an install cost, so it is relevant to any instruction
+                    // where a card will be played or installed AND the
+                    // corresponding cost paid — which is exactly the
+                    // instruction carrying a `PayCost` value.
+                    cite!("rule_modifiable_value_cost");
+                    cite!("rule_modify_value_relevant");
+                    return atoms.iter().any(|a| a.expected() && a.class == EffectClass::PayCost);
+                }
                 TriggerCond::SelfWouldBeTrashed => {
                     // Harbinger class: relevant while the expected effects
                     // still include this source being trashed (9.9.4c).
@@ -3544,6 +3561,18 @@ impl Vm {
                             && a.value > 0
                             && !a.unpreventable
                     }) {
+                        return true;
+                    }
+                }
+                Instruction::ReduceImminentCost { .. } => {
+                    // 9.9.6c's example: the interrupt modifies a play cost or
+                    // an install cost, so it is relevant to any instruction
+                    // where a card will be played or installed AND the
+                    // corresponding cost paid — which is exactly the
+                    // instruction carrying a `PayCost` value.
+                    cite!("rule_modify_value_relevant");
+                    cite!("rule_modifiable_value_cost");
+                    if atoms.iter().any(|a| a.expected() && a.class == EffectClass::PayCost) {
                         return true;
                     }
                 }
@@ -4049,6 +4078,7 @@ impl Vm {
             | Instruction::RezCard { target: spec, .. }
             | Instruction::ExposeCards { cards: spec }
             | Instruction::ResolveAbilityOf { source: spec, .. }
+            | Instruction::Derez { target: spec }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -4647,6 +4677,22 @@ impl Vm {
                 let theirs = self.reference_position(r, source);
                 mine.is_some() && mine == theirs
             }
+            // 9.5.5: the cards this ability's own trigger cost set aside.
+            // 4.8.3: no other ability can see them, which is why the criterion
+            // reads the RESOLVING ability's set-aside list rather than the
+            // set-aside zone.
+            TargetFilter::SetAsideByThisAbility => {
+                cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+                cite!("rule_set_aside_zone_passthrough");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|fr| match fr {
+                        Frame::Ability(af) => Some(af.set_aside_cards.contains(&o.id)),
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+            }
             TargetFilter::InstalledCorpCard => self.is_installed(o) && is_corp_card(o.printed.card_type),
             TargetFilter::InstalledRunnerCard => {
                 self.is_installed(o) && !is_corp_card(o.printed.card_type)
@@ -5190,7 +5236,28 @@ impl Vm {
     /// Step 8.5.16d proper: pay the install cost, net of the reductions the
     /// installer must use (1.16.6) and of the share of a 1.16.2f "total"
     /// modifier the Corp declared against it.
-    fn pay_install_cost(&mut self) {
+    /// CR 9.9.6c: the credits an install or play cost payment step is about
+    /// to pay — the VALUE the interrupt window is opened over.
+    fn imminent_cost_credits(&self) -> i64 {
+        cite!("rule_modifiable_value_cost");
+        if let Some(p) = self.installs.last() {
+            if p.aborted || p.ignore_costs {
+                return 0;
+            }
+            let payer = self.st.objects[&p.card].printed.side;
+            let (net, _) = self.install_payment(p.card, p.dest, p.resolved_zone, payer);
+            return net.saturating_sub(p.reduce_install) as i64;
+        }
+        if let Some(pl) = self.plays.last() {
+            if pl.ignore_costs {
+                return 0;
+            }
+            return self.st.objects[&pl.card].printed.cost.unwrap_or(0) as i64;
+        }
+        0
+    }
+
+    fn pay_install_cost(&mut self, value: Option<u32>) {
         let Some(p) = self.installs.last().cloned() else { return };
         // 1.16.5c: "ignoring all costs" reduces the cost to 0, but the step
         // still happens and is still followed by a checkpoint (1.16.3a).
@@ -5201,9 +5268,13 @@ impl Vm {
             Cost::free()
         } else {
             let (net, extra) = self.install_payment(p.card, p.dest, p.resolved_zone, payer);
-            // 1.16.2a: apply the lowering effect, then floor at 0.
+            // 1.16.2a: apply the lowering effect, then floor at 0. 9.9.6c: an
+            // interrupt that modified the value while the instruction was
+            // imminent has already produced the final number.
             cite!("rule_cost_calculation");
-            extra.plus(&Cost::credits(net.saturating_sub(p.reduce_install)))
+            cite!("rule_modifiable_value_cost");
+            let credits = value.unwrap_or_else(|| net.saturating_sub(p.reduce_install));
+            extra.plus(&Cost::credits(credits))
         };
         self.pay_cost(payer, p.card, &cost);
     }
@@ -5789,6 +5860,19 @@ impl Vm {
                 // avoidance; the chain reaction resolves while the interrupt
                 // window is still open (9.9.4c/d examples).
                 self.changes.record(GameChange::TagsAvoided { amount: *n });
+            }
+            Instruction::ReduceImminentCost { amount } => {
+                // 9.9.6c: decrease the cost value of the imminent instruction.
+                cite!("rule_modifiable_value_cost");
+                let n = self.eval_quantity(amount, Some(source.obj)).max(0);
+                self.modify_parent_imminent(move |atom| {
+                    if atom.class == EffectClass::PayCost {
+                        atom.value -= n;
+                        true
+                    } else {
+                        false
+                    }
+                });
             }
             Instruction::IncreaseImminentDamage { kind, amount } => {
                 self.modify_parent_imminent(|atom| {
@@ -6593,6 +6677,32 @@ impl Vm {
                     self.changes.record(GameChange::CounterPlaced { obj: t, kind: *kind, amount: n });
                 }
             }
+            Instruction::ForEach { count, effects } => {
+                // 9.12.2b: the whole rule in one place. Whether the effects
+                // tied to the quantity aggregate is a property of the SET of
+                // effects, not of any one of them — "if ANY part of those
+                // effects is not listed in rule 9.12.2c, then the effects are
+                // not aggregated".
+                cite!("rule_calculated_quantity");
+                cite!("rule_aggregated_instructions");
+                let x = self.eval_quantity(count, Some(source.obj)).max(0);
+                let all_aggregated = effects.iter().all(instruction_aggregates);
+                let expanded: Vec<Instruction> = if all_aggregated {
+                    // Performed once, with the values multiplied by the
+                    // quantity. 9.12.2b: an aggregated value of 0 or less
+                    // means that part of the effect does not take place —
+                    // which the scaled selector says by itself.
+                    effects.iter().map(|i| scale_instruction(i, x)).collect()
+                } else {
+                    // Performed once per unit, each its own occurrence.
+                    (0..x).flat_map(|_| effects.iter().cloned()).collect()
+                };
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    for (k, ins) in expanded.into_iter().enumerate() {
+                        af.instructions.insert(af.idx + 1 + k, ins);
+                    }
+                }
+            }
             Instruction::IdentifyMark => {
                 // 10.11.3: if a server is already the mark, this does nothing
                 // — the mark is immutable for the remainder of the turn.
@@ -6814,7 +6924,14 @@ impl Vm {
                     );
                     return;
                 }
-                self.pay_install_cost();
+                // 9.9.6c: an interrupt may have decreased the cost value while
+                // this instruction was imminent.
+                let modified = imm
+                    .atoms
+                    .iter()
+                    .find(|a| a.class == EffectClass::PayCost)
+                    .map(|a| a.value.max(0) as u32);
+                self.pay_install_cost(modified);
             }
             Instruction::InstallStepComplete => {
                 cite!("rule_steps_installing_become_installed");
@@ -6982,8 +7099,21 @@ impl Vm {
                 let Some(p) = self.plays.last().cloned() else { return };
                 let c = p.card;
                 let side = self.st.objects[&c].printed.side;
-                let amount =
-                    if p.ignore_costs { 0 } else { self.st.objects[&c].printed.cost.unwrap_or(0) };
+                // 9.9.6c: the cost is a VALUE, and the interrupt window that
+                // just closed may have modified it. 1.16.2a applies to the
+                // final value at the time the cost is paid, so it is floored
+                // at 0 here.
+                cite!("rule_modifiable_value_cost");
+                cite!("rule_cost_calculation");
+                let amount = if p.ignore_costs {
+                    0
+                } else {
+                    imm.atoms
+                        .iter()
+                        .find(|a| a.class == EffectClass::PayCost)
+                        .map(|a| a.value.max(0) as u32)
+                        .unwrap_or_else(|| self.st.objects[&c].printed.cost.unwrap_or(0))
+                };
                 // 1.16.10b: an additional cost to play the card combines with
                 // the play cost into ONE payment.
                 let mut cost = Cost::credits(amount);
@@ -8985,7 +9115,10 @@ impl Vm {
                 if let Some(p) = self.installs.last_mut() {
                     p.reduce_install = n.min(p.reduce_total);
                 }
-                self.pay_install_cost();
+                // (The 1.16.2f division Decision resumes here; the 9.9.6c
+                // value modification, if any, was applied to `reduce_install`
+                // before the Decision was asked.)
+                self.pay_install_cost(None);
                 // Step 8.5.16d completes; its checkpoint is the cost-paid one.
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                     if af.phase == AbilityPhase::Resolve {
@@ -9312,6 +9445,71 @@ fn class_key(c: EffectClass) -> u64 {
         EffectClass::Structural => 14,
         EffectClass::Breach => 15,
         EffectClass::AccessCard => 16,
+        EffectClass::PayCost => 17,
+    }
+}
+
+/// CR 9.12.2c: the effects that are aggregated when performed in a single
+/// instruction — gaining, losing or spending credits or clicks; taking,
+/// removing or preventing tags or bad publicity; looking at or revealing
+/// cards from a specified location; drawing cards; trashing cards from
+/// specified locations, including by damage; and shuffling cards from a
+/// discard pile into a deck. Everything else is not on the list, and 9.12.2b
+/// says one such effect is enough to stop the whole group aggregating.
+fn instruction_aggregates(i: &Instruction) -> bool {
+    cite!("rule_aggregated_instructions");
+    match i {
+        Instruction::GainCredits(..)
+        | Instruction::LoseCredits(..)
+        | Instruction::Draw(..)
+        | Instruction::GainTags(..)
+        | Instruction::TakeBadPublicity { .. }
+        | Instruction::RemoveCountersFromPlayer { .. }
+        | Instruction::LookAtCards { .. }
+        | Instruction::TrashCards(..)
+        | Instruction::Damage { .. } => true,
+        // A wrapper aggregates exactly when what it wraps does.
+        Instruction::PerformedBy { instr, .. } | Instruction::DeclineableChoice(instr) => {
+            instruction_aggregates(instr)
+        }
+        Instruction::Combined(list) => list.iter().all(instruction_aggregates),
+        _ => false,
+    }
+}
+
+/// CR 9.12.2b: "the values included in the effect aggregated according to the
+/// calculated quantity" — the per-unit value of an aggregated effect scaled
+/// by the quantity. Only the effects `instruction_aggregates` accepts are
+/// ever scaled, and only the ones that carry a numeric value: a set-based
+/// aggregated effect (trashing named cards, looking at named cards) has no
+/// per-unit number to multiply.
+fn scale_instruction(i: &Instruction, x: i64) -> Instruction {
+    use crate::instr::Quantity as Q;
+    let times = |q: &Q| Q::Times(x, Box::new(q.clone()));
+    match i {
+        Instruction::GainCredits(s, q) => Instruction::GainCredits(*s, times(q)),
+        Instruction::LoseCredits(s, n) => {
+            Instruction::LoseCredits(*s, (*n as i64 * x).max(0) as u32)
+        }
+        Instruction::Draw(s, n) => Instruction::Draw(*s, (*n as i64 * x).max(0) as u32),
+        Instruction::GainTags(n) => Instruction::GainTags((*n as i64 * x).max(0) as u32),
+        Instruction::TakeBadPublicity { side, amount } => {
+            Instruction::TakeBadPublicity { side: *side, amount: times(amount) }
+        }
+        Instruction::RemoveCountersFromPlayer { side, kind, amount } => {
+            Instruction::RemoveCountersFromPlayer { side: *side, kind: *kind, amount: times(amount) }
+        }
+        Instruction::Damage { kind, amount, responsible } => {
+            Instruction::Damage { kind: *kind, amount: times(amount), responsible: *responsible }
+        }
+        Instruction::PerformedBy { side, instr } => Instruction::PerformedBy {
+            side: *side,
+            instr: Box::new(scale_instruction(instr, x)),
+        },
+        Instruction::Combined(list) => {
+            Instruction::Combined(list.iter().map(|i| scale_instruction(i, x)).collect())
+        }
+        other => other.clone(),
     }
 }
 

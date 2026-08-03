@@ -522,6 +522,22 @@ pub enum Instruction {
     /// other counter kinds only ever exist hosted on cards.
     RemoveCountersFromPlayer { side: Side, kind: crate::object::CounterKind, amount: Quantity },
 
+    /// CR 9.9.6c: "the next card you install or play this turn costs N less"
+    /// as an INTERRUPT (Patchwork class): a cost that would be paid while
+    /// resolving an effect is a value, so the interrupt decreases it exactly
+    /// as a damage prevention decreases an imminent damage value. 1.16.2a
+    /// applies to the final value at the time the cost is paid, so the value
+    /// is floored at 0 there.
+    ReduceImminentCost { amount: Quantity },
+
+    /// CR 9.12.2b: "<effects>, for each <quantity>" — the effects TIED to a
+    /// calculated quantity. If every one of them is an aggregated class
+    /// (9.12.2c) the group is performed ONCE with its values multiplied by
+    /// the quantity; if any of them is not, the group is not aggregated at
+    /// all and is performed once per unit, as separate occurrences that a
+    /// per-occurrence trigger condition (9.6.4b) meets separately.
+    ForEach { count: Quantity, effects: Vec<Instruction> },
+
     /// CR 10.11.2: "identify your mark." If no server is designated, a random
     /// CENTRAL server becomes the mark for the remainder of the turn
     /// (10.11.2a); if one already is, the instruction does nothing (10.11.3).
@@ -765,6 +781,11 @@ pub enum TargetFilter {
     /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed
     /// faceup Corp card.
     Rezzed,
+    /// CR 9.5.5 / 4.8.3: a card SET ASIDE by the trigger cost of the ability
+    /// making this selection — the only kind of ability that can see the
+    /// set-aside zone at all (Street Peddler class). A zone-naming criterion,
+    /// so 1.15.2c's play-area restriction lifts for it.
+    SetAsideByThisAbility,
     /// CR 4.5: "an agenda in the Runner's score area".
     InScoreAreaOf(Side),
     /// CR 4.4: "a card in Archives" / "a card in your heap" — a criterion
@@ -840,6 +861,7 @@ impl TargetFilter {
                 | TargetFilter::CardsInHandOf(_)
                 | TargetFilter::InScoreAreaOf(_)
                 | TargetFilter::InDiscardOf(_)
+                | TargetFilter::SetAsideByThisAbility
                 | TargetFilter::TopOfDeckOf { .. }
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.

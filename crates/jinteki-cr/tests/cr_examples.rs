@@ -273,6 +273,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_active_exception_conditional_move_to_inactive_zone_2",
     "example_rule_empty_requires_loading_1",
     "example_rule_mark_designated_condition_check_1",
+    // Wave 12c: 9.12.2b's non-aggregating groups, 9.9.6c costs as modifiable
+    // values, 9.5.5's set-aside cards as install targets.
+    "example_rule_calculated_quantity_3",
+    "example_rule_modifiable_value_cost_1",
+    "example_rule_trash_ability_keeps_track_of_hosted_objects_2",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -9851,4 +9856,150 @@ fn example_rule_mark_designated_condition_check_1() {
         .count();
     assert_eq!(accesses, 3, "1 card on the first breach, 2 on the second");
     let _ = designated;
+}
+
+// ===========================================================================
+// Wave 12c — 9.12.2b aggregation, 9.9.6c cost interrupts
+// ===========================================================================
+
+/// example_rule_calculated_quantity_3 (9.12.2b): a realloc-class operation
+/// has the Corp gain credits based on a "for each" and derez cards based on
+/// the SAME "for each". Derezzing is not one of 9.12.2c's aggregated effects,
+/// so none of the effects aggregate: the credits arrive as separate
+/// occurrences and a NASX-class "whenever you gain credits" ability resolves
+/// twice.
+#[test]
+fn example_rule_calculated_quantity_3() {
+    let mut vm = Vm::empty(1210);
+    let nasx = tk::install_root(&mut vm, tk::nasx_like("NASX-like"), ServerId::Remote(1), true);
+    let a = tk::install_root(&mut vm, tk::vanilla_asset("Rezzed-A", 0, 1), ServerId::Remote(2), true);
+    let b = tk::install_root(&mut vm, tk::vanilla_asset("Rezzed-B", 0, 1), ServerId::Remote(3), true);
+    let op = vm.new_object(tk::realloc_like("realloc-like", Quantity::c(2)), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+    tk::install_root(&mut vm, tk::play_operation_button("Play-Button", op), ServerId::Remote(4), true);
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("play-op").once(), Reply::take("play-op"))
+            .when(Match::targets().once(), Reply::target(a))
+            .when(Match::targets().once(), Reply::target(b))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"));
+    let gains = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, .. }))
+        .count();
+    assert_eq!(
+        gains, 2,
+        "9.12.2b: the group is not aggregated, so the gain happens once per unit"
+    );
+    assert_eq!(
+        vm.st.objects[&nasx].counter(CounterKind::Power),
+        2,
+        "two separate occurrences met the per-occurrence condition twice (9.6.4b)"
+    );
+    assert!(!vm.st.objects[&a].faceup && !vm.st.objects[&b].faceup, "both cards were derezzed:\n{}", t.tail(20));
+}
+
+/// example_rule_modifiable_value_cost_1 (9.9.6c): a Patchwork-class interrupt
+/// modifies a play cost or install cost, so it is relevant to any instruction
+/// where a card will be played or installed and the corresponding cost paid —
+/// and to no other instruction. The Runner plays an event and installs a
+/// program; the interrupt is offered for both cost payments, lowering each,
+/// and never for anything else.
+#[test]
+fn example_rule_modifiable_value_cost_1() {
+    let mut vm = Vm::empty(1211);
+    let event = vm.new_object(tk::event("Priced-Event", 3, Vec::new()), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(event);
+    let prog = vm.new_object(tk::program_cost("Priced-Program", 3), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(prog);
+    tk::install_rig(&mut vm, tk::patchwork_interrupt("Patchwork-like", 2));
+    tk::install_rig(&mut vm, tk::play_event_button("Play-Button", event));
+    tk::install_rig(&mut vm, tk::runner_install_button("Install-Button", 1));
+    vm.st.runner.credits = 6;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().offering("play-event").once(), Reply::take("play-event"))
+            .when(Match::paid().offering("install-button").once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::target(prog))
+            .when(Match::interrupt().offering("patchwork"), Reply::take("patchwork"))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        t.offers("patchwork"),
+        2,
+        "9.9.6c: relevant to the play cost and to the install cost, and to nothing else"
+    );
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Rig);
+    assert_eq!(
+        vm.st.runner.credits,
+        6 - 1 - 1,
+        "each 3[credit] cost was paid as 1 after the interrupt lowered the value"
+    );
+}
+
+/// example_rule_trash_ability_keeps_track_of_hosted_objects_2 (9.5.5): the
+/// Runner uses the [trash] ability on a Street-Peddler-class card. The
+/// trigger cost sets the 3 hosted cards aside; when the ability resolves the
+/// Runner installs one of them. The other two are still set aside, so the
+/// next checkpoint trashes them exactly as it would any card hosted on a card
+/// that is no longer installed — and 4.8.3 means no other ability can tell:
+/// the installed one is treated as installed from the play area, and the
+/// trashed ones as trashed from there.
+#[test]
+fn example_rule_trash_ability_keeps_track_of_hosted_objects_2() {
+    let mut vm = Vm::empty(1212);
+    let peddler = tk::install_rig(&mut vm, tk::street_peddler_like("StreetPeddler-like"));
+    let hosted: Vec<_> = ["Hosted-A", "Hosted-B", "Hosted-C"]
+        .into_iter()
+        .map(|n| {
+            let id = vm.new_object(tk::program_cost(n, 5), Zone::Rig);
+            tk::host_on(&mut vm, id, peddler);
+            id
+        })
+        .collect();
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().offering("peddler: install").once(), Reply::take("peddler: install"))
+            .when(Match::targets().once(), Reply::target(hosted[1]))
+            .stop_at_action(),
+    );
+    assert!(t.took("peddler: install"));
+    let ann = t.first_window(Kind::Targets, Side::Runner);
+    assert_eq!(
+        ann.candidates().len(),
+        3,
+        "9.5.5: all 3 set-aside cards are still addressable by THIS ability"
+    );
+    assert_eq!(vm.st.objects[&peddler].zone, Zone::Discard(Side::Runner));
+    assert_eq!(
+        vm.st.objects[&hosted[1]].zone,
+        Zone::Rig,
+        "the chosen card was installed, ignoring its 5[credit] cost"
+    );
+    for other in [hosted[0], hosted[2]] {
+        assert_eq!(
+            vm.st.objects[&other].zone,
+            Zone::Discard(Side::Runner),
+            "the cards still set aside were trashed at the next checkpoint (1.13.13)"
+        );
+    }
 }

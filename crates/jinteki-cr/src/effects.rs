@@ -35,6 +35,11 @@ pub enum EffectClass {
     /// Accessing the chosen candidate (7.5.5) — the replacement-effect
     /// target of the Immolation Script class (7.4.3).
     AccessCard,
+    /// CR 9.9.6c: a cost that would be paid while resolving an effect — the
+    /// install/play cost payment steps. Its value is the credits that would
+    /// be paid, and an interrupt can modify it (Patchwork class) exactly as
+    /// one can modify an imminent damage value.
+    PayCost,
     /// Structure-internal effects with no modifiable value.
     Structural,
 }

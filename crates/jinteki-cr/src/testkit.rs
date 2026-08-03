@@ -4738,3 +4738,104 @@ pub fn virtuoso_like(name: &'static str, server: ServerId) -> PrintedCard {
     .labeled("virtuoso: access 1 additional card")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W12c shapes: §9.12.2b aggregation, §9.9.6c cost interrupts
+// ---------------------------------------------------------------------------
+
+/// realloc() shape (9.12.2b): "For each rezzed card, gain 1[credit] and derez
+/// a card." Two effects tied to ONE calculated quantity, and one of them —
+/// derezzing — is not on 9.12.2c's list, so neither aggregates.
+pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
+    c.cost = Some(0);
+    c.abilities = vec![AbilityDef {
+        kind: crate::ability::AbilityKind::Play,
+        flags: Vec::new(),
+        condition: None,
+        cost: None,
+        instructions: vec![Instruction::ForEach {
+            count,
+            effects: vec![
+                Instruction::GainCredits(Side::Corp, Quantity::c(1)),
+                Instruction::Derez {
+                    target: TargetSpec::Choose {
+                        count: Quantity::c(1),
+                        criteria: vec![crate::instr::TargetFilter::Rezzed],
+                    },
+                },
+            ],
+        }],
+        statics: Vec::new(),
+        optional: false,
+        timing: None,
+        label: "realloc: gain and derez for each",
+    }];
+    c
+}
+
+/// NASX shape (9.12.2b): "Whenever you gain credits, place 1 power counter on
+/// this card." A per-occurrence condition (9.6.4b) — which is how the example
+/// counts the instances.
+pub fn nasx_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerGainsCredits(Side::Corp),
+        vec![Instruction::PlaceCounters {
+            target: TargetSpec::SelfSource,
+            kind: CounterKind::Power,
+            amount: Quantity::c(1),
+        }],
+        false,
+    )
+    .labeled("nasx: place a power counter")];
+    c
+}
+
+/// Patchwork shape (9.9.6c): a conditional INTERRUPT that decreases the cost
+/// value of the imminent instruction. What the example is about is relevance
+/// — the interrupt applies to any instruction where a card will be played or
+/// installed and the corresponding cost paid, and to nothing else.
+pub fn patchwork_interrupt(name: &'static str, less: i64) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    let mut a = AbilityDef::conditional(
+        TriggerCond::WouldPayCost,
+        vec![Instruction::ReduceImminentCost { amount: Quantity::c(less) }],
+        true,
+    )
+    .labeled("patchwork: that cost is lower");
+    a.flags.push(AbilityFlag::Interrupt);
+    c.abilities = vec![a];
+    c
+}
+
+/// Street Peddler shape (9.5.5): "[trash]: Install 1 of the hosted cards,
+/// ignoring install costs." The trigger cost uninstalls the source, so its
+/// hosted cards are set aside as the cost is paid (9.5.5) and this ability —
+/// and only this ability — can still address them.
+pub fn street_peddler_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::CanHost {
+            criteria: Vec::new(),
+            capacity: None,
+        }])
+        .labeled("peddler: can host cards"),
+        AbilityDef::paid(
+            Cost::trash_self(),
+            vec![Instruction::InstallCard {
+                card: TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![crate::instr::TargetFilter::SetAsideByThisAbility],
+                },
+                dest: crate::instr::InstallDest::Rig,
+                and_rez: false,
+                ignore_costs: true,
+                reveal_check: None,
+                reduce_total: Quantity::c(0),
+            }],
+        )
+        .labeled("peddler: install one of the hosted cards"),
+    ];
+    c
+}

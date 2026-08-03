@@ -105,6 +105,15 @@ pub enum TriggerCond {
     /// meets it is the move that makes the card INACTIVE, which is why
     /// 9.1.8g has to keep the ability active long enough to resolve.
     SelfAddedToDeck,
+    /// CR 9.9.6c: interrupt trigger — "…would pay a play or install cost".
+    /// A cost that would be paid while resolving an effect is a value, so an
+    /// interrupt can modify it; the relevance test is whether the imminent
+    /// instruction carries such a value.
+    WouldPayCost,
+    /// CR 9.12.2b: "whenever you gain credits…" (NASX class). One instance
+    /// per OCCURRENCE (9.6.4b): an unaggregated group of effects gains the
+    /// credits several times over, and this condition sees each of them.
+    PlayerGainsCredits(Side),
     /// CR 10.11.5: "the first time each turn you make a successful run on
     /// your mark…" (Virtuoso class). 10.11.5: a condition checking a game
     /// property related to the mark only checks from the moment that server
@@ -828,6 +837,10 @@ pub fn trigger_matches(
         (TriggerCond::SelfInstalled, GameChange::CardInstalled { obj, .. }) => {
             cite!("rule_when_installed");
             *obj == source.id
+        }
+        (TriggerCond::PlayerGainsCredits(side), GameChange::CreditsGained { side: s, .. }) => {
+            cite!("rule_calculated_quantity");
+            side == s
         }
         // 10.11.5: the server must be the mark, and the "first time each
         // turn" ordinal is counted from the designation — both are state the
