@@ -23,7 +23,11 @@ rustPlatform.buildRustPackage {
       # (include_str! of docs/rules/*.json), so they are build inputs — the
       # rest of docs/ stays out of the closure.
       || rel == "docs"
-      || lib.hasPrefix "docs/rules" rel;
+      || lib.hasPrefix "docs/rules" rel
+      # The designer guide is include_str!-able by jinteki-cards (its examples
+      # double as doctests), so it is a build input the same way the CR
+      # tables are.
+      || lib.hasPrefix "docs/cards" rel;
   };
 
   cargoLock.lockFile = ../Cargo.lock;
