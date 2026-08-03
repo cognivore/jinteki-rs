@@ -247,6 +247,19 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             continue;
                         }
                     }
+                    // 9.10.3b: Security Testing class — the successful run
+                    // must be on the server the source chose THIS turn. No
+                    // choice maintained means the condition is never met.
+                    if let (
+                        crate::ability::TriggerCond::SuccessfulRunOnChosenServer { key },
+                        GameChange::RunDeclaredSuccessful { server },
+                    ) = (cond, c)
+                    {
+                        let chosen = vm.maintained_choice(obj_id, key);
+                        if chosen != Some(crate::lingering::ChoiceValue::Server(*server)) {
+                            continue;
+                        }
+                    }
                     // Warroid Tracker class: the trashed card must have been
                     // in the source's server — which for a card trashed FROM
                     // that server is the server it left (4.6.6i again).

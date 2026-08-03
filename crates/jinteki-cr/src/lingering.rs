@@ -116,6 +116,8 @@ pub enum ReplacementTransform {
 pub enum ChoiceValue {
     Server(ServerId),
     Object(ObjectId),
+    /// CR 2.16: a chosen subtype (Pelangi class).
+    Subtype(&'static str),
 }
 
 /// One lingering effect record (9.10.1): exists independently of its source.

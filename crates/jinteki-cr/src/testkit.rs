@@ -1950,6 +1950,126 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
+// §9.10.3 — maintained choices
+// ---------------------------------------------------------------------------
+
+/// Pelangi shape (9.10.3a): a paid ability that chooses an ice subtype and
+/// gives it to the encountered ice for the remainder of the encounter. The
+/// choice BETWEEN subtypes is 9.11.4g's option choice, so each branch both
+/// maintains its own choice and applies the matching modification.
+pub fn pelangi_like(name: &'static str, subtypes: &[&'static str]) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    let options: Vec<(&'static str, Vec<Instruction>)> = subtypes
+        .iter()
+        .map(|t| {
+            (
+                *t,
+                vec![
+                    Instruction::MaintainChoice {
+                        key: "pelangi-subtype",
+                        of: crate::instr::ChoiceSpec::Subtype(t),
+                        duration: crate::lingering::WantedDuration::ThisEncounter,
+                    },
+                    Instruction::ModifySubtypes {
+                        target: TargetSpec::EncounteredIce,
+                        add: vec![*t],
+                        remove: vec![],
+                        duration: crate::lingering::WantedDuration::ThisEncounter,
+                    },
+                ],
+            )
+        })
+        .collect();
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::ChooseOne { options }],
+    )
+    .labeled("pelangi: give the encountered ice a chosen subtype")];
+    c
+}
+
+/// Security Testing shape (9.10.3b): "When your turn begins, you may choose a
+/// server. The first time each turn you make a successful run on that server,
+/// instead of breaching it, gain 2[credit]." The first ability's ONLY effect is
+/// making the choice, so 9.10.3b gives the choice a turn duration; the second
+/// ability reads it back by key.
+///
+/// Simplification: the second ability gains credits rather than replacing the
+/// breach — the replacement half is `sec_test_like`, and this shape is about
+/// which server the trigger condition looks for.
+pub fn security_testing_choice_like(name: &'static str, servers: &[ServerId]) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    let options: Vec<(&'static str, Vec<Instruction>)> = servers
+        .iter()
+        .map(|s| {
+            let label: &'static str = Box::leak(format!("choose {s:?}").into_boxed_str());
+            (
+                label,
+                vec![Instruction::MaintainChoice {
+                    key: "sectest-server",
+                    of: crate::instr::ChoiceSpec::Server(*s),
+                    duration: crate::lingering::WantedDuration::ThisTurn,
+                }],
+            )
+        })
+        .collect();
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::TurnBegins(Side::Runner),
+            vec![Instruction::ChooseOne { options }],
+            true,
+        )
+        .labeled("sectest: you may choose a server"),
+        AbilityDef::conditional(
+            TriggerCond::SuccessfulRunOnChosenServer { key: "sectest-server" },
+            vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+            false,
+        )
+        .labeled("sectest: 2 credits on a successful run on the chosen server"),
+    ];
+    c
+}
+
+/// Femme Fatale shape (9.10.3c / 1.12.4): "When you install this program,
+/// choose an installed piece of ice. You can bypass that ice." The choice is
+/// maintained for as long as the source is active, and the bypass ability
+/// reads it back through `TargetSpec::MaintainedChoice`.
+///
+/// Simplification: the conditional that makes the choice is triggered here by
+/// the turn beginning rather than by installing, because the examples set the
+/// board up rather than playing the install out; the DURATION under test
+/// (9.10.3c, `WhileSourceActive`) is stated on the choice itself and is
+/// unaffected.
+pub fn femme_choice_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::TurnBegins(Side::Runner),
+            vec![Instruction::MaintainChoice {
+                key: "femme-ice",
+                of: crate::instr::ChoiceSpec::Object(TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![
+                        crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+                        crate::instr::TargetFilter::Rezzed,
+                    ],
+                }),
+                duration: crate::lingering::WantedDuration::WhileSourceActive,
+            }],
+            false,
+        )
+        .labeled("femme: choose an installed piece of ice"),
+        AbilityDef::paid(
+            Cost::credits(1),
+            vec![Instruction::TrashCards(TargetSpec::MaintainedChoice("femme-ice"))],
+        )
+        .labeled("femme: act on the remembered ice"),
+    ];
+    c
+}
+
+// ---------------------------------------------------------------------------
 // §9.12.3 — "must"
 // ---------------------------------------------------------------------------
 

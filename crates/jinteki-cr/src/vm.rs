@@ -1555,6 +1555,22 @@ impl Vm {
         }
     }
 
+    /// CR 9.10.3: the choice `source` is currently maintaining under `key`,
+    /// if the lingering effect that remembers it is still alive.
+    pub fn maintained_choice(
+        &self,
+        source: ObjectId,
+        key: &str,
+    ) -> Option<crate::lingering::ChoiceValue> {
+        cite!("rule_lingering_effect_maintaining_choice_duration_other_cases");
+        self.lingering.iter().rev().find_map(|l| match &l.payload {
+            Payload::MaintainedChoice { key: k, choice } if *k == key && l.source == source => {
+                Some(*choice)
+            }
+            _ => None,
+        })
+    }
+
     /// CR 4.6.6i: what an ability on `obj` means by **"this server"**.
     ///
     /// Three readings, in the order the rule gives them:
@@ -3730,6 +3746,11 @@ impl Vm {
                 cite!("rule_controller_choices");
                 self.targets_needed(instr).map(|(_, spec)| (*side, spec))
             }
+            // 9.10.3: "choose an installed piece of ice" is a 1.15.2
+            // announcement like any other; the choice is then remembered.
+            Instruction::MaintainChoice { of: crate::instr::ChoiceSpec::Object(spec), .. } => {
+                self.announcement_for(spec).map(|s| (af.controller, s))
+            }
             Instruction::TrashCards(spec)
             | Instruction::AccessCards { cards: spec }
             | Instruction::ModifySubtypes { target: spec, .. }
@@ -5681,6 +5702,50 @@ impl Vm {
                 self.next_lingering += 1;
                 self.lingering.push(LingeringEffect::new(id, source.obj, Payload::MemoryLimitMod { delta: -(*n as i32) }, Duration::Turn(self.st.turn_seq)));
             }
+            Instruction::MaintainChoice { key, of, duration } => {
+                // 9.10.3: the choice is remembered by a lingering effect, so
+                // later abilities of the same source can refer to it. Which
+                // of 9.10.3's three durations applies is stated by the card
+                // layer; 9.10.4 binds it to the structure in progress.
+                cite!("rule_lingering_effect_maintaining_choice_default_duration");
+                cite!("rule_lingering_effect_maintaining_choice_turn_begins_duration");
+                cite!("rule_lingering_effect_maintaining_choice_duration_other_cases");
+                let value = match of {
+                    crate::instr::ChoiceSpec::Server(s) => {
+                        Some(crate::lingering::ChoiceValue::Server(*s))
+                    }
+                    crate::instr::ChoiceSpec::Subtype(t) => {
+                        Some(crate::lingering::ChoiceValue::Subtype(t))
+                    }
+                    crate::instr::ChoiceSpec::Object(spec) => self
+                        .resolve_targets(spec, Some(source.obj), &imm.targets)
+                        .first()
+                        .copied()
+                        .map(crate::lingering::ChoiceValue::Object),
+                };
+                let Some(choice) = value else { return };
+                let dur = crate::lingering::bind_duration(
+                    *duration,
+                    self.st.encounter.as_ref().map(|e| e.id),
+                    self.current_run.map(|(r, _, _)| r),
+                    self.st.turn_seq,
+                );
+                // A source maintains ONE choice per key: a new one replaces
+                // the old (9.10.3b's "always look for the server chosen this
+                // turn").
+                self.lingering.retain(|l| {
+                    !matches!(&l.payload, Payload::MaintainedChoice { key: k, .. }
+                        if *k == *key && l.source == source.obj)
+                });
+                let id = self.next_lingering;
+                self.next_lingering += 1;
+                self.lingering.push(LingeringEffect::new(
+                    id,
+                    source.obj,
+                    Payload::MaintainedChoice { key, choice },
+                    dur,
+                ));
+            }
             Instruction::MustTrashAccessedCard { means } => {
                 // 9.12.3a/b: a requirement, not an effect — it is recorded
                 // against the access in progress and read when the mid-access
@@ -6622,6 +6687,15 @@ impl Vm {
                 .into_iter()
                 .collect(),
             TargetSpec::AccessedCard => self.st.accessed.into_iter().collect(),
+            // 9.10.3: "that ice" — the object the source is remembering.
+            TargetSpec::MaintainedChoice(key) => source
+                .and_then(|src| self.maintained_choice(src, key))
+                .and_then(|c| match c {
+                    crate::lingering::ChoiceValue::Object(o) => Some(o),
+                    _ => None,
+                })
+                .into_iter()
+                .collect(),
             TargetSpec::EncounteredIce => {
                 self.st.encounter.as_ref().map(|e| e.ice).into_iter().collect()
             }

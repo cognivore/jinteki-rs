@@ -86,6 +86,14 @@ pub enum Instruction {
     GainTags(u32),
     /// "Trash <targets>." — one effect acting on the whole set (9.12.2a).
     TrashCards(TargetSpec),
+    /// CR 9.10.3: "choose a server", "choose an installed piece of ice",
+    /// "choose an ice subtype" — the choice is REMEMBERED by a lingering
+    /// effect (`Payload::MaintainedChoice`) that later abilities of the same
+    /// source read by `key`. The duration is 9.10.3's, which the card layer
+    /// states as one of its three cases: (a) the same duration as the effect
+    /// that reads it, (b) `ThisTurn` for a bare "when your turn begins"
+    /// choice, (c) `WhileSourceActive` otherwise.
+    MaintainChoice { key: &'static str, of: ChoiceSpec, duration: crate::lingering::WantedDuration },
     /// CR 9.12.3a/b: "the Runner MUST trash this card, if able." The
     /// instruction states a requirement, not an effect: it forbids the Runner
     /// from passing the mid-access window (9.2.10) while a permitted means of
@@ -562,6 +570,21 @@ pub enum LingeringSpec {
     CannotUseAbilitiesOf(TargetSpec),
 }
 
+/// CR 9.10.3: what a maintained choice is a choice OF.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChoiceSpec {
+    /// "…this server." (Security Testing class.) A choice BETWEEN servers is
+    /// 9.11.4g's option choice — an `Instruction::ChooseOne` whose branches
+    /// each maintain a different one — so this variant names one server.
+    Server(ServerId),
+    /// "…choose an installed piece of ice." (Femme Fatale class.) The pick is
+    /// a 1.15.2 target announcement over the shared criteria vocabulary.
+    Object(TargetSpec),
+    /// "…this ice subtype." (Pelangi class.) As with `Server`, the choice
+    /// between subtypes is an `Instruction::ChooseOne`.
+    Subtype(&'static str),
+}
+
 /// CR 9.12.3a/b: how a "must trash" requirement may be satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrashMeans {
@@ -588,6 +611,10 @@ pub enum TargetSpec {
     HostOfSource,
     /// The card currently being accessed.
     AccessedCard,
+    /// CR 9.10.3: the object remembered by this source's maintained choice
+    /// under `key` (Femme Fatale's "that ice"). Resolves to nothing when no
+    /// such choice is being maintained.
+    MaintainedChoice(&'static str),
     /// The ice currently being encountered (Forked class).
     EncounteredIce,
     /// Chosen by the controller at announce time from the shared filter

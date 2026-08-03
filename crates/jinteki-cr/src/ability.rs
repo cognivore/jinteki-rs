@@ -118,6 +118,11 @@ pub enum TriggerCond {
     PlayerSearchesDeck(Side),
     /// "Whenever you install a card…" (Near-Earth Hub class).
     CardInstalledBy(Side),
+    /// "Whenever you make a successful run on the chosen server…" (Security
+    /// Testing class). CR 9.10.3b: the server is read from the maintained
+    /// choice under `key`, so the condition is met only by a run on the
+    /// server chosen for THIS turn — and never when no server was chosen.
+    SuccessfulRunOnChosenServer { key: &'static str },
     /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
     /// at run step 6.9.4a (`rule_pass_ice`).
     SelfPassed,
@@ -724,6 +729,15 @@ pub fn trigger_matches(
         }
         (TriggerCond::CardInstalledBy(side), GameChange::CardInstalled { side: s, .. }) => {
             side == s
+        }
+        (
+            TriggerCond::SuccessfulRunOnChosenServer { .. },
+            GameChange::RunDeclaredSuccessful { .. },
+        ) => {
+            // 9.10.3b: the chosen server is compared by the checkpoint scan,
+            // which can read the maintained choice.
+            cite!("rule_lingering_effect_maintaining_choice_turn_begins_duration");
+            true
         }
         _ => false,
     }

@@ -124,6 +124,10 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_must_with_choice_1",
     "example_rule_must_without_choice_1",
     "example_rule_forced_mid_access_ability_optional_1",
+    "example_rule_lingering_effect_maintaining_choice_default_duration_1",
+    "example_rule_lingering_effect_maintaining_choice_turn_begins_duration_1",
+    "example_rule_lingering_effect_maintaining_choice_duration_other_cases_1",
+    "example_rule_object_move_known_location_1",
     // Wave 5a: searching, finding and shuffling (§8.7), 9.11.4d.
     "example_rule_valid_search_target_install_play_1",
     "example_rule_valid_search_target_install_play_2",
@@ -3886,6 +3890,197 @@ fn example_rule_independent_effects_2() {
         vm.ability_present(hush, 0),
         "Magnet's ability no longer exists, so its effect is never applied"
     );
+}
+
+// ===========================================================================
+// §9.10.3 — maintained choices
+// ===========================================================================
+
+/// example_rule_lingering_effect_maintaining_choice_default_duration_1
+/// (9.10.3a): a choice referred to only by another lingering effect is
+/// maintained for that effect's duration — the chosen subtype and the effect
+/// adding it to the encountered ice both expire at the end of the encounter.
+#[test]
+fn example_rule_lingering_effect_maintaining_choice_default_duration_1() {
+    use jinteki_cr::lingering::ChoiceValue;
+    let mut vm = Vm::empty(1301);
+    let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Plain-Ice", 0, 1), ServerId::Hq, true);
+    let pelangi = tk::install_rig(&mut vm, tk::pelangi_like("Pelangi-like", &["barrier", "sentry"]));
+    tk::install_rig(&mut vm, tk::break_button("Break-button"));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run HQ, use Pelangi in the encounter's paid window choosing
+    // "sentry", then halt in the NEXT paid window of that encounter so the
+    // effect can be read while the encounter still lasts.
+    let mut g = plan::Script::new(
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("pelangi"))
+            .when(Match::options().once(), Reply::ChooseNamed("sentry"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert!(vm.st.encounter.is_some(), "the readings below are taken mid-encounter");
+    assert_eq!(
+        vm.maintained_choice(pelangi, "pelangi-subtype"),
+        Some(ChoiceValue::Subtype("sentry")),
+        "9.10.3: the choice is maintained by a lingering effect"
+    );
+    assert!(vm.has_subtype(ice, "sentry"), "and the effect it feeds is applying");
+
+    g.run(&mut vm);
+    assert!(vm.st.encounter.is_none(), "the encounter is over");
+    assert_eq!(
+        vm.maintained_choice(pelangi, "pelangi-subtype"),
+        None,
+        "9.10.3a: the choice expires with the effect that referred to it"
+    );
+    assert!(!vm.has_subtype(ice, "sentry"), "and so does the subtype it granted");
+}
+
+/// example_rule_lingering_effect_maintaining_choice_turn_begins_duration_1
+/// (9.10.3b): a "when your turn begins" ability whose only effect is a choice
+/// maintains that choice until the turn ends. The second ability always looks
+/// for the server chosen THIS turn — a successful run on any other server
+/// never meets its condition, and neither does one when no server was chosen.
+#[test]
+fn example_rule_lingering_effect_maintaining_choice_turn_begins_duration_1() {
+    use jinteki_cr::lingering::ChoiceValue;
+    let mut vm = Vm::empty(1304);
+    let st = tk::install_rig(
+        &mut vm,
+        tk::security_testing_choice_like("SecTest-like", &[ServerId::Hq, ServerId::Rnd]),
+    );
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    // The plan: choose HQ at turn begin, then run R&D — the server that was
+    // NOT chosen.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().once(), Reply::take("sectest"))
+            .when(Match::options().once(), Reply::ChooseNamed("Hq"))
+            .when(Match::action().first(), Reply::run(ServerId::Rnd))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert!(t.halted);
+    assert_eq!(
+        vm.maintained_choice(st, "sectest-server"),
+        Some(ChoiceValue::Server(ServerId::Hq)),
+        "the choice made this turn is maintained"
+    );
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "9.10.3b: a successful run on a server that was not chosen never meets the condition"
+    );
+
+    // The turn ends: the choice expires with it, so nothing is remembered.
+    vm.start_turn(Side::Corp);
+    vm.checkpoint_and_react(None);
+    assert_eq!(
+        vm.maintained_choice(st, "sectest-server"),
+        None,
+        "9.10.3b: the lingering effect maintaining the choice expires when the turn ends"
+    );
+}
+
+/// example_rule_lingering_effect_maintaining_choice_duration_other_cases_1
+/// (9.10.3c): a choice that neither 9.10.3a nor 9.10.3b covers is maintained
+/// for as long as its source is active — across encounters and turns — and
+/// expires when the source stops being active.
+#[test]
+fn example_rule_lingering_effect_maintaining_choice_duration_other_cases_1() {
+    use jinteki_cr::lingering::ChoiceValue;
+    let mut vm = Vm::empty(1302);
+    let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Chosen-Ice", 0, 1), ServerId::Remote(1), true);
+    let femme = tk::install_rig(&mut vm, tk::femme_choice_like("Femme-like"));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: the turn-begins conditional makes the choice; stop at the
+    // first action window.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner().when(Match::optional(), Reply::Optional(true)).stop_at_action(),
+    );
+    assert!(t.halted);
+    assert_eq!(
+        vm.maintained_choice(femme, "femme-ice"),
+        Some(ChoiceValue::Object(ice)),
+        "the ice the Runner chose is being remembered"
+    );
+
+    // The turn ends and the next begins: a `WhileSourceActive` choice does
+    // not care (9.10.3c), unlike the 9.10.3b turn-scoped case.
+    vm.start_turn(Side::Corp);
+    assert_eq!(
+        vm.maintained_choice(femme, "femme-ice"),
+        Some(ChoiceValue::Object(ice)),
+        "9.10.3c: the choice outlives the turn it was made in"
+    );
+
+    // The source stops being active: the lingering effect expires at the next
+    // checkpoint and the choice is gone.
+    vm.trash_card(femme, Side::Corp);
+    vm.checkpoint_and_react(None);
+    assert_eq!(
+        vm.maintained_choice(femme, "femme-ice"),
+        None,
+        "9.10.3c: it expires when the source becomes inactive"
+    );
+}
+
+/// example_rule_object_move_known_location_1 (1.12.4): a card moved to another
+/// known location WITHIN the play area does not become a new object, so a
+/// maintained choice naming it still names it — the Runner can still use the
+/// remembering ability on the ice a Thimblerig-class swap moved.
+#[test]
+fn example_rule_object_move_known_location_1() {
+    use jinteki_cr::lingering::ChoiceValue;
+    let mut vm = Vm::empty(1303);
+    let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Chosen-Ice", 0, 1), ServerId::Remote(1), true);
+    let thimble =
+        tk::install_ice(&mut vm, tk::thimblerig_like("Thimblerig-like"), ServerId::Remote(2), true);
+    let femme = tk::install_rig(&mut vm, tk::femme_choice_like("Femme-like"));
+    vm.st.runner.credits = 5;
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let gen_before = vm.st.objects[&ice].generation;
+    // The plan: the turn-begins conditional makes the Runner's choice, then
+    // the Corp swaps the chosen ice into another position from the paid
+    // window before the Runner's first action (8.8 / 6.2.2f).
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("thimblerig"))
+            .when(Match::targets().once(), Reply::Targets(vec![ice]))
+            .when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::targets().once(), Reply::Targets(vec![ice]))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert!(t.took("thimblerig"), "the ice was moved: {}", t.tail(8));
+    assert_ne!(vm.st.objects[&ice].zone, Zone::Ice(ServerId::Remote(1)), "it moved");
+    assert_eq!(
+        vm.st.objects[&ice].generation, gen_before,
+        "1.12.4: it never left the play area, so it is the same object"
+    );
+    assert_eq!(
+        vm.maintained_choice(femme, "femme-ice"),
+        Some(ChoiceValue::Object(ice)),
+        "so the maintained choice still names it"
+    );
+    let _ = thimble;
 }
 
 // ===========================================================================
