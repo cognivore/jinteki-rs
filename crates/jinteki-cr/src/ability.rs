@@ -105,6 +105,12 @@ pub enum TriggerCond {
     CorpPurgesVirusCounters,
     /// "When this turn ends." (Joshua B. class delayed conditionals.)
     TurnEnds(Side),
+    /// CR 5.5.4 / 5.1.4b: "When a discard phase ends…" (Breaking News, The
+    /// Class Act, Citadel Sanctuary). 5.1.4b is explicit that conditions
+    /// related to a turn OR DISCARD PHASE ending are met at the same step —
+    /// the formal end of that player's turn (5.6.3d / 5.7.2d) — so this is a
+    /// distinct sentence met by the same occurrence, not a distinct moment.
+    DiscardPhaseEnds(Side),
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
@@ -273,6 +279,13 @@ pub enum TriggerCond {
 pub enum TriggerRequirement {
     /// "…if the Runner is tagged" (5.4: the Runner is tagged with ≥ 1 tag).
     RunnerTagged,
+    /// "…if the Runner made a run during their last turn" (Neural EMP), and
+    /// with `successful_only` "…made a successful run during their last turn"
+    /// (SEA Source, Hard-Hitting News). The game history is public
+    /// information (10.2.1), so this is read from the change log's most
+    /// recently COMPLETED Runner turn, exactly as 1.12.6's "ice you passed
+    /// during this run" is read from history.
+    RunnerMadeRunLastTurn { successful_only: bool },
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -661,6 +674,13 @@ pub enum StaticDecl {
     /// static ability active even while the card is INACTIVE — an unrezzed
     /// Ice Wall can still be advanced, which is the whole point of the rule.
     CanBeAdvancedSelf,
+    /// CR 9.1.8c: "Play only if <state>." — a static ability that modifies
+    /// WHEN OR IF its source card can be played, so it is active while the
+    /// card is inactive (in HQ or the grip, the only place it could ever
+    /// matter). Every requirement must hold or the card is not a legal play:
+    /// the basic play action does not offer it (5.2.6e/5.2.7e) and an effect
+    /// that would play a card cannot choose it (8.6.3).
+    PlayOnlyIf(Vec<TriggerRequirement>),
 }
 
 /// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional
@@ -1074,6 +1094,12 @@ pub fn ability_active(
     // kernel's only representation of what an ability does, so the scan reads
     // it (a shallow scan: wrappers are not looked inside).
     cite!("rule_active_exception_modify_play_install_rez");
+    // The other half of 9.1.8c: a static ability DECLARING when its source
+    // may be played is active while the source is inactive, which is the only
+    // state a playable card is ever in.
+    if def.statics.iter().any(|d| matches!(d, StaticDecl::PlayOnlyIf(_))) {
+        return true;
+    }
     if def.instructions.iter().any(|i| {
         matches!(
             i,
@@ -1238,6 +1264,14 @@ pub fn trigger_matches(
             true
         }
         (TriggerCond::TurnEnds(side), GameChange::TurnEnded { side: s }) => side == s,
+        // 5.1.4b: "Trigger conditions related to a turn or discard phase
+        // ending are met at the timing step that indicates the formal end of
+        // the turn." Same step, same occurrence, different sentence.
+        (TriggerCond::DiscardPhaseEnds(side), GameChange::TurnEnded { side: s }) => {
+            cite!("rule_turn_end_trigger_conditions");
+            cite!("rule_discard_step");
+            side == s
+        }
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
         (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
         (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {

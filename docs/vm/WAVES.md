@@ -6,15 +6,15 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W16c)
+## Odometers (after W16d)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 831/1420** distinct rules cited (58.6%; 831 of the 1385 non-header ids); traceability test fails
+- **DP-7b: 832/1420** distinct rules cited (58.6%; 832 of the 1385 non-header ids); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **DP-7c: 58/3717** reference tests ported and passing
+- **DP-7c: 59/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
   `docs/vm/CORPUS.md`; the divergence ledger is
@@ -850,8 +850,9 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W15d it is **51 cards, 14 complete, 37 partial, 57
-printed sentences unsayable** (from 80 unsayable across 5 complete cards).
+prints the count. At W16d it is **50 cards, 16 complete, 34 partial, 53
+printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
+51-card list before Hedge Fund left it).
 
 The card-authoring surface is now an EMBEDDED DSL — typed builders over the
 kernel vocabulary, `docs/cards/EDSL.md` — so a missing verb is no longer a
@@ -863,14 +864,11 @@ with the cards that want it named. The deck modules carry the matching
 `.unimplemented(…)` markers as data, so this list and the test's count move
 together — and `tests/decks.rs` ratchets the count, so it cannot quietly grow.
 
-**A defect, not a gap — fix this one first.** `Vm::char_effects` gathers
-characteristic declarations behind `card_active(o)` alone and never consults
-`ability_active`, so 9.3.6f's `[threat N]` flag (and every other 9.1.8
-exception) is ignored for strength and subtype modification. Shibboleth's
-"Threat 4 → This program gets −2 strength" applies at threat 0. The card is
-written correctly and marked unimplemented anyway, because a wrong card is
-worse than a partial one (SYS-D-12); un-marking it is a one-line change here
-once `char_effects` filters the same way `active_statics` does.
+~~**A defect, not a gap — fix this one first.** `Vm::char_effects` gathers
+characteristic declarations behind `card_active(o)` alone…~~ — **fixed,
+W16d**: `char_effects` now filters through `ability_active` (and honours a
+9.6.7 static condition), so `[threat N]` and every 9.1.8 exception reach
+strength and subtype modification. Shibboleth can be un-marked.
 
 *Instructions with no variant at all:*
 
@@ -948,8 +946,9 @@ scan of its instructions.
 
 *Trigger conditions the checkpoint cannot detect:*
 
-- **"When a discard phase ends"** (5.5.4) — three cards want it: Breaking
-  News, The Class Act, Citadel Sanctuary. The best value on this list.
+- ~~**"When a discard phase ends"** (5.5.4)~~ — **done, W16d**:
+  `TriggerCond::DiscardPhaseEnds(Side)`, met where 5.1.4b says it is met (the
+  formal end of the turn). Breaking News, The Class Act, Citadel Sanctuary.
 - "Whenever the Runner breaks a printed subroutine on this ice" (Gold
   Farmer), and "the first time each turn this program fully breaks a piece of
   ice" (Bukhgalter) — `PassedIceAfterFullyBreaking` is the PASS, not the
@@ -969,10 +968,13 @@ scan of its instructions.
 
 *Restrictions and declarations:*
 
-- **"Play only if <state>"** — six cards: BOOM!, Closed Accounts,
-  Hard-Hitting News, Petty Cash, Self-Growth Program, and Predictive
-  Planogram's "if the Runner is tagged, you may resolve both instead". The
-  second-best value on this list.
+- ~~**"Play only if <state>"**~~ — **done, W16d**:
+  `StaticDecl::PlayOnlyIf(Vec<TriggerRequirement>)` (9.1.8c) with
+  `TriggerRequirement::{RunnerTagged, RunnerMadeRunLastTurn}` as the shared
+  state-predicate vocabulary. BOOM!, Closed Accounts, Hard-Hitting News,
+  Petty Cash, Self-Growth Program. (Predictive Planogram's "if the Runner is
+  tagged, you may resolve both instead" is a different sentence — a
+  requirement on an OPTION, not on the play — and is still unsayable.)
 - "The advancement requirement of all agendas is increased by 1" (The
   Source); `ScoreRequirementModInSourceServer` is scoped to one server.
 - `PlayedNotTrashedUntilAgendaSteal` ends only on a steal, so a Runner

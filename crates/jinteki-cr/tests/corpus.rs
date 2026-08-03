@@ -1651,6 +1651,70 @@ fn rashida_jaheem_when_there_are_enough_cards_in_r_d() {
     );
 }
 
+/// neural-emp: 9.1.8c — "Play only if the Runner made a run during their last
+/// turn" is a static ability active while the card is in HQ, so the operation
+/// is not even an option until the Runner has run, and is afterwards.
+#[test]
+fn neural_emp() {
+    let mut g = Game::new(11)
+        .hand(Side::Corp, vec![cards::neural_emp()])
+        .credits(Side::Corp, 5)
+        .start(Side::Corp);
+    let emp = g.id("Neural EMP");
+    tk::fill_hand(&mut g.vm, Side::Runner, 3);
+    let hand_before = g.vm.st.hand[&Side::Runner].len();
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            // The Corp's first turn: nothing to play, so spend it.
+            .when(Match::action().times(3), Reply::credit())
+            .when(Match::action().once(), Reply::play_card(emp))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Archives)))
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    let offers_emp = |e: &plan::Entry| match &e.spec {
+        jinteki_cr::decision::DecisionSpec::TakeAction { options } => options.iter().any(
+            |o| matches!(o, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == emp),
+        ),
+        _ => false,
+    };
+    let ran = t
+        .entries
+        .iter()
+        .position(|e| {
+            matches!(&e.answer, Some(jinteki_cr::decision::DecisionAnswer::Action(
+                jinteki_cr::decision::ActionOption::BasicRun { .. })))
+        })
+        .expect("the Runner ran");
+    assert!(
+        !t.entries[..ran].iter().any(offers_emp),
+        "before the Runner had run, the precondition failed and the card was \
+         not playable: {}",
+        t.tail(10)
+    );
+    assert!(
+        t.entries[ran..].iter().any(offers_emp),
+        "after the Runner's turn ended, it was: {}",
+        t.tail(14)
+    );
+    assert_eq!(
+        g.vm.st.hand[&Side::Runner].len(),
+        hand_before - 1,
+        "Neural EMP did 1 net damage: {}",
+        t.tail(14)
+    );
+    assert_eq!(g.zone_of("Neural EMP"), Zone::Discard(Side::Corp), "8.6.7g");
+}
+
 /// Take the basic play action with this card and let the play resolve.
 fn play_it(g: &mut Game, side: Side, card: ObjectId) {
     let acting = Plan::for_side(side)
@@ -1734,6 +1798,7 @@ const PORTED: &[&str] = &[
     "hedge-fund",
     "beanstalk-royalties",
     "ipo",
+    "neural-emp",
     "extract-trash-to-gain-9",
     "extract-skip-trash",
     "extract-nothing-to-trash",
@@ -1787,8 +1852,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 58,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 58",
+        PORTED.len() >= 59,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 59",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is

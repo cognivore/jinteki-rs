@@ -15,7 +15,7 @@
 //! in CORPUS.md §5 cannot drift from the code. A partial card is legitimate
 //! only while the missing clause is orthogonal to every test using it.
 
-use crate::ability::{AbilityDef, AbilityFlag, Cost, StaticDecl, TriggerCond};
+use crate::ability::{AbilityDef, AbilityFlag, Cost, StaticDecl, TriggerCond, TriggerRequirement};
 use crate::effects::DamageKind;
 use crate::instr::{Instruction, Quantity, TargetFilter, TargetSpec};
 use crate::object::{CardType, CounterKind, PrintedCard, ServerId, Side};
@@ -86,6 +86,32 @@ pub fn extract() -> PrintedCard {
         },
     ])
     .labeled("extract: gain 6, then may trash to gain 3")];
+    c
+}
+
+/// Neural EMP — Operation: Gray Ops. Cost 2. COMPLETE.
+/// "Play only if the Runner made a run during their last turn.
+///  Do 1 net damage."
+///
+/// 9.1.8c: the first sentence is a static ability that modifies WHEN the card
+/// can be played, so it is active while the card sits in HQ — which is the
+/// only place it could ever matter.
+pub fn neural_emp() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Neural EMP", Side::Corp, CardType::Operation);
+    c.subtypes = vec!["Gray Ops"];
+    c.cost = Some(2);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
+            TriggerRequirement::RunnerMadeRunLastTurn { successful_only: false },
+        ])])
+        .labeled("neural emp: play only if the Runner made a run during their last turn"),
+        AbilityDef::play(vec![Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(1),
+            responsible: Side::Corp,
+        }])
+        .labeled("neural emp: do 1 net damage"),
+    ];
     c
 }
 

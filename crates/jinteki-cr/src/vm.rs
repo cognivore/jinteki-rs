@@ -2096,12 +2096,9 @@ impl Vm {
     /// really occurs and when 9.6.14d resolves the ability by class.
     pub fn trigger_requirements_met(&self, cond: &crate::ability::TriggerCond) -> bool {
         cite!("rule_condition_requirements_part_of_condition");
-        crate::ability::trigger_requirements(cond).iter().all(|r| match r {
-            crate::ability::TriggerRequirement::RunnerTagged => {
-                cite!("rule_tagged");
-                self.st.runner.tags > 0
-            }
-        })
+        crate::ability::trigger_requirements(cond)
+            .iter()
+            .all(|r| self.state_requirement_holds(r))
     }
 
     /// CR 9.6.14d: mark the abilities of `obj` in the named class pending, as
@@ -2358,13 +2355,32 @@ impl Vm {
     pub fn char_effects(&self) -> Vec<crate::object::CharEffect> {
         use crate::object::{CharEffect, CharOp};
         let mut out = Vec::new();
+        let threat = self.threat_level();
         for o in self.st.objects.values() {
-            if !card_active(o) {
-                continue;
-            }
             for a in &o.printed.abilities {
                 if a.kind != AbilityKind::Static {
                     continue;
+                }
+                // 9.1.7/9.1.8 + 9.3.6f: a static ability contributes
+                // characteristic modifications only while it is ACTIVE, which
+                // `active_statics` has always checked and this pass did not —
+                // it gathered behind `card_active` alone, so a `[threat N]`
+                // ability modified strength and subtypes at threat 0. Every
+                // 9.1.8 exception now reaches characteristics too.
+                cite!("rule_threat_flag");
+                if !ability_active(
+                    o,
+                    a,
+                    self.st.encounter.as_ref().map(|e| e.ice),
+                    self.st.accessed,
+                    threat,
+                ) {
+                    continue;
+                }
+                if let Some(Condition::Static(sc)) = &a.condition {
+                    if !self.static_cond_holds(o.id, sc) {
+                        continue;
+                    }
                 }
                 for d in &a.statics {
                     match d {
@@ -6463,6 +6479,7 @@ impl Vm {
         self.st.hand[&from_hand_of]
             .iter()
             .copied()
+            .filter(|id| self.play_permitted(*id))
             .filter(|id| {
                 let o = &self.st.objects[id];
                 let playable_type = match from_hand_of {
@@ -6474,6 +6491,62 @@ impl Vm {
                 playable_type && afford
             })
             .collect()
+    }
+
+    /// CR 9.1.8c: does every "Play only if <state>" requirement printed on
+    /// this card hold right now? A card with no such declaration is always
+    /// permitted; the declaration is read from the card itself because
+    /// `active_statics` only gathers statics of ACTIVE cards and a card in
+    /// hand is inactive — which is exactly the case 9.1.8c exists for.
+    pub fn play_permitted(&self, card: ObjectId) -> bool {
+        cite!("rule_active_exception_modify_play_install_rez");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        o.printed.abilities.iter().all(|a| {
+            a.statics.iter().all(|d| match d {
+                StaticDecl::PlayOnlyIf(reqs) => {
+                    reqs.iter().all(|r| self.state_requirement_holds(r))
+                }
+                _ => true,
+            })
+        })
+    }
+
+    /// One state requirement of the shared predicate vocabulary
+    /// (`TriggerRequirement`), evaluated against the present state and the
+    /// public game history (10.2.1).
+    pub fn state_requirement_holds(&self, req: &crate::ability::TriggerRequirement) -> bool {
+        use crate::ability::TriggerRequirement as R;
+        match req {
+            R::RunnerTagged => {
+                cite!("rule_tagged");
+                self.st.runner.tags > 0
+            }
+            // "…during their last turn": the most recently COMPLETED Runner
+            // turn in the change log. During the Runner's own turn that is the
+            // previous one, which is what the Corp's cards ask about.
+            R::RunnerMadeRunLastTurn { successful_only } => {
+                cite!("rule_hidden_or_open_information");
+                let log = &self.changes.log;
+                let ends: Vec<usize> = log
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| matches!(c, GameChange::TurnEnded { side: Side::Runner }))
+                    .map(|(i, _)| i)
+                    .collect();
+                let Some(&end) = ends.last() else { return false };
+                let start = log[..end]
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { side: Side::Runner }))
+                    .unwrap_or(0);
+                log[start..end].iter().any(|c| {
+                    if *successful_only {
+                        matches!(c, GameChange::RunDeclaredSuccessful { .. })
+                    } else {
+                        matches!(c, GameChange::RunBegan { .. })
+                    }
+                })
+            }
+        }
     }
 
     /// CR 1.20-adjacent: the Runner's link strength (base + active statics).
@@ -9555,6 +9628,12 @@ impl Vm {
             // The action's own [click] is spent before the play cost, so it
             // is not part of what has to be affordable here.
             cost.clicks = cost.clicks.saturating_sub(0);
+            // 9.1.8c: a "Play only if <state>" declaration on the card is
+            // active while the card sits in hand, and an illegal play is not
+            // an option at all.
+            if !self.play_permitted(c) {
+                continue;
+            }
             if self.cost_payable(side, c, &cost) && self.st.player(side).clicks > cost.clicks {
                 out.push(ActionOption::BasicPlayOperation { card: c });
             }

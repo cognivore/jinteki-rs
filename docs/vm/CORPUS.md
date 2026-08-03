@@ -131,8 +131,8 @@ rule, not to the card, and the CR example suite already covers it.
 
 | bucket | tests | note |
 |---|---|---|
-| **ported and passing** | 58 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
-| **blocked on the card layer** | 3481 | card tests; unblocked card by card, in frequency order |
+| **ported and passing** | 59 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
+| **blocked on the card layer** | 3480 | card tests; unblocked card by card, in frequency order |
 | **blocked on kernel gaps** | 176 | the rest of the engine slice; §5 lists the machinery |
 | **out of scope** | ~40 | `quotes_test`, `web/deck_test` and the reference-plumbing tests listed in `UPSTREAM-DEFECTS.md` §2 |
 
@@ -147,15 +147,15 @@ and from the card files `corroder`, `mimic`, `magnum-opus`, `rezeki`,
 `government-takeover`, `pad-campaign`, `lt-todachine`,
 `hostile-infrastructure-basic-behavior`, `desperado`, `ice-wall`, `enigma`,
 `tithe`, `paper-wall`, `imp-vs-cards-in-archives`, `extract-{trash-to-gain-9,
-skip-trash,nothing-to-trash}`, `infiltration-{gain-2,expose}` and
-`rashida-jaheem-when-there-are-enough-cards-in-r-d`. **36 real cards** live in
+skip-trash,nothing-to-trash}`, `infiltration-{gain-2,expose}` `rashida-jaheem-when-there-are-enough-cards-in-r-d` and `neural-emp`.
+**37 real cards** live in
 `crates/jinteki-cr/src/cards.rs`; the parallel `crates/jinteki-cards` DSL
 (another agent's work, same session) is where the card layer scales, and the
 two must be reconciled — see §7.
 
 **A measured selection rule, for the successor.** Re-running the survey with
 the implemented card set as a filter answers "what can be ported *today*"
-exactly: a test is portable when every card it names is in `cards.rs`. At 36
+exactly: a test is portable when every card it names is in `cards.rs`. At 37
 cards that set is ~80 tests, of which 48 are ported and most of the rest are
 `UPSTREAM-DEFECTS.md` §2 plumbing (`auto-no-action-*`, `buffered-continue-*`,
 `hide-continue-msg-*`, `stats`, `say`). Adding one card unlocks 4–8 more
