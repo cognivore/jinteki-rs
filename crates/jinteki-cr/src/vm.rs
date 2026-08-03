@@ -1782,6 +1782,42 @@ impl Vm {
         }
     }
 
+    /// A **citation anchor**: the rule below is realised structurally — by the
+    /// shape of the types and the records, not at one call site — so this is
+    /// where the traceability registry records it.
+    ///
+    /// CR 9.1.6: a player USES an ability whenever they choose to resolve an
+    /// optional ability or an optional part of one, and 9.1.6b puts the moment
+    /// at the end of the relevant optional effects — which is where
+    /// `AbilityUsed` is recorded.
+    pub fn ability_use_model() {
+        cite!("rule_using");
+        cite!("rule_conditional_ability_used_condition");
+    }
+
+    /// CR 4.6.6: a SERVER is a set of locations the Corp installs into and the
+    /// Runner runs against. 4.6.6c: the two types are central (4.6.7a: three
+    /// of them, one per Corp zone) and remote (4.6.8a: the only kind whose
+    /// root can hold an asset or agenda; 4.6.8b: created by declaring one as
+    /// an install destination; 4.6.8e: ceases to exist at a checkpoint once
+    /// nothing is installed in or protecting it). 4.6.6d: every server can
+    /// have ice protecting it; 4.6.6f: the cards in a root are kept together
+    /// and their order carries no meaning; 4.6.6b: an installed Corp card
+    /// cannot leave its server without explicit direction.
+    pub fn remote_servers(&self) -> std::collections::BTreeSet<ServerId> {
+        cite!("rule_server");
+        cite!("rule_server_types");
+        cite!("rule_server_ice");
+        cite!("rule_server_root_order");
+        cite!("rule_corp_cards_cannot_be_moved");
+        cite!("rule_three_central_servers");
+        cite!("rule_remote_server");
+        cite!("rule_creating_remote_servers");
+        cite!("rule_remote_server_cease_to_exist");
+        cite!("rule_play_area_corp_cards_distinct_server");
+        self.remote_servers_inner()
+    }
+
     /// CR 9.10.3: the choice `source` is currently maintaining under `key`,
     /// if the lingering effect that remembers it is still alive.
     pub fn maintained_choice(
@@ -2171,7 +2207,7 @@ impl Vm {
 
     /// CR 4.6.8d: the remote servers that exist — those with at least one card
     /// in their root or protecting them.
-    pub fn remote_servers(&self) -> std::collections::BTreeSet<ServerId> {
+    fn remote_servers_inner(&self) -> std::collections::BTreeSet<ServerId> {
         cite!("rule_remote_server_existence");
         self.st
             .objects
@@ -4779,6 +4815,12 @@ impl Vm {
                 self.set_ability_phase(AbilityPhase::Resolve);
             }
             AbilityPhase::Resolve => {
+                // 9.1.2: to resolve an ability is to resolve each of its
+                // instructions in the order they appear; 9.1.2a: an ability
+                // that meets its condition while this one resolves starts a
+                // chain reaction, which the checkpoint below discovers.
+                cite!("rule_resolve_ability");
+                cite!("rule_chain_reaction");
                 cite!("step_paid_ability_resolution");
                 cite!("step_conditional_ability_resolution");
                 cite!("step_play_ability_interrupt_resolution");
@@ -7711,6 +7753,13 @@ impl Vm {
                 }
             }
             Instruction::Derez { target } => {
+                // 8.1.3/8.1.3a-c: derezzing turns a rezzed card facedown; it
+                // happens only through a card effect, has no inherent cost,
+                // and is instantaneous — no component steps.
+                cite!("sec_derez");
+                cite!("rule_derez_by_ability");
+                cite!("rule_derez_cost");
+                cite!("rule_derez_procedure");
                 // CR 8.1.2 / 1.12.5: the card is turned facedown. It stays
                 // the same object — it never changed zones — so anything
                 // keyed to the object (a once-per-turn use, a maintained
@@ -9389,8 +9438,18 @@ impl Vm {
         (out, !has_mandatory_relevant)
     }
 
+    /// CR 7.1.5a: "all assets and upgrades have trash costs, as do some ice
+    /// and operations. If a card does not have a trash cost, the Runner cannot
+    /// pay its trash cost, and therefore cannot use the basic trash ability
+    /// during that access." 7.1.5b: nor can they trash a card in Archives.
+    /// 7.1.4: the Runner has ONE mid-access opportunity, after the reaction
+    /// window at the beginning of the access and before stealing an agenda —
+    /// which is where the 9.2.10 window sits in the §7.2 step table.
     fn mid_access_options(&self) -> Vec<WindowOption> {
         cite!("rule_mid_access_window_options");
+        cite!("rule_paying_trash_costs");
+        cite!("rule_trash_in_archives");
+        cite!("rule_mid_access_ability_opportunity");
         let mut out = Vec::new();
         let Some(card) = self.st.accessed else { return out };
         let o = &self.st.objects[&card];
@@ -10665,6 +10724,13 @@ impl Vm {
     }
 
     fn rez_card_inner(&mut self, id: ObjectId, ignore_costs: bool) {
+        // 8.1.2: to rez an unrezzed card is to turn it faceup. 8.1.2a: some
+        // paid ability windows allow it (the (R) class, and ice at 6.9.2b);
+        // 8.1.4f: Runner cards are never rezzed or unrezzed, which is why
+        // nothing routes them here.
+        cite!("sec_rez");
+        cite!("rule_rez_in_paw");
+        cite!("rule_runner_cards_neither_rezzed_nor_unrezzed");
         cite!("rule_rez_procedure");
         if !ignore_costs {
             let cost = Cost::credits(self.st.objects[&id].printed.cost.unwrap_or(0));

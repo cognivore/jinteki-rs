@@ -158,6 +158,22 @@ pub struct View {
 }
 
 impl View {
+    /// A **citation anchor**: the rules below are realised by the shape of a
+    /// [`View`] rather than at one call site.
+    ///
+    /// CR 4.6.2/4.6.3: "the number of cards in the play area and the location
+    /// of each card in the play area is always open information"; whether a
+    /// card there and its attributes are open information is decided by the
+    /// card's status (1.21.1: faceup or facedown). Both are exactly what a
+    /// [`View`] is: every slot is present, and whether it names an object is
+    /// the status question.
+    pub fn play_area_information() {
+        cite!("rule_play_area_number_location_open_info");
+        cite!("rule_play_area_card_open_info");
+        cite!("rule_play_area_credit_pool");
+        cite!("rule_play_area_counters");
+    }
+
     /// The cards in this zone, as this player sees them.
     pub fn in_zone(&self, z: Zone) -> &[CardView] {
         self.zones

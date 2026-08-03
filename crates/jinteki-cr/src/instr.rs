@@ -110,6 +110,29 @@ impl RunServerSet {
     }
 }
 
+/// The movement vocabulary, as a list — a **citation anchor** for the rules
+/// each movement's own instruction or procedure implements.
+///
+/// CR 8.2.1: the MOVEMENTS — the ways a card changes zone or location under
+/// special rules. Each is an instruction or a procedure below; 8.2.1a's
+/// non-movements ("add", "move", "discard", "set aside", "remove from the
+/// game") simply put the cards where they are told, which is why they are
+/// ordinary moves in the kernel and meet no movement-related condition.
+pub const fn movements() -> &'static [&'static str] {
+    cite!("sec_movement");
+    cite!("rule_non_movements");
+    cite!("movement_arrange");
+    cite!("movement_draw");
+    cite!("movement_install");
+    cite!("movement_play");
+    cite!("movement_search");
+    cite!("movement_score");
+    cite!("movement_steal");
+    cite!("movement_swap");
+    cite!("movement_trash");
+    &["arrange", "draw", "forfeit", "install", "play", "search", "score", "steal", "swap", "trash"]
+}
+
 /// A single instruction: the atomic unit of ability resolution (9.3.4c).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {

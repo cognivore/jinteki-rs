@@ -6,10 +6,13 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W13f)
+## Odometers (after W14j)
 
-- **DP-7a: 229/243** CR examples as example-named passing tests (94.2%).
-- **DP-7b: 588/1420** distinct rules cited (41.4%); traceability test fails
+- **DP-7a: 243/243** — **COMPLETE.** Every worked example in
+  `docs/rules/examples.json` is an example-named passing test in
+  `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
+  elisions, no example unimplemented.
+- **DP-7b: 712/1420** distinct rules cited (50.1%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -41,11 +44,14 @@ tests_are_plans_not_loops` now enforces all three so they cannot come back.
 The CR implementation is completed FIRST; the architecture work follows.
 
 1. FT-0 — done (W4b–W4f).
-2. **The odometer, wave after wave, to 243/243.** This is the deliverable.
-   Resume the queued clusters below and keep going through every remaining
-   example in `docs/rules/examples.json`, one commit per coherent sub-wave.
-3. DP-7c (jinteki-reference corpus port, triaged against the CR), then the
-   two decks (estrike Andromeda, Gauntlet NTM) from printed oracle text.
+2. **The odometer, wave after wave, to 243/243** — **DONE (W14i).** Every
+   CR example is a passing test.
+3. **DP-7c (jinteki-reference corpus port, triaged against the CR), then the
+   two decks (estrike Andromeda, Gauntlet NTM) from printed oracle text. THIS
+   IS NOW THE FRONT OF THE QUEUE.** ARCHITECTURE §12 rule 4's re-derivation
+   gate is its entry criterion: every testkit shape used by a CR-example test
+   is re-derived from the corresponding real card's printed text, and the
+   DP-7a suite must pass unchanged.
 4. **FT-1/FT-2/FT-3 (algebra extraction, vocabulary collapse,
    Legality/Viewpoint/Replay interpreters) are DEFERRED until after that.**
    `FINAL-TAGLESS.md` stays normative as the TARGET architecture — do not
@@ -72,6 +78,16 @@ prefer a slightly larger honest primitive and note it here.
 | `120c8a2` | W13d | **9.9.9c**: `ReplacementTransform::StealWithHostedCounters` (Project Vacheron) — the agenda still enters the score area, with counters, and the replacement cannot apply to its own result; `TriggerCond::WouldStealSelfAgenda`, a `StealAgenda` atom on `Instruction::StealIfAgenda`, and `interrupt_relevant` for an interrupt that CREATES a replacement (9.9.8c). **Three bugs fixed:** `after_window_closed` sent a structure frame from Enter/Exec straight to Checkpoint, so a step whose INTERRUPT window opened never executed its instruction (every interrupt on a timing-structure step silently cancelled that step); nothing applied a replacement created by an interrupt to the instruction that was imminent (9.9.10); and 1.13.13's sweep read a moved card's counters after the whole scan window, banking counters placed as part of the very move that put it there | 226 |
 | `348cce0` | W13e | **the basic play action and action identity**: `ActionOption::BasicPlayOperation` (5.2.6e/5.2.7d — half of deviation 17), running the ordinary 8.6.7 procedure in a rules ability frame; `ActionIdentity` (5.2.5a/b as data — a basic action, or the (card, ability) pair, since equivalent abilities on different cards are still different actions) recorded by `GameChange::ActionTaken` with `CoreState::turn_log_start` as the history window; `CoreState::current_action` counts the clicks spent to TAKE an action, so 1.16.4d's additional-cost click still counts against it | 228 |
 | `ac96779` | W13f | **1.12.3's third case**: `AbilityFrame::looked_at` stamps each looked-at card with its generation and `TargetFilter::LookedAtByThisAbility` reads them back, so a shuffle that re-makes the object simply stops matching and the ability can no longer act on the card. Deviation 26 closed | 229 |
+| `d96c1e6` | W14a | **§10.2 information as a per-side view** (`src/view.rs`): `CardView::{Seen,Unseen}` — one card as one player sees it, with two `Unseen` entries EQUAL, which is what "the Runner cannot tell which" means; the distinction drawn is a card's IDENTITY (its front face) versus its PRESENCE, since an unrezzed installed card is an object both players can point at. `Vm::identity_visible_to` derives the entitlement in the order the CR gives it — a disclosure (10.2.2b), the card being accessed (7.1.2), an object accessed earlier in the breach in progress (7.3.1a), then the zone (4.3.2 own hand only, 4.2.2 decks hidden from BOTH, 4.4.6c facedown Archives is the Corp's, 4.4.7b the heap is open, 1.21.2a your own facedown cards, 4.8.7/8.3.3a a facedown set-aside group belongs to the player carrying the effect out). `Vm::view_of(side)` assembles the redacted state with 10.2.3a's open counts and 10.2.3b's maintained choices; `Sightings` is 10.2.2b's record of what an effect SHOWED a player, expired by 1.21.6 when the card moves. `Object::set_aside_group` is 4.8.7/1.21.1b. 4.4.6b is real. Verbal communication is deliberately outside the kernel — no instruction, decision or record lets a player assert something, so a claim changes neither state nor view, which IS "bluffing is allowed" | 231 |
+| `5574154` | W14b | **§8.4 drawing as a PROCEDURE**: `Instruction::Draw` expands into 8.4.5's steps — `DrawStepSetAside` (8.4.5a: the cards are set aside facedown as one 4.8.7 group and are "then considered drawn", so this is the step carrying the draw's expected effect and what a `WouldDraw` interrupt modifies), the ordinary post-instruction checkpoint (8.4.5b), and `DrawStepAddToHand` (8.4.5c: whatever is STILL in the group goes, so 8.4.3a's card that left is not added and 8.4.3b's card swapped in is). `TriggerCond::PlayerDrawsCards` is per EVENT; `TargetFilter::DrawnCards` is 8.4.2a's exception to 4.8.3; `swap_cards` carries the group across the exchange, which IS 8.4.3b/8.8.4d. **Bug fixed:** `MoveToDeck`'s card position never announced its targets (missing from `targets_needed`), so "add 1 of the drawn cards to the bottom of R&D" silently moved nothing | 233 |
+| `2218ce2` | W14c | **§8.3 arranging**: `SetAsideTopOfDeck` + `ArrangeSetAside` are 8.3.3's two halves with room between them, which is the whole content of 8.3.3b — `TargetFilter::SetAsideByThisAbility` now names the arranging group too, so a Cultivate-class ability trashes one and adds one to HQ while they are set aside. The order is a DECLARATION, not a target announcement (`DecisionSpec::ArrangeCards` / `plan::Kind::Arrange`), 8.3.1a skips it for ≤1 card, every arranged card becomes a new object, and the arranging player keeps seeing them (8.3.3 + 4.2.3) while 8.3.3a keeps the opponent out. That asymmetry IS 10.2.2b's example | 235 |
+| `3e2028f` | W14d | **6.8.2c**: `end_the_run` PROCESSES the open priority windows instead of discarding them — (a) paid windows close, (b) a reaction window bound to a structure closes per 9.2.8f, (c) any other "is completed normally, except that new timing structures … cannot be initiated" (`WindowFrame::no_new_timing_structures`, consulted by `initiate_run` / the Encounter Ice Phase opener / `push_breach`). Also **9.1.8c**: an ability whose effect is rezzing its own source modifies WHEN that card can be rezzed, so it is active while the card is inactive — without which a Formicary-class ability could never pend. `TriggerCond::ServerApproached` | 236 |
+| `3ee0fb6` | W14e | **8.2.2 / 9.9.8b**: `StaticDecl::ReplaceTrashDestination { criteria, to }` — a static ability stipulating a replacement of where a trashed card goes (`RemovedFromGame`, Skorpios class; `FacedownInPlay`, Harbinger class, 8.1.4d so the card is not uninstalled). `trash_card` records `CardTrashed` unconditionally, which is 8.2.2's "the modified effect is still an occurrence of that movement". **9.1.8b** is real for the class the CR describes (`TriggerCond::SelfTrashedByDamage` can only be met by the grip→heap move, so the ability is active in the heap and nowhere else); 8.1.4a too. **Two bugs fixed:** damage trashed with a bare `move_card`, so 10.4.2a's trash was not a trash movement at all; and the 9.1.8g hangover was granted to any source that moved to an inactive zone, though the rule begins "if an ACTIVE card moves…" | 238 |
+| `429d81f` | W14f | **9.8.9**: `AbilityPhase::SubImminent` is where `StaticDecl::ReplaceSubroutineResolution` swaps the INSTRUCTION LIST while keeping the frame's source — exactly "the replaced subroutine is treated as having the same source as the original imminent subroutine". **6.1.3e/f**: `RunCtx::last_encounter` records the Encounter Ice Phase the run comes directly from (the ice, whether it was fully broken, whether any subroutine resolved), never set by a forced encounter (6.1.3c); `GameChange::IcePassed` carries all three, so `PassedIceAfterFullyBreaking` and `PassedIceWithResolvedSubroutines` are one field read each. The Mirāju case falls out of 6.1.3d + 6.2.8a | 240 |
+| `59056cf` | W14g | **10.1.6a**: `Vm::loop_period` detects a repeating suffix of the ability-frame sequence — only MANDATORY loops, which is the rule's own scope (an optional loop has a priority window in it, and a window is a frame of another kind). `DecisionSpec::LoopCount { period }` puts the number to the player resolving it and `Vm::loop_budget` counts the turns down, refusing the push that would begin one too many. Also: `ResolveAbilityOf`'s subroutine class now records `SubroutineResolved` (9.8.10) | 241 |
+| `f14776a` | W14h | **1.15.1 counters are targets**: `object::CounterRef { host, kind, index }` gives a counter an address; `DecisionSpec::ChooseCounters` / `AbilityFrame::counter_targets` / `ImminentWrap::counter_targets` make it the THIRD kind of target. `Instruction::MoveCounters { kind, count, up_to, to, from_criteria }` announces the destination first and the counters second, keeping only counters that share the host of the first named — "if 2 tokens are chosen, they must be hosted on the same card" enforced where the choice is made. 1.18.2 stays true | 242 |
+| `0a370c4` | W14i | **9.11.2a**: the steps of installing are not instructions — step 8.5.16a is followed by NO checkpoint, so the only one during the procedure is 8.5.16d (the checkpoint after 8.5.16f IS the instruction's own post-instruction checkpoint). That makes 1.13.13 exact where deviation 14 said it was one checkpoint early. **DP-7a 243/243** | 243 |
+| `-` | W14j | DP-7b sweep: ~70 rules the kernel genuinely implements but had never cited — §8.2's movement vocabulary, §9.1's ability/source/use model, §4.6's play-area and server rules, §6.2's position rules, §8.1's rez/derez, §7.1.4/7.1.5a-b. Rules realised structurally rather than at one call site are cited at a doc-commented **citation anchor** (`instr::movements`, `ability::ability_model`, `ability::ability_source_model`, `Vm::ability_use_model`, `View::play_area_information`), which is labelled as such. DP-7b 643 → 712 | 243 |
 | `07e386e` | W1 | kernel: objects/characteristics 9.12.1, change-buffer checkpoints 10.3.1(a–l), five windows 9.2.6–9.2.10, frames + §11 step tables as data, imminence/expected effects §9.9, decision-yielding coroutine | 15 |
 | `f50c063` | W2a | cost system §1.16 (tag/damage components, all-at-once aggregation, declinable steal costs, nested Then/Unless payers, unpayability 1.16.1b), paid abilities §9.5 (set-aside 9.5.5, timing 9.5.6) | 27 |
 | `713b25d` | W2b | §9.9 complete for example set (statics-shaped expected effects, unpreventable retention, replacement-at-resolution w/ relevance re-eval); persistent 9.12.5 ARMED incl. run-binding 9.12.5d | 34 |
@@ -154,13 +170,16 @@ prefer a slightly larger honest primitive and note it here.
    notice; nothing in the corpus does.
 3. **The Cleaners dual modeling** — CR 9.9.7a example flow (triggered
    interrupt) AND `StaticDecl::DamageBonus`; both tested.
-4. **Procedure-step surplus checkpoints** — traces (10.8.6), installs
-   (8.5.16), and plays (8.6.7) expand into per-step instructions inside the
-   ability loop, so each step gets a post-instruction checkpoint and
-   interrupt-window point where the strict reading has only the explicitly
-   called-for checkpoints (10.8.6b, 8.5.16d, 8.6.7b/e). Defended in-code as
-   10.3.4/10.3.5 checkpoints; harmless surplus — revisit only if an example
-   distinguishes them.
+4. **Procedure-step surplus checkpoints, NARROWED (W14i)** — installing is
+   now exact: 9.11.2a is implemented, step 8.5.16a is followed by no
+   checkpoint, and the only one during the procedure is 8.5.16d (the one
+   after 8.5.16f is the instruction's own post-instruction checkpoint, which
+   9.11.2 requires). Traces (10.8.6), plays (8.6.7) and the install-and-rez
+   tail still expand into per-step instructions and so still get a checkpoint
+   per step where the strict reading has only the explicitly called-for ones
+   (10.8.6b, 8.6.7b/e, 8.1.2e). Defended in-code as 10.3.4/10.3.5
+   checkpoints; the same one-line suppression in `AbilityPhase::Checkpoint`
+   extends to them when an example distinguishes them.
 5. **RETIRED (W12d)** — "9.8.2c order-declaration not implemented".
    `Payload::GrantedSubroutine.placement` + `DecisionSpec::
    DeclareSubroutineOrder` implement the declaration for a grant of any size,
@@ -216,11 +235,12 @@ prefer a slightly larger honest primitive and note it here.
     below it is topped up from the front of HQ instead of being rejected as
     illegal. The kernel has no "your answer was illegal, choose again" path
     anywhere; every other Decision clamps the same way.
-20. **`Instruction::Sabotage` trashes without a Decision per card** (W6c) —
-    10.12.2b ("the Corp cannot look at cards trashed from R&D until after
-    making all decisions") is satisfied trivially because the R&D cards are
-    never shown to the answering side; the kernel has no per-side visibility
-    model to violate yet. §10.2 information rules are their own wave.
+20. **RETIRED (W14a)** — "the kernel has no per-side visibility model".
+    `src/view.rs` is one: `Vm::identity_visible_to` / `Vm::view_of(side)` /
+    `CardView`. 10.12.2b still holds trivially for `Instruction::Sabotage`
+    (the R&D cards are never shown to the answering side, and the Corp's view
+    of R&D is `Unseen` by 4.2.2 anyway), so nothing about sabotage changed —
+    what changed is that the claim is now checkable.
 
 12. **Plan-driver approximations** (W4, all annotated in `src/plan.rs`):
     `Reply::Pass` in a window where 9.2.8e forbids passing discharges the
@@ -241,13 +261,11 @@ prefer a slightly larger honest primitive and note it here.
     Choose{…} }` spends it on the card and never offers a host;
     `InstallCards` (8.5.5, one at a time) rewrites itself per card and so
     gets both, which is how the §1.13 tests install.
-14. **1.13.13 counter-trashing is one checkpoint early** (W5b, an instance of
-    deviation 4) — `example_rule_trash_hosted_objects_when_host_trashed_2`
-    says the hosted agenda counter goes "after step 8.5.16d"; the kernel
-    gives every install step its own checkpoint, and the card leaves the
-    score area at 8.5.16a, so the counter goes after (a). The observable
-    claim — gone during the installation, before the card becomes installed
-    at 8.5.16f, unpreventable — holds and is what the test asserts.
+14. **RETIRED (W14i)** — "1.13.13 counter-trashing is one checkpoint early".
+    9.11.2a is implemented: step 8.5.16a is followed by no checkpoint, so the
+    counter goes at the only checkpoint the install procedure has, 8.5.16d,
+    which is what `example_rule_trash_hosted_objects_when_host_trashed_2`
+    says. `example_rule_step_sequences_1` asserts the ordering both ways.
 15. **RETIRED (W8b)** — "§8.8 swaps are a slice" (W5b). W8a added 6.2.2f
     position preservation, W8b added 8.8.2 destination legality (as a gate
     AND as an announcement filter) and the 8.8.4b mixed installed/uninstalled
@@ -259,7 +277,8 @@ prefer a slightly larger honest primitive and note it here.
     `DeclineableChoice` wrappers), and `RemoveCountersFromPlayer` is wired
     for bad publicity only — tags have their own removal path and the other
     counter kinds only ever exist hosted on cards.
-17. **PARTIALLY RETIRED (W13e)** — the basic PLAY action (5.2.6e/5.2.7d) is
+17. **PARTIALLY RETIRED (W13e; still open at 243/243)** — the basic PLAY
+    action (5.2.6e/5.2.7d) is
     `ActionOption::BasicPlayOperation`. What is still missing is the basic
     INSTALL action (5.2.6d/5.2.7e) and the basic advance action (5.2.6f).
     Original text: the action
@@ -336,13 +355,13 @@ prefer a slightly larger honest primitive and note it here.
     inward case). Any other destination moves nothing. 6.2.2d's "in any
     position" (a Corp choice among the gaps) and 6.2.2e's Mutate case are not
     expressible yet.
-29. **8.8.4a is applied only where a card becomes (un)installed** (W8b) —
-    "each of the swapped cards enters its destination zone in the same state
-    that a card would normally enter that zone" is implemented for the 8.8.4b
-    case (a Corp card entering the play area enters unrezzed). A swap between
-    two hidden zones does not re-derive faceup status, and the "facedown into
-    Archives unless it was visible" clause needs the per-side visibility model
-    §10.2 does not have yet (see deviation 20).
+29. **8.8.4a is applied where a card becomes (un)installed or joins a
+    facedown group** (W8b, extended W14b) — the 8.8.4b case (a Corp card
+    entering the play area enters unrezzed) and 8.4.3b/8.8.4d (a card swapped
+    into the set-aside zone joins the group that the leaver was in) are both
+    implemented. 4.4.6b's "facedown into Archives unless it was visible" is
+    real since W14a. A swap between two hidden zones still does not re-derive
+    faceup status; no example does one.
 30. **Two swap announcements, and only two** (W8b, `announcements_required`) —
     a `SwapCards { Choose, Choose }` asks once per target position, and the
     FIRST announcement is filtered to cards that have at least one legal
@@ -573,6 +592,77 @@ chance of passing).**
     each turn you take 3 different actions"). A card asking "have your
     actions so far all been different" would want `>=`.
 
+63. **The §10.2 view is over the STATE, not over the change log** (W14a) —
+    `Vm::view_of(side)` redacts the game state as it stands; there is no
+    per-side redaction of `ChangeBuffer::log`. Every §10.2 example is asserted
+    by halting the plan where the information would leak and reading the two
+    views, which is stronger for those examples (the claim is about what a
+    player can tell APART, and two `Unseen` entries are equal). A redacted log
+    is what the server's replay/redaction view will want at cutover, and
+    `record` would have to take the Vm to build it as changes happen.
+64. **A sighting lapses when the card moves** (W14a, `Sightings::forget`,
+    1.21.6) — every other visibility is derived from the zone, so a player who
+    is continuously entitled to a card keeps seeing it. The two exceptions the
+    CR states are implemented: 7.1.2 (the card being accessed) and 7.3.1a (an
+    object accessed earlier in the breach in progress), and the latter is
+    move-immune, which is what its own example needs. A human tracking a
+    revealed card into HQ would know more than the kernel says they do —
+    10.2.2a lists "cards in HQ" as hidden information, which is the reading
+    taken.
+65. **8.3.3's secret order is a Decision whose answer is not shown** (W14c) —
+    `DecisionSpec::ArrangeCards`. The kernel has no channel by which one
+    player sees another's answer, so "they do not declare which cards moved to
+    which locations" holds by construction; the arranging player is granted a
+    sighting of the returned cards (8.3.3 + 4.2.3, they placed them) and
+    8.3.3a keeps the opponent out.
+66. **The draw procedure is expanded only for `Instruction::Draw`** (W14b) —
+    the mandatory draw (5.6.1) and the basic draw action (5.2.6c/5.2.7c) still
+    call `draw_cards` synchronously, so a Daily-Business-Show-class ability
+    does not see THEIR drawn cards set aside. Routing them through a rules
+    ability frame resolving `Instruction::Draw` is the fix (W13e's
+    `BasicPlayOperation` is the pattern); no example needs it, and every test
+    that starts a Corp turn would be re-timed by it.
+67. **6.8.2b's "opened due to a phase beginning" is read as the 9.2.8f
+    binding** (W14d) — `WindowFrame::originating_structure` is set for any
+    reaction window opened during an encounter and `None` otherwise, so a
+    window opened by a RUN phase beginning (say `step_approach_begins`) would
+    be completed under 6.8.2c rather than closed under 6.8.2b. Every tested
+    case is an encounter window, which the binding gets right; a finer
+    predicate would flag the windows opened by the checkpoint after a phase's
+    first step.
+68. **A window surviving 6.8.2c is re-pushed above the run frame** (W14d) —
+    if it was opened inside a breach, the breach frame below it is popped
+    while the window lives on. Nothing in the vocabulary lets a pending
+    ability in that window read the breach it was opened in; a delayed breach
+    (7.3.8) is the case the rule names, and it is blocked by
+    `no_new_timing_structures`.
+69. **9.8.9 replaces EVERY imminent subroutine while the declaration is
+    active** (W14f, `StaticDecl::ReplaceSubroutineResolution`) — the printed
+    Bankhar class conditions the replacement on the encountered ice not having
+    been fully broken; the shape leaves the condition off, and the tests scope
+    it by installing the card only where the replacement should apply. The
+    rule under test is what the replaced subroutine's SOURCE is, which the
+    condition does not touch.
+70. **A `CounterRef` is derived, not stored** (W14h) — a counter's identity is
+    `(host, kind, ordinal)`, which is exact when an instruction announces it
+    (1.15.2) and is what 1.15.1 needs, but it is NOT 1.12.1 identity: a
+    counter that moves between cards gets a new `CounterRef`. Full counter
+    objects mean replacing `Object::counters`, which reaches every counter
+    reader in the kernel; no example needs it, and the corpus port should
+    decide whether it does.
+71. **The mandatory-loop count is per DETECTION, not per turn of the loop**
+    (W14g) — the Decision is asked at the push that closes the second
+    repetition and the budget counts the pushes after it, so choosing `n`
+    resolves `n` further turns of the loop and then ends it. The CR's "the
+    loop instantaneously resolves that many times" says nothing about where
+    the counting starts; `example_rule_mandatory_infinite_loop_1` asserts the
+    slope (one turn per unit chosen), which is the observable content.
+72. **The loop detector looks at ABILITY frames only, to depth 4** (W14g,
+    `Vm::loop_period`) — a cycle whose period is longer than four abilities,
+    or one made of timing structures rather than abilities (a run that
+    initiates a run), is not detected. 10.1.6b's optional loops are out of
+    scope by construction, which is right.
+
 ## The test pattern, now mandatory (ARCHITECTURE §12 rule 5)
 
 Every new example test declares: setup (cards, hands, credits — data), ONE
@@ -632,9 +722,34 @@ encounter's paid window yields no Decision at all when neither player has a
 usable paid ability — a plan that wants to halt mid-encounter must give
 someone something to be offered (`tk::break_button` is the usual one).
 
-## Next targets — 14 examples left, re-measured after W13f
+W14 adds four decision kinds and one assertion surface:
+`Match::arrange()` / `Reply::Arrange` (8.3.3's secret order),
+`Match::loop_count()` / `Reply::LoopCount` (10.1.6a), `Match::counter_targets()`
+/ `Reply::Counters` with `Entry::counters()` (1.15.1 counters as targets), and
+the §10.2 state view — `vm.view_of(side)` with `View::{in_zone, count_in,
+sees, group, choice, credits_of}` and `vm.identity_visible_to(obj, side)`,
+plus `vm.set_aside_groups()` for 4.8.7. §10.2 assertions are made by halting
+where the information would leak and comparing the two views: two `CardView::
+Unseen` entries are EQUAL, which is what "cannot tell which" means.
 
-Re-run the count before choosing a cluster:
+Three more plan-driver facts W14 paid for:
+- a conditional whose source is a Corp card is controlled by the CORP even
+  when the effect moves the RUNNER (the Mirāju case, `run_phase_after_1`):
+  put the rule in the right plan and check `Entry::side` first;
+- `AbilityDef::conditional(.., optional: true)` makes the INSTANCE
+  non-mandatory (the reaction window gains a pass), not an `OptionalEffect`
+  decision — match it with `Match::reaction().offering(..)`, not
+  `Match::optional()`;
+- a testkit shape whose label is used by `Reply::take` must be matched by a
+  distinctive substring of the LABEL as written (`"do net damage"`, not
+  `"net-damage"`), and a `Take` reply carries an implicit offer guard, so a
+  mistyped needle makes the rule silently never fire rather than fail.
+
+## What is next — DP-7a is done
+
+DP-7a is **243/243**. There is no example backlog; `dp7a_odometer` asserts it
+and `dp7a_backlog_placeholder` has nothing left to list. Re-run the count
+before believing this file:
 
 ```
 python3 - <<'EOF'
@@ -644,79 +759,70 @@ src=open('crates/jinteki-cr/tests/cr_examples.rs').read()
 i=src.index('const IMPLEMENTED'); j=src.index('];', i)
 impl=set(re.findall(r'"(example_[a-z0-9_+]+)"', src[i:j]))
 missing=[(e['section_number'], e['id']) for e in v['examples'] if e['id'] not in impl]
-from collections import Counter
 print(len(missing)); [print(s, i) for s, i in sorted(missing)]
 EOF
 ```
 
-The 14 remaining, best first. Everything cheap has been taken; what is left
-is four §10.2 examples behind ONE model, and nine singletons each behind its
-own primitive.
+(One id, `example_rule_54+_1`, is listed with a test function named
+`example_rule_54_1` — `+` is not a Rust identifier. That is the only
+divergence between the ledger and the test names, and it is deliberate.)
 
-1. **§10.2 per-side visibility — FOUR examples behind ONE model, and it is
-   now the biggest cluster by a wide margin.** `bluffing_1`,
-   `cannot_hide_open_info_1`, `arrange_and_other_effect_1`,
-   `visibility_after_access_1`, plus it would let
-   `facedown_set_aside_distinct_groups_1` (4.8.5) be asserted at all.
-   Deviations 20 and 29 are both instances. The shape: a per-side view of
-   the game state — what each player is ENTITLED to know (10.2's open,
-   hidden and secret information) — derived from `CoreState` rather than
-   stored, plus a `Transcript`-visible record of what each side was shown.
-   The kernel already has every hook it needs (`Object::faceup`,
-   `Zone::is_hidden`-style classes, `GameChange::CardLookedAt`,
-   `CardRevealed`); what it has never had is a query. Budget one full wave
-   and do not start it with less than half a context.
-2. **`run_ends_other_priority_windows_1` (6.8.2c)** — the run ends during a
-   priority window that was NOT opened by a phase beginning; that window is
-   "completed normally, except that new timing structures cannot be
-   initiated". `Vm::end_the_run` currently pops every frame above the run,
-   window included. The change: a flag on `WindowFrame`
-   (`no_new_timing_structures`) consulted by `push_encounter` /
-   `initiate_run` / `push_breach`, and `end_the_run` leaving such windows in
-   place instead of popping them. Formicary can rez and move; the encounter
-   cannot begin.
-3. **`replace_subroutine_resolution_1` (9.8.9)** — a replacement effect
-   applying at `AbilityPhase::SubImminent` (which exists as a no-op
-   placeholder) that swaps WHICH subroutine resolves, plus a Persephone-class
-   "the Runner passes an ice whose subroutines resolved" trigger.
-   `GameChange::SubroutineResolved { ice, .. }` already records the ICE, which
-   is the "count as resolving from Bloop" the rule asserts. W13b's `optional`
-   flag and W13d's fix to interrupt-created replacements are both in place
-   now, so this is mostly a new `ReplacementTransform` arm.
-4. **`run_phase_after_1` (6.1.3e/f)** — "after" is a DIRECT-SEQUENCE relation
-   between phases. The kernel should decide it where the pass happens: record
-   on `GameChange::IcePassed` whether the pass directly follows an encounter
-   with that ice and whether all its subroutines were broken during THAT
-   encounter (the encounter's broken set is already tracked, W3d). Needs a
-   Mirāju-class replacement of the pass step too (an atom on `PassIce` plus a
-   `SuppressPassAndMoveRunner` transform), which is the expensive half.
-5. **`target_3` (1.15.1)** — counters as objects (1.12.1). Advancement
-   counters are a `BTreeMap<CounterKind, u32>` on the object, not
-   `ObjectId`-addressed, so they cannot be announced as targets. This is the
-   ONLY §1.12 work left and it is a data-model change reaching every counter
-   reader; do not take it for one example unless the corpus port needs it.
-6. **`step_sequences_1` (9.11.2a)** — asserts installing has exactly ONE
-   checkpoint (8.5.16d). That is deviation 4: the kernel expands install/play/
-   trace procedures into per-step instructions and each gets a checkpoint.
-   Take it WITH the deviation-4 fix (procedures as a single instruction with
-   internal steps) or not at all.
-7. **`mandatory_infinite_loop_1` (10.1.6a)** — needs loop DETECTION (two ice
-   whose subroutines resolve each other) and then a Decision for "how many
-   times". The kernel has no cycle detection anywhere; the honest form is a
-   depth/repetition guard on the frame stack that recognises a repeating
-   frame signature and asks the resolving player for a count.
-8. **`sec_replacing_movements_1` (8.2.2) and `active_exception_catchall_1`
-   (9.1.8b)** — take together: both want a replacement of a card's MOVEMENT
-   (Skorpios-class removal instead of a trash), and 9.1.8b additionally wants
-   an ability active IN THE HEAP because its condition can only ever be met
-   there, plus damage-trash marking. 8.1.4's facedown installed Runner cards
-   are a prerequisite (`card_active` ignores `faceup` for Runner cards).
-9. **`drawn_card_swapped_1` (8.4.3b)** — 8.8.4d (swapping with a SET-ASIDE
-   card) plus the §8.4 drawing procedure's set-aside step. Take it with §8.4.
+**The queue, in the user's stated order:**
 
-Also still missing, and cheap, if a wave wants filler: the basic INSTALL
-action (5.2.6d/5.2.7e) and the basic ADVANCE action (5.2.6f) — deviation 17's
-remaining half. No example needs them, but the deck work after 243 will.
+1. **DP-7c — the jinteki-reference corpus port, triaged against the CR.**
+   ARCHITECTURE §12 rule 4's re-derivation gate is its entry criterion and it
+   is now the most valuable thing in the campaign: every `testkit` shape used
+   by a CR-example test is re-derived from the corresponding real card's
+   printed text, and the DP-7a suite must pass **unchanged**. Divergence means
+   harvested overfit — either the example test is wrong or the kernel is, and
+   the CR decides which. Every shape carries a doc comment naming its class
+   exemplar and annotating its simplifications; those annotations are the
+   worklist.
+2. **The two decks** (estrike Andromeda, Gauntlet NTM) from printed oracle
+   text.
+3. **FT-1/FT-2/FT-3** (algebra extraction, vocabulary collapse,
+   Legality/Viewpoint/Replay interpreters), which the user deferred until
+   after the above. `FINAL-TAGLESS.md` stays normative as the TARGET.
+
+**Cheap kernel work that the deck/corpus phase will want, none of which any
+example needs** (this is the honest gap list, not a backlog):
+
+- the basic INSTALL action (5.2.6d/5.2.7e) and the basic ADVANCE action
+  (5.2.6f) — deviation 17's remaining half. `ActionOption::BasicPlayOperation`
+  (W13e) is the pattern: a rules ability frame resolving the ordinary
+  procedure.
+- routing the mandatory draw and the basic draw action through
+  `Instruction::Draw` so they get the 8.4.5 procedure (deviation 66).
+- 1.18.3's "you can advance" permission (deviation 36), which the basic
+  advance action needs.
+- `Vm::view_of` over the change log as well as the state (deviation 63) — the
+  server's redaction view at cutover wants exactly that.
+- 8.5.6's optional "may first trash any number" (deviation 8).
+- the 4.6.8f remote-server limit's second half (deviation 39).
+
+**DP-7b is 712/1420 (50.1%).** The remaining ~700 uncited rules are dominated
+by §4.6 layout/orientation prose, §9.3's ability-timing taxonomy, §1.5 setup,
+§2.16 subtypes and §1.9 counters. Raising it further is honest work — but only
+where the kernel really implements the rule. Where a rule is realised
+structurally rather than at one call site, W14j's convention is a doc-commented
+**citation anchor** (`instr::movements`, `ability::ability_model`,
+`ability::ability_source_model`, `Vm::ability_use_model`,
+`View::play_area_information`), labelled as such so nobody mistakes it for an
+implementation. To find candidates:
+
+```
+python3 - <<'EOF'
+import json,re,os
+d=json.load(open('docs/rules/cr-index.json'))
+cited=set()
+for f in os.listdir('crates/jinteki-cr/src'):
+    if f.endswith('.rs'):
+        cited |= set(re.findall(r'cite!\("([A-Za-z0-9_+]+)"\)', open('crates/jinteki-cr/src/'+f).read()))
+for r in d['rules']:
+    if r['id'] not in cited and not r.get('is_header'):
+        print(r['number'], r['id'], '|', r['text'][:100])
+EOF
+```
 
 ## Discipline (unchanged, binding)
 

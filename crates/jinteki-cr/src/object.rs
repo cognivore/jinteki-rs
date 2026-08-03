@@ -47,7 +47,15 @@ impl ServerId {
 }
 
 /// CR 6.2.1: ONE position in a server's sequence of positions, which is what
-/// assigns an order to the ice protecting that server.
+/// assigns an order to the ice protecting that server. 4.6.9a/b: the ice
+/// protecting a server is ORDERED, innermost first, and 4.6.9e says a change
+/// to the ice between a piece and its server changes that piece's position —
+/// which positions-as-elements gives for free.
+///
+/// CR 6.2.6 is why this is a struct and not an index: the Runner's current
+/// position "is a specific element of the sequence of positions, not an index
+/// into that sequence", so a position added or removed outward (6.2.6a) or
+/// inward (6.2.6b) of theirs cannot move them.
 ///
 /// A position is an OBJECT OF ITS OWN, not an index: 6.2.6 says the Runner's
 /// current position "is a specific element of the sequence of positions, not
@@ -83,7 +91,8 @@ pub enum Zone {
     Root(ServerId),
     /// CR 4.6: installed ice protecting a server. Order lives on the server.
     Ice(ServerId),
-    /// CR 4.6: the Runner's rig (installed Runner cards).
+    /// CR 4.6: the Runner's rig (installed Runner cards). 4.6.5c: they have
+    /// no specific location in the play area.
     Rig,
     /// CR 4.6: identity / play-area home of identities and currently-resolving
     /// events/operations.
@@ -354,6 +363,21 @@ pub struct Object {
     pub set_aside_group: Option<crate::view::SetAsideGroup>,
 }
 
+impl IcePosition {
+    /// CR 6.2.1 / 4.6.9a-e: the position's identity, which is what the
+    /// Runner's position names (6.2.6) and what a swap re-occupies (6.2.2f).
+    pub fn id(&self) -> u64 {
+        cite!("rule_position");
+        cite!("rule_ice_ordered");
+        cite!("rule_innermost_ice");
+        cite!("rule_ice_move");
+        cite!("rule_ice_change_can_affect_position");
+        cite!("rule_ice_change_outward");
+        cite!("rule_ice_change_inward");
+        self.id
+    }
+}
+
 impl Object {
     pub fn counter(&self, kind: CounterKind) -> u32 {
         *self.counters.get(&kind).unwrap_or(&0)
@@ -373,6 +397,17 @@ pub fn controls(obj: &Object, side: Side) -> bool {
 /// identity, or a currently-resolving event.
 pub fn card_active(obj: &Object) -> bool {
     cite!("rule_active_cards");
+    // 4.6.4: whether a card in the play area is active is decided by its
+    // status — 4.6.4a identities always are, 4.6.4b Corp cards are installed
+    // unrezzed and so inactive until rezzed, 4.6.4c Runner cards are installed
+    // faceup and active, 4.6.4d some are installed facedown instead, and
+    // 4.6.4e a played operation or event is active for its resolution.
+    cite!("rule_play_area_active_inactive");
+    cite!("rule_play_area_identity");
+    cite!("rule_play_area_corp_cards");
+    cite!("rule_play_area_runner_cards");
+    cite!("rule_play_area_faceup_facedown");
+    cite!("rule_play_area_operations_events");
     if obj.set_aside_for_ability {
         // CR 4.8.3: other abilities cannot interact with set-aside objects.
         return false;

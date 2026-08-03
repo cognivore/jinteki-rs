@@ -640,6 +640,53 @@ pub enum StaticDecl {
     CannotInitiateRunOnSourceServer,
 }
 
+/// A **citation anchor**: these rules are realised structurally — by the shape
+/// of [`AbilityDef`] and [`AbilityKind`], not at one call site — so this is
+/// where the traceability registry records them.
+///
+/// CR 9.1.1: "an ability is an independent unit of text on a card or counter,
+/// a basic action, or the basic trash ability", and 9.1.1a "all rules text on
+/// a card or counter is part of an ability" — which is why `PrintedCard` has
+/// no free-form text field at all. 9.1.1e categorises every ability as static
+/// (§9.4), paid (§9.5), conditional (§9.6), a play ability (§9.7) or a
+/// subroutine (§9.8), and that is exactly [`AbilityKind`]; 9.1.1b/c put the
+/// basic actions and the basic trash ability in the same vocabulary; 9.1.1f
+/// is the `[interrupt]` flag; 9.1.1g is the instruction list.
+///
+/// 9.1.9c: abilities on an object have no inherent order except play
+/// abilities and subroutines — which is why subroutines are ordered by §9.8's
+/// categories and everything else is read as a set.
+pub fn ability_model() {
+    cite!("rule_ability");
+    cite!("rule_all_text_is_an_ability");
+    cite!("rule_basic_action_link");
+    cite!("rule_trash_ability_link");
+    cite!("rule_lingering_effects_link");
+    cite!("rule_ability_categories");
+    cite!("rule_interrupt_link");
+    cite!("rule_instruction_link");
+    cite!("rule_abilities_no_inherent_order");
+    cite!("rule_gaining_losing_abilities");
+    cite!("rule_determine_actual_abilities");
+}
+
+/// A **citation anchor** (see [`ability_model`]).
+///
+/// CR 9.1.3: the SOURCE of an ability is the card, counter, or game rule that
+/// originated it. 9.1.3a a card is the source of its printed abilities;
+/// 9.1.3b a granted ability's source is the object it was granted to; 9.1.3c
+/// an ability maintained by a lingering effect has the object that created
+/// that effect as its source — which is what [`AbilityRef`] and
+/// `LingeringEffect::source` record.
+pub fn ability_source_model() {
+    cite!("rule_source");
+    cite!("rule_source_printed_abilities");
+    cite!("rule_source_granted_abilities");
+    cite!("rule_source_lingering_effect");
+    cite!("rule_effect");
+    cite!("rule_effect_beyond_resolution");
+}
+
 /// One ability as printed/granted: the unit of rules text (9.1.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityDef {
