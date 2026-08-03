@@ -260,6 +260,13 @@ pub struct AbilityFrame {
     /// effects on cards in a deck" are performed, and what
     /// `Instruction::ArrangeSetAside` returns to the deck.
     pub set_aside_group: Option<u64>,
+    /// CR 1.16.2c: the value this ability's controller announced for X when
+    /// they paid its trigger cost. The announcement belongs to the USE of the
+    /// ability (9.5.1), not to the transient payment, so "remove X tags" reads
+    /// it here once the payment has committed. 1.16.2d stays true: an ability
+    /// asking about a cost NOT being paid finds neither a payment nor a frame
+    /// and sees 0.
+    pub announced_x: Option<u32>,
 }
 
 /// A frame on the control stack.

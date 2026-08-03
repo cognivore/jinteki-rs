@@ -6,15 +6,15 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W15c)
+## Odometers (after W16a)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 823/1420** distinct rules cited (58.0%; 823 of the 1385 non-header ids); traceability test fails
+- **DP-7b: 829/1420** distinct rules cited (58.4%; 829 of the 1385 non-header ids); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **DP-7c: 31/3717** reference tests ported and passing
+- **DP-7c: 48/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
   `docs/vm/CORPUS.md`; the divergence ledger is
@@ -79,6 +79,7 @@ prefer a slightly larger honest primitive and note it here.
 |---|---|---|---|
 | `1c0fd24` | W15a | **DP-7c sub-wave 1 — the basic actions the corpus needs, and the card layer.** `ActionOption::{BasicInstall, BasicAdvance, BasicTrashResource, BasicPurge}` (5.2.6d/f/g/h, 5.2.7d) resolve the ordinary procedures in rules ability frames; the install's destination is declared where the CR puts it, step 8.5.16b, through `InstallDest::DeclaredByInstaller` + `DecisionSpec::DeclareInstallDestination` — ONE declaration listing every legal location "including any host relationships" — with `InstallDest::NewRemoteProtecting` for 8.5.2a's other half. **1.18.3** is real: `StaticDecl::CanBeAdvancedSelf` + `Vm::advanceable_cards`, active while installed-but-inactive per 9.1.8f (an unrezzed Ice Wall can be advanced). **10.1.2** is `Instruction::PurgeVirusCounters` + `GameChange::VirusCountersPurged` + `TriggerCond::CorpPurgesVirusCounters`. **`src/cards.rs`** is the card layer: real cards re-derived from printed text (oracle: the reference's `data/cards.edn`), unexpressible clauses marked `UNIMPLEMENTED:` and counted by a test. Deviation 17 retired. Fixed: `BasicPlayOperation` cited 5.2.7d, which is the Runner's INSTALL action | 243 |
 | `db77549` | W15b | **DP-7c sub-wave 2 — 5.6.2 ends a phase properly.** Porting `no-scoring-after-terminal` found OUR defect: `Instruction::EndActionPhase` took the player's clicks, so 5.6.2's loop returned to step (a) — a paid window offering (P)(R)(S) — and only then skipped to (d), leaving the Corp a window to score after a TERMINAL operation. Ending the action phase is a jump to step (d); 5.2.2a keeps the action itself intact. Ported: `run-timing-with-{no-ice,an-ice}`, `no-scoring-after-terminal`, `purge-corp`. `docs/vm/UPSTREAM-DEFECTS.md` opens the triage ledger | 243 |
+| `820b8ad` | W16a | **DP-7c sub-wave 4 — three real defects, found by porting.** (1) **6.2.1**: `occupy_ice_position` gave a POSITION to any card moving into a server's ice zone, so a program hosted on a piece of ice (Botulus) became a position of its own — the Runner approached and "encountered" the program, vacuously fully breaking it, before ever reaching the ice. Only a piece of ice occupies a position, and 6.2.1a takes the position away from ice that becomes hosted. (2) **9.5.6a** ("a paid ability that contains an instruction that could break 1 or more subroutines can only be used during an encounter") was not implemented at all: it was approximated per-card by `TimingRestriction::EncounterOnly`, so a breaker whose text names no ice — Botulus's "break 1 subroutine on host ice" — was offered in every paid window. Now derived from the INSTRUCTIONS (`instr::could_break_subroutines`) and applied at all three paid-ability offer sites. (3) **1.16.2c**: the announced X died with the payment record, so Misdirection's "remove X tags" removed 0 — the announcement belongs to the USE of the ability (`AbilityFrame::announced_x`, `PaymentCont::TriggerCost`), and 1.16.2d stays exact for a cost that is not being paid. New vocabulary: `Instruction::{GainClicks, LoseClicks}` (1.11.3a/b, aggregated per 9.12.2c). 10 new cards (Enigma, Tithe, Pup, Government Takeover, Easy Mark, Diesel, Magnum Opus, Rezeki, Mimic, Cache); 17 tests ported, DP-7c 31 → 48 | 243 |
 | `edce92b` | W15c | **DP-7c sub-wave 3 — the icebreaker class.** Corroder needed NO new kernel machinery: 9.3.6c's [interface] strength gate, 9.5.6c's "this barrier" encounter restriction and 3.9.5b's implicit pump duration were all built during the CR wave, so the class gating ~a fifth of the card corpus is expressible today. Ported: `corroder`, `hedge-fund`, `beanstalk-royalties`, `ipo`, `sure-gamble`, `hostile-takeover`, `pad-campaign`, `ice-wall`. (This wave's diff landed inside another agent's commit `edce92b` — shared tree, staged index; the code is intact, only the message is theirs) | 243 |
 | `6eb2b59` | W13a | **cost payment as a PROCEDURE (§1.16)**: `Vm::begin_payment` gathers every choice the payer gets — 1.16.2c's X (`Cost::x_restriction` + `Quantity::AnnouncedX`, 0 outside a payment, which IS 1.16.2d; `PrintedCard::cost_x`), 1.16.2e's alternate payments (`StaticDecl::AlternatePaymentForSelf`, with 9.1.8d now REAL so the declaration is active while the source is unrezzed), 1.10.3c's division of the credits among the allowed locations (`DecisionSpec::DivideCreditPayment`), and which cards/agendas are spent (`DecisionSpec::PaymentCards` — cards paying a cost are NOT targets, so it does not collide with a 1.15.2 announcement) — then pays the whole cost at once and resumes `PaymentCont`. 1.16.1c is `PaymentRestriction` + `advancement_requirement_without`; 1.16.10c is `PrintedCard::additional_score_cost` + `Instruction::ScoreSelfAgenda` through an ability frame's PayCost phase. Deviations 11, 18, 44 retired. **Bug fixed:** the (R) rez offer read the credit pool alone, so hosted credits could never pay a rez cost | 221 |
 | `ef6904a` | W13b | **§6.7 "If successful" is a property of the initiating effect**: `Instruction::InitiateRun` grows `allowed: RunServerSet` (6.7.4a, a selector — "a remote server" names a computed set) and `if_successful: Vec<Instruction>`, carried on `RunCtx` and pended by `Vm::pend_if_successful` at step 6.9.5a as an ordinary conditional instance. 6.7.4c is `optional` on `Payload::ReplacementEffect`: an optional replacement asks before applying, and replacements apply as the replaced instruction's interrupt window opens — which for the breach step IS 6.9.5b, after the 6.9.5a reaction window's Ash-class trace. New `TriggerCond::SuccessfulRunOnServer` | 223 |
@@ -836,6 +837,9 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
   and 1.18.3's "you can advance" permission (deviation 36 closed).
 - routing the mandatory draw and the basic draw action through
   `Instruction::Draw` so they get the 8.4.5 procedure (deviation 66).
+- **"Run any server" as a chosen `InitiateRun.server` (6.7.4a)** — the single
+  best remaining buy for the corpus (Dirty Laundry alone is 44 tests) and for
+  the deck rung (Clean Getaway, Pinhole Threading, Inside Job, Stimhack).
 - `Vm::view_of` over the change log as well as the state (deviation 63) — the
   server's redaction view at cutover wants exactly that, and the corpus asserts
   on the reference's log 148 times.
@@ -876,9 +880,9 @@ once `char_effects` filters the same way `active_statics` does.
 - "remove N hosted <kind> counters" from a card, outside a cost (Earthrise
   Hotel). `Cost::spend_counters` is the paid-ability half; a mandatory
   conditional has nowhere to go.
-- "gain [click]" (Petty Cash, Subliminal Messaging). `GainAllottedClicks` is
-  the turn-structure step and `EffectClass::GainClicks` is only the atom
-  class — no instruction gains a click.
+- ~~"gain [click]" (Petty Cash, Subliminal Messaging)~~ — **done, W16a**:
+  `Instruction::GainClicks(Side, Quantity)` and its `LoseClicks` twin
+  (1.11.3a/b).
 - 1.21.3 REVEAL (Mutual Favor, Archangel, Slot Machine, Subliminal
   Messaging). `LookAtCards` and `ExposeCards` are the neighbours.
 - "remove <a card that is not the source> from the game" (Bloo Moose; also

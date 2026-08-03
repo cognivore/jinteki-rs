@@ -131,18 +131,42 @@ rule, not to the card, and the CR example suite already covers it.
 
 | bucket | tests | note |
 |---|---|---|
-| **ported and passing** | 31 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
-| **blocked on the card layer** | 3508 | card tests; unblocked card by card, in frequency order |
+| **ported and passing** | 48 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
+| **blocked on the card layer** | 3491 | card tests; unblocked card by card, in frequency order |
 | **blocked on kernel gaps** | 176 | the rest of the engine slice; §5 lists the machinery |
 | **out of scope** | ~40 | `quotes_test`, `web/deck_test` and the reference-plumbing tests listed in `UPSTREAM-DEFECTS.md` §2 |
 
-Ported so far: all 19 of `cards/basic_test.clj`; `run-timing-with-no-ice`,
-`run-timing-with-an-ice`, `no-scoring-after-terminal` and `purge-corp` from
-the `core/` slice; and `corroder`, `hedge-fund`, `beanstalk-royalties`, `ipo`,
-`sure-gamble`, `hostile-takeover`, `pad-campaign`, `ice-wall` from the card
-files. 19 real cards live in `crates/jinteki-cr/src/cards.rs`; the parallel
-`crates/jinteki-cards` DSL (another agent's work, same session) is where the
-card layer scales, and the two must be reconciled — see §7.
+Ported so far: all 19 of `cards/basic_test.clj`; from the `core/` slice
+`run-timing-with-{no-ice,an-ice,ice-and-a-breaker}`,
+`replace-access-you-may-only`, `no-scoring-after-terminal` and `purge-corp`;
+and from the card files `corroder`, `mimic`, `magnum-opus`, `rezeki`,
+`botulus`, `imp-can-t-be-used-when-empty-5190`,
+`misdirection-basic-behavior`, `hedge-fund`, `beanstalk-royalties`, `ipo`,
+`sure-gamble`, `easy-mark`, `diesel`, `account-siphon-{use-ability,access}`,
+`hostile-takeover`, `government-takeover`, `pad-campaign`, `lt-todachine`,
+`desperado`, `ice-wall`, `enigma`, `tithe`. **29 real cards** live in
+`crates/jinteki-cr/src/cards.rs`; the parallel `crates/jinteki-cards` DSL
+(another agent's work, same session) is where the card layer scales, and the
+two must be reconciled — see §7.
+
+**A measured selection rule, for the successor.** Re-running the survey with
+the implemented card set as a filter answers "what can be ported *today*"
+exactly: a test is portable when every card it names is in `cards.rs`. At 29
+cards that set is 66 tests, of which 48 are ported and most of the rest are
+`UPSTREAM-DEFECTS.md` §2 plumbing (`auto-no-action-*`, `buffered-continue-*`,
+`hide-continue-msg-*`, `stats`, `say`). Adding one card unlocks 4–8 more
+tests at the top of the tail and 1–2 in the middle, so waves should mix:
+cards whose own `deftest` is cheap, plus the one or two kernel capabilities
+that unblock a whole class.
+
+```
+python3 - <<'PY'   # after `corpus_survey.py --json /tmp/corpus_index.json`
+import json
+idx=json.load(open('/tmp/corpus_index.json'))
+have={…the names in cards.rs…}
+print(len([t for t in idx if t['cards'] and set(t['cards'])<=have]))
+PY
+```
 
 The wave order followed from the measurement. `cards/basic_test.clj` (19) and
 the `core/` slice (180) came first because they name the *basic actions* —
@@ -183,12 +207,26 @@ UPSTREAM-DEFECTS.md` carries that ledger alongside genuine divergences.
 top cards are counted by how many tests name them):
 
 **The card-layer machinery the next slice needs**, in the order the corpus
-asks for it: the icebreaker class (break-with-subtype-restriction + strength
-pump + the "interface" timing restriction); "the Runner loses [click]" as an
-instruction (Enigma, #7 by frequency); an agenda-point modification (2.5 —
-Project Beale's second sentence); a rez-cost modification scoped to a server
-(Breaker Bay Grid); a movement into a score area for a non-agenda (Fan Site);
-and a prohibition on SCORING scoped by when the agenda was installed (Clot).
+asks for it: ~~the icebreaker class~~ (done, W15c); ~~"the Runner loses
+[click]" as an instruction~~ (done, W16a — `Instruction::{GainClicks,
+LoseClicks}`, 1.11.3a/b); an agenda-point modification (2.5 — Project Beale's
+second sentence, also Merger and Global Food Initiative); **"Run any server"
+— a chosen `InitiateRun.server` (6.7.4a)**, which is the best remaining buy
+(Dirty Laundry 44 tests, Inside Job, Knifed, Möbius, Stimhack, and the deck
+rung's Clean Getaway/Pinhole Threading); a rez-cost modification scoped to a
+server (Breaker Bay Grid); a movement into a score area for a non-agenda (Fan
+Site, Film Critic); and a prohibition on SCORING scoped by when the agenda
+was installed (Clot — wants `TargetFilter::InstalledThisTurn`, which Seamless
+Launch wants too).
+
+One test is **deferred pending a CR reading**, not blocked:
+`programs_test.clj::imp-vs-cards-in-archives` asserts that Imp's "trash the
+card you are accessing" is not even offered while accessing a card in
+Archives. Nothing in §9.5.6 or §7.1.5 forbids using an ability whose effect
+can do nothing, and our kernel offers it; the reference's card implementation
+restricts it. Settle it against 8.2's movement rules before porting, and
+record the outcome in `UPSTREAM-DEFECTS.md` §1 if the reference is the one
+diverging.
 
 | rank | card | tests | what it needs |
 |---|---|---|---|

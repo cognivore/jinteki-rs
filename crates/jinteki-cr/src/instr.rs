@@ -146,6 +146,16 @@ pub enum Instruction {
     GainCredits(Side, Quantity),
     /// "Lose N credits." (loses as much as possible if short)
     LoseCredits(Side, u32),
+    /// CR 1.11.3a: "A player gains clicks whenever the number of clicks they
+    /// have is increased." The count is a quantity position (§12 rule 6).
+    GainClicks(Side, Quantity),
+    /// CR 1.11.3b: "If a player loses or spends clicks, the number of clicks
+    /// they have is reduced by that amount." This is the LOSE half — Enigma's
+    /// "the Runner loses [click]" — and 1.11.3b is explicit that losing and
+    /// spending are not synonymous, so a card that counts spent clicks does
+    /// not see this. A player with fewer clicks than the amount simply reaches
+    /// zero: the number they have cannot go below it.
+    LoseClicks(Side, Quantity),
     /// "Draw N cards." CR 8.4.1: drawing moves cards from a deck to a hand,
     /// and 8.4.2 makes that a PROCEDURE — the cards are set aside facedown
     /// first, are considered drawn there, and only reach the hand once every
@@ -1127,4 +1137,31 @@ pub enum InstallFilter {
 pub enum RevealCheck {
     /// "…with printed rez cost N or lower" (Ob Superheavy class).
     PrintedRezCostAtMost(u32),
+}
+
+/// CR 9.5.6a: "A paid ability that contains an instruction that could break 1
+/// or more subroutines can only be used during an encounter."
+///
+/// The restriction is a property of the INSTRUCTIONS, not of the card, so it
+/// is derived here and applied wherever a paid ability is offered. A card that
+/// additionally *refers* to a stated piece of ice ("break 1 **barrier**
+/// subroutine") carries 9.5.6c's separate restriction as a
+/// [`crate::ability::TimingRestriction`]; this one holds even for a card that
+/// names no ice at all.
+pub fn could_break_subroutines(instrs: &[Instruction]) -> bool {
+    cite!("rule_paid_ability_breaks_subroutines");
+    instrs.iter().any(|i| match i {
+        Instruction::BreakSubroutines { .. } => true,
+        Instruction::PerformedBy { instr, .. } | Instruction::DeclineableChoice(instr) => {
+            could_break_subroutines(std::slice::from_ref(instr))
+        }
+        Instruction::NestedCostThen { effect, .. } | Instruction::NestedCostUnless { effect, .. } => {
+            could_break_subroutines(std::slice::from_ref(effect))
+        }
+        Instruction::Combined(list) => could_break_subroutines(list),
+        Instruction::ChooseOne { options } => {
+            options.iter().any(|(_, is)| could_break_subroutines(is))
+        }
+        _ => false,
+    })
 }

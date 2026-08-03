@@ -457,6 +457,10 @@ pub enum PaymentCont {
     Access(ObjectId),
     /// 7.1.5: the basic trash ability's cost was paid.
     BasicTrash { card: ObjectId, window: u64 },
+    /// CR 9.5.7b: a paid ability's TRIGGER cost. Nothing follows it — the
+    /// ability frame carries on by itself — but the payment's announced X
+    /// (1.16.2c) belongs to this use of the ability and is kept on the frame.
+    TriggerCost,
 }
 
 // A tiny wrapper so effects.rs stays free of frame types.
@@ -1167,6 +1171,15 @@ impl Vm {
         server: ServerId,
         reserved: Option<(ServerId, u64)>,
     ) {
+        // CR 6.2.1: a POSITION is occupied by a piece of ice. A card that is
+        // merely in a server's ice zone because it is hosted on a piece of ice
+        // there (1.13.5: a hosted card is in its host's zone) protects
+        // nothing — it is not ice, so it never occupies a position, and the
+        // Runner never approaches it.
+        cite!("rule_position");
+        if self.st.objects[&ice].printed.card_type != CardType::Ice {
+            return;
+        }
         let slot = match reserved {
             Some((s, id)) if s == server => Some(id),
             _ => None,
@@ -3572,10 +3585,23 @@ impl Vm {
                 (on_card + set_aside) as i64
             }
             Q::AnnouncedX => {
-                // 1.16.2c/d: the value announced for the payment in progress;
-                // 0 wherever no such payment is being made.
+                // 1.16.2c: the value announced for the payment in progress —
+                // or, once that payment has committed, the value announced for
+                // the trigger cost of the ability now resolving, because the
+                // announcement belongs to that use of the ability.
+                // 1.16.2d: 0 wherever neither exists.
                 cite!("rule_cost_x");
-                self.payment.as_ref().and_then(|p| p.announced_x).unwrap_or(0) as i64
+                cite!("rule_cost_x_out_of_context");
+                self.payment
+                    .as_ref()
+                    .and_then(|p| p.announced_x)
+                    .or_else(|| {
+                        self.frames.iter().rev().find_map(|f| match f {
+                            Frame::Ability(af) => Some(af.announced_x),
+                            _ => None,
+                        })?
+                    })
+                    .unwrap_or(0) as i64
             }
             Q::RunnerTags => {
                 cite!("rule_tag");
@@ -3657,6 +3683,19 @@ impl Vm {
             }
             Instruction::LoseCredits(side, n) => {
                 vec![EffectAtom::new(EffectClass::LoseCredits, *n as i64, *side)]
+            }
+            // 1.11.3a/b + 9.12.2c: clicks are an aggregated class exactly as
+            // credits are, so a "lose [click]" carries one atom whose value
+            // is the whole amount.
+            Instruction::GainClicks(side, q) => {
+                cite!("rule_gain_clicks");
+                let n = self.eval_quantity(q, source);
+                vec![EffectAtom::new(EffectClass::GainClicks, n, *side)]
+            }
+            Instruction::LoseClicks(side, q) => {
+                cite!("rule_lose_spend_clicks");
+                let n = self.eval_quantity(q, source);
+                vec![EffectAtom::new(EffectClass::LoseClicks, n, *side)]
             }
             // 8.4.5a: setting the cards aside IS the draw — "the cards are
             // now considered drawn" — so this is the step that carries the
@@ -4498,6 +4537,9 @@ impl Vm {
                 if !self.ability_present(o.id, i) {
                     continue;
                 }
+                if !self.break_ability_timing_ok(a) {
+                    continue;
+                }
                 if !self.cost_payable(side, o.id, a.cost.as_ref().unwrap_or(&Cost::default())) {
                     continue;
                 }
@@ -4653,6 +4695,7 @@ impl Vm {
             found_cards: Vec::new(),
             looked_at: Vec::new(),
             set_aside_group: None,
+            announced_x: None,
         }));
     }
 
@@ -4713,7 +4756,7 @@ impl Vm {
                     controller,
                     source.obj,
                     &cost,
-                    PaymentCont::None,
+                    PaymentCont::TriggerCost,
                     restriction,
                 );
             }
@@ -5439,6 +5482,10 @@ impl Vm {
             }
         }
         self.st.objects.get_mut(&host).unwrap().hosted.push(guest);
+        // CR 6.2.1a: hosted ice has no position — becoming hosted takes a
+        // piece of ice out of the sequence it was protecting a server in.
+        cite!("rule_hosted_ice_has_no_position");
+        self.vacate_ice(guest);
         self.changes.record(GameChange::CardHosted { obj: guest, host });
         // 1.13.2b: an installed Corp card that becomes hosted on a Runner
         // card becomes uninstalled.
@@ -6912,6 +6959,28 @@ impl Vm {
                     let n = (a.value.max(0) as u32).min(have);
                     self.st.player_mut(*side).credits -= n;
                     self.changes.record(GameChange::CreditsLost { side: *side, amount: n });
+                }
+            }
+            // 1.11.3a: gaining clicks increases the number the player has.
+            Instruction::GainClicks(side, _) => {
+                cite!("rule_gain_spend_lose_clicks");
+                cite!("rule_gain_clicks");
+                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
+                    let n = a.value.max(0) as u32;
+                    self.st.player_mut(*side).clicks += n;
+                    self.changes.record(GameChange::ClicksGained { side: *side, amount: n });
+                }
+            }
+            // 1.11.3b: losing clicks reduces the number the player has by that
+            // amount — a player holding fewer simply reaches zero, exactly as
+            // 1.10.3b's forced credit loss takes what the pool holds.
+            Instruction::LoseClicks(side, _) => {
+                cite!("rule_lose_spend_clicks");
+                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
+                    let have = self.st.player(*side).clicks;
+                    let n = (a.value.max(0) as u32).min(have);
+                    self.st.player_mut(*side).clicks -= n;
+                    self.changes.record(GameChange::ClicksLost { side: *side, amount: n });
                 }
             }
             // A `Draw` that reached resolution unexpanded (no ability frame to
@@ -9516,6 +9585,14 @@ impl Vm {
         v
     }
 
+    /// CR 9.5.6a: "A paid ability that contains an instruction that could
+    /// break 1 or more subroutines can only be used during an encounter."
+    fn break_ability_timing_ok(&self, a: &AbilityDef) -> bool {
+        cite!("rule_paid_ability_breaks_subroutines");
+        cite!("rule_paid_ability_effect_based_timing_restrictions");
+        !crate::instr::could_break_subroutines(&a.instructions) || self.st.encounter.is_some()
+    }
+
     fn paid_window_options(&self, side: Side, classes: PawClasses) -> Vec<WindowOption> {
         cite!("rule_paid_ability_window_options");
         let mut out = Vec::new();
@@ -9539,6 +9616,13 @@ impl Vm {
                     continue;
                 }
                 if !self.ability_present(o.id, i) {
+                    continue;
+                }
+                // 9.5.6a: an ability that could break a subroutine can only be
+                // used during an encounter — a property of the INSTRUCTIONS,
+                // so it holds for a card that names no ice at all (Botulus's
+                // "break 1 subroutine on host ice").
+                if !self.break_ability_timing_ok(a) {
                     continue;
                 }
                 // 9.5.6: effect-based timing restrictions.
@@ -9738,6 +9822,7 @@ impl Vm {
                 if a.kind == AbilityKind::Paid
                     && a.has_flag(AbilityFlag::Access)
                     && ability_active(src, a, None, self.st.accessed, threat)
+                    && self.break_ability_timing_ok(a)
                     && self.cost_payable(
                         Side::Runner,
                         src.id,
@@ -10498,6 +10583,16 @@ impl Vm {
         // performed while the payment is still in progress.
         let want_credits = self.cost_credits(&p.cost, p.source);
         self.payment = None;
+        // 1.16.2c: the announced X belongs to this USE of the ability, so it
+        // outlives the payment record that collected it.
+        if matches!(p.cont, PaymentCont::TriggerCost) {
+            cite!("rule_cost_x");
+            if let Some(Frame::Ability(af)) =
+                self.frames.iter_mut().rev().find(|f| matches!(f, Frame::Ability(_)))
+            {
+                af.announced_x = p.announced_x;
+            }
+        }
         self.pay_cost_committed(&p, want_credits);
         self.resume_payment(p.cont);
     }
@@ -10505,7 +10600,7 @@ impl Vm {
     /// Continue whatever the payment was for.
     fn resume_payment(&mut self, cont: PaymentCont) {
         match cont {
-            PaymentCont::None => {}
+            PaymentCont::None | PaymentCont::TriggerCost => {}
             PaymentCont::Rez(id) => self.rez_card_finish(id),
             PaymentCont::Access(card) => self.push_access(card),
             PaymentCont::BasicTrash { card, window } => {
@@ -12280,6 +12375,8 @@ fn instruction_aggregates(i: &Instruction) -> bool {
     match i {
         Instruction::GainCredits(..)
         | Instruction::LoseCredits(..)
+        | Instruction::GainClicks(..)
+        | Instruction::LoseClicks(..)
         | Instruction::Draw(..)
         | Instruction::GainTags(..)
         | Instruction::TakeBadPublicity { .. }
@@ -12307,6 +12404,8 @@ fn scale_instruction(i: &Instruction, x: i64) -> Instruction {
     let times = |q: &Q| Q::Times(x, Box::new(q.clone()));
     match i {
         Instruction::GainCredits(s, q) => Instruction::GainCredits(*s, times(q)),
+        Instruction::GainClicks(s, q) => Instruction::GainClicks(*s, times(q)),
+        Instruction::LoseClicks(s, q) => Instruction::LoseClicks(*s, times(q)),
         Instruction::LoseCredits(s, n) => {
             Instruction::LoseCredits(*s, (*n as i64 * x).max(0) as u32)
         }

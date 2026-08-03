@@ -487,6 +487,155 @@ fn run_timing_with_an_ice() {
     );
 }
 
+/// run-timing-with-ice-and-a-breaker: the Runner breaks the only subroutine
+/// with Corroder, passes the ice, and the run reaches the Success Phase and
+/// the breach that follows it.
+#[test]
+fn run_timing_with_ice_and_a_breaker() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::corroder()])
+        .credits(Side::Runner, 10)
+        .credits(Side::Corp, 10)
+        .start(Side::Runner);
+    let cor = g.id("Corroder");
+    tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Rnd, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(cor)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Rnd)))
+            .when(Match::paid().once(), Reply::take("break 1 barrier"))
+            .when(Match::sub_targets(), Reply::SubroutineNamed("End the run"))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert_eq!(
+        g.vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        0,
+        "the only subroutine was broken: {}",
+        t.tail(14)
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "6.9.5: the run passed the ice and reached the Success Phase: {}",
+        t.tail(14)
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { .. })),
+        "the breach of R&D accessed a card: {}",
+        t.tail(14)
+    );
+    assert!(g.vm.current_run.is_none(), "the run is over");
+}
+
+/// replace-access-you-may-only: Account Siphon's replacement is a "you may",
+/// so step 6.9.5b puts the choice to the Runner — taking it means no breach
+/// happens at all, declining it means the ordinary breach does.
+#[test]
+fn replace_access_you_may_only() {
+    // …and choosing the replacement effect.
+    let mut g = siphon_game();
+    let siphon = g.id("Account Siphon");
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(siphon))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert!(
+        !g.vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+        "9.9.2: the replacement was applied, so HQ was never breached: {}",
+        t.tail(14)
+    );
+
+    // …and choosing to access cards.
+    let mut g = siphon_game();
+    let siphon = g.id("Account Siphon");
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(siphon))
+            .when(Match::optional().once(), Reply::Optional(false))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+        "6.7.4c: declining the optional replacement leaves the breach: {}",
+        t.tail(14)
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { .. })),
+        "the ordinary access happened: {}",
+        t.tail(14)
+    );
+}
+
+/// account-siphon-use-ability: the reference's exact numbers — a Corp with 8
+/// credits ends on 3, the Runner on 15, with 2 tags.
+#[test]
+fn account_siphon_use_ability() {
+    let mut g = siphon_game();
+    let siphon = g.id("Account Siphon");
+    assert_eq!(g.vm.st.corp.credits, 8, "the Corp has 8 credits");
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(siphon))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(g.vm.st.runner.tags, 2, "the Runner took 2 tags: {}", t.tail(14));
+    assert_eq!(g.vm.st.runner.credits, 15, "the Runner gained 10 credits: {}", t.tail(14));
+    assert_eq!(g.vm.st.corp.credits, 3, "the Corp lost 5 credits");
+}
+
+/// account-siphon-access: declining the replacement costs the Corp nothing
+/// and the Runner gains nothing.
+#[test]
+fn account_siphon_access() {
+    let mut g = siphon_game();
+    let siphon = g.id("Account Siphon");
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(siphon))
+            .when(Match::optional().once(), Reply::Optional(false))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert_eq!(g.vm.st.runner.tags, 0, "no tags: {}", t.tail(14));
+    assert_eq!(g.vm.st.runner.credits, 5, "the Runner gained nothing");
+    assert_eq!(g.vm.st.corp.credits, 8, "the Corp lost nothing");
+}
+
+/// The `(new-game {:runner {:deck [(qty "Account Siphon" 3)]}})` position the
+/// three Siphon tests share: a Corp on 8 credits with cards in HQ, a Runner
+/// on 5 holding the real card.
+fn siphon_game() -> Game {
+    Game::new(11)
+        .hand(Side::Runner, vec![cards::account_siphon()])
+        .hand(Side::Corp, vec![cards::hedge_fund()])
+        .credits(Side::Corp, 8)
+        .credits(Side::Runner, 5)
+        .start(Side::Runner)
+}
+
 // ---------------------------------------------------------------------------
 // test/clj/game/core/rules_test.clj
 // ---------------------------------------------------------------------------
@@ -631,6 +780,137 @@ fn corroder() {
         t.tail(12)
     );
     let _ = wall;
+}
+
+/// mimic: an icebreaker with no pump at all breaks both of Pup's
+/// subroutines, so neither net damage happens and the Runner spends 2.
+#[test]
+fn mimic() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::mimic()])
+        .credits(Side::Runner, 5)
+        .credits(Side::Corp, 10)
+        .start(Side::Runner);
+    let mim = g.id("Mimic");
+    tk::fill_hand(&mut g.vm, Side::Runner, 4);
+    let hand_before = g.vm.st.hand[&Side::Runner].len();
+    tk::install_ice(&mut g.vm, cards::pup(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(mim)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::paid().times(2), Reply::take("break 1 sentry"))
+            .when(Match::sub_targets(), Reply::Default)
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert_eq!(t.times_taken("break 1 sentry"), 2, "both subroutines broken: {}", t.tail(16));
+    assert_eq!(
+        g.vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        0,
+        "9.8.6: a broken subroutine does not resolve: {}",
+        t.tail(16)
+    );
+    // 5 - 3 (install) - 1 - 1 (the two breaks).
+    assert_eq!(g.vm.st.runner.credits, 0, "the Runner spent 2 credits breaking");
+    assert_eq!(
+        g.vm.st.hand[&Side::Runner].len(),
+        hand_before - 1,
+        "no net damage — only Mimic left the grip"
+    );
+}
+
+/// magnum-opus: the [click] paid ability is an ACTION (1.11.3c/5.2.1), so it
+/// is offered in the action window and gains 2.
+#[test]
+fn magnum_opus() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::magnum_opus()])
+        .credits(Side::Runner, 5)
+        .start(Side::Runner);
+    let mo = g.id("Magnum Opus");
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(mo)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::take("magnum opus"))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(g.zone_of("Magnum Opus"), Zone::Rig, "installed");
+    // 5 - 5 (install) + 2.
+    assert_eq!(g.vm.st.runner.credits, 2, "gain 2 credits: {}", t.tail(10));
+    assert_eq!(g.vm.memory_limit(), 4, "1.20.2: Magnum Opus does not change the limit");
+}
+
+/// rezeki: 1 credit when the Runner's turn begins — the turn AFTER it was
+/// installed, since its own turn had already begun.
+#[test]
+fn rezeki() {
+    let mut g = Game::new(11).credits(Side::Runner, 5).start(Side::Corp);
+    tk::install_rig(&mut g.vm, cards::rezeki());
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let before = g.vm.st.runner.credits;
+    script.run(&mut g.vm);
+    assert_eq!(g.vm.st.runner.credits, before + 1, "Rezeki: gain 1 when your turn begins");
+}
+
+/// imp-can-t-be-used-when-empty-5190: with no hosted virus counters Imp's
+/// mid-access ability is not an option at all (1.16.1b), and Cache's counters
+/// are no help — a cost spends counters hosted on the ability's own source.
+#[test]
+fn imp_can_t_be_used_when_empty_5190() {
+    let mut g = Game::new(11)
+        .hand(Side::Corp, vec![cards::hostile_takeover()])
+        .credits(Side::Runner, 10)
+        .start(Side::Runner);
+    let imp = tk::install_rig(&mut g.vm, cards::imp());
+    let cache = tk::install_rig(&mut g.vm, cards::cache());
+    // The two install conditionals are not replayed for a board seeded
+    // directly, so the counters each program carries are setup: Imp empty
+    // (the reference zeroes it with `core/update!`), Cache with its 3.
+    g.vm.st.objects.get_mut(&cache).unwrap().counters.insert(CounterKind::Virus, 3);
+    let mut script = plan::Script::new(
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::mid_access().once(), Reply::Halt)
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    assert!(
+        !t.ever_offered("imp:"),
+        "an unpayable cost is not an option (1.16.1b): {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        g.vm.st.objects[&imp].counters.get(&CounterKind::Virus).copied().unwrap_or(0),
+        0,
+        "Imp really is empty"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -785,6 +1065,276 @@ fn ice_wall() {
     );
 }
 
+/// easy-mark: gain 3.
+#[test]
+fn easy_mark() {
+    let mut g = Game::new(11).hand(Side::Runner, vec![cards::easy_mark()]).start(Side::Runner);
+    let card = g.id("Easy Mark");
+    let before = g.vm.st.runner.credits;
+    play_it(&mut g, Side::Runner, card);
+    assert_eq!(g.vm.st.runner.credits, before + 3, "Easy Mark: gain 3 credits");
+}
+
+/// diesel: play it (−1 card) and draw 3.
+#[test]
+fn diesel() {
+    let mut g = Game::new(11).hand(Side::Runner, vec![cards::diesel()]).start(Side::Runner);
+    tk::fill_hand(&mut g.vm, Side::Runner, 2);
+    let card = g.id("Diesel");
+    let before = g.vm.st.hand[&Side::Runner].len();
+    play_it(&mut g, Side::Runner, card);
+    assert_eq!(
+        g.vm.st.hand[&Side::Runner].len(),
+        before - 1 + 3,
+        "8.4.5c: Diesel leaves the grip and 3 drawn cards arrive"
+    );
+}
+
+/// enigma: the first subroutine takes a click off the Runner (1.11.3b), the
+/// second ends the run.
+#[test]
+fn enigma() {
+    let mut g = Game::new(11).credits(Side::Corp, 10).start(Side::Runner);
+    tk::install_ice(&mut g.vm, cards::enigma(), ServerId::Hq, false);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    // 4 allotted − 1 spent on the run action − 1 LOST to the subroutine.
+    assert_eq!(
+        g.vm.st.runner.clicks,
+        2,
+        "1.11.3b: the Runner lost 1 click: {}",
+        script.transcript().tail(12)
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::ClicksLost { side: Side::Runner, amount: 1 }
+        )),
+        "the loss is a real ClicksLost event"
+    );
+    assert!(g.vm.current_run.is_none(), "the second subroutine ended the run");
+}
+
+/// tithe: 1 net damage from the first subroutine, 1 credit from the second.
+#[test]
+fn tithe() {
+    let mut g = Game::new(11).credits(Side::Corp, 5).start(Side::Runner);
+    tk::fill_hand(&mut g.vm, Side::Runner, 3);
+    tk::install_ice(&mut g.vm, cards::tithe(), ServerId::Hq, false);
+    let hand_before = g.vm.st.hand[&Side::Runner].len();
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+    );
+    assert_eq!(
+        g.vm.st.hand[&Side::Runner].len(),
+        hand_before - 1,
+        "1 net damage trashed 1 card from the grip: {}",
+        t.tail(14)
+    );
+    assert_eq!(g.vm.st.discard[&Side::Runner].len(), 1, "the damaged card is in the heap");
+    // 5 − 1 (the rez) + 1 (the subroutine).
+    assert_eq!(g.vm.st.corp.credits, 5, "rezzed for 1, gained 1: {}", t.tail(14));
+}
+
+/// government-takeover: a scored agenda is still active (9.1.8a), so its
+/// [click] ability is an action the Corp can take from the score area.
+#[test]
+fn government_takeover() {
+    let mut g = Game::new(11).credits(Side::Corp, 5).start(Side::Corp);
+    let gt = tk::install_root(&mut g.vm, cards::government_takeover(), ServerId::Remote(1), false);
+    // The reference reaches the 9 advancements with `core/gain :click 8
+    // :credit 8` and nine advance actions; nine counters on the installed
+    // card is the same starting position, expressed as setup.
+    tk::place_counters(&mut g.vm, gt, CounterKind::Advancement, 9);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Score(gt)))
+            .when(Match::action().once(), Reply::take("government takeover"))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(
+        g.vm.st.objects[&gt].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was scored: {}",
+        t.tail(12)
+    );
+    assert_eq!(g.vm.st.corp.credits, 8, "the scored agenda's ability gained 3: {}", t.tail(12));
+}
+
+/// lt-todachine: rezzing a piece of ice gives the Runner a tag. The ice can
+/// only be rezzed where the CR lets it be — as the Runner approaches it
+/// (9.2.7e) — so the port runs at it.
+#[test]
+fn lt_todachine() {
+    let mut g = Game::new(11).credits(Side::Corp, 10).start(Side::Runner);
+    tk::install_root(&mut g.vm, cards::lt_todachine(), ServerId::Remote(1), true);
+    tk::install_ice(&mut g.vm, cards::vanilla_ice(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+    );
+    assert_eq!(g.vm.st.runner.tags, 1, "the Runner has 1 tag: {}", t.tail(12));
+}
+
+/// desperado: +1[mu] and 1 credit for a successful run.
+#[test]
+fn desperado() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::desperado()])
+        .credits(Side::Runner, 5)
+        .start(Side::Runner);
+    let desp = g.id("Desperado");
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(desp)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Archives)))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert_eq!(g.vm.memory_limit(), 5, "1.20.2: +1[mu]");
+    // 5 − 3 (install) + 1 (the successful run).
+    assert_eq!(g.vm.st.runner.credits, 3, "1 credit for the successful run: {}", t.tail(12));
+}
+
+/// botulus: the hosted virus counter breaks a subroutine on the host ice.
+#[test]
+fn botulus() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::botulus()])
+        .credits(Side::Runner, 15)
+        .credits(Side::Corp, 10)
+        .start(Side::Runner);
+    let bot = g.id("Botulus");
+    let wall = tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(bot)))
+            .when(Match::destination(), Reply::Destination(InstallDest::HostedOn(wall)))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::paid().once(), Reply::take("botulus: break"))
+            .when(Match::sub_targets(), Reply::Default)
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert_eq!(
+        g.vm.st.objects[&bot].host,
+        Some(wall),
+        "1.13.6c: installed hosted on the ice: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        g.vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        0,
+        "every subroutine on the host ice was broken: {}",
+        t.tail(16)
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "the run was not ended: {}",
+        t.tail(16)
+    );
+}
+
+/// misdirection-basic-behavior: [click][click], X[credit] removes X tags.
+///
+/// The reference starts the Runner with `:tags 2`; we make the tags the way
+/// the game does — two copies of Lt. Todachine, each of which triggers on the
+/// same rez of the approached ice (9.6.4b: one instance per occurrence per
+/// source). That costs the port one extra [click] for the run, so the click
+/// assertion is on the DELTA the ability charges, not the reference's
+/// absolute count.
+#[test]
+fn misdirection_basic_behavior() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::misdirection()])
+        .credits(Side::Runner, 5)
+        .credits(Side::Corp, 20)
+        .start(Side::Runner);
+    let mis = g.id("Misdirection");
+    tk::install_root(&mut g.vm, cards::lt_todachine(), ServerId::Remote(1), true);
+    tk::install_root(&mut g.vm, cards::lt_todachine(), ServerId::Remote(2), true);
+    tk::install_ice(&mut g.vm, cards::vanilla_ice(), ServerId::Hq, false);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(mis)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::action().once(), Reply::take("misdirection"))
+            .when(Match::declare_x(), Reply::DeclareX(2))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    assert_eq!(g.vm.st.runner.tags, 2, "two Todachines, one rez, two tags");
+    let clicks_spent = |vm: &Vm| {
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::ClickSpent { side: Side::Runner }))
+            .count()
+    };
+    let clicks_before = clicks_spent(&g.vm);
+    let credits_before = g.vm.st.runner.credits;
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.runner.tags,
+        0,
+        "the Runner has lost both tags: {}",
+        script.transcript().tail(20)
+    );
+    // The ability empties the Runner's action phase, so the clicks it charged
+    // are counted where they were spent rather than in a later window.
+    assert_eq!(clicks_spent(&g.vm), clicks_before + 2, "the ability cost 2 clicks");
+    assert_eq!(g.vm.st.runner.credits, credits_before - 2, "1.16.2c: X = 2, so 2 credits");
+}
+
 /// Take the basic play action with this card and let the play resolve.
 fn play_it(g: &mut Game, side: Side, card: ObjectId) {
     let acting = Plan::for_side(side)
@@ -850,19 +1400,36 @@ const PORTED: &[&str] = &[
     // test/clj/game/core/runs_test.clj
     "run-timing-with-no-ice",
     "run-timing-with-an-ice",
+    "run-timing-with-ice-and-a-breaker",
+    "replace-access-you-may-only",
     // test/clj/game/core/rules_test.clj
     "no-scoring-after-terminal",
     "purge-corp",
     // test/clj/game/cards/programs_test.clj
     "corroder",
-    // test/clj/game/cards/{operations,events,agendas,assets,ice}_test.clj
+    "mimic",
+    "magnum-opus",
+    "rezeki",
+    "botulus",
+    "imp-can-t-be-used-when-empty-5190",
+    "misdirection-basic-behavior",
+    // test/clj/game/cards/{operations,events,agendas,assets,hardware,ice}_test.clj
     "hedge-fund",
     "beanstalk-royalties",
     "ipo",
     "sure-gamble",
+    "easy-mark",
+    "diesel",
+    "account-siphon-use-ability",
+    "account-siphon-access",
     "hostile-takeover",
+    "government-takeover",
     "pad-campaign",
+    "lt-todachine",
+    "desperado",
     "ice-wall",
+    "enigma",
+    "tithe",
 ];
 
 /// Every ported name exists as a `#[test] fn` in this file, spelled the
@@ -894,8 +1461,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 31,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 31",
+        PORTED.len() >= 48,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 48",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is
@@ -906,6 +1473,6 @@ fn dp7c_odometer() {
         .map(|(_, s)| *s)
         .expect("cards.rs is embedded");
     let partial = card_src.matches("/// UNIMPLEMENTED:").count();
-    assert_eq!(partial, 6, "partial cards (CORPUS.md §5): {partial}");
+    assert_eq!(partial, 7, "partial cards (CORPUS.md §5): {partial}");
     let _ = CardType::Agenda;
 }

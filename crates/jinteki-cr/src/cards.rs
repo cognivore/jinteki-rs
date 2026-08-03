@@ -16,6 +16,7 @@
 //! only while the missing clause is orthogonal to every test using it.
 
 use crate::ability::{AbilityDef, AbilityFlag, Cost, StaticDecl, TriggerCond};
+use crate::effects::DamageKind;
 use crate::instr::{Instruction, Quantity, TargetFilter, TargetSpec};
 use crate::object::{CardType, CounterKind, PrintedCard, ServerId, Side};
 
@@ -99,6 +100,73 @@ pub fn ice_wall() -> PrintedCard {
         .labeled("ice wall: can be advanced, +1 strength per advancement counter"),
         AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
     ];
+    c
+}
+
+/// Enigma — ICE: Code Gate. Rez 3, strength 2. COMPLETE.
+/// "[subroutine] The Runner loses [click].
+///  [subroutine] End the run."
+///
+/// 1.11.3b: losing clicks is not spending them, and a Runner with none left
+/// simply stays at zero — the subroutine still resolves.
+pub fn enigma() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Enigma", Side::Corp, CardType::Ice);
+    c.subtypes = vec!["Code Gate"];
+    c.cost = Some(3);
+    c.strength = Some(2);
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::LoseClicks(Side::Runner, Quantity::c(1))])
+            .labeled("[sub] The Runner loses [click]"),
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
+    ];
+    c
+}
+
+/// Tithe — ICE: Sentry - AP. Rez 1, strength 1. COMPLETE.
+/// "[subroutine] Do 1 net damage.
+///  [subroutine] Gain 1[credit]."
+pub fn tithe() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Tithe", Side::Corp, CardType::Ice);
+    c.subtypes = vec!["Sentry", "AP"];
+    c.cost = Some(1);
+    c.strength = Some(1);
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(1),
+            responsible: Side::Corp,
+        }])
+        .labeled("[sub] Do 1 net damage"),
+        AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))])
+            .labeled("[sub] Gain 1 credit"),
+    ];
+    c
+}
+
+/// Pup — ICE: Sentry - AP. Rez 1, strength 0. COMPLETE.
+/// "[subroutine] Do 1 net damage unless the Runner pays 1[credit].
+///  [subroutine] Do 1 net damage unless the Runner pays 1[credit]."
+///
+/// 1.16.11b: paying suppresses the effect; declining (or being unable to pay)
+/// makes it the next instruction.
+pub fn pup() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Pup", Side::Corp, CardType::Ice);
+    c.subtypes = vec!["Sentry", "AP"];
+    c.cost = Some(1);
+    c.strength = Some(0);
+    let sub = || {
+        AbilityDef::subroutine(vec![Instruction::NestedCostUnless {
+            cost: Cost::credits(1),
+            effect: Box::new(Instruction::Damage {
+                kind: DamageKind::Net,
+                amount: Quantity::c(1),
+                responsible: Side::Corp,
+            }),
+            payer: Some(Side::Runner),
+        }])
+        .labeled("[sub] Do 1 net damage unless the Runner pays 1")
+    };
+    c.abilities = vec![sub(), sub()];
     c
 }
 
@@ -190,6 +258,30 @@ pub fn hostile_takeover() -> PrintedCard {
     c
 }
 
+/// Government Takeover — Agenda: Expansion. 9/6. Unique.
+/// "[click]: Gain 3[credit].
+///  Limit 1 Government Takeover per deck."
+///
+/// The paid ability is a [click]-cost ability on a card in the score area,
+/// which 9.1.8a keeps active — that is the whole point of the card.
+/// UNIMPLEMENTED: the per-deck limit. It is a DECKBUILDING restriction
+/// (§1.4), not an ability of a card in play; the kernel's `deck` module
+/// validates influence and size and nothing names a per-title limit.
+pub fn government_takeover() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Government Takeover", Side::Corp, CardType::Agenda);
+    c.subtypes = vec!["Expansion"];
+    c.cost = None;
+    c.unique = true;
+    c.advancement_requirement = Some(9);
+    c.agenda_points = Some(6);
+    c.abilities = vec![AbilityDef::paid(
+        Cost { clicks: 1, ..Default::default() },
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(3))],
+    )
+    .labeled("government takeover: gain 3 credits")];
+    c
+}
+
 /// Project Beale — Agenda: Research. 3/2.
 /// "When you score this agenda, place 1 agenda counter on it for every 2
 ///  hosted advancement counters past 3.
@@ -221,6 +313,31 @@ pub fn sure_gamble() -> PrintedCard {
     c.abilities =
         vec![AbilityDef::play(vec![Instruction::GainCredits(Side::Runner, Quantity::c(9))])
             .labeled("sure gamble: gain 9 credits")];
+    c
+}
+
+/// Easy Mark — Event: Job. Cost 0. COMPLETE.
+/// "Gain 3[credit]."
+pub fn easy_mark() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Easy Mark", Side::Runner, CardType::Event);
+    c.subtypes = vec!["Job"];
+    c.cost = Some(0);
+    c.abilities =
+        vec![AbilityDef::play(vec![Instruction::GainCredits(Side::Runner, Quantity::c(3))])
+            .labeled("easy mark: gain 3 credits")];
+    c
+}
+
+/// Diesel — Event. Cost 0. COMPLETE.
+/// "Draw 3 cards."
+///
+/// 8.4.2's procedure, not a one-shot: `Instruction::Draw` expands into
+/// 8.4.5's steps.
+pub fn diesel() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Diesel", Side::Runner, CardType::Event);
+    c.cost = Some(0);
+    c.abilities = vec![AbilityDef::play(vec![Instruction::Draw(Side::Runner, 3)])
+        .labeled("diesel: draw 3 cards")];
     c
 }
 
@@ -296,6 +413,67 @@ pub fn misdirection() -> PrintedCard {
     c
 }
 
+/// Magnum Opus — Program. Install 5, 2[mu], strength 0. COMPLETE.
+/// "[click]: Gain 2[credit]."
+///
+/// 1.11.3c: a paid ability beginning with [click] IS an action (5.2.1), so it
+/// is offered in the action window and nowhere else.
+pub fn magnum_opus() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Magnum Opus", Side::Runner, CardType::Program);
+    c.cost = Some(5);
+    c.memory_cost = Some(2);
+    c.strength = Some(0);
+    c.abilities = vec![AbilityDef::paid(
+        Cost { clicks: 1, ..Default::default() },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+    )
+    .labeled("magnum opus: gain 2 credits")];
+    c
+}
+
+/// Rezeki — Program. Install 2, 1[mu], strength 0. COMPLETE.
+/// "When your turn begins, gain 1[credit]."
+pub fn rezeki() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Rezeki", Side::Runner, CardType::Program);
+    c.cost = Some(2);
+    c.memory_cost = Some(1);
+    c.strength = Some(0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::TurnBegins(Side::Runner),
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        false,
+    )
+    .labeled("rezeki: gain 1 credit")];
+    c
+}
+
+/// Mimic — Program: Icebreaker - Killer. Install 3, 1[mu], strength 3.
+/// COMPLETE.
+/// "Interface → <strong>1[credit]:</strong> Break 1 <strong>sentry</strong>
+///  subroutine."
+///
+/// The icebreaker class with no pump: 9.3.6c's [interface] strength gate and
+/// 9.5.6c's subtype restriction, and nothing else.
+pub fn mimic() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Mimic", Side::Runner, CardType::Program);
+    c.subtypes = vec!["Icebreaker", "Killer"];
+    c.cost = Some(3);
+    c.memory_cost = Some(1);
+    c.strength = Some(3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(1),
+        vec![Instruction::BreakSubroutines {
+            subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
+        }],
+    )
+    .with_flag(AbilityFlag::Interface)
+    .with_timing(crate::ability::TimingRestriction::EncounterOnly {
+        required_subtype: Some("Sentry"),
+    })
+    .labeled("mimic: break 1 sentry subroutine")];
+    c
+}
+
 /// Corroder — Program: Icebreaker - Fracter. Install 2, 1[mu], strength 2.
 /// "Interface → <strong>1[credit]:</strong> Break 1 <strong>barrier</strong>
 ///  subroutine.
@@ -365,6 +543,35 @@ pub fn clot() -> PrintedCard {
         false,
     )
     .labeled("clot: trash this program")];
+    c
+}
+
+/// Cache — Program: Virus. Install 1, 1[mu], strength 0. COMPLETE.
+/// "Place 3 virus counters on Cache when it is installed.
+///  <strong>Hosted virus counter:</strong> Gain 1[credit]."
+pub fn cache() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Cache", Side::Runner, CardType::Program);
+    c.subtypes = vec!["Virus"];
+    c.cost = Some(1);
+    c.memory_cost = Some(1);
+    c.strength = Some(0);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfInstalled,
+            vec![Instruction::PlaceCounters {
+                target: TargetSpec::SelfSource,
+                kind: CounterKind::Virus,
+                amount: Quantity::c(3),
+            }],
+            false,
+        )
+        .labeled("cache: place 3 virus counters"),
+        AbilityDef::paid(
+            Cost::spend_counters(CounterKind::Virus, 1),
+            vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        )
+        .labeled("cache: gain 1 credit"),
+    ];
     c
 }
 

@@ -15,7 +15,7 @@
 use jinteki_cr::cards;
 use jinteki_cr::change::GameChange;
 use jinteki_cr::object::{ServerId, Side, Zone};
-use jinteki_cr::plan::{self, Match, Pick, Plan, Reply};
+use jinteki_cr::plan::{self, Match, Plan, Reply};
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::Vm;
 
