@@ -297,15 +297,18 @@ prefer a slightly larger honest primitive and note it here.
     the 7.4.3/1.16.10 additional-access-cost Decision lives only on the
     candidate path (`StepKind::AccessChosenCandidate`). No example
     exercises a Top-Hat-class access with a Gagarin-class cost.
-26. **`Object::generation` bumps on zone CLASS; history queries are still
-    missing** (W7e/W7f, extended W11b) — 1.12.3's new object is a
+26. **`Object::generation` bumps on zone CLASS *and* on unknown-location
+    moves** (W7e/W7f, extended W11b, W12f) — 1.12.3's new object is a
     `(ObjectId, generation)` pair, with the whole play area one class so
-    1.12.4 moves keep the object. W11b made 9.1.4 read it (`AbilityFrame::
-    source_generation`). What is still NOT built: 1.12.3's "moved to an
-    unknown location" cases (a shuffle or a rearrangement makes new objects —
-    `object_move_location_1/2`), and 1.12.6's game-history queries
-    (`previous_object_1`, `previous_object_source_1`), which want the change
-    log indexed by object rather than scanned.
+    1.12.4 moves keep the object; W11b made 9.1.4 read it; W12f added
+    `new_objects_for_unknown_location` for shuffles and rearrangements, and
+    `Quantity::DistinctIcePassedThisRun` for 1.12.6's history queries (a
+    linear scan of the change log from `run_log_start`, not an index). What
+    is still NOT built: 1.12.3's third case, cards being LOOKED AT that a
+    shuffle moves out from under the ability looking at them
+    (`object_move_location_1` — it wants `Instruction::LookAtCards` to keep
+    the looked-at set on the ability frame, the way `found_cards` does, and
+    to drop entries whose object has been re-made).
 27. **6.2.7 is applied at the checkpoint, not continuously** (W8a,
     `Vm::apply_ice_change_to_run`) — the CR states 6.2.7a/c/d as immediate
     consequences of a change to the ice in the Runner's position. The kernel
@@ -487,6 +490,45 @@ through `Instruction::CreateLingeringEffect` / `CreateDelayedConditional` /
 printed card could produce, and the §12 rule 4 re-derivation gate has a
 chance of passing).**
 
+50. **The 7.4.2b access limit and `Quantity::AccessesThisRun` read ONE
+    counter** (W12a, `CoreState::run_accesses`) — the count is kept for the
+    run in progress and survives its end, so a "when this run ends" ability
+    can still read it (6.9.6d puts those abilities after the run frame pops).
+    An ability asking about an EARLIER run in the same turn would read the
+    wrong number; nothing does. Accesses performed outside a run count for
+    nothing at all, which is right for every "during that run" ability and
+    would be wrong for a "this turn" one.
+51. **`Instruction::ForEach`'s aggregated branch scales the arms that carry a
+    number** (W12c, `scale_instruction`) — a set-based aggregated effect
+    (trashing named cards, looking at named cards) has no per-unit value to
+    multiply, so it is performed once unscaled. 9.12.2b's "if a value
+    aggregated in this way is less than or equal to 0, that part of the
+    effect does not take place" is left to the selector, which evaluates to
+    the scaled number and is floored where the effect is applied.
+52. **9.9.6c's cost value is read at the payment step** (W12c) — the
+    `EffectClass::PayCost` atom is computed when `InstallStepPayCost` /
+    `PlayStepPayCost` becomes imminent and applied when it resolves. The
+    1.16.2f division path (`DivideCostReduction`) resumes payment through a
+    Decision and does NOT re-read the modified atom, so a Patchwork-class
+    interrupt on an install-and-rez that also carries a "total N less"
+    modifier would be lost. No example combines them.
+53. **A mark is only ever designated by `IdentifyMark`** (W12d… W12b, §10.11)
+    — 10.11.2a's "any method with equal probability" is the kernel RNG, and
+    10.11.4's expiry rides `Duration::Turn`. Nothing else can designate or
+    clear a mark, which is all 10.11 asks for.
+54. **9.8.2c declarations are made per ABILITY, against the list as it
+    stands** (W12d) — which is what the rule says ("each subroutine the ice
+    has at that time"). Two abilities resolving in the same window each
+    declare separately, in resolution order; the kernel never has to
+    reconcile two simultaneous declarations, and the CR does not say what
+    would happen if it did.
+55. **`SelectsDamageTrashes` has a count, not an ordinal** (W12e) — Chronos
+    Protocol's "the first time each turn" and Titanium Ribs' "you choose the
+    cards you trash" differ in the kernel only by `count`. The once-per-turn
+    limit is elided (deviation 4's class: no example damages twice in a turn
+    through it), and the selection Decision is asked once per damage
+    instruction rather than once per point.
+
 ## The test pattern, now mandatory (ARCHITECTURE §12 rule 5)
 
 Every new example test declares: setup (cards, hands, credits — data), ONE
@@ -513,13 +555,24 @@ New card shapes go in `testkit.rs` and are built EXCLUSIVELY through
 shape is annotated in its doc comment and is legitimate only while
 orthogonal to every example using it.
 
-Two plan-driver gotchas W11 hit repeatedly, both instances of deviation 12:
+Three plan-driver gotchas, all instances of deviation 12. The first two W11
+hit repeatedly; the third is W12's, and it cost more time than anything else
+in the wave: **an ordinal counts PER RULE and only advances on decisions the
+driver actually EVALUATES that rule against.** Two rules that both want "the
+nth decision of a kind" must therefore both be written `.once()` — a second
+rule written `.nth(2)` never fires, because the first rule answered the
+decision its own counter was on and the second rule's counter never saw it.
+The same trap bites `stop_at_action_nth(3)` after two action rules.
+And:
 a `when(Match::paid(), Reply::take("x"))` rule with no `.once()` will take a
 FREE ability every window forever and blow the 600-decision budget; and a
 delayed conditional armed by an ability that also initiates the run is never
 created at all, because 9.6.13d requires the run to be in progress when the
 `CreateDelayedConditional` instruction resolves (arm it from a paid window
-INSIDE the run instead).
+INSIDE the run instead). Also: a paid ability offered to BOTH sides needs
+`Match::paid()` scoped by side implicitly (the plan is per player), but a
+Corp-side shape installed with `tk::install_rig` is still controlled by the
+CORP — check the transcript's `side` before assuming a rule will fire.
 
 Since W9a the Encounter Ice Phase is its own timing structure, so
 `Match::during(StructKind::Encounter)` joins `at_step("step_encounter_paw")`
@@ -528,7 +581,7 @@ encounter's paid window yields no Decision at all when neither player has a
 usable paid ability — a plan that wants to halt mid-encounter must give
 someone something to be offered (`tk::break_button` is the usual one).
 
-## Next targets — 44 examples left, re-measured after W11f
+## Next targets — 26 examples left, re-measured after W12f
 
 Re-run the count before choosing a cluster:
 
@@ -546,115 +599,78 @@ print(len(missing)); [print(s, n) for s, n in Counter(s for s,_ in missing).most
 EOF
 ```
 
-Remaining by section (44 after W11f): 1.16 Costs 5 · 7.3 Breaching 4 ·
-1.12/9.8/9.12 three each · 4.8/6.7/7.4/9.1/9.9/10.2 two each · rest 1.
+Remaining by section (26 after W12f): 1.16 Costs 5 · 6.7 and 10.2 two each ·
+rest 1.
 
-CLUSTER RANKING (measured after W11f, best first):
+CLUSTER RANKING (measured after W12f, best first):
 
-1. **§7.3/§7.4 breaching (5 reachable of 6).** The biggest live cluster and
-   it shares ONE mechanism: 7.4.2b's "the Runner cannot access more than 1
-   card during this run" as a lingering prohibition, plus 7.4.2a's
-   re-evaluation of candidates when a prohibition goes inactive mid-breach
-   (`Vm::refresh_candidates_after_access` is the hook, and
-   `Payload::RestrictCandidatesTo` is the Ash-class prohibition already in
-   the kernel). `number_of_accesses_1` additionally wants a `Quantity`
-   selector counting accesses actually performed during the run — a
-   REPLACED access must not count (the replacement machinery is W3c's and
-   already works); `number_of_accesses_2` is the same counting plus 7.4.2b;
-   `prohibiting_access_to_1_1` and `prohibition_removed_1` are 7.4.2a/b
-   directly; `consecutive_breaches_1` is 7.3.8 delayed breaches ("the effect
-   creating the delayed breach is treated as a conditional ability
-   controlled by the Runner" — a `Payload::DelayedConditional` whose
-   instruction is `BreachServer`). `visibility_after_access_1` is §10.2 and
-   stays blocked.
-2. **§9.8's three, unchanged in shape but now better understood.**
-   `subroutine_origin_external_before_1` (9.8.3a) needs a Loki-class grant of
-   SEVERAL subroutines by ONE effect ("gains the subroutines of that ice"):
-   generalise `GrantSubroutines`'s `sub`/`count` position into a
-   `SubroutineGrant::{Stated { count, sub }, CopiedFrom(TargetSpec)}`, give
-   `Payload::GrantedSubroutine` an `ord` within the grant, and sort
-   `befores` by `(seq desc, ord asc)`. The example's expected order then
-   falls out: Loki's copies (newest), then the Runner-card grant, then
-   Warden Fatuma's static grant, then Loki's printed subroutine.
-   `gain_subroutines_in_any_order_1` (9.8.2c) is deviation 5 — an order
-   DECLARATION Decision; the honest shape is a placement index on
-   `Payload::GrantedSubroutine` that `current_subs` applies AFTER the
-   category sort ("regardless of categories"), declared through a new
-   `DecisionSpec` answered with a position. `replace_subroutine_resolution_1`
-   (9.8.9) wants a replacement effect that applies at
-   `AbilityPhase::SubImminent` (which exists as a no-op placeholder) plus a
-   "the Runner passes an ice whose subroutines resolved from it" trigger —
-   `GameChange::SubroutineResolved { ice, .. }` is already recorded before
-   the frame push, which is exactly the "count as resolving from Bloop"
-   the rule asserts.
-3. **§1.16's last 5.** `cost_x_1` (1.16.2c: X announced before payment —
-   wants a numeric Decision like W8c's `DivideCostReduction`);
-   `alternate_payment_1` (1.16.2e Biawak: needs the payment DIVISION put to
-   the payer — deviations 11/18/44 — i.e. "cost payment becomes a phase of
-   the ability frame", which would retire three deviations at once and also
-   unlock the forfeit choice); `cost_restrictions_2` (1.16.1c: an additional
-   cost to SCORE, plus the advancement-requirement modification W9b has);
-   `additional_cost_checkpoint_1` (1.16.10c); `inherent_cost_aggregates_1`
-   (1.16.4d — wants the basic play action, deviation 17).
-4. **The cheap singletons, now the best examples-per-token in the file.**
-   Each is one small mechanism plus a test:
-   - `calculated_quantity_3` (9.12.2b, realloc/NASX) — if ANY part of an
-     instruction is a non-aggregated class, NONE of it aggregates, so the
-     credit gains arrive as separate occurrences and a "whenever you gain
-     credits" ability pends twice. `expected_atoms`'s `Combined` arm is
-     where it goes.
-   - `set_aside_zone_passthrough_1` (4.8.3) — an install out of the 8.7.4
-     set-aside is treated as an install from the zone the card CAME from, so
-     an Exile-class "whenever you install a program from your heap" fires.
-     Wants a `from_zone` on `TriggerCond::CardInstalledBy` and the previous
-     location carried through the set-aside.
-   - `trash_ability_keeps_track_of_hosted_objects_2` (9.5.5, Street Peddler)
-     — the 9.5.5 set-aside machinery is all there; what is missing is a way
-     to ADDRESS the set-aside cards as install targets (a
-     `TargetSpec::SetAsideByCost`, since they are invisible to normal
-     announcements by 4.8.3).
-   - `empty_requires_loading_1` (10.9.2) — the loading/empty keyword: a
-     `loaded` flag on the object plus `TriggerCond::SelfEmpty` that cannot
-     be met before the card was ever loaded.
-   - `mark_designated_condition_check_1` (10.11.5) — §10.11 marks.
-   - `active_exception_conditional_move_to_inactive_zone_2` (9.1.8g) — Test
-     Run/Nanuq. The hangover already exists; what it needs is a trigger met
-     by the source being UNINSTALLED (the scan window already looks for
-     `CardUninstalled`) and `Instruction::RemoveSelfFromGame`, which exists.
-   - `modifiable_value_cost_1` (9.9.6c) — a Patchwork-class interrupt is
-     relevant to any instruction that will pay a play/install cost; the
-     relevance predicate is `interrupt_relevant`'s (a)/(b) arm.
-5. **The damage-selection pair (2).** `multiple_damage_selected_sequentially_1`
-   (10.4.3a) and `modify_ability_with_choice_1` (9.12.1c) are one mechanism:
-   a declaration modifying the damage procedure so a player SELECTS the cards
-   trashed, plus 9.12.1c's tiebreak (when both players are told to make a
-   choice that can only be made once, the ACTIVE player makes it, and the
-   rest of each ability still happens). `Vm::do_damage` is synchronous, but
-   the `Instruction::Damage` arm of `apply_imminent` may `ask` and finish in
-   `answer` — which is exactly what `Instruction::Sabotage` does.
-6. **The rest of §6 (5).** `run_ends_other_priority_windows_1` (6.8.2c —
-   Formicary: a window completed normally except that no new timing
-   structure may be initiated), `if_successful_tied_to_server_1` (6.7.4a —
-   `InitiateRun` must carry the set of servers the initiating effect
-   allowed), `if_successful_ability_optional_1` (6.7.4c), `abilities_during_
-   a_run_1` (6.3.4 — wants an additional cost on the basic run action),
-   `run_phase_after_1` (6.1.3e, hardest).
+1. **§1.16's last 5 — the biggest live cluster, and four of them share ONE
+   missing primitive: COST PAYMENT AS A PHASE OF THE ABILITY FRAME.**
+   `Vm::pay_cost` is synchronous everywhere, which is what deviations 11, 18
+   and 44 are all instances of. Give `AbilityPhase` a `PayCost`-style
+   suspension that can `ask` and resume (the shape `Instruction::Damage`
+   acquired in W12e is the template — `ask` in `apply_imminent`, finish in
+   `answer`) and the following fall out at once:
+   - `alternate_payment_1` (1.16.2e Biawak) — the payment DIVISION put to the
+     payer, retiring deviations 11/18/44 together.
+   - `cost_x_1` (1.16.2c) — X announced before payment, a numeric Decision
+     like W8c's `DivideCostReduction`.
+   - `cost_restrictions_2` (1.16.1c) — an additional cost to SCORE; the
+     advancement-requirement machinery is W9b's and already there, and
+     `StaticDecl::AdditionalStealCost` is the shape to copy.
+   - `additional_cost_checkpoint_1` (1.16.10c).
+   `inherent_cost_aggregates_1` (1.16.4d) additionally wants the basic play
+   action (deviation 17).
+2. **§6.7's two — `if_successful` as a real property of the initiating
+   effect.** `if_successful_tied_to_server_1` (6.7.4a) needs
+   `Instruction::InitiateRun` to carry the SET of servers the initiating
+   effect allowed, so that 6.1.2d moving the run to another server inside
+   that set keeps the "if successful" clause and moving it outside drops it;
+   `if_successful_ability_optional_1` (6.7.4c) is the same instruction
+   growing an optional clause the Runner may resolve after the 6.9.5a window
+   has played out. Together they are one field plus one Decision.
+3. **The rest of §6, one each.** `run_ends_other_priority_windows_1` (6.8.2c
+   — Formicary: a window completed normally except that no new timing
+   structure may be initiated: a flag on `WindowFrame` consulted by
+   `push_encounter`/`initiate_run`); `abilities_during_a_run_1` (6.3.4 —
+   wants an additional cost on the basic run action); `run_phase_after_1`
+   (6.1.3e, hardest — the phase-after query).
+4. **§9.8's last one.** `replace_subroutine_resolution_1` (9.8.9) — a
+   replacement effect applying at `AbilityPhase::SubImminent` (which exists
+   as a no-op placeholder) that swaps WHICH subroutine resolves, plus a
+   Persephone-class "the Runner passes an ice whose subroutines resolved"
+   trigger. `GameChange::SubroutineResolved { ice, .. }` is already recorded
+   with the ICE before the frame push, which is exactly the "count as
+   resolving from Bloop" the rule asserts, so the trigger is a scan over the
+   encounter's window.
+5. **Two singletons riding machinery that now exists.**
+   - `replacement_effect_only_applies_once_per_effect_1` (9.9.9c, Project
+     Vacheron) — deviation 7 already gives once-per-effect; what is missing
+     is a `ReplacementTransform` arm that adds the agenda to the score area
+     with hosted counters.
+   - `facedown_set_aside_distinct_groups_1` (4.8.5) — W12b's
+     `Object::set_aside_from` is the hook; what it needs is set-aside GROUPS
+     that stay distinct.
+6. **`must_cannot_force_additional_cost_1` (9.12.3e)** — deviation 41: a
+   "must" over a decision other than the mid-access window's pass. Needs the
+   basic run action to carry an additional cost, so it pairs with
+   `abilities_during_a_run_1`.
 
-Hard/blocked, with reasons:
+Hard/blocked, with reasons (unchanged unless noted):
 - `target_3` (Trick of Light, 1.15.1) — the targets are ADVANCEMENT COUNTERS.
   Counters are a `BTreeMap<CounterKind, u32>` on the object, not
-  `ObjectId`-addressed objects, so they cannot be announced. Belongs with
-  1.12.1's counters-as-objects, which is still the ONLY remaining §1.12 work
-  besides the two `object_move_location_*` unknown-location cases and
-  `previous_object_1`'s history query (deviation 26).
-- `bluffing_1`, `cannot_hide_open_info_1`, `facedown_set_aside_distinct_
-  groups_1`, `arrange_and_other_effect_1`, `visibility_after_access_1` — §10.2
-  information: the kernel has NO per-side visibility model (deviations 20,
-  29). That is one wave of its own and it unlocks five examples.
+  `ObjectId`-addressed objects, so they cannot be announced. This is 1.12.1's
+  counters-as-objects and it is now the ONLY §1.12 work left; W12f cleared
+  the rest of that section.
+- `bluffing_1`, `cannot_hide_open_info_1`, `arrange_and_other_effect_1`,
+  `visibility_after_access_1` — §10.2 information: the kernel has NO per-side
+  visibility model (deviations 20, 29). One wave of its own; it unlocks four.
 - `mandatory_infinite_loop_1` (10.1.6a draws the game).
 - `step_sequences_1` (9.11.2a — asserts installing has exactly ONE checkpoint,
   which deviation 4 says the kernel does not honour; take it WITH the
   deviation-4 fix or not at all).
+- `object_move_location_1` (1.12.3) — see deviation 26: the looked-at set has
+  to live on the ability frame before a shuffle can strand it.
 - `drawn_card_swapped_1` (8.4.3b) — 8.8.4d (swapping with a SET-ASIDE card)
   plus the §8.4 drawing procedure's set-aside step. Take it with §8.4.
 - `defferent_actions_1` (5.2.5b) and `inherent_cost_aggregates_1` (1.16.4d)
@@ -666,11 +682,6 @@ Hard/blocked, with reasons:
   (`sec_replacing_movements_1`), which also needs 8.1.4's facedown installed
   Runner cards (a facedown Runner card is blank and inactive — `card_active`
   currently ignores `faceup` for Runner cards).
-- `replacement_effect_only_applies_once_per_effect_1` (9.9.9c, Project
-  Vacheron) — deviation 7 already gives the once-per-effect behaviour; what
-  is missing is a steal-replacement transform that adds the agenda to the
-  score area with hosted counters. Cheap-ish, listed here only because it
-  needs a new `ReplacementTransform` arm.
 
 ## Discipline (unchanged, binding)
 
