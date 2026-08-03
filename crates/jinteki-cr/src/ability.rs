@@ -247,19 +247,50 @@ pub enum TimingRestriction {
     ApproachOnly { required_subtype: Option<&'static str>, rezzed: bool },
 }
 
+/// CR 1.13: which side of a hosting relationship a declaration reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostRelation {
+    /// The card this one is hosted on (1.13.1).
+    Host,
+    /// The cards hosted on this one — directly only; hosting is not
+    /// transitive (1.13.9).
+    Hosted,
+}
+
 /// Declarations of a static ability (kernel-wave subset). Statics never
 /// resolve (9.4.1) — the VM queries them continuously.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StaticDecl {
     /// Characteristic modification of the source's host (Hush class) or self.
     StrengthMod { target_self: bool, delta: i32 },
-    /// Remove all abilities of the host (Hush) — 9.12.1d/e material.
-    RemoveHostAbilities,
+    /// CR 9.1.9a: "<the related card> loses all of its abilities." The
+    /// relation is the content (§12 rule 2), so both directions of §1.13's
+    /// hosting relation are one declaration: the Hush class removes its
+    /// HOST's abilities, the Magnet class removes its HOSTED cards'. When
+    /// both are present the two effects form a 9.12.1e dependency loop, which
+    /// is what the hosted-beats-host tiebreak exists for.
+    RemoveAbilitiesOf(HostRelation),
     /// "This card gains/loses <subtypes>." (Morph class — Lycan's own
     /// ability removes one instance of a subtype it also prints.) 2.16.5
     /// counts instances, so removing one instance of a doubly-added subtype
     /// leaves the card with it.
     SubtypeModSelf { add: Vec<&'static str>, remove: Vec<&'static str> },
+    /// "This card gains the subtypes of <criteria>." (Mother Goddess class.)
+    /// The subtypes copied are the source cards' EFFECTIVE subtypes, read
+    /// through the same 9.12.1b pipeline — so a card that itself gained a
+    /// subtype passes it on, and the dependency 9.12.1d describes is realised
+    /// by the pipeline re-entering itself for each copied-from card.
+    GainSubtypesOf { criteria: Vec<crate::instr::TargetFilter> },
+    /// "Each <criteria> gains '[sub] …' before/after its other subroutines."
+    /// (Warden Fatuma class.) A static ability that is NOT on the ice gaining
+    /// the subroutine, so the grant lands in origin category 9.8.3a (before)
+    /// or 9.8.3e (after) rather than the self-static categories b/d that
+    /// [`StaticDecl::GainSubroutines`] carries.
+    GrantSubroutinesTo {
+        criteria: Vec<crate::instr::TargetFilter>,
+        sub: Box<AbilityDef>,
+        before: bool,
+    },
     /// "This ice cannot be trashed by <side>'s card abilities."
     /// (Architect class; a restriction active per 9.1.8.)
     CannotBeTrashed,

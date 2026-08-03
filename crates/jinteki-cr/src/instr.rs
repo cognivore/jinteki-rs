@@ -652,6 +652,12 @@ pub enum TargetFilter {
     /// has from its own. Which position is the reference is the content
     /// (§12 rule 2), so the Rook class and the Slipstream class are one atom.
     IceInSamePositionAs(PositionRef),
+    /// "each **other** rezzed piece of ice", "another installed program" —
+    /// the word "other" in a description, which excludes the ability's own
+    /// source from the set it describes (Mother Goddess and Warden Fatuma
+    /// both need it, and a swap that must name "another piece of ice" is the
+    /// same atom — see deviation 30).
+    OtherThanSource,
 }
 
 /// CR 6.2.3: what a "same position" criterion is measured against.

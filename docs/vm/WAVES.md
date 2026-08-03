@@ -6,9 +6,9 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W9c)
+## Odometers (after W10a)
 
-- **DP-7a: 172/243** CR examples as example-named passing tests (70.8%).
+- **DP-7a: 174/243** CR examples as example-named passing tests (71.6%).
 - **DP-7b: 519/1420** distinct rules cited (36.5%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
@@ -103,6 +103,7 @@ prefer a slightly larger honest primitive and note it here.
 | `0b9cd6d` | W9a | **encounters as a timing structure** (§6.5): `StructKind::Encounter`, whose table IS the run table's phase-3 span (9.2.2b makes each run phase a structure), opened by the run's step 3a as a child frame parked at 4a; `Instruction::ForceEncounter { ice: TargetSpec }` for 6.5.9a, with 6.5.9c ("not finished until the encounter is complete") and "return to the effect that caused it" free from the frame stack; nested encounters (Shiro→Chrysalis) stash and restore the interrupted one; 6.1.4b unwinds exactly the phase (everything begun inside it, no Run Ends steps) and 6.5.9b unwinds it with the run; 6.5.8a/6.2.7c ABORT the phase (the aborting instruction finishes, then no further step — 9.8.7c) instead of poking the run's cursor. **Bugs fixed:** 6.2.7 was applied to any encountered ice, killing a forced encounter with a card in HQ instantly; `current_subs` never checked 9.1.7 activity, so 9.1.8h was unimplemented-but-passing | 165 |
 | `7629564` | W9b | §1.18 advancing vs placing: `Instruction::AdvanceCard` + `GameChange::CardAdvanced`, so 1.18.2's distinction exists at all (`TriggerCond::AdvancesCard` keyed on the advance, 9.6.6a's "had" check moved with it); `PlaceCounters.amount` is a `Quantity` (§12 rule 6) with `Minus`/`RequirementOfSource` joining the selector language; §10.13 **dividends** as a keyword expanded into the conditional ability it denotes (`PrintedCard::with_dividends`, `TriggerCond::SelfScored`); 1.17.8/10.13.2 `Object::scored_snapshot` — the counters and requirement as the agenda began to be scored — plus `Vm::advancement_requirement` and `StaticDecl::ScoreRequirementModInSourceServer` (SanSan class) | 168 |
 | `55056b3` | W9c | the attacked server: `Instruction::ChangeAttackedServer` (6.1.2d — changed DIRECTLY, so the timing step does not change and the new server's ice is never approached), `StaticDecl::CannotInitiateRunOnSourceServer` (6.3.2a — removes the basic run action for that server and reaches no further, so a run can still be moved onto it); 9.11.4a/9.3.3f as tests over machinery already right (a use-restriction gates every window the ability is offered in and resolves nothing; an X definition is a static ability with no instructions) | 172 |
+| `2ec7cf8` | W10a | **§9.12.1d/e dependency, both classes**: `StaticDecl::RemoveHostAbilities` generalised to `RemoveAbilitiesOf(HostRelation::{Host,Hosted})`, so the Hush direction and the Magnet direction are ONE declaration and their mutual dependency is the 9.12.1e loop the hosted-beats-host tiebreak exists for; `StaticDecl::GainSubtypesOf { criteria }` + `CharOp::CopySubtypesFrom` — the copied subtypes are the source object's EFFECTIVE ones, so `compute_effective` re-enters itself (cycle-guarded by a `visiting` set) and 9.12.1d's dependency ordering is realised by construction; `StaticDecl::GrantSubroutinesTo { criteria, sub, before }` for subroutines granted by a static ability that is NOT on the ice (9.8.3a/e external categories, ordered by the source's `active_since` — and `Payload::GrantedSubroutine`'s `seq` moved onto the same clock so the two kinds of external grant sort against each other); `TargetFilter::OtherThanSource` (the word "other" in a description) | 174 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -112,8 +113,24 @@ prefer a slightly larger honest primitive and note it here.
    the same single-pass pattern: steps (k)/(l) run before the answer, which
    is unobservable (they only clean counters). Revisit if an example demands
    true mid-procedure resume.
-2. **9.12.1d/e dependency analysis** — covers the ability-removal dependency
-   class (Hush/Magnet exact), not arbitrary predicates.
+2. **9.12.1d/e dependency analysis** — the EXPLICIT dependency graph
+   (`compute_effective`'s `dep_of`) still covers only the ability-removal
+   class, which is what 9.12.1e's loop tiebreak needs. Every other dependency
+   is realised implicitly, by the pipeline re-entering itself: a
+   `CopySubtypesFrom` reads the copied-from object's effective subtypes
+   (W10a), and a criteria-scoped effect like a subtype-gated subroutine grant
+   asks `has_subtype`, which runs the whole pipeline for that object. That is
+   correct for a dependency FOREST; a dependency LOOP not made of
+   ability-removals would recurse, and the `visiting` guard falls back to
+   printed characteristics rather than applying 9.12.1e's hosting tiebreak.
+   No example.
+2b. **Criteria are read shallowly while gathering the pipeline's input**
+   (W10a, `Vm::filter_matches_shallow`) — `StaticDecl::GainSubtypesOf`'s
+   criteria are evaluated inside `char_effects`, where asking for an
+   EFFECTIVE subtype would re-enter the gather forever, so `HasSubtype` there
+   reads printed subtypes (2.16). Every other atom is the real one. A "gains
+   the subtypes of each other ice that HAS a granted subtype" card would
+   notice; nothing in the corpus does.
 3. **The Cleaners dual modeling** — CR 9.9.7a example flow (triggered
    interrupt) AND `StaticDecl::DamageBonus`; both tested.
 4. **Procedure-step surplus checkpoints** — traces (10.8.6), installs

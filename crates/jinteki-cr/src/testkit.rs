@@ -1949,6 +1949,71 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
     c
 }
 
+/// Hush shape (9.12.1d/e): a program installed on a piece of ice whose static
+/// ability removes all of its HOST's abilities.
+pub fn hush_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Program);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::RemoveAbilitiesOf(
+        crate::ability::HostRelation::Host,
+    )])
+    .labeled("hush: host loses all abilities")];
+    c
+}
+
+/// Magnet shape (9.12.1e): ice whose static ability removes all abilities from
+/// the cards HOSTED on it — the opposite direction of the Hush relation, which
+/// is what makes the two form a dependency loop.
+pub fn magnet_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 3, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::RemoveAbilitiesOf(
+        crate::ability::HostRelation::Hosted,
+    )])
+    .labeled("magnet: hosted cards lose all abilities")];
+    c
+}
+
+/// Mother Goddess shape (9.12.1d): ice with a static ability granting itself
+/// the subtypes of every OTHER rezzed piece of ice.
+pub fn mother_goddess_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 2, 4);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GainSubtypesOf {
+        criteria: vec![
+            crate::instr::TargetFilter::Rezzed,
+            crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+            crate::instr::TargetFilter::OtherThanSource,
+        ],
+    }])
+    .labeled("mother goddess: gains the subtypes of other rezzed ice")];
+    c
+}
+
+/// Warden Fatuma shape (9.8.3a): ice whose static ability gives every OTHER
+/// rezzed piece of ice with a named subtype an extra subroutine, before that
+/// ice's other subroutines. The granting ability is not on the ice that gains
+/// the subroutine, so the grant is external (category a), not self-static.
+///
+/// Simplification: the granted subroutine is the fixed `sub` passed in — the
+/// examples using this shape do not vary it.
+pub fn warden_fatuma_like(
+    name: &'static str,
+    subtype: &'static str,
+    sub: AbilityDef,
+) -> PrintedCard {
+    let mut c = vanilla_ice(name, 6, 8);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GrantSubroutinesTo {
+        criteria: vec![
+            crate::instr::TargetFilter::Rezzed,
+            crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+            crate::instr::TargetFilter::HasSubtype(subtype),
+            crate::instr::TargetFilter::OtherThanSource,
+        ],
+        sub: Box::new(sub),
+        before: true,
+    }])
+    .labeled("warden fatuma: other bioroid ice gain a subroutine first")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // §8.7 — searching, finding, shuffling
 // ---------------------------------------------------------------------------

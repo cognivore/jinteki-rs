@@ -364,6 +364,12 @@ pub enum CharOp {
     /// 9.12.1b add/remove by counting.
     AddSubtype(&'static str),
     RemoveSubtype(&'static str),
+    /// "…gains the subtypes of <that card>" (Mother Goddess class): add one
+    /// instance of every subtype the named object has *after* its own
+    /// characteristics are computed. This is the 9.12.1d dependency in
+    /// person — the copied-from object's effective subtypes are what is
+    /// copied, so an effect changing them is applied first by construction.
+    CopySubtypesFrom(ObjectId),
     /// 9.1.9: gain/lose abilities. Losing all abilities is the Hush pattern.
     RemoveAllAbilities,
 }
@@ -400,6 +406,20 @@ pub fn compute_effective(
     objects: &std::collections::BTreeMap<ObjectId, Object>,
     effects: &[CharEffect],
     target: ObjectId,
+) -> Effective {
+    let mut visiting = BTreeSet::new();
+    compute_effective_inner(objects, effects, target, &mut visiting)
+}
+
+/// `visiting` carries the chain of objects whose characteristics are already
+/// being computed further up the call stack, so a `CopySubtypesFrom` cycle
+/// (two cards each gaining the other's subtypes) terminates: the re-entered
+/// object contributes its printed subtypes only.
+fn compute_effective_inner(
+    objects: &std::collections::BTreeMap<ObjectId, Object>,
+    effects: &[CharEffect],
+    target: ObjectId,
+    visiting: &mut BTreeSet<ObjectId>,
 ) -> Effective {
     cite!("rule_dependent_effects");
     cite!("rule_independent_effects");
@@ -492,13 +512,28 @@ pub fn compute_effective(
     for s in &obj.printed.subtypes {
         *adds.entry(*s).or_insert(0) += 1;
     }
+    visiting.insert(target);
     for e in &on_target {
         match e.op {
             CharOp::AddSubtype(s) => *adds.entry(s).or_insert(0) += 1,
             CharOp::RemoveSubtype(s) => *adds.entry(s).or_insert(0) -= 1,
+            CharOp::CopySubtypesFrom(from) => {
+                if !objects.contains_key(&from) {
+                    continue;
+                }
+                let copied: BTreeSet<&'static str> = if visiting.contains(&from) {
+                    objects[&from].printed.subtypes.iter().copied().collect()
+                } else {
+                    compute_effective_inner(objects, effects, from, visiting).subtypes
+                };
+                for s in copied {
+                    *adds.entry(s).or_insert(0) += 1;
+                }
+            }
             _ => {}
         }
     }
+    visiting.remove(&target);
     eff.subtypes = adds
         .iter()
         .filter(|(_, &n)| n > 0)

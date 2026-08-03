@@ -113,6 +113,8 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_trigger_paid_ability_interrupt_1",
     "example_rule_values_defined_by_x_1",
     "example_rule_values_defined_by_x_2",
+    "example_rule_independent_effects_1",
+    "example_rule_independent_effects_2",
     // Wave 5a: searching, finding and shuffling (§8.7), 9.11.4d.
     "example_rule_valid_search_target_install_play_1",
     "example_rule_valid_search_target_install_play_2",
@@ -3772,17 +3774,108 @@ fn example_rule_values_defined_by_x_2() {
     let surveyor = tk::install_ice(&mut vm, tk::surveyor_like("Surveyor-like"), ServerId::Remote(1), true);
     assert_eq!(vm.effective_strength(surveyor), Some(4), "X = 2 x 2 without Hush");
     // Hush: hosted program removing all host abilities.
-    let mut hush = tk::vanilla_runner_card("Hush-like", jinteki_cr::object::CardType::Program);
-    hush.abilities = vec![jinteki_cr::ability::AbilityDef::static_ability(vec![
-        jinteki_cr::ability::StaticDecl::RemoveHostAbilities,
-    ])
-    .labeled("hush: remove host abilities")];
-    let hush = tk::install_rig(&mut vm, hush);
+    let hush = tk::install_rig(&mut vm, tk::hush_like("Hush-like"));
     tk::host_on(&mut vm, hush, surveyor);
     assert_eq!(
         vm.effective_strength(surveyor),
         Some(0),
         "9.12.2e: the ability defining X is lost, so X = 0"
+    );
+}
+
+/// example_rule_independent_effects_1 (9.12.1d/e): Mother Goddess, Ansel 1.0
+/// and Warden Fatuma are rezzed with Hush hosted on Mother Goddess. Hush's
+/// effect is the only independent one, so it applies first and Mother Goddess's
+/// ability is gone; Warden Fatuma's effect then applies to Ansel 1.0 (a
+/// bioroid) but not to Mother Goddess, which never gained the subtype.
+#[test]
+fn example_rule_independent_effects_1() {
+    // The plan: nothing is asked of either player — the claim is a reading of
+    // the characteristics pipeline and of the 9.8.2 subroutine order, both of
+    // which are pure queries over board state.
+    use jinteki_cr::ability::AbilityDef;
+    use jinteki_cr::instr::Instruction;
+    let mut vm = Vm::empty(1012);
+    let mut ansel = tk::vanilla_ice("Ansel-1.0-like", 4, 4);
+    ansel.subtypes = vec!["bioroid", "sentry"];
+    ansel.abilities = vec![AbilityDef::subroutine(vec![Instruction::Damage {
+        kind: DamageKind::Net,
+        amount: Quantity::c(1),
+        responsible: Side::Corp,
+    }])
+    .labeled("[sub] ansel printed")];
+    let ansel = tk::install_ice(&mut vm, ansel, ServerId::Remote(1), true);
+    let mg = tk::install_ice(
+        &mut vm,
+        tk::mother_goddess_like("Mother-Goddess-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    let fatuma = tk::install_ice(
+        &mut vm,
+        tk::warden_fatuma_like(
+            "Warden-Fatuma-like",
+            "bioroid",
+            AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, 1)])
+                .labeled("[sub] the runner loses a credit"),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+
+    // Without Hush, Mother Goddess's own effect is independent and gives it
+    // every other rezzed ice's subtypes — including bioroid, which is what
+    // makes Warden Fatuma's effect depend on it.
+    assert!(vm.has_subtype(mg, "bioroid"), "9.12.1d: Mother Goddess gains Ansel's subtypes");
+    assert_eq!(
+        vm.current_subs(mg).len(),
+        1,
+        "and so Warden Fatuma's effect applies to it: one granted subroutine"
+    );
+
+    // Hush hosted on Mother Goddess: its effect depends on nothing, so it is
+    // applied first and Mother Goddess's ability no longer exists.
+    let hush = tk::install_rig(&mut vm, tk::hush_like("Hush-like"));
+    tk::host_on(&mut vm, hush, mg);
+
+    assert!(
+        !vm.has_subtype(mg, "bioroid"),
+        "9.12.1e: Hush is applied first, so Mother Goddess's effect never applies"
+    );
+    let mg_subs = vm.current_subs(mg);
+    assert!(
+        mg_subs.is_empty(),
+        "Warden Fatuma's effect grants nothing to a non-bioroid: {mg_subs:?}"
+    );
+    // Ansel 1.0 still gains it, and 9.8.3a puts an external "before" grant
+    // ahead of the printed subroutines.
+    let ansel_subs = vm.current_subs(ansel);
+    assert_eq!(ansel_subs.len(), 2, "the grant plus Ansel's printed subroutine");
+    assert_eq!(ansel_subs[0].1.label, "[sub] the runner loses a credit");
+    assert_eq!(ansel_subs[1].1.label, "[sub] ansel printed");
+    // Warden Fatuma does not grant to itself — the effect names OTHER ice.
+    assert!(vm.current_subs(fatuma).is_empty());
+}
+
+/// example_rule_independent_effects_2 (9.12.1e): Hush hosted on Magnet. Each
+/// effect removes the other's source's abilities, so the dependencies form a
+/// loop; the hosted object's effect ignores its dependence on its host's, is
+/// applied first, and Magnet's effect is never applied.
+#[test]
+fn example_rule_independent_effects_2() {
+    // The plan: no decisions — the claim is a pure reading of the pipeline.
+    let mut vm = Vm::empty(1013);
+    let magnet = tk::install_ice(&mut vm, tk::magnet_like("Magnet-like"), ServerId::Remote(1), true);
+    let hush = tk::install_rig(&mut vm, tk::hush_like("Hush-like"));
+    tk::host_on(&mut vm, hush, magnet);
+
+    assert!(
+        !vm.ability_present(magnet, 0),
+        "9.12.1e: Hush's effect is treated as independent and applied first"
+    );
+    assert!(
+        vm.ability_present(hush, 0),
+        "Magnet's ability no longer exists, so its effect is never applied"
     );
 }
 

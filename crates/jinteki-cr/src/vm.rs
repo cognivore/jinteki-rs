@@ -1632,13 +1632,38 @@ impl Vm {
                                 });
                             }
                         }
-                        StaticDecl::RemoveHostAbilities => {
-                            if let Some(h) = o.host {
+                        StaticDecl::RemoveAbilitiesOf(rel) => {
+                            cite!("rule_lose_ability");
+                            let targets: Vec<ObjectId> = match rel {
+                                crate::ability::HostRelation::Host => o.host.into_iter().collect(),
+                                // 1.13.9: hosting is not transitive, so only
+                                // the cards hosted DIRECTLY on the source.
+                                crate::ability::HostRelation::Hosted => o.hosted.clone(),
+                            };
+                            for t in targets {
                                 out.push(CharEffect {
                                     source: o.id,
-                                    target: h,
+                                    target: t,
                                     op: CharOp::RemoveAllAbilities,
                                 });
+                            }
+                        }
+                        StaticDecl::GainSubtypesOf { criteria } => {
+                            // 9.12.1b through 9.12.1d: one add per subtype of
+                            // each described card, resolved when the pipeline
+                            // applies the effect (see `CharOp::CopySubtypesFrom`).
+                            cite!("rule_add_remove_subtypes");
+                            for other in self.st.objects.values() {
+                                if criteria
+                                    .iter()
+                                    .all(|f| self.filter_matches_shallow(other, *f, Some(o.id)))
+                                {
+                                    out.push(CharEffect {
+                                        source: o.id,
+                                        target: o.id,
+                                        op: CharOp::CopySubtypesFrom(other.id),
+                                    });
+                                }
                             }
                         }
                         StaticDecl::SelfStrength(q) => {
@@ -1849,6 +1874,7 @@ impl Vm {
                 _ => None,
             })
             .collect();
+        befores.extend(self.static_subroutine_grants(ice, true));
         befores.sort_by(|x, y| y.0.cmp(&x.0));
         for (seq, def) in befores {
             out.push((SubKey { category: 1, src: seq, ord: 0 }, def));
@@ -1901,9 +1927,49 @@ impl Vm {
                 _ => None,
             })
             .collect();
+        afters.extend(self.static_subroutine_grants(ice, false));
         afters.sort_by(|x, y| x.0.cmp(&y.0));
         for (seq, def) in afters {
             out.push((SubKey { category: 5, src: seq, ord: 0 }, def));
+        }
+        out
+    }
+
+    /// CR 9.8.3a/e: subroutines granted to `ice` by a static ability on ANOTHER
+    /// card (Warden Fatuma class). Because the granting ability is not on the
+    /// ice itself, the grant is external, and its "when the effect began to
+    /// apply" stamp is the moment its source became active — the same clock
+    /// `Payload::GrantedSubroutine`'s `seq` is drawn from, so the two kinds of
+    /// external grant sort against each other.
+    fn static_subroutine_grants(&self, ice: ObjectId, before: bool) -> Vec<(u64, AbilityDef)> {
+        cite!("rule_subroutine_origins");
+        let threat = self.threat_level();
+        let encountered = self.st.encounter.as_ref().map(|e| e.ice);
+        let mut out = Vec::new();
+        for o in self.st.objects.values() {
+            if o.id == ice || !card_active(o) {
+                continue;
+            }
+            for (i, a) in o.printed.abilities.iter().enumerate() {
+                if a.kind != AbilityKind::Static
+                    || !self.ability_present(o.id, i)
+                    || !ability_active(o, a, encountered, self.st.accessed, threat)
+                {
+                    continue;
+                }
+                for d in &a.statics {
+                    let StaticDecl::GrantSubroutinesTo { criteria, sub, before: b } = d else {
+                        continue;
+                    };
+                    if *b != before {
+                        continue;
+                    }
+                    let target = &self.st.objects[&ice];
+                    if criteria.iter().all(|f| self.filter_matches(target, *f, Some(o.id))) {
+                        out.push((o.active_since, (**sub).clone()));
+                    }
+                }
+            }
         }
         out
     }
@@ -4229,6 +4295,26 @@ impl Vm {
                 cite!("rule_deck_ordered");
                 self.st.deck[&side].iter().take(n as usize).any(|c| *c == o.id)
             }
+            // "each OTHER rezzed piece of ice": the description excludes the
+            // describing ability's own source.
+            TargetFilter::OtherThanSource => source != Some(o.id),
+        }
+    }
+
+    /// The same predicate, evaluated without re-entering the 9.12.1
+    /// characteristics pipeline. Used only while GATHERING that pipeline's
+    /// input (`char_effects`), where a subtype atom would recurse forever:
+    /// there, `HasSubtype` reads the printed subtypes (2.16) instead of the
+    /// effective ones. Every other atom is unchanged.
+    fn filter_matches_shallow(
+        &self,
+        o: &Object,
+        f: TargetFilter,
+        source: Option<ObjectId>,
+    ) -> bool {
+        match f {
+            TargetFilter::HasSubtype(s) => o.printed.subtypes.contains(&s),
+            other => self.filter_matches(o, other, source),
         }
     }
 
@@ -5374,11 +5460,17 @@ impl Vm {
                     for _ in 0..*count {
                         let id = self.next_lingering;
                         self.next_lingering += 1;
+                        // 9.8.3a/e order by "when the effect granting them
+                        // began to apply"; `active_seq` is the kernel's clock
+                        // for that, shared with static grants
+                        // (`static_subroutine_grants`) so the two compare.
+                        self.st.active_seq += 1;
+                        let seq = self.st.active_seq;
                         self.lingering.push(LingeringEffect::new(id, source.obj, Payload::GrantedSubroutine {
                                 to: obj,
                                 sub: (**sub).clone(),
                                 before: *before,
-                                seq: id,
+                                seq,
                             }, dur));
                     }
                 }
