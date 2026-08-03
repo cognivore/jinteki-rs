@@ -12,6 +12,7 @@ use rand_chacha::ChaCha8Rng;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::ability::{
+    StaticCond,
     ability_active, is_corp_card, AbilityDef, AbilityFlag, AbilityInstance, AbilityKind,
     AbilityRef, Condition, Cost, StaticDecl, TriggerCond,
 };
@@ -1684,7 +1685,7 @@ impl Vm {
                     window: None,
                     hangover: false,
                     independent: false,
-                    source_move_stamp: self.st.move_seq,
+                    source_generation: self.generation(obj),
                     occurrence_group: 0,
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
@@ -1740,6 +1741,14 @@ impl Vm {
                 if a.kind != AbilityKind::Static {
                     continue;
                 }
+                // 9.3.7a: a static ability's declarations apply while any
+                // condition stated in the ability holds (9.1.2b scoping, the
+                // Attini class).
+                if let Some(Condition::Static(sc)) = &a.condition {
+                    if !self.static_cond_holds(o.id, sc) {
+                        continue;
+                    }
+                }
                 if !self.ability_present(o.id, i) {
                     continue;
                 }
@@ -1753,6 +1762,33 @@ impl Vm {
             }
         }
         out
+    }
+
+    /// CR 9.6.7 / 9.3.7a: does the static condition stated by an ability of
+    /// `obj` hold right now?
+    pub fn static_cond_holds(&self, obj: ObjectId, cond: &StaticCond) -> bool {
+        cite!("rule_conditional_ability_with_static_condition");
+        match cond {
+            StaticCond::HostStrengthAtMost(n) => self
+                .st
+                .objects
+                .get(&obj)
+                .and_then(|o| o.host)
+                .and_then(|h| self.effective_strength(h))
+                .map(|s| s <= *n)
+                .unwrap_or(false),
+            // 9.1.2b: an ability of this card "is resolving" — its frame is
+            // on the stack, from its first instruction becoming imminent
+            // until its last has finished resolving. Any interrupt window
+            // opened for one of its instructions is nested ABOVE that frame,
+            // so it is inside the scope, which is the whole point of the rule.
+            StaticCond::SourceAbilityResolving => {
+                cite!("rule_is_resolving");
+                self.frames
+                    .iter()
+                    .any(|f| matches!(f, Frame::Ability(af) if af.source.obj == obj))
+            }
+        }
     }
 
     /// Is ability index `i` on `obj` present after gains/losses (9.1.9)?
@@ -1822,6 +1858,26 @@ impl Vm {
                                     target: t,
                                     op: CharOp::RemoveAllAbilities,
                                 });
+                            }
+                        }
+                        StaticDecl::RemoveAbilitiesOfMatching { criteria } => {
+                            // 9.1.9a: every card the description reaches loses
+                            // all of its abilities. The criteria are read
+                            // shallowly here for the same reason
+                            // `GainSubtypesOf`'s are (deviation 2b).
+                            cite!("rule_lose_ability");
+                            for other in self.st.objects.values() {
+                                if other.id != o.id
+                                    && criteria
+                                        .iter()
+                                        .all(|f| self.filter_matches_shallow(other, *f, Some(o.id)))
+                                {
+                                    out.push(CharEffect {
+                                        source: o.id,
+                                        target: other.id,
+                                        op: CharOp::RemoveAllAbilities,
+                                    });
+                                }
                             }
                         }
                         StaticDecl::GainSubtypesOf { criteria } => {
@@ -3218,7 +3274,7 @@ impl Vm {
                     window: None,
                     hangover: false,
                     independent: false,
-                    source_move_stamp: self.st.move_seq,
+                    source_generation: self.generation(obj),
                     occurrence_group: 0,
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
@@ -3495,7 +3551,17 @@ impl Vm {
             ability_targets: Vec::new(),
             imminent_index: None,
             instance,
-            source_move_stamp: self.st.move_seq,
+            // CR 9.1.4 via 1.12.3: the ability's source is an OBJECT, i.e. an
+            // (id, generation) pair. A conditional instance remembers the
+            // generation it came into being with (9.6.2), and the frame
+            // inherits it — so an ability whose source moved between the
+            // condition being met and the ability resolving is stranded even
+            // though the frame was pushed after the move (the Compile/Mayfly
+            // example).
+            source_generation: instance
+                .and_then(|i| self.instances.get(&i))
+                .map(|i| i.source_generation)
+                .unwrap_or_else(|| self.generation(source.obj)),
             any_expected_effects: false,
             subroutine_index,
             declined: false,
@@ -5270,7 +5336,7 @@ impl Vm {
         self.changes.bump_group();
         let (frame_idx, controller, source, stamp) = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
-            (self.frames.len() - 1, af.controller, af.source, af.source_move_stamp)
+            (self.frames.len() - 1, af.controller, af.source, af.source_generation)
         };
         // CR 9.1.4: if the source changed zones after independence, the
         // ability cannot act on the source.
@@ -5288,13 +5354,15 @@ impl Vm {
         }
     }
 
-    fn source_moved_since(&self, obj: ObjectId, _stamp: u64) -> bool {
-        // Kernel-wave approximation: track via move stamps on the object.
-        // Objects record moves by bumping st.move_seq; ability frames record
-        // the seq at push. A finer per-object stamp arrives with the card
-        // layer; for now compare zones recorded at frame push.
-        let _ = obj;
-        false
+    /// CR 9.1.4 + 1.12.3: has the ability's source changed zones since the
+    /// ability became independent of it? The card that was the source is one
+    /// OBJECT; a zone change makes the card a NEW object (1.12.3), which the
+    /// generation stamp records. An ability whose source generation no longer
+    /// matches cannot act on the source — there is nothing there to act on.
+    fn source_moved_since(&self, obj: ObjectId, generation: u32) -> bool {
+        cite!("rule_abilities_resolution_independent");
+        cite!("rule_object_move_location");
+        self.st.objects.get(&obj).map(|o| o.generation) != Some(generation)
     }
 
     /// Apply a resolved instruction's effects (9.9.2a: expected effects
@@ -6687,14 +6755,24 @@ impl Vm {
                 }
                 self.refresh_candidates_after_access();
             }
-            Instruction::MoveToTopOfRnd { card } => {
+            Instruction::MoveToDeck { card, top } => {
                 cite!("rule_rnd_topmost_eligibile_candidate");
+                cite!("rule_deck_ordered");
                 let targets = self.resolve_targets(card, Some(source.obj), &imm.targets);
-                if let Some(&t) = targets.first() {
-                    self.move_card(t, Zone::Deck(Side::Corp));
-                    let deck = self.st.deck.get_mut(&Side::Corp).unwrap();
+                for t in targets {
+                    // 4.2.1: a card goes to ITS OWNER's deck. 1.12.3: the move
+                    // between zones makes the card a new object, which is what
+                    // strands a self-referencing ability of the card that moved
+                    // (9.1.4, the Compile/Mayfly example).
+                    let owner = self.st.objects[&t].printed.side;
+                    self.move_card(t, Zone::Deck(owner));
+                    let deck = self.st.deck.get_mut(&owner).unwrap();
                     deck.retain(|&x| x != t);
-                    deck.insert(0, t);
+                    if *top {
+                        deck.insert(0, t);
+                    } else {
+                        deck.push(t);
+                    }
                     // Cards entered/reordered: recompute the topmost
                     // eligible candidate (7.4.7a).
                     self.refresh_candidates_after_access();
@@ -7519,14 +7597,20 @@ impl Vm {
         cite!("rule_cost");
         let p = self.st.player(side);
         // 1.10.3c: hosted credits their card lets them spend are part of what
-        // this player can pay with (Cyberfeeder class, 9.1.6c).
-        let credits_avail = p.credits
-            + self.spendable_hosted_credits(side)
-            + if side == Side::Runner && self.current_run.is_some() {
-                self.st.bp_fund
-            } else {
-                0
-            };
+        // this player can pay with (Cyberfeeder class, 9.1.6c) — and a
+        // prohibition on spending (RSVP / Attini classes) removes all of it,
+        // so any credit cost becomes unpayable (1.16.1b).
+        let credits_avail = if self.credits_prohibited(side) {
+            0
+        } else {
+            p.credits
+                + self.spendable_hosted_credits(side)
+                + if side == Side::Runner && self.current_run.is_some() {
+                    self.st.bp_fund
+                } else {
+                    0
+                }
+        };
         // 1.16.2b: the calculation is performed when the cost is to be paid.
         let want_credits = self.cost_credits(cost, source);
         if credits_avail < want_credits || p.clicks < cost.clicks + cost.lose_clicks {
@@ -7623,15 +7707,20 @@ impl Vm {
     /// hosted credits on cards that allow spending them, minus prohibitions
     /// (RSVP class → 0).
     pub fn spendable_credits(&self, side: Side) -> u32 {
-        if self
-            .active_statics()
-            .iter()
-            .any(|(_, d)| matches!(d, StaticDecl::CannotSpendCredits(s) if *s == side))
-        {
+        if self.credits_prohibited(side) {
             cite!("rule_bid_possible");
             return 0;
         }
         self.st.player(side).credits + self.spendable_hosted_credits(side)
+    }
+
+    /// CR 9.3.4: an active declaration forbidding this player from spending
+    /// credits (RSVP class; the Attini class scopes the same declaration to
+    /// its own resolution through 9.1.2b).
+    pub fn credits_prohibited(&self, side: Side) -> bool {
+        self.active_statics()
+            .iter()
+            .any(|(_, d)| matches!(d, StaticDecl::CannotSpendCredits(s) if *s == side))
     }
 
     /// CR 1.10.3c: credits hosted on this player's cards that the card's own

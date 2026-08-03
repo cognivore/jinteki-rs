@@ -165,6 +165,12 @@ pub struct SubKey {
 pub enum StaticCond {
     /// "While this card's host has 0 or less strength…" (Parasite class).
     HostStrengthAtMost(i32),
+    /// CR 9.1.2b: "…during the resolution of this card's abilities" (Attini
+    /// class). An ability "is resolving" from when its first instruction
+    /// becomes imminent until its last instruction has finished resolving,
+    /// which includes every interrupt window opened for its instructions —
+    /// so a declaration scoped this way applies inside those windows.
+    SourceAbilityResolving,
 }
 
 /// CR 9.6.1a: the primary condition is a trigger or static condition.
@@ -326,6 +332,12 @@ pub enum StaticDecl {
     /// counts instances, so removing one instance of a doubly-added subtype
     /// leaves the card with it.
     SubtypeModSelf { add: Vec<&'static str>, remove: Vec<&'static str> },
+    /// CR 9.1.9a: "<the described cards> lose all of their abilities."
+    /// (Direct Access class: "identity cards do not have abilities".) The
+    /// described set is the shared criteria vocabulary, so the whole class is
+    /// one declaration (§12 rule 2) — contrast `RemoveAbilitiesOf`, which
+    /// names the hosting relation instead of a description.
+    RemoveAbilitiesOfMatching { criteria: Vec<crate::instr::TargetFilter> },
     /// "This card gains the subtypes of <criteria>." (Mother Goddess class.)
     /// The subtypes copied are the source cards' EFFECTIVE subtypes, read
     /// through the same 9.12.1b pipeline — so a card that itself gained a
@@ -359,6 +371,8 @@ pub enum StaticDecl {
     /// parts of expected effects.)
     CannotDraw(Side),
     /// "<side> cannot spend credits." (RSVP class; forces 0 bids, 10.14.3.)
+    /// A static ability carrying `StaticCond::SourceAbilityResolving` scopes
+    /// it to its own resolution (Attini class, 9.1.2b).
     CannotSpendCredits(Side),
     /// "This ice gains N copies of '[sub] …'" where N is a quantity selector
     /// (Ashigaru class: N = count of cards in HQ; category 9.8.3d —
@@ -590,10 +604,12 @@ pub struct AbilityInstance {
     /// zone — the ability remains active until this instance resolves.
     pub hangover: bool,
     /// CR 9.6.12/9.5.4/9.8.8 → 9.1.4: once independent, a source zone change
-    /// strands self-referencing effects. `source_zone_stamp` is the source's
-    /// move counter at independence.
+    /// strands self-referencing effects. `source_generation` is the source
+    /// OBJECT's generation (1.12.3) as of when this instance came into being;
+    /// a zone change bumps it, so a later comparison says the object the
+    /// ability referred to no longer exists.
     pub independent: bool,
-    pub source_move_stamp: u64,
+    pub source_generation: u32,
     /// Group of the change occurrence that created this instance.
     pub occurrence_group: u64,
     /// For delayed conditionals: the lingering effect maintaining it.

@@ -1856,7 +1856,7 @@ pub fn seidr_like(name: &'static str, card: ObjectId) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunnerStealsAgenda,
-        vec![Instruction::MoveToTopOfRnd { card: TargetSpec::Objects(vec![card]) }],
+        vec![Instruction::MoveToDeck { card: TargetSpec::Objects(vec![card]), top: true }],
         false,
     )
     .labeled("seidr: add a card to the top of R&D")];
@@ -4100,5 +4100,110 @@ pub fn nanisivik_like(name: &'static str) -> PrintedCard {
         ],
     )
     .labeled("nanisivik: turn ice faceup and resolve its first subroutine")];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W11b shapes: §9.1 — is-resolving scope, resolution independence
+// ---------------------------------------------------------------------------
+
+/// Attini shape (9.1.2b): a piece of ice declaring that the Runner cannot
+/// spend credits during the resolution of its own abilities, plus a
+/// net-damage subroutine. The scope is `StaticCond::SourceAbilityResolving`,
+/// which is exactly 9.1.2b's "from when its first instruction becomes
+/// imminent until its last instruction has finished resolving".
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card gates the declaration on the
+/// size of the Runner's grip; the grip size is orthogonal to what 9.1.2b
+/// decides, so the shape declares it unconditionally.
+pub fn attini_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 3);
+    c.abilities = vec![
+        AbilityDef {
+            condition: Some(Condition::Static(StaticCond::SourceAbilityResolving)),
+            ..AbilityDef::static_ability(vec![StaticDecl::CannotSpendCredits(Side::Runner)])
+        }
+        .labeled("attini: no spending while its abilities resolve"),
+        AbilityDef::subroutine(vec![Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(1),
+            responsible: Side::Corp,
+        }])
+        .labeled("[sub] do 1 net damage"),
+    ];
+    c
+}
+
+/// Caldera shape (9.1.2b): a Runner card with a credit-costed interrupt
+/// ability that prevents 1 net damage.
+pub fn caldera_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(1),
+        vec![Instruction::PreventDamage { kind: DamageKind::Net, amount: 1 }],
+    )
+    .with_flag(AbilityFlag::Interrupt)
+    .labeled("caldera: prevent 1 net damage")];
+    c
+}
+
+/// Direct Access shape (9.1.2b example 2): an event that runs a server and
+/// declares that identity cards do not have abilities. The declaration is
+/// active for as long as the card is — which, for an event, is throughout
+/// step 8.6.7f (9.1.2b), the very window the run-end conditions pend in.
+pub fn direct_access_like(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = event(name, 0, vec![Instruction::InitiateRun(server)]);
+    c.abilities.push(
+        AbilityDef::static_ability(vec![StaticDecl::RemoveAbilitiesOfMatching {
+            criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Identity)],
+        }])
+        .labeled("direct access: identities have no abilities"),
+    );
+    c
+}
+
+/// Zahya Sadeghi shape (9.1.2b example 2): a Runner identity whose ability
+/// meets its condition when a run ends.
+pub fn run_end_identity(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        false,
+    )
+    .labeled("identity: gain 1 when a run ends")];
+    c
+}
+
+/// Compile shape (9.1.4): a Runner card that arms a "when this run ends, add
+/// that program to the bottom of your stack" delayed conditional, used from
+/// inside the run (9.6.13d: with no run in progress the delayed conditional
+/// is never created at all).
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card makes the run itself and
+/// installs the program from the stack during it; the run comes from the
+/// basic run action here and the program is pre-installed and named, because
+/// what 9.1.4 decides is what happens to the OTHER ability once this one has
+/// moved the program.
+pub fn compile_like(name: &'static str, program: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateDelayedConditional {
+            def: Box::new(
+                AbilityDef::conditional(
+                    TriggerCond::RunEnds { successful_only: false },
+                    vec![Instruction::MoveToDeck {
+                        card: TargetSpec::Objects(vec![program]),
+                        top: false,
+                    }],
+                    false,
+                )
+                .labeled("compile-delayed: the program goes to the bottom of the stack"),
+            ),
+            duration: crate::lingering::WantedDuration::UntilResolved,
+        }],
+    )
+    .labeled("compile: arm the run-end move")];
     c
 }

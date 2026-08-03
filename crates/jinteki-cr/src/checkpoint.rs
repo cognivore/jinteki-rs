@@ -6,7 +6,7 @@
 
 use crate::ability::{
     ability_active, is_corp_card, trigger_matches, trigger_per_event, AbilityDef,
-    AbilityInstance, AbilityKind, AbilityRef, Condition, StaticCond,
+    AbilityInstance, AbilityKind, AbilityRef, Condition,
 };
 use crate::change::GameChange;
 use crate::decision::GameResult;
@@ -180,6 +180,14 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
 
     let mut newly: Vec<u64> = Vec::new();
     for (obj_id, index, def, controller, from_lingering) in sources {
+        // CR 9.1.9: an ability the card no longer HAS cannot meet a condition.
+        // (`usize::MAX` indices are abilities carried by a lingering effect,
+        // not printed on the card, so 9.1.9's gains/losses do not address
+        // them.)
+        if index < usize::MAX - 1 && !vm.ability_present(obj_id, index) {
+            cite!("rule_lose_ability");
+            continue;
+        }
         let Some(source_obj) = vm.st.objects.get(&obj_id) else { continue };
         let aref = AbilityRef { obj: obj_id, index };
 
@@ -350,7 +358,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             window: None,
                             hangover,
                             independent: false,
-                            source_move_stamp: vm.st.move_seq,
+                            source_generation: vm.generation(obj_id),
                             occurrence_group: occurrences.get(k).copied().unwrap_or(0),
                             from_lingering,
                             run_id: vm.current_run.map(|(r, _, _)| r),
@@ -365,13 +373,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 // checkpoint (we evaluate before this checkpoint mutates
                 // anything relevant).
                 cite!("rule_conditional_ability_check_start_of_checkpoint");
-                let true_now = match sc {
-                    StaticCond::HostStrengthAtMost(n) => source_obj
-                        .host
-                        .and_then(|h| vm.effective_strength(h))
-                        .map(|s| s <= *n)
-                        .unwrap_or(false),
-                };
+                let true_now = vm.static_cond_holds(obj_id, sc);
                 if !true_now {
                     continue;
                 }
@@ -415,7 +417,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         window: None,
                         hangover: false,
                         independent: false,
-                        source_move_stamp: vm.st.move_seq,
+                        source_generation: vm.generation(obj_id),
                         occurrence_group: 0,
                         from_lingering,
                         run_id: vm.current_run.map(|(r, _, _)| r),

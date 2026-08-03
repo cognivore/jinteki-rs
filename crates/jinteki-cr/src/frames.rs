@@ -197,7 +197,7 @@ pub struct AbilityFrame {
     pub instance: Option<u64>,
     /// CR 9.1.4: source zone-move stamp at independence; if the source moved
     /// since, self-referencing effects are stranded.
-    pub source_move_stamp: u64,
+    pub source_generation: u32,
     /// CR 9.6.7d bookkeeping: did ANY instruction of this ability have
     /// expected effects when its interrupt window opened?
     pub any_expected_effects: bool,

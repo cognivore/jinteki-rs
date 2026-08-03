@@ -405,8 +405,13 @@ pub enum Instruction {
     /// (1.12.3), so 7.4.7a's "already chosen" bookkeeping forgets them and
     /// the breach continues from the top of R&D.
     CorpRearrangesRnd,
-    /// "Add a card from Archives to the top of R&D." (Seidr class.)
-    MoveToTopOfRnd { card: TargetSpec },
+    /// CR 8.2: "Add <cards> to the top / bottom of <a deck>." The cards are a
+    /// target POSITION and the end of the deck is the content (§12 rule 2),
+    /// so a Seidr-class "add a card from Archives to the top of R&D" and a
+    /// Compile-class "add that program to the bottom of your stack" are one
+    /// instruction. The deck is the card's OWNER's (4.2.1: a card can only
+    /// ever be in its owner's deck).
+    MoveToDeck { card: TargetSpec, top: bool },
     /// CR 8.7.1–8.7.3: "Search <zone> for <criteria>." The searching player
     /// looks at every card in the zone (8.7.1; hidden/secret zones are
     /// temporarily visible to them alone, 8.7.1a) and may FIND up to `count`

@@ -241,6 +241,11 @@ const IMPLEMENTED: &[&str] = &[
     // (8.1.2b), forfeit as a cost (8.2.5).
     "example_rule_this_server_3",
     "example_rule_instructed_to_resolve_conditional_ability_1",
+    // Wave 11b: §9.1 — resolution independence (9.1.4), "is resolving"
+    // (9.1.2b).
+    "example_rule_abilities_resolution_independent_1",
+    "example_rule_is_resolving_1",
+    "example_rule_is_resolving_2",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -8686,6 +8691,172 @@ fn example_rule_instructed_to_resolve_conditional_ability_1_requirement() {
                 0,
                 "…and nothing resolved"
             );
+        }
+    }
+}
+
+// ===========================================================================
+// W11b — §9.1: what "is resolving" scopes, and resolution independence
+// ===========================================================================
+
+/// example_rule_abilities_resolution_independent_1 (9.1.4): a Compile-class
+/// ability and a Mayfly-class ability both arm "when this run ends" delayed
+/// conditionals. When the run ends both pend; the Runner resolves Compile's
+/// first, adding the program to the bottom of the stack. That zone change
+/// makes the card a NEW object (1.12.3), so the ability from Mayfly — which
+/// became independent of its source before the move — has nothing to trash.
+#[test]
+fn example_rule_abilities_resolution_independent_1() {
+    let mut vm = Vm::empty(933);
+    let mayfly = tk::install_rig(&mut vm, tk::mayfly_button("Mayfly-like"));
+    tk::install_rig(&mut vm, tk::compile_like("Compile-like", mayfly));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    // The plan: run, arm both delayed conditionals inside the run (9.6.13d),
+    // then at the run-end reaction window resolve Compile's ability FIRST.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Archives)
+            .when(
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("compile"),
+            )
+            .when(
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("mayfly"),
+            )
+            .when(Match::reaction().once(), Reply::take("compile-delayed"))
+            .when(Match::reaction().once(), Reply::take("mayfly-delayed"))
+            .stop_at_action(),
+    );
+    assert!(t.took("compile") && t.took("mayfly"), "both abilities armed: {}", t.tail(12));
+    assert!(t.took("compile-delayed"), "the Runner resolved Compile first: {}", t.tail(30));
+    assert!(t.took("mayfly-delayed"), "…and then the ability from Mayfly");
+    assert_eq!(
+        vm.st.objects[&mayfly].zone,
+        Zone::Deck(Side::Runner),
+        "the program went to the bottom of the stack"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == mayfly)),
+        "9.1.4 / 1.12.3: the copy on the stack is a NEW object — with nothing \
+         to trash, the ability from Mayfly did nothing: {:?}",
+        vm.changes.log.iter().rev().take(6).collect::<Vec<_>>()
+    );
+}
+
+/// example_rule_is_resolving_1 (9.1.2b): an Attini-class declaration forbids
+/// the Runner from spending credits while an ability of its source is
+/// resolving. A subroutine "is resolving" during the interrupt window for its
+/// instruction, so a Caldera-class credit-costed prevention is not even
+/// offered there — while the same prevention IS offered against damage from a
+/// piece of ice with no such declaration.
+#[test]
+fn example_rule_is_resolving_1() {
+    for attini in [true, false] {
+        let mut vm = Vm::empty(934);
+        let ice = if attini {
+            tk::attini_like("Attini-like")
+        } else {
+            let mut c = tk::vanilla_ice("Plain-Ice", 0, 3);
+            c.abilities = vec![jinteki_cr::ability::AbilityDef::subroutine(vec![
+                jinteki_cr::instr::Instruction::Damage {
+                    kind: DamageKind::Net,
+                    amount: Quantity::c(1),
+                    responsible: Side::Corp,
+                },
+            ])
+            .labeled("[sub] do 1 net damage")];
+            c
+        };
+        tk::install_ice(&mut vm, ice, ServerId::Hq, true);
+        tk::install_rig(&mut vm, tk::caldera_like("Caldera-like"));
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .runs(ServerId::Hq)
+                .when(Match::interrupt(), Reply::take("caldera"))
+                .when(Match::jack_out(), Reply::JackOut(true))
+                .stop_at_action(),
+        );
+        let suffered = vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::DamageSuffered { kind: DamageKind::Net, .. }));
+        if attini {
+            assert!(
+                !t.ever_offered("caldera"),
+                "9.1.2b: the subroutine is resolving during its instruction's \
+                 interrupt window, so the Runner cannot spend credits: {}",
+                t.tail(12)
+            );
+            assert!(suffered, "…and the net damage landed");
+            assert_eq!(vm.st.runner.credits, 5, "no credits were spent");
+        } else {
+            assert!(t.took("caldera"), "the same prevention IS offered otherwise: {}", t.tail(12));
+            assert!(!suffered, "…and it prevented the damage");
+        }
+    }
+}
+
+/// example_rule_is_resolving_2 (9.1.2b): a Direct-Access-class event runs a
+/// server and declares that identity cards do not have abilities. The
+/// identity's "when a run ends" ability would meet its condition immediately
+/// after the "Run any server." instruction — a reaction window OUTSIDE the
+/// run, but still inside step 8.6.7f of playing the event — so the ability is
+/// not present at the needed time and cannot be triggered or resolved.
+#[test]
+fn example_rule_is_resolving_2() {
+    for via_direct_access in [true, false] {
+        let mut vm = Vm::empty(935);
+        tk::install_identity(&mut vm, tk::run_end_identity("Zahya-like"), Side::Runner);
+        let ev = vm.new_object(
+            tk::direct_access_like("DirectAccess-like", ServerId::Hq),
+            Zone::Hand(Side::Runner),
+        );
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(ev);
+        tk::install_rig(&mut vm, tk::play_event_button("Play-Button", ev));
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let runner = if via_direct_access {
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("play-event"))
+                .when(Match::reaction(), Reply::take("identity"))
+                .stop_at_action()
+        } else {
+            Plan::runner()
+                .runs(ServerId::Hq)
+                .when(Match::reaction(), Reply::take("identity"))
+                .stop_at_action()
+        };
+        let t = plan::play(&mut vm, Plan::corp(), runner);
+        assert!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+            "a run on HQ happened either way: {}",
+            t.tail(12)
+        );
+        if via_direct_access {
+            assert!(
+                !t.ever_offered("identity"),
+                "9.1.2b: the reaction window is still part of the event resolving, \
+                 so the identity's ability is not present: {}",
+                t.tail(12)
+            );
+            assert_eq!(vm.st.runner.credits, 0, "…and nothing resolved");
+        } else {
+            assert!(t.took("identity"), "without the declaration it resolves: {}", t.tail(12));
+            assert_eq!(vm.st.runner.credits, 1);
         }
     }
 }
