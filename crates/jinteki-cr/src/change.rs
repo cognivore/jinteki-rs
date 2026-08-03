@@ -17,6 +17,14 @@ pub enum BasicAction {
     RemoveTag,
     /// 5.2.6e: "[click]: Play 1 operation from HQ."
     PlayOperation,
+    /// 5.2.6d / 5.2.7d: "[click]: Install 1 … card."
+    Install,
+    /// 5.2.6f: "[click], 1[credit]: Advance 1 installed card."
+    Advance,
+    /// 5.2.6g: "[click], 2[credit]: Trash 1 resource."
+    TrashResource,
+    /// 5.2.6h: "[click][click][click]: Purge virus counters."
+    Purge,
 }
 
 /// CR 5.2.5a/b: what makes two actions the same or different — the basic
@@ -79,7 +87,10 @@ pub enum GameChange {
     /// CR 8.6.7h: conditions related to finishing resolving it are met.
     CardPlayResolved { obj: ObjectId },
     CardUninstalled { obj: ObjectId, was_zone: Zone },
-    CardRezzed { obj: ObjectId },
+    /// CR 8.1.2: a card was rezzed. The card TYPE travels with the record
+    /// because "whenever you rez a piece of ice" is answered at the
+    /// checkpoint scan, when the object may already have moved on.
+    CardRezzed { obj: ObjectId, card_type: crate::object::CardType },
     /// CR 8.1.2 / 1.12.5: a card turned facedown again. It does NOT become a
     /// new object — it never left the play area.
     CardDerezzed { obj: ObjectId },
@@ -90,6 +101,11 @@ pub enum GameChange {
     /// moving one from another card, is NOT advancing, and records only
     /// `CounterPlaced`, so a "whenever you advance" condition is not met.
     CardAdvanced { obj: ObjectId },
+    /// CR 10.1.2: the Corp purged virus counters. Recorded once per purge,
+    /// whether or not any counters were on the board — the condition Clot's
+    /// class meets is "when the Corp purges virus counters", not "when a
+    /// virus counter is removed" (the removals are their own records).
+    VirusCountersPurged,
     /// Counters left a card or a player and returned to the bank (1.9.2) —
     /// spent, removed, or trashed with their host (1.13.13).
     CounterRemoved { obj: Option<ObjectId>, kind: crate::object::CounterKind, amount: u32 },

@@ -5220,6 +5220,27 @@ impl Vm {
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((af.controller, self.announcement(candidates, want)))
             }
+            // 8.5.16b: the effect named no destination, so the installing
+            // player chooses and declares one — every location the card may
+            // legally occupy, "including any host relationships".
+            Instruction::InstallCard {
+                card,
+                dest: crate::instr::InstallDest::DeclaredByInstaller,
+                ..
+            } => {
+                cite!("rule_steps_installing_destination");
+                let c = self
+                    .resolve_targets(card, Some(af.source.obj), &af.targets)
+                    .first()
+                    .copied();
+                let options =
+                    c.map(|c| self.install_destinations_for(c, af.controller)).unwrap_or_default();
+                if options.is_empty() {
+                    None
+                } else {
+                    Some((af.controller, DecisionSpec::DeclareInstallDestination { options }))
+                }
+            }
             // 1.13.6a/8.5.16b: with the card known, whoever is installing it
             // declares the destination — and any eligible host is one of the
             // destinations on offer, whatever destination the effect named.
@@ -5772,6 +5793,12 @@ impl Vm {
             TargetFilter::OtherThanSource => source != Some(o.id),
             // 10.1.4: "this card" — the ability's own source, and only it.
             TargetFilter::IsSource => source == Some(o.id),
+            // 1.13.2: hosted ON the source — a host relationship, which is
+            // what "all hosted cards" names.
+            TargetFilter::HostedOnSource => {
+                cite!("rule_hosted_word_meaning");
+                o.host.is_some() && o.host == source
+            }
             // 10.1.5: naming a card is not self-reference — "a copy of X"
             // matches every card named X, the source included.
             TargetFilter::HasName(n) => {
@@ -7956,6 +7983,17 @@ impl Vm {
                     "step_approach_begins"
                 });
             }
+            Instruction::RemoveTags(amount) => {
+                // 10.5.5: removing a tag returns the tag counter to the bank;
+                // "as much as possible" if fewer are there (1.10.3b's shape).
+                cite!("rule_tag");
+                let n = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                let take = self.st.runner.tags.min(n);
+                self.st.runner.tags -= take;
+                for _ in 0..take {
+                    self.changes.record(GameChange::TagRemoved);
+                }
+            }
             Instruction::RemoveCountersFromPlayer { side, kind, amount } => {
                 // 1.13.3: counters hosted on cards are not on a player, so
                 // nothing here can reach them — the pools this touches are
@@ -8097,6 +8135,32 @@ impl Vm {
                     self.changes.record(GameChange::CardAdvanced { obj: t });
                 }
             }
+            Instruction::PurgeVirusCounters => {
+                // CR 10.1.2: remove ALL virus counters hosted on cards and
+                // return them to the bank. One occurrence, however many cards
+                // it touches — "purge virus counters" names the board.
+                cite!("rule_purge");
+                let hosts: Vec<(ObjectId, u32)> = self
+                    .st
+                    .objects
+                    .values()
+                    .filter_map(|o| match o.counters.get(&CounterKind::Virus) {
+                        Some(n) if *n > 0 => Some((o.id, *n)),
+                        _ => None,
+                    })
+                    .collect();
+                for (id, n) in hosts {
+                    if let Some(o) = self.st.objects.get_mut(&id) {
+                        o.counters.remove(&CounterKind::Virus);
+                    }
+                    self.changes.record(GameChange::CounterRemoved {
+                        obj: Some(id),
+                        kind: CounterKind::Virus,
+                        amount: n,
+                    });
+                }
+                self.changes.record(GameChange::VirusCountersPurged);
+            }
             Instruction::StealSelfAgenda => {
                 if !source_moved {
                     self.steal_agenda(source.obj);
@@ -8146,6 +8210,25 @@ impl Vm {
                     crate::instr::InstallDest::Protecting(s) => {
                         cite!("rule_ice_outermost_position");
                         Some((Zone::Ice(s), None))
+                    }
+                    crate::instr::InstallDest::NewRemoteProtecting => {
+                        // 8.5.2a: the new remote server is created at step
+                        // 8.5.16e, with this ice protecting it.
+                        cite!("rule_corp_install_choose_destination_server");
+                        if !self.can_create_new_remote() {
+                            None
+                        } else {
+                            let s = ServerId::Remote(self.next_remote);
+                            self.next_remote += 1;
+                            Some((Zone::Ice(s), None))
+                        }
+                    }
+                    crate::instr::InstallDest::DeclaredByInstaller => {
+                        // 8.5.16b replaced this with the declared destination
+                        // before the instruction became imminent; reaching it
+                        // here means no destination could be identified.
+                        cite!("rule_install_to_invalid_destination");
+                        None
                     }
                     crate::instr::InstallDest::InwardFromSource => {
                         // 6.2.2c: the new position goes inward from the
@@ -8396,7 +8479,8 @@ impl Vm {
                     let o = self.st.objects.get_mut(&c).unwrap();
                     o.faceup = true;
                     o.active_since = seq;
-                    self.changes.record(GameChange::CardRezzed { obj: c });
+                    let ct = self.st.objects[&c].printed.card_type;
+                    self.changes.record(GameChange::CardRezzed { obj: c, card_type: ct });
                     self.place_recurring_credits(c);
                 }
                 self.install_terminal_reveal(&p);
@@ -9211,7 +9295,68 @@ impl Vm {
                 out.push(ActionOption::BasicRemoveTag);
             }
         }
-        // 5.2.6e / 5.2.7d: "[click]: Play 1 operation from HQ." (the Runner's
+        // 5.2.6d / 5.2.7d: "[click]: Install 1 agenda, asset, upgrade, or
+        // piece of ice from HQ" / "1 program, resource, or piece of hardware
+        // from the grip". The install cost is paid at step 8.5.16d, so it is
+        // not a condition of the action being available (8.5.11 lets the
+        // procedure fail there); what IS a condition is that a destination
+        // exists at all (8.5.14 — an install with no identifiable
+        // destination does not take place).
+        cite!("rule_corp_basic_action_install");
+        cite!("runner_basic_action_install");
+        let installable = |t: CardType| match side {
+            Side::Corp => matches!(
+                t,
+                CardType::Agenda | CardType::Asset | CardType::Upgrade | CardType::Ice
+            ),
+            Side::Runner => {
+                matches!(t, CardType::Program | CardType::Resource | CardType::Hardware)
+            }
+        };
+        for c in self.st.hand[&side].clone() {
+            if !installable(self.st.objects[&c].printed.card_type) {
+                continue;
+            }
+            if self.install_destinations_for(c, side).is_empty() {
+                continue;
+            }
+            out.push(ActionOption::BasicInstall { card: c });
+        }
+        if side == Side::Corp {
+            // 5.2.6f: "[click], 1[credit]: Advance 1 installed card." 1.18.3
+            // says which installed cards those are; a card that cannot be
+            // advanced is not an option, and with no credit there is no
+            // action at all (1.16.1b).
+            cite!("corp_basic_action_advance");
+            if self.st.corp.credits >= 1 {
+                for id in self.advanceable_cards() {
+                    out.push(ActionOption::BasicAdvance { card: id });
+                }
+            }
+            // 5.2.6g / 10.5.3: "Trash 1 resource. Take this action only if
+            // the Runner is tagged." 10.5.2: tagged is one or more tags.
+            cite!("corp_basic_action_trash_resource");
+            cite!("rule_tagged_trash_resource");
+            cite!("rule_tagged");
+            if self.st.runner.tags > 0
+                && self.st.corp.credits >= 2
+                && self.st.objects.values().any(|o| {
+                    o.zone == Zone::Rig
+                        && o.printed.card_type == CardType::Resource
+                        && !o.hosted_not_installed
+                })
+            {
+                out.push(ActionOption::BasicTrashResource);
+            }
+            // 5.2.6h: "[click][click][click]: Purge virus counters." The
+            // action costs three clicks, so it is only available with three
+            // left to spend.
+            cite!("corp_basic_action_purge_virus_counters");
+            if self.st.corp.clicks >= 3 {
+                out.push(ActionOption::BasicPurge);
+            }
+        }
+        // 5.2.6e / 5.2.7e: "[click]: Play 1 operation from HQ." (the Runner's
         // is the same action for events from the grip). 1.16.4b: the play
         // cost must be payable, and 1.16.10a's additional cost is combined
         // with it at step 8.6.7b.
@@ -10786,7 +10931,8 @@ impl Vm {
         let o = self.st.objects.get_mut(&id).unwrap();
         o.faceup = true;
         o.active_since = seq;
-        self.changes.record(GameChange::CardRezzed { obj: id });
+        let ct = self.st.objects[&id].printed.card_type;
+        self.changes.record(GameChange::CardRezzed { obj: id, card_type: ct });
         // 1.10.5b: recurring credits arrive as soon as the card is faceup.
         self.place_recurring_credits(id);
     }
@@ -11020,6 +11166,36 @@ impl Vm {
                 };
                 // 1.15.2: an instruction requiring several announcements
                 // asks again before becoming imminent.
+                if let Some((side, next)) = self.targets_needed(&instr) {
+                    self.ask(side, next, DecisionCtx::Targets);
+                    return;
+                }
+                self.begin_imminence(instr);
+            }
+            (DecisionCtx::Targets, DecisionAnswer::InstallDestination(d)) => {
+                // CR 8.5.16b: the declaration replaces the stated-nothing
+                // destination with the declared one; the instruction then
+                // becomes imminent like any other, so an interrupt sees the
+                // destination the installer declared.
+                cite!("rule_steps_installing_destination");
+                // The answer is clamped to the offered list, like every other
+                // Decision: there is no "your answer was illegal" path.
+                let declared = match &spec {
+                    DecisionSpec::DeclareInstallDestination { options } => {
+                        if options.contains(&d) { Some(d) } else { options.first().copied() }
+                    }
+                    _ => None,
+                };
+                let instr = {
+                    let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
+                    let idx = af.idx;
+                    if let (Some(decl), Instruction::InstallCard { dest, .. }) =
+                        (declared, &mut af.instructions[idx])
+                    {
+                        *dest = decl;
+                    }
+                    af.instructions[idx].clone()
+                };
                 if let Some((side, next)) = self.targets_needed(&instr) {
                     self.ask(side, next, DecisionCtx::Targets);
                     return;
@@ -11603,6 +11779,12 @@ impl Vm {
             ActionOption::BasicPlayOperation { .. } => {
                 ActionIdentity::Basic(BasicAction::PlayOperation)
             }
+            ActionOption::BasicInstall { .. } => ActionIdentity::Basic(BasicAction::Install),
+            ActionOption::BasicAdvance { .. } => ActionIdentity::Basic(BasicAction::Advance),
+            ActionOption::BasicTrashResource => {
+                ActionIdentity::Basic(BasicAction::TrashResource)
+            }
+            ActionOption::BasicPurge => ActionIdentity::Basic(BasicAction::Purge),
             ActionOption::CardAction { ability, .. } => ActionIdentity::CardAbility(*ability),
         };
         // 1.16.4d: the clicks spent to TAKE this action, counted from here —
@@ -11675,11 +11857,193 @@ impl Vm {
                     None,
                 );
             }
+            ActionOption::BasicInstall { card } => {
+                // CR 5.2.6d/5.2.7d: the action's effect is the ordinary 8.5.16
+                // install procedure, in a rules ability frame — the same shape
+                // the basic play action uses. The destination is declared
+                // inside it, at step 8.5.16b.
+                cite!("rule_corp_basic_action_install");
+                cite!("runner_basic_action_install");
+                self.spend_click(side);
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: card, index: usize::MAX },
+                    side,
+                    vec![Instruction::InstallCard {
+                        card: TargetSpec::Objects(vec![card]),
+                        dest: crate::instr::InstallDest::DeclaredByInstaller,
+                        and_rez: false,
+                        ignore_costs: false,
+                        reveal_check: None,
+                        reduce_total: crate::instr::Quantity::Const(0),
+                    }],
+                    None,
+                    None,
+                );
+            }
+            ActionOption::BasicAdvance { card } => {
+                // CR 5.2.6f: "[click], 1[credit]: Advance 1 installed card."
+                // The credit is part of the action's cost, so it is paid as
+                // the action is initiated (5.2.2) — before the advance.
+                cite!("corp_basic_action_advance");
+                self.spend_click(side);
+                self.st.player_mut(side).credits -= 1;
+                self.changes.record(GameChange::CreditsLost { side, amount: 1 });
+                self.changes.record(GameChange::CostPaid {
+                    side,
+                    credits: 1,
+                    clicks: 0,
+                    trashed: Vec::new(),
+                });
+                cite!("rule_checkpoint_after_paying_cost");
+                self.checkpoint_and_react(None);
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: card, index: usize::MAX },
+                    side,
+                    vec![Instruction::AdvanceCard { target: TargetSpec::Objects(vec![card]) }],
+                    None,
+                    None,
+                );
+            }
+            ActionOption::BasicTrashResource => {
+                // CR 5.2.6g / 10.5.3: the resource is chosen while the action
+                // resolves — a 1.15.2 target announcement over the installed
+                // resources, which is exactly what the criteria say.
+                cite!("corp_basic_action_trash_resource");
+                cite!("rule_tagged_trash_resource");
+                self.spend_click(side);
+                self.st.player_mut(side).credits -= 2;
+                self.changes.record(GameChange::CreditsLost { side, amount: 2 });
+                self.changes.record(GameChange::CostPaid {
+                    side,
+                    credits: 2,
+                    clicks: 0,
+                    trashed: Vec::new(),
+                });
+                cite!("rule_checkpoint_after_paying_cost");
+                self.checkpoint_and_react(None);
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
+                    side,
+                    vec![Instruction::TrashCards(TargetSpec::Choose {
+                        count: crate::instr::Quantity::Const(1),
+                        criteria: vec![TargetFilter::InstalledResource],
+                    })],
+                    None,
+                    None,
+                );
+            }
+            ActionOption::BasicPurge => {
+                // CR 5.2.6h: three clicks, paid one at a time — each is a cost
+                // payment with its own checkpoint (1.16.3).
+                cite!("corp_basic_action_purge_virus_counters");
+                self.spend_click(side);
+                self.spend_click(side);
+                self.spend_click(side);
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
+                    side,
+                    vec![Instruction::PurgeVirusCounters],
+                    None,
+                    None,
+                );
+            }
             ActionOption::CardAction { ability, .. } => {
                 let def = self.st.objects[&ability.obj].printed.abilities[ability.index].clone();
                 self.trigger_paid_ability(side, ability, def);
             }
         }
+    }
+
+    /// CR 1.18.3: which installed cards the Corp can advance — agendas
+    /// always, and any other card whose active abilities say it can be
+    /// advanced (9.1.8f keeps that declaration active while the card is
+    /// unrezzed, which is the usual case for an Ice Wall).
+    fn advanceable_cards(&self) -> Vec<ObjectId> {
+        cite!("rule_you_can_advance");
+        let threat = self.threat_level();
+        let mut out: Vec<ObjectId> = self
+            .st
+            .objects
+            .values()
+            .filter(|o| {
+                if !matches!(o.zone, Zone::Root(_) | Zone::Ice(_)) || o.hosted_not_installed {
+                    return false;
+                }
+                if o.printed.card_type == CardType::Agenda {
+                    return true;
+                }
+                o.printed.abilities.iter().any(|a| {
+                    a.statics.iter().any(|d| matches!(d, StaticDecl::CanBeAdvancedSelf))
+                        && crate::ability::ability_active(
+                            o,
+                            a,
+                            self.st.encounter.as_ref().map(|e| e.ice),
+                            self.st.accessed,
+                            threat,
+                        )
+                })
+            })
+            .map(|o| o.id)
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// CR 8.5.16b: every destination this card may legally be installed in —
+    /// the option list of the declaration the installing player makes when
+    /// the effect states no destination of its own (5.2.6d/5.2.7d).
+    pub(crate) fn install_destinations_for(
+        &self,
+        card: ObjectId,
+        side: Side,
+    ) -> Vec<crate::instr::InstallDest> {
+        use crate::instr::InstallDest as D;
+        cite!("rule_steps_installing_destination");
+        let Some(o) = self.st.objects.get(&card) else { return Vec::new() };
+        let mut out = Vec::new();
+        match o.printed.card_type {
+            // 8.5.2d: ice is installed protecting a server.
+            CardType::Ice => {
+                for s in self.all_servers() {
+                    out.push(D::Protecting(s));
+                }
+                if self.can_create_new_remote() {
+                    out.push(D::NewRemoteProtecting);
+                }
+            }
+            // 8.5.2b/c: agendas, assets and upgrades go in the root of a
+            // server; 4.6.6e/3.6.1 limit which roots will take them, and
+            // `may_occupy` is that test.
+            CardType::Agenda | CardType::Asset | CardType::Upgrade => {
+                for s in self.all_servers() {
+                    if self.may_occupy(card, Zone::Root(s), ObjectId(u32::MAX)) {
+                        out.push(D::Root(s));
+                    }
+                }
+                if self.can_create_new_remote() {
+                    out.push(D::NewRemoteRoot);
+                }
+            }
+            // 8.5.4: Runner cards are installed in the rig.
+            _ => {
+                if side == Side::Runner {
+                    out.push(D::Rig);
+                }
+            }
+        }
+        // 8.5.16b's "including any host relationships": an eligible host is a
+        // destination like any other (1.13.6a), and where the installee's own
+        // ability names its hosts it is the ONLY kind (1.13.6c).
+        let hosts = self.eligible_hosts_for(card);
+        if self.install_only_hosted_on(card).is_some() {
+            out.clear();
+        }
+        out.extend(hosts.into_iter().map(D::HostedOn));
+        out
     }
 
     fn spend_click(&mut self, side: Side) {

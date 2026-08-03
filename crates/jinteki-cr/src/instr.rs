@@ -268,6 +268,10 @@ pub enum Instruction {
     PreventAllDamage { kind: DamageKind },
     /// Interrupt-effect: avoid N tags (9.9.5).
     AvoidTags(u32),
+    /// CR 10.5.5: "Remove N tags." — the tags return to the bank (1.9.2). A
+    /// quantity position (§12 rule 6): "remove X tags" is this instruction
+    /// with the announced X (Misdirection class).
+    RemoveTags(Quantity),
     /// Interrupt-effect: increase imminent damage by N (The Cleaners class).
     IncreaseImminentDamage { kind: DamageKind, amount: u32 },
     /// Interrupt-effect: prevent a specific object from being trashed
@@ -454,6 +458,12 @@ pub enum Instruction {
     /// bank on it, as an ADVANCE, so that "whenever you advance" conditions
     /// are met (1.18.2 distinguishes this from placing the counter directly).
     AdvanceCard { target: TargetSpec },
+    /// CR 10.1.2: "Purge virus counters." — remove ALL virus counters hosted
+    /// on cards and return them to the bank. One instruction, one occurrence:
+    /// the rule names the whole board at once, so a condition looking for the
+    /// purge is met once however many counters came off (and is met even if
+    /// none did — the Corp purged).
+    PurgeVirusCounters,
     /// "Trash this card." (self-referencing; strandable per 9.1.4)
     TrashSelf,
     /// Steal the accessed agenda (7.1.4 via access step 7.2.3).
@@ -976,6 +986,9 @@ pub enum TargetFilter {
     /// "this card" as a criterion — the ability's own source, and only it.
     /// Self-referential language (10.1.4), the complement of `OtherThanSource`.
     IsSource,
+    /// CR 1.13.2: "cards hosted on this card" — the source's hosted cards,
+    /// installed or not (1.13.2a).
+    HostedOnSource,
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma
@@ -1063,6 +1076,9 @@ pub enum InstallDest {
     Root(ServerId),
     /// Corp: create a new remote server (8.5.2a).
     NewRemoteRoot,
+    /// Corp: ice protecting a NEW remote server (8.5.2a + 8.5.2d) — the
+    /// server is created at step 8.5.16e, exactly as for `NewRemoteRoot`.
+    NewRemoteProtecting,
     /// Corp: protecting a server, outermost position (8.5.2d).
     Protecting(ServerId),
     /// "directly inward" from the ability's source ice (Brân class). If the
@@ -1077,6 +1093,13 @@ pub enum InstallDest {
     /// The root of the server currently being breached (Ganked/Drafter
     /// class; resolved when the destination is declared).
     BreachedServerRoot,
+    /// CR 8.5.16b: the effect states NO destination, so the installing player
+    /// chooses and declares one at step 8.5.16b — every location the card
+    /// could legally occupy, "including any host relationships". This is the
+    /// destination of the basic install action (5.2.6d/5.2.7d), where the
+    /// player picks the server; `Vm::install_destinations_for` computes the
+    /// list and the answer replaces this variant with the declared one.
+    DeclaredByInstaller,
     /// Runner installs with no stated destination: the rig (8.5.4). Named
     /// for the 1.13.6a choice every install offers — a card whose ability
     /// describes what it can host is an eligible destination, so the

@@ -95,6 +95,8 @@ pub enum Kind {
     LoopCount,
     /// 1.15.1: announcing COUNTERS as targets.
     CounterTargets,
+    /// 8.5.16b: declaring the install destination.
+    Destination,
 }
 
 impl Kind {
@@ -128,6 +130,7 @@ impl Kind {
             DecisionSpec::ArrangeCards { .. } => Kind::Arrange,
             DecisionSpec::LoopCount { .. } => Kind::LoopCount,
             DecisionSpec::ChooseCounters { .. } => Kind::CounterTargets,
+            DecisionSpec::DeclareInstallDestination { .. } => Kind::Destination,
         }
     }
 }
@@ -168,6 +171,14 @@ pub enum Pick {
     Run(ServerId),
     /// 5.2.7g basic remove-tag action.
     RemoveTag,
+    /// 5.2.6d/5.2.7d basic install action with this card.
+    InstallCard(ObjectId),
+    /// 5.2.6f basic advance action on this card.
+    Advance(ObjectId),
+    /// 5.2.6g basic trash-resource action.
+    TrashResource,
+    /// 5.2.6h basic purge action.
+    Purge,
 }
 
 /// Does a window option carry a label containing `needle`?
@@ -212,7 +223,15 @@ impl Pick {
                 .find(|o| matches!(o, WindowOption::TriggerInstance { mandatory: true, .. }))
                 .cloned(),
             Pick::Index(i) => options.get(*i).cloned(),
-            Pick::Credit | Pick::Draw | Pick::Run(_) | Pick::RemoveTag | Pick::PlayCard(_) => None,
+            Pick::Credit
+            | Pick::Draw
+            | Pick::Run(_)
+            | Pick::RemoveTag
+            | Pick::PlayCard(_)
+            | Pick::InstallCard(_)
+            | Pick::Advance(_)
+            | Pick::TrashResource
+            | Pick::Purge => None,
         }
     }
 
@@ -237,6 +256,20 @@ impl Pick {
                 .iter()
                 .find(|o| matches!(o, ActionOption::BasicPlayOperation { card } if card == c))
                 .cloned(),
+            // 5.2.6d/5.2.7d: the basic install action names its card too.
+            Pick::InstallCard(c) => options
+                .iter()
+                .find(|o| matches!(o, ActionOption::BasicInstall { card } if card == c))
+                .cloned(),
+            // 5.2.6f: "[click], 1[credit]: Advance 1 installed card."
+            Pick::Advance(c) => options
+                .iter()
+                .find(|o| matches!(o, ActionOption::BasicAdvance { card } if card == c))
+                .cloned(),
+            Pick::TrashResource => {
+                options.iter().find(|o| **o == ActionOption::BasicTrashResource).cloned()
+            }
+            Pick::Purge => options.iter().find(|o| **o == ActionOption::BasicPurge).cloned(),
             Pick::Index(i) => options.get(*i).cloned(),
             _ => None,
         }
@@ -383,6 +416,10 @@ impl Match {
     /// 1.15.1: announcing counters as targets.
     pub fn counter_targets() -> Match {
         Match::of(Kind::CounterTargets)
+    }
+    /// 8.5.16b: declaring where a card being installed goes.
+    pub fn destination() -> Match {
+        Match::of(Kind::Destination)
     }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
@@ -577,6 +614,8 @@ pub enum Reply {
     /// 1.10.3c: take these credits from the allowed locations, in the order
     /// the decision listed them (the credit pool first).
     Division(Vec<u32>),
+    /// 8.5.16b: declare this install destination.
+    Destination(crate::instr::InstallDest),
     /// 8.3.1: put the arranged cards back in this order, topmost first.
     Arrange(Vec<ObjectId>),
     /// 10.1.6a: the loop resolves this many more times, then ends.
@@ -1086,6 +1125,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::DeclareX(n) => DecisionAnswer::DeclaredX(*n),
         Reply::Division(v) => DecisionAnswer::Division(v.clone()),
         Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
+        Reply::Destination(d) => DecisionAnswer::InstallDestination(*d),
         Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
         Reply::Counters(v) => DecisionAnswer::Counters(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
@@ -1113,6 +1153,11 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
             options.first().cloned().unwrap_or(ActionOption::BasicCredit),
         ),
         DecisionSpec::PaidWindow { .. } => DecisionAnswer::Pass,
+        // 8.5.16b: a declaration cannot be passed — the neutral policy takes
+        // the first destination offered.
+        DecisionSpec::DeclareInstallDestination { options } => DecisionAnswer::InstallDestination(
+            options.first().copied().expect("a destination was offered"),
+        ),
         DecisionSpec::ReactionWindow { options, can_pass } => {
             cite!("rule_reaction_window_priority");
             if *can_pass {

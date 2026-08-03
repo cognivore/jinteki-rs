@@ -58,9 +58,24 @@ pub enum ActionOption {
     BasicRun { server: ServerId },
     /// 5.2.7g: "[click], 2[credit]: Remove 1 tag."
     BasicRemoveTag,
-    /// 5.2.6e: "[click]: Play 1 operation from HQ." (5.2.7d is the Runner's
+    /// 5.2.6e: "[click]: Play 1 operation from HQ." (5.2.7e is the Runner's
     /// "[click]: Play 1 event from the grip", the same action option.)
     BasicPlayOperation { card: ObjectId },
+    /// 5.2.6d: "[click]: Install 1 agenda, asset, upgrade, or piece of ice
+    /// from HQ." (5.2.7d is the Runner's "[click]: Install 1 program,
+    /// resource, or piece of hardware from the grip".) The destination is
+    /// declared inside the procedure, at step 8.5.16b.
+    BasicInstall { card: ObjectId },
+    /// 5.2.6f: "[click], 1[credit]: Advance 1 installed card." The card is
+    /// part of the option because 1.18.3 restricts WHICH installed cards can
+    /// be advanced, and an option that cannot be taken is not offered.
+    BasicAdvance { card: ObjectId },
+    /// 5.2.6g / 10.5.3: "[click], 2[credit]: Trash 1 resource. Take this
+    /// action only if the Runner is tagged." The resource is announced as a
+    /// target (1.15.2) while the action resolves, not chosen here.
+    BasicTrashResource,
+    /// 5.2.6h / 10.1.2: "[click][click][click]: Purge virus counters."
+    BasicPurge,
     /// A [click]-cost card paid ability (an action, 5.2.1).
     CardAction { ability: AbilityRef, label: &'static str },
 }
@@ -90,6 +105,12 @@ pub enum DecisionSpec {
     /// `count` may be chosen — 0 for a plain "up to N", and non-zero where
     /// the rules force a floor (a sabotage that must take enough from HQ).
     ChooseTargets { candidates: Vec<ObjectId>, count: u32, up_to: bool, min: u32 },
+    /// CR 8.5.16b: "Choose and declare the install destination appropriate to
+    /// the card that will be installed, including any host relationships."
+    /// Asked where the installing effect states no destination of its own —
+    /// the basic install action (5.2.6d/5.2.7d). Every option is a location
+    /// the card may legally occupy (8.5.2/8.5.4/8.5.14, 1.13.6a hosts).
+    DeclareInstallDestination { options: Vec<crate::instr::InstallDest> },
     /// CR 1.15.1 / 9.8.6: announce SUBROUTINES as targets — the other kind
     /// of thing that can be a target. Each candidate carries its label so a
     /// driver can show it. 9.8.6 restricts the candidates for an ability
@@ -215,4 +236,6 @@ pub enum DecisionAnswer {
     /// CR 1.10.3c: credits taken from each allowed location, in the order the
     /// spec listed them.
     Division(Vec<u32>),
+    /// CR 8.5.16b: the declared install destination.
+    InstallDestination(crate::instr::InstallDest),
 }

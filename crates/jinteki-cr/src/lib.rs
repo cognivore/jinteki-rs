@@ -14,6 +14,7 @@
 pub mod cite;
 
 pub mod ability;
+pub mod cards;
 pub mod change;
 pub mod checkpoint;
 pub mod deck;
@@ -33,6 +34,7 @@ pub mod window;
 /// Embedded sources for the static citation registry (see `cite`).
 pub const EMBEDDED_SOURCES: &[(&str, &str)] = &[
     ("ability.rs", include_str!("ability.rs")),
+    ("cards.rs", include_str!("cards.rs")),
     ("change.rs", include_str!("change.rs")),
     ("checkpoint.rs", include_str!("checkpoint.rs")),
     ("deck.rs", include_str!("deck.rs")),

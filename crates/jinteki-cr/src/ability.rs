@@ -96,6 +96,13 @@ pub enum TriggerCond {
     /// CR 10.6.1: "whenever the Corp takes bad publicity…" (Raymond Flint
     /// class).
     PlayerTakesBadPublicity(Side),
+    /// CR 8.1.2: "Whenever you rez a piece of ice…" (Lt. Todachine class) —
+    /// the rez of a card of one of the named types.
+    CorpRezzesCard { of_types: Vec<CardType> },
+    /// CR 10.1.2: "When the Corp purges virus counters…" (Clot class). The
+    /// condition is met by the PURGE, not by any counter coming off, so it is
+    /// met even when there was nothing to remove.
+    CorpPurgesVirusCounters,
     /// "When this turn ends." (Joshua B. class delayed conditionals.)
     TurnEnds(Side),
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
@@ -638,6 +645,12 @@ pub enum StaticDecl {
     /// the attacked server at step 6.9.1a and to nothing else — an ability
     /// that changes the attacked server mid-run (6.1.2d) is not affected.
     CannotInitiateRunOnSourceServer,
+    /// CR 1.18.3: "You can advance this ice" / "this card can be advanced"
+    /// (Ice Wall class). Agendas can always be advanced; every other card can
+    /// be advanced only while an ability says so. 9.1.8f makes this class of
+    /// static ability active even while the card is INACTIVE — an unrezzed
+    /// Ice Wall can still be advanced, which is the whole point of the rule.
+    CanBeAdvancedSelf,
 }
 
 /// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional
@@ -855,6 +868,23 @@ impl AbilityDef {
         }
     }
 
+    /// CR 9.7.1: a PLAY ability — the ability of an operation or event that
+    /// resolves as the card is played (step 8.6.7f).
+    pub fn play(instrs: Vec<Instruction>) -> Self {
+        cite!("rule_play_ability");
+        AbilityDef {
+            kind: AbilityKind::Play,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: instrs,
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            label: "",
+        }
+    }
+
     pub fn subroutine(instrs: Vec<Instruction>) -> Self {
         AbilityDef {
             kind: AbilityKind::Subroutine,
@@ -1044,11 +1074,20 @@ pub fn ability_active(
     }) {
         return true;
     }
-    // 9.1.8e/f: advancement-requirement modifiers and can-advance grants. The
-    // kernel-wave StaticDecl set has no such declarations yet; when the card
-    // layer adds them they gain activity here.
+    // 9.1.8f: "abilities that allow their source card to be advanced are
+    // active while that card is installed" — an unrezzed Ice Wall can be
+    // advanced, which is what the rule exists for. (9.1.8e's
+    // advancement-requirement modifiers are the neighbouring case; the kernel
+    // states those over a SERVER, not over the source card, so they are
+    // active by the ordinary rule.)
     cite!("rule_active_exception_advancement_requirement");
     cite!("rule_active_exception_can_be_advanced");
+    if !obj.staged
+        && matches!(obj.zone, crate::object::Zone::Root(_) | crate::object::Zone::Ice(_))
+        && def.statics.iter().any(|d| matches!(d, StaticDecl::CanBeAdvancedSelf))
+    {
+        return true;
+    }
     // 9.1.8b: "abilities that can only ever meet their conditions in a
     // particular zone are active in that zone. … When determining whether
     // these stipulations apply, refer only to the GAME RULES, not to any
@@ -1175,6 +1214,14 @@ pub fn trigger_matches(
         ) => {
             cite!("rule_bad_publicity");
             side == s
+        }
+        (TriggerCond::CorpRezzesCard { of_types }, GameChange::CardRezzed { card_type, .. }) => {
+            cite!("rule_rez_in_paw");
+            of_types.contains(card_type)
+        }
+        (TriggerCond::CorpPurgesVirusCounters, GameChange::VirusCountersPurged) => {
+            cite!("rule_purge");
+            true
         }
         (TriggerCond::TurnEnds(side), GameChange::TurnEnded { side: s }) => side == s,
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
