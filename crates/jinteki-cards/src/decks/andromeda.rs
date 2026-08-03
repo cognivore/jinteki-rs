@@ -72,9 +72,11 @@ pub fn clean_getaway() -> Card {
 ///  lose up to 5[credit], then you gain 2[credit] for each credit lost and
 ///  take 2 tags."
 ///
-/// UNIMPLEMENTED: `ReplacementTransform` is a closed list of specific
-/// transforms, so "instead of breaching, <arbitrary instructions>" cannot be
-/// stated; and no quantity reads the credits an ability has caused to be lost.
+/// The whole card is machinery that already exists: a run whose initiating
+/// effect carries the "if successful" ability (6.7.4), an OPTIONAL breach
+/// replacement decided where the breach would have happened (6.7.4c/9.9.2b),
+/// a forced loss that takes only what the pool holds (1.10.3b — the "up to"),
+/// and a gain calculated from the credits ACTUALLY lost.
 pub fn account_siphon() -> Card {
     card("Account Siphon")
         .runner()
@@ -82,7 +84,17 @@ pub fn account_siphon() -> Card {
         .subtypes(&["Run", "Sabotage"])
         .cost(0)
         .text("Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags.")
-        .unimplemented("Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags.")
+        .play([run_then_if_successful(
+            ServerId::Hq,
+            [instead_of_breaching(
+                true,
+                [
+                    lose(Corp, 5),
+                    gain_q(Runner, times(2, per_credit_lost_by(Corp))),
+                    give_tags(2),
+                ],
+            )],
+        )])
         .build()
 }
 
@@ -147,8 +159,11 @@ pub fn mutual_favor() -> Card {
 ///  access 1 card in the root of another server. If that card is an agenda,
 ///  you cannot steal or trash it during this access."
 ///
-/// UNIMPLEMENTED: both sentences — the chosen-server run, the general breach
-/// replacement, and a per-access prohibition on stealing or trashing.
+/// UNIMPLEMENTED: both sentences. The breach replacement itself is sayable
+/// now (Account Siphon uses it), but the run's server is a choice the Runner
+/// makes, there is no instruction that accesses a card in the root of a
+/// server other than the one being breached, and nothing states a per-access
+/// prohibition on stealing or trashing.
 pub fn pinhole_threading() -> Card {
     card("Pinhole Threading")
         .runner()
@@ -212,9 +227,7 @@ pub fn boomerang() -> Card {
 ///  Gain 1[credit] whenever you make a successful run.
 ///  Limit 1 console per player."
 ///
-/// UNIMPLEMENTED: the second sentence. 6.7.2's condition exists per-server,
-/// per-mark and per-chosen-server, but not as the plain "whenever you make a
-/// successful run".
+/// (The console limit is a checkpoint rule, driven by `.console()`.)
 pub fn desperado() -> Card {
     card("Desperado")
         .runner()
@@ -227,7 +240,7 @@ pub fn desperado() -> Card {
         .text("Gain 1[credit] whenever you make a successful run.")
         .text("Limit 1 console per player.")
         .declares([plus_memory(1)])
-        .unimplemented("Gain 1[credit] whenever you make a successful run.")
+        .when(makes_successful_run(), [gain(Runner, 1)])
         .build()
 }
 

@@ -82,7 +82,8 @@
 //! ```
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
-use jinteki_cr::effects::DamageKind;
+use jinteki_cr::effects::{DamageKind, EffectClass};
+use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
 use jinteki_cr::object::PrintedCard;
 
 // Re-exported so a deck file needs exactly one `use` line. These are the
@@ -745,6 +746,25 @@ pub fn trace_both(
         determined_min: None,
     }
 }
+/// "Instead of breaching <the server>, …" (9.9.2b): a replacement created
+/// ahead of the breach and applied where the breach would have happened
+/// (step 6.9.5b). `optional` is the printed "you may" — 6.7.4c puts that
+/// decision with the Runner. The replacing instructions resolve through the
+/// ordinary pipeline, which is what keeps their damage and tags preventable.
+pub fn instead_of_breaching(
+    optional: bool,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::CreateLingeringEffect {
+        payload: LingeringSpec::Replacement {
+            applies_to: EffectClass::Breach,
+            with: ReplacementTransform::SuppressAndResolve(instrs.into_iter().collect()),
+            optional,
+        },
+        duration: WantedDuration::ThisRun,
+    }
+}
+
 /// "<The named player> does …" (1.14.5): the player who carries the effect
 /// out and makes its choices.
 pub fn performed_by(side: Side, instr: Instruction) -> Instruction {
@@ -895,6 +915,10 @@ pub fn run_ends() -> TriggerCond {
 pub fn after_this_resolves() -> TriggerCond {
     TriggerCond::SelfPlayResolved
 }
+/// "Whenever you make a successful run" — any server (6.8.4).
+pub fn makes_successful_run() -> TriggerCond {
+    TriggerCond::MakesSuccessfulRun
+}
 
 // ---- what is permanently true (9.4) ---------------------------------------
 
@@ -973,4 +997,10 @@ pub fn times(n: i64, q: Quantity) -> Quantity {
 /// "N plus 1 for each …" — a printed base plus a count.
 pub fn plus(a: Quantity, b: Quantity) -> Quantity {
     Quantity::Plus(Box::new(a), Box::new(b))
+}
+/// "…for each credit lost" — the credits this ability has ACTUALLY caused
+/// `side` to lose, which 1.10.3b caps at what their pool held. That is what
+/// makes "lose up to 5" and "for each credit lost" agree.
+pub fn per_credit_lost_by(side: Side) -> Quantity {
+    Quantity::CreditsLostThisAbility(side)
 }

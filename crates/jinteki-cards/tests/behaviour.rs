@@ -927,3 +927,85 @@ fn resistor_grows_with_the_runners_tags() {
         t.tail(14)
     );
 }
+
+/// Account Siphon: "Run HQ. If successful, instead of breaching HQ, you may
+/// force the Corp to lose up to 5[credit], then you gain 2[credit] for each
+/// credit lost and take 2 tags."
+///
+/// The kernel's own suite proves the card class end to end; this proves the
+/// version in the deck module — the one a game will actually deal — is that
+/// card. "Up to 5" is the observed 1.10.3b loss, which is what makes the
+/// gain agree with it.
+#[test]
+fn account_siphon_replaces_the_breach_and_pays_what_was_actually_lost() {
+    for (corp_credits, expect_lost) in [(8u32, 5u32), (3u32, 3u32)] {
+        let mut vm = Vm::empty(37);
+        let agenda = vm.new_object(tk::vanilla_agenda("Untouched", 6, 3), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+        vm.st.corp.credits = corp_credits;
+        let siphon = vm.new_object(card("Account Siphon"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(siphon);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(siphon))
+                .when(Match::optional().once(), Reply::Optional(true))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            corp_credits - expect_lost,
+            "1.10.3b: the Corp loses only what the pool holds: {}",
+            t.tail(14)
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            2 * expect_lost,
+            "2[credit] for each credit ACTUALLY lost: {}",
+            t.tail(14)
+        );
+        assert_eq!(vm.st.runner.tags, 2, "and take 2 tags: {}", t.tail(14));
+        assert_eq!(
+            vm.st.objects[&agenda].zone,
+            Zone::Hand(Side::Corp),
+            "the breach was replaced, so nothing in HQ was accessed"
+        );
+        assert!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: ServerId::Hq })),
+            "6.8.4: a replaced breach still leaves the run successful: {}",
+            t.tail(14)
+        );
+    }
+}
+
+/// Desperado: "+1[mu]" / "Gain 1[credit] whenever you make a successful run."
+/// The second sentence is what the classic Siphon interaction is evidence of,
+/// so it is worth asserting on its own too.
+#[test]
+fn desperado_pays_on_a_successful_run() {
+    let mut vm = Vm::empty(38);
+    tk::install_rig(&mut vm, card("Desperado"));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.credits, 1, "1[credit] for the successful run: {}", t.tail(12));
+}

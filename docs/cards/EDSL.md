@@ -185,6 +185,12 @@ for "place N counters on this card", `place_on(target, …)` for somewhere else,
 `play_cards_from_hand(1, Corp)`, `rez(…)`,
 `resolve_when_scored_ability_of(…)`.
 
+**Instead of what would have happened.** `instead_of_breaching(true, […])` is
+Account Siphon's "instead of breaching HQ, you may …" — the `true` is the
+printed "you may". Pair it with `run_then_if_successful(…)`, and read the
+credits it actually took with `per_credit_lost_by(Corp)`, which is what makes
+"lose up to 5" and "for each credit lost" agree.
+
 ### Sentences built out of other sentences
 
 The card writes some things as one sentence that are really two. These take
@@ -350,8 +356,8 @@ cargo test -p jinteki-cards
 The deck tests print the manifest:
 
 ```text
-priority decks: 51 cards, 12 complete, 39 partial, 59 printed sentences still unsayable
-complete: ["Sure Gamble", "Diesel", "Bellona", …]
+priority decks: 51 cards, 14 complete, 37 partial, 57 printed sentences still unsayable
+complete: ["Sure Gamble", "Diesel", "Account Siphon", "Desperado", …]
 ```
 
 That count is ratcheted: a change that makes it worse fails, so the gap list

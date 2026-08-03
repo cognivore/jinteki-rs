@@ -845,7 +845,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W15d it is **51 cards, 12 complete, 39 partial, 59
+prints the count. At W15d it is **51 cards, 14 complete, 37 partial, 57
 printed sentences unsayable** (from 80 unsayable across 5 complete cards).
 
 The card-authoring surface is now an EMBEDDED DSL — typed builders over the
@@ -910,10 +910,13 @@ once `char_effects` filters the same way `active_statics` does.
   discount — "Install 1 resource from your grip, paying 3[credit] less"
   (Career Fair) — has nowhere to land.
 - `TargetSpec::TopOfDeck(Side, u32)` (The Class Act's "top X cards").
-- `ReplacementTransform` is a closed list of specific transforms; a card that
-  says "instead of breaching HQ, <arbitrary instructions>" (Account Siphon,
-  Pinhole Threading, Cupellation) needs the general
-  `Suppress`-plus-`Vec<Instruction>` shape.
+- ~~a general "instead of breaching, <arbitrary instructions>" replacement~~ —
+  **done, 82bfd54** (`ReplacementTransform::SuppressAndResolve`), along with
+  `Quantity::CreditsLostThisAbility` and `TriggerCond::MakesSuccessfulRun`.
+  Account Siphon and Desperado are complete. Pinhole Threading still is not:
+  it needs the chosen-server run below, an access into the root of a server
+  other than the one being breached, and a per-access prohibition on stealing
+  or trashing.
 
 *Criteria the shared filter vocabulary lacks (§12 rule 5):*
 
@@ -925,13 +928,6 @@ once `char_effects` filters the same way `active_statics` does.
   filter misses it (Employee Strike).
 - criteria on `TargetSpec::AccessedCard` — "the non-agenda card you are
   accessing" (Cupellation).
-
-*The three the coordinator is landing.* Account Siphon's breach replacement
-(a `ReplacementTransform` carrying arbitrary instructions), the quantity that
-reads the credits an ability has caused to be lost, and the plain "whenever
-you make a successful run" condition are being built in `jinteki-cr` now.
-Account Siphon and Desperado become complete when they land; the deck modules
-are written so that is a two-line change each.
 
 *One more defect-shaped gap.* `Vm::hosts_onto_itself` derives 1.13.6b by
 scanning an object's instruction lists for `HostCards { host: SelfSource }`.
@@ -949,9 +945,6 @@ scan of its instructions.
 
 - **"When a discard phase ends"** (5.5.4) — three cards want it: Breaking
   News, The Class Act, Citadel Sanctuary. The best value on this list.
-- "Whenever you make a successful run" with no server stipulation
-  (Desperado). 6.7.2's per-server, per-mark and per-chosen-server forms all
-  exist; the plain one does not.
 - "Whenever the Runner breaks a printed subroutine on this ice" (Gold
   Farmer), and "the first time each turn this program fully breaks a piece of
   ice" (Bukhgalter) — `PassedIceAfterFullyBreaking` is the PASS, not the
