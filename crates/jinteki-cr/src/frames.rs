@@ -28,10 +28,11 @@ pub struct RunCtx {
     pub run_id: u64,
     /// CR 6.1.2: the attacked server (announced at initiation).
     pub server: ServerId,
-    /// CR 6.2: the Runner's position, as an index into the server's ice
-    /// list counted from the innermost (1-based). `None` = no position /
-    /// inside the server.
-    pub position: Option<usize>,
+    /// CR 6.2.6: the Runner's position — the IDENTITY of one element of the
+    /// attacked server's sequence of positions, never an index into it, so
+    /// adding or removing other positions cannot move the Runner. `None` =
+    /// no position (6.2.5c/d/e).
+    pub position: Option<u64>,
     /// Whether the current approach/encounter arrived from phase 2/3 (drives
     /// `step_pass_ice`'s "if the run got here from (2) or (3)").
     pub came_from_ice: bool,

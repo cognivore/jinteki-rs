@@ -29,7 +29,8 @@ use crate::instr::{Instruction, TargetFilter, TargetSpec};
 use crate::lingering::{Duration, LingeringEffect, Payload};
 use crate::change::{ChangeBuffer, GameChange};
 use crate::object::{
-    card_active, CardType, CounterKind, Object, ObjectId, PrintedCard, ServerId, Side, Zone,
+    card_active, CardType, CounterKind, IcePosition, Object, ObjectId, PrintedCard, ServerId, Side,
+    Zone,
 };
 use crate::timing::{load_tables, step_op, BranchPred, StepBody, StepKind, StepOp, StepTable};
 use crate::window::{PawClasses, WindowFrame, WindowKind};
@@ -95,8 +96,11 @@ pub struct CoreState {
     pub hand: BTreeMap<Side, Vec<ObjectId>>,
     pub discard: BTreeMap<Side, Vec<ObjectId>>,
     pub score_area: BTreeMap<Side, Vec<ObjectId>>,
-    /// Ice per server, INNERMOST FIRST (position k = index k-1).
-    pub ice: BTreeMap<ServerId, Vec<ObjectId>>,
+    /// CR 6.2.1: each server's sequence of positions, INNERMOST FIRST. The
+    /// ice protecting a server is what occupies those positions; the
+    /// positions themselves are the ordered thing (6.2.6), so a vacated
+    /// position survives here until 10.3.1i destroys it.
+    pub ice: BTreeMap<ServerId, Vec<crate::object::IcePosition>>,
     /// Root cards per server.
     pub root: BTreeMap<ServerId, Vec<ObjectId>>,
     pub corp: PlayerState,
@@ -189,8 +193,9 @@ pub struct InstallProgress {
     pub revealed: bool,
     /// Destination resolved at step 8.5.16b.
     pub resolved_zone: Option<Zone>,
-    /// Ice-position insertion index (innermost-first) for inward installs.
-    pub ice_insert_at: Option<usize>,
+    /// CR 6.2.2: the position created for this ice when its destination was
+    /// declared (8.5.16b); the ice occupies it at 8.5.16e.
+    pub ice_position: Option<u64>,
 }
 
 /// CR 8.7.2b: the instruction a search is "followed by", when it refers to
@@ -280,6 +285,13 @@ pub struct Vm {
     next_encounter: u64,
     next_run: u64,
     next_remote: u32,
+    next_position: u64,
+    /// CR 6.2.2: the position created when an install destination was
+    /// declared (step 8.5.16b), waiting for the ice to occupy it once it
+    /// becomes installed (step 8.5.16e) — and the same channel by which a
+    /// swap (6.2.2f) or a move (6.2.7d) puts a piece of ice into an
+    /// already-existing position instead of making a new one.
+    pending_ice_position: Option<(ServerId, u64)>,
     /// Run context mirror for conditions when the run frame is deep in the
     /// stack: (run_id, server, reached_success) while a run is in progress.
     pub current_run: Option<(u64, ServerId, bool)>,
@@ -431,6 +443,8 @@ impl Vm {
             next_encounter: 1,
             next_run: 1,
             next_remote: 100,
+            next_position: 1,
+            pending_ice_position: None,
             current_run: None,
             resolution_log: Vec::new(),
         }
@@ -781,13 +795,12 @@ impl Vm {
             BranchPred::ActivePlayerHasClicks => {
                 self.st.player(self.st.turn_side).clicks > 0
             }
+            // 6.9.1f: "Does the Runner have a position corresponding to a
+            // piece of ice?" — a vacated position (6.2.4) is a position with
+            // no ice, and answers no.
             BranchPred::RunnerHasIcePosition => self
                 .run_ctx()
-                .map(|r| {
-                    r.position
-                        .map(|p| p >= 1 && p <= self.ice_at(r.server).len())
-                        .unwrap_or(false)
-                })
+                .map(|r| r.position.and_then(|p| self.ice_in_position(r.server, p)).is_some())
                 .unwrap_or(false),
             BranchPred::ApproachedIceRezzed => self
                 .run_ctx()
@@ -829,13 +842,226 @@ impl Vm {
         })
     }
 
-    pub fn ice_at(&self, server: ServerId) -> &[ObjectId] {
+    /// CR 6.2.1: the ice protecting a server, INNERMOST FIRST. Vacant
+    /// positions (6.2.4, awaiting 10.3.1i) contribute nothing.
+    pub fn ice_at(&self, server: ServerId) -> Vec<ObjectId> {
+        self.positions_at(server).iter().filter_map(|p| p.ice).collect()
+    }
+
+    /// CR 6.2.1: the server's sequence of positions, innermost first.
+    pub fn positions_at(&self, server: ServerId) -> &[IcePosition] {
         self.st.ice.get(&server).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
+    /// Which position (and whose server) a piece of ice occupies (6.2.1:
+    /// exactly 1 at a time). `None` for ice that is not protecting a server —
+    /// including hosted ice (6.2.1a).
+    pub fn position_of_ice(&self, ice: ObjectId) -> Option<(ServerId, u64)> {
+        cite!("rule_hosted_ice_has_no_position");
+        self.st.ice.iter().find_map(|(&s, v)| {
+            v.iter().find(|p| p.ice == Some(ice)).map(|p| (s, p.id))
+        })
+    }
+
+    /// The ice occupying a named position, if any.
+    pub fn ice_in_position(&self, server: ServerId, pos: u64) -> Option<ObjectId> {
+        self.positions_at(server).iter().find(|p| p.id == pos).and_then(|p| p.ice)
+    }
+
+    /// CR 6.2.3: how many positions lie inward from this one — the number
+    /// that decides whether two pieces of ice protecting different servers
+    /// occupy the "same position".
+    pub fn positions_inward_of(&self, server: ServerId, pos: u64) -> Option<usize> {
+        cite!("rule_count_positions");
+        self.positions_at(server).iter().position(|p| p.id == pos)
+    }
+
+    /// CR 6.2.3: the reference a "same position" criterion is measured
+    /// against, as a count of positions inward.
+    fn reference_position(
+        &self,
+        r: crate::instr::PositionRef,
+        source: Option<ObjectId>,
+    ) -> Option<usize> {
+        let (server, pos) = match r {
+            crate::instr::PositionRef::Source => {
+                let src = source?;
+                // 6.2.1a: a hosted card occupies no position of its own, so
+                // the reference is its host's (1.13.12 puts it in the same
+                // zone, which is how a hosted program names ice positions).
+                self.position_of_ice(src).or_else(|| {
+                    self.st.objects.get(&src).and_then(|o| o.host).and_then(|h| {
+                        self.position_of_ice(h)
+                    })
+                })?
+            }
+            crate::instr::PositionRef::Runner => {
+                let r = self.run_ctx()?;
+                (r.server, r.position?)
+            }
+        };
+        self.positions_inward_of(server, pos)
+    }
+
+    /// CR 6.2.2: create a new position in a server's sequence at `at`
+    /// (innermost-first index), and return its identity. `at = len` is
+    /// 6.2.2a's outermost, `at = 0` is 6.2.2b's innermost, and an index
+    /// found from another ice's position is 6.2.2c's "directly inward".
+    fn create_position(&mut self, server: ServerId, at: usize) -> u64 {
+        cite!("rule_create_position");
+        let id = self.next_position;
+        self.next_position += 1;
+        let v = self.st.ice.entry(server).or_default();
+        let at = at.min(v.len());
+        v.insert(at, IcePosition { id, ice: None });
+        id
+    }
+
+    /// A piece of ice leaves whatever position it occupies. CR 6.2.4: the
+    /// position does NOT cease here — it ceases at the next checkpoint's step
+    /// 10.3.1i, and not even then if the Runner is standing in it.
+    fn vacate_ice(&mut self, ice: ObjectId) {
+        cite!("rule_destroy_position");
+        for v in self.st.ice.values_mut() {
+            for p in v.iter_mut() {
+                if p.ice == Some(ice) {
+                    p.ice = None;
+                }
+            }
+        }
+    }
+
+    /// CR 6.2.2a: a piece of ice comes to protect `server` in a NEW outermost
+    /// position — the position an instruction that does not explicitly
+    /// specify one creates.
+    pub fn place_ice_outermost(&mut self, ice: ObjectId, server: ServerId) {
+        self.occupy_ice_position(ice, server, None);
+    }
+
+    /// A piece of ice comes to protect `server`. CR 6.2.2: it occupies the
+    /// position `reserved` for it — by the install's destination declaration
+    /// (8.5.16b), by a swap (6.2.2f) or by a move — and otherwise a NEW
+    /// outermost position is created for it (6.2.2a, the default an
+    /// instruction that does not explicitly specify a position gets).
+    fn occupy_ice_position(
+        &mut self,
+        ice: ObjectId,
+        server: ServerId,
+        reserved: Option<(ServerId, u64)>,
+    ) {
+        let slot = match reserved {
+            Some((s, id)) if s == server => Some(id),
+            _ => None,
+        };
+        let existing = slot
+            .filter(|&id| self.positions_at(server).iter().any(|p| p.id == id));
+        let id = match existing {
+            Some(id) => id,
+            None => {
+                cite!("rule_create_position_outermost");
+                let at = self.positions_at(server).len();
+                self.create_position(server, at)
+            }
+        };
+        if let Some(v) = self.st.ice.get_mut(&server) {
+            if let Some(p) = v.iter_mut().find(|p| p.id == id) {
+                p.ice = Some(ice);
+            }
+        }
+    }
+
     fn approached_ice(&self, r: &RunCtx) -> Option<ObjectId> {
-        let pos = r.position?;
-        self.ice_at(r.server).get(pos - 1).copied()
+        self.ice_in_position(r.server, r.position?)
+    }
+
+    /// Redirect the innermost run structure to another of its §11 steps.
+    fn jump_run_to(&mut self, step: &str) {
+        let idx = self.table(crate::timing::StructKind::Run).index_of(step);
+        for f in self.frames.iter_mut().rev() {
+            if let Frame::Structure(sf) = f {
+                if matches!(sf.ctx, StructCtx::Run(_)) {
+                    sf.pending_jump = Some(idx);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// The §11 step id the innermost run structure is currently at.
+    fn run_step_id(&self) -> Option<&str> {
+        self.frames.iter().rev().find_map(|f| match f {
+            Frame::Structure(sf) if matches!(sf.ctx, StructCtx::Run(_)) => {
+                self.table(sf.kind).steps.get(sf.cursor).map(|s| s.id.as_str())
+            }
+            _ => None,
+        })
+    }
+
+    /// CR 6.2.7: changes to the piece of ice in the Runner's CURRENT position
+    /// affect the progression of the run — differently during an encounter
+    /// than outside one. These are consequences of state changes, not steps of
+    /// any procedure, so the VM notices them where it notices every state
+    /// change: at the checkpoint, before its own steps run (so that an
+    /// encounter ending here is in the scan window step 10.3.1a reads, and so
+    /// that a position the Runner has just left is vacant for 10.3.1i).
+    pub(crate) fn apply_ice_change_to_run(&mut self) {
+        cite!("rule_ice_change_current_position");
+        let Some(enc) = self.st.encounter.as_ref().map(|e| e.ice) else {
+            // 6.2.7a: outside an encounter, an approached piece of ice that
+            // is uninstalled or moved to another position ends the approach
+            // and the run continues to the Movement Phase. 6.2.7e: during the
+            // Initiation and Movement Phases the same change does nothing —
+            // the Runner is not moved and the timing step does not change,
+            // which is what 6.2.6's position-as-element gives for free.
+            cite!("rule_ice_change_during_movement");
+            let approaching = matches!(
+                self.run_step_id(),
+                Some("step_approach_begins" | "step_approach_paw" | "step_approach_complete")
+            );
+            if approaching {
+                let vacant = self
+                    .run_ctx()
+                    .map(|r| self.approached_ice(r).is_none())
+                    .unwrap_or(false);
+                if vacant {
+                    cite!("rule_ice_change_approach_uninstall_move");
+                    self.jump_run_to("step_pass_ice");
+                }
+            }
+            return;
+        };
+        // 6.2.7c: uninstalled or derezzed while being encountered — the
+        // Encounter Phase ends and the run continues to the Movement Phase.
+        let gone = self
+            .st
+            .objects
+            .get(&enc)
+            .map(|o| !o.zone.is_installed() || !o.faceup)
+            .unwrap_or(true);
+        if gone {
+            cite!("rule_ice_change_encounter_uninstall_derez");
+            self.end_encounter();
+            if self.run_ctx().is_some() {
+                self.jump_run_to("step_pass_ice");
+            }
+            return;
+        }
+        // 6.2.7d: the encountered ice moved to another position, or was
+        // swapped with installed ice in another position — the Runner stays
+        // WITH THE ICE and continues the run from its new position, which can
+        // make another server the attacked one (6.1.2).
+        let Some((server, pos)) = self.position_of_ice(enc) else { return };
+        let stale = self.run_ctx().map(|r| (r.server, r.position) != (server, Some(pos)));
+        if stale == Some(true) {
+            cite!("rule_ice_change_encounter_move_swap");
+            if let Some(r) = self.run_ctx_mut() {
+                r.server = server;
+                r.position = Some(pos);
+            }
+            if let Some((_, s, _)) = self.current_run.as_mut() {
+                *s = server;
+            }
+        }
     }
 
     /// Build the contextual instruction for a step kind.
@@ -983,19 +1209,17 @@ impl Vm {
             StepKind::SetPositionOutermost => {
                 cite!("rule_position_initial");
                 let server = self.run_ctx().unwrap().server;
-                let n = self.ice_at(server).len();
+                let outermost = self.positions_at(server).last().map(|p| p.id);
                 let r = self.run_ctx_mut().unwrap();
-                r.position = if n > 0 { Some(n) } else { None };
+                r.position = outermost;
             }
             StepKind::ApproachIce => {
                 let (server, pos) = {
                     let r = self.run_ctx().unwrap();
                     (r.server, r.position)
                 };
-                if let Some(p) = pos {
-                    if let Some(&ice) = self.ice_at(server).get(p - 1) {
-                        self.changes.record(GameChange::IceApproached { ice });
-                    }
+                if let Some(ice) = pos.and_then(|p| self.ice_in_position(server, p)) {
+                    self.changes.record(GameChange::IceApproached { ice });
                 }
                 if let Some(r) = self.run_ctx_mut() {
                     r.came_from_ice = true;
@@ -1017,11 +1241,9 @@ impl Vm {
                     (r.came_from_ice, r.server, r.position)
                 };
                 if came {
-                    if let Some(p) = pos {
-                        if let Some(&ice) = self.ice_at(server).get(p - 1) {
-                            cite!("rule_pass_ice");
-                            self.changes.record(GameChange::IcePassed { ice });
-                        }
+                    if let Some(ice) = pos.and_then(|p| self.ice_in_position(server, p)) {
+                        cite!("rule_pass_ice");
+                        self.changes.record(GameChange::IcePassed { ice });
                     }
                 }
             }
@@ -1031,17 +1253,31 @@ impl Vm {
             }
             StepKind::MovePositionInward => {
                 cite!("rule_position_progression");
+                // 6.2.5b/c: the next position moving inward is the element
+                // before this one in the server's sequence; leaving the
+                // innermost position leaves the Runner with none.
+                let (server, pos) = {
+                    let r = self.run_ctx().unwrap();
+                    (r.server, r.position)
+                };
+                let inward = pos
+                    .and_then(|p| self.positions_inward_of(server, p))
+                    .and_then(|i| i.checked_sub(1))
+                    .and_then(|i| self.positions_at(server).get(i).map(|p| p.id));
+                let had_position = pos.is_some();
                 let r = self.run_ctx_mut().unwrap();
-                match r.position {
-                    Some(p) if p > 1 => {
-                        r.position = Some(p - 1);
+                match inward {
+                    Some(next) => {
+                        r.position = Some(next);
                         r.moved_to_new_position = true;
                     }
-                    Some(_) => {
-                        r.position = None;
+                    None => {
+                        cite!("rule_no_position_after_innermost_ice");
+                        if had_position {
+                            r.position = None;
+                        }
                         r.moved_to_new_position = false;
                     }
-                    None => r.moved_to_new_position = false,
                 }
             }
             StepKind::ApproachServer => {
@@ -2169,7 +2405,9 @@ impl Vm {
             Instruction::Search { .. }
             | Instruction::AddCardsToHand { .. }
             | Instruction::HostCards { .. }
-            | Instruction::SwapCards { .. } => {
+            | Instruction::SwapCards { .. }
+            | Instruction::MoveIce { .. }
+            | Instruction::MoveRunnerToIce { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::RemoveCountersFromPlayer { side, amount, .. } => {
@@ -3054,7 +3292,9 @@ impl Vm {
             }
             Instruction::TrashCards(spec)
             | Instruction::AccessCards { cards: spec }
-            | Instruction::ModifySubtypes { target: spec, .. } => {
+            | Instruction::ModifySubtypes { target: spec, .. }
+            | Instruction::MoveIce { ice: spec, .. }
+            | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
             // CR 1.15.1 / 9.8.6: a break ability announces the subroutines
@@ -3126,6 +3366,15 @@ impl Vm {
                         min: 0,
                     },
                 ))
+            }
+            // 1.13.1: the other target position of a hosting instruction —
+            // WHICH CARD becomes the host (a Rook-class ability moving itself
+            // onto another piece of ice). 1.15.2e applies: as many distinct
+            // valid targets as the instruction asks for, or as many as exist.
+            Instruction::HostCards { host: TargetSpec::Choose { count, criteria }, .. } => {
+                let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
             }
             // 8.5.5: multi-installs choose ONE card at a time.
             Instruction::InstallCards {
@@ -3351,14 +3600,23 @@ impl Vm {
         cite!("rule_swap_installed_cards_preserves_hosting");
         cite!("rule_swap_score_areas");
         let (zx, zy) = (self.st.objects[&x].zone, self.st.objects[&y].zone);
-        if zx == zy {
+        // 6.2.2f: ice protecting a server occupies a POSITION, so two pieces
+        // of ice protecting the SAME server are in different locations even
+        // though they are in the same zone — and the swap re-occupies the two
+        // existing positions rather than creating any.
+        let (px, py) = (self.position_of_ice(x), self.position_of_ice(y));
+        if zx == zy && px == py {
             return;
         }
+        cite!("rule_create_position_swap");
         // Simultaneous exchange: neither card's own move can be observed
         // trashing what is hosted on it (8.8.3a), so the host relationships
         // are simply carried along with the cards.
+        self.pending_ice_position = py;
         self.move_card(x, zy);
+        self.pending_ice_position = px;
         self.move_card(y, zx);
+        self.pending_ice_position = None;
         if let (Zone::ScoreArea(sx), Zone::ScoreArea(sy)) = (zx, zy) {
             // 4.5: a card in a score area is controlled by its owner of that
             // area — the swap changes who has scored it.
@@ -3473,6 +3731,15 @@ impl Vm {
             TargetFilter::IceProtectingAttackedServer => {
                 matches!((o.zone, self.current_run), (Zone::Ice(a), Some((_, b, _))) if a == b)
             }
+            // 6.2.3: "the same position" is the same number of positions
+            // inward, counted in each ice's own server.
+            TargetFilter::IceInSamePositionAs(r) => {
+                let mine = self.position_of_ice(o.id).and_then(|(s, p)| {
+                    self.positions_inward_of(s, p)
+                });
+                let theirs = self.reference_position(r, source);
+                mine.is_some() && mine == theirs
+            }
             TargetFilter::InstalledCorpCard => self.is_installed(o) && is_corp_card(o.printed.card_type),
             TargetFilter::InstalledRunnerCard => {
                 self.is_installed(o) && !is_corp_card(o.printed.card_type)
@@ -3584,7 +3851,7 @@ impl Vm {
             _ => return None,
         };
         cite!("rule_announce_targets");
-        let mut candidates = self.filter_candidates(criteria, af.controller);
+        let mut candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
         candidates.retain(|c| !af.targets.contains(c));
         let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
         Some(self.announcement(candidates, want))
@@ -3717,7 +3984,7 @@ impl Vm {
             rez_skipped: false,
             revealed: false,
             resolved_zone: None,
-            ice_insert_at: None,
+            ice_position: None,
         });
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.instructions[af.idx] = Instruction::InstallStepPlace;
@@ -4090,7 +4357,7 @@ impl Vm {
             Zone::Discard(s) => self.st.discard[&s].clone(),
             Zone::ScoreArea(s) => self.st.score_area[&s].clone(),
             Zone::Root(s) => self.st.root.get(&s).cloned().unwrap_or_default(),
-            Zone::Ice(s) => self.st.ice.get(&s).cloned().unwrap_or_default(),
+            Zone::Ice(s) => self.ice_at(s),
             other => self
                 .st
                 .objects
@@ -4168,7 +4435,9 @@ impl Vm {
                 Zone::Root(s) => {
                     self.st.root.entry(s).or_default().retain(|&x| x != c)
                 }
-                Zone::Ice(s) => self.st.ice.entry(s).or_default().retain(|&x| x != c),
+                // 6.2.4: taken out of its position, which then awaits
+                // 10.3.1i like any other vacated position.
+                Zone::Ice(_) => self.vacate_ice(c),
                 _ => {}
             }
             cite!("rule_searched_cards_set_aside");
@@ -4759,19 +5028,8 @@ impl Vm {
             Instruction::BypassEncounteredIce => {
                 cite!("rule_bypass_during_encounter");
                 self.end_encounter();
-                // The run proceeds to the Movement Phase (6.5.8): jump the
-                // run frame to step_pass_ice.
-                let idx = self
-                    .table(crate::timing::StructKind::Run)
-                    .index_of("step_pass_ice");
-                for f in self.frames.iter_mut().rev() {
-                    if let Frame::Structure(sf) = f {
-                        if matches!(sf.ctx, StructCtx::Run(_)) {
-                            sf.pending_jump = Some(idx);
-                            break;
-                        }
-                    }
-                }
+                // The run proceeds to the Movement Phase (6.5.8).
+                self.jump_run_to("step_pass_ice");
             }
             Instruction::ModifyStrength { target, amount, duration } => {
                 let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
@@ -4936,6 +5194,75 @@ impl Vm {
                     self.swap_cards(x, y);
                 }
             }
+            Instruction::MoveIce { ice, dest } => {
+                cite!("rule_create_position");
+                let targets = self.resolve_targets(ice, Some(source.obj), &imm.targets);
+                for t in targets {
+                    // 6.2.2: for installed ice being moved, the position is
+                    // created when the movement happens and the ice occupies
+                    // it immediately.
+                    let placed = match dest {
+                        crate::instr::InstallDest::Protecting(s) => {
+                            cite!("rule_create_position_outermost");
+                            let at = self.positions_at(*s).len();
+                            Some((*s, self.create_position(*s, at)))
+                        }
+                        crate::instr::InstallDest::InwardFromSource => {
+                            cite!("rule_create_position_innermost");
+                            self.position_of_ice(source.obj).and_then(|(s, p)| {
+                                self.positions_inward_of(s, p)
+                                    .map(|i| (s, self.create_position(s, i)))
+                            })
+                        }
+                        // Nothing else names a position protecting a server.
+                        _ => None,
+                    };
+                    let Some((s, pos)) = placed else { continue };
+                    self.pending_ice_position = Some((s, pos));
+                    self.move_card(t, Zone::Ice(s));
+                    self.pending_ice_position = None;
+                }
+            }
+            Instruction::MoveRunnerToIce { ice, encounter } => {
+                cite!("rule_move_runner_to_position");
+                cite!("rule_move_to_piece_of_ice");
+                let targets = self.resolve_targets(ice, Some(source.obj), &imm.targets);
+                let Some(&t) = targets.first() else { return };
+                let Some((server, pos)) = self.position_of_ice(t) else { return };
+                // 6.2.8c: no position can be entered during the Success Phase,
+                // the Run Ends Phase, or outside a run — the Runner does
+                // nothing instead (6.2.5d).
+                let movable = self
+                    .run_ctx()
+                    .map(|r| !r.reached_success && !r.jump_to_run_ends)
+                    .unwrap_or(false);
+                if !movable {
+                    cite!("rule_ineffective_move");
+                    cite!("rule_no_position_after_approach_server");
+                    return;
+                }
+                // 6.2.8d: already approaching that very position — nothing.
+                if self.run_ctx().map(|r| (r.server, r.position) == (server, Some(pos)))
+                    == Some(true)
+                    && !*encounter
+                {
+                    cite!("rule_move_to_current_ice");
+                    return;
+                }
+                if let Some(r) = self.run_ctx_mut() {
+                    r.server = server;
+                    r.position = Some(pos);
+                    r.came_from_ice = false;
+                }
+                if let Some((_, s, _)) = self.current_run.as_mut() {
+                    *s = server;
+                }
+                self.jump_run_to(if *encounter {
+                    "step_encounter_begins"
+                } else {
+                    "step_approach_begins"
+                });
+            }
             Instruction::RemoveCountersFromPlayer { side, kind, amount } => {
                 // 1.13.3: counters hosted on cards are not on a player, so
                 // nothing here can reach them — the pools this touches are
@@ -4990,18 +5317,14 @@ impl Vm {
                         Some((Zone::Ice(s), None))
                     }
                     crate::instr::InstallDest::InwardFromSource => {
-                        match self.st.objects.get(&source.obj).map(|o| o.zone) {
-                            Some(Zone::Ice(s)) => self
-                                .st
-                                .ice
-                                .get(&s)
-                                .and_then(|v| v.iter().position(|&i| i == source.obj))
-                                .map(|i| (Zone::Ice(s), Some(i))),
-                            // The source is not protecting a server: it has
-                            // no position from which "directly inward" can
-                            // be evaluated (8.5.14).
-                            _ => None,
-                        }
+                        // 6.2.2c: the new position goes inward from the
+                        // source's own position. The source not protecting a
+                        // server has no position from which "directly
+                        // inward" can be evaluated (8.5.14).
+                        cite!("rule_create_position_directly_inward");
+                        self.position_of_ice(source.obj).and_then(|(s, pos)| {
+                            self.positions_inward_of(s, pos).map(|i| (Zone::Ice(s), Some(i)))
+                        })
                     }
                     crate::instr::InstallDest::Rig
                     | crate::instr::InstallDest::RunnerChoiceHostOrRig => {
@@ -5032,9 +5355,22 @@ impl Vm {
                     o.staged = true;
                     o.faceup = side == Side::Runner;
                 }
+                // 6.2.2: for ice being installed, the position is created
+                // HERE — when the destination is declared — and the ice
+                // occupies it at step 8.5.16e.
+                let ice_position = match zone {
+                    Zone::Ice(s) => {
+                        let at = ice_at.unwrap_or_else(|| self.positions_at(s).len());
+                        if ice_at.is_none() {
+                            cite!("rule_create_position_outermost");
+                        }
+                        Some(self.create_position(s, at))
+                    }
+                    _ => None,
+                };
                 if let Some(p) = self.installs.last_mut() {
                     p.resolved_zone = Some(zone);
-                    p.ice_insert_at = ice_at;
+                    p.ice_position = ice_position;
                 }
                 // (c) trash like cards — the MUST component of 8.5.6a.
                 if let Zone::Root(s) = zone {
@@ -5106,13 +5442,11 @@ impl Vm {
                 let zone = p.resolved_zone.expect("destination resolved at step (b)");
                 // (e) create the server if new, move the card into place; it
                 // becomes installed; if faceup, it becomes active.
-                self.move_card(c, zone);
-                if let (Zone::Ice(s), Some(at)) = (zone, p.ice_insert_at) {
-                    let v = self.st.ice.get_mut(&s).unwrap();
-                    v.retain(|&x| x != c);
-                    let at = at.min(v.len());
-                    v.insert(at, c);
+                // 6.2.2: the ice occupies the position created at (b).
+                if let (Zone::Ice(s), Some(pos)) = (zone, p.ice_position) {
+                    self.pending_ice_position = Some((s, pos));
                 }
+                self.move_card(c, zone);
                 if let crate::instr::InstallDest::HostedOn(h) = p.dest {
                     cite!("rule_host_via_install");
                     // 1.13.7a: hosted while being installed, so it keeps the
@@ -6397,18 +6731,19 @@ impl Vm {
         for v in self.st.score_area.values_mut() {
             v.retain(|&c| c != id);
         }
-        for v in self.st.ice.values_mut() {
-            v.retain(|&c| c != id);
-        }
+        // 6.2.4: leaving a position vacates it; the position itself survives
+        // until step 10.3.1i.
+        self.vacate_ice(id);
         for v in self.st.root.values_mut() {
             v.retain(|&c| c != id);
         }
+        let reserved = self.pending_ice_position.take();
         match to {
             Zone::Deck(s) => self.st.deck.get_mut(&s).unwrap().push(id),
             Zone::Hand(s) => self.st.hand.get_mut(&s).unwrap().push(id),
             Zone::Discard(s) => self.st.discard.get_mut(&s).unwrap().push(id),
             Zone::ScoreArea(s) => self.st.score_area.get_mut(&s).unwrap().push(id),
-            Zone::Ice(s) => self.st.ice.entry(s).or_default().push(id),
+            Zone::Ice(s) => self.occupy_ice_position(id, s, reserved),
             Zone::Root(s) => self.st.root.entry(s).or_default().push(id),
             _ => {}
         }

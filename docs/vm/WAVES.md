@@ -6,10 +6,10 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W7)
+## Odometers (after W8a)
 
-- **DP-7a: 145/243** CR examples as example-named passing tests (59.7%).
-- **DP-7b: 472/1420** distinct rules cited (33.2%); traceability test fails
+- **DP-7a: 152/243** CR examples as example-named passing tests (62.6%).
+- **DP-7b: 489/1420** distinct rules cited (34.4%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -97,6 +97,7 @@ prefer a slightly larger honest primitive and note it here.
 | `30992fe` | W7d | subtypes as modifiable characteristics and §9.11 instruction identification: `Instruction::ModifySubtypes { target, add, remove, duration }` + `Payload::SubtypeMod` + `StaticDecl::SubtypeModSelf` feeding the 9.12.1b counting pipeline (2.16.5 — a subtype is present while its adds outnumber its removals); 9.11.4c the choose-and-modify sentence pair as ONE instruction; 9.11.4b split-up instructions, 9.11.4g choice instructions and 9.11.2a's "no checkpoint inside a checkpoint" asserted against existing machinery | 135 |
 | `bc1a920` | W7e | small rules riding existing machinery: §1.4 deck construction as pure functions (`src/deck.rs` — 1.4.5a influence counted by copy, 1.4.6d agenda-point requirement), `Cost::lose_clicks` so 5.2.1a's "Lose [click]" ability is used in a paid window and never offered as an action, 5.2.2b action completion, 6.1.4c "end the run" with no run and no encounter, 7.4.1a root cards are candidates for EVERY server (a real gap: Archives ignored its root), and `Object::generation` — CR 1.12.3's "a card that changes zone becomes a new object" as a stamp, which is what lets a trashed upgrade become an Archives candidate again (7.4.5) | 141 |
 | `8126ef9` | W7f | §1.12 object identity: `Zone::zone_class` makes the play area ONE zone so 1.12.4 moves within it keep the object while 1.12.3 moves between zones make a new one; once-per-turn use (9.3.6g) is keyed by `(AbilityRef, generation)`, so a reinstalled card's ability is fresh (1.12.2) and a derezzed-then-rezzed one's is not (1.12.5); `Instruction::Derez { target }` | 145 |
+| `pending` | W8a | **§6.2 positions are OBJECTS, not indices** (6.2.6): `object::IcePosition { id, ice }`, `CoreState.ice: BTreeMap<ServerId, Vec<IcePosition>>` and `RunCtx.position: Option<u64>` — a position id. 6.2.2 creation (a outermost / b innermost / c directly inward / f swaps create none), 6.2.4 destruction as a REAL 10.3.1i with both its exceptions (the Runner's position, and an install in progress protecting that server), 6.2.3 "same position" as `TargetFilter::IceInSamePositionAs(PositionRef::{Source,Runner})`, 6.2.7a/c/d/e as `Vm::apply_ice_change_to_run`; `Instruction::{MoveIce, MoveRunnerToIce}` (6.2.2 / 6.2.8a-d); `swap_cards` re-occupies the existing positions (6.2.2f) and no longer no-ops on two ice protecting the SAME server; the HOST position of `HostCards` is now announceable and `announcement_for` passes the source so source-relative criteria work in announcements | 152 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -201,12 +202,14 @@ prefer a slightly larger honest primitive and note it here.
     score area at 8.5.16a, so the counter goes after (a). The observable
     claim — gone during the installation, before the card becomes installed
     at 8.5.16f, unpreventable — holds and is what the test asserts.
-15. **§8.8 swaps are a slice** (W5b) — `Instruction::SwapCards` exchanges two
-    cards' zones simultaneously and leaves everything hosted on them hosted
-    (8.8.3a/8.8.4c), which is all 1.13.13's third example needs. 8.8.2
-    destination legality, 8.8.3's exact position preservation and the 8.8.4b
-    mixed installed/uninstalled case (where hosted objects ARE trashed and
-    install/uninstall conditions meet) belong to the §8.8 wave.
+15. **§8.8 swaps are a slice** (W5b, NARROWED by W8a) — `Instruction::
+    SwapCards` exchanges two cards' zones simultaneously and leaves everything
+    hosted on them hosted (8.8.3a/8.8.4c). W8a added 8.8.3's exact position
+    preservation (6.2.2f: the two ice re-occupy the existing positions, no
+    new ones are created, and two ice protecting the SAME server are now
+    recognised as being in different locations). Still missing: 8.8.2
+    destination legality and the 8.8.4b mixed installed/uninstalled case
+    (where hosted objects ARE trashed and install/uninstall conditions meet).
 16. **Two narrow scans** (W5b): 1.13.6b's "has an ability that hosts onto
     itself" is a shallow scan of printed instruction lists for
     `HostCards { host: SelfSource }` (it does not look inside `Combined` /
@@ -262,6 +265,24 @@ prefer a slightly larger honest primitive and note it here.
     1.12.6's game-history queries (`previous_object_1`,
     `previous_object_source_1`), which want the change log indexed by
     object rather than scanned.
+27. **6.2.7 is applied at the checkpoint, not continuously** (W8a,
+    `Vm::apply_ice_change_to_run`) — the CR states 6.2.7a/c/d as immediate
+    consequences of a change to the ice in the Runner's position. The kernel
+    notices them where it notices every state change: at the top of the
+    checkpoint procedure, before step (a) (so an encounter ending there is in
+    the scan window) and before step (i) (so a position the Runner has just
+    left is vacant). Nothing can observe the difference without a decision
+    between the change and the checkpoint, and there is none. 6.2.7b's "the
+    trigger conditions of being approached are not met for the new ice" is
+    free — nothing re-records `IceApproached` — and 6.2.7e needs no code at
+    all, which is the point of positions-as-elements.
+28. **`MoveIce` accepts the `InstallDest` vocabulary** (W8a) — 6.2.2's
+    position language is the same one 8.5.16b uses, so `MoveIce` reuses it and
+    implements the two arms that name a position protecting a server
+    (`Protecting` = 6.2.2a outermost, `InwardFromSource` = the innermost/
+    inward case). Any other destination moves nothing. 6.2.2d's "in any
+    position" (a Corp choice among the gaps) and 6.2.2e's Mutate case are not
+    expressible yet.
 
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real

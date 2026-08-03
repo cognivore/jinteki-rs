@@ -362,6 +362,20 @@ pub enum Instruction {
     /// simultaneously (8.8.3/8.8.4), keeping whatever is hosted on either of
     /// them hosted on it (8.8.3a/8.8.4c).
     SwapCards { a: TargetSpec, b: TargetSpec },
+    /// CR 6.2.2: "Move <ice> to <a position>." An installed piece of ice
+    /// leaves its position for a new one, created when the movement happens
+    /// and occupied immediately. The destination takes the shared
+    /// [`InstallDest`] language — that is where the CR's position vocabulary
+    /// (6.2.2a outermost, 6.2.2c directly inward) already lives — and a
+    /// destination that names no position protecting a server moves nothing.
+    MoveIce { ice: TargetSpec, dest: InstallDest },
+    /// CR 6.2.8a: "Move to <a piece of ice>, then approach (or encounter)
+    /// it." The Runner's position becomes that ice's position, the server it
+    /// protects becomes the attacked server (6.1.2), and the run's current
+    /// timing step becomes the Approach Ice Phase or the Encounter Ice Phase.
+    /// 6.2.8c: with no position to move to — the Success Phase, the Run Ends
+    /// Phase, or no run at all — the Runner does nothing.
+    MoveRunnerToIce { ice: TargetSpec, encounter: bool },
     /// CR 1.14.5: "<player> does X." — an instruction naming the player who
     /// carries out the effect. By DEFAULT the ability's controller carries
     /// out every effect and makes every choice it requires (1.14.5); where
@@ -582,6 +596,22 @@ pub enum TargetFilter {
     /// that explicitly specifies the zone, which is what lets 1.15.2c's
     /// play-area restriction lift for it.
     TopOfDeckOf { side: Side, n: u32 },
+    /// CR 6.2.3: "a piece of ice in the same position" — ice whose server has
+    /// the same number of positions inward from it as the reference position
+    /// has from its own. Which position is the reference is the content
+    /// (§12 rule 2), so the Rook class and the Slipstream class are one atom.
+    IceInSamePositionAs(PositionRef),
+}
+
+/// CR 6.2.3: what a "same position" criterion is measured against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PositionRef {
+    /// The position of the ability's source — or of its HOST, when the source
+    /// is hosted on a piece of ice (6.2.1a: a hosted card occupies no position
+    /// of its own, so a hosted program's "same position" reads its host's).
+    Source,
+    /// The Runner's current position in the run (6.2.5).
+    Runner,
 }
 
 impl TargetFilter {
@@ -605,6 +635,9 @@ impl TargetFilter {
                 | TargetFilter::CardsInHandOf(_)
                 | TargetFilter::InScoreAreaOf(_)
                 | TargetFilter::TopOfDeckOf { .. }
+                // 6.2.1: only ice PROTECTING a server occupies a position, so
+                // this criterion already names the play area.
+                | TargetFilter::IceInSamePositionAs(_)
         )
     }
 }

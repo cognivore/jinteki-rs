@@ -21,6 +21,12 @@ pub fn run_checkpoint(vm: &mut Vm) -> Vec<u64> {
     cite!("rule_checkpoints");
     cite!("rule_step_sequences"); // checkpoint steps are not instructions
 
+    // 6.2.7: not a step of this procedure — a consequence the run draws from
+    // what has happened to the ice in the Runner's position. It runs first so
+    // that an encounter ending here is visible to step (a)'s scan window and
+    // so that a position the Runner has just left is vacant for step (i).
+    vm.apply_ice_change_to_run();
+
     let newly = step_a_conditional_abilities(vm);
     step_b_durations(vm);
     step_c_agenda_points(vm);
@@ -815,7 +821,9 @@ fn step_h_empty_remotes(vm: &mut Vm) {
         .chain(vm.st.root.keys())
         .filter(|s| matches!(s, crate::object::ServerId::Remote(_)))
         .filter(|s| {
-            vm.st.ice.get(s).map(|v| v.is_empty()).unwrap_or(true)
+            // 6.2.1: a position with no ice in it holds no card, so a server
+            // whose positions are all vacant is still empty.
+            vm.st.ice.get(s).map(|v| v.iter().all(|p| p.ice.is_none())).unwrap_or(true)
                 && vm.st.root.get(s).map(|v| v.is_empty()).unwrap_or(true)
         })
         .copied()
@@ -830,11 +838,31 @@ fn step_h_empty_remotes(vm: &mut Vm) {
 fn step_i_vacant_positions(vm: &mut Vm) {
     cite!("step_checkpoint_vacant_position");
     cite!("rule_destroy_position");
-    // Positions are indices into the per-server ice list; trashing ice
-    // already collapses the list. The Runner's current position is preserved
-    // by clamping rather than deletion: if their index now exceeds the list,
-    // it stays (an existing-but-unoccupied position) until they move.
-    let _ = vm;
+    // 6.2.4: a position a piece of ice has left ceases to exist HERE — unless
+    // the Runner is standing in it, in which case it survives until they move
+    // to another position or cease to have one. That exception is the whole
+    // reason positions are objects rather than indices (6.2.6): the Runner
+    // keeps standing where they stood while the sequence changes around them.
+    //
+    // The step's OTHER exception is an installation in progress: 6.2.2 makes
+    // the position at step 8.5.16b and the ice only occupies it at 8.5.16e,
+    // so the checkpoints in between would otherwise destroy the position the
+    // install is aiming at.
+    let held = vm.run_ctx().and_then(|r| r.position.map(|p| (r.server, p)));
+    let installing: Vec<crate::object::ServerId> = vm
+        .installs
+        .iter()
+        .filter_map(|p| match p.resolved_zone {
+            Some(crate::object::Zone::Ice(s)) => Some(s),
+            _ => None,
+        })
+        .collect();
+    for (&server, positions) in vm.st.ice.iter_mut() {
+        if installing.contains(&server) {
+            continue;
+        }
+        positions.retain(|p| p.ice.is_some() || held == Some((server, p.id)));
+    }
 }
 
 /// 10.3.1j: cards that entered the breached server's root since the previous

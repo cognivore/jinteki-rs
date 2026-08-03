@@ -46,6 +46,27 @@ impl ServerId {
     }
 }
 
+/// CR 6.2.1: ONE position in a server's sequence of positions, which is what
+/// assigns an order to the ice protecting that server.
+///
+/// A position is an OBJECT OF ITS OWN, not an index: 6.2.6 says the Runner's
+/// current position "is a specific element of the sequence of positions, not
+/// an index into that sequence", so adding or removing other positions cannot
+/// move them. Positions are created by 6.2.2 (an ice installed protecting a
+/// server, or an installed ice moved), destroyed by 6.2.4 (vacated, at
+/// checkpoint step 10.3.1i unless the Runner is standing in them), and
+/// neither created nor destroyed by 6.2.2f (a swap re-occupies the existing
+/// positions). A position can be momentarily vacant — that is exactly the
+/// state 6.2.4 cleans up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IcePosition {
+    /// Stable identity: what `RunCtx.position` names (6.2.6).
+    pub id: u64,
+    /// The ice occupying this position (6.2.1: exactly 1 at a time), or
+    /// `None` while the position is vacant.
+    pub ice: Option<ObjectId>,
+}
+
 /// Game zones per §4: deck (4.2), hand (4.3), discard pile (4.4), score area
 /// (4.5), play area (4.6), bank (4.7), set-aside (4.8), removed (4.9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

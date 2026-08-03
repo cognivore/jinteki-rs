@@ -82,7 +82,7 @@ pub fn install_root(vm: &mut Vm, card: PrintedCard, server: ServerId, rezzed: bo
 /// Install ice protecting a server (appended OUTERMOST).
 pub fn install_ice(vm: &mut Vm, card: PrintedCard, server: ServerId, rezzed: bool) -> ObjectId {
     let id = vm.new_object(card, Zone::Ice(server));
-    vm.st.ice.entry(server).or_default().push(id);
+    vm.place_ice_outermost(id, server);
     if rezzed {
         vm.st.active_seq += 1;
         let seq = vm.st.active_seq;
@@ -3114,4 +3114,109 @@ pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> P
             },
         ],
     )
+}
+
+/// Project Yagi-Uda shape (6.2.7e): a Corp paid ability that swaps two pieces
+/// of ice. SIMPLIFICATION: both sides of the swap are fixed at card-build
+/// time — the §6.2 examples turn on what a swap does to POSITIONS and to the
+/// Runner's progress through them, never on which ice is chosen. (The real
+/// card's choice would be two `TargetSpec::Choose` announcements, which
+/// `Instruction::SwapCards` already accepts.)
+pub fn ice_swap_button(name: &'static str, a: ObjectId, b: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::SwapCards {
+            a: TargetSpec::Objects(vec![a]),
+            b: TargetSpec::Objects(vec![b]),
+        }],
+    )
+    .labeled("yagi: swap 2 pieces of ice")];
+    c
+}
+
+/// Drafter shape (6.2.6a): "[sub] Install 1 piece of ice from HQ protecting
+/// this server, ignoring all costs. Trash 2 pieces of ice protecting the
+/// attacked server." The install takes the outermost position (6.2.2a) and
+/// the trashes vacate two positions, which is the whole content of the
+/// example — the new ice sits outward from where the Runner is standing.
+pub fn drafter_like(name: &'static str, installee: ObjectId, server: ServerId) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_ice(name, 0, 4);
+    c.abilities = vec![AbilityDef::subroutine(vec![
+        Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![installee]),
+            dest: crate::instr::InstallDest::Protecting(server),
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        },
+        Instruction::TrashCards(TargetSpec::Choose {
+            count: Quantity::c(2),
+            criteria: vec![F::IceProtectingAttackedServer],
+        }),
+    ])
+    .labeled("[sub] install ice outermost, trash 2 ice")];
+    c
+}
+
+/// Rook shape (6.2.3): "[click]: Host this card on a piece of ice in the same
+/// position." SIMPLIFICATION: the printed card says "ANOTHER piece of ice",
+/// and nothing in the filter vocabulary excludes the current host, so the
+/// host itself is among the offered targets. That is orthogonal to the
+/// example, which is about WHICH SERVERS' ice qualify — a server protected by
+/// only 1 piece of ice has nothing in the 2nd position.
+pub fn rook_like(name: &'static str) -> PrintedCard {
+    use crate::instr::{PositionRef, TargetFilter as F};
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::HostCards {
+            cards: TargetSpec::SelfSource,
+            host: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::IceInSamePositionAs(PositionRef::Source)],
+            },
+        }],
+    )
+    .labeled("rook: move to ice in the same position")];
+    c
+}
+
+/// Slipstream shape (6.2.3 / 6.2.8a): "You may move to the same position
+/// protecting another server, then approach that ice." SIMPLIFICATION: a paid
+/// ability used in the Movement Phase paid window rather than a "when you
+/// pass a piece of ice" conditional — the example is about which positions
+/// are reachable, not about when the offer arrives — and, as with the Rook
+/// shape, "another server" is not expressible as a criterion, so the ice the
+/// Runner is already standing at is offered too.
+pub fn slipstream_like(name: &'static str) -> PrintedCard {
+    use crate::instr::{PositionRef, TargetFilter as F};
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::MoveRunnerToIce {
+            ice: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::IceInSamePositionAs(PositionRef::Runner)],
+            },
+            encounter: false,
+        }],
+    )
+    .labeled("slipstream: move to the same position")];
+    c
+}
+
+/// Bullfrog shape (6.2.7d): "[sub] Move this ice to the outermost position
+/// protecting another server." SIMPLIFICATION: the destination server is
+/// fixed at card-build time, because the decision vocabulary addresses
+/// objects and subroutines, not servers.
+pub fn bullfrog_like(name: &'static str, to: ServerId) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::MoveIce {
+        ice: TargetSpec::SelfSource,
+        dest: crate::instr::InstallDest::Protecting(to),
+    }])
+    .labeled("[sub] move this ice to another server")];
+    c
 }

@@ -188,6 +188,14 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_object_turn_faceup_facedown_1",
     "example_rule_identify_object_after_move_1",
     "example_rule_previous_object_2",
+    // Wave 8a: positions as objects (§6.2).
+    "example_rule_ice_change_during_movement_1",
+    "example_rule_ice_change_during_movement_2",
+    "example_rule_ice_change_outward_1",
+    "example_rule_ice_change_inward_1",
+    "example_rule_count_positions_1",
+    "example_rule_count_positions_2",
+    "example_rule_ice_change_encounter_move_swap_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -2459,7 +2467,7 @@ fn example_rule_no_reveal_for_default_install_2() {
     );
     assert_eq!(vm.st.objects[&hq_ice].zone, Zone::Ice(ServerId::Remote(1)));
     assert_eq!(
-        vm.st.ice[&ServerId::Remote(1)],
+        vm.ice_at(ServerId::Remote(1)),
         vec![hq_ice, bran],
         "installed directly inward of Brân (innermost-first order)"
     );
@@ -6474,6 +6482,326 @@ fn example_rule_previous_object_2() {
     );
     assert_eq!(accessed[0], rnd[0]);
     assert_eq!(vm.st.objects[&rnd[0]].zone, Zone::Discard(Side::Corp));
+}
+
+// ===========================================================================
+// §6.2 — positions (W8a): the Runner's position is an ELEMENT, not an index
+// ===========================================================================
+
+/// example_rule_ice_change_during_movement_1 (6.2.7e): a run begins, and
+/// before the Runner approaches the outermost ice the Corp swaps that ice
+/// with another. The Runner is not moved and the timing step does not
+/// change — they approach whatever now occupies their position, which is the
+/// new ice. 6.2.2f: the swap creates no position, so the position id is the
+/// one the run entered.
+#[test]
+fn example_rule_ice_change_during_movement_1() {
+    let mut vm = Vm::empty(730);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 1), ServerId::Remote(1), false);
+    let other = tk::install_ice(&mut vm, tk::vanilla_ice("Other", 0, 1), ServerId::Remote(2), false);
+    tk::install_root(&mut vm, tk::ice_swap_button("Yagi-like", outer, other), ServerId::Remote(3), true);
+    let pos = vm.positions_at(ServerId::Remote(1))[0].id;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().at_step("step_initiation_paw").once(), Reply::take("yagi")),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    assert!(t.took("yagi"), "the swap happened during the Initiation Phase");
+    assert_eq!(vm.st.objects[&other].zone, Zone::Ice(ServerId::Remote(1)));
+    assert_eq!(vm.st.objects[&outer].zone, Zone::Ice(ServerId::Remote(2)));
+    assert_eq!(
+        vm.positions_at(ServerId::Remote(1)).iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![pos],
+        "6.2.2f: a swap creates no new position"
+    );
+    let approached: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IceApproached { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(approached, vec![other], "the Runner approaches the new ice");
+}
+
+/// example_rule_ice_change_during_movement_2 (6.2.7e): the Runner passes a
+/// piece of ice and the Corp swaps it away in step 6.9.4b. The Runner has
+/// still passed their POSITION — they do not pass, approach or encounter the
+/// new ice — and proceed inward in step 6.9.4d.
+#[test]
+fn example_rule_ice_change_during_movement_2() {
+    let mut vm = Vm::empty(731);
+    let inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 1), ServerId::Remote(1), false);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 1), ServerId::Remote(1), false);
+    let other = tk::install_ice(&mut vm, tk::vanilla_ice("Other", 0, 1), ServerId::Remote(2), false);
+    tk::install_root(&mut vm, tk::ice_swap_button("Yagi-like", outer, other), ServerId::Remote(3), true);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().at_step("step_before_jack_out_paw").once(), Reply::take("yagi")),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    assert!(t.took("yagi"), "the swap happened in step 6.9.4b");
+    let approached: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IceApproached { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    let passed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IcePassed { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(approached, vec![outer, inner], "never the new ice occupying that position");
+    assert_eq!(passed, vec![outer, inner], "the position they passed was the old ice's");
+    assert_eq!(
+        vm.ice_at(ServerId::Remote(1)),
+        vec![inner, other],
+        "the new ice took the outermost position"
+    );
+}
+
+/// example_rule_ice_change_outward_1 (6.2.6a): the Runner is encountering the
+/// outermost of 2 ice; its subroutine installs a new piece of ice protecting
+/// the attacked server and trashes both of the others. The new ice occupies a
+/// position OUTWARD from the Runner's, so they never approach it — even
+/// though fewer positions now lie between it and the server than lay between
+/// the Runner and the server a moment ago.
+#[test]
+fn example_rule_ice_change_outward_1() {
+    let mut vm = Vm::empty(732);
+    let inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 1), ServerId::Remote(1), false);
+    let fresh = vm.new_object(tk::vanilla_ice("Fresh", 0, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(fresh);
+    let drafter = tk::install_ice(
+        &mut vm,
+        tk::drafter_like("Drafter-like", fresh, ServerId::Remote(1)),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 3), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::targets(), Reply::Targets(vec![inner, drafter])),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&fresh].zone, Zone::Ice(ServerId::Remote(1)), "{}", t.tail(8));
+    assert_eq!(vm.st.objects[&inner].zone, Zone::Discard(Side::Corp));
+    assert_eq!(vm.st.objects[&drafter].zone, Zone::Discard(Side::Corp));
+    let approached: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IceApproached { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(approached, vec![drafter], "6.2.6a: the new outermost ice is never approached");
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "the run reached the server: {}",
+        t.tail(8)
+    );
+    assert_eq!(
+        vm.ice_at(ServerId::Remote(1)),
+        vec![fresh],
+        "10.3.1i: the vacated positions ceased once the Runner left them"
+    );
+}
+
+/// example_rule_ice_change_inward_1 (6.2.6b): a Brân-class subroutine
+/// installs a new piece of ice in the next INWARD position while the Runner
+/// is encountering it. That position is inward from the Runner's, so they
+/// approach the new ice later in the same run.
+#[test]
+fn example_rule_ice_change_inward_1() {
+    let mut vm = Vm::empty(733);
+    let fresh = vm.new_object(tk::vanilla_ice("Fresh", 0, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(fresh);
+    let bran = tk::install_ice(&mut vm, tk::bran_like("Bran-like", fresh), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 3), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.ice_at(ServerId::Remote(1)),
+        vec![fresh, bran],
+        "6.2.2c: the new position is inward from Brân's"
+    );
+    let approached: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IceApproached { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        approached,
+        vec![bran, fresh],
+        "6.2.6b: the Runner approaches the new ice later in this run: {}",
+        t.tail(8)
+    );
+}
+
+/// example_rule_count_positions_1 (6.2.3): a Rook-class program hosted on the
+/// outermost of 2 pieces of ice can move to the 2nd piece of ice protecting
+/// ANY server, counted from the innermost outward — and cannot move to a
+/// server protected by only 1 piece of ice.
+#[test]
+fn example_rule_count_positions_1() {
+    let mut vm = Vm::empty(734);
+    let a_inner = tk::install_ice(&mut vm, tk::vanilla_ice("A-in", 0, 1), ServerId::Remote(1), false);
+    let a_outer = tk::install_ice(&mut vm, tk::vanilla_ice("A-out", 0, 1), ServerId::Remote(1), false);
+    let b_inner = tk::install_ice(&mut vm, tk::vanilla_ice("B-in", 0, 1), ServerId::Remote(2), false);
+    let b_outer = tk::install_ice(&mut vm, tk::vanilla_ice("B-out", 0, 1), ServerId::Remote(2), false);
+    let c_only = tk::install_ice(&mut vm, tk::vanilla_ice("C-only", 0, 1), ServerId::Remote(3), false);
+    let rook = tk::install_rig(&mut vm, tk::rook_like("Rook-like"));
+    tk::host_on(&mut vm, rook, a_outer);
+    vm.st.objects.get_mut(&rook).unwrap().zone = Zone::Ice(ServerId::Remote(1));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("rook"))
+            .when(Match::targets().once(), Reply::Targets(vec![b_outer]))
+            .stop_at_action(),
+    );
+    let offer = t.first_window(Kind::Targets, Side::Runner).candidates().to_vec();
+    assert!(offer.contains(&b_outer), "the 2nd piece of ice protecting another server");
+    assert!(!offer.contains(&c_only), "a server protected by only 1 piece of ice has no 2nd position");
+    assert!(!offer.contains(&a_inner) && !offer.contains(&b_inner), "the innermost positions differ");
+    assert_eq!(vm.st.objects[&rook].host, Some(b_outer));
+    assert_eq!(vm.st.objects[&rook].zone, Zone::Ice(ServerId::Remote(2)), "1.13.12");
+}
+
+/// example_rule_count_positions_2 (6.2.3 / 6.2.8a): the Runner passes the ice
+/// in the innermost position protecting a server and moves to the "same
+/// position" protecting another server. Positions are compared from the
+/// innermost, so the innermost ice of any server qualifies however many
+/// pieces of ice are outward from it — and the run continues on that server.
+#[test]
+fn example_rule_count_positions_2() {
+    let mut vm = Vm::empty(735);
+    let a_only = tk::install_ice(&mut vm, tk::vanilla_ice("A-only", 0, 1), ServerId::Remote(1), false);
+    let b0 = tk::install_ice(&mut vm, tk::vanilla_ice("B-0", 0, 1), ServerId::Remote(2), false);
+    let b1 = tk::install_ice(&mut vm, tk::vanilla_ice("B-1", 0, 1), ServerId::Remote(2), false);
+    let b2 = tk::install_ice(&mut vm, tk::vanilla_ice("B-2", 0, 1), ServerId::Remote(2), false);
+    tk::install_rig(&mut vm, tk::slipstream_like("Slipstream-like"));
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 3), ServerId::Remote(2), false);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Remote(1))
+            .when(
+                Match::paid().at_step("step_before_jack_out_paw").once(),
+                Reply::take("slipstream"),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![b0]))
+            .stop_at_action(),
+    );
+    let offer = t.first_window(Kind::Targets, Side::Runner).candidates().to_vec();
+    assert!(offer.contains(&b0), "the innermost ice of another server is the same position");
+    assert!(
+        !offer.contains(&b1) && !offer.contains(&b2),
+        "however many pieces of ice are outward from it"
+    );
+    let approached: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IceApproached { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(approached, vec![a_only, b0], "6.2.8a: the Runner approaches the ice moved to");
+    assert!(
+        vm.changes.log.iter().any(
+            |c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Remote(2))
+        ),
+        "6.2.8a: that server became the attacked server: {}",
+        t.tail(10)
+    );
+}
+
+/// example_rule_ice_change_encounter_move_swap_1 (6.2.7d): a Bullfrog-class
+/// subroutine moves the ice being encountered to the outermost position
+/// protecting another server. The Runner stays WITH the ice: that server
+/// becomes the attacked server and the run continues from the ice's new
+/// position, working inward from it.
+#[test]
+fn example_rule_ice_change_encounter_move_swap_1() {
+    let mut vm = Vm::empty(736);
+    let arch = tk::install_ice(&mut vm, tk::vanilla_ice("Arch-ice", 0, 1), ServerId::Archives, false);
+    let frog = tk::install_ice(
+        &mut vm,
+        tk::bullfrog_like("Bullfrog-like", ServerId::Archives),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 3), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.ice_at(ServerId::Archives),
+        vec![arch, frog],
+        "moved to the outermost position protecting Archives"
+    );
+    let approached: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::IceApproached { ice } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        approached,
+        vec![frog, arch],
+        "the run continued inward from Bullfrog's new position: {}",
+        t.tail(10)
+    );
+    assert!(
+        vm.changes.log.iter().any(
+            |c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Archives)
+        ),
+        "the Runner is now running on Archives"
+    );
 }
 
 // ===========================================================================
