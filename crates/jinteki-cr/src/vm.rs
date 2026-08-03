@@ -3450,7 +3450,10 @@ impl Vm {
             Instruction::LoseCredits(side, n) => {
                 vec![EffectAtom::new(EffectClass::LoseCredits, *n as i64, *side)]
             }
-            Instruction::Draw(side, n) => {
+            // 8.4.5a: setting the cards aside IS the draw — "the cards are
+            // now considered drawn" — so this is the step that carries the
+            // draw's expected effect and that a WouldDraw interrupt modifies.
+            Instruction::Draw(side, n) | Instruction::DrawStepSetAside { side, n, .. } => {
                 // 9.9.2: statics modify expected effects — a Lockdown-class
                 // "cannot draw" removes the draw entirely.
                 if self.draw_prohibited(*side) {
@@ -3458,6 +3461,11 @@ impl Vm {
                 } else {
                     vec![EffectAtom::new(EffectClass::Draw, *n as i64, *side)]
                 }
+            }
+            // 8.4.5c: adding the set-aside cards to the hand completes the
+            // procedure; the draw already happened at (a).
+            Instruction::DrawStepAddToHand { side, .. } => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, *side)]
             }
             Instruction::DamageUnpreventable { kind, amount, responsible } => {
                 cite!("rule_static_modification_keep_restrictions");
@@ -4712,6 +4720,9 @@ impl Vm {
             | Instruction::ExposeCards { cards: spec }
             | Instruction::ResolveAbilityOf { source: spec, .. }
             | Instruction::Derez { target: spec }
+            // 8.2/1.15.1: "add 1 of the drawn cards to the bottom of R&D"
+            // chooses its card, so the card position announces like any other.
+            | Instruction::MoveToDeck { card: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -5127,6 +5138,15 @@ impl Vm {
             return;
         }
         cite!("rule_create_position_swap");
+        // 8.8.4d / 8.4.3b: a card swapped INTO the set-aside zone takes the
+        // place of the one that left — it joins that card's 4.8.7 group, so
+        // "the card swapped into the set-aside zone is now considered drawn,
+        // can be manipulated by other abilities, and will be added to the hand
+        // with the other drawn cards".
+        let (gx, gy) = (
+            self.st.objects[&x].set_aside_group,
+            self.st.objects[&y].set_aside_group,
+        );
         // Simultaneous exchange: neither card's own move can be observed
         // trashing what is hosted on it (8.8.3a), so the host relationships
         // are simply carried along with the cards.
@@ -5136,6 +5156,15 @@ impl Vm {
         self.pending_ice_position = px;
         self.move_card(y, zx);
         self.pending_ice_position = None;
+        if zy == Zone::SetAside {
+            cite!("rule_drawn_card_swapped");
+            cite!("rule_state_of_swap_into_zone");
+            self.st.objects.get_mut(&x).unwrap().set_aside_group = gy;
+        }
+        if zx == Zone::SetAside {
+            cite!("rule_drawn_card_swapped");
+            self.st.objects.get_mut(&y).unwrap().set_aside_group = gx;
+        }
         // 8.8.4b: exactly one of the two was installed. It becomes
         // uninstalled — and everything hosted on it is trashed, since nothing
         // followed it out of the play area — while the other becomes
@@ -5314,6 +5343,13 @@ impl Vm {
             // 4.8.3: no other ability can see them, which is why the criterion
             // reads the RESOLVING ability's set-aside list rather than the
             // set-aside zone.
+            // 8.4.2a: the drawn cards, while they are still set aside — an
+            // explicit exception to 4.8.3, so this criterion reads the
+            // set-aside ZONE rather than any one ability's list.
+            TargetFilter::DrawnCards => {
+                cite!("rule_draw_relevant_abilities_see_set_aside");
+                o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.drawn)
+            }
             TargetFilter::SetAsideByThisAbility => {
                 cite!("rule_trash_ability_keeps_track_of_hosted_objects");
                 cite!("rule_set_aside_zone_passthrough");
@@ -5521,6 +5557,13 @@ impl Vm {
                 self.expand_play_cards(instr);
                 return;
             }
+            // §8.4: drawing is a PROCEDURE too (8.4.2/8.4.5) — the cards are
+            // set aside facedown, a checkpoint happens while they are there,
+            // and only then do they reach the hand.
+            Instruction::Draw(..) if matches!(self.frames.last(), Some(Frame::Ability(_))) => {
+                self.expand_draw(instr);
+                return;
+            }
             _ => {}
         }
         let (controller, targets, sub_targets) = {
@@ -5669,6 +5712,79 @@ impl Vm {
             af.announce_slot = 0;
             // Phase stays Targets: the next tick makes InstallStepPlace
             // imminent.
+        }
+    }
+
+    /// CR 8.4.2 / 8.4.5: expand a draw into its step sequence. Drawing is a
+    /// procedure, not a timing structure (9.2.2e), so the steps become
+    /// instructions in the resolving ability's own list — the same shape
+    /// installing (8.5.16) and playing (8.6.7) take. The checkpoint 8.4.5b
+    /// calls for is the ordinary post-instruction one between them, and it is
+    /// what lets a "whenever you draw" ability resolve while the cards are
+    /// still set aside (8.4.2/8.4.2a).
+    fn expand_draw(&mut self, instr: Instruction) {
+        let Instruction::Draw(side, n) = instr else { unreachable!() };
+        cite!("rule_drawing");
+        cite!("rule_draw_procedure");
+        cite!("sec_steps_of_drawing_n_cards");
+        let group = self.st.next_set_aside_group;
+        self.st.next_set_aside_group += 1;
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.instructions[af.idx] = Instruction::DrawStepSetAside { side, n, group };
+            af.instructions
+                .insert(af.idx + 1, Instruction::DrawStepAddToHand { side, group });
+        }
+    }
+
+    /// CR 8.4.5a: set aside N cards from the top of the drawing player's deck,
+    /// facedown, as ONE 4.8.7 group. "The cards are now considered drawn and
+    /// can be looked at by their controller" — so `CardDrawn` is recorded here
+    /// and 8.4.2a's exception can name the group.
+    fn set_aside_drawn(&mut self, side: Side, n: u32, group: u64) {
+        if self.draw_prohibited(side) {
+            return;
+        }
+        cite!("rule_facedown_set_aside_distinct_groups");
+        for _ in 0..n {
+            if self.st.deck[&side].is_empty() {
+                return;
+            }
+            let id = self.st.deck.get_mut(&side).unwrap().remove(0);
+            {
+                let o = self.st.objects.get_mut(&id).unwrap();
+                // 4.8.3: where the card is treated as coming from, so an
+                // ability that does not refer to drawn cards sees the move
+                // deck -> hand and nothing else (8.4.2b).
+                o.set_aside_from = Some(Zone::Deck(side));
+                o.zone = Zone::SetAside;
+                o.faceup = false;
+                o.set_aside_group =
+                    Some(crate::view::SetAsideGroup { id: group, by: side, drawn: true });
+            }
+            self.changes.record(GameChange::CardDrawn { side, obj: id });
+        }
+    }
+
+    /// CR 8.4.5c: add whatever is still in the drawn group to the hand.
+    /// 8.4.3a — a drawn card that LEFT the set-aside zone is no longer drawn
+    /// and stays where it went; 8.4.3b — a card swapped INTO the group is now
+    /// drawn and goes to the hand with the rest.
+    fn add_drawn_set_to_hand(&mut self, side: Side, group: u64) {
+        cite!("rule_modify_drawn_cards");
+        cite!("rule_card_leaves_drawn_set");
+        cite!("rule_drawn_card_swapped");
+        let cards: Vec<ObjectId> = self
+            .st
+            .objects
+            .iter()
+            .filter(|(_, o)| {
+                o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.id == group)
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        for c in cards {
+            // 4.2.1/4.3.1: a drawn card goes to the drawing player's hand.
+            self.move_card(c, Zone::Hand(side));
         }
     }
 
@@ -6316,10 +6432,22 @@ impl Vm {
                     self.changes.record(GameChange::CreditsLost { side: *side, amount: n });
                 }
             }
+            // A `Draw` that reached resolution unexpanded (no ability frame to
+            // splice into) keeps the one-shot behaviour.
             Instruction::Draw(side, _) => {
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     self.draw_cards(*side, a.value.max(0) as u32, false);
                 }
+            }
+            Instruction::DrawStepSetAside { side, group, .. } => {
+                cite!("step_draw_set_aside");
+                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
+                    self.set_aside_drawn(*side, a.value.max(0) as u32, *group);
+                }
+            }
+            Instruction::DrawStepAddToHand { side, group } => {
+                cite!("step_draw_add_to_hand");
+                self.add_drawn_set_to_hand(*side, *group);
             }
             Instruction::Damage { responsible, .. } => {
                 // 10.4.3a: a declaration may make the trashed cards a CHOICE

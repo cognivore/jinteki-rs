@@ -29,6 +29,9 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 14a: §10.2 information.
     "example_rule_cannot_hide_open_info_1",
     "example_rule_visibility_after_access_1",
+    // Wave 14b: §8.4 drawing, §4.8.7 facedown groups.
+    "example_rule_facedown_set_aside_distinct_groups_1",
+    "example_rule_drawn_card_swapped_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11283,4 +11286,183 @@ fn example_rule_visibility_after_access_1() {
         !vm.identity_visible_to(deck[0], Side::Runner),
         "7.3.1a scopes the visibility to the breach"
     );
+}
+
+// ===========================================================================
+// Wave 14b — §8.4 drawing as a procedure, §4.8.7 facedown set-aside groups
+// ===========================================================================
+
+/// example_rule_facedown_set_aside_distinct_groups_1 (4.8.7): the Runner
+/// accesses the top card of R&D and neither steals nor trashes it. Once the
+/// breach is over, the Corp draws that card and one other SIMULTANEOUSLY and a
+/// Daily-Business-Show-class ability puts 1 of the drawn cards on the bottom of
+/// R&D. While the draw resolves the cards are set aside facedown as one group,
+/// "so the Corp can shuffle them" — the Corp does not have to tell the Runner
+/// whether the previously-accessed card ended up in HQ or on the bottom of R&D.
+#[test]
+fn example_rule_facedown_set_aside_distinct_groups_1() {
+    use jinteki_cr::view::CardView;
+    let mut vm = Vm::empty(1403);
+    tk::install_root(&mut vm, tk::draw_on_breach_end("BreachDraw", 2), ServerId::Remote(1), true);
+    tk::install_root(
+        &mut vm,
+        tk::daily_business_show_like("DBS-like"),
+        ServerId::Remote(2),
+        true,
+    );
+    // R&D, top first. `corp_filler` has no trash cost, so the Runner has no
+    // basic trash ability during the access — "does not steal or trash it".
+    let mut deck = Vec::new();
+    for name in ["Prev-Accessed", "Other-Drawn", "Rnd-3", "Rnd-4"] {
+        let id = vm.new_object(tk::corp_filler(name), Zone::Deck(Side::Corp));
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+        deck.push(id);
+    }
+    let (prev, other) = (deck[0], deck[1]);
+    vm.start_turn(Side::Runner);
+
+    // The plan: the Runner runs R&D and accesses the top card. When the breach
+    // ends the Corp draws 2; the driver halts at the Daily-Business-Show
+    // choice, which happens while the drawn cards are still set aside.
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Halt)
+            .when(Match::targets().once(), Reply::Targets(vec![prev])),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Rnd)).stop_at_action(),
+    );
+    let t = script.run(&mut vm).clone();
+    assert!(t.halted, "stopped at the drawn-card choice: {}", t.tail(12));
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == prev)));
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::BreachEnded { .. })));
+
+    // 4.8.7: ONE distinct group, holding both cards, kept facedown.
+    let groups = vm.set_aside_groups();
+    assert_eq!(groups.len(), 1, "one group per effect that set cards aside");
+    assert_eq!(groups[0].1.len(), 2, "the two cards drawn simultaneously");
+    assert!(groups[0].0.drawn, "8.4.2a: they are the drawn set");
+    // 10.2.2a: to the Runner the two are indistinguishable — that is what
+    // "the Corp can shuffle them" buys.
+    assert_eq!(
+        vm.view_of(Side::Runner).group(0),
+        &[CardView::Unseen, CardView::Unseen]
+    );
+    // 8.4.5a: "the cards … can be looked at by their controller".
+    assert_eq!(
+        vm.view_of(Side::Corp).group(0),
+        &[CardView::Seen(prev), CardView::Seen(other)]
+    );
+    // 7.3.1a's entitlement is over with the breach, which is why the Runner
+    // cannot follow the previously-accessed card at all.
+    assert!(!vm.identity_visible_to(prev, Side::Runner));
+
+    // The Corp puts the previously-accessed card on the bottom of R&D.
+    script.run(&mut vm);
+    assert_eq!(vm.st.objects[&prev].zone, Zone::Deck(Side::Corp));
+    assert_eq!(
+        vm.st.deck[&Side::Corp].last(),
+        Some(&prev),
+        "8.2: added to the BOTTOM of R&D"
+    );
+    assert_eq!(
+        vm.st.objects[&other].zone,
+        Zone::Hand(Side::Corp),
+        "8.4.5c: the rest of the drawn set went to HQ"
+    );
+    assert!(vm.set_aside_groups().is_empty(), "the group is gone once the draw completes");
+
+    // The claim: nothing in the Runner's view distinguishes the two
+    // destinations. Every card in HQ and every card in R&D is `Unseen`.
+    let runner = vm.view_of(Side::Runner);
+    assert!(runner.in_zone(Zone::Hand(Side::Corp)).iter().all(|c| *c == CardView::Unseen));
+    assert!(runner.in_zone(Zone::Deck(Side::Corp)).iter().all(|c| *c == CardView::Unseen));
+    assert_eq!(runner.count_in(Zone::Hand(Side::Corp)), 1, "10.2.3a: the COUNT is open");
+    assert_eq!(runner.count_in(Zone::Deck(Side::Corp)), 3);
+}
+
+/// example_rule_drawn_card_swapped_1 (8.4.3b): the Corp draws 2 cards; while
+/// they are set aside a Raman-Rai-class ability swaps one of them with a card
+/// in Archives. "The card swapped into the set-aside zone is now considered
+/// drawn, can be manipulated by other abilities, and will be added to the hand
+/// with the other drawn cards" — so a Daily-Business-Show-class ability can
+/// choose it, and without one it simply goes to HQ.
+#[test]
+fn example_rule_drawn_card_swapped_1() {
+    for with_dbs in [false, true] {
+        let mut vm = Vm::empty(1404);
+        tk::install_root(&mut vm, tk::draw_button("Draw2", 2), ServerId::Remote(1), true);
+        tk::install_root(&mut vm, tk::raman_rai_like("RamanRai-like"), ServerId::Remote(2), true);
+        if with_dbs {
+            tk::install_root(
+                &mut vm,
+                tk::daily_business_show_like("DBS-like"),
+                ServerId::Remote(3),
+                true,
+            );
+        }
+        // Archives holds the card to be swapped in.
+        let tollbooth = vm.new_object(tk::corp_filler("Tollbooth-like"), Zone::Discard(Side::Corp));
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(tollbooth);
+        vm.st.objects.get_mut(&tollbooth).unwrap().faceup = true;
+        let mut deck = Vec::new();
+        for name in ["Wraparound-like", "Enigma-like", "Rnd-3"] {
+            let id = vm.new_object(tk::corp_filler(name), Zone::Deck(Side::Corp));
+            vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+            deck.push(id);
+        }
+        let (wraparound, enigma) = (deck[0], deck[1]);
+        vm.start_turn(Side::Runner);
+
+        // The plan: the Corp draws 2 from its first paid window, then resolves
+        // the Raman-Rai-class ability first — swapping the second drawn card
+        // for the card in Archives. Every target rule is `.once()`: an ordinal
+        // counts per rule and only advances on decisions that rule is
+        // evaluated against.
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("draw-button"))
+                .when(Match::reaction().once(), Reply::take("raman-rai"))
+                .when(Match::targets().once(), Reply::Targets(vec![enigma]))
+                .when(Match::targets().once(), Reply::Targets(vec![tollbooth]))
+                .when(Match::targets().once(), Reply::Targets(vec![tollbooth])),
+            Plan::runner().stop_at_action(),
+        );
+        assert!(t.took("draw-button"), "the Corp drew: {}", t.tail(12));
+        assert!(t.took("raman-rai"), "the swap resolved: {}", t.tail(12));
+
+        // 8.4.3a: the card swapped OUT of the set-aside zone is no longer
+        // drawn and stays where it went.
+        assert_eq!(
+            vm.st.objects[&enigma].zone,
+            Zone::Discard(Side::Corp),
+            "8.4.3a: it left the drawn set and remains in its new location"
+        );
+        if with_dbs {
+            // 8.4.3b: the swapped-in card IS drawn, so the DBS-class ability
+            // could choose it.
+            assert_eq!(
+                vm.st.objects[&tollbooth].zone,
+                Zone::Deck(Side::Corp),
+                "8.4.3b: it could be manipulated by another ability as a drawn card"
+            );
+            assert_eq!(vm.st.deck[&Side::Corp].last(), Some(&tollbooth));
+            assert_eq!(vm.st.objects[&wraparound].zone, Zone::Hand(Side::Corp));
+            assert_eq!(vm.st.hand[&Side::Corp].len(), 1);
+        } else {
+            // 8.4.3b: "…and will be added to the hand with the other drawn
+            // cards."
+            assert_eq!(vm.st.objects[&tollbooth].zone, Zone::Hand(Side::Corp));
+            assert_eq!(vm.st.objects[&wraparound].zone, Zone::Hand(Side::Corp));
+            assert_eq!(vm.st.hand[&Side::Corp].len(), 2);
+        }
+        assert!(vm.set_aside_groups().is_empty());
+    }
 }

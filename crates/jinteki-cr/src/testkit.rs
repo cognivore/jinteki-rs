@@ -5328,3 +5328,82 @@ pub fn shuffle_on_credit_asset(name: &'static str) -> PrintedCard {
     .labeled("foundry: shuffle R&D")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// §8.4 — the drawing procedure, and the drawn set as a facedown group
+// ---------------------------------------------------------------------------
+
+/// A Corp card whose paid ability is nothing but "Draw N cards" — the
+/// simplest way to put the 8.4.5 draw procedure under a plan's control.
+pub fn draw_button(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::Draw(Side::Corp, n)])
+        .labeled("draw-button: draw cards")];
+    c
+}
+
+/// Daily-Business-Show shape (4.8.7 / 8.4.3a): "Whenever you draw 1 or more
+/// cards, add 1 of the drawn cards to the bottom of R&D." The ability resolves
+/// at the 8.4.5b checkpoint, while the drawn cards are still set aside
+/// facedown, which is what lets it choose among them (8.4.2a) and what makes
+/// which card went where hidden information (10.2.2a).
+///
+/// Simplification: the printed card also draws the additional card itself; the
+/// shape leaves the size of the draw to whatever drew, since the rules under
+/// test are about the drawn SET.
+pub fn daily_business_show_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerDrawsCards(Side::Corp),
+        vec![Instruction::MoveToDeck {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::DrawnCards],
+            },
+            top: false,
+        }],
+        false,
+    )
+    .labeled("dbs: put a drawn card on the bottom of R&D")];
+    c
+}
+
+/// Raman-Rai shape (8.4.3b): "Whenever you draw cards, you may swap a card you
+/// just drew with a card in Archives." The card swapped INTO the set-aside
+/// zone is now considered drawn and is added to HQ with the rest.
+///
+/// Simplification: the printed card's [click] cost and its reveal are left
+/// off; the rule under test is what the swap does to the drawn set.
+pub fn raman_rai_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerDrawsCards(Side::Corp),
+        vec![Instruction::SwapCards {
+            a: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::DrawnCards],
+            },
+            b: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::InDiscardOf(Side::Corp)],
+            },
+        }],
+        false,
+    )
+    .labeled("raman-rai: swap a drawn card with one in Archives")];
+    c
+}
+
+/// A Corp card that draws when a breach ends — the timing CR 4.8.7's example
+/// needs, where the previously-accessed card is drawn once the breach in which
+/// it was accessed is over, so 7.3.1a's visibility has already lapsed.
+pub fn draw_on_breach_end(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::BreachEnds,
+        vec![Instruction::Draw(Side::Corp, n)],
+        false,
+    )
+    .labeled("breach-draw: draw when a breach ends")];
+    c
+}

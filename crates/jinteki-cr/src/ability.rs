@@ -70,6 +70,11 @@ pub enum TriggerCond {
     RunnerSuffersDamage,
     /// Interrupt trigger: "…would draw any number of cards" (Class Act).
     WouldDraw { first_each_turn: bool },
+    /// CR 8.4.2: "abilities with trigger conditions related to cards being
+    /// drawn can act on them" — met once per card drawn, while the drawn
+    /// cards are still set aside (8.4.2a), which is what lets a Daily-Business
+    /// -Show-class ability move one of them before it reaches the hand.
+    PlayerDrawsCards(Side),
     /// Interrupt trigger: "…this card would be trashed" (Harbinger class).
     SelfWouldBeTrashed,
     /// "Whenever the Runner breaches this server…" (Ash class).
@@ -891,6 +896,10 @@ pub fn trigger_matches(
             cite!("rule_accessing");
             true
         }
+        (TriggerCond::PlayerDrawsCards(side), GameChange::CardDrawn { side: s, .. }) => {
+            cite!("rule_draw_procedure");
+            side == s
+        }
         (TriggerCond::SelfEncountered, GameChange::EncounterBegan { ice, .. }) => {
             *ice == source.id
         }
@@ -1107,7 +1116,12 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
 /// group)?
 pub fn trigger_per_event(cond: &TriggerCond) -> bool {
     cite!("rule_act_on_multiple_cards");
-    matches!(cond, TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. })
+    // 8.4.2: the cards of one draw are set aside — and so considered drawn —
+    // together, so "whenever you draw 1 or more cards" is met ONCE per draw.
+    matches!(
+        cond,
+        TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. } | TriggerCond::PlayerDrawsCards(_)
+    )
 }
 
 /// Map the trash-trigger filter's Corp-ness back to a side.

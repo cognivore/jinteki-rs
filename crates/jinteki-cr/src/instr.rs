@@ -119,8 +119,23 @@ pub enum Instruction {
     GainCredits(Side, Quantity),
     /// "Lose N credits." (loses as much as possible if short)
     LoseCredits(Side, u32),
-    /// "Draw N cards."
+    /// "Draw N cards." CR 8.4.1: drawing moves cards from a deck to a hand,
+    /// and 8.4.2 makes that a PROCEDURE — the cards are set aside facedown
+    /// first, are considered drawn there, and only reach the hand once every
+    /// ability that acts on the draw has resolved. So this instruction
+    /// expands into the 8.4.5 step sequence, exactly as an install expands
+    /// into 8.5.16.
     Draw(Side, u32),
+    /// CR 8.4.5a: "Set aside N cards from the top of the drawing player's
+    /// deck. The cards are now considered drawn and can be looked at by their
+    /// controller." They are one facedown 4.8.7 group, so 4.8.2a's exception
+    /// (abilities referring to drawn cards CAN see them there) has something
+    /// to name.
+    DrawStepSetAside { side: Side, n: u32, group: u64 },
+    /// CR 8.4.5c: "Add the set-aside cards to the player's hand." Whatever is
+    /// still in the group goes — 8.4.3a's card that left is not added, and
+    /// 8.4.3b's card swapped in is.
+    DrawStepAddToHand { side: Side, group: u64 },
     /// "Do N <kind> damage." / "Suffer N <kind> damage."
     /// `responsible` per 10.4.1 (Corp "does", Runner "suffers"). The amount
     /// is a quantity position: "2 net plus 1 per advancement counter" is one
@@ -875,6 +890,12 @@ pub enum TargetFilter {
     /// set-aside zone at all (Street Peddler class). A zone-naming criterion,
     /// so 1.15.2c's play-area restriction lifts for it.
     SetAsideByThisAbility,
+    /// CR 8.4.2a: the cards a player has DRAWN and that are still set aside —
+    /// "abilities with a trigger condition that refers to cards being drawn
+    /// can see the drawn cards in the set-aside zone. This is an exception to
+    /// rule 4.8.3." A zone-naming criterion, so 1.15.2c's play-area
+    /// restriction lifts for it.
+    DrawnCards,
     /// CR 1.12.3 / 1.21.2: a card THIS ability is currently looking at. An
     /// entry whose object has been re-made — a shuffle or a rearrangement
     /// moves cards to an unknown location, and 1.12.3 makes each a NEW object
@@ -957,6 +978,7 @@ impl TargetFilter {
                 | TargetFilter::InScoreAreaOf(_)
                 | TargetFilter::InDiscardOf(_)
                 | TargetFilter::SetAsideByThisAbility
+                | TargetFilter::DrawnCards
                 | TargetFilter::LookedAtByThisAbility
                 | TargetFilter::TopOfDeckOf { .. }
                 // 6.2.1: only ice PROTECTING a server occupies a position, so

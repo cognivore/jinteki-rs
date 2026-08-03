@@ -129,6 +129,10 @@ pub struct SetAsideGroup {
     /// The player carrying the effect out — 8.3.3a's "that opponent cannot
     /// look at the set-aside cards during this process".
     pub by: Side,
+    /// CR 8.4.2a: this group is a DRAWN set. Abilities whose trigger
+    /// condition refers to cards being drawn can see it in the set-aside
+    /// zone, which is an explicit exception to 4.8.3.
+    pub drawn: bool,
 }
 
 /// One player's view of the game state: everything they are entitled to know.
