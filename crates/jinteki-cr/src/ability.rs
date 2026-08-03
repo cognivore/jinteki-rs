@@ -129,6 +129,11 @@ pub enum TriggerCond {
     /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
     /// at run step 6.9.4a (`rule_pass_ice`).
     SelfPassed,
+    /// "After you resolve this operation/event…" (Oppo Research class). CR
+    /// 8.6.7h: conditions related to finishing resolving a played card are
+    /// met at that step, after the card has been trashed (8.6.7g) — which is
+    /// why 9.1.8g keeps the ability active long enough to resolve.
+    SelfPlayResolved,
     /// "Whenever this card prevents 1 or more damage…" (Guru Davinder class,
     /// 9.9.7f). Met only when the imminent damage value was greater than 0
     /// before the interrupt from the SAME source decreased or removed it.
@@ -776,6 +781,10 @@ pub fn trigger_matches(
             // Server comparison happens in the checkpoint scan (it has state
             // access); this arm only matches the change class.
             true
+        }
+        (TriggerCond::SelfPlayResolved, GameChange::CardPlayResolved { obj }) => {
+            cite!("rule_steps_playing_after_resolve_condition");
+            *obj == source.id
         }
         (TriggerCond::SourcePreventedDamage, GameChange::DamagePrevented { by, .. }) => {
             cite!("rule_prevent_as_trigger_condition");

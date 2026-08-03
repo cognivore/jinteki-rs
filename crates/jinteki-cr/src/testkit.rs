@@ -4358,3 +4358,46 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
     .labeled("[sub] look at the top of R&D and install one of those cards")];
     c
 }
+
+/// Oppo Research shape (9.7.1): an operation carrying FOUR abilities of three
+/// types — a static ability that is nothing but a restriction (no
+/// declarations), a conditional ability triggered by finishing resolving the
+/// operation (8.6.7h), and TWO play abilities, which resolve in sequence while
+/// the operation is being played.
+///
+/// SIMPLIFICATION (§12 rule 3): "your action phase ends" is transcribed as the
+/// loss of the remaining clicks, which is what ends an action phase (5.6);
+/// and the two play abilities' effects are stand-ins, since 9.7.1 decides
+/// which ABILITY TYPE each sentence is, not what the sentences do.
+pub fn oppo_research_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
+    c.cost = Some(0);
+    let play_ability = |instrs: Vec<Instruction>, label: &'static str| AbilityDef {
+        kind: crate::ability::AbilityKind::Play,
+        flags: Vec::new(),
+        condition: None,
+        cost: None,
+        instructions: instrs,
+        statics: Vec::new(),
+        optional: false,
+        timing: None,
+        label,
+    };
+    c.abilities = vec![
+        // 9.3.4/9.11.4a: a restriction sentence is not an instruction, and a
+        // static ability may carry no declarations at all.
+        AbilityDef::static_ability(Vec::new()).labeled("oppo: play only if …"),
+        AbilityDef::conditional(
+            TriggerCond::SelfPlayResolved,
+            vec![Instruction::EndActionPhase(Side::Corp)],
+            false,
+        )
+        .labeled("oppo: after you resolve this, your action phase ends"),
+        play_ability(
+            vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
+            "oppo: first play ability",
+        ),
+        play_ability(vec![Instruction::GainTags(1)], "oppo: second play ability"),
+    ];
+    c
+}

@@ -2920,6 +2920,7 @@ impl Vm {
             | Instruction::Derez { .. }
             | Instruction::ExposeCards { .. }
             | Instruction::LookAtCards { .. }
+            | Instruction::EndActionPhase(_)
             | Instruction::RezCard { .. }
             | Instruction::ResolveAbilityOf { .. }
             | Instruction::BreakSubroutines { .. } => {
@@ -6175,6 +6176,16 @@ impl Vm {
                             self.pending_from_effect.extend(ids);
                         }
                     }
+                }
+            }
+            Instruction::EndActionPhase(side) => {
+                // 5.6.2: the action phase ends once the active player has no
+                // clicks left, so this instruction takes them.
+                cite!("step_corp_turn_action");
+                let n = self.st.player(*side).clicks;
+                self.st.player_mut(*side).clicks = 0;
+                if n > 0 {
+                    self.changes.record(GameChange::ClicksLost { side: *side, amount: n });
                 }
             }
             Instruction::LookAtCards { cards, by } => {

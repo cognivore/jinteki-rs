@@ -253,6 +253,7 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_run_ends_close_paws_1",
     "example_rule_prevent_as_trigger_condition_1",
     "example_rule_look_reveal_instruction_1",
+    "example_rule_play_ability_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -9179,3 +9180,71 @@ fn example_rule_look_reveal_instruction_1() {
 /// Newtype so the look-log assertion above reads as a count, not as ids.
 #[derive(Debug, PartialEq, Eq)]
 struct ObjectIdShim(jinteki_cr::object::ObjectId);
+
+/// example_rule_play_ability_1 (9.7.1): an Oppo-Research-class operation
+/// carries four abilities of three types. The first is a static ability that
+/// is nothing but a restriction — no declarations, no instructions. The second
+/// is a conditional ability that meets its trigger condition and resolves
+/// AFTER the Corp finishes playing and resolving the operation (8.6.7h). The
+/// third and fourth have instructions with no trigger condition and no paid
+/// trigger cost, so they are both PLAY abilities, and they resolve in sequence
+/// while the operation is being played.
+#[test]
+fn example_rule_play_ability_1() {
+    use jinteki_cr::ability::AbilityKind;
+    let mut vm = Vm::empty(941);
+    let oppo = vm.new_object(tk::oppo_research_like("Oppo-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(oppo);
+    tk::install_root(
+        &mut vm,
+        tk::play_operation_button("Play-Button", oppo),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    // 9.7.1's classification, read straight off the printed card.
+    let kinds: Vec<AbilityKind> =
+        vm.st.objects[&oppo].printed.abilities.iter().map(|a| a.kind).collect();
+    assert_eq!(
+        kinds,
+        vec![AbilityKind::Static, AbilityKind::Conditional, AbilityKind::Play, AbilityKind::Play],
+        "9.7.1: a restriction-only static, a conditional, and two play abilities"
+    );
+    assert!(
+        vm.st.objects[&oppo].printed.abilities[0].statics.is_empty()
+            && vm.st.objects[&oppo].printed.abilities[0].instructions.is_empty(),
+        "9.3.4/9.11.4a: the first ability contains a restriction and no declarations"
+    );
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("play-op"))
+            .when(Match::reaction(), Reply::take("action phase ends"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"), "the operation was played: {}", t.tail(10));
+    let gained = change_at(&vm, |c| matches!(c, GameChange::CreditsGained { side: Side::Corp, .. }));
+    let tagged = change_at(&vm, |c| matches!(c, GameChange::TagsTaken { .. }));
+    let resolved = change_at(&vm, |c| matches!(c, GameChange::CardPlayResolved { obj } if *obj == oppo));
+    assert!(gained < tagged, "the two play abilities resolved in sequence");
+    assert!(
+        tagged < resolved,
+        "…both while the operation was being played (8.6.7f), before 8.6.7h"
+    );
+    assert!(
+        t.took("action phase ends"),
+        "8.6.7h: the conditional ability meets its condition after that: {}",
+        t.tail(10)
+    );
+    let lost = change_at(&vm, |c| {
+        matches!(c, GameChange::ClicksLost { side: Side::Corp, amount } if *amount > 0)
+    });
+    assert!(resolved < lost, "…and ended the Corp's action phase, after all of that");
+    assert_eq!(vm.st.corp.credits, 1);
+    assert_eq!(vm.st.runner.tags, 1);
+}

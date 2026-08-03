@@ -152,6 +152,10 @@ pub enum Instruction {
     /// 8.1.2d: the rez cost is paid first unless the ability states that it
     /// is ignored (1.16.5c), which is what `ignore_costs` says.
     RezCard { target: TargetSpec, ignore_costs: bool },
+    /// CR 5.6.2b: "Your action phase ends." (Oppo Research class.) The action
+    /// phase loop takes an action only while the player has unspent [click],
+    /// so ending the phase early is losing the ones they have left.
+    EndActionPhase(Side),
     /// CR 1.21.2: "Look at <cards>." — the looking player sees their front
     /// faces without showing them to the other player. CR 9.11.4e: where an
     /// older card puts the look in the SAME sentence as what is then done to
