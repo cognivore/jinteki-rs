@@ -40,6 +40,9 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 14e: 8.2.2 replaced movements, 9.1.8b zone-scoped activity.
     "example_sec_replacing_movements_1",
     "example_rule_active_exception_catchall_1",
+    // Wave 14f: 9.8.9 replaced subroutines, 6.1.3e/f "after".
+    "example_rule_replace_subroutine_resolution_1",
+    "example_rule_run_phase_after_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -447,7 +450,7 @@ fn example_rule_reaction_window_closing_timing_structure_1() {
         "the run did not end; it continued and succeeded"
     );
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::IcePassed { ice } if *ice == booth)),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::IcePassed { ice, .. } if *ice == booth)),
         "bypassing passes the ice"
     );
     assert!(
@@ -7367,7 +7370,7 @@ fn example_rule_ice_change_during_movement_2() {
         .log
         .iter()
         .filter_map(|c| match c {
-            GameChange::IcePassed { ice } => Some(*ice),
+            GameChange::IcePassed { ice, .. } => Some(*ice),
             _ => None,
         })
         .collect();
@@ -8130,7 +8133,7 @@ fn example_rule_bypass_during_encounter_1() {
         "the Forked-class condition was not met and the ice was not trashed"
     );
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::IcePassed { ice } if *ice == troll)),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::IcePassed { ice, .. } if *ice == troll)),
         "6.5.8a: the Runner immediately proceeded to pass that ice"
     );
 }
@@ -11851,4 +11854,147 @@ fn example_rule_active_exception_catchall_1() {
             );
         }
     }
+}
+
+// ===========================================================================
+// Wave 14f — 9.8.9 replaced subroutines, 6.1.3e/f "after"
+// ===========================================================================
+
+/// example_rule_replace_subroutine_resolution_1 (9.8.9): the Runner encounters
+/// a three-subroutine piece of ice while a Bankhar-class replacement effect
+/// applies. All 3 subroutines would resolve but are replaced by "[subroutine]
+/// Do 1 net damage." — and "these subroutines count as resolving from" the
+/// ice, so when the Runner passes it after the encounter a Persephone-class
+/// ability meets its trigger condition.
+#[test]
+fn example_rule_replace_subroutine_resolution_1() {
+    for replaced in [false, true] {
+        let mut vm = Vm::empty(1410);
+        let bloop = tk::install_ice(&mut vm, tk::three_sub_ice("Bloop-like"), ServerId::Archives, true);
+        tk::install_rig(&mut vm, tk::persephone_like("Persephone-like"));
+        if replaced {
+            tk::install_rig(&mut vm, tk::bankhar_like("Bankhar-like"));
+        }
+        tk::fill_hand(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        // The plan: run Archives, break nothing, let all 3 subroutines resolve.
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .stop_at_action(),
+        );
+        assert!(
+            vm.changes
+                .log
+                .iter()
+                .filter(|c| matches!(c, GameChange::SubroutineResolved { ice, .. } if *ice == bloop))
+                .count()
+                == 3,
+            "9.8.9: three subroutines resolved FROM the ice either way: {}",
+            t.tail(14)
+        );
+
+        if replaced {
+            // The replacement resolved instead of the printed subroutines.
+            assert_eq!(vm.st.corp.credits, 0, "the printed subroutines did not resolve");
+            assert_eq!(
+                vm.st.hand[&Side::Runner].len(),
+                2,
+                "3 net damage resolved in their place"
+            );
+        } else {
+            assert_eq!(vm.st.corp.credits, 3);
+            assert_eq!(vm.st.hand[&Side::Runner].len(), 5);
+        }
+        // Either way the Runner passes the ice with subroutines having
+        // resolved from it, so the Persephone-class condition is met.
+        assert!(vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::IcePassed { ice, after_encounter: true, subs_resolved: true, .. } if *ice == bloop)));
+        assert_eq!(
+            vm.st.runner.credits, 2,
+            "9.8.9: the replaced subroutines still resolved from the ice: {}",
+            t.tail(14)
+        );
+    }
+}
+
+/// example_rule_run_phase_after_1 (6.1.3e/f): an Inversificator-class ability
+/// is met by passing a piece of ice "after" fully breaking it. When a
+/// Mirāju-class ability moves the Runner instead, the ice is never passed and
+/// the condition is not met. When the Runner later encounters the same ice
+/// again and does NOT break it, the pass happens — but it is not a pass after
+/// an encounter in which the ice was fully broken, so the condition is still
+/// not met, even though the Runner fully broke it earlier in the same run.
+#[test]
+fn example_rule_run_phase_after_1() {
+    let mut vm = Vm::empty(1411);
+    // Archives is protected by two pieces of ice; the outer one is unrezzed,
+    // so the Runner passes it out of the Approach Ice Phase with no encounter
+    // at all (6.1.3e's other half).
+    // 6.2.2a: each install takes the OUTERMOST position, so Mirāju — the
+    // inner one — is installed first.
+    let miraju = tk::install_ice(&mut vm, tk::miraju_like("Miraju-like"), ServerId::Archives, true);
+    let outer =
+        tk::install_ice(&mut vm, tk::vanilla_ice("Outer-Ice", 0, 1), ServerId::Archives, false);
+    tk::install_rig(&mut vm, tk::inversificator_like("Inversificator-like"));
+    tk::install_rig(&mut vm, tk::break_button("Breaker"));
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        // The Mirāju-class ability is the CORP's (the ice is a Corp card): it
+        // is taken after the FIRST encounter and declined after the second.
+        Plan::corp()
+            .when(Match::reaction().offering("miraju").once(), Reply::take("miraju"))
+            .when(Match::targets().once(), Reply::Targets(vec![outer])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            // First encounter with Mirāju: break its subroutine.
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("break"))
+            .stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.ice_at(ServerId::Archives),
+        vec![miraju, outer],
+        "6.2.1: innermost first — the Runner meets the outer ice first"
+    );
+    let passes: Vec<&GameChange> = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::IcePassed { .. }))
+        .collect();
+    // The outer, unrezzed ice is passed with no encounter at all.
+    assert!(passes.iter().any(|c| matches!(
+        c,
+        GameChange::IcePassed { ice, after_encounter: false, .. } if *ice == outer
+    )));
+    // Mirāju is passed exactly once — after the SECOND encounter, in which
+    // nothing was broken. The first encounter's pass never happened.
+    let miraju_passes: Vec<&&GameChange> = passes
+        .iter()
+        .filter(|c| matches!(c, GameChange::IcePassed { ice, .. } if *ice == miraju))
+        .collect();
+    assert_eq!(miraju_passes.len(), 1, "6.1.3e: the replaced pass did not happen: {}", t.tail(20));
+    assert!(matches!(
+        miraju_passes[0],
+        GameChange::IcePassed { after_encounter: true, fully_broken: false, .. }
+    ));
+    assert_eq!(
+        vm.st.runner.credits, 10,
+        "6.1.3f: the condition is not met — the Runner is not passing the ice \
+         after the encounter in which they fully broke it: {}",
+        t.tail(20)
+    );
+    assert!(!t.ever_offered("inversificator"));
 }

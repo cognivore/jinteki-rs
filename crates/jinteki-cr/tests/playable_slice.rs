@@ -199,7 +199,7 @@ fn full_game_slice() {
         .changes
         .log
         .iter()
-        .any(|c| matches!(c, GameChange::IcePassed { ice: i } if *i == ice)));
+        .any(|c| matches!(c, GameChange::IcePassed { ice: i, .. } if *i == ice)));
     assert!(vm
         .changes
         .log

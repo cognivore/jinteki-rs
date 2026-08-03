@@ -209,6 +209,17 @@ pub enum TriggerCond {
     /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
     /// at run step 6.9.4a (`rule_pass_ice`).
     SelfPassed,
+    /// CR 6.1.3f: "whenever you pass a piece of ice you fully broke during
+    /// that encounter" (Inversificator class). The scope is the encounter the
+    /// pass DIRECTLY follows (6.1.3e), so breaking the same ice earlier in the
+    /// run does not satisfy it.
+    PassedIceAfterFullyBreaking,
+    /// CR 9.8.9: "whenever you pass a piece of ice, if any of its subroutines
+    /// resolved during that encounter" (Persephone class). A subroutine
+    /// resolved through a 9.8.9 replacement still counts, because "the
+    /// replaced subroutine is treated as having the same source as the
+    /// original imminent subroutine".
+    PassedIceWithResolvedSubroutines,
     /// "After you resolve this operation/event…" (Oppo Research class). CR
     /// 8.6.7h: conditions related to finishing resolving a played card are
     /// met at that step, after the card has been trashed (8.6.7g) — which is
@@ -459,6 +470,12 @@ pub enum StaticDecl {
         criteria: Vec<crate::instr::TargetFilter>,
         to: crate::instr::TrashDestination,
     },
+    /// CR 9.8.9 / 9.9.8b: while this static ability is active, an imminent
+    /// subroutine is replaced by the stated one (Tsakhia "Bankhar" Gantulga
+    /// class). "The replaced subroutine is treated as having the same source
+    /// as the original imminent subroutine", so it still resolves FROM the
+    /// ice — which is what a Persephone-class condition asks about.
+    ReplaceSubroutineResolution { instead: Vec<crate::instr::Instruction> },
     /// Characteristic modification of the source's host (Hush class) or self.
     StrengthMod { target_self: bool, delta: i32 },
     /// CR 9.1.9a: "<the related card> loses all of its abilities." The
@@ -963,7 +980,22 @@ pub fn trigger_matches(
             cite!("rule_cost_quantities");
             side == s && *credits > 0
         }
-        (TriggerCond::SelfPassed, GameChange::IcePassed { ice }) => {
+        (
+            TriggerCond::PassedIceAfterFullyBreaking,
+            GameChange::IcePassed { after_encounter, fully_broken, .. },
+        ) => {
+            cite!("rule_run_phase_after");
+            cite!("rule_pass_after_breaking");
+            *after_encounter && *fully_broken
+        }
+        (
+            TriggerCond::PassedIceWithResolvedSubroutines,
+            GameChange::IcePassed { after_encounter, subs_resolved, .. },
+        ) => {
+            cite!("rule_replace_subroutine_resolution");
+            *after_encounter && *subs_resolved
+        }
+        (TriggerCond::SelfPassed, GameChange::IcePassed { ice, .. }) => {
             cite!("rule_pass_ice");
             *ice == source.id
         }

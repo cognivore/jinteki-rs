@@ -5581,3 +5581,106 @@ pub fn ive_had_worse_like(name: &'static str) -> PrintedCard {
     .labeled("ihw: when trashed by damage")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// §9.8.9 / §6.1.3e-f — replaced subroutines, and passing "after" a phase
+// ---------------------------------------------------------------------------
+
+/// Bloop shape: a piece of ice with three subroutines, each gaining the Corp
+/// a credit — distinguishable from the 9.8.9 replacement, which does damage.
+pub fn three_sub_ice(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = (0..3)
+        .map(|i| {
+            let label: &'static str =
+                Box::leak(format!("[sub] bloop {i}: gain 1").into_boxed_str());
+            AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))])
+                .labeled(label)
+        })
+        .collect();
+    c
+}
+
+/// Tsakhia "Bankhar" Gantulga shape (9.8.9): a Runner card whose static
+/// ability replaces every imminent subroutine with "[subroutine] Do 1 net
+/// damage." The replaced subroutine still resolves FROM the ice.
+pub fn bankhar_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(0);
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::ReplaceSubroutineResolution {
+            instead: vec![Instruction::Damage {
+                kind: DamageKind::Net,
+                amount: Quantity::c(1),
+                responsible: Side::Corp,
+            }],
+        },
+    ])
+    .labeled("bankhar: resolve net damage instead of any subroutine")];
+    c
+}
+
+/// Persephone shape (9.8.9): "Whenever you pass a piece of ice, if any of its
+/// subroutines resolved during that encounter, …". Gains credits here; the
+/// printed card trashes cards, which is the same occurrence.
+pub fn persephone_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PassedIceWithResolvedSubroutines,
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+        false,
+    )
+    .labeled("persephone: subroutines resolved from the ice just passed")];
+    c
+}
+
+/// Inversificator shape (6.1.3f): "Whenever you pass a piece of ice you fully
+/// broke during that encounter, …". The scope is the encounter the pass
+/// directly follows (6.1.3e).
+pub fn inversificator_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PassedIceAfterFullyBreaking,
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        false,
+    )
+    .labeled("inversificator: passed an ice fully broken that encounter")];
+    c
+}
+
+/// Mirāju shape (6.1.3e): a piece of ice with "When the encounter with this
+/// ice ends, you may move the Runner to the outermost position protecting this
+/// server." Moving the Runner to another position changes the run's timing
+/// point (6.1.3d/6.2.8a), so the Movement Phase's pass step never happens —
+/// "because the ice is not passed", conditions about passing it are not met.
+pub fn miraju_like(name: &'static str) -> PrintedCard {
+    // The printed card's subroutine is elided: an "end the run" would stop the
+    // run before the second pass this example is about, and nothing 6.1.3e/f
+    // measures depends on which subroutine the ice has.
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::GainCredits(
+        Side::Corp,
+        Quantity::c(1),
+    )])
+    .labeled("[sub] miraju: gain 1")];
+    c.abilities.push(
+        AbilityDef::conditional(
+            TriggerCond::EncounterEnds,
+            vec![Instruction::MoveRunnerToIce {
+                ice: TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![
+                        crate::instr::TargetFilter::IceProtectingSourceServer,
+                        crate::instr::TargetFilter::OtherThanSource,
+                    ],
+                },
+                encounter: false,
+            }],
+            true,
+        )
+        .labeled("miraju: move the Runner to another position on this server"),
+    );
+    c
+}

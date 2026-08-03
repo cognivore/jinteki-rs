@@ -48,6 +48,14 @@ pub struct RunCtx {
     /// CR 6.7.4: the "If successful" ability the effect that initiated this
     /// run carried, with the 6.7.4a set of servers that effect allowed.
     pub if_successful: Option<crate::vm::IfSuccessful>,
+    /// CR 6.1.3e: the Encounter Ice Phase the run has come DIRECTLY from,
+    /// which is what makes a pass a pass "after an encounter" — `(ice, all
+    /// its subroutines were broken during that encounter (6.1.3f/6.5.7), any
+    /// of its subroutines resolved during it (9.8.9))`. Set when an Encounter
+    /// Ice Phase completes normally, cleared whenever the run reaches the
+    /// Approach Ice Phase by any other route, so "the standard progression of
+    /// the run" is what decides it.
+    pub last_encounter: Option<(ObjectId, bool, bool)>,
 }
 
 /// Per-encounter-phase state (§6.5). The phase is a timing structure of its

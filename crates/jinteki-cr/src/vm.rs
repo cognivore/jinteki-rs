@@ -1441,6 +1441,9 @@ impl Vm {
                 }
                 if let Some(r) = self.run_ctx_mut() {
                     r.came_from_ice = true;
+                    // 6.1.3e: a new approach starts a new "direct sequence";
+                    // anything the run reached this phase from is behind it.
+                    r.last_encounter = None;
                 }
             }
             StepKind::EncounterIce => {
@@ -1454,14 +1457,30 @@ impl Vm {
                 self.begin_encounter(ice);
             }
             StepKind::PassIce => {
-                let (came, server, pos) = {
+                let (came, server, pos, last) = {
                     let r = self.run_ctx().unwrap();
-                    (r.came_from_ice, r.server, r.position)
+                    (r.came_from_ice, r.server, r.position, r.last_encounter)
                 };
                 if came {
                     if let Some(ice) = pos.and_then(|p| self.ice_in_position(server, p)) {
                         cite!("rule_pass_ice");
-                        self.changes.record(GameChange::IcePassed { ice });
+                        // 6.1.3e: the pass is "after" an encounter only when
+                        // the two phases occurred in direct sequence, with
+                        // this ice — an unrezzed ice passed straight out of
+                        // the Approach Ice Phase is passed after no encounter
+                        // at all, and 6.1.3f then has nothing to be true of.
+                        cite!("rule_run_phase_after");
+                        cite!("rule_pass_after_breaking");
+                        let (after_encounter, fully_broken, subs_resolved) = match last {
+                            Some((i, b, r)) if i == ice => (true, b, r),
+                            _ => (false, false, false),
+                        };
+                        self.changes.record(GameChange::IcePassed {
+                            ice,
+                            after_encounter,
+                            fully_broken,
+                            subs_resolved,
+                        });
                     }
                 }
             }
@@ -2512,6 +2531,28 @@ impl Vm {
         }
     }
 
+    /// CR 9.8.9: the subroutine an active replacement effect says resolves
+    /// instead of the imminent one.
+    fn subroutine_replacement(&self) -> Option<Vec<Instruction>> {
+        for (_, d) in self.active_statics() {
+            if let StaticDecl::ReplaceSubroutineResolution { instead } = d {
+                return Some(instead);
+            }
+        }
+        None
+    }
+
+    /// CR 6.1.3f / 9.8.9: what happened during the encounter that is ending —
+    /// `(ice, every subroutine it had was broken (6.5.7), any of its
+    /// subroutines resolved)`. Read before the encounter state is cleared.
+    fn encounter_outcome(&self, ice: ObjectId) -> (ObjectId, bool, bool) {
+        cite!("rule_pass_after_breaking");
+        let Some(e) = self.st.encounter.as_ref() else { return (ice, false, false) };
+        let fully_broken = e.all_broken_noted;
+        let subs_resolved = !e.resolved.is_empty();
+        (ice, fully_broken, subs_resolved)
+    }
+
     /// The encounter STATE ends (the change is recorded). The phase's frame is
     /// wound up separately — by [`Vm::complete_encounter_phase`] at step
     /// 6.9.3e, or by [`Vm::abort_encounter_phase`] where an effect ends it
@@ -2821,6 +2862,7 @@ impl Vm {
                 declared_successful: false,
                 jump_to_run_ends: false,
                 if_successful: None,
+                last_encounter: None,
             }),
         }));
     }
@@ -3324,6 +3366,18 @@ impl Vm {
                 // a phase reaching step (e) ends it here.
                 cite!("rule_encounter_ice_next_phase");
                 if !e.aborted {
+                    // 6.1.3e: the run is now coming DIRECTLY from an encounter
+                    // with this ice, and what happened in it is what 6.1.3f
+                    // and 9.8.9 ask about. 6.1.3c: a FORCED encounter does not
+                    // change the run's timing point, so it is not a phase the
+                    // run can pass "after".
+                    if !e.forced {
+                        cite!("rule_run_phase_after");
+                        let outcome = self.encounter_outcome(e.ice);
+                        if let Some(r) = self.run_ctx_mut() {
+                            r.last_encounter = Some(outcome);
+                        }
+                    }
                     self.end_encounter();
                     cite!("rule_forced_encounter");
                     self.st.encounter = e.outer;
@@ -3378,7 +3432,7 @@ impl Vm {
                 cite!("rule_previous_object");
                 let mut seen: Vec<ObjectId> = Vec::new();
                 for c in &self.changes.log[self.st.run_log_start..] {
-                    if let GameChange::IcePassed { ice } = c {
+                    if let GameChange::IcePassed { ice, .. } = c {
                         if !seen.contains(ice) {
                             seen.push(*ice);
                         }
@@ -4484,8 +4538,22 @@ impl Vm {
             AbilityPhase::SubImminent => {
                 cite!("step_subroutine_becomes_imminent");
                 cite!("step_subroutine_interrupt_subroutine_resolution");
-                // Kernel wave: no prevent-the-subroutine interrupts in the
-                // vocabulary yet; the imminence point exists and proceeds.
+                // 9.8.9: a replacement effect can apply WHILE THE SUBROUTINE
+                // IS IMMINENT to resolve a different subroutine instead. The
+                // frame keeps its source — "the replaced subroutine is treated
+                // as having the same source as the original imminent
+                // subroutine" — so the substitution is of the instruction list
+                // alone, and everything downstream (9.8.8 independence, the
+                // `SubroutineResolved` record naming the ice) is unchanged.
+                let replacement = self.subroutine_replacement();
+                if let Some(instrs) = replacement {
+                    cite!("rule_replace_subroutine_resolution");
+                    cite!("rule_replacement_effect_from_static_ability");
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        af.instructions = instrs;
+                        af.idx = 0;
+                    }
+                }
                 self.set_ability_phase(AbilityPhase::Targets);
             }
             AbilityPhase::SubInterrupt => {

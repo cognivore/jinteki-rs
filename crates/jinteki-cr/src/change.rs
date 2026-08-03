@@ -115,7 +115,13 @@ pub enum GameChange {
     EncounterBegan { ice: ObjectId, encounter_id: u64 },
     EncounterEnded { ice: ObjectId, encounter_id: u64 },
     IceApproached { ice: ObjectId },
-    IcePassed { ice: ObjectId },
+    /// CR 6.9.4a: the Runner passed a piece of ice. `after_encounter` is
+    /// 6.1.3e's "direct sequence" test — whether this pass directly follows
+    /// an Encounter Ice Phase WITH THIS ICE — and the other two flags carry
+    /// what happened during that encounter, since 6.1.3f scopes "after fully
+    /// breaking it" to that encounter and 9.8.9's Persephone class asks
+    /// whether any subroutine resolved from this ice.
+    IcePassed { ice: ObjectId, after_encounter: bool, fully_broken: bool, subs_resolved: bool },
     ServerApproached { server: ServerId },
     /// CR 1.16.3: a cost was paid (zero costs are real, 1.16.1d).
     CostPaid { side: Side, credits: u32, clicks: u32, trashed: Vec<ObjectId> },
