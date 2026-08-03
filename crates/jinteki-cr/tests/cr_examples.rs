@@ -8586,11 +8586,11 @@ fn dp7a_odometer() {
     assert!(IMPLEMENTED.len() >= 12, "W1 mandate: at least 12 examples");
 }
 
-/// The full remaining-work list: every CR example id not yet implemented.
-/// Un-ignore as the suite grows toward DP-7a = 100%.
+/// DP-7a is complete, and this is the ratchet that keeps it complete: every
+/// worked example in the Comprehensive Rules has a test named after it. A
+/// change that drops one fails here rather than quietly lowering a number.
 #[test]
-#[ignore = "DP-7a backlog: 243 examples total; see dp7a_odometer for progress"]
-fn dp7a_backlog_placeholder() {
+fn dp7a_complete() {
     let v: serde_json::Value = serde_json::from_str(EXAMPLES_JSON).unwrap();
     let mut missing: Vec<String> = v["examples"]
         .as_array()
@@ -8600,8 +8600,9 @@ fn dp7a_backlog_placeholder() {
         .filter(|id| !IMPLEMENTED.contains(&id.as_str()))
         .collect();
     missing.sort();
-    panic!(
-        "{} CR examples not yet implemented:\n{}",
+    assert!(
+        missing.is_empty(),
+        "DP-7a regression: {} CR examples no longer implemented:\n{}",
         missing.len(),
         missing.join("\n")
     );
