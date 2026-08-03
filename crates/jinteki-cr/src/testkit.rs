@@ -1949,6 +1949,84 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
     c
 }
 
+// ---------------------------------------------------------------------------
+// §9.12.3 — "must"
+// ---------------------------------------------------------------------------
+
+/// Mumbad Virtual Tour shape (9.12.3a): an asset whose "when accessed" ability
+/// says the Runner must trash it if able, WITHOUT stipulating how.
+pub fn must_trash_accessed_like(name: &'static str, trash_cost: u32) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
+    c.trash_cost = Some(trash_cost);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfAccessed,
+        vec![Instruction::MustTrashAccessedCard {
+            means: crate::instr::TrashMeans::AnyAbility,
+        }],
+        false,
+    )
+    .labeled("mvt: the runner must trash this card if able")];
+    c
+}
+
+/// Neutralize All Threats shape (9.12.3b): a Runner card whose ability says the
+/// Runner must trash the card they access if they can PAY ITS TRASH COST — a
+/// stipulated means, so no other ability can be forced.
+///
+/// Simplification: the printed card's "the first time each turn" restriction is
+/// left off; the examples using this shape access exactly one card.
+pub fn must_trash_by_paying_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerAccessesCard,
+        vec![Instruction::MustTrashAccessedCard {
+            means: crate::instr::TrashMeans::PayingTheTrashCost,
+        }],
+        false,
+    )
+    .labeled("nat: must trash if the trash cost can be paid")];
+    c
+}
+
+/// Imp shape (9.3.6b / 1.9.2): an access-flagged paid ability costing a hosted
+/// virus counter that trashes the accessed card at no further cost.
+pub fn imp_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.subtypes = vec!["virus"];
+    c.abilities = vec![AbilityDef::paid(
+        Cost::spend_counters(CounterKind::Virus, 1),
+        vec![Instruction::TrashCards(TargetSpec::AccessedCard)],
+    )
+    .with_flag(AbilityFlag::Access)
+    .labeled("imp: spend a virus counter to trash the accessed card")];
+    c
+}
+
+/// Scrubber shape (1.10.3c): a Runner card hosting credits its controller may
+/// spend. Simplification: the printed card restricts them to trashing Corp
+/// cards; the kernel's `hosted_credits_spendable` carries no restriction, and
+/// the examples using this shape spend them on exactly that.
+pub fn scrubber_like(name: &'static str, recurring: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.recurring_credits = Some(recurring);
+    c.hosted_credits_spendable = true;
+    c
+}
+
+/// Wendigo shape (9.5.3a): ice with a subroutine prohibiting the Runner from
+/// using a named installed card's abilities for the remainder of the run.
+pub fn use_prohibition_ice(name: &'static str, target: ObjectId) -> PrintedCard {
+    let mut c = vanilla_ice(name, 3, 3);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::CreateLingeringEffect {
+        payload: crate::instr::LingeringSpec::CannotUseAbilitiesOf(TargetSpec::Objects(vec![
+            target,
+        ])),
+        duration: crate::lingering::WantedDuration::ThisRun,
+    }])
+    .labeled("[sub] the runner cannot use that card this run")];
+    c
+}
+
 /// Warroid Tracker shape (4.6.6i): an asset whose ability meets its condition
 /// when the Runner trashes at least 1 card in THIS SERVER — including the
 /// asset itself — and whose effect reads "this server" a second time, by

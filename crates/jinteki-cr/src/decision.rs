@@ -77,7 +77,10 @@ pub enum DecisionSpec {
     /// Interrupt window (9.2.9): relevant interrupts or pass (9.2.9f).
     InterruptWindow { options: Vec<WindowOption>, can_pass: bool },
     /// Mid-access window (9.2.10): one ability / basic trash / pass.
-    MidAccessWindow { options: Vec<WindowOption> },
+    /// CR 9.2.10: the Runner uses one mid-access ability or passes.
+    /// 9.12.3a/b: `can_pass` is false while a "must trash this card"
+    /// requirement is in force and a permitted means is among the options.
+    MidAccessWindow { options: Vec<WindowOption>, can_pass: bool },
     /// Choose targets for an instruction (9.3.4b), one of `candidates`,
     /// `count` times (or fewer if `up_to`). CR 1.15.2e / 10.12.3a: `min` is
     /// the number of targets the instruction REQUIRES where fewer than

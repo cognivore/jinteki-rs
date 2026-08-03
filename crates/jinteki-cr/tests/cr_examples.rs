@@ -121,6 +121,9 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_limit_remote_servers_1",
     "example_sec_old_self_reference_rules_1",
     "example_sec_old_self_reference_rules_2",
+    "example_rule_must_with_choice_1",
+    "example_rule_must_without_choice_1",
+    "example_rule_forced_mid_access_ability_optional_1",
     // Wave 5a: searching, finding and shuffling (§8.7), 9.11.4d.
     "example_rule_valid_search_target_install_play_1",
     "example_rule_valid_search_target_install_play_2",
@@ -3883,6 +3886,156 @@ fn example_rule_independent_effects_2() {
         vm.ability_present(hush, 0),
         "Magnet's ability no longer exists, so its effect is never applied"
     );
+}
+
+// ===========================================================================
+// §9.12.3 — "must"
+// ===========================================================================
+
+/// example_rule_must_with_choice_1 (9.12.3a): a "must" that does not stipulate
+/// how forces the Runner to make any decision that satisfies it, including
+/// using another card's ability. With 4 credits, an Imp and a Scrubber, the
+/// Runner cannot pass the mid-access window: they must spend the virus counter
+/// or pay the trash cost with the Scrubber's credits.
+#[test]
+fn example_rule_must_with_choice_1() {
+    let mut vm = Vm::empty(1201);
+    let mvt = tk::install_root(
+        &mut vm,
+        tk::must_trash_accessed_like("MVT-like", 5),
+        ServerId::Remote(1),
+        true,
+    );
+    let imp = tk::install_rig(&mut vm, tk::imp_like("Imp-like"));
+    tk::place_counters(&mut vm, imp, CounterKind::Virus, 1);
+    let scrubber = tk::install_rig(&mut vm, tk::scrubber_like("Scrubber-like", 2));
+    tk::place_counters(&mut vm, scrubber, CounterKind::Credit, 2);
+    vm.st.runner.credits = 4;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the remote, then HALT at the mid-access window so the
+    // offer itself can be inspected.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::Halt)
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    let e = t.entries.last().expect("the mid-access window was reached");
+    match &e.spec {
+        DecisionSpec::MidAccessWindow { options, can_pass } => {
+            assert!(!can_pass, "9.12.3a: the 'must' leaves the Runner no pass");
+            assert!(
+                options.iter().any(|o| matches!(o, WindowOption::BasicTrash { card, .. } if *card == mvt)),
+                "1.10.3c: 4 credits plus the Scrubber's 2 pay the trash cost of 5: {options:?}"
+            );
+            assert!(
+                options.iter().any(|o| matches!(o, WindowOption::TriggerPaid { label, .. } if label.contains("imp"))),
+                "and the Imp is the other way to satisfy it: {options:?}"
+            );
+        }
+        other => panic!("expected the mid-access window, got {other:?}"),
+    }
+}
+
+/// example_rule_must_without_choice_1 (9.12.3b): a "must" that stipulates the
+/// means ("if you can pay its trash cost") cannot be satisfied any other way.
+/// With the trash cost unaffordable, the Runner is not required to spend a
+/// counter from Imp, even though Imp could trash the card.
+#[test]
+fn example_rule_must_without_choice_1() {
+    let mut vm = Vm::empty(1202);
+    let target =
+        tk::install_root(&mut vm, tk::vanilla_asset("Expensive-Asset", 0, 5), ServerId::Remote(1), true);
+    let imp = tk::install_rig(&mut vm, tk::imp_like("Imp-like"));
+    tk::place_counters(&mut vm, imp, CounterKind::Virus, 1);
+    tk::install_rig(&mut vm, tk::must_trash_by_paying_like("NAT-like"));
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::Halt)
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    let e = t.entries.last().expect("the mid-access window was reached");
+    match &e.spec {
+        DecisionSpec::MidAccessWindow { options, can_pass } => {
+            assert!(
+                !options.iter().any(|o| matches!(o, WindowOption::BasicTrash { .. })),
+                "2 credits cannot pay a trash cost of 5: {options:?}"
+            );
+            assert!(
+                options.iter().any(|o| matches!(o, WindowOption::TriggerPaid { label, .. } if label.contains("imp"))),
+                "the Imp is still usable — it is simply not required"
+            );
+            assert!(
+                *can_pass,
+                "9.12.3b: the means was stipulated, so Imp cannot be compelled"
+            );
+        }
+        other => panic!("expected the mid-access window, got {other:?}"),
+    }
+    assert_eq!(vm.st.objects[&imp].counter(CounterKind::Virus), 1, "no counter was spent");
+    assert_eq!(vm.st.objects[&target].zone, Zone::Root(ServerId::Remote(1)));
+}
+
+/// example_rule_forced_mid_access_ability_optional_1 (9.5.3a): a paid ability
+/// is optional even when a "must" is in force, so a prohibition on using it
+/// removes it from what the "must" can compel. With Imp prohibited for the run
+/// and the trash cost unaffordable, nothing compels the Runner at all.
+#[test]
+fn example_rule_forced_mid_access_ability_optional_1() {
+    let mut vm = Vm::empty(1203);
+    let mvt = tk::install_root(
+        &mut vm,
+        tk::must_trash_accessed_like("MVT-like", 5),
+        ServerId::Remote(1),
+        true,
+    );
+    let imp = tk::install_rig(&mut vm, tk::imp_like("Imp-like"));
+    tk::place_counters(&mut vm, imp, CounterKind::Virus, 1);
+    tk::install_ice(
+        &mut vm,
+        tk::use_prohibition_ice("Wendigo-like", imp),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the remote, halting at the jack-out decision — which comes
+    // after the subroutine has resolved and while the run, and therefore the
+    // prohibition, is still in progress — then resume into the access.
+    let mut g = plan::Script::new(
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::jack_out().once(), Reply::Halt)
+            .when(Match::jack_out(), Reply::JackOut(false))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert!(
+        vm.ability_use_prohibited(imp),
+        "9.5.3a: the subroutine's prohibition is in force for the run"
+    );
+    g.run(&mut vm);
+    let t = g.transcript();
+    assert!(
+        t.of_kind(Kind::MidAccess).is_empty(),
+        "9.5.3a/9.12.3a: nothing the Runner could be compelled to use was on offer"
+    );
+    assert_eq!(vm.st.objects[&imp].counter(CounterKind::Virus), 1, "no counter was spent");
+    assert_eq!(vm.st.objects[&mvt].zone, Zone::Root(ServerId::Remote(1)), "and nothing is trashed");
 }
 
 // ===========================================================================

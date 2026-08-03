@@ -431,7 +431,7 @@ pub fn window_options(spec: &DecisionSpec) -> &[WindowOption] {
         DecisionSpec::PaidWindow { options, .. }
         | DecisionSpec::ReactionWindow { options, .. }
         | DecisionSpec::InterruptWindow { options, .. }
-        | DecisionSpec::MidAccessWindow { options } => options,
+        | DecisionSpec::MidAccessWindow { options, .. } => options,
         _ => &[],
     }
 }
@@ -947,7 +947,9 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
                 // 9.2.8e: mandatory pendings must be discharged before their
                 // controller may pass — "pass" means "nothing of my own".
                 DecisionSpec::ReactionWindow { can_pass: false, .. }
-                | DecisionSpec::InterruptWindow { can_pass: false, .. } => default_answer(spec),
+                | DecisionSpec::InterruptWindow { can_pass: false, .. }
+                // 9.12.3a/b: a "must trash this card" leaves no pass either.
+                | DecisionSpec::MidAccessWindow { can_pass: false, .. } => default_answer(spec),
                 _ => DecisionAnswer::Pass,
             }
         }
@@ -1018,9 +1020,16 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
                 DecisionAnswer::Take(options.first().cloned().unwrap())
             }
         }
-        DecisionSpec::MidAccessWindow { .. } => {
+        DecisionSpec::MidAccessWindow { options, can_pass } => {
             cite!("rule_mid_access_window_one_ability");
-            DecisionAnswer::Pass
+            // 9.12.3a/b: a "must trash this card" requirement leaves the
+            // Runner no pass, so the neutral policy takes the first permitted
+            // means instead of declining.
+            if *can_pass {
+                DecisionAnswer::Pass
+            } else {
+                DecisionAnswer::Take(options.first().cloned().unwrap())
+            }
         }
         DecisionSpec::ChooseTargets { candidates, count, .. } => {
             DecisionAnswer::Targets(candidates.iter().take(*count as usize).copied().collect())

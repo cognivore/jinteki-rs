@@ -2143,7 +2143,7 @@ impl Vm {
             cursor: 0,
             phase: StepPhase::Enter,
             pending_jump: None,
-            ctx: StructCtx::Access(AccessCtx { card }),
+            ctx: StructCtx::Access(AccessCtx { card, must_trash: None }),
         }));
     }
 
@@ -5639,7 +5639,24 @@ impl Vm {
                     self.current_run.map(|(r, _, _)| r),
                     self.st.turn_seq,
                 );
+                // 9.5.3a: "cannot use <card>'s abilities" is a per-target
+                // prohibition, so it makes one lingering effect per target.
+                if let crate::instr::LingeringSpec::CannotUseAbilitiesOf(spec) = payload {
+                    cite!("rule_forced_mid_access_ability_optional");
+                    for t in self.resolve_targets(spec, Some(source.obj), &imm.targets) {
+                        let id = self.next_lingering;
+                        self.next_lingering += 1;
+                        self.lingering.push(LingeringEffect::new(
+                            id,
+                            source.obj,
+                            Payload::CannotUseAbilitiesOf(t),
+                            dur,
+                        ));
+                    }
+                    return;
+                }
                 let payload = match payload {
+                    crate::instr::LingeringSpec::CannotUseAbilitiesOf(_) => unreachable!(),
                     crate::instr::LingeringSpec::PreventAllDamage => Payload::DamagePreventionAll,
                     crate::instr::LingeringSpec::Replacement { applies_to, with } => {
                         // 9.9.8c: a replacement effect can be created ahead
@@ -5663,6 +5680,22 @@ impl Vm {
                 let id = self.next_lingering;
                 self.next_lingering += 1;
                 self.lingering.push(LingeringEffect::new(id, source.obj, Payload::MemoryLimitMod { delta: -(*n as i32) }, Duration::Turn(self.st.turn_seq)));
+            }
+            Instruction::MustTrashAccessedCard { means } => {
+                // 9.12.3a/b: a requirement, not an effect — it is recorded
+                // against the access in progress and read when the mid-access
+                // window (9.2.10) asks whether the Runner may pass.
+                cite!("rule_must_with_choice");
+                cite!("rule_must_without_choice");
+                for f in self.frames.iter_mut().rev() {
+                    if let Frame::Structure(StructureFrame {
+                        ctx: StructCtx::Access(a), ..
+                    }) = f
+                    {
+                        a.must_trash = Some(*means);
+                        break;
+                    }
+                }
             }
             Instruction::ChooseOne { .. } => {
                 // Handled at answer time (the choice ends the instruction;
@@ -6833,11 +6866,14 @@ impl Vm {
             WindowKind::MidAccess => {
                 let options = self.mid_access_options();
                 if options.is_empty() {
+                    // 9.12.3a/b: a "must trash" with no permitted means
+                    // available compels nothing — the window simply closes.
                     self.window_pass();
                 } else {
+                    let can_pass = self.mid_access_can_pass(&options);
                     self.ask(
                         Side::Runner,
-                        DecisionSpec::MidAccessWindow { options },
+                        DecisionSpec::MidAccessWindow { options, can_pass },
                         DecisionCtx::Window(wid),
                     );
                 }
@@ -7142,16 +7178,22 @@ impl Vm {
         let Some(card) = self.st.accessed else { return out };
         let o = &self.st.objects[&card];
         // 7.1.5: the basic trash ability — pay the trash cost, trash it.
+        // 1.10.3c: what the Runner can pay it WITH includes hosted credits
+        // their own cards let them spend (Scrubber class), not just the pool.
         if let Some(tc) = o.printed.trash_cost {
             cite!("rule_basic_trash_ability");
-            if self.st.runner.credits + self.st.bp_fund >= tc {
+            cite!("rule_spend_credits");
+            let avail = self.st.runner.credits
+                + self.st.bp_fund
+                + self.spendable_hosted_credits(Side::Runner);
+            if avail >= tc {
                 out.push(WindowOption::BasicTrash { card, cost: tc });
             }
         }
         // Access-flagged paid abilities (9.3.6b).
         let threat = self.threat_level();
         for src in self.st.objects.values() {
-            if src.controller != Side::Runner {
+            if src.controller != Side::Runner || self.ability_use_prohibited(src.id) {
                 continue;
             }
             for (i, a) in src.printed.abilities.iter().enumerate() {
@@ -7172,6 +7214,60 @@ impl Vm {
             }
         }
         out
+    }
+
+    /// CR 9.5.3a (Wendigo class): a lingering effect can forbid the use of a
+    /// card's abilities. The prohibition is on USE, so it removes the
+    /// ability from every window it would be offered in — and, because the
+    /// ability is still optional (9.5.3), a 9.12.3a "must" cannot reach past
+    /// it either.
+    pub fn ability_use_prohibited(&self, obj: ObjectId) -> bool {
+        self.lingering
+            .iter()
+            .any(|l| matches!(l.payload, Payload::CannotUseAbilitiesOf(o) if o == obj))
+    }
+
+    /// CR 9.12.3a/b: may the Runner pass the mid-access window? Only if no
+    /// "must trash this card" requirement is in force with a permitted means
+    /// available to them among `options`.
+    fn mid_access_can_pass(&self, options: &[WindowOption]) -> bool {
+        let Some(means) = self.access_must_trash() else { return true };
+        cite!("rule_must_with_choice");
+        cite!("rule_must_without_choice");
+        let card = self.st.accessed;
+        !options.iter().any(|opt| match opt {
+            // 7.1.5: paying the trash cost is a permitted means under BOTH
+            // readings — it is the means 9.12.3b stipulates.
+            WindowOption::BasicTrash { .. } => true,
+            // 9.12.3a: with no means stipulated, any ability whose resolution
+            // trashes the accessed card also satisfies the requirement;
+            // 9.12.3b: it does not, and cannot be forced.
+            WindowOption::TriggerPaid { ability, .. } => {
+                means == crate::instr::TrashMeans::AnyAbility
+                    && card.is_some()
+                    && self.ability_trashes_accessed_card(*ability)
+            }
+            _ => false,
+        })
+    }
+
+    /// The "must trash" requirement in force for the access in progress.
+    fn access_must_trash(&self) -> Option<crate::instr::TrashMeans> {
+        self.frames.iter().rev().find_map(|f| match f {
+            Frame::Structure(StructureFrame { ctx: StructCtx::Access(a), .. }) => Some(a.must_trash),
+            _ => None,
+        })?
+    }
+
+    /// Would using this ability trash the card being accessed? A shallow scan
+    /// of its instructions for a trash naming the accessed card — the same
+    /// shape 1.13.6b's scan uses (deviation 16).
+    fn ability_trashes_accessed_card(&self, ability: AbilityRef) -> bool {
+        let Some(o) = self.st.objects.get(&ability.obj) else { return false };
+        let Some(a) = o.printed.abilities.get(ability.index) else { return false };
+        a.instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::TrashCards(TargetSpec::AccessedCard)))
     }
 
     // ------------------------------------------------------------------
@@ -7208,6 +7304,14 @@ impl Vm {
         // with fewer than N cards there (the Patchwork branch of 8.7.2b).
         if (self.st.hand[&side].len() as u32) < cost.trash_from_hand {
             return false;
+        }
+        // 1.9.2: a counter component is spent from the source, so a card
+        // without enough hosted counters cannot pay it.
+        if let Some((kind, n)) = cost.spend_counters {
+            cite!("rule_counters_default_from_bank");
+            if self.st.objects[&source].counter(kind) < n {
+                return false;
+            }
         }
         // CR 1.16.1b: if a static ability or a MANDATORY conditional
         // interrupt would prevent the steps of payment, the cost cannot be
@@ -7414,6 +7518,17 @@ impl Vm {
         // [click] cost — the difference is only that it is not an action.
         cite!("rule_costs_with_click");
         self.st.player_mut(side).clicks -= cost.clicks + cost.lose_clicks;
+        // 1.9.2: counters spent as a cost come off the source and go back to
+        // the bank.
+        if let Some((kind, n)) = cost.spend_counters {
+            cite!("rule_counters_default_from_bank");
+            let o = self.st.objects.get_mut(&source).unwrap();
+            let have = *o.counters.get(&kind).unwrap_or(&0);
+            let spent = n.min(have);
+            o.counters.insert(kind, have - spent);
+            self.changes
+                .record(GameChange::CounterRemoved { obj: Some(source), kind, amount: spent });
+        }
         let mut trashed = Vec::new();
         if cost.trash_self {
             // 1.19.4: [trash] on a card means "trash this object", used as a

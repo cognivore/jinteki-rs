@@ -6,9 +6,9 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W10b)
+## Odometers (after W10c)
 
-- **DP-7a: 180/243** CR examples as example-named passing tests (74.1%).
+- **DP-7a: 183/243** CR examples as example-named passing tests (75.3%).
 - **DP-7b: 519/1420** distinct rules cited (36.5%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
@@ -103,7 +103,8 @@ prefer a slightly larger honest primitive and note it here.
 | `0b9cd6d` | W9a | **encounters as a timing structure** (§6.5): `StructKind::Encounter`, whose table IS the run table's phase-3 span (9.2.2b makes each run phase a structure), opened by the run's step 3a as a child frame parked at 4a; `Instruction::ForceEncounter { ice: TargetSpec }` for 6.5.9a, with 6.5.9c ("not finished until the encounter is complete") and "return to the effect that caused it" free from the frame stack; nested encounters (Shiro→Chrysalis) stash and restore the interrupted one; 6.1.4b unwinds exactly the phase (everything begun inside it, no Run Ends steps) and 6.5.9b unwinds it with the run; 6.5.8a/6.2.7c ABORT the phase (the aborting instruction finishes, then no further step — 9.8.7c) instead of poking the run's cursor. **Bugs fixed:** 6.2.7 was applied to any encountered ice, killing a forced encounter with a card in HQ instantly; `current_subs` never checked 9.1.7 activity, so 9.1.8h was unimplemented-but-passing | 165 |
 | `7629564` | W9b | §1.18 advancing vs placing: `Instruction::AdvanceCard` + `GameChange::CardAdvanced`, so 1.18.2's distinction exists at all (`TriggerCond::AdvancesCard` keyed on the advance, 9.6.6a's "had" check moved with it); `PlaceCounters.amount` is a `Quantity` (§12 rule 6) with `Minus`/`RequirementOfSource` joining the selector language; §10.13 **dividends** as a keyword expanded into the conditional ability it denotes (`PrintedCard::with_dividends`, `TriggerCond::SelfScored`); 1.17.8/10.13.2 `Object::scored_snapshot` — the counters and requirement as the agenda began to be scored — plus `Vm::advancement_requirement` and `StaticDecl::ScoreRequirementModInSourceServer` (SanSan class) | 168 |
 | `55056b3` | W9c | the attacked server: `Instruction::ChangeAttackedServer` (6.1.2d — changed DIRECTLY, so the timing step does not change and the new server's ice is never approached), `StaticDecl::CannotInitiateRunOnSourceServer` (6.3.2a — removes the basic run action for that server and reaches no further, so a run can still be moved onto it); 9.11.4a/9.3.3f as tests over machinery already right (a use-restriction gates every window the ability is offered in and resolves nothing; an X definition is a static ability with no instructions) | 172 |
-| `TBD-W10B` | W10b | **§4.6.6i "this server"**: `Object::last_server` stamped whenever a card leaves a server/root/position, and `Vm::this_server` as the ONE resolution of the phrase — host's server (4.6.6k), else the current server, else the server the card LEFT, else the central server corresponding to the zone the card is in. Every "this server" reader routes through it: `TargetFilter::IceProtectingSourceServer` (both the filter and the count), the checkpoint's trigger-condition server, `CardInstalledInSourceServer`, and the new 4.6.6i scope on `RunnerTrashesAtLeastOneCorpCard { in_this_server }`. **Bug fixed:** `IceProtectingSourceServer` matched only a source in `Zone::Ice`, so an upgrade or asset in a server's ROOT — the usual source of "ice protecting this server" text — counted ZERO ice. Also §4.6.8f `StaticDecl::RemoteServerLimit` + `Vm::{can_create_new_remote, remote_servers}` (a limit makes "a new remote server" an unidentifiable destination, 8.5.14), and §10.1.5 `TargetFilter::HasName` — naming a card is not self-reference | 180 |
+| `TBD-W10C` | W10c | **§9.12.3 "must" as a requirement at the mid-access window**: `Instruction::MustTrashAccessedCard { means: TrashMeans::{AnyAbility, PayingTheTrashCost} }` records a requirement on the access in progress (`AccessCtx::must_trash`), and `DecisionSpec::MidAccessWindow` grows `can_pass` — false exactly while a permitted means of trashing the accessed card is among the options. 9.12.3a's "any decisions necessary, even other card abilities" is `AnyAbility` plus a shallow scan for `TrashCards(AccessedCard)`; 9.12.3b's stipulated means is `PayingTheTrashCost`, which no other ability can satisfy. Supporting vocabulary: `Cost::spend_counters` (1.9.2, Imp class), `Payload::CannotUseAbilitiesOf` + `LingeringSpec::CannotUseAbilitiesOf` (9.5.3a, Wendigo class — a prohibition on USE, which a "must" cannot reach past because paid abilities are always optional), `TriggerCond::RunnerAccessesCard`. **Bug fixed:** the basic trash ability's affordability read only the credit pool and the bad-publicity fund, so 1.10.3c hosted credits (Scrubber class) never paid a trash cost, though `cost_payable` counted them everywhere else | 183 |
+| `2fad713` | W10b | **§4.6.6i "this server"**: `Object::last_server` stamped whenever a card leaves a server/root/position, and `Vm::this_server` as the ONE resolution of the phrase — host's server (4.6.6k), else the current server, else the server the card LEFT, else the central server corresponding to the zone the card is in. Every "this server" reader routes through it: `TargetFilter::IceProtectingSourceServer` (both the filter and the count), the checkpoint's trigger-condition server, `CardInstalledInSourceServer`, and the new 4.6.6i scope on `RunnerTrashesAtLeastOneCorpCard { in_this_server }`. **Bug fixed:** `IceProtectingSourceServer` matched only a source in `Zone::Ice`, so an upgrade or asset in a server's ROOT — the usual source of "ice protecting this server" text — counted ZERO ice. Also §4.6.8f `StaticDecl::RemoteServerLimit` + `Vm::{can_create_new_remote, remote_servers}` (a limit makes "a new remote server" an unidentifiable destination, 8.5.14), and §10.1.5 `TargetFilter::HasName` — naming a card is not self-reference | 180 |
 | `7c4d480` | W10a | **§9.12.1d/e dependency, both classes**: `StaticDecl::RemoveHostAbilities` generalised to `RemoveAbilitiesOf(HostRelation::{Host,Hosted})`, so the Hush direction and the Magnet direction are ONE declaration and their mutual dependency is the 9.12.1e loop the hosted-beats-host tiebreak exists for; `StaticDecl::GainSubtypesOf { criteria }` + `CharOp::CopySubtypesFrom` — the copied subtypes are the source object's EFFECTIVE ones, so `compute_effective` re-enters itself (cycle-guarded by a `visiting` set) and 9.12.1d's dependency ordering is realised by construction; `StaticDecl::GrantSubroutinesTo { criteria, sub, before }` for subroutines granted by a static ability that is NOT on the ice (9.8.3a/e external categories, ordered by the source's `active_since` — and `Payload::GrantedSubroutine`'s `seq` moved onto the same clock so the two kinds of external grant sort against each other); `TargetFilter::OtherThanSource` (the word "other" in a description) | 174 |
 
 ## Open deviations (documented in code; retire deliberately)
@@ -392,6 +393,21 @@ prefer a slightly larger honest primitive and note it here.
     (9.8.2c), `replace_subroutine_resolution_1` (9.8.9) and
     `instructed_to_resolve_conditional_ability_1` (9.6.14d), which all want
     the same "resolve that ability now" primitive.
+
+41. **9.12.3's "must" is implemented for the mid-access window only** (W10c) —
+    `MustTrashAccessedCard` is the shape both 9.12.3a and 9.12.3b examples
+    take, and the requirement is enforced exactly where the CR puts the
+    choice: the 9.2.10 window's pass. A "must" over any OTHER decision (the
+    9.12.3e half about declining an additional cost to a basic action, which
+    needs the basic run action to carry one) is not expressible yet, which is
+    why `must_cannot_force_additional_cost_1` is still open.
+42. **"Would this ability trash the accessed card?" is a shallow scan** (W10c,
+    `Vm::ability_trashes_accessed_card`) — the same shape deviation 16
+    describes: the ability's instruction list is scanned for
+    `TrashCards(AccessedCard)` and wrappers (`Combined`, `DeclineableChoice`,
+    `NestedCost*`) are not looked inside. An Imp-class ability that trashed
+    the accessed card from inside a wrapper would not satisfy a 9.12.3a
+    "must".
 
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real

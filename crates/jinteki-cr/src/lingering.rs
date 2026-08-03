@@ -67,6 +67,11 @@ pub enum Payload {
     /// CR 7.4.2: "the Runner cannot access any card other than <obj> for
     /// the remainder of the run" (Ash class).
     RestrictCandidatesTo(ObjectId),
+    /// CR 9.5.3a: "the Runner cannot use <card>'s abilities" for a duration
+    /// (Wendigo class). A prohibition on USE, so the abilities are not
+    /// offered in any window — and, since paid abilities are always optional
+    /// (9.5.3), a 9.12.3a "must" cannot force one that is prohibited.
+    CannotUseAbilitiesOf(ObjectId),
     /// CR 8.6.6c: a played card kept in the play area instead of being
     /// trashed at 8.6.7g; when the indicated effect occurs (kernel wave: the
     /// Runner steals an agenda), the effect expires at checkpoint step

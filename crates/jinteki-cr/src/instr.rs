@@ -86,6 +86,15 @@ pub enum Instruction {
     GainTags(u32),
     /// "Trash <targets>." — one effect acting on the whole set (9.12.2a).
     TrashCards(TargetSpec),
+    /// CR 9.12.3a/b: "the Runner MUST trash this card, if able." The
+    /// instruction states a requirement, not an effect: it forbids the Runner
+    /// from passing the mid-access window (9.2.10) while a permitted means of
+    /// trashing the accessed card is available to them. `means` is 9.12.3's
+    /// distinction — with no means stipulated the Runner must make any
+    /// decision that satisfies the requirement, including using another
+    /// card's ability (9.12.3a); with a means stipulated only that means
+    /// counts and nothing else can be forced (9.12.3b).
+    MustTrashAccessedCard { means: TrashMeans },
     /// "End the run."
     EndTheRun,
     /// An optional part its controller may decline (9.6.9c): "you may …".
@@ -548,6 +557,23 @@ pub enum LingeringSpec {
     /// "Access N additional cards from <server>." (The Maker's Eye class;
     /// added to the 7.3.6 access limit at breach step 7.5.3.)
     AdditionalAccess { server: ServerId, extra: u32 },
+    /// CR 9.5.3a: "the Runner cannot use <targets>' abilities" for the
+    /// duration (Wendigo class).
+    CannotUseAbilitiesOf(TargetSpec),
+}
+
+/// CR 9.12.3a/b: how a "must trash" requirement may be satisfied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrashMeans {
+    /// 9.12.3a: no means stipulated — any mid-access ability whose resolution
+    /// trashes the accessed card satisfies the requirement, and the Runner is
+    /// forced to use one if they can (Mumbad Virtual Tour class).
+    AnyAbility,
+    /// 9.12.3b: "…if you can pay its trash cost" — only the basic trash
+    /// ability (7.1.5) satisfies the requirement, so an ability that would
+    /// trash the card by some other means cannot be forced (Neutralize All
+    /// Threats class).
+    PayingTheTrashCost,
 }
 
 /// Targets, either fixed at card-compile time or chosen at announce time

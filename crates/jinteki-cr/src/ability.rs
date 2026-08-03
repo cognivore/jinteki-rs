@@ -55,6 +55,9 @@ pub enum TriggerCond {
     RunnerTrashesAtLeastOneCorpCard { in_this_server: bool },
     /// "When you access this card." (active while inactive, 9.1.8a)
     SelfAccessed,
+    /// "Whenever you access a card…" (Neutralize All Threats class) — a
+    /// Runner-side condition met by accessing ANY card, not this one.
+    RunnerAccessesCard,
     /// "When the Runner encounters this ice."
     SelfEncountered,
     /// "Whenever the Runner encounters a piece of ice." (Runner-side class)
@@ -174,6 +177,10 @@ pub struct Cost {
     /// KERNEL APPROXIMATION: which cards are trashed is not put to the payer
     /// (the front of the hand is taken); no example distinguishes them.
     pub trash_from_hand: u32,
+    /// CR 1.9.2: "spend N <kind> counters hosted on this card" (Imp class).
+    /// The counters come off the ability's SOURCE, which is what makes an
+    /// empty card's ability unusable rather than free.
+    pub spend_counters: Option<(crate::object::CounterKind, u32)>,
 }
 
 impl Cost {
@@ -199,6 +206,10 @@ impl Cost {
     }
     pub fn trash_from_hand(n: u32) -> Self {
         Cost { trash_from_hand: n, ..Default::default() }
+    }
+    /// CR 1.9.2: "spend N hosted counters of a kind" as a cost.
+    pub fn spend_counters(kind: crate::object::CounterKind, n: u32) -> Self {
+        Cost { spend_counters: Some((kind, n)), ..Default::default() }
     }
     pub fn free() -> Self {
         Cost::default()
@@ -233,6 +244,7 @@ impl Cost {
             net_damage: self.net_damage + other.net_damage,
             lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
+            spend_counters: self.spend_counters.or(other.spend_counters),
         }
     }
 }
@@ -640,6 +652,10 @@ pub fn trigger_matches(
             *by == Side::Runner && trashed_is_corp(*obj)
         }
         (TriggerCond::SelfAccessed, GameChange::CardAccessed { obj }) => *obj == source.id,
+        (TriggerCond::RunnerAccessesCard, GameChange::CardAccessed { .. }) => {
+            cite!("rule_accessing");
+            true
+        }
         (TriggerCond::SelfEncountered, GameChange::EncounterBegan { ice, .. }) => {
             *ice == source.id
         }

@@ -98,6 +98,10 @@ pub struct BreachCtx {
 #[derive(Debug, Clone)]
 pub struct AccessCtx {
     pub card: ObjectId,
+    /// CR 9.12.3a/b: a "the Runner must trash this card, if able" requirement
+    /// in force for THIS access, and the means it stipulates (if any). The
+    /// requirement lives exactly as long as the access does.
+    pub must_trash: Option<crate::instr::TrashMeans>,
 }
 
 /// Structure-specific context.
