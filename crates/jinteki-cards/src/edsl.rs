@@ -255,6 +255,18 @@ impl CardBuilder {
     /// One printed line of the card's text box, copied exactly. Call it once
     /// per line; the lines are joined in order. **Required** — a card with no
     /// text fails the deck test, because behaviour is checked against it.
+    /// "You draw a starting hand of N cards." (Andromeda class; 1.6.6.)
+    pub fn starting_hand(mut self, n: u32) -> Self {
+        self.printed.starting_hand_size = Some(n);
+        self
+    }
+    /// The identity's back face (rule_identity_double_sided; Nebula class).
+    /// Build the back exactly like a card — its own printed text and
+    /// abilities — and "flip this identity" swaps which face applies.
+    pub fn flip_face(mut self, back: Card) -> Self {
+        self.printed.flip_face = Some(Box::new(back.printed));
+        self
+    }
     pub fn text(mut self, line: &'static str) -> Self {
         self.text.push(line);
         self
@@ -339,6 +351,18 @@ impl CardBuilder {
     /// controller must resolve it.
     pub fn when(self, cond: TriggerCond, instrs: impl IntoIterator<Item = Instruction>) -> Self {
         self.ability(AbilityDef::conditional(cond, instrs.into_iter().collect(), false))
+    }
+    /// "The first time each turn <trigger>, …" — the once-per-turn flag
+    /// (9.3.6g) carrying the card's "first time each turn".
+    pub fn when_first_each_turn(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
+                .with_flag(AbilityFlag::OncePerTurn),
+        )
     }
     /// "When <trigger>, you may …" — the same, declinable (9.6.9). Use this
     /// only where the "may" is the WHOLE ability; a "may" inside one sentence
@@ -974,7 +998,47 @@ pub fn after_this_resolves() -> TriggerCond {
 }
 /// "Whenever you make a successful run" — any server (6.8.4).
 pub fn makes_successful_run() -> TriggerCond {
-    TriggerCond::MakesSuccessfulRun
+    TriggerCond::MakesSuccessfulRun { on: None }
+}
+/// "…makes a successful run on <these servers>" (Gemilang class).
+pub fn makes_successful_run_on(servers: &[ServerId]) -> TriggerCond {
+    TriggerCond::MakesSuccessfulRun { on: Some(servers.to_vec()) }
+}
+/// "When your action phase ends, if <requirements>…" (Nebula class; 5.6.2.)
+pub fn action_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::ActionPhaseEnds { side, requires: reqs.to_vec() }
+}
+/// "…you play an operation" (Gemilang class; the trigger half — pair with
+/// [`CardBuilder::when_first_each_turn`] for the printed "first time each
+/// turn").
+pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
+    TriggerCond::CardPlayed { by, of_types: vec![of] }
+}
+/// "…if you played an operation this turn" (Nebula class; history 1.12.6).
+pub fn played_operation_this_turn(side: Side) -> TriggerRequirement {
+    TriggerRequirement::PlayedOperationThisTurn(side)
+}
+/// "Gain [click]." (1.11.3a.)
+pub fn gain_clicks(side: Side, n: u32) -> Instruction {
+    Instruction::GainClicks(side, Quantity::c(n as i64))
+}
+/// "<side> loses N credits" with a calculated amount (1.10.3b; W17c made the
+/// position a quantity).
+pub fn loses_credits(side: Side, amount: Quantity) -> Instruction {
+    Instruction::LoseCredits(side, amount)
+}
+/// "…if the Runner has at least N tags" (BOOM! class; RunnerTagsAtLeast(1)
+/// IS "tagged").
+pub fn runner_tags_at_least(n: u32) -> TriggerRequirement {
+    TriggerRequirement::RunnerTagsAtLeast(n)
+}
+/// "…flip this identity." (rule_identity_double_sided.)
+pub fn flip_identity(side: Side) -> Instruction {
+    Instruction::FlipIdentity(side)
+}
+/// "all credits in their credit pool" (Closed Accounts class; 1.10.)
+pub fn credits_in_pool_of(side: Side) -> Quantity {
+    Quantity::CreditsInPoolOf(side)
 }
 /// "Whenever the Corp scores an agenda…" (1.17.6.)
 pub fn corp_scores_agenda() -> TriggerCond {

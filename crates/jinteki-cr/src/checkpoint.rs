@@ -121,7 +121,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     // conditionals maintained by lingering effects (9.6.13) + granted ones.
     let mut sources: Vec<(ObjectId, usize, AbilityDef, Side, Option<u64>)> = Vec::new();
     for o in vm.st.objects.values() {
-        for (i, a) in o.printed.abilities.iter().enumerate() {
+        for (i, a) in o.face().abilities.iter().enumerate() {
             if a.kind != AbilityKind::Conditional {
                 continue;
             }
@@ -416,6 +416,20 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // the Runner must already be tagged).
                     if !vm.trigger_requirements_met(cond) {
                         cite!("rule_condition_requirements_part_of_condition");
+                        continue;
+                    }
+                    // 9.3.6g, as the CR's own example fixes the reading: the
+                    // flag is spent when the ability is USED, not when its
+                    // condition occurs — an instance that never resolved does
+                    // not stop the ability pending again later the same turn
+                    // (example_rule_once_per_turn_flag_1). So creation is
+                    // gated on used-ness, and marking happens at resolution.
+                    if def.has_flag(crate::ability::AbilityFlag::OncePerTurn)
+                        && vm
+                            .once_per_turn_used
+                            .contains(&(aref, vm.generation(obj_id)))
+                    {
+                        cite!("rule_once_per_turn_flag");
                         continue;
                     }
                     if let Some(bound) = persisted_run {
@@ -759,7 +773,7 @@ fn step_e_restrictions(vm: &mut Vm) {
                 && o.host.is_some_and(|h| {
                     vm.st.objects.get(&h).is_some_and(|host| {
                         card_active(host)
-                            && host.printed.abilities.iter().enumerate().any(|(i, a)| {
+                            && host.face().abilities.iter().enumerate().any(|(i, a)| {
                                 a.kind == AbilityKind::Static
                                     && vm.ability_present(h, i)
                                     && a.statics

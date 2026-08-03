@@ -265,6 +265,12 @@ pub struct PrintedCard {
     /// (24/7 News Cycle class). 1.16.10b combines it with the printed play
     /// cost into ONE payment at step 8.6.7b.
     pub additional_play_cost: Option<crate::ability::Cost>,
+    /// CR 1.6.6-adjacent: identities that change the starting hand size
+    /// ("You draw a starting hand of 9 cards." — Andromeda class). None = 5.
+    pub starting_hand_size: Option<u32>,
+    /// CR 1.4 double-sided identities: the back face's printed
+    /// characteristics ("flip this identity" — Nebula/Gemilang class).
+    pub flip_face: Option<Box<PrintedCard>>,
     /// CR 1.10.3c: hosted credits on this card are spendable by its
     /// controller (Fencer Fueno class — drives bid legality, 10.14.3).
     pub hosted_credits_spendable: bool,
@@ -292,6 +298,8 @@ impl PrintedCard {
             additional_score_cost: None,
             cost_x: None,
             additional_play_cost: None,
+            starting_hand_size: None,
+            flip_face: None,
             hosted_credits_spendable: false,
             abilities: Vec::new(),
         }
@@ -337,6 +345,9 @@ impl PrintedCard {
 pub struct Object {
     pub id: ObjectId,
     pub printed: PrintedCard,
+    /// CR double-sided identities: which face is up. Only ever true for an
+    /// identity with a `flip_face`.
+    pub flipped: bool,
     pub zone: Zone,
     /// CR 8.1: faceup/facedown; a faceup installed Corp card is rezzed.
     pub faceup: bool,
@@ -455,6 +466,18 @@ impl CounterKind {
 }
 
 impl Object {
+    /// CR rule_identity_double_sided: the face currently showing. Everything
+    /// that reads printed characteristics of an ACTIVE card goes through
+    /// here, so flipping an identity swaps its abilities, name and subtypes.
+    pub fn face(&self) -> &PrintedCard {
+        if self.flipped {
+            if let Some(back) = &self.printed.flip_face {
+                return back;
+            }
+        }
+        &self.printed
+    }
+
     pub fn counter(&self, kind: CounterKind) -> u32 {
         *self.counters.get(&kind).unwrap_or(&0)
     }

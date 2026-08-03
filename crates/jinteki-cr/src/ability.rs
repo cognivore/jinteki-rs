@@ -59,6 +59,14 @@ pub enum TriggerCond {
     SelfAccessed { requires: Vec<TriggerRequirement> },
     /// "Whenever you access a card…" (Neutralize All Threats class) — a
     /// Runner-side condition met by accessing ANY card, not this one.
+    /// "When your action phase ends…" (Nebula class). The §11 turn tables
+    /// record the phase boundary as a change (5.6.2 / 5.7.2), and the
+    /// stipulation rides as requirements exactly as on DiscardPhaseEnds.
+    ActionPhaseEnds { side: Side, requires: Vec<TriggerRequirement> },
+    /// "The first time each turn you play an operation…" (Gemilang class,
+    /// with the once-per-turn flag carrying the "first time"): a card of one
+    /// of these types was played by `by`. Empty `of_types` = any card.
+    CardPlayed { by: Side, of_types: Vec<CardType> },
     /// `of_types` is the sentence's card-type stipulation ("whenever you
     /// access an agenda", Film Critic); empty means no stipulation, exactly
     /// as it does on [`TriggerCond::CorpRezzesCard`].
@@ -174,8 +182,9 @@ pub enum TriggerCond {
     /// the breach step where 6.7.4c puts the Runner's decision.
     SuccessfulRunOnServer,
     /// "Whenever you make a successful run" (Desperado class): the run is
-    /// declared successful (6.8.4), whichever server it was on.
-    MakesSuccessfulRun,
+    /// declared successful (6.8.4). `on` stipulates the servers the sentence
+    /// names ("…a successful run on HQ or R&D" — Gemilang class); None = any.
+    MakesSuccessfulRun { on: Option<Vec<crate::object::ServerId>> },
     /// CR 10.9.2: "when this card is empty…" (Crowdfunding class). The
     /// condition can only be met after the card has been LOADED with counters
     /// of this kind by a preceding ability of the same card — a card with no
@@ -298,6 +307,9 @@ pub enum TriggerRequirement {
     /// recently COMPLETED Runner turn, exactly as 1.12.6's "ice you passed
     /// during this run" is read from history.
     RunnerMadeRunLastTurn { successful_only: bool },
+    /// "…if you played an operation this turn" (Nebula class) — the game
+    /// history since the current turn began (1.12.6, 10.2.1).
+    PlayedOperationThisTurn(Side),
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -1259,9 +1271,20 @@ pub fn trigger_matches(
             cite!("rule_successful_run");
             server_of_source == Some(*server)
         }
-        (TriggerCond::MakesSuccessfulRun, GameChange::RunDeclaredSuccessful { .. }) => {
+        (
+            TriggerCond::MakesSuccessfulRun { on },
+            GameChange::RunDeclaredSuccessful { server },
+        ) => {
             cite!("rule_successful_run");
-            true
+            on.as_ref().is_none_or(|set| set.contains(server))
+        }
+        (TriggerCond::ActionPhaseEnds { side, .. }, GameChange::ActionPhaseEnded { side: s }) => {
+            cite!("rule_action_phase_duration");
+            side == s
+        }
+        (TriggerCond::CardPlayed { by, of_types }, GameChange::CardPlayed { obj, side }) => {
+            cite!("rule_play_ability");
+            by == side && (of_types.is_empty() || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
         }
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
@@ -1548,6 +1571,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
     match cond {
         TriggerCond::SelfAccessed { requires }
         | TriggerCond::SelfScored { requires }
+        | TriggerCond::ActionPhaseEnds { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
         _ => &[],
     }

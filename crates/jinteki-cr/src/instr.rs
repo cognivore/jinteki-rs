@@ -540,6 +540,8 @@ pub enum Instruction {
     /// purge is met once however many counters came off (and is met even if
     /// none did — the Corp purged).
     PurgeVirusCounters,
+    /// "…flip this identity." (rule_identity_double_sided; Nebula class.)
+    FlipIdentity(Side),
     /// "Trash this card." (self-referencing; strandable per 9.1.4)
     TrashSelf,
     /// Steal the accessed agenda (7.1.4 via access step 7.2.3).

@@ -1119,7 +1119,7 @@ pub fn desperado() -> PrintedCard {
         AbilityDef::static_ability(vec![StaticDecl::MemoryLimitMod(1)])
             .labeled("desperado: +1 memory"),
         AbilityDef::conditional(
-            TriggerCond::MakesSuccessfulRun,
+            TriggerCond::MakesSuccessfulRun { on: None },
             vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
             false,
         )

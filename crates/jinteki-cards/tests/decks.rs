@@ -127,7 +127,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 51, "one check per card DEFINITION (Hedge Fund is defined but not in the deck list)");
+    assert_eq!(checked, 52, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and

@@ -19,7 +19,33 @@ pub fn nebula_talent_management() -> Card {
         .identity()
         .subtypes(&["Division"])
         .text("When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.")
-        .unimplemented("When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.")
+        .when(
+            action_phase_ends_if(Corp, &[played_operation_this_turn(Corp)]),
+            [gain(Corp, 1), flip_identity(Corp)],
+        )
+        .named("nebula: gain 1 and flip")
+        .flip_face(gemilang_arena())
+        .build()
+}
+
+/// Gemilang Arena: Burning Bright — Identity: Division; the back face of
+/// Nebula Talent Management (oracle: netrunner-cards-json v2, `faces[0]`).
+/// "The first time each turn you play an operation, gain [click].
+///  When the Runner makes a successful run on HQ or R&D, flip this identity."
+pub fn gemilang_arena() -> Card {
+    card("Gemilang Arena: Burning Bright")
+        .corp()
+        .identity()
+        .subtypes(&["Division"])
+        .text("The first time each turn you play an operation, gain [click].")
+        .text("When the Runner makes a successful run on HQ or R&D, flip this identity.")
+        .when_first_each_turn(plays_a(Corp, CardType::Operation), [gain_clicks(Corp, 1)])
+        .named("gemilang: first operation of the turn")
+        .when(
+            makes_successful_run_on(&[ServerId::Hq, ServerId::Rnd]),
+            [flip_identity(Corp)],
+        )
+        .named("gemilang: flip back")
         .build()
 }
 
@@ -207,8 +233,8 @@ pub fn boom() -> Card {
         .text("As an additional cost to play this operation, spend [click].")
         .text("Do 7 meat damage.")
         .additional_play_cost(clicks(1))
+        .declares([play_only_if(&[runner_tags_at_least(2)])])
         .play([meat_damage(Corp, 7)])
-        .unimplemented("Play only if the Runner has at least 2 tags.")
         .build()
 }
 
@@ -228,7 +254,7 @@ pub fn closed_accounts() -> Card {
         .text("Play only if the Runner is tagged.")
         .text("The Runner loses all credits in their credit pool.")
         .declares([play_only_if(&[runner_is_tagged()])])
-        .unimplemented("The Runner loses all credits in their credit pool.")
+        .play([loses_credits(Runner, credits_in_pool_of(Runner))])
         .build()
 }
 

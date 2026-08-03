@@ -9,8 +9,8 @@
 use jinteki_cr::change::GameChange;
 
 use jinteki_cr::instr::Instruction;
-use jinteki_cr::object::{CounterKind, PrintedCard, ServerId, Side, Zone};
-use jinteki_cr::plan::{self, Kind, Match, Plan, Reply};
+use jinteki_cr::object::{CardType, CounterKind, PrintedCard, ServerId, Side, Zone};
+use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply};
 use jinteki_cr::timing::StructKind;
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::Vm;
@@ -709,7 +709,9 @@ fn targeted_marketing_stays_in_the_play_area() {
 #[test]
 fn boom_costs_a_click_on_top_of_its_play_cost() {
     let mut vm = Vm::empty(32);
-    let boom = vm.new_object(card_partial("BOOM!"), Zone::Hand(Side::Corp));
+    // 9.1.8c: "Play only if the Runner has at least 2 tags."
+    vm.st.runner.tags = 2;
+    let boom = vm.new_object(card("BOOM!"), Zone::Hand(Side::Corp));
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(boom);
     tk::fill_hand(&mut vm, Side::Runner, 4);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -879,9 +881,10 @@ fn builder_calls_denote_into_the_right_ability_kinds() {
     assert_eq!(kinds("Tomorrow's Headline"), vec![AbilityKind::Conditional; 2]);
     assert_eq!(kinds("Resistor"), vec![AbilityKind::Static, AbilityKind::Subroutine]);
     // 1.16.10: an additional play cost is a printed property, not a
-    // declaration — so BOOM!'s cost sentence adds no ability at all.
-    let boom = card_partial("BOOM!");
-    assert_eq!(boom.abilities.len(), 1, "only the play ability");
+    // declaration — so BOOM!'s cost sentence adds no ability. Its play
+    // RESTRICTION (9.1.8c) is one, and the effect is the other.
+    let boom = card("BOOM!");
+    assert_eq!(boom.abilities.len(), 2, "the restriction and the play ability");
     assert_eq!(boom.additional_play_cost.as_ref().map(|c| c.clicks), Some(1));
 }
 
@@ -1394,4 +1397,155 @@ fn seamless_launch_cannot_target_what_was_installed_this_turn() {
         !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAdvanced { .. })),
         "1.18.2: placing a counter is not advancing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Wave 1 of the coordinator's direct card drive: identities and staples
+// ---------------------------------------------------------------------------
+
+/// Andromeda: "You draw a starting hand of 9 cards." — through the real game
+/// setup (1.6.6), not a fixture: her side draws 9, the Corp still draws 5.
+#[test]
+fn andromeda_draws_a_starting_hand_of_nine() {
+    use jinteki_cr::vm::GameSetup;
+    let corp_deck: Vec<PrintedCard> = (0..20).map(|_| tk::corp_filler("C-filler")).collect();
+    let runner_deck: Vec<PrintedCard> =
+        (0..20).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    let vm = Vm::new_game(GameSetup {
+        seed: 7,
+        corp_identity: None,
+        runner_identity: Some(card("Andromeda: Dispossessed Ristie")),
+        corp_deck,
+        runner_deck,
+        shuffle: true,
+    });
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 9, "Andromeda's opening nine");
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 5, "the Corp's ordinary five");
+}
+
+/// Nebula, front face: the Corp plays an operation, so when the action
+/// phase ends the identity pays 1[credit] and flips (and only once —
+/// the ability is not "per operation").
+#[test]
+fn nebula_flips_after_an_operation_turn() {
+    let mut vm = Vm::empty(4400);
+    let id = tk::install_identity(&mut vm, card("Nebula Talent Management: Making Stars"), Side::Corp);
+    let hf = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hf);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action().once(), Reply::play_card(hf)),
+        Plan::runner().stop_at_action(),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        1,
+        "flipped exactly once at the phase end: {}",
+        t.tail(12)
+    );
+    assert!(vm.st.objects[&id].flipped, "the back face is up");
+    // 5 − 5 (Hedge Fund) + 9 + 2 (two remaining basic credits) + 1 (Nebula).
+    assert_eq!(vm.st.corp.credits, 12, "{}", t.tail(12));
+}
+
+/// Gemilang (the back face): the first operation of the turn pays [click] —
+/// only the first — and the Runner's successful central run flips it home.
+#[test]
+fn gemilang_pays_a_click_once_and_flips_back_on_a_central_run() {
+    let mut vm = Vm::empty(4401);
+    let id = tk::install_identity(&mut vm, card("Nebula Talent Management: Making Stars"), Side::Corp);
+    // Setup state: the identity begins on its back face (as after a Nebula
+    // turn) — placement, not effect-by-fiat.
+    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    let hf1 = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hf1);
+    let hf2 = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hf2);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(hf1))
+            .when(Match::action().once(), Reply::play_card(hf2))
+            .when(Match::action().once(), Reply::Halt),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Rnd)))
+            .when(Match::action().once(), Reply::Halt),
+    );
+    script.run(&mut vm);
+
+    // Halted after both operations: 3 allotted − 2 spent + 1 gained (ONCE).
+    assert_eq!(vm.st.corp.clicks, 2, "one click for two operations: {}", script.transcript().tail(10));
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(
+            c,
+            GameChange::ClicksGained { side: Side::Corp, amount: 1 }
+        )).count(),
+        1,
+        "the 'first time each turn' fired once"
+    );
+    assert!(vm.st.objects[&id].flipped, "still Gemilang — no flip yet");
+
+    // Resume: the Corp drains, the Runner runs R&D. The successful run flips
+    // the identity home; the Runner's halt right after proves the timing.
+    script.run(&mut vm);
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        1,
+        "flipped back on the successful central run: {}",
+        script.transcript().tail(14)
+    );
+    assert!(!vm.st.objects[&id].flipped, "front face up again");
+}
+
+/// Closed Accounts: "Play only if the Runner is tagged. The Runner loses all
+/// credits in their credit pool." — the whole pool, whatever its size.
+#[test]
+fn closed_accounts_wipes_the_whole_pool() {
+    let mut vm = Vm::empty(4401);
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 7;
+    let ca = vm.new_object(card("Closed Accounts"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ca);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.st.corp.credits = 2;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action().once(), Reply::play_card(ca)).stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.runner.credits, 0, "all 7 gone: {}", t.tail(10));
+    assert_eq!(vm.st.corp.credits, 1, "the Corp paid only the printed 1");
+}
+
+/// BOOM!'s play restriction: with one tag the action is not even offered
+/// (9.1.8c removes the option, it does not merely refuse it).
+#[test]
+fn boom_is_not_offered_below_two_tags() {
+    let mut vm = Vm::empty(4402);
+    vm.st.runner.tags = 1;
+    let boom = vm.new_object(card("BOOM!"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(boom);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.st.corp.credits = 6;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+    let offered = t.entries.iter().any(|e| {
+        e.actions().iter().any(|a| matches!(
+            a,
+            jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == boom
+        ))
+    });
+    assert!(!offered, "one tag is not 'at least 2 tags': {}", t.tail(6));
 }

@@ -12,9 +12,6 @@ use crate::edsl::*;
 
 /// Andromeda: Dispossessed Ristie — Identity: Natural. Link 1.
 /// "You draw a starting hand of 9 cards."
-///
-/// UNIMPLEMENTED: the whole ability. `Vm::new_game` draws 5 (1.6.6) with no
-/// hook for an identity to change it.
 pub fn andromeda() -> Card {
     card("Andromeda: Dispossessed Ristie")
         .runner()
@@ -22,7 +19,7 @@ pub fn andromeda() -> Card {
         .subtypes(&["Natural"])
         .link(1)
         .text("You draw a starting hand of 9 cards.")
-        .unimplemented("You draw a starting hand of 9 cards.")
+        .starting_hand(9)
         .build()
 }
 
@@ -266,7 +263,8 @@ pub fn bukhgalter() -> Card {
         .named("interface: break 1 sentry subroutine")
         .paid(credits(1), [pump(1)])
         .named("pump: +1 strength")
-        .unimplemented("The first time each turn this program fully breaks a piece of ice, gain 2[credit].")
+        .when_first_each_turn(TriggerCond::SelfFullyBroken, [gain(Runner, 2)])
+        .named("bukhgalter: fully broke a piece of ice")
         .build()
 }
 

@@ -535,7 +535,8 @@ impl Vm {
         }
         cite!("rule_start_hand");
         for side in [Side::Corp, Side::Runner] {
-            for _ in 0..5 {
+            let n = vm.starting_hand_size(side);
+            for _ in 0..n {
                 vm.draw_card_silent(side);
             }
         }
@@ -638,6 +639,7 @@ impl Vm {
             Object {
                 id,
                 printed,
+                flipped: false,
                 zone,
                 faceup: false,
                 owner,
@@ -2284,7 +2286,7 @@ impl Vm {
         let mut out = Vec::new();
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Static {
                     continue;
                 }
@@ -2384,7 +2386,7 @@ impl Vm {
         let mut out = Vec::new();
         let threat = self.gather_threat_level();
         for o in self.st.objects.values() {
-            for a in &o.printed.abilities {
+            for a in &o.face().abilities {
                 if a.kind != AbilityKind::Static {
                     continue;
                 }
@@ -2776,7 +2778,7 @@ impl Vm {
         cite!("rule_active_exception_encounter_not_installed");
         let threat = self.threat_level();
         let encountered = self.st.encounter.as_ref().map(|e| e.ice);
-        for (i, a) in self.st.objects[&ice].printed.abilities.iter().enumerate() {
+        for (i, a) in self.st.objects[&ice].face().abilities.iter().enumerate() {
             if a.kind == AbilityKind::Subroutine
                 && self.ability_present(ice, i)
                 && ability_active(&self.st.objects[&ice], a, encountered, self.st.accessed, threat)
@@ -2786,7 +2788,7 @@ impl Vm {
         }
         // (d) self-static count-linked (9.8.3d): Ashigaru class.
         cite!("rule_subroutine_origin_static_after");
-        for a in &self.st.objects[&ice].printed.abilities {
+        for a in &self.st.objects[&ice].face().abilities {
             if a.kind != AbilityKind::Static {
                 continue;
             }
@@ -2910,7 +2912,7 @@ impl Vm {
             if o.id == ice || !card_active(o) {
                 continue;
             }
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Static
                     || !self.ability_present(o.id, i)
                     || !ability_active(o, a, encountered, self.st.accessed, threat)
@@ -3700,7 +3702,7 @@ impl Vm {
                 let defined = source.is_some_and(|s| {
                     self.st.objects.get(&s).is_some_and(|o| {
                         card_active(o)
-                            && o.printed.abilities.iter().enumerate().any(|(i, a)| {
+                            && o.face().abilities.iter().enumerate().any(|(i, a)| {
                                 a.statics.iter().any(|d| {
                                     matches!(d, StaticDecl::SelfStrength(_))
                                 }) && self.ability_present(s, i)
@@ -4320,7 +4322,7 @@ impl Vm {
         let mut to_pend: Vec<(ObjectId, usize, AbilityDef, Side)> = Vec::new();
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Conditional || !a.is_interrupt() {
                     continue;
                 }
@@ -4607,7 +4609,7 @@ impl Vm {
             if o.controller != side {
                 continue;
             }
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Paid || !a.is_interrupt() {
                     continue;
                 }
@@ -5825,7 +5827,7 @@ impl Vm {
     fn hosts_onto_itself(&self, host: ObjectId) -> bool {
         cite!("rule_host_via_ability");
         let Some(o) = self.st.objects.get(&host) else { return false };
-        o.printed.abilities.iter().any(|a| {
+        o.face().abilities.iter().any(|a| {
             a.instructions.iter().any(|i| {
                 matches!(i, Instruction::HostCards { host: TargetSpec::SelfSource, .. })
             })
@@ -5835,7 +5837,7 @@ impl Vm {
     /// Does `host`'s hosting declaration accept `installee`, with room left
     /// (1.13.5: any number unless the ability says otherwise)?
     fn host_accepts(&self, host: &Object, installee: &Object) -> bool {
-        host.printed.abilities.iter().enumerate().any(|(i, a)| {
+        host.face().abilities.iter().enumerate().any(|(i, a)| {
             a.kind == AbilityKind::Static
                 && self.ability_present(host.id, i)
                 && a.statics.iter().any(|d| match d {
@@ -6603,7 +6605,7 @@ impl Vm {
     pub fn play_permitted(&self, card: ObjectId) -> bool {
         cite!("rule_active_exception_modify_play_install_rez");
         let Some(o) = self.st.objects.get(&card) else { return false };
-        o.printed.abilities.iter().all(|a| {
+        o.face().abilities.iter().all(|a| {
             a.statics.iter().all(|d| match d {
                 StaticDecl::PlayOnlyIf(reqs) => {
                     reqs.iter().all(|r| self.state_requirement_holds(r))
@@ -6611,6 +6613,17 @@ impl Vm {
                 _ => true,
             })
         })
+    }
+
+    /// CR 1.6.6 / rule_start_hand: the starting hand size — 5 unless this
+    /// side's identity prints another number (Andromeda class).
+    pub fn starting_hand_size(&self, side: Side) -> u32 {
+        self.st
+            .objects
+            .values()
+            .find(|o| o.printed.card_type == CardType::Identity && o.printed.side == side)
+            .and_then(|o| o.face().starting_hand_size)
+            .unwrap_or(5)
     }
 
     /// One state requirement of the shared predicate vocabulary
@@ -6626,6 +6639,18 @@ impl Vm {
             // "…during their last turn": the most recently COMPLETED Runner
             // turn in the change log. During the Runner's own turn that is the
             // previous one, which is what the Corp's cards ask about.
+            R::PlayedOperationThisTurn(side) => {
+                cite!("rule_hidden_or_open_information");
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                    .unwrap_or(0);
+                log[start..].iter().any(|c| {
+                    matches!(c, GameChange::CardPlayed { obj, side: s } if s == side
+                        && self.st.objects.get(obj).is_some_and(|o| o.printed.card_type == CardType::Operation))
+                })
+            }
             R::RunnerMadeRunLastTurn { successful_only } => {
                 cite!("rule_hidden_or_open_information");
                 let log = &self.changes.log;
@@ -8606,6 +8631,30 @@ impl Vm {
                     self.changes.record(GameChange::CardAdvanced { obj: t });
                 }
             }
+            Instruction::FlipIdentity(side) => {
+                // CR rule_identity_double_sided: turning the identity over
+                // changes which face's printed characteristics apply. The
+                // 10.3.1a checkpoint after this instruction re-derives
+                // abilities from the new face, so pendings/statics follow.
+                cite!("rule_identity_double_sided");
+                cite!("rule_double_sided_identity");
+                let id = self
+                    .st
+                    .objects
+                    .values()
+                    .find(|o| {
+                        o.printed.card_type == CardType::Identity && o.printed.side == *side
+                    })
+                    .map(|o| o.id);
+                if let Some(id) = id {
+                    if let Some(o) = self.st.objects.get_mut(&id) {
+                        if o.printed.flip_face.is_some() {
+                            o.flipped = !o.flipped;
+                            self.changes.record(GameChange::IdentityFlipped { side: *side });
+                        }
+                    }
+                }
+            }
             Instruction::PurgeVirusCounters => {
                 // CR 10.1.2: remove ALL virus counters hosted on cards and
                 // return them to the bank. One occurrence, however many cards
@@ -9065,7 +9114,7 @@ impl Vm {
                 if in_play_area {
                     // 8.6.6c: a "not trashed until <effect>" ability keeps
                     // the card in the play area via a lingering effect.
-                    let shielded = self.st.objects[&c].printed.abilities.iter().any(|a| {
+                    let shielded = self.st.objects[&c].face().abilities.iter().any(|a| {
                         a.statics.iter().any(|d| {
                             matches!(d, StaticDecl::PlayedNotTrashedUntilAgendaSteal)
                         })
@@ -9533,6 +9582,22 @@ impl Vm {
                 .unwrap_or("?");
             self.resolution_log.push(format!("{label}#{}", af.source.index));
         }
+        // 9.3.6g: completing a conditional ability's resolution is USING it
+        // — which is what spends the once-per-turn flag (the optional path
+        // in DeclineableChoice marks the same way; a declined optional is
+        // NOT a use and pends again).
+        if matches!(af.kind, ResolutionKind::Conditional) && !af.declined {
+            let used_def = self
+                .st
+                .objects
+                .get(&af.source.obj)
+                .and_then(|o| o.face().abilities.get(af.source.index))
+                .is_some_and(|d| d.has_flag(crate::ability::AbilityFlag::OncePerTurn));
+            if used_def {
+                cite!("rule_once_per_turn_flag");
+                self.once_per_turn_used.insert((af.source, af.source_generation));
+            }
+        }
         // CR 9.6.7d: a static-condition conditional that resolved with no
         // expected effects at any interrupt-window open is throttled until a
         // timing structure step completes.
@@ -9900,7 +9965,7 @@ impl Vm {
             if o.controller != side {
                 continue;
             }
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if !a.is_action() {
                     continue;
                 }
@@ -9952,7 +10017,7 @@ impl Vm {
             if o.controller != side {
                 continue;
             }
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Paid
                     || a.is_action()
                     || a.is_interrupt()
@@ -10174,7 +10239,7 @@ impl Vm {
             if src.controller != Side::Runner || self.ability_use_prohibited(src.id) {
                 continue;
             }
-            for (i, a) in src.printed.abilities.iter().enumerate() {
+            for (i, a) in src.face().abilities.iter().enumerate() {
                 if a.kind == AbilityKind::Paid
                     && a.has_flag(AbilityFlag::Access)
                     && ability_active(src, a, None, self.st.accessed, threat)
@@ -10245,7 +10310,7 @@ impl Vm {
     /// shape 1.13.6b's scan uses (deviation 16).
     fn ability_trashes_accessed_card(&self, ability: AbilityRef) -> bool {
         let Some(o) = self.st.objects.get(&ability.obj) else { return false };
-        let Some(a) = o.printed.abilities.get(ability.index) else { return false };
+        let Some(a) = o.face().abilities.get(ability.index) else { return false };
         a.instructions
             .iter()
             .any(|i| matches!(i, Instruction::TrashCards(TargetSpec::AccessedCard)))
@@ -10399,7 +10464,7 @@ impl Vm {
     fn damage_cost_blocked(&self, kind: DamageKind) -> bool {
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
                     continue;
                 }
@@ -10603,7 +10668,7 @@ impl Vm {
     fn tag_cost_blocked(&self) -> bool {
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.printed.abilities.iter().enumerate() {
+            for (i, a) in o.face().abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
                     continue;
                 }
@@ -11662,7 +11727,7 @@ impl Vm {
                     }
                     let deck = self.st.deck.get_mut(&s).unwrap();
                     deck.shuffle(&mut self.rng);
-                    for _ in 0..5 {
+                    for _ in 0..self.starting_hand_size(side) {
                         self.draw_card_silent(s);
                     }
                 }
@@ -12573,7 +12638,7 @@ impl Vm {
                 );
             }
             ActionOption::CardAction { ability, .. } => {
-                let def = self.st.objects[&ability.obj].printed.abilities[ability.index].clone();
+                let def = self.st.objects[&ability.obj].face().abilities[ability.index].clone();
                 self.trigger_paid_ability(side, ability, def);
             }
         }
@@ -12597,7 +12662,7 @@ impl Vm {
                 if o.printed.card_type == CardType::Agenda {
                     return true;
                 }
-                o.printed.abilities.iter().any(|a| {
+                o.face().abilities.iter().any(|a| {
                     a.statics.iter().any(|d| matches!(d, StaticDecl::CanBeAdvancedSelf))
                         && crate::ability::ability_active(
                             o,
@@ -12738,7 +12803,7 @@ impl Vm {
                 );
             }
             WindowOption::TriggerPaid { ability, .. } => {
-                let def = self.st.objects[&ability.obj].printed.abilities[ability.index].clone();
+                let def = self.st.objects[&ability.obj].face().abilities[ability.index].clone();
                 self.trigger_paid_ability(side, ability, def);
             }
             WindowOption::Rez { card } | WindowOption::RezApproachedIce { card } => {

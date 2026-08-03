@@ -123,6 +123,8 @@ pub enum GameChange {
     TurnBegan { side: Side },
     TurnEnded { side: Side },
     ActionPhaseEnded { side: Side },
+    /// CR rule_identity_double_sided: a double-sided identity turned over.
+    IdentityFlipped { side: Side },
     RunBegan { server: ServerId },
     RunDeclaredSuccessful { server: ServerId },
     RunDeclaredUnsuccessful { server: ServerId },
