@@ -145,6 +145,32 @@ pub fn seamless_launch() -> PrintedCard {
     c
 }
 
+/// Closed Accounts — Operation: Gray Ops. Cost 1. COMPLETE.
+/// "Play only if the Runner is tagged.
+///  The Runner loses all credits in their credit pool."
+///
+/// 9.1.8c's play restriction (active while the card sits in HQ) plus a loss
+/// whose amount is a quantity position: 1.10.2's credit POOL, which 1.13.3
+/// keeps distinct from credits hosted on cards, so a Runner with credits on a
+/// card keeps those.
+pub fn closed_accounts() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Closed Accounts", Side::Corp, CardType::Operation);
+    c.subtypes = vec!["Gray Ops"];
+    c.cost = Some(1);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
+            TriggerRequirement::RunnerTagged,
+        ])])
+        .labeled("closed accounts: play only if the Runner is tagged"),
+        AbilityDef::play(vec![Instruction::LoseCredits(
+            Side::Runner,
+            Quantity::CreditsInPoolOf(Side::Runner),
+        )])
+        .labeled("closed accounts: the Runner loses all credits"),
+    ];
+    c
+}
+
 /// Cyberdex Trial — Operation. Cost 0.
 /// "Purge virus counters."
 pub fn cyberdex_trial() -> PrintedCard {
@@ -268,6 +294,18 @@ pub fn paper_wall() -> PrintedCard {
     c
 }
 
+/// Quandary — ICE: Code Gate. Rez 1, strength 0. COMPLETE.
+/// "[subroutine] End the run."
+pub fn quandary() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Quandary", Side::Corp, CardType::Ice);
+    c.subtypes = vec!["Code Gate"];
+    c.cost = Some(1);
+    c.strength = Some(0);
+    c.abilities =
+        vec![AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run")];
+    c
+}
+
 /// Vanilla — ICE: Barrier. Rez 0, strength 0.
 /// "[subroutine] End the run."
 pub fn vanilla_ice() -> PrintedCard {
@@ -382,6 +420,37 @@ pub fn breaker_bay_grid() -> PrintedCard {
     c.subtypes = vec!["Region"];
     c.cost = Some(0);
     c.trash_cost = Some(2);
+    c
+}
+
+/// Corporate Troubleshooter — Upgrade. Rez 0, trash 2. COMPLETE.
+/// "X[credit], [trash]: Choose 1 rezzed piece of ice protecting this server.
+///  That ice gets +X strength for the remainder of the turn."
+///
+/// Every position in this card is a selector (§12 rule 6): the cost's X is
+/// 1.16.2c's announced value, the chosen ice is a 1.15.2 announcement over
+/// "rezzed" ∧ "protecting this server" (so an unrezzed one is not a legal
+/// target at all), and the STRENGTH MODIFICATION reads the same announced X —
+/// which is the whole reason `ModifyStrength.amount` has to be a quantity.
+/// The stated duration (3.9.5c) is the remainder of the turn.
+pub fn corporate_troubleshooter() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Corporate Troubleshooter", Side::Corp, CardType::Upgrade);
+    c.cost = Some(0);
+    c.trash_cost = Some(2);
+    let mut cost = Cost { trash_self: true, ..Default::default() };
+    cost.credits = Quantity::AnnouncedX;
+    c.abilities = vec![AbilityDef::paid(
+        cost,
+        vec![Instruction::ModifyStrength {
+            target: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![TargetFilter::Rezzed, TargetFilter::IceProtectingSourceServer],
+            },
+            amount: Quantity::AnnouncedX,
+            duration: Some(crate::lingering::WantedDuration::ThisTurn),
+        }],
+    )
+    .labeled("corporate troubleshooter: that ice gets +X strength")];
     c
 }
 
@@ -849,7 +918,7 @@ pub fn corroder() -> PrintedCard {
             Cost::credits(1),
             vec![Instruction::ModifyStrength {
                 target: TargetSpec::SelfSource,
-                amount: 1,
+                amount: Quantity::c(1),
                 duration: None,
             }],
         )
@@ -1018,7 +1087,7 @@ pub fn account_siphon() -> PrintedCard {
             payload: crate::instr::LingeringSpec::Replacement {
                 applies_to: crate::effects::EffectClass::Breach,
                 with: crate::lingering::ReplacementTransform::SuppressAndResolve(vec![
-                    Instruction::LoseCredits(Side::Corp, 5),
+                    Instruction::LoseCredits(Side::Corp, Quantity::c(5)),
                     Instruction::GainCredits(
                         Side::Runner,
                         Quantity::Times(2, Box::new(Quantity::CreditsLostThisAbility(Side::Corp))),

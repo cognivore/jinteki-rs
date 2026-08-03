@@ -3676,6 +3676,12 @@ impl Vm {
             Q::RequirementOfSource => {
                 source.map(|s| self.advancement_requirement(s) as i64).unwrap_or(0)
             }
+            // 1.10.1: the named player's credit POOL — 1.13.3 keeps credits
+            // hosted on cards out of it.
+            Q::CreditsInPoolOf(side) => {
+                cite!("rule_credit_pool");
+                self.st.player(*side).credits as i64
+            }
             Q::Times(n, inner) => n * self.eval_quantity(inner, source),
             // 9.12.2a: "1 for every N" — the count of complete groups, so a
             // remainder buys nothing and there is never a negative count.
@@ -3754,8 +3760,9 @@ impl Vm {
                 let n = self.eval_quantity(q, source);
                 vec![EffectAtom::new(EffectClass::GainCredits, n, *side)]
             }
-            Instruction::LoseCredits(side, n) => {
-                vec![EffectAtom::new(EffectClass::LoseCredits, *n as i64, *side)]
+            Instruction::LoseCredits(side, q) => {
+                let n = self.eval_quantity(q, source);
+                vec![EffectAtom::new(EffectClass::LoseCredits, n, *side)]
             }
             // 1.11.3a/b + 9.12.2c: clicks are an aggregated class exactly as
             // credits are, so a "lose [click]" carries one atom whose value
@@ -5096,7 +5103,10 @@ impl Vm {
     fn option_resolvable(&self, instrs: &[Instruction]) -> bool {
         instrs.iter().all(|i| match i {
             Instruction::PerformedBy { instr, .. } => self.option_resolvable(std::slice::from_ref(instr)),
-            Instruction::LoseCredits(side, n) => self.st.player(*side).credits >= *n,
+            Instruction::LoseCredits(side, q) => {
+                self.st.player(*side).credits as i64
+                    >= self.eval_quantity(q, self.current_source())
+            }
             Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
                 let want = self.eval_quantity(count, self.current_source()).max(0) as usize;
                 self.filter_candidates(criteria, Side::Runner).len() >= want
@@ -5203,6 +5213,11 @@ impl Vm {
             | Instruction::RemoveCounters { target: spec, .. }
             | Instruction::TakeHostedCredits { from: spec, .. }
             | Instruction::AdvanceCard { target: spec }
+            // 1.15.1: "Choose 1 rezzed piece of ice protecting this server.
+            // That ice gets +X strength" — 9.11.4c makes the choose sentence
+            // and the modifying sentence ONE instruction, and the ice is its
+            // target.
+            | Instruction::ModifyStrength { target: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -7914,6 +7929,10 @@ impl Vm {
             }
             Instruction::ModifyStrength { target, amount, duration } => {
                 let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                // §12 rule 6: the amount is a selector, evaluated where the
+                // instruction resolves — 1.16.2c's announced X, a count of
+                // installed icebreakers, or a printed constant.
+                let delta = self.eval_quantity(amount, Some(source.obj)) as i32;
                 let enc = self.st.encounter.as_ref().map(|e| e.id);
                 let run = self.current_run.map(|(r, _, _)| r);
                 let turn = self.st.turn_seq;
@@ -7949,7 +7968,7 @@ impl Vm {
                     let mut l = LingeringEffect::new(
                         id,
                         source.obj,
-                        Payload::StrengthMod { target: t, delta: *amount },
+                        Payload::StrengthMod { target: t, delta },
                         base,
                     );
                     // 3.9.5c / 3.4.4a: a STATED duration runs alongside the
@@ -10670,14 +10689,35 @@ impl Vm {
         }
     }
 
+    /// CR 1.16.2c: the greatest value the payer may announce for X.
+    ///
+    /// "The chosen value must follow any applicable restrictions" — a stated
+    /// restriction (Misdirection's "X must be no greater than the number of
+    /// tags") is one; and where none is stated the bound is what 1.16.1a
+    /// leaves: a cost must be paid all at once, so a value the payer could
+    /// not pay for would make the ability unusable (1.16.1b) rather than
+    /// legal. Both bounds apply when both exist.
+    fn x_bound(&self, p: &Payment) -> u32 {
+        cite!("rule_cost_x");
+        cite!("rule_cost_restrictions");
+        let mut max = self.spendable_credits(p.side);
+        if let Some(q) = &p.cost.x_restriction {
+            max = max.min(self.eval_quantity(q, Some(p.source)).max(0) as u32);
+        }
+        max
+    }
+
     /// CR 1.16: ask for the next choice this payment needs, or commit it.
     fn advance_payment(&mut self) {
         let Some(p) = self.payment.clone() else { return };
         // 1.16.2c: X is announced BEFORE the cost is paid.
         if p.announced_x.is_none() {
-            if let Some(restriction) = &p.cost.x_restriction {
+            // 1.16.2c: the announcement is owed whenever the cost CONTAINS X
+            // — a stated restriction is an extra bound on the value, not what
+            // creates the choice (Corporate Troubleshooter states none).
+            if p.cost.credits.mentions_announced_x() || p.cost.x_restriction.is_some() {
                 cite!("rule_cost_x");
-                let max = self.eval_quantity(restriction, Some(p.source)).max(0) as u32;
+                let max = self.x_bound(&p);
                 self.ask(p.side, DecisionSpec::DeclareX { max }, DecisionCtx::Payment);
                 return;
             }
@@ -10800,12 +10840,7 @@ impl Vm {
                 // 1.16.2c: "the chosen value must follow any applicable
                 // restrictions" — the announcement is clamped to them.
                 cite!("rule_cost_x");
-                let max = p
-                    .cost
-                    .x_restriction
-                    .as_ref()
-                    .map(|q| self.eval_quantity(q, Some(p.source)).max(0) as u32)
-                    .unwrap_or(0);
+                let max = self.x_bound(&p);
                 if let Some(pm) = self.payment.as_mut() {
                     pm.announced_x = Some(n.min(max));
                 }
@@ -12767,9 +12802,7 @@ fn scale_instruction(i: &Instruction, x: i64) -> Instruction {
         Instruction::GainCredits(s, q) => Instruction::GainCredits(*s, times(q)),
         Instruction::GainClicks(s, q) => Instruction::GainClicks(*s, times(q)),
         Instruction::LoseClicks(s, q) => Instruction::LoseClicks(*s, times(q)),
-        Instruction::LoseCredits(s, n) => {
-            Instruction::LoseCredits(*s, (*n as i64 * x).max(0) as u32)
-        }
+        Instruction::LoseCredits(s, q) => Instruction::LoseCredits(*s, times(q)),
         Instruction::Draw(s, n) => Instruction::Draw(*s, (*n as i64 * x).max(0) as u32),
         Instruction::GainTags(n) => Instruction::GainTags((*n as i64 * x).max(0) as u32),
         Instruction::TakeBadPublicity { side, amount } => {

@@ -3924,7 +3924,7 @@ fn example_rule_independent_effects_1() {
         tk::warden_fatuma_like(
             "Warden-Fatuma-like",
             "bioroid",
-            AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, 1)])
+            AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, Quantity::c(1))])
                 .labeled("[sub] the runner loses a credit"),
         ),
         ServerId::Remote(2),
@@ -10086,7 +10086,7 @@ fn example_rule_subroutine_origin_external_before_1() {
             "WardenFatuma-like",
             "Bioroid",
             jinteki_cr::ability::AbilityDef::subroutine(vec![
-                jinteki_cr::instr::Instruction::LoseCredits(Side::Runner, 1),
+                jinteki_cr::instr::Instruction::LoseCredits(Side::Runner, Quantity::c(1)),
             ])
             .labeled("[sub] fatuma"),
         ),

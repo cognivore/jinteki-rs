@@ -71,6 +71,10 @@ pub enum Quantity {
     /// CR 10.7: the number of tags the Runner has. A quantity position
     /// (§12 rule 6), used both in effects and as a 1.16.2c restriction on X.
     RunnerTags,
+    /// CR 1.10.1: "all credits in their credit pool" (Closed Accounts) — the
+    /// named player's credit POOL, which 1.13.3 keeps distinct from any
+    /// credits hosted on cards.
+    CreditsInPoolOf(Side),
 }
 
 impl Default for Quantity {
@@ -84,6 +88,23 @@ impl Quantity {
     /// Shorthand for a printed constant.
     pub fn c(n: i64) -> Quantity {
         Quantity::Const(n)
+    }
+    /// CR 1.16.2c: does this quantity CONTAIN the variable X? "Some costs
+    /// contain the variable X. Before a player pays such a cost, they choose
+    /// and announce a positive integer or 0 to be the value for X" — so the
+    /// announcement is owed by the cost's SHAPE, not by whether the ability
+    /// also states a restriction on the value.
+    pub fn mentions_announced_x(&self) -> bool {
+        match self {
+            Quantity::AnnouncedX => true,
+            Quantity::Plus(a, b) | Quantity::Minus(a, b) => {
+                a.mentions_announced_x() || b.mentions_announced_x()
+            }
+            Quantity::Times(_, q) | Quantity::PerEvery(q, _) | Quantity::XOfSource(q) => {
+                q.mentions_announced_x()
+            }
+            _ => false,
+        }
     }
     /// "base plus per × (counters of `kind` on this card)" — the common
     /// calculated-quantity shape (9.12.2b, Urtica/Fermenter classes).
@@ -150,8 +171,11 @@ pub enum Instruction {
     /// "Gain N credits." — N is a quantity position (9.12.2: "…for each" is
     /// the same instruction with a computed selector).
     GainCredits(Side, Quantity),
-    /// "Lose N credits." (loses as much as possible if short)
-    LoseCredits(Side, u32),
+    /// "Lose N credits." (1.10.3b: loses as much as possible if short.) N is
+    /// a quantity position (§12 rule 6), so "the Runner loses all credits in
+    /// their credit pool" (Closed Accounts) is this instruction with a
+    /// selector rather than a variant of its own.
+    LoseCredits(Side, Quantity),
     /// CR 1.11.3a: "A player gains clicks whenever the number of clicks they
     /// have is increased." The count is a quantity position (§12 rule 6).
     GainClicks(Side, Quantity),
@@ -463,9 +487,13 @@ pub enum Instruction {
     /// current encounter" (3.9.5b / 9.10.4a) and outside an encounter means
     /// "until the next checkpoint" (3.9.5d). A stated duration runs
     /// ALONGSIDE that implicit one, not instead of it (3.9.5c / 3.4.4a).
+    /// The AMOUNT is a quantity position too (§12 rule 6): "+X strength"
+    /// (Paperclip, Corporate Troubleshooter) and "+X strength, X = the number
+    /// of installed icebreakers" (Unity) are this instruction with a
+    /// selector. A negative quantity lowers the strength.
     ModifyStrength {
         target: TargetSpec,
-        amount: i32,
+        amount: Quantity,
         duration: Option<crate::lingering::WantedDuration>,
     },
     /// "Place N <kind> counters on <target>." The count is a quantity

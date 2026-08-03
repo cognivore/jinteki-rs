@@ -1374,6 +1374,142 @@ fn fan_site() {
     );
 }
 
+/// closed-accounts: untagged, the play restriction (9.1.8c) removes the card
+/// from the basic play action entirely; tagged, the Runner loses their whole
+/// credit POOL (1.10.2) — a quantity position on the loss, not a printed
+/// number.
+///
+/// The reference reaches into state with `gain-tags`; the port makes the tag
+/// the way the game does — Lt. Todachine's "whenever you rez a piece of ice,
+/// give the Runner 1 tag", with the ice rezzed as the Runner approaches it
+/// (9.2.7e), which is the same idiom `corp-basic-actions-trash-resource-if-
+/// runner-is-tagged` uses.
+#[test]
+fn closed_accounts() {
+    let mut g = Game::new(11)
+        .hand(Side::Corp, vec![cards::closed_accounts()])
+        .credits(Side::Corp, 10)
+        .credits(Side::Runner, 5)
+        .start(Side::Corp);
+    let ca = g.id("Closed Accounts");
+    tk::install_root(&mut g.vm, cards::lt_todachine(), ServerId::Remote(1), true);
+    tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            // The Corp's first turn: the Runner is untagged, so there is
+            // nothing to play and the turn is spent.
+            .when(Match::action().times(3), Reply::credit())
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::action().once(), Reply::play_card(ca))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    let offers_ca = |e: &plan::Entry| match &e.spec {
+        jinteki_cr::decision::DecisionSpec::TakeAction { options } => options.iter().any(
+            |o| matches!(o, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == ca),
+        ),
+        _ => false,
+    };
+    let tagged = t
+        .entries
+        .iter()
+        .position(|_| g.vm.st.runner.tags > 0)
+        .filter(|_| g.vm.st.runner.tags > 0);
+    assert!(tagged.is_some(), "Lt. Todachine tagged the Runner: {}", t.tail(14));
+    let first_offer = t.entries.iter().position(offers_ca);
+    assert!(
+        first_offer.is_some(),
+        "once the Runner was tagged the card became playable: {}",
+        t.tail(14)
+    );
+    // The Corp's whole first turn came before the run, and the card was never
+    // among its options there.
+    let ran = t
+        .entries
+        .iter()
+        .position(|e| {
+            matches!(&e.answer, Some(jinteki_cr::decision::DecisionAnswer::Action(
+                jinteki_cr::decision::ActionOption::BasicRun { .. })))
+        })
+        .expect("the Runner ran");
+    assert!(
+        !t.entries[..ran].iter().any(offers_ca),
+        "untagged, the play restriction removed it from the action window: {}",
+        t.tail(14)
+    );
+    assert_eq!(g.vm.st.runner.credits, 0, "the Runner lost all credits: {}", t.tail(14));
+    assert_eq!(g.zone_of("Closed Accounts"), Zone::Discard(Side::Corp), "8.6.7g: trashed");
+}
+
+/// corporate-troubleshooter: X credits and a [trash] buy +X strength for one
+/// rezzed piece of ice protecting this server, for the remainder of the turn.
+/// The unrezzed ice in the same server is not a legal target (1.15.2b), the
+/// amount is 1.16.2c's announced X read back by the strength modification,
+/// and the effect is gone once the turn is over (9.10.2).
+#[test]
+fn corporate_troubleshooter() {
+    let mut g = Game::new(11).credits(Side::Corp, 10).start(Side::Corp);
+    let ct = tk::install_root(&mut g.vm, cards::corporate_troubleshooter(), ServerId::Hq, true);
+    let q1 = tk::install_ice(&mut g.vm, cards::quandary(), ServerId::Hq, true);
+    let q2 = tk::install_ice(&mut g.vm, cards::quandary(), ServerId::Hq, false);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corporate troubleshooter"))
+            .when(Match::declare_x(), Reply::DeclareX(5))
+            .when(Match::targets().once(), Reply::Targets(vec![q1]))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    let announcement = t
+        .entries
+        .iter()
+        .find(|e| !e.candidates().is_empty())
+        .unwrap_or_else(|| panic!("the ice was announced as a target: {}", t.tail(20)));
+    assert_eq!(
+        announcement.candidates(),
+        &[q1],
+        "the unrezzed outer Quandary cannot be targeted: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        g.vm.effective_strength(q1),
+        Some(5),
+        "+X strength, X = the 5 announced: {}",
+        t.tail(12)
+    );
+    assert_eq!(g.vm.st.objects[&ct].zone, Zone::Discard(Side::Corp), "[trash] was paid");
+    assert_eq!(g.vm.st.corp.credits, 5, "10 − 5 announced for X");
+    // Let the turn end.
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.effective_strength(q1),
+        Some(0),
+        "the modification lasted only for the remainder of the turn"
+    );
+    let _ = q2;
+}
+
 /// clot: with Clot installed, the Corp cannot score an agenda during the same
 /// turn they installed it — but an agenda installed on an earlier turn is
 /// scored normally, and the blocked one becomes scorable on the next turn.
@@ -2154,6 +2290,8 @@ const PORTED: &[&str] = &[
     "account-siphon-use-ability",
     "account-siphon-access",
     "hostile-takeover",
+    "closed-accounts",
+    "corporate-troubleshooter",
     "clot",
     "seamless-launch",
     "global-food-initiative",
@@ -2201,8 +2339,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 66,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 66",
+        PORTED.len() >= 68,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 68",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is

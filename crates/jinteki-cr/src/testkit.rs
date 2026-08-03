@@ -209,7 +209,7 @@ pub fn drug_dealer_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::TurnBegins(Side::Runner),
-        vec![Instruction::LoseCredits(Side::Runner, 1)],
+        vec![Instruction::LoseCredits(Side::Runner, Quantity::c(1))],
         false,
     )
     .labeled("drug-dealer: lose 1 credit")];
@@ -502,7 +502,7 @@ pub fn pump_breaker(name: &'static str, base_strength: i32) -> PrintedCard {
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
             target: TargetSpec::SelfSource,
-            amount: 2,
+            amount: Quantity::c(2),
             duration: None,
         }],
     )
@@ -1253,7 +1253,7 @@ pub fn fairchild_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 5, 4);
     let sub = AbilityDef::subroutine(vec![Instruction::ChooseOne {
         options: vec![
-            ("pay 2", vec![Instruction::LoseCredits(Side::Runner, 2)]),
+            ("pay 2", vec![Instruction::LoseCredits(Side::Runner, Quantity::c(2))]),
             (
                 "trash installed",
                 vec![Instruction::TrashCards(TargetSpec::Choose {
@@ -2734,7 +2734,7 @@ pub fn exchange_of_information_like(
 pub fn whitespace_like(name: &'static str, amount: u32) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 0);
     c.abilities = vec![
-        AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, amount)])
+        AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, Quantity::c(amount as i64))])
             .labeled("[sub] the Runner loses credits"),
     ];
     c
@@ -2775,7 +2775,7 @@ pub fn credit_cost_program(name: &'static str) -> PrintedCard {
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
             target: TargetSpec::SelfSource,
-            amount: 1,
+            amount: Quantity::c(1),
             duration: None,
         }],
     )
@@ -3010,7 +3010,7 @@ pub fn implicit_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
             target: TargetSpec::SelfSource,
-            amount: 1,
+            amount: Quantity::c(1),
             duration: None,
         }],
     )
@@ -3029,7 +3029,7 @@ pub fn run_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
             target: TargetSpec::SelfSource,
-            amount: 1,
+            amount: Quantity::c(1),
             duration: Some(crate::lingering::WantedDuration::ThisRun),
         }],
     )
@@ -3055,7 +3055,7 @@ pub fn attacked_server_breaker(name: &'static str) -> PrintedCard {
             Cost::credits(1),
             vec![Instruction::ModifyStrength {
                 target: TargetSpec::SelfSource,
-                amount: 2,
+                amount: Quantity::c(2),
                 duration: None,
             }],
         )
@@ -3081,7 +3081,7 @@ pub fn counter_strength_breaker(name: &'static str) -> PrintedCard {
             Cost::credits(1),
             vec![Instruction::ModifyStrength {
                 target: TargetSpec::SelfSource,
-                amount: 1,
+                amount: Quantity::c(1),
                 duration: None,
             }],
         )
@@ -3959,7 +3959,12 @@ pub fn devil_charm_like(name: &'static str, amount: i32) -> PrintedCard {
         Cost::free(),
         vec![Instruction::ModifyStrength {
             target: TargetSpec::EncounteredIce,
-            amount: -amount,
+            // A negative quantity lowers the strength (9.12.1a's third
+            // stage): "0 minus N", the selector language's way of saying it.
+            amount: Quantity::Minus(
+                Box::new(Quantity::c(0)),
+                Box::new(Quantity::c(amount as i64)),
+            ),
             duration: Some(crate::lingering::WantedDuration::ThisRun),
         }],
     )
@@ -5191,7 +5196,7 @@ pub fn heinlein_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_upgrade(name, 0);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::PlayerSpendsClick { side: Side::Runner, during_run: true },
-        vec![Instruction::LoseCredits(Side::Runner, 99)],
+        vec![Instruction::LoseCredits(Side::Runner, Quantity::c(99))],
         false,
     )
     .labeled("heinlein: lose all credits")];

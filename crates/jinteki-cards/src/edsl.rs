@@ -477,7 +477,7 @@ pub fn gain_q(side: Side, n: Quantity) -> Instruction {
 }
 /// "Lose N[credit]." / "The Runner loses N[credit]."
 pub fn lose(side: Side, n: u32) -> Instruction {
-    Instruction::LoseCredits(side, n)
+    Instruction::LoseCredits(side, Quantity::c(n as i64))
 }
 
 // ---- cards ----------------------------------------------------------------
@@ -666,7 +666,11 @@ pub fn advance(target: TargetSpec) -> Instruction {
 /// icebreaker modifying its own strength keeps it for the rest of the
 /// encounter (3.9.5b).
 pub fn pump(n: i32) -> Instruction {
-    Instruction::ModifyStrength { target: TargetSpec::SelfSource, amount: n, duration: None }
+    Instruction::ModifyStrength {
+        target: TargetSpec::SelfSource,
+        amount: Quantity::c(n as i64),
+        duration: None,
+    }
 }
 /// "Break N subroutines."
 pub fn break_subroutines(n: i64) -> Instruction {
