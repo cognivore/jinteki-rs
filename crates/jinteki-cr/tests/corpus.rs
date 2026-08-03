@@ -438,6 +438,151 @@ fn runner_basic_actions_remove_tag() {
 }
 
 // ---------------------------------------------------------------------------
+// test/clj/game/core/runs_test.clj — run timing (§6)
+// ---------------------------------------------------------------------------
+
+/// run-timing-with-no-ice: a run on an empty, unprotected server reaches
+/// Success and completes without the Runner deciding anything more.
+#[test]
+fn run_timing_with_no_ice() {
+    let mut g = Game::new(11).start(Side::Runner);
+    plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Archives)))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert!(g.vm.current_run.is_none(), "6.9.6d: the run is over");
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "6.9.5: with nothing to pass, the run reaches the Success Phase"
+    );
+}
+
+/// run-timing-with-an-ice: the Corp rezzes the approached ice (9.2.7e), the
+/// encounter begins, and Ice Wall's subroutine ends the run — which does NOT
+/// leave any "ended" status behind (6.8.2/6.9.6d).
+#[test]
+fn run_timing_with_an_ice() {
+    let mut g = Game::new(11).credits(Side::Corp, 10).start(Side::Runner);
+    tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Remote(1), false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Remote(1))))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert!(g.vm.current_run.is_none(), "Ice Wall's subroutine ended the run: {}", t.tail(10));
+    assert!(
+        !g.vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "the run ended before the Success Phase"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// test/clj/game/core/rules_test.clj
+// ---------------------------------------------------------------------------
+
+/// no-scoring-after-terminal: IPO ends the Corp's action phase, so the (S)
+/// option that WAS on offer while the agenda stood fully advanced is never
+/// offered again this turn.
+#[test]
+fn no_scoring_after_terminal() {
+    let mut g =
+        Game::new(11).hand(Side::Corp, vec![cards::ipo()]).credits(Side::Corp, 15).start(Side::Corp);
+    let ipo = g.id("IPO");
+    let ht = tk::install_root(&mut g.vm, cards::hostile_takeover(), ServerId::Remote(1), false);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::Advance(ht)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(ht)))
+            .when(Match::action().once(), Reply::play_card(ipo))
+            .when(Match::paid(), Reply::Pass)
+            // Whatever the Corp is asked next, stop and look.
+            .when(Match::any().once(), Reply::Halt)
+            .when(Match::discard(), Reply::Default)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::discard(), Reply::Default)
+            .when(Match::reaction(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.objects[&ht].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+        2,
+        "advanced twice with the basic action"
+    );
+    let offers_score = |e: &plan::Entry| match &e.spec {
+        jinteki_cr::decision::DecisionSpec::PaidWindow { options, .. } => options.iter().any(
+            |o| matches!(o, jinteki_cr::decision::WindowOption::Score { card } if *card == ht),
+        ),
+        _ => false,
+    };
+    let played_ipo = script
+        .transcript()
+        .entries
+        .iter()
+        .position(|e| {
+            matches!(&e.answer, Some(jinteki_cr::decision::DecisionAnswer::Action(a))
+                if matches!(a, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == ipo))
+        })
+        .expect("IPO was played");
+    assert!(
+        script.transcript().entries[..played_ipo].iter().any(offers_score),
+        "1.17.3: the fully advanced agenda WAS scorable before the terminal operation: {}",
+        script.transcript().tail(12)
+    );
+    assert!(
+        !script.transcript().entries[played_ipo + 1..].iter().any(offers_score),
+        "5.6.2b: the terminal operation ended the action phase, so scoring was \
+         never offered again this turn: {}",
+        script.transcript().tail(12)
+    );
+    assert_eq!(
+        g.vm.st.objects[&ht].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "Hostile Takeover is still installed, not scored"
+    );
+}
+
+/// purge-corp: "Purge virus counters" from a card ability reaches virus
+/// counters on CORP cards too (10.1.2 names the board, not a side).
+#[test]
+fn purge_corp() {
+    let mut g = Game::new(11).hand(Side::Corp, vec![cards::cyberdex_trial()]).start(Side::Corp);
+    let trial = g.id("Cyberdex Trial");
+    let wall = tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Hq, false);
+    // The reference seeds the counters with a debug command; there is no card
+    // that puts virus counters on ice, so they are setup here too.
+    g.vm.st.objects.get_mut(&wall).unwrap().counters.insert(CounterKind::Virus, 2);
+    plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(trial))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(
+        g.vm.st.objects[&wall].counters.get(&CounterKind::Virus).copied().unwrap_or(0),
+        0,
+        "10.1.2: purging removed the counters on the Corp's own card"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Shared shape: install one card with the basic install action
 // ---------------------------------------------------------------------------
 
@@ -487,6 +632,12 @@ const PORTED: &[&str] = &[
     "runner-basic-actions-play-operation",
     "runner-basic-actions-run-hq",
     "runner-basic-actions-remove-tag",
+    // test/clj/game/core/runs_test.clj
+    "run-timing-with-no-ice",
+    "run-timing-with-an-ice",
+    // test/clj/game/core/rules_test.clj
+    "no-scoring-after-terminal",
+    "purge-corp",
 ];
 
 /// Every ported name exists as a `#[test] fn` in this file, spelled the
@@ -518,8 +669,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 19,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 19",
+        PORTED.len() >= 23,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 23",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is

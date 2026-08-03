@@ -131,27 +131,43 @@ rule, not to the card, and the CR example suite already covers it.
 
 | bucket | tests | note |
 |---|---|---|
-| **ported and passing** | 0 (at plan time) | `tests/corpus.rs`, manifest-ratcheted |
-| **triaged, blocked on the card layer** | 3516 | card tests; unblocked card by card, in frequency order |
-| **triaged, blocked on kernel gaps** | 199 | the engine slice; §5 lists the machinery |
+| **ported and passing** | 23 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
+| **blocked on the card layer** | 3516 | card tests; unblocked card by card, in frequency order |
+| **blocked on kernel gaps** | 176 | the rest of the engine slice; §5 lists the machinery |
 | **out of scope** | 2 | `quotes_test`, `web/deck_test` — not game rules |
 
-The wave order follows from the measurement. `cards/basic_test.clj` (19) and
-the `core/` slice (180) are first because they name the *basic actions* —
-and the action window offers no install, advance, purge or trash-resource
+Ported so far: all 19 of `cards/basic_test.clj`, plus `run-timing-with-no-ice`,
+`run-timing-with-an-ice`, `no-scoring-after-terminal` and `purge-corp` from
+the `core/` slice.
+
+The wave order followed from the measurement. `cards/basic_test.clj` (19) and
+the `core/` slice (180) came first because they name the *basic actions* —
+and the action window offered no install, advance, purge or trash-resource
 action at all (deviation 17's remaining half), so the first sub-wave of DP-7c
-is kernel work, not translation work. The card layer starts immediately
+was kernel work, not translation work. The card layer starts immediately
 after, in corpus-frequency order, because §1's table says nothing else moves
 the odometer.
+
+**One measured obstacle worth planning around: 1041 of the 3717 tests (28%)
+— 93 engine, 948 card — call the reference's own internal API inside the test
+body** (`(core/gain …)`, `(core/process-action "subroutine" …)`,
+`core/num-cards-to-access`, `card-def`, …). Those are not translations of game
+actions; they are pokes at the reference's implementation. A port either
+re-expresses the poke as setup (usually possible: `(core/gain state :corp
+:click 1)` is a starting click count) or the test is measuring the
+reference's plumbing rather than the rules, in which case it is **out of
+scope and recorded as such**, not counted as blocked. `docs/vm/
+UPSTREAM-DEFECTS.md` carries that ledger alongside genuine divergences.
 
 ## 5. The gap list (prioritised; this is what the deck work consumes)
 
 **Kernel machinery the corpus needs and the CR examples never did:**
 
-1. basic install action (5.2.6d/5.2.7d)
-2. basic advance action (5.2.6f) + 1.18.3 "can be advanced"
-3. basic trash-resource action (5.2.6g)
-4. basic purge action (5.2.6h) + 10.1.2 purging
+1. ~~basic install action (5.2.6d/5.2.7d)~~ — **done, W15a**, with 8.5.16b's
+   destination declaration as a real decision
+2. ~~basic advance action (5.2.6f) + 1.18.3 "can be advanced"~~ — **done, W15a**
+3. ~~basic trash-resource action (5.2.6g)~~ — **done, W15a**
+4. ~~basic purge action (5.2.6h) + 10.1.2 purging~~ — **done, W15a**
 5. mandatory/basic draw routed through `Instruction::Draw` (deviation 66) —
    the 8.4.5 procedure exists but the basic action does not use it
 6. `Vm::view_of` over the change log (deviation 63) — the reference asserts on
@@ -161,6 +177,14 @@ the odometer.
 
 **Card-text machinery, by corpus frequency of the cards that need it** (the
 top cards are counted by how many tests name them):
+
+**The card-layer machinery the next slice needs**, in the order the corpus
+asks for it: the icebreaker class (break-with-subtype-restriction + strength
+pump + the "interface" timing restriction); "the Runner loses [click]" as an
+instruction (Enigma, #7 by frequency); an agenda-point modification (2.5 —
+Project Beale's second sentence); a rez-cost modification scoped to a server
+(Breaker Bay Grid); a movement into a score area for a non-agenda (Fan Site);
+and a prohibition on SCORING scoped by when the agenda was installed (Clot).
 
 | rank | card | tests | what it needs |
 |---|---|---|---|

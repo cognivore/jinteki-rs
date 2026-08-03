@@ -62,6 +62,16 @@ pub fn beanstalk_royalties() -> PrintedCard {
     c
 }
 
+/// Cyberdex Trial — Operation. Cost 0.
+/// "Purge virus counters."
+pub fn cyberdex_trial() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Cyberdex Trial", Side::Corp, CardType::Operation);
+    c.cost = Some(0);
+    c.abilities = vec![AbilityDef::play(vec![Instruction::PurgeVirusCounters])
+        .labeled("cyberdex trial: purge virus counters")];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Corp — ice
 // ---------------------------------------------------------------------------

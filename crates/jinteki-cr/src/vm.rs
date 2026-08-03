@@ -7760,13 +7760,44 @@ impl Vm {
                 }
             }
             Instruction::EndActionPhase(side) => {
-                // 5.6.2: the action phase ends once the active player has no
-                // clicks left, so this instruction takes them.
-                cite!("step_corp_turn_action");
+                // 5.6.2: the action phase's steps are (a) a paid window, (b)
+                // an action, (c) return to (a) — so ENDING the phase is a jump
+                // to step (d), not merely running the player out of clicks.
+                // The difference is observable: an ended phase does not open
+                // another (a), so a terminal operation leaves no window in
+                // which the Corp could still score (S).
+                //
+                // 5.2.2a keeps the action itself intact — this instruction
+                // resolves inside it, and the jump takes effect when the turn
+                // structure next advances, which is after the action
+                // completes.
+                cite!("step_corp_turn_action_phase_end");
+                cite!("step_runner_turn_action_phase_end");
+                cite!("rule_action_completion");
                 let n = self.st.player(*side).clicks;
                 self.st.player_mut(*side).clicks = 0;
                 if n > 0 {
                     self.changes.record(GameChange::ClicksLost { side: *side, amount: n });
+                }
+                let (kind, step) = match side {
+                    Side::Corp => {
+                        (crate::timing::StructKind::CorpTurn, "step_corp_turn_action_phase_end")
+                    }
+                    Side::Runner => (
+                        crate::timing::StructKind::RunnerTurn,
+                        "step_runner_turn_action_phase_end",
+                    ),
+                };
+                let idx = self.table(kind).index_of(step);
+                for f in self.frames.iter_mut().rev() {
+                    if let Frame::Structure(sf) = f {
+                        if sf.kind == kind {
+                            sf.cursor = idx;
+                            sf.phase = StepPhase::Enter;
+                            sf.pending_jump = None;
+                            break;
+                        }
+                    }
                 }
             }
             Instruction::LookAtCards { cards, by } => {
