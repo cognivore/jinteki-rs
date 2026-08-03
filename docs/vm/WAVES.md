@@ -103,7 +103,7 @@ prefer a slightly larger honest primitive and note it here.
 | `0b9cd6d` | W9a | **encounters as a timing structure** (§6.5): `StructKind::Encounter`, whose table IS the run table's phase-3 span (9.2.2b makes each run phase a structure), opened by the run's step 3a as a child frame parked at 4a; `Instruction::ForceEncounter { ice: TargetSpec }` for 6.5.9a, with 6.5.9c ("not finished until the encounter is complete") and "return to the effect that caused it" free from the frame stack; nested encounters (Shiro→Chrysalis) stash and restore the interrupted one; 6.1.4b unwinds exactly the phase (everything begun inside it, no Run Ends steps) and 6.5.9b unwinds it with the run; 6.5.8a/6.2.7c ABORT the phase (the aborting instruction finishes, then no further step — 9.8.7c) instead of poking the run's cursor. **Bugs fixed:** 6.2.7 was applied to any encountered ice, killing a forced encounter with a card in HQ instantly; `current_subs` never checked 9.1.7 activity, so 9.1.8h was unimplemented-but-passing | 165 |
 | `7629564` | W9b | §1.18 advancing vs placing: `Instruction::AdvanceCard` + `GameChange::CardAdvanced`, so 1.18.2's distinction exists at all (`TriggerCond::AdvancesCard` keyed on the advance, 9.6.6a's "had" check moved with it); `PlaceCounters.amount` is a `Quantity` (§12 rule 6) with `Minus`/`RequirementOfSource` joining the selector language; §10.13 **dividends** as a keyword expanded into the conditional ability it denotes (`PrintedCard::with_dividends`, `TriggerCond::SelfScored`); 1.17.8/10.13.2 `Object::scored_snapshot` — the counters and requirement as the agenda began to be scored — plus `Vm::advancement_requirement` and `StaticDecl::ScoreRequirementModInSourceServer` (SanSan class) | 168 |
 | `55056b3` | W9c | the attacked server: `Instruction::ChangeAttackedServer` (6.1.2d — changed DIRECTLY, so the timing step does not change and the new server's ice is never approached), `StaticDecl::CannotInitiateRunOnSourceServer` (6.3.2a — removes the basic run action for that server and reaches no further, so a run can still be moved onto it); 9.11.4a/9.3.3f as tests over machinery already right (a use-restriction gates every window the ability is offered in and resolves nothing; an X definition is a static ability with no instructions) | 172 |
-| `TBD-W10D` | W10d | **§9.10.3 maintained choices, all three durations**: `Instruction::MaintainChoice { key, of: ChoiceSpec::{Server, Object, Subtype}, duration }` finally creates the `Payload::MaintainedChoice` that has existed since W1 with nothing to create it, and `TargetSpec::MaintainedChoice(key)` + `Vm::maintained_choice` read it back. A choice BETWEEN servers or subtypes is 9.11.4g's option choice (`ChooseOne` with one branch per value), so no new Decision was needed — only the object case announces (1.15.2). 9.10.3a rides `ThisEncounter`, 9.10.3b `ThisTurn` with `TriggerCond::SuccessfulRunOnChosenServer { key }` comparing the choice in the checkpoint scan, 9.10.3c the already-implemented `WhileSourceActive`. `object_move_known_location_1` (1.12.4) falls out: a Thimblerig-class move inside the play area does not bump `generation`, so the remembered object is still the same object | 187 |
+| `53c8243` | W10d | **§9.10.3 maintained choices, all three durations**: `Instruction::MaintainChoice { key, of: ChoiceSpec::{Server, Object, Subtype}, duration }` finally creates the `Payload::MaintainedChoice` that has existed since W1 with nothing to create it, and `TargetSpec::MaintainedChoice(key)` + `Vm::maintained_choice` read it back. A choice BETWEEN servers or subtypes is 9.11.4g's option choice (`ChooseOne` with one branch per value), so no new Decision was needed — only the object case announces (1.15.2). 9.10.3a rides `ThisEncounter`, 9.10.3b `ThisTurn` with `TriggerCond::SuccessfulRunOnChosenServer { key }` comparing the choice in the checkpoint scan, 9.10.3c the already-implemented `WhileSourceActive`. `object_move_known_location_1` (1.12.4) falls out: a Thimblerig-class move inside the play area does not bump `generation`, so the remembered object is still the same object | 187 |
 | `070e034` | W10c | **§9.12.3 "must" as a requirement at the mid-access window**: `Instruction::MustTrashAccessedCard { means: TrashMeans::{AnyAbility, PayingTheTrashCost} }` records a requirement on the access in progress (`AccessCtx::must_trash`), and `DecisionSpec::MidAccessWindow` grows `can_pass` — false exactly while a permitted means of trashing the accessed card is among the options. 9.12.3a's "any decisions necessary, even other card abilities" is `AnyAbility` plus a shallow scan for `TrashCards(AccessedCard)`; 9.12.3b's stipulated means is `PayingTheTrashCost`, which no other ability can satisfy. Supporting vocabulary: `Cost::spend_counters` (1.9.2, Imp class), `Payload::CannotUseAbilitiesOf` + `LingeringSpec::CannotUseAbilitiesOf` (9.5.3a, Wendigo class — a prohibition on USE, which a "must" cannot reach past because paid abilities are always optional), `TriggerCond::RunnerAccessesCard`. **Bug fixed:** the basic trash ability's affordability read only the credit pool and the bad-publicity fund, so 1.10.3c hosted credits (Scrubber class) never paid a trash cost, though `cost_payable` counted them everywhere else | 183 |
 | `2fad713` | W10b | **§4.6.6i "this server"**: `Object::last_server` stamped whenever a card leaves a server/root/position, and `Vm::this_server` as the ONE resolution of the phrase — host's server (4.6.6k), else the current server, else the server the card LEFT, else the central server corresponding to the zone the card is in. Every "this server" reader routes through it: `TargetFilter::IceProtectingSourceServer` (both the filter and the count), the checkpoint's trigger-condition server, `CardInstalledInSourceServer`, and the new 4.6.6i scope on `RunnerTrashesAtLeastOneCorpCard { in_this_server }`. **Bug fixed:** `IceProtectingSourceServer` matched only a source in `Zone::Ice`, so an upgrade or asset in a server's ROOT — the usual source of "ice protecting this server" text — counted ZERO ice. Also §4.6.8f `StaticDecl::RemoteServerLimit` + `Vm::{can_create_new_remote, remote_servers}` (a limit makes "a new remote server" an unidentifiable destination, 8.5.14), and §10.1.5 `TargetFilter::HasName` — naming a card is not self-reference | 180 |
 | `7c4d480` | W10a | **§9.12.1d/e dependency, both classes**: `StaticDecl::RemoveHostAbilities` generalised to `RemoveAbilitiesOf(HostRelation::{Host,Hosted})`, so the Hush direction and the Magnet direction are ONE declaration and their mutual dependency is the 9.12.1e loop the hosted-beats-host tiebreak exists for; `StaticDecl::GainSubtypesOf { criteria }` + `CharOp::CopySubtypesFrom` — the copied subtypes are the source object's EFFECTIVE ones, so `compute_effective` re-enters itself (cycle-guarded by a `visiting` set) and 9.12.1d's dependency ordering is realised by construction; `StaticDecl::GrantSubroutinesTo { criteria, sub, before }` for subroutines granted by a static ability that is NOT on the ice (9.8.3a/e external categories, ordered by the source's `active_since` — and `Payload::GrantedSubroutine`'s `seq` moved onto the same clock so the two kinds of external grant sort against each other); `TargetFilter::OtherThanSource` (the word "other" in a description) | 174 |
@@ -410,6 +410,16 @@ prefer a slightly larger honest primitive and note it here.
     the accessed card from inside a wrapper would not satisfy a 9.12.3a
     "must".
 
+43. **A maintained choice of a server or a subtype is enumerated, not
+    computed** (W10d) — `ChoiceSpec::{Server, Subtype}` name ONE value, and
+    the choice between values is `Instruction::ChooseOne` with one branch
+    each, which is what 9.11.4g says a choice between options that create
+    different effects is. That is exact for Security Testing (five servers)
+    and Pelangi (five subtypes), and it kept a new `DecisionSpec` out of the
+    kernel. A card choosing from a set the kernel must COMPUTE (every server
+    with ice, say) would want a real `ChooseServer` decision; nothing does.
+    `ChoiceSpec::Object` already announces properly through 1.15.2.
+
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real
 Runner declaration Decision with 7.4.6a declined-tracking); **W3's
@@ -458,7 +468,7 @@ encounter's paid window yields no Decision at all when neither player has a
 usable paid ability — a plan that wants to halt mid-encounter must give
 someone something to be offered (`tk::break_button` is the usual one).
 
-## Next targets — 71 examples left, re-measured after W9c
+## Next targets — 56 examples left, re-measured after W10d
 
 Re-run the count before choosing a cluster:
 
@@ -476,99 +486,110 @@ print(len(missing)); [print(s, n) for s, n in Counter(s for s,_ in missing).most
 EOF
 ```
 
-Remaining by section: 9.12 Other 7 · 1.12 Objects 5 · 1.16 Costs 5 ·
-9.1 General 5 · 4.6 Play Area 4 · 7.3 Breaching 4 ·
-9.8/9.9/9.10/10.1 three each · rest <= 2.
+Remaining by section: 1.16 Costs 5 · 9.1 General 5 · 7.3 Breaching 4 ·
+1.12/9.8/9.9/9.12 three each · rest <= 2.
 
-CLUSTER RANKING (measured after W9c, best first):
+CLUSTER RANKING (measured after W10d, best first):
 
-1. **§9.12.1 dependency + must-choices (~7)** — `independent_effects_1/2`
-   (Mother Goddess/Warden Fatuma/Hush; Hush/Magnet), `modify_ability_with_
-   choice_1`, `calculated_quantity_3`, `must_with_choice_1`,
-   `must_without_choice_1`, `must_cannot_force_additional_cost_1`. Deviation 2
-   says the dependency analysis covers the ability-removal class only, and
-   `independent_effects_2` (Hush/Magnet) is exactly that class — check whether
-   it already passes before building anything. `independent_effects_1` is the
-   SUBTYPE-GRANT class and W7d added the subtype ops the pipeline needs. The
-   three `must_*` examples extend 9.12.3 (W2f).
-2. **§1.12's remaining 5 + §4.6 "this server" (~9)** — `previous_object_1`,
-   `previous_object_source_1`, `object_move_location_1/2`,
-   `object_move_known_location_1`, `this_server_1/2/3`,
-   `limit_remote_servers_1`. `Object::generation` (W7e/f) is the stamp; what
-   is missing is (a) unknown-location moves bumping it (shuffle, rearrange)
-   and (b) a game-history query keyed by object, which 1.12.6 needs and which
-   `previous_object_source_1` shares with 4.6.6i's "this server" (the server a
-   card was in when it left). `MaintainedChoice` exists but nothing creates
-   one — `object_move_known_location_1` and the three
-   `lingering_effect_maintaining_choice_*` examples all want
-   `Instruction::MaintainChoice`, which is one more instruction (+3 in §9.10).
-   `target_3` (Trick of Light) belongs here too: counters must become
-   `ObjectId`-addressed objects (1.12.1) before they can be announced.
-3. **§7.3/§7.4 breaching (~6)** — `number_of_accesses_1/2`,
+1. **"Resolve that ability NOW" — one primitive, four examples.** Deviation
+   40. `instructed_to_resolve_conditional_ability_1` (9.6.14d, 24/7 News
+   Cycle: mark a conditional pending "as though the stipulation of its class
+   had occurred", with the trigger condition's ADDITIONAL requirements still
+   checked — so a `TriggerCond::SelfScored { requires_runner_tagged }` and a
+   forfeit cost), `this_server_3` (4.6.6i — `Vm::this_server` ALREADY returns
+   Archives for that card; all that is missing is an instruction that
+   resolves a named subroutine of an INACTIVE ice, Nanisivik/ZATO class), and
+   it is most of `replace_subroutine_resolution_1` (9.8.9) and
+   `gain_subroutines_in_any_order_1` (9.8.2c). Shape:
+   `Instruction::ResolveAbilityOf { source: TargetSpec, which: AbilityClass }`
+   where `AbilityClass` is 9.6.14a/b/c plus "subroutine N".
+2. **§9.8's three.** `subroutine_origin_external_before_1` now rides directly
+   on W10a's `StaticDecl::GrantSubroutinesTo` (Warden Fatuma is already
+   category 9.8.3a and orders by `active_since`, the same clock the lingering
+   grants use). What it still needs is a Loki-class "gains the subroutines of
+   THAT ice" grant: ONE effect granting several subroutines, so
+   `Payload::GrantedSubroutine` wants an `ord` within the grant and `befores`
+   must sort by `(seq desc, ord asc)`. `gain_subroutines_in_any_order_1`
+   (9.8.2c) is the order-DECLARATION Decision deviation 5 names.
+   `replace_subroutine_resolution_1` (9.8.9) wants a subroutine-level
+   replacement effect plus a "when the Runner passes an ice whose subroutines
+   resolved from it" reading.
+3. **§9.1's five.** `abilities_resolution_independent_1` (9.1.4 Compile/
+   Mayfly) is the one REAL kernel gap in the file: `Vm::source_moved_since`
+   is a stub that always returns `false`, so 9.1.4 stranding is only enforced
+   through "the object no longer exists". `Object::generation` (W7e/f) is the
+   stamp it should compare against — record the generation on the ability
+   frame at independence (9.5.4/9.6.12/9.8.8) and compare at resolution.
+   `is_resolving_1/2` (9.1.2b) want a scope predicate over the frame stack
+   ("this ability is resolving from its first imminence to its last
+   resolution") — `StaticDecl::CannotSpendCredits` and
+   `RemoveAbilitiesOf`-style removal both exist, so these are mostly a
+   predicate plus two tests. `active_exception_catchall_1` (9.1.8b) and
+   `active_exception_conditional_move_to_inactive_zone_2` (9.1.8g).
+4. **§7.3/§7.4 breaching (6)** — `number_of_accesses_1/2`,
    `consecutive_breaches_1`, `visibility_after_access_1`,
    `prohibiting_access_to_1_1`, `prohibition_removed_1`. 7.3.6 access counts
-   already exist (`BreachCtx.remaining_from_zone`) and 7.4.2's Ash-class
-   prohibition exists as `Payload::RestrictCandidatesTo`; these are about
-   several breaches in one run (7.3.8 delayed breaches), about accesses that
-   were REPLACED not counting, and about a prohibition going inactive
-   mid-breach (7.4.2a's candidate re-evaluation — `refresh_candidates_after_
-   access` is the hook).
-4. **§1.16's last 5** — `cost_x_1` (X announced before payment, 1.16.2c —
-   wants a numeric Decision like W8c's `DivideCostReduction`),
-   `alternate_payment_1` (1.16.2e — Biawak: needs the payment DIVISION to be
-   put to the payer, which is deviations 11 and 18; `pay_cost` is synchronous
-   and cannot suspend, so this is the "cost payment becomes a phase of the
-   ability frame" refactor), `cost_restrictions_2` (1.16.1c — advancement-
-   requirement modification, which W9b now HAS as
-   `StaticDecl::ScoreRequirementModInSourceServer`, plus an additional cost to
-   SCORE), `additional_cost_checkpoint_1` (1.16.10c — additional cost to
-   score, paid with its checkpoint before the agenda moves),
-   `inherent_cost_aggregates_1` (1.16.4d — wants the basic play action,
-   deviation 17).
-5. **§9.1's five** — `is_resolving_1/2` (9.1.3: an ability "is resolving"
-   from first imminence to last resolution — wants a scope predicate the
-   kernel can already compute from the frame stack, plus
-   `StaticDecl::CannotSpendCredits` which exists),
-   `abilities_resolution_independent_1` (9.1.4 Compile/Mayfly — the kernel's
-   `source_moved_since` is a stub that always returns false, so this one is a
-   real gap worth closing), `active_exception_catchall_1` (9.1.8b),
-   `active_exception_conditional_move_to_inactive_zone_2` (9.1.8g).
-6. **The rest of §6 (~5)** — `run_ends_close_paws_1` and
-   `run_ends_other_priority_windows_1` (6.8.2a/c: what survives an ETR —
-   W9a's frame unwinding is most of it; (c) wants "other windows complete
-   normally but no new timing structure may be initiated"),
-   `if_successful_tied_to_server_1` (6.7.4a — `InitiateRun` must carry the
-   servers the initiating effect allowed), `if_successful_ability_optional_1`
-   (6.7.4c), `abilities_during_a_run_1` (6.3.4 — wants an additional cost to
-   initiate a run, and a "spends [click] during a run" trigger),
-   `run_phase_after_1` (6.1.3e — wants a pass-replacement and an "encounter
-   after approach" adjacency check; hardest of the six).
+   exist (`BreachCtx.remaining_from_zone`) and 7.4.2's Ash-class prohibition
+   exists as `Payload::RestrictCandidatesTo`; these are about several breaches
+   in one run (7.3.8 delayed breaches), accesses that were REPLACED not
+   counting, and a prohibition going inactive mid-breach (7.4.2a —
+   `refresh_candidates_after_access` is the hook).
+5. **The damage-selection pair (2), now cheap-ish.**
+   `multiple_damage_selected_sequentially_1` (10.4.3a) and
+   `modify_ability_with_choice_1` (9.12.1c) are one mechanism: a declaration
+   modifying the damage procedure so a player SELECTS the cards trashed
+   (Chronos Protocol / Titanium Ribs), plus 9.12.1c's tiebreak — when both
+   players are told to make a choice that can only be made once, the ACTIVE
+   player makes it, and the rest of each ability ("look at the grip") still
+   happens. `Vm::do_damage` is synchronous, but the `Instruction::Damage` arm
+   of `apply_imminent` may `ask` and finish in `answer` — that is exactly what
+   `Instruction::Sabotage` does (`DecisionCtx::Sabotage`), and damage
+   aggregates into ONE atom per instruction (9.12.2c) so the loop over atoms
+   is not an obstacle. Cost-payment damage (1.16 components) would keep the
+   random path; annotate.
+6. **§1.16's last 5** — `cost_x_1` (1.16.2c: X announced before payment; wants
+   a numeric Decision like W8c's `DivideCostReduction`), `alternate_payment_1`
+   (1.16.2e Biawak: needs the payment DIVISION put to the payer — deviations
+   11 and 18 — which means "cost payment becomes a phase of the ability
+   frame"), `cost_restrictions_2` (1.16.1c: advancement-requirement
+   modification, which W9b HAS, plus an additional cost to SCORE),
+   `additional_cost_checkpoint_1` (1.16.10c), `inherent_cost_aggregates_1`
+   (1.16.4d — wants the basic play action, deviation 17).
+7. **The rest of §6 (5)** — `run_ends_close_paws_1`,
+   `run_ends_other_priority_windows_1` (6.8.2a/c; W9a's frame unwinding is
+   most of it), `if_successful_tied_to_server_1` (6.7.4a — `InitiateRun` must
+   carry the servers the initiating effect allowed),
+   `if_successful_ability_optional_1` (6.7.4c), `abilities_during_a_run_1`
+   (6.3.4), `run_phase_after_1` (6.1.3e, hardest).
 
-Cheap singletons worth taking opportunistically:
-`multiple_damage_selected_sequentially_1` (10.4.3a — damage cards selected
-sequentially, trashed simultaneously); `reveal_from_hidden_1` (4.1.2a —
-reveal before moving a facedown card when the effect requires an attribute;
-8.5.13's reveal machinery from W5a is the model); `play_ability_1` (9.7.1 —
-an operation with two play abilities resolving in sequence plus a conditional
-that fires after; needs a "when this operation finishes resolving" trigger);
-`empty_requires_loading_1` (10.9); `defferent_actions_1` (5.2).
-Hard/blocked: `bluffing_1` + `cannot_hide_open_info_1` (§10.2 information —
-the kernel has no per-side visibility model at all, see deviation 20);
-`mandatory_infinite_loop_1` (10.1.6a draws the game); `step_sequences_1`
-(9.11.2a — asserts installing has exactly ONE checkpoint, which deviation 4
-says the kernel does not honour; take it WITH the deviation-4 fix or not at
-all).
+Cheap singletons worth taking opportunistically: `reveal_from_hidden_1`
+(4.1.2a — 8.5.13's reveal machinery from W5a is the model);
+`condition_met_multiple_times_2` (9.6.4b — two exposes in one instruction,
+two instances; needs an "expose" instruction); `cancelled_movement_1` (8.2.2a
+— prevention already exists, wants a "whenever you trash an installed card"
+counter that does NOT fire on a prevented trash); `empty_requires_loading_1`
+(10.9); `play_ability_1` (9.7.1); `mark_designated_condition_check_1`
+(10.11.5).
 
-**Blocked / deferred, with reasons:**
-- `target_3` (Trick of Light, 1.15.1) — the targets are ADVANCEMENT
-  COUNTERS. Counters are a `BTreeMap<CounterKind, u32>` on the object, not
-  `ObjectId`-addressed objects, so they cannot be announced. Deferred to
-  the §1.12 cluster, which is where counters-as-objects belongs (1.12.1
-  says counters are objects).
-- `drawn_card_swapped_1` (8.4.3b) — the last piece of §8.8 (8.8.4d, swapping
-  with a SET-ASIDE card) plus the §8.4 drawing procedure's set-aside step.
-  Take it with §8.4, not with §8.8.
-
+Hard/blocked, with reasons:
+- `target_3` (Trick of Light, 1.15.1) — the targets are ADVANCEMENT COUNTERS.
+  Counters are a `BTreeMap<CounterKind, u32>` on the object, not
+  `ObjectId`-addressed objects, so they cannot be announced. Belongs with
+  1.12.1's counters-as-objects, which is now the ONLY remaining §1.12 work
+  besides the two `object_move_location_*` unknown-location cases and
+  `previous_object_1`'s game-history query (deviation 26).
+- `bluffing_1`, `cannot_hide_open_info_1`, `facedown_set_aside_distinct_
+  groups_1`, `arrange_and_other_effect_1`, `visibility_after_access_1` — §10.2
+  information: the kernel has NO per-side visibility model (deviations 20,
+  29). That is one wave of its own and it unlocks five examples.
+- `mandatory_infinite_loop_1` (10.1.6a draws the game).
+- `step_sequences_1` (9.11.2a — asserts installing has exactly ONE checkpoint,
+  which deviation 4 says the kernel does not honour; take it WITH the
+  deviation-4 fix or not at all).
+- `drawn_card_swapped_1` (8.4.3b) — 8.8.4d (swapping with a SET-ASIDE card)
+  plus the §8.4 drawing procedure's set-aside step. Take it with §8.4.
+- `defferent_actions_1` (5.2.5b) and `inherent_cost_aggregates_1` (1.16.4d)
+  both want the basic play/install actions (deviation 17).
 
 ## Discipline (unchanged, binding)
 
