@@ -267,6 +267,20 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .focus-panel .fbroken { text-decoration: line-through; opacity: .45; }
 .focus-panel .chip { margin-top: 4px; align-self: flex-start; padding: 6px 12px; min-height: 32px; font-size: 12px; }
 
+/* ── Overlay hit-testing: floating chrome must never eat a tap meant for a
+      card underneath it. Containers are transparent to pointer events; only
+      the actual controls opt back in. Without this the action bar's own box
+      (including the empty space between wrapped chips) covered the bottom of
+      the board and made assets/resources unclickable. ── */
+.action-bar, .run-controls, #turn-btn-wrap, .focus-panel, .prompt-sheet,
+.side-bar, .hand { pointer-events: none; }
+.action-bar .chip, .run-controls .chip, #turn-btn, .focus-panel .chip,
+.prompt-sheet .chip, .prompt-sheet input, .side-bar .stat, .side-bar .idchip,
+.hand .card { pointer-events: auto; }
+/* Tappable stat chips read as buttons. */
+.side-bar .stat.tappable { cursor: pointer; border-color: #3b4a6f; }
+.side-bar .stat.tappable:active { background: #2a3a5e; }
+
 /* ── MTGA-style corner clusters: stats live on the LEFT RAIL, board owns
       the screen. Bars become vertical stacks; identity art is the anchor. */
 .side-bar { flex-direction: column; align-items: flex-start; gap: 4px;
@@ -282,8 +296,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   border: 1px solid var(--line); }
 .side-bar .who { font-size: 11.5px; max-width: 70px; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis; }
-#board { inset: 4px 58px 124px 128px; }
-.action-bar { left: 132px; }
+/* The right inset clears the turn dial, the bottom strip holds the hand and
+   the action chips — so nothing floats over the board's own cards. */
+#board { inset: 4px 104px 124px 128px; }
+.action-bar { left: 10px; bottom: calc(8px + env(safe-area-inset-bottom, 0));
+  max-width: 42vw; }
 .focus-panel { left: 132px; }
 
 /* ── phone landscape: everything smaller, denser, closer to the edges ── */
@@ -300,7 +317,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .rig-row { min-height: 48px; }
   #mid-strip { height: 20px; }
   .phase-pill { font-size: 11px; padding: 2px 10px; }
-  #board { inset: 2px 50px 92px 104px; }
+  #board { inset: 2px 76px 92px 104px; }
   .side-bar { max-width: 98px; gap: 3px; }
   .side-bar .stat { padding: 1px 6px; font-size: 10.5px; border-width: 1px; }
   .side-bar.bottom { bottom: calc(88px + env(safe-area-inset-bottom, 0)); }
@@ -309,12 +326,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .hand { height: 92px; bottom: calc(-16px + env(safe-area-inset-bottom, 0)); }
   .hand .card { width: 60px; height: 84px; margin: 0 -16px; font-size: 9px; }
   .hand .card.raised { transform: translateY(-38px) scale(1.5) !important; }
-  .action-bar { bottom: calc(94px + env(safe-area-inset-bottom, 0)); left: 106px;
-    gap: 5px; max-width: 52vw; }
+  /* Action chips live in the bottom strip beside the hand fan, not on top
+     of the board's lowest row. */
+  .action-bar { bottom: calc(6px + env(safe-area-inset-bottom, 0)); left: 6px;
+    gap: 5px; max-width: 38vw; }
   .action-bar .chip { padding: 5px 10px; min-height: 30px; font-size: 12px; }
   #turn-btn { width: 60px; height: 60px; font-size: 10px; border-width: 2px; }
   #turn-btn-wrap { right: 8px; }
-  .run-controls { right: 8px; bottom: calc(100px + env(safe-area-inset-bottom, 0)); gap: 6px; }
+  /* Run controls: a row in the bottom-right strip, clear of the board. */
+  .run-controls { right: 8px; bottom: calc(6px + env(safe-area-inset-bottom, 0));
+    flex-direction: row; gap: 6px; }
   .run-controls .chip { padding: 9px 14px; font-size: 13px; min-height: 40px; }
   .prompt-sheet { bottom: calc(96px + env(safe-area-inset-bottom, 0));
     padding: 8px 10px; gap: 6px; max-width: min(72vw, 420px); border-radius: 12px; }
@@ -343,8 +364,8 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 }
 .side-bar { left: calc(6px + var(--sal)); }
 .side-bar.top { top: calc(6px + var(--sat)); }
-#board { inset: calc(4px + var(--sat)) calc(58px + var(--sar)) 124px calc(128px + var(--sal)); }
-.action-bar { left: calc(132px + var(--sal)); }
+#board { inset: calc(4px + var(--sat)) calc(104px + var(--sar)) 124px calc(128px + var(--sal)); }
+.action-bar { left: calc(10px + var(--sal)); bottom: calc(8px + var(--sab)); }
 .focus-panel { left: calc(132px + var(--sal)); }
 #turn-btn-wrap { right: calc(12px + var(--sar)); }
 .run-controls { right: calc(12px + var(--sar)); }
@@ -352,11 +373,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .log-drawer.open { right: var(--sar); }
 .hand { bottom: calc(-26px + var(--sab)); }
 @media (max-height: 640px) {
-  #board { inset: calc(2px + var(--sat)) calc(50px + var(--sar)) 92px calc(104px + var(--sal)); }
-  .action-bar { left: calc(106px + var(--sal)); bottom: calc(94px + var(--sab)); }
+  #board { inset: calc(2px + var(--sat)) calc(76px + var(--sar)) 92px calc(104px + var(--sal)); }
+  .action-bar { left: calc(6px + var(--sal)); bottom: calc(6px + var(--sab)); }
   .focus-panel { left: calc(106px + var(--sal)); bottom: calc(94px + var(--sab)); }
   #turn-btn-wrap { right: calc(8px + var(--sar)); }
-  .run-controls { right: calc(8px + var(--sar)); bottom: calc(100px + var(--sab)); }
+  .run-controls { right: calc(8px + var(--sar)); bottom: calc(6px + var(--sab)); }
   .side-bar.bottom { bottom: calc(88px + var(--sab)); }
   .hand { bottom: calc(-16px + var(--sab)); }
   .prompt-sheet { bottom: calc(96px + var(--sab)); }
@@ -487,3 +508,38 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   padding-bottom: calc(8px + var(--sab)); }
 .bottom-actions .big { flex: 1; }
 #edit-results:not(:empty) { border: 1px dashed var(--line); border-radius: 10px; }
+
+/* ── Access reader: when a decision is ABOUT one card, the card itself is
+      the prompt. Reuses the .zoom-overlay/.zoom-card reader (art left, text
+      right in landscape) and adds the question + answers in the text column,
+      plus a peek toggle that steps aside so the board can be read. ── */
+#access-overlay .zoom-card { border-color: var(--gold); }
+.access-q { font-size: 16px; font-weight: 700; margin-top: 6px; }
+.access-q .cost { color: var(--gold); }
+.access-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.access-actions .chip { min-height: 46px; font-size: 15px; font-weight: 700;
+  padding: 12px 22px; }
+.access-actions .yes { background: var(--legal); color: #05221d; border: none; }
+.access-actions .no { background: var(--bg2); border-color: var(--line); }
+.access-actions .peek { background: transparent; border-color: var(--dim);
+  color: var(--dim); font-weight: 400; }
+.peek-back { position: fixed; z-index: 210; right: calc(10px + var(--sar));
+  bottom: calc(10px + var(--sab)); background: var(--gold); color: #241c04;
+  border: none; font-weight: 800; min-height: 46px; padding: 12px 20px;
+  border-radius: 999px; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+@media (max-height: 640px) {
+  .access-q { font-size: 14px; }
+  .access-actions .chip { min-height: 40px; font-size: 13px; padding: 9px 16px; }
+  .peek-back { min-height: 40px; font-size: 13px; padding: 9px 16px; }
+}
+
+/* Pile reader (Archives, score areas): tappable rows with thumbnails. */
+.zoom-card.pile { max-height: 86vh; overflow-y: auto; gap: 6px; }
+.pilerow { display: flex; align-items: center; gap: 8px; padding: 5px 6px;
+  border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
+  cursor: pointer; }
+.pilerow:active { border-color: var(--gold); }
+.pilethumb { width: 34px; height: 25px; border-radius: 4px; flex-shrink: 0;
+  background-size: cover; background-position: center 15%; }
+.pilename { flex: 1; font-size: 13px; }
+.pilepts { color: var(--gold); font-weight: 700; font-size: 12px; }

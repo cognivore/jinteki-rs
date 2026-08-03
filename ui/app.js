@@ -295,7 +295,8 @@ function barHtml(st, side, isOpp) {
     <span class="stat" title="clicks remaining">${clicks}</span>
     <span class="stat" title="cards in hand">Hand ${st["hand-count"] ?? (st.hand || []).length}</span>
     <span class="stat" title="cards in deck">Deck ${st["deck-count"] ?? 0}</span>
-    <span class="stat" title="agenda points">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
+    <span class="stat tappable" data-stat="ap" data-side="${side}"
+      title="agenda points — tap to see the agendas">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
 }
 
 // Tap an identity thumb to read the identity card.
@@ -304,6 +305,18 @@ document.addEventListener("click", (e) => {
   if (!chip || !S) return;
   const st = S[chip.dataset.side];
   if (st && st.identity) zoomCard(st.identity);
+});
+
+// Tap AP to see the agendas behind the number (both sides' score areas are
+// public information).
+document.addEventListener("click", (e) => {
+  const stat = e.target.closest('.stat[data-stat="ap"]');
+  if (!stat || !S) return;
+  const side = stat.dataset.side;
+  const st = S[side] || {};
+  const who = side === "corp" ? "Corp" : "Runner";
+  const verb = side === "corp" ? "scored" : "stolen";
+  zoomPile(st.scored || [], `${who} agendas (${verb}) — ${st["agenda-point"] ?? 0} points`);
 });
 
 const SERVER_ORDER = (k) => ({ archives: 0, rd: 1, hq: 2 }[k] ?? 10 + parseInt(k.replace("remote", ""), 10));
@@ -682,7 +695,10 @@ document.addEventListener("pointerdown", (e) => {
 function renderPrompt() {
   const sheet = $("prompt-sheet");
   const p = myPrompt();
-  if (!p) { sheet.style.display = "none"; return; }
+  if (!p) { sheet.style.display = "none"; hideAccessReader(); return; }
+  // A decision ABOUT a card puts the card itself in front of you.
+  if (p.card && p.card.title) { sheet.style.display = "none"; renderAccessReader(p); return; }
+  hideAccessReader();
   sheet.style.display = "flex";
   sheet.classList.toggle("waiting", p["prompt-type"] === "waiting");
   const choices = p.choices || [];
@@ -697,6 +713,85 @@ function renderPrompt() {
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
+}
+
+/* ── access reader ───────────────────────────────────────────────────────
+   Accessing a card is the moment you most need to SEE it, so the card is
+   the prompt: full art and text, the question underneath ("Trash for 3⬡?"),
+   and a peek toggle that steps the reader aside so the board can be read
+   and stepped back into — no decision is lost while peeking. */
+let peekingBoard = false;
+let accessFocusCid = null;
+
+function accessOverlayEl() {
+  let o = document.getElementById("access-overlay");
+  if (!o) {
+    o = document.createElement("div");
+    o.id = "access-overlay";
+    o.className = "zoom-overlay";
+    document.getElementById("screen-game").appendChild(o);
+  }
+  return o;
+}
+
+function hideAccessReader() {
+  const o = document.getElementById("access-overlay");
+  if (o) o.style.display = "none";
+  const pb = document.getElementById("peek-back");
+  if (pb) pb.remove();
+  peekingBoard = false;
+  accessFocusCid = null;
+}
+
+function renderAccessReader(p) {
+  const c = p.card;
+  // A new card to look at always starts un-peeked.
+  if (accessFocusCid !== c.cid) { accessFocusCid = c.cid; peekingBoard = false; }
+  const o = accessOverlayEl();
+
+  if (peekingBoard) {
+    o.style.display = "none";
+    let pb = document.getElementById("peek-back");
+    if (!pb) {
+      pb = document.createElement("button");
+      pb.id = "peek-back";
+      pb.className = "peek-back";
+      document.getElementById("screen-game").appendChild(pb);
+    }
+    pb.textContent = `↩ ${c.title}`;
+    pb.onclick = () => { peekingBoard = false; renderAccessReader(p); };
+    return;
+  }
+  const pb = document.getElementById("peek-back");
+  if (pb) pb.remove();
+
+  const choices = p.choices || [];
+  const yes = choices.find((ch) => /^(pay|rez|steal)/i.test(String(ch.value)));
+  const no = choices.find((ch) => /^no action$/i.test(String(ch.value)));
+  const tc = p["trash-cost"];
+  const q =
+    tc != null ? `Trash <b>${c.title}</b> for <span class="cost">${tc}⬡</span>?` :
+    p.focus === "rez" ? `Rez <b>${c.title}</b>${c.cost != null ? ` for <span class="cost">${c.cost}⬡</span>` : ""}?` :
+    yes && /^steal/i.test(String(yes.value)) ? `Steal <b>${c.title}</b>?` :
+    `You accessed <b>${c.title}</b>.`;
+  const binary = tc != null || p.focus === "rez";
+
+  const btns = [];
+  if (yes) btns.push([binary ? "Yes" : sym(String(yes.value)), "yes", yes.uuid]);
+  if (no) btns.push([binary ? "No" : "No action", "no", no.uuid]);
+  if (!btns.length) choices.forEach((ch) => btns.push([sym(String(ch.value)) || "OK", "no", ch.uuid]));
+
+  o.style.display = "flex";
+  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}
+    <div class="access-q">${q}</div>
+    <div class="access-actions">
+      ${btns.map(([l, cls, uuid]) => `<button class="chip ${cls}" data-uuid="${uuid}">${l}</button>`).join("")}
+      <button class="chip peek" id="access-peek">Peek board</button>
+    </div></div>`;
+  o.querySelectorAll("[data-uuid]").forEach((b) => {
+    b.onclick = () => { peekingBoard = false; act("choice", { choice: { uuid: b.dataset.uuid } }); };
+  });
+  document.getElementById("access-peek").onclick = () => { peekingBoard = true; renderAccessReader(p); };
 }
 
 /* ── chips / turn / run ──────────────────────────────────────────────── */
@@ -828,10 +923,21 @@ function zoomCard(c) {
 function zoomPile(cards, title) {
   const o = $("zoom-overlay");
   o.style.display = "flex";
-  o.innerHTML = `<div class="zoom-card"><h3>${title}</h3>
-    ${cards.map((c) => `<div class="ztext">${c.title || "🂠 facedown"}</div>`).join("") || "<div class='zline'>empty</div>"}
-  </div>`;
-  o.onclick = () => { o.style.display = "none"; };
+  const rows = cards.map((c, i) => `
+    <div class="pilerow" data-i="${i}">
+      ${c.code ? `<span class="pilethumb" style="background-image:url(${cardImgUrl(c.code)})"></span>` : ""}
+      <span class="pilename">${c.title || "🂠 facedown"}</span>
+      ${c.agendapoints != null ? `<span class="pilepts">${c.agendapoints} pts</span>` : ""}
+    </div>`).join("");
+  o.innerHTML = `<div class="zoom-card pile"><h3>${title}</h3>
+    ${rows || "<div class='zline'>none yet</div>"}</div>`;
+  // Tap a row to read that card; tap anywhere else to close.
+  o.onclick = (e) => {
+    const row = e.target.closest(".pilerow");
+    const c = row ? cards[+row.dataset.i] : null;
+    if (c && c.title) zoomCard(c);
+    else o.style.display = "none";
+  };
 }
 
 function renderGameOver() {

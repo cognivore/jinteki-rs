@@ -451,3 +451,34 @@ fn win_at_7_points() {
     st.check_agenda_win();
     assert_eq!(st.winner, Some(Side::Corp));
 }
+
+/// The client can only put the accessed card itself in front of the player if
+/// the prompt carries it (UI "access reader"). Trash-cost accesses also carry
+/// the price so the question can read "Trash for N credits?" rather than
+/// echoing a button label.
+#[test]
+fn access_prompt_carries_the_card_and_its_trash_cost() {
+    use jinteki_core::view::{render_state, Viewer};
+    let mut st = new_test_game(23, &["PAD Campaign"], &["Sure Gamble"]);
+    stack_hand(&mut st, Side::Corp, &["PAD Campaign"]);
+    corp_install(&mut st, "PAD Campaign", "New remote");
+    take_credits(&mut st, Side::Corp);
+    let remote = st.servers.iter().map(|(id, _)| *id)
+        .find(|id| !id.is_central()).expect("the remote we just made");
+    cmd(&mut st, Side::Runner, Command::Run { server: remote });
+
+    let p = st.current_prompt(Side::Runner).expect("access prompt");
+    assert!(p.choices.iter().any(|c| c.label.starts_with("Pay 4")), "have {:?}",
+        p.choices.iter().map(|c| &c.label).collect::<Vec<_>>());
+
+    let v = render_state(&st, Viewer::Side(Side::Runner));
+    let prompt = &v["runner"]["prompt-state"];
+    assert_eq!(prompt["card"]["title"], "PAD Campaign");
+    assert_eq!(prompt["focus"], "access");
+    assert_eq!(prompt["trash-cost"], 4);
+    assert!(prompt["card"]["code"].is_string(), "card art code travels for the reader");
+
+    // The Corp's view of the same moment leaks nothing.
+    let cv = render_state(&st, Viewer::Side(Side::Corp));
+    assert!(cv["runner"]["prompt-state"].is_null());
+}

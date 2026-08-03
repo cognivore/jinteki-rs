@@ -217,12 +217,33 @@ fn prompt_state(st: &GameState, side: Side, viewer: Viewer) -> Value {
                 .iter()
                 .map(|c| json!({"uuid": c.uuid, "value": c.label}))
                 .collect();
-            json!({
+            let mut obj = json!({
                 "msg": p.msg,
                 "prompt-type": p.prompt_type,
                 "choices": choices,
                 "select": p.select.is_some(),
-            })
+            });
+            // A prompt about ONE card carries that card, so the client can put
+            // the card itself in front of the player instead of a sentence
+            // about it. The card is already visible to this side (they are
+            // accessing it, or it is their own ice), so this widens nothing.
+            let (focus, kind, trash_cost) = match p.context {
+                PromptContext::AccessSteal { cid } => (Some(cid), "access", None),
+                PromptContext::AccessTrashOrNo { cid, trash_cost } => {
+                    (Some(cid), "access", Some(trash_cost))
+                }
+                PromptContext::AccessNoAction { cid } => (Some(cid), "access", None),
+                PromptContext::RezApproached { ice } => (Some(ice), "rez", None),
+                _ => (None, "", None),
+            };
+            if let (Some(cid), Some(m)) = (focus, obj.as_object_mut()) {
+                m.insert("card".into(), card_json(st, cid, true));
+                m.insert("focus".into(), json!(kind));
+                if let Some(tc) = trash_cost {
+                    m.insert("trash-cost".into(), json!(tc));
+                }
+            }
+            obj
         }
         None => {
             if st.any_prompt_open() {
