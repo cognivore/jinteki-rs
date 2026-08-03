@@ -1093,6 +1093,12 @@ pub enum TargetFilter {
     /// which 10.2.1 makes open information to both players. The polarity is
     /// content (§12 rule 2), so one atom says both sentences.
     InstalledThisTurn(bool),
+    /// CR 1.18.3: "a card you can advance" (AstroScript Pilot Program, Slot
+    /// Machine). The PERMISSION side of advancing — an agenda always, and any
+    /// other installed card while an active ability says so — read through
+    /// the same derivation the basic advance action uses, so the criterion
+    /// and the action can never disagree. Names the play area (1.15.2c).
+    CanBeAdvanced,
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma
@@ -1156,6 +1162,9 @@ impl TargetFilter {
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.
                 | TargetFilter::IceInSamePositionAs(_)
+                // 1.18.3: only an INSTALLED card can be advanced, so this
+                // criterion already names the play area.
+                | TargetFilter::CanBeAdvanced
         )
     }
 }

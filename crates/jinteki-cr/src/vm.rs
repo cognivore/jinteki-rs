@@ -5974,6 +5974,12 @@ impl Vm {
                 });
                 installed == want
             }
+            // 1.18.3: the same permission the basic advance action reads, so
+            // a criterion and the action can never disagree about it.
+            TargetFilter::CanBeAdvanced => {
+                cite!("rule_you_can_advance");
+                self.advanceable_cards().contains(&o.id)
+            }
             TargetFilter::InstalledCorpCard => self.is_installed(o) && is_corp_card(o.printed.card_type),
             TargetFilter::InstalledRunnerCard => {
                 self.is_installed(o) && !is_corp_card(o.printed.card_type)
@@ -6613,9 +6619,9 @@ impl Vm {
     pub fn state_requirement_holds(&self, req: &crate::ability::TriggerRequirement) -> bool {
         use crate::ability::TriggerRequirement as R;
         match req {
-            R::RunnerTagged => {
+            R::RunnerTagsAtLeast(n) => {
                 cite!("rule_tagged");
-                self.st.runner.tags > 0
+                self.st.runner.tags >= *n
             }
             // "…during their last turn": the most recently COMPLETED Runner
             // turn in the change log. During the Runner's own turn that is the
@@ -7259,7 +7265,49 @@ impl Vm {
                     return; // frame already unwound; no phase advance
                 }
             }
-            Instruction::Combined(_) => {
+            Instruction::Combined(list) => {
+                // CR 9.11.4a: a sentence describing several effects is
+                // normally several INSTRUCTIONS. `Combined` is the exception
+                // the CR's own examples force (Snare!'s "do 3 net damage and
+                // give the Runner 1 tag" is one instruction, so one interrupt
+                // window sees both), and it works by merging the sub-
+                // instructions' expected atoms into one imminent set.
+                //
+                // That merge can only carry a sub-instruction whose effect IS
+                // a value: a STRUCTURAL atom carries none, so the merged set
+                // has nothing to resolve from and the sub-instruction used to
+                // be silently dropped (Earthrise Hotel's "remove 1 hosted
+                // power counter and draw 2 cards" removed nothing). Those
+                // sub-instructions are what 9.11.4a calls separate
+                // instructions (9.11.3: "usually, each sentence in the text
+                // of an ability forms a single instruction"), and they are
+                // spliced in after this one.
+                //
+                // DEVIATION: a spliced sub-instruction resolves AFTER every
+                // merged one, so printed order is not preserved between the
+                // two kinds. Nothing in the corpus distinguishes them; a card
+                // that did would want its sentence written as two
+                // instructions, which 9.11.4a already permits.
+                cite!("rule_instructions_in_ability_text");
+                cite!("rule_instruction_sentence_exceptions");
+                let deferred: Vec<Instruction> = list
+                    .iter()
+                    .filter(|i| {
+                        let atoms =
+                            self.expected_atoms(i, controller, &imm.targets, Some(source.obj));
+                        !atoms.is_empty()
+                            && atoms.iter().all(|a| a.class == EffectClass::Structural)
+                    })
+                    .cloned()
+                    .collect();
+                if !deferred.is_empty() {
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        let at = af.idx + 1;
+                        for (k, ins) in deferred.into_iter().enumerate() {
+                            af.instructions.insert(at + k, ins);
+                        }
+                    }
+                }
                 // Combined instructions carry heterogeneous atoms; apply each.
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     match a.class {
@@ -12535,7 +12583,7 @@ impl Vm {
     /// always, and any other card whose active abilities say it can be
     /// advanced (9.1.8f keeps that declaration active while the card is
     /// unrezzed, which is the usual case for an Ice Wall).
-    fn advanceable_cards(&self) -> Vec<ObjectId> {
+    pub fn advanceable_cards(&self) -> Vec<ObjectId> {
         cite!("rule_you_can_advance");
         let threat = self.threat_level();
         let mut out: Vec<ObjectId> = self

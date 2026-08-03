@@ -988,14 +988,14 @@ pub fn runner_steals_agenda() -> TriggerCond {
 /// as the turn formally ending, so it is that occurrence read as a different
 /// sentence.
 pub fn discard_phase_ends(side: Side) -> TriggerCond {
-    TriggerCond::DiscardPhaseEnds(side)
+    TriggerCond::DiscardPhaseEnds { side, requires: Vec::new() }
 }
 
 // ---- states a card can require (9.6.5c / 9.1.8c) --------------------------
 
 /// "…the Runner is tagged" (5.4).
 pub fn runner_is_tagged() -> TriggerRequirement {
-    TriggerRequirement::RunnerTagged
+    TriggerRequirement::RunnerTagsAtLeast(1)
 }
 /// "…the Runner made a run during their last turn."
 pub fn runner_made_a_run_last_turn() -> TriggerRequirement {

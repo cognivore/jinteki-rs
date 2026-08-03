@@ -159,7 +159,7 @@ pub fn closed_accounts() -> PrintedCard {
     c.cost = Some(1);
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
-            TriggerRequirement::RunnerTagged,
+            TriggerRequirement::RunnerTagsAtLeast(1),
         ])])
         .labeled("closed accounts: play only if the Runner is tagged"),
         AbilityDef::play(vec![Instruction::LoseCredits(

@@ -259,7 +259,9 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // through `Vm::this_server`, so a condition met BY the
                     // source leaving its server still names the server it
                     // left (Warroid Tracker class).
-                    if !trigger_matches(cond, c, source_obj, vm.this_server(obj_id), is_corp)
+                    if !trigger_matches(cond, c, source_obj, vm.this_server(obj_id), is_corp, |o| {
+                        vm.st.objects.get(&o).map(|x| x.printed.card_type)
+                    })
                         && !persisted_server_override(vm, from_lingering, cond, c)
                     {
                         continue;

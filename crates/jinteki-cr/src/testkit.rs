@@ -1632,7 +1632,7 @@ pub fn qpm_with_casting_call(name: &'static str) -> PrintedCard {
     c.trash_cost = Some(0);
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::SelfAccessed { requires: vec![TriggerRequirement::RunnerTagged] },
+            TriggerCond::SelfAccessed { requires: vec![TriggerRequirement::RunnerTagsAtLeast(1)] },
             vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
             false,
         )
@@ -2108,7 +2108,7 @@ fn femme_choice_over(
 pub fn poetri_like(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerAccessesCard,
+        TriggerCond::RunnerAccessesCard { of_types: Vec::new() },
         vec![Instruction::InstallCard {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
@@ -2155,7 +2155,7 @@ pub fn must_trash_accessed_like(name: &'static str, trash_cost: u32) -> PrintedC
 pub fn must_trash_by_paying_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerAccessesCard,
+        TriggerCond::RunnerAccessesCard { of_types: Vec::new() },
         vec![Instruction::MustTrashAccessedCard {
             means: crate::instr::TrashMeans::PayingTheTrashCost,
         }],
@@ -4090,7 +4090,7 @@ pub fn when_scored_agenda(
 ) -> PrintedCard {
     let mut c = vanilla_agenda(name, req, points);
     let requires = if requires_tagged {
-        vec![TriggerRequirement::RunnerTagged]
+        vec![TriggerRequirement::RunnerTagsAtLeast(1)]
     } else {
         Vec::new()
     };

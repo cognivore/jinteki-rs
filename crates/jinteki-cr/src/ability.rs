@@ -59,7 +59,10 @@ pub enum TriggerCond {
     SelfAccessed { requires: Vec<TriggerRequirement> },
     /// "Whenever you access a card…" (Neutralize All Threats class) — a
     /// Runner-side condition met by accessing ANY card, not this one.
-    RunnerAccessesCard,
+    /// `of_types` is the sentence's card-type stipulation ("whenever you
+    /// access an agenda", Film Critic); empty means no stipulation, exactly
+    /// as it does on [`TriggerCond::CorpRezzesCard`].
+    RunnerAccessesCard { of_types: Vec<crate::object::CardType> },
     /// "When the Runner encounters this ice."
     SelfEncountered,
     /// "Whenever the Runner encounters a piece of ice." (Runner-side class)
@@ -110,7 +113,7 @@ pub enum TriggerCond {
     /// related to a turn OR DISCARD PHASE ending are met at the same step —
     /// the formal end of that player's turn (5.6.3d / 5.7.2d) — so this is a
     /// distinct sentence met by the same occurrence, not a distinct moment.
-    DiscardPhaseEnds(Side),
+    DiscardPhaseEnds { side: Side, requires: Vec<TriggerRequirement> },
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
@@ -283,8 +286,11 @@ pub enum TriggerCond {
 /// than a `CondIfRunnerTagged` variant per condition (§12 rule 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerRequirement {
-    /// "…if the Runner is tagged" (5.4: the Runner is tagged with ≥ 1 tag).
-    RunnerTagged,
+    /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
+    /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
+    /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`
+    /// IS "tagged".
+    RunnerTagsAtLeast(u32),
     /// "…if the Runner made a run during their last turn" (Neural EMP), and
     /// with `successful_only` "…made a successful run during their last turn"
     /// (SEA Source, Hard-Hitting News). The game history is public
@@ -1222,6 +1228,9 @@ pub fn trigger_matches(
     source: &Object,
     server_of_source: Option<ServerId>,
     trashed_is_corp: impl Fn(ObjectId) -> bool,
+    // The printed card type of an object named by the change, for a condition
+    // that stipulates one (2.15).
+    card_type_of: impl Fn(ObjectId) -> Option<crate::object::CardType>,
 ) -> bool {
     cite!("rule_trigger_condition_checked");
     match (cond, change) {
@@ -1272,9 +1281,10 @@ pub fn trigger_matches(
         // checked by the checkpoint scan (it has the state access); this arm
         // only matches the change class.
         (TriggerCond::SelfAccessed { .. }, GameChange::CardAccessed { obj }) => *obj == source.id,
-        (TriggerCond::RunnerAccessesCard, GameChange::CardAccessed { .. }) => {
+        (TriggerCond::RunnerAccessesCard { of_types }, GameChange::CardAccessed { obj }) => {
             cite!("rule_accessing");
-            true
+            cite!("rule_card_type_list");
+            of_types.is_empty() || card_type_of(*obj).is_some_and(|t| of_types.contains(&t))
         }
         (TriggerCond::PlayerDrawsCards(side), GameChange::CardDrawn { side: s, .. }) => {
             cite!("rule_draw_procedure");
@@ -1337,7 +1347,7 @@ pub fn trigger_matches(
         // 5.1.4b: "Trigger conditions related to a turn or discard phase
         // ending are met at the timing step that indicates the formal end of
         // the turn." Same step, same occurrence, different sentence.
-        (TriggerCond::DiscardPhaseEnds(side), GameChange::TurnEnded { side: s }) => {
+        (TriggerCond::DiscardPhaseEnds { side, .. }, GameChange::TurnEnded { side: s }) => {
             cite!("rule_turn_end_trigger_conditions");
             cite!("rule_discard_step");
             side == s
@@ -1536,7 +1546,9 @@ pub fn ability_in_class(def: &AbilityDef, class: AbilityClass) -> bool {
 pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
     cite!("rule_condition_requirements_part_of_condition");
     match cond {
-        TriggerCond::SelfAccessed { requires } | TriggerCond::SelfScored { requires } => requires,
+        TriggerCond::SelfAccessed { requires }
+        | TriggerCond::SelfScored { requires }
+        | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
         _ => &[],
     }
 }
