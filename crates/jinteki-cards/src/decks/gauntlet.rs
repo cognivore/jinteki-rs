@@ -54,10 +54,12 @@ pub fn gemilang_arena() -> Card {
 ///  Hosted agenda counter: Place 1 advancement counter on an installed card
 ///  you can advance."
 ///
-/// UNIMPLEMENTED: the paid ability. 1.18.3's permission exists as
-/// `StaticDecl::CanBeAdvancedSelf`, but no `TargetFilter` reads it, so "a card
-/// you can advance" cannot be described — and describing it as "an installed
-/// card" instead would let the counter land on cards that cannot be advanced.
+/// COMPLETE. 1.18.3's permission is read as a criterion by
+/// `TargetFilter::CanBeAdvanced`, which derives from the same
+/// `Vm::advanceable_cards` the basic advance action uses — so the counter
+/// cannot land where the action would refuse to advance. 1.18.2: this places
+/// an advancement counter DIRECTLY, which is not advancing, so no "whenever
+/// you advance" condition is met.
 pub fn astroscript_pilot_program() -> Card {
     card("AstroScript Pilot Program")
         .corp()
@@ -66,7 +68,11 @@ pub fn astroscript_pilot_program() -> Card {
         .text("When you score this agenda, place 1 agenda counter on it.")
         .text("Hosted agenda counter: Place 1 advancement counter on an installed card you can advance.")
         .when(scored(), [place(CounterKind::Agenda, 1)])
-        .unimplemented("Hosted agenda counter: Place 1 advancement counter on an installed card you can advance.")
+        .paid(
+            hosted_counters(CounterKind::Agenda, 1),
+            [place_on(choose(1, &[advanceable()]), CounterKind::Advancement, 1)],
+        )
+        .named("astroscript: spend a counter to advance")
         .build()
 }
 
@@ -526,9 +532,13 @@ pub fn gold_farmer() -> Card {
 ///  [subroutine] Trace[3]. If successful, give the Runner 1 tag.
 ///  [subroutine] End the run if the Runner is tagged."
 ///
-/// UNIMPLEMENTED: the first and third. No instruction is conditional on the
-/// board holding a described card, and `IfRunnerLinkAtLeast` is the only
-/// state-conditional instruction there is — there is no tagged equivalent.
+/// COMPLETE. Both conditional sentences are 9.6.5d requirements living in the
+/// INSTRUCTIONS rather than in a trigger condition: they are checked when the
+/// instruction resolves, so a tag gained by the second subroutine is seen by
+/// the third, and an AI installed after the encounter began is not seen by
+/// the first. "There is an installed AI program" asks the board through the
+/// same criteria a target announcement uses — 1.15.2c restricts it to
+/// installed cards, which is exactly what "there is" means here.
 pub fn ip_block() -> Card {
     card("IP Block")
         .corp()
@@ -538,9 +548,16 @@ pub fn ip_block() -> Card {
         .text("When the Runner encounters this ice, give them 1 tag if there is an installed AI program.")
         .text("[subroutine] Trace[3]. If successful, give the Runner 1 tag.")
         .text("[subroutine] End the run if the Runner is tagged.")
+        .when(
+            encountered(),
+            [if_met(
+                &[board_has(&[of_type(CardType::Program), with_subtype("AI")], 1)],
+                [give_tags(1)],
+            )],
+        )
+        .named("ip block: the ai tax")
         .subroutine([trace(3, [give_tags(1)])])
-        .unimplemented("When the Runner encounters this ice, give them 1 tag if there is an installed AI program.")
-        .unimplemented("[subroutine] End the run if the Runner is tagged.")
+        .subroutine([if_met(&[runner_is_tagged()], [end_the_run()])])
         .build()
 }
 

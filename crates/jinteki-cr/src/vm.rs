@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use crate::ability::{
     StaticCond,
     ability_active, is_corp_card, AbilityDef, AbilityFlag, AbilityInstance, AbilityKind,
-    AbilityRef, Condition, Cost, StaticDecl, TriggerCond,
+    AbilityRef, Condition, Cost, StaticDecl, TriggerCond, TurnScope,
 };
 use crate::checkpoint;
 use crate::decision::{
@@ -6735,6 +6735,14 @@ impl Vm {
                 cite!("rule_tagged");
                 self.st.runner.tags >= *n
             }
+            R::RunnerLinkAtLeast(n) => self.runner_link() >= *n as i32,
+            // A question about the board, answered through the same criteria
+            // vocabulary a target announcement uses — so "an installed AI
+            // program" means here exactly what it would mean as a target.
+            R::BoardHasMatching { criteria, at_least } => {
+                cite!("rule_targets_must_be_in_play_area");
+                self.candidates_matching(criteria, source).len() >= *at_least as usize
+            }
             // "…during their last turn": the most recently COMPLETED Runner
             // turn in the change log. During the Runner's own turn that is the
             // previous one, which is what the Corp's cards ask about.
@@ -6770,20 +6778,38 @@ impl Vm {
                     .values()
                     .any(|o| o.host == Some(src) && o.printed.side == Side::Corp)
             }
-            R::RunnerMadeRunLastTurn { successful_only } => {
+            R::RunnerMadeRun { successful_only, scope } => {
                 cite!("rule_hidden_or_open_information");
                 let log = &self.changes.log;
-                let ends: Vec<usize> = log
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, c)| matches!(c, GameChange::TurnEnded { side: Side::Runner }))
-                    .map(|(i, _)| i)
-                    .collect();
-                let Some(&end) = ends.last() else { return false };
-                let start = log[..end]
-                    .iter()
-                    .rposition(|c| matches!(c, GameChange::TurnBegan { side: Side::Runner }))
-                    .unwrap_or(0);
+                // The window the sentence names. "This turn" is the current
+                // turn, bounded by the last `TurnBegan` of EITHER side — the
+                // same reading every other "this turn" requirement uses.
+                // "Their last turn" is the most recently COMPLETED Runner
+                // turn, so it is bounded at both ends.
+                let (start, end) = match scope {
+                    TurnScope::ThisTurn => {
+                        let Some(start) = log
+                            .iter()
+                            .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                        else {
+                            return false;
+                        };
+                        (start, log.len())
+                    }
+                    TurnScope::LastCompletedTurn => {
+                        let Some(end) = log
+                            .iter()
+                            .rposition(|c| matches!(c, GameChange::TurnEnded { side: Side::Runner }))
+                        else {
+                            return false;
+                        };
+                        let start = log[..end]
+                            .iter()
+                            .rposition(|c| matches!(c, GameChange::TurnBegan { side: Side::Runner }))
+                            .unwrap_or(0);
+                        (start, end)
+                    }
+                };
                 log[start..end].iter().any(|c| {
                     if *successful_only {
                         matches!(c, GameChange::RunDeclaredSuccessful { .. })
@@ -9558,16 +9584,20 @@ impl Vm {
                     self.trash_card(card, *side);
                 }
             }
-            Instruction::IfRunnerLinkAtLeast { n, then } => {
+            Instruction::IfMet { requires, then, otherwise } => {
                 // 9.6.5d: requirements in the INSTRUCTIONS are checked when
                 // the relevant instructions resolve — not at trigger time.
                 cite!("rule_condition_requirements_part_of_effect");
-                if self.runner_link() >= *n as i32 {
+                let met = requires
+                    .iter()
+                    .all(|r| self.state_requirement_holds_for(r, Some(source.obj)));
+                let branch = if met { then } else { otherwise };
+                for step in branch {
                     let atoms =
-                        self.expected_atoms(then, controller, &imm.targets, Some(source.obj));
+                        self.expected_atoms(step, controller, &imm.targets, Some(source.obj));
                     let inner = ImminentWrap {
                         counter_targets: Vec::new(),
-                        instr: (**then).clone(),
+                        instr: step.clone(),
                         atoms,
                         controller,
                         targets: imm.targets.clone(),

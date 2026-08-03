@@ -88,7 +88,7 @@ use jinteki_cr::object::PrintedCard;
 // Re-exported so a deck file needs exactly one `use` line. These are the
 // kernel's own types: a designer who outgrows the helpers below can reach
 // for them directly and is still inside the public vocabulary.
-pub use jinteki_cr::ability::{Cost, StaticDecl, TriggerCond, TriggerRequirement};
+pub use jinteki_cr::ability::{Cost, StaticDecl, TriggerCond, TriggerRequirement, TurnScope};
 pub use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
 pub use jinteki_cr::instr::{
     InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, SubroutineSpec,
@@ -920,6 +920,13 @@ pub fn hosted_on_this_card() -> TargetFilter {
 pub fn installed_this_turn(yes: bool) -> TargetFilter {
     TargetFilter::InstalledThisTurn(yes)
 }
+/// "a card you can advance" (1.18.3) — the PERMISSION as a criterion, read
+/// from the same place the basic advance action reads it, so a card the
+/// action would refuse cannot be described here either. (The declaration
+/// that GRANTS the permission to its own card is `can_be_advanced()`.)
+pub fn advanceable() -> TargetFilter {
+    TargetFilter::CanBeAdvanced
+}
 
 // ---- what an ability costs (1.16) -----------------------------------------
 
@@ -1190,11 +1197,57 @@ pub fn runner_is_tagged() -> TriggerRequirement {
 }
 /// "…the Runner made a run during their last turn."
 pub fn runner_made_a_run_last_turn() -> TriggerRequirement {
-    TriggerRequirement::RunnerMadeRunLastTurn { successful_only: false }
+    TriggerRequirement::RunnerMadeRun {
+        successful_only: false,
+        scope: TurnScope::LastCompletedTurn,
+    }
 }
 /// "…the Runner made a successful run during their last turn."
 pub fn runner_made_a_successful_run_last_turn() -> TriggerRequirement {
-    TriggerRequirement::RunnerMadeRunLastTurn { successful_only: true }
+    TriggerRequirement::RunnerMadeRun {
+        successful_only: true,
+        scope: TurnScope::LastCompletedTurn,
+    }
+}
+/// "…you made a successful run this turn" (Mutual Favor class) — the same
+/// question asked of the CURRENT turn.
+pub fn made_a_successful_run_this_turn() -> TriggerRequirement {
+    TriggerRequirement::RunnerMadeRun { successful_only: true, scope: TurnScope::ThisTurn }
+}
+/// "…you have at least N link" (1.20).
+pub fn link_at_least(n: u32) -> TriggerRequirement {
+    TriggerRequirement::RunnerLinkAtLeast(n)
+}
+/// "…there is an installed AI program" (IP Block class) — at least `n` cards
+/// on the board match the description. The criteria are the same ones a
+/// target announcement uses, so 1.15.2c applies: without a criterion naming
+/// a zone this asks about INSTALLED cards, which is what "there is" means.
+pub fn board_has(criteria: &[TargetFilter], n: u32) -> TriggerRequirement {
+    TriggerRequirement::BoardHasMatching { criteria: criteria.to_vec(), at_least: n }
+}
+/// "If <state>, <effect>." (9.6.5d — the requirement is in the instructions.)
+pub fn if_met(
+    requires: &[TriggerRequirement],
+    then: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::IfMet {
+        requires: requires.to_vec(),
+        then: then.into_iter().collect(),
+        otherwise: Vec::new(),
+    }
+}
+/// "If <state>, <effect>. If you do not, <other effect>." — the printed
+/// two-branch form (Mutual Favor class).
+pub fn if_met_else(
+    requires: &[TriggerRequirement],
+    then: impl IntoIterator<Item = Instruction>,
+    otherwise: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::IfMet {
+        requires: requires.to_vec(),
+        then: then.into_iter().collect(),
+        otherwise: otherwise.into_iter().collect(),
+    }
 }
 
 // ---- what is permanently true (9.4) ---------------------------------------

@@ -640,10 +640,23 @@ pub enum Instruction {
     /// "Remove this card from the game." (Ashen Epilogue class; 8.6.6a — a
     /// played card no longer in the play area is not trashed.)
     RemoveSelfFromGame,
-    /// "If you have at least N link, <effect>." — the requirement lives in
-    /// the INSTRUCTIONS, not the trigger condition (9.6.5d): it is checked
-    /// when this instruction resolves.
-    IfRunnerLinkAtLeast { n: u32, then: Box<Instruction> },
+    /// "If <state>, <effect>[. If you do not, <other effect>]." — a
+    /// requirement that lives in the INSTRUCTIONS rather than in the trigger
+    /// condition (9.6.5d), so it is checked when this instruction resolves
+    /// and not when the condition was met.
+    ///
+    /// The predicate is the SAME `TriggerRequirement` vocabulary 9.6.5c uses
+    /// on conditions — one state language for both places (§12 rule 2) —
+    /// which is why "if you have at least 2 link" (Underworld Contact), "if
+    /// the Runner is tagged" (IP Block) and "if you made a successful run
+    /// this turn" (Mutual Favor) are one instruction rather than three.
+    /// `otherwise` is the printed "if you do not" branch; empty where the
+    /// sentence has none.
+    IfMet {
+        requires: Vec<crate::ability::TriggerRequirement>,
+        then: Vec<Instruction>,
+        otherwise: Vec<Instruction>,
+    },
     /// CR 8.3.3 / 4.8.2: "set aside the top N cards of <a deck> facedown."
     /// The first half of the 8.3.3 arranging procedure, and the point at which
     /// 8.3.3b's "other effects on cards in a deck" become possible: while the

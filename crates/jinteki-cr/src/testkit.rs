@@ -1678,9 +1678,10 @@ pub fn underworld_contact_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::TurnBegins(Side::Runner),
-        vec![Instruction::IfRunnerLinkAtLeast {
-            n: 2,
-            then: Box::new(Instruction::GainCredits(Side::Runner, Quantity::c(1))),
+        vec![Instruction::IfMet {
+            requires: vec![crate::ability::TriggerRequirement::RunnerLinkAtLeast(2)],
+            then: vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+            otherwise: Vec::new(),
         }],
         false,
     )

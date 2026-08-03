@@ -289,6 +289,19 @@ pub enum TriggerCond {
     PlayerPaysCredits(Side),
 }
 
+/// Which turn a history question looks at. CR 10.2.1 makes the game history
+/// open information, and 1.12.6's "this turn" and "their last turn" are the
+/// two windows cards actually name — the window is content (§12 rule 2), not
+/// a requirement of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnScope {
+    /// Since the CURRENT turn began — the last `TurnBegan` of either side,
+    /// which is how every other "this turn" requirement reads it.
+    ThisTurn,
+    /// The most recently COMPLETED turn of the side in question.
+    LastCompletedTurn,
+}
+
 /// CR 9.6.5c: an ADDITIONAL requirement listed inside a trigger condition
 /// ("…if the Runner is tagged"). It is part of the condition, not of the
 /// effect, so it must hold at the moment the condition would occur — and
@@ -296,20 +309,33 @@ pub enum TriggerCond {
 /// instead of the stipulation actually occurring. Carried as data next to
 /// the condition it qualifies, so the requirement is one vocabulary rather
 /// than a `CondIfRunnerTagged` variant per condition (§12 rule 2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// NOT `Copy`: `BoardHasMatching` carries criteria, so a requirement is as
+// big as the description it holds. Requirements are read by reference
+// everywhere (`state_requirement_holds_for(&self, req: &_)`), so this costs
+// nothing at the call sites.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerRequirement {
+    /// "…if you have at least N link" (Underworld Contact class; 1.20).
+    RunnerLinkAtLeast(u32),
+    /// "…if there is an installed AI program" (IP Block class) — a question
+    /// about the BOARD rather than about a player or the history: at least
+    /// `at_least` cards match the criteria. The criteria are the shared
+    /// filter vocabulary, so the card described is content (§12 rule 2).
+    BoardHasMatching { criteria: Vec<crate::instr::TargetFilter>, at_least: u32 },
     /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
     /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
     /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`
     /// IS "tagged".
     RunnerTagsAtLeast(u32),
-    /// "…if the Runner made a run during their last turn" (Neural EMP), and
-    /// with `successful_only` "…made a successful run during their last turn"
-    /// (SEA Source, Hard-Hitting News). The game history is public
-    /// information (10.2.1), so this is read from the change log's most
-    /// recently COMPLETED Runner turn, exactly as 1.12.6's "ice you passed
-    /// during this run" is read from history.
-    RunnerMadeRunLastTurn { successful_only: bool },
+    /// "…if the Runner made a run during their last turn" (Neural EMP), with
+    /// `successful_only` "…made a successful run during their last turn"
+    /// (SEA Source, Hard-Hitting News), and with `scope` "…if you made a
+    /// successful run this turn" (Mutual Favor). The game history is public
+    /// information (10.2.1), so this is read from the change log, exactly as
+    /// 1.12.6's "ice you passed during this run" is. Both the success
+    /// stipulation and the window are content, not separate atoms (§12
+    /// rule 2).
+    RunnerMadeRun { successful_only: bool, scope: TurnScope },
     /// "…if you played an operation this turn" (Nebula class) — the game
     /// history since the current turn began (1.12.6, 10.2.1).
     PlayedOperationThisTurn(Side),

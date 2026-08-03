@@ -105,7 +105,10 @@ pub fn neural_emp() -> PrintedCard {
     c.cost = Some(2);
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
-            TriggerRequirement::RunnerMadeRunLastTurn { successful_only: false },
+            TriggerRequirement::RunnerMadeRun {
+                successful_only: false,
+                scope: crate::ability::TurnScope::LastCompletedTurn,
+            },
         ])])
         .labeled("neural emp: play only if the Runner made a run during their last turn"),
         AbilityDef::play(vec![Instruction::Damage {

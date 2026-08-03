@@ -136,17 +136,40 @@ pub fn employee_strike() -> Card {
 ///  after searching it.) If you made a successful run this turn, you may
 ///  install that program. If you do not, add it to your grip."
 ///
-/// UNIMPLEMENTED: both sentences. The search itself is sayable, but there is
-/// no REVEAL instruction (1.21.3) to finish the first sentence with, and no
-/// way to ask whether a successful run has been made this turn.
+/// COMPLETE. 8.7.2e makes the search able to fail to find, and 8.7.4's
+/// "the cards found by this ability's search" is `TargetSpec::FoundBySearch`,
+/// so the reveal and both branches act on whatever the search actually got.
+///
+/// "You may install that program. If you do not, add it to your grip." is one
+/// choice, not a permission followed by a separate sentence: declining the
+/// install IS the "if you do not" branch, so both readings of "do not" — no
+/// successful run, or a run but no install — put the card in the grip. The
+/// requirement rides in the INSTRUCTIONS (9.6.5d), because it is checked when
+/// this instruction resolves rather than when the event was played.
 pub fn mutual_favor() -> Card {
     card("Mutual Favor")
         .runner()
         .event()
         .cost(0)
         .text("Search your stack for 1 icebreaker and reveal it. (Shuffle your stack after searching it.) If you made a successful run this turn, you may install that program. If you do not, add it to your grip.")
-        .unimplemented("Search your stack for 1 icebreaker and reveal it.")
-        .unimplemented("If you made a successful run this turn, you may install that program. If you do not, add it to your grip.")
+        .play([
+            search_stack(&[with_subtype("Icebreaker")], 1),
+            reveal(TargetSpec::FoundBySearch),
+            if_met_else(
+                &[made_a_successful_run_this_turn()],
+                [choose_one([
+                    (
+                        "install that program",
+                        vec![install(
+                            TargetSpec::FoundBySearch,
+                            InstallDest::DeclaredByInstaller,
+                        )],
+                    ),
+                    ("add it to your grip", vec![add_to_hand(TargetSpec::FoundBySearch)]),
+                ])],
+                [add_to_hand(TargetSpec::FoundBySearch)],
+            ),
+        ])
         .build()
 }
 

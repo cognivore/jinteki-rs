@@ -1823,3 +1823,113 @@ fn pinhole_threads_into_another_root_and_cannot_steal() {
     assert_eq!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(2)), "not stolen, not trashed");
     assert_eq!(vm.score(Side::Runner), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Wave 4 — the conditional pack
+// ---------------------------------------------------------------------------
+
+/// AstroScript: "Hosted agenda counter: Place 1 advancement counter on an
+/// installed card you can advance."
+///
+/// 1.18.3's permission is the criterion, so the counter can only land where
+/// the basic advance action would also be allowed to go — and 1.18.2 keeps
+/// this a PLACEMENT, not an advance.
+#[test]
+fn astroscript_spends_its_counter_to_place_an_advancement() {
+    let mut vm = Vm::empty(4700);
+    let astro = tk::put_in_score_area(&mut vm, card("AstroScript Pilot Program"), Side::Corp);
+    vm.st.objects.get_mut(&astro).unwrap().counters.insert(CounterKind::Agenda, 1);
+    // An agenda in a remote root is advanceable by 1.18.3 without any card
+    // granting the permission.
+    let bellona = tk::install_root(&mut vm, card("Bellona"), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("spend a counter to advance"))
+            .when(Match::targets().once(), Reply::Targets(vec![bellona]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&bellona].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+        1,
+        "1 advancement counter placed: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        vm.st.objects[&astro].counters.get(&CounterKind::Agenda).copied().unwrap_or(0),
+        0,
+        "the agenda counter was spent"
+    );
+}
+
+/// IP Block's encounter ability is conditional on the BOARD (9.6.5d), so it
+/// is checked when the instruction resolves: no installed AI, no tag.
+///
+/// The ice's OWN trace subroutine also hands out a tag, so the encounter
+/// ability is isolated by differencing the two boards rather than by
+/// asserting an absolute count — that keeps the test honest about which
+/// sentence it is measuring even if the trace's outcome changes.
+#[test]
+fn ip_block_taxes_only_while_an_ai_is_installed() {
+    let tags_with_board = |ai_installed: bool| {
+        let mut vm = Vm::empty(4701);
+        tk::install_ice(&mut vm, card("IP Block"), ServerId::Hq, true);
+        if ai_installed {
+            let mut ai = tk::runner_filler("Bogus AI");
+            ai.card_type = CardType::Program;
+            ai.subtypes = vec!["AI", "Icebreaker"];
+            tk::install_rig(&mut vm, ai);
+        }
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+        );
+        vm.st.runner.tags
+    };
+    let without = tags_with_board(false);
+    let with = tags_with_board(true);
+    assert_eq!(with - without, 1, "the installed AI is worth exactly the encounter's 1 tag");
+}
+
+/// Mutual Favor with no successful run this turn: the icebreaker is found,
+/// revealed, and goes to the grip rather than the rig.
+#[test]
+fn mutual_favor_without_a_run_puts_the_breaker_in_the_grip() {
+    let mut vm = Vm::empty(4702);
+    let mf = vm.new_object(card("Mutual Favor"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(mf);
+    let mut breaker = tk::runner_filler("Bogus Breaker");
+    breaker.card_type = CardType::Program;
+    breaker.subtypes = vec!["Icebreaker"];
+    breaker.cost = Some(0);
+    let brk = vm.new_object(breaker, Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(brk);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(mf))
+            .when(Match::targets().once(), Reply::Targets(vec![brk]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&brk].zone,
+        Zone::Hand(Side::Runner),
+        "no successful run this turn, so it goes to the grip: {}",
+        t.tail(16)
+    );
+}
