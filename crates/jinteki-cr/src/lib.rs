@@ -22,6 +22,7 @@ pub mod frames;
 pub mod instr;
 pub mod lingering;
 pub mod object;
+pub mod plan;
 pub mod testkit;
 pub mod timing;
 pub mod vm;
@@ -38,6 +39,7 @@ pub const EMBEDDED_SOURCES: &[(&str, &str)] = &[
     ("instr.rs", include_str!("instr.rs")),
     ("lingering.rs", include_str!("lingering.rs")),
     ("object.rs", include_str!("object.rs")),
+    ("plan.rs", include_str!("plan.rs")),
     ("testkit.rs", include_str!("testkit.rs")),
     ("timing.rs", include_str!("timing.rs")),
     ("vm.rs", include_str!("vm.rs")),

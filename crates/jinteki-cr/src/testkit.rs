@@ -7,7 +7,7 @@ use crate::ability::{
     AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TimingRestriction,
     TriggerCond,
 };
-use crate::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption, Yield};
+use crate::decision::{DecisionAnswer, DecisionSpec, WindowOption, Yield};
 use crate::effects::DamageKind;
 use crate::instr::{Instruction, Quantity, TargetSpec};
 use crate::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
@@ -1917,56 +1917,10 @@ pub fn drain_to_game_over(vm: &mut Vm, max_decisions: usize) -> crate::decision:
     panic!("no game over within {max_decisions} decisions");
 }
 
-/// A neutral default answer: pass/decline where legal, first mandatory
-/// obligation otherwise.
-pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
-    match spec {
-        DecisionSpec::Mulligan => DecisionAnswer::KeepHand,
-        DecisionSpec::TakeAction { options } => DecisionAnswer::Action(
-            options.first().cloned().unwrap_or(ActionOption::BasicCredit),
-        ),
-        DecisionSpec::PaidWindow { .. } => DecisionAnswer::Pass,
-        DecisionSpec::ReactionWindow { options, can_pass } => {
-            if *can_pass {
-                DecisionAnswer::Pass
-            } else {
-                let mandatory = options
-                    .iter()
-                    .find(|o| matches!(o, WindowOption::TriggerInstance { mandatory: true, .. }))
-                    .or(options.first())
-                    .cloned()
-                    .expect("mandatory option");
-                DecisionAnswer::Take(mandatory)
-            }
-        }
-        DecisionSpec::InterruptWindow { options, can_pass } => {
-            if *can_pass {
-                DecisionAnswer::Pass
-            } else {
-                DecisionAnswer::Take(options.first().cloned().unwrap())
-            }
-        }
-        DecisionSpec::MidAccessWindow { .. } => DecisionAnswer::Pass,
-        DecisionSpec::ChooseTargets { candidates, count, .. } => {
-            DecisionAnswer::Targets(candidates.iter().take(*count as usize).copied().collect())
-        }
-        DecisionSpec::ChooseOption { .. } => DecisionAnswer::Option(0),
-        DecisionSpec::NestedCost { .. } => DecisionAnswer::PayNestedCost(false),
-        DecisionSpec::OptionalEffect { .. } => DecisionAnswer::ResolveOptional(false),
-        DecisionSpec::ChooseCandidate { candidates } => {
-            DecisionAnswer::Candidate(candidates[0])
-        }
-        // 10.3.1j: default drivers decline candidacy; tests opt in.
-        DecisionSpec::DeclareBreachCandidate { .. } => DecisionAnswer::ResolveOptional(false),
-        DecisionSpec::JackOut => DecisionAnswer::JackOut(false),
-        DecisionSpec::DiscardCards { count, hand } => {
-            DecisionAnswer::Discard(hand.iter().take(*count as usize).copied().collect())
-        }
-        DecisionSpec::MinimalSet { .. } => DecisionAnswer::ChooseSet(0),
-        DecisionSpec::TraceSpend { .. } => DecisionAnswer::SpendCredits(0),
-        DecisionSpec::PsiBid { .. } => DecisionAnswer::Bid(0),
-    }
-}
+/// The neutral default answer now lives with the plan language (§12 rule 5)
+/// as the meaning of `Reply::Default`; re-exported while the migration to
+/// plans completes.
+pub use crate::plan::default_answer;
 
 /// Find a window option whose label contains `needle`.
 pub fn option_labeled(options: &[WindowOption], needle: &str) -> Option<WindowOption> {

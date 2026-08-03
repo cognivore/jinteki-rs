@@ -10,6 +10,7 @@ use jinteki_cr::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOpt
 use jinteki_cr::effects::DamageKind;
 use jinteki_cr::instr::Quantity;
 use jinteki_cr::object::{CounterKind, ServerId, Side, Zone};
+use jinteki_cr::plan::{self, Kind, Match, Plan, Reply};
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::Vm;
 
@@ -170,30 +171,17 @@ fn example_rule_chain_reaction_1() {
     tk::fill_deck(&mut vm, Side::Runner, 3);
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Rnd }));
-
-    let mut used_decoy = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !used_decoy => {
-                let opt = options
-                    .iter()
-                    .find(|o| matches!(o, WindowOption::TriggerPaid { label, .. } if label.contains("decoy")))
-                    .cloned()
-                    .expect("Decoy-class interrupt offered while the tag is imminent");
-                used_decoy = true;
-                vm.answer(DecisionAnswer::Take(opt));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(used_decoy);
+    // The plan: run R&D, and the first time an interrupt window offers Decoy
+    // (while the tag is imminent), use it.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Rnd))
+            .when(Match::interrupt().once(), Reply::take("decoy"))
+            .stop_at_action(),
+    );
+    assert!(t.took("decoy"), "Decoy-class interrupt offered while the tag is imminent");
     // Outcomes stated by the example:
     assert_eq!(vm.st.runner.tags, 0, "the tag was avoided");
     assert_eq!(vm.st.hand[&Side::Runner].len(), 0, "2 + 1 drawn - 3 damage");
@@ -224,40 +212,17 @@ fn example_rule_active_exception_conditional_move_to_inactive_zone_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    // Trigger the trash button in the first PAW (once).
-    let mut corp_reaction_options = None;
-    let mut fired = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner => {
-                match tk::option_labeled(options, "trash the set") {
-                    Some(opt) if !fired => {
-                        fired = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                    }
-                    _ => vm.answer(DecisionAnswer::Pass),
-                }
-            }
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Corp => {
-                if corp_reaction_options.is_none() {
-                    corp_reaction_options = Some(options.clone());
-                }
-                let a = tk::default_answer(&spec);
-                vm.answer(a);
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    let opts = corp_reaction_options.expect("corp reaction window opened");
+    // The plan: fire the trash button once, in the first paid window offering
+    // it; everything else is neutral.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("trash the set"))
+            .stop_at_action(),
+    );
     assert_eq!(
-        opts.iter()
-            .filter(|o| matches!(o, WindowOption::TriggerInstance { label, .. } if label.contains("hostile-infra")))
-            .count(),
+        t.first_window(Kind::Reaction, Side::Corp).count("hostile-infra"),
         3,
         "9.1.8g + 9.6.4b: 3 instances pending though HI is in Archives"
     );
@@ -290,34 +255,21 @@ fn example_rule_reaction_window_closing_timing_structure_1() {
     vm.st.runner.credits = 5;
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
-
-    let mut used_femme = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner && !used_femme => {
-                if let Some(opt) = tk::option_labeled(options, "femme") {
-                    used_femme = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::NestedCost { cost } => {
-                assert_eq!(cost.credits, 1);
-                vm.answer(DecisionAnswer::PayNestedCost(true));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(used_femme);
+    // The plan: run HQ, bypass with Femme from the encounter-begins reaction
+    // window, and pay her bypass cost.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::reaction().once(), Reply::take("femme"))
+            .when(Match::nested_cost(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert!(t.took("femme"));
+    let costs: Vec<u32> =
+        t.of_kind(Kind::NestedCost).iter().filter_map(|e| e.cost()).map(|c| c.credits).collect();
+    assert_eq!(costs, vec![1], "the only cost put to a player was Femme's 1[c]");
     assert_eq!(vm.st.runner.credits, 4, "paid exactly the 1[c] bypass cost, never 3");
     assert!(
         vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
@@ -354,45 +306,16 @@ fn example_rule_condition_met_multiple_times_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    let mut corp_first_offer: Option<Vec<WindowOption>> = None;
-    let mut fired = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner => {
-                match tk::option_labeled(options, "trash the set") {
-                    Some(opt) if !fired => {
-                        fired = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                    }
-                    _ => vm.answer(DecisionAnswer::Pass),
-                }
-            }
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Corp => {
-                if corp_first_offer.is_none() {
-                    corp_first_offer = Some(options.clone());
-                }
-                let a = tk::default_answer(&spec);
-                vm.answer(a);
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    let opts = corp_first_offer.expect("reaction window opened");
-    let hi_count = opts
-        .iter()
-        .filter(|o| matches!(o, WindowOption::TriggerInstance { label, .. } if label.contains("hostile-infra")))
-        .count();
-    let w_count = opts
-        .iter()
-        .filter(|o| matches!(o, WindowOption::TriggerInstance { label, .. } if label.contains("warroid")))
-        .count();
-    assert_eq!(hi_count, 3, "9.6.4b: one instance per trashed card");
-    assert_eq!(w_count, 1, "9.12.2a: the set-trigger sees one event");
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("trash the set"))
+            .stop_at_action(),
+    );
+    let offer = t.first_window(Kind::Reaction, Side::Corp);
+    assert_eq!(offer.count("hostile-infra"), 3, "9.6.4b: one instance per trashed card");
+    assert_eq!(offer.count("warroid"), 1, "9.12.2a: the set-trigger sees one event");
     let _ = (hi, w);
 }
 
@@ -412,39 +335,20 @@ fn example_rule_conditional_ability_static_condition_no_effect_1() {
     let sac = tk::install_rig(&mut vm, tk::sac_con_like("SacCon-like", ice));
     vm.start_turn(Side::Runner);
 
-    let mut used_sac = false;
-    let mut parasite_triggers = 0;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner => {
-                if let Some(opt) = tk::option_labeled(options, "parasite") {
-                    parasite_triggers += 1;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !used_sac => {
-                if let Some(opt) = tk::option_labeled(options, "sac-con") {
-                    used_sac = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(used_sac, "the trash was prevented once");
+    // The plan: always trigger Parasite when offered; prevent the trash once
+    // with Sacrificial Construct.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction(), Reply::take("parasite"))
+            .when(Match::interrupt().once(), Reply::take("sac-con"))
+            .stop_at_action(),
+    );
+    assert!(t.took("sac-con"), "the trash was prevented once");
     assert_eq!(
-        parasite_triggers, 2,
+        t.times_taken("parasite"),
+        2,
         "prevented → condition still true → pends again (9.6.7d)"
     );
     assert_eq!(vm.st.objects[&ice].zone, Zone::Discard(Side::Corp), "second try trashed it");
@@ -457,26 +361,12 @@ fn example_rule_conditional_ability_static_condition_no_effect_1() {
     tk::host_on(&mut vm, para, arch);
     vm.start_turn(Side::Runner);
 
-    let mut parasite_triggers = 0;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner => {
-                if let Some(opt) = tk::option_labeled(options, "parasite") {
-                    parasite_triggers += 1;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::reaction(), Reply::take("parasite")).stop_at_action(),
+    );
+    let parasite_triggers = t.times_taken("parasite");
     assert!(vm.st.objects[&arch].zone.is_installed(), "the ice was never trashed");
     // Steps before the first action window: allotted clicks, PAW, refill,
     // turn-begins, PAW, action-branch — the throttle limits the ability to
@@ -505,17 +395,15 @@ fn example_rule_instruction_requirements_past_state_1() {
     vm.st.corp.credits = 5;
     vm.start_turn(Side::Corp);
 
-    for advance_round in 0..2 {
-        let options = drive_to_action_window(&mut vm, Side::Corp);
-        let adv = options
-            .iter()
-            .find(|o| matches!(o, ActionOption::CardAction { label, .. } if label.contains("advance")))
-            .cloned()
-            .expect("advance action available");
-        vm.answer(DecisionAnswer::Action(adv));
-        let _ = advance_round;
-    }
-    let _ = drive_to_action_window(&mut vm, Side::Corp);
+    // The plan: spend the first two Corp actions advancing the ice.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().times(2), Reply::take("advance target"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(t.times_taken("advance target"), 2, "two advance actions were taken");
 
     assert_eq!(vm.st.objects[&ice].counter(CounterKind::Advancement), 2);
     assert_eq!(
@@ -543,39 +431,27 @@ fn example_rule_conditional_ability_lose_pending_when_ability_becomes_inactive_1
     vm.st.runner.credits = 5;
     vm.start_turn(Side::Runner);
 
-    let mut triggered_aesops = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner => {
-                if let Some(opt) = tk::option_labeled(options, "aesops") {
-                    triggered_aesops = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    // After Aesop's resolves, Drug Dealer's pending must be
-                    // GONE: passing must be legal (no mandatory pendings).
-                    if triggered_aesops {
-                        assert!(
-                            tk::option_labeled(options, "drug-dealer").is_none(),
-                            "9.6.10: Drug Dealer's instance lost its pending status"
-                        );
-                    }
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::ChooseTargets { candidates, .. } => {
-                assert!(candidates.contains(&dd));
-                vm.answer(DecisionAnswer::Targets(vec![dd]));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(triggered_aesops);
+    // The plan: trigger Aesop's when offered and feed it Drug Dealer.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction(), Reply::take("aesops"))
+            .when(Match::targets(), Reply::target(dd))
+            .stop_at_action(),
+    );
+    assert!(t.took("aesops"));
+    assert!(t.first_window(Kind::Targets, Side::Runner).candidates().contains(&dd));
+    // After Aesop's resolves, Drug Dealer's pending must be GONE: no later
+    // window may offer it.
+    assert!(
+        t.entries
+            .iter()
+            .skip_while(|e| !e.took("aesops"))
+            .skip(1)
+            .all(|e| !e.offered("drug-dealer")),
+        "9.6.10: Drug Dealer's instance lost its pending status"
+    );
     assert_eq!(vm.st.objects[&dd].zone, Zone::Discard(Side::Runner));
     assert_eq!(vm.st.runner.credits, 5 + 3, "gained 3, never lost the 1");
 }
@@ -597,47 +473,23 @@ fn example_rule_ordinal_would_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Archives }));
-
-    let mut zaps = 0;
-    let mut tori_ever_offered = false;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        for o in window_options(&spec) {
-            if let WindowOption::TriggerInstance { label, .. } = o {
-                if label.contains("tori") {
-                    tori_ever_offered = true;
-                }
-            }
-        }
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && zaps < 2 => {
-                if let Some(opt) = tk::option_labeled(options, "do net damage") {
-                    zaps += 1;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner => {
-                if let Some(opt) = tk::option_labeled(options, "feedback") {
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert_eq!(zaps, 2, "two net-damage instructions became imminent");
+    // The plan: the Runner runs Archives; the Corp zaps twice from its paid
+    // windows; the Runner prevents with Feedback Filter whenever offered.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().times(2), Reply::take("do net damage")),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Archives))
+            .when(Match::interrupt(), Reply::take("feedback"))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        t.times_taken("do net damage"),
+        2,
+        "two net-damage instructions became imminent"
+    );
     assert!(
-        !tori_ever_offered,
+        !t.ever_offered("tori"),
         "9.9.5a: after the first (prevented) imminence, Tori is never usable"
     );
     assert_eq!(
@@ -664,47 +516,22 @@ fn example_rule_negative_values_imminent_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    let mut took_tag = false;
-    let mut prevented = false;
-    let mut cleaners_uses = 0;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner && !took_tag => {
-                if let Some(opt) = tk::option_labeled(options, "take 1 tag") {
-                    took_tag = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !prevented => {
-                if let Some(opt) = tk::option_labeled(options, "biometric") {
-                    prevented = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Corp && cleaners_uses < 2 => {
-                if let Some(opt) = tk::option_labeled(options, "cleaners") {
-                    cleaners_uses += 1;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(took_tag && prevented);
-    assert_eq!(cleaners_uses, 2, "the value was modifiable at 0 and below (9.9.7a)");
+    // The plan: the Runner takes the tag (arming Mr. Stone) and prevents 2
+    // with Biometric Spoofing; the Corp adds +1 twice from its interrupts.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::interrupt().times(2), Reply::take("cleaners")),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("take 1 tag"))
+            .when(Match::interrupt().once(), Reply::take("biometric"))
+            .stop_at_action(),
+    );
+    assert!(t.took("take 1 tag") && t.took("biometric"));
+    assert_eq!(
+        t.times_taken("cleaners"),
+        2,
+        "the value was modifiable at 0 and below (9.9.7a)"
+    );
     let meat: u32 = vm
         .changes
         .log
@@ -741,46 +568,20 @@ fn example_rule_prevent_all_1() {
     tk::fill_deck(&mut vm, Side::Corp, 5);
     vm.start_turn(Side::Corp);
 
-    let mut fired = false;
-    let mut prevented_all = false;
-    let mut cleaners_offered_after_prevent = false;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        if prevented_all {
-            if let DecisionSpec::InterruptWindow { options, .. } = &spec {
-                if s == Side::Corp && tk::option_labeled(options, "cleaners").is_some() {
-                    cleaners_offered_after_prevent = true;
-                }
-            }
-        }
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !fired => {
-                if let Some(opt) = tk::option_labeled(options, "do meat damage") {
-                    fired = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !prevented_all => {
-                if let Some(opt) = tk::option_labeled(options, "chrome-parlor") {
-                    prevented_all = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(fired && prevented_all);
+    // The plan: the Corp fires the damage button once; the Runner prevents
+    // ALL of it with the Chrome-Parlor-class interrupt.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("do meat damage")),
+        Plan::runner().when(Match::interrupt().once(), Reply::take("chrome-parlor")),
+    );
+    assert!(t.took("do meat damage") && t.took("chrome-parlor"));
     assert!(
-        !cleaners_offered_after_prevent,
+        t.entries
+            .iter()
+            .skip_while(|e| !e.took("chrome-parlor"))
+            .skip(1)
+            .all(|e| !e.offered("cleaners")),
         "9.9.7b: with the damage effect removed, +1 is no longer relevant"
     );
     assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "no damage occurred");
@@ -800,30 +601,16 @@ fn example_rule_negative_values_resolution_1() {
     let stack = tk::fill_deck(&mut vm, Side::Runner, 3);
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Archives }));
-
-    let mut prevented = false;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner && !prevented => {
-                if let Some(opt) = tk::option_labeled(options, "biometric") {
-                    prevented = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(prevented);
+    // The plan: run Archives, access the Dome, prevent 2 of the 1 net damage.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Archives))
+            .when(Match::interrupt().once(), Reply::take("biometric"))
+            .stop_at_action(),
+    );
+    assert!(t.took("biometric"));
     assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "the damage did not occur");
     assert_eq!(
         vm.st.objects[&stack[0]].zone,
