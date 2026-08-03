@@ -233,48 +233,65 @@ New card shapes go in `testkit.rs` and are built EXCLUSIVELY through
 shape is annotated in its doc comment and is legitimate only while
 orthogonal to every example using it.
 
-## Next targets — resume the odometer (from W3 close-out, leverage-ordered)
+## Next targets — resume the odometer (144 examples left, cluster-ordered)
 
-1. ~~**§8.7 search/find/shuffle**~~ — **DONE (W5a).** All five §8.7/9.11.4d
-   examples land (`example_rule_search_condition_1` does not exist in
-   `examples.json` — 8.7.5 has no worked example of its own; it is asserted
-   through `example_rule_search_instruction_1`). The vocabulary is
-   `Instruction::Search`, `TargetSpec::FoundBySearch`,
-   `Instruction::AddCardsToHand`, `Instruction::TrashRandomFromHand`,
-   `StaticDecl::InstallDiscount`, `Cost::trash_from_hand`,
-   `TriggerCond::{PlayerSearchesDeck, CardInstalledBy}`, and the
-   card-characteristic `TargetFilter` atoms
-   (`CardTypeIs`/`HasSubtype`/`PrintedCostAtMost`). Searching a hand or a
-   discard pile is expressible (the `zone` position is a `Zone`) but only
-   deck searches are exercised.
-2. **9.12.2b calculated_quantity_3** — realloc()/NASX: a "for each" whose
-   effects are NOT all aggregated classes resolves as separate instances
-   (needs a derez primitive + per-occurrence change groups; NASX-class
-   credits-gained triggers).
-3. **§8.8 swaps** — Metamorph/Thimblerig/A Teia/Tatu-Bola examples
-   (position-preserving moves, hosted-relationship maintenance, 8.8.4b
-   install/uninstall condition timing). W5b landed `Instruction::SwapCards`
-   as the zone exchange with hosting preserved (8.8.3a/8.8.4c) — the wave
-   itself is the legality, position and mixed-installed-state work
-   (deviation 15).
-6. ~~**§1.13 hosting + 1.13.3 hosted counters**~~ — **DONE (W5b).** All 12
-   examples land. The vocabulary is `StaticDecl::{CanHost,
-   HostedInstallDiscount, InstallOnlyHostedOn}`,
-   `Instruction::{HostCards, SwapCards, RemoveCountersFromPlayer}`,
-   `Object::hosted_not_installed` (1.13.2a/b),
-   `Vm::{eligible_hosts_for, install_only_hosted_on,
-   install_destination_available, create_host_relationship, swap_cards}`,
-   `CounterKind::BadPublicity`, `TargetFilter::{Rezzed, InScoreAreaOf}`,
-   `TargetSpec::Choose { criteria: Vec<TargetFilter> }` (conjunctions, as
-   8.7.2a criteria already were), and `GameChange::{CardHosted,
-   CounterRemoved}`. Still open from §1.13: 1.13.7c/d facedown hosting
-   groups, 1.13.8 (a player cannot change hosted status), 1.13.14 condition
-   counters as hosts, and 10.1.4 card-to-counter conversion.
-4. **Chain/independence residue** — 9.1.2a example 2 (Zahya/Direct Access
-   ability-removed-during-resolution), 9.1.4 Compile/Mayfly stranding
-   (source_moved_since is still a stub — see vm.rs).
-5. **Encounter/bypass residue** — 6.5.8c bypass-after-subs-broken states,
-   8.5.10 mid-encounter ice uninstall (currently position arithmetic only).
+Measured from `docs/rules/examples.json` minus the `IMPLEMENTED` ledger. The
+remaining examples are scattered; these are the clusters big enough to pay
+for their machinery, largest first. Re-run the count before choosing:
+
+```
+python3 - <<'EOF'
+import json,re
+v=json.load(open('docs/rules/examples.json'))
+src=open('crates/jinteki-cr/tests/cr_examples.rs').read()
+i=src.index('const IMPLEMENTED'); j=src.index('];', i)
+impl=set(re.findall(r'"(example_[a-z0-9_]+)"', src[i:j]))
+missing=[e['id'] for e in v['examples'] if e['id'] not in impl]
+print(len(missing)); [print(m) for m in missing]
+EOF
+```
+
+1. **§8.9 / §9.3.4b targets** (~7): `example_rule_target_1..4`,
+   `distinct_targets_1`, `targets_must_be_in_play_area_1`,
+   `target_beyond_move_1`. Announce-time targeting is already half-built
+   (`TargetSpec::Choose`, `targets_needed`); this makes the target RULES
+   explicit — legality at announce, re-checking at resolution, targets that
+   left the play area.
+2. **Object identity and movement** (~8): `object_move_location_1/2`,
+   `object_move_known_location_1`, `previous_object_1/2`,
+   `previous_object_source_1`, `identify_object_after_move_1`,
+   `cancelled_movement_1`, `sec_replacing_movements_1`. §1.12's "a card that
+   changes zone becomes a NEW object" is already relied on by 7.4.7a
+   (Bacterial); these examples pin it, and `source_moved_since` (still a stub
+   in vm.rs — see deviation list) is the same machinery.
+3. **§6.2 ice position changes** (~5): `ice_change_during_movement_1/2`,
+   `ice_change_inward_1`, `ice_change_outward_1`,
+   `ice_change_encounter_move_swap_1` — plus **§8.8 swaps** (~4:
+   `swap_become_installed_1`, `swap_installed_cards_preserves_hosting_1`,
+   `swap_only_to_valid_location_1`, `drawn_card_swapped_1`), which shares the
+   position-preservation machinery and retires deviation 15's
+   `SwapCards` slice.
+4. **Icebreaker strength / lingering durations** (~5):
+   `icebreaker_strength_increase_implicit_1`, `_specified_1`,
+   `_outside_of_encounter_1`, `ice_strength_modification_duration_1`,
+   `modify_duration_of_lingering_effect_1` — §9.10.4a is implemented but
+   untested by its own examples.
+5. **Credit spending and pools** (~5): `spend_credits_1..3`,
+   `lose_credits_1`, `recurring_credits_do_not_accumulate_1`,
+   `alternate_payment_1` — §1.16/§10.2, and W5b's hosted-pool-first payment
+   is the same code path.
+6. **Basic actions** — deviation 17: there are still no basic install/play
+   ACTIONS (5.2.6d/5.2.7a/d); every example so far installs and plays through
+   card abilities. Several remaining examples (`defferent_actions_1`,
+   `costs_with_click_1`, `action_timing_structure_completion_1`) need them,
+   and they are cheap now that §8.5/§8.6 are complete.
+
+Singletons worth taking opportunistically while their machinery is warm:
+`look_reveal_instruction_1` and `reveal_from_hidden_1` (next to §8.7's
+search), `split_up_instruction_1` / `choice_instruction_1` /
+`choose_instruction_1` (§9.11 segmentation), `sabotage_all_remaining_cards_*`
+(3, one mechanism), `this_server_*` (3), `hosted_counters`/`trash_hosted`
+follow-ons now that §1.13 is done.
 
 ## Discipline (unchanged, binding)
 
