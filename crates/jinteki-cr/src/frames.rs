@@ -143,8 +143,22 @@ pub struct AbilityFrame {
     pub instructions: Vec<Instruction>,
     pub idx: usize,
     pub phase: AbilityPhase,
-    /// Announced targets for the current instruction (9.3.4b).
+    /// Announced targets for the current instruction (9.3.4b), in
+    /// announcement order. An instruction that requires several
+    /// announcements (1.15.2, "Trash 1 program and 1 resource") appends one
+    /// round per announcement, so this is the whole set the instruction acts
+    /// on once every slot is filled.
     pub targets: Vec<ObjectId>,
+    /// CR 1.15.2: which announcement of the current instruction comes next.
+    /// Reset when the frame moves on to the next instruction.
+    pub announce_slot: usize,
+    /// CR 1.15.1 / 9.8.6: announced SUBROUTINE targets for the current
+    /// instruction — the other kind of target.
+    pub sub_targets: Vec<crate::ability::SubKey>,
+    /// CR 1.15.4: every target this ABILITY has announced, across all its
+    /// instructions — "subsequent instructions of the same ability can
+    /// continue to act on that target without needing to select it again".
+    pub ability_targets: Vec<ObjectId>,
     /// Index into the VM's imminence stack while Imminent.
     pub imminent_index: Option<usize>,
     /// The conditional-instance id this frame resolves (drops pending).

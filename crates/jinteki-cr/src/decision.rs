@@ -3,7 +3,7 @@
 //! (ARCHITECTURE §3: decisions are DATA, never callbacks). The driver
 //! answers with a [`DecisionAnswer`] and steps again.
 
-use crate::ability::AbilityRef;
+use crate::ability::{AbilityRef, SubKey};
 use crate::object::{ObjectId, ServerId, Side};
 use crate::window::PawClasses;
 
@@ -84,6 +84,13 @@ pub enum DecisionSpec {
     /// `count` may be chosen — 0 for a plain "up to N", and non-zero where
     /// the rules force a floor (a sabotage that must take enough from HQ).
     ChooseTargets { candidates: Vec<ObjectId>, count: u32, up_to: bool, min: u32 },
+    /// CR 1.15.1 / 9.8.6: announce SUBROUTINES as targets — the other kind
+    /// of thing that can be a target. Each candidate carries its label so a
+    /// driver can show it. 9.8.6 restricts the candidates for an ability
+    /// that would BREAK them to unbroken subroutines; 9.8.6b's "all but N"
+    /// ability targets the subroutines it will NOT break, so its candidates
+    /// include the broken ones.
+    ChooseSubroutines { candidates: Vec<(SubKey, &'static str)>, count: u32, up_to: bool },
     /// CR 9.11.4g: choose between optioned effects; each option is its own
     /// instruction chain.
     ChooseOption { options: Vec<&'static str> },
@@ -119,6 +126,8 @@ pub enum DecisionAnswer {
     Take(WindowOption),
     Pass,
     Targets(Vec<ObjectId>),
+    /// CR 1.15.1: announced subroutine targets (9.8.6).
+    Subroutines(Vec<SubKey>),
     Option(usize),
     PayNestedCost(bool),
     ResolveOptional(bool),

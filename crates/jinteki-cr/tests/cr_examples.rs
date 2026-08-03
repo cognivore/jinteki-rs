@@ -163,6 +163,10 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 7a: target announcements (§1.15.2c/e).
     "example_rule_targets_must_be_in_play_area_1",
     "example_rule_distinct_targets_1",
+    // Wave 7b: several announcements per instruction, subroutine targets.
+    "example_rule_target_2",
+    "example_rule_target_4",
+    "example_rule_break_all_but_x_subroutines_targets_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5696,6 +5700,147 @@ fn example_rule_distinct_targets_1() {
     assert_eq!(vm.st.objects[&pa].zone, Zone::Discard(Side::Runner));
     assert_eq!(vm.st.objects[&pb].zone, Zone::Discard(Side::Runner));
     assert_eq!(vm.st.corp.credits, 3, "the 2 credits were paid");
+}
+
+/// example_rule_target_2 (1.15.1): a Colossus-class subroutine reads "Trash 1
+/// installed program and 1 installed resource." — ONE instruction that
+/// requires TWO announcements (1.15.2), whose targets are the two cards that
+/// will be trashed. Nothing intervenes between the announcements: the
+/// instruction becomes imminent only once both are made.
+#[test]
+fn example_rule_target_2() {
+    let mut vm = Vm::empty(703);
+    tk::install_ice(&mut vm, tk::colossus_like("Colossus-like"), ServerId::Hq, true);
+    let prog = tk::install_rig(&mut vm, tk::program_mu("Program-a", 1));
+    let res = tk::install_rig(&mut vm, tk::vanilla_runner_card("Resource-a", jinteki_cr::object::CardType::Resource));
+    let other = tk::install_rig(&mut vm, tk::program_mu("Program-b", 1));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::targets().nth(1), Reply::target(prog)),
+        Plan::runner().runs(ServerId::Hq).stop_at_action(),
+    );
+    let announce = t.of_kind(Kind::Targets);
+    assert_eq!(announce.len(), 2, "1.15.2: one announcement per choice: {}", t.tail(8));
+    assert_eq!(
+        announce[1].seq,
+        announce[0].seq + 1,
+        "both announcements happen before the instruction becomes imminent"
+    );
+    assert!(
+        announce[0].candidates().contains(&prog) && !announce[0].candidates().contains(&res),
+        "the program announcement offers programs"
+    );
+    assert_eq!(
+        announce[1].candidates(),
+        &[res],
+        "the resource announcement offers resources"
+    );
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.objects[&res].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.objects[&other].zone, Zone::Rig, "only the announced program");
+}
+
+/// example_rule_target_4 (1.15.1): the Runner encounters a barrier and uses a
+/// Cleaver-class interface ability to break subroutines. The targets are the
+/// 1 or 2 subroutines it will break — subroutines are targets, and 9.8.6
+/// offers only the unbroken ones.
+#[test]
+fn example_rule_target_4() {
+    let mut vm = Vm::empty(704);
+    tk::install_ice(&mut vm, tk::heimdall_like("Heimdall-like"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::cleaver_like("Cleaver-like", 6));
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::any().once(), Reply::take("cleaver"))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("end the run (a)"))
+            .stop_at_action(),
+    );
+    let announce = t.of_kind(Kind::SubTargets);
+    assert_eq!(announce.len(), 1, "the break ability announces once: {}", t.tail(8));
+    let offered: Vec<&str> = announce[0].subroutines().iter().map(|(_, l)| *l).collect();
+    assert_eq!(
+        offered,
+        vec!["[sub] do 1 core damage", "[sub] end the run (a)", "[sub] end the run (b)"],
+        "9.8.6: every unbroken subroutine is a candidate"
+    );
+    assert!(
+        matches!(announce[0].spec, DecisionSpec::ChooseSubroutines { count: 2, up_to: true, .. }),
+        "'break up to 2' asks for up to 2: {:?}",
+        announce[0].spec
+    );
+    // Announcing 1 of the 2 breaks exactly that one — "the 1 or 2
+    // subroutines that it will break". The other two resolve: 1 core damage
+    // and the run ends.
+    assert_eq!(vm.st.runner.credits, 8, "the 2 credits were paid");
+    assert_eq!(vm.st.runner.core_damage, 1, "the unbroken core-damage sub resolved");
+    let resolved = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::SubroutineResolved { .. }))
+        .count();
+    assert_eq!(resolved, 2, "the announced subroutine was broken, the other two resolved");
+}
+
+/// example_rule_break_all_but_x_subroutines_targets_1 (9.8.6b): two Grappling
+/// Hooks on Heimdall 1.0. The first targets the unbroken core-damage
+/// subroutine and breaks both "End the run" subroutines. The second targets an
+/// ALREADY-BROKEN "End the run" — legal, because the ability will not attempt
+/// to break its target — and breaks the core-damage subroutine, doing nothing
+/// to the other, already-broken one.
+#[test]
+fn example_rule_break_all_but_x_subroutines_targets_1() {
+    let mut vm = Vm::empty(705);
+    let ice = tk::install_ice(&mut vm, tk::heimdall_like("Heimdall-like"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::grappling_hook_like("Hook-a"));
+    tk::install_rig(&mut vm, tk::grappling_hook_like("Hook-b"));
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().once(), Reply::take("hook"))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("core damage"))
+            .when(Match::paid().once(), Reply::take("hook"))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("end the run (a)"))
+            .when(Match::jack_out().once(), Reply::Halt),
+    );
+    let announce = t.of_kind(Kind::SubTargets);
+    assert_eq!(announce.len(), 2, "one announcement per Hook: {}", t.tail(10));
+    let second: Vec<&str> = announce[1].subroutines().iter().map(|(_, l)| *l).collect();
+    assert_eq!(
+        second.len(),
+        3,
+        "9.8.6b: the broken subroutines are still valid targets — the ability \
+         will not attempt to break the chosen one: {second:?}"
+    );
+    // Every subroutine ended up broken: the first Hook broke both "End the
+    // run" subroutines, the second broke the core-damage one. Nothing
+    // resolved, so the run was not ended and no core damage was suffered.
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::AllSubsBroken { ice: i } if *i == ice)),
+        "9.12.2d: all three subroutines were broken"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
+        "no subroutine resolved"
+    );
+    assert_eq!(vm.st.runner.core_damage, 0, "the core-damage subroutine was broken");
 }
 
 // ===========================================================================

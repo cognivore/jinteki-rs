@@ -24,6 +24,7 @@
 //! of from inside a loop. That is strictly stronger: the loop could only see
 //! what it thought to look at.
 
+use crate::ability::SubKey;
 use crate::decision::{
     ActionOption, DecisionAnswer, DecisionSpec, GameResult, WindowOption, Yield,
 };
@@ -53,6 +54,8 @@ pub enum Kind {
     MidAccess,
     /// 9.3.4b target announcement.
     Targets,
+    /// 1.15.1 / 9.8.6 subroutine target announcement.
+    SubTargets,
     /// 9.11.4g optioned effects.
     Options,
     /// 9.11.4f / 1.16.10-11 nested or additional cost.
@@ -86,6 +89,7 @@ impl Kind {
             DecisionSpec::InterruptWindow { .. } => Kind::Interrupt,
             DecisionSpec::MidAccessWindow { .. } => Kind::MidAccess,
             DecisionSpec::ChooseTargets { .. } => Kind::Targets,
+            DecisionSpec::ChooseSubroutines { .. } => Kind::SubTargets,
             DecisionSpec::ChooseOption { .. } => Kind::Options,
             DecisionSpec::NestedCost { .. } => Kind::NestedCost,
             DecisionSpec::OptionalEffect { .. } => Kind::Optional,
@@ -276,6 +280,9 @@ impl Match {
     pub fn targets() -> Match {
         Match::of(Kind::Targets)
     }
+    pub fn sub_targets() -> Match {
+        Match::of(Kind::SubTargets)
+    }
     pub fn options() -> Match {
         Match::of(Kind::Options)
     }
@@ -423,6 +430,14 @@ pub fn window_options(spec: &DecisionSpec) -> &[WindowOption] {
     }
 }
 
+/// The subroutines offered by a 1.15.1/9.8.6 subroutine announcement.
+pub fn sub_candidates(spec: &DecisionSpec) -> &[(SubKey, &'static str)] {
+    match spec {
+        DecisionSpec::ChooseSubroutines { candidates, .. } => candidates,
+        _ => &[],
+    }
+}
+
 /// The labelled options of a 9.11.4g optioned-effect decision.
 pub fn choices(spec: &DecisionSpec) -> &[&'static str] {
     match spec {
@@ -457,6 +472,11 @@ pub enum Reply {
     /// otherwise. The second interpreter of the player algebra.
     Default,
     Targets(Vec<ObjectId>),
+    /// 1.15.1: announce these subroutines as targets (9.8.6).
+    Subroutines(Vec<SubKey>),
+    /// 1.15.1: announce the first offered subroutine whose label contains
+    /// this needle — subroutine keys are opaque, their labels are not.
+    SubroutineNamed(&'static str),
     /// 9.11.4g: choose the nth option.
     Choose(usize),
     /// 9.11.4g / 9.9.11: choose the option whose label contains this needle
@@ -645,6 +665,10 @@ impl Entry {
             DecisionSpec::DiscardCards { hand, .. } => hand,
             _ => &[],
         }
+    }
+    /// The subroutines put to the player at a 9.8.6 announcement.
+    pub fn subroutines(&self) -> &[(SubKey, &'static str)] {
+        sub_candidates(&self.spec)
     }
     /// The cost put to the player at a nested/additional-cost decision.
     pub fn cost(&self) -> Option<&crate::ability::Cost> {
@@ -920,6 +944,16 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         }
         Reply::Default => default_answer(spec),
         Reply::Targets(t) => DecisionAnswer::Targets(t.clone()),
+        Reply::Subroutines(v) => DecisionAnswer::Subroutines(v.clone()),
+        Reply::SubroutineNamed(n) => {
+            let subs = sub_candidates(spec);
+            DecisionAnswer::Subroutines(vec![
+                subs.iter()
+                    .find(|(_, l)| l.contains(n))
+                    .map(|(k, _)| *k)
+                    .unwrap_or_else(|| panic!("plan wanted subroutine {n:?}; offered: {subs:?}")),
+            ])
+        }
         Reply::Choose(i) => DecisionAnswer::Option(*i),
         Reply::ChooseNamed(n) => {
             let opts = choices(spec);
@@ -981,6 +1015,11 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::ChooseTargets { candidates, count, .. } => {
             DecisionAnswer::Targets(candidates.iter().take(*count as usize).copied().collect())
         }
+        // 9.8.6: the neutral policy announces the first `count` offered
+        // subroutines, which for a break ability is "break from the top".
+        DecisionSpec::ChooseSubroutines { candidates, count, .. } => DecisionAnswer::Subroutines(
+            candidates.iter().take(*count as usize).map(|(k, _)| *k).collect(),
+        ),
         DecisionSpec::ChooseOption { .. } => DecisionAnswer::Option(0),
         DecisionSpec::NestedCost { .. } => DecisionAnswer::PayNestedCost(false),
         DecisionSpec::OptionalEffect { .. } => DecisionAnswer::ResolveOptional(false),

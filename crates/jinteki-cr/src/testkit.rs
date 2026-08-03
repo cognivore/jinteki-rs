@@ -1001,7 +1001,9 @@ pub fn utopia_button(name: &'static str) -> PrintedCard {
 /// A generic "break 1 subroutine" button (encounter-only, 9.5.6a).
 pub fn break_button(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
-    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::BreakSubroutines { count: 1 }])
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::BreakSubroutines {
+            subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
+        }])
         .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
         .labeled("break: 1 subroutine")];
     c
@@ -2735,7 +2737,9 @@ pub fn abagnale_like(name: &'static str, strength: i32) -> PrintedCard {
         AbilityDef::paid(Cost::trash_self(), vec![Instruction::BypassEncounteredIce])
             .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate") })
             .labeled("abagnale: [trash] bypass this code gate"),
-        AbilityDef::paid(Cost::credits(1), vec![Instruction::BreakSubroutines { count: 1 }])
+        AbilityDef::paid(Cost::credits(1), vec![Instruction::BreakSubroutines {
+            subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
+        }])
             .with_flag(AbilityFlag::Interface)
             .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate") })
             .labeled("abagnale: interface break 1"),
@@ -2782,5 +2786,87 @@ pub fn aggressive_secretary_like(name: &'static str) -> PrintedCard {
         true,
     )
     .labeled("secretary: pay 2 to trash X programs")];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W7b shapes: several announcements per instruction, subroutine targets
+// ---------------------------------------------------------------------------
+
+/// Colossus shape (1.15.1): a piece of ice with the subroutine "Trash 1
+/// installed program and 1 installed resource." — ONE instruction requiring
+/// TWO announcements (1.15.2), acting on both targets at once.
+pub fn colossus_like(name: &'static str) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_ice(name, 6, 6);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::TrashCards(TargetSpec::Each(
+        vec![
+            TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::InstalledRunnerCard, F::CardTypeIs(CardType::Program)],
+            },
+            TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::InstalledResource],
+            },
+        ],
+    ))])
+    .labeled("[sub] trash 1 program and 1 resource")];
+    c
+}
+
+/// Cleaver shape (1.15.1): "2[c]: Break up to 2 barrier subroutines." The
+/// break ability's targets are the 1 or 2 subroutines it will break (9.8.6:
+/// only unbroken ones can be chosen). The [interface] strength gate and the
+/// barrier stipulation are the card's; the strength-pumping half is elided.
+pub fn cleaver_like(name: &'static str, strength: i32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.strength = Some(strength);
+    c.memory_cost = Some(1);
+    c.subtypes = vec!["icebreaker", "fracter"];
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(2),
+        vec![Instruction::BreakSubroutines {
+            subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(2), up_to: true },
+        }],
+    )
+    .with_flag(AbilityFlag::Interface)
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("barrier") })
+    .labeled("cleaver: break up to 2 barrier subroutines")];
+    c
+}
+
+/// Grappling-Hook shape (9.8.6b): "[trash]: Break all but 1 subroutine on
+/// the encountered ice." The announced target is the subroutine that will
+/// NOT be broken, so an already-broken subroutine is a legal choice.
+pub fn grappling_hook_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![Instruction::BreakSubroutines {
+            subs: crate::instr::SubroutineSpec::AllBut { count: Quantity::c(1) },
+        }],
+    )
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+    .labeled("hook: break all but 1 subroutine")];
+    c
+}
+
+/// Heimdall-1.0 shape (9.8.6b): a barrier with "[sub] Do 1 core damage."
+/// and two "[sub] End the run." subroutines.
+pub fn heimdall_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 8, 6);
+    c.subtypes = vec!["barrier"];
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::Damage {
+            kind: DamageKind::Core,
+            amount: Quantity::c(1),
+            responsible: Side::Corp,
+        }])
+        .labeled("[sub] do 1 core damage"),
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] end the run (a)"),
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] end the run (b)"),
+    ];
     c
 }

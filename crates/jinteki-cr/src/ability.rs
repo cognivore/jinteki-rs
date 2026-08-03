@@ -111,6 +111,18 @@ pub enum TriggerCond {
     CardInstalledBy(Side),
 }
 
+/// Stable identity of one subroutine on a piece of ice: (category rank per
+/// 9.8.2/9.8.3, source key, ordinal within that source). Category-d counts
+/// shrink last-first (9.8.3d), which is exactly highest-ordinal-first here.
+/// CR 1.15.1: subroutines are announced as targets like objects are, so this
+/// key is part of the decision vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubKey {
+    pub category: u8,
+    pub src: u64,
+    pub ord: u32,
+}
+
 /// Static conditions (9.6.7) for repeat-while-true conditionals.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StaticCond {

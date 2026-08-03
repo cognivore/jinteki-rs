@@ -24,6 +24,7 @@ use crate::frames::{
     AbilityFrame, AbilityPhase, AccessCtx, BreachCtx, Frame, ResolutionKind, RunCtx, StepPhase,
     StructCtx, StructureFrame,
 };
+pub use crate::ability::SubKey;
 use crate::instr::{Instruction, TargetFilter, TargetSpec};
 use crate::lingering::{Duration, LingeringEffect, Payload};
 use crate::change::{ChangeBuffer, GameChange};
@@ -85,15 +86,6 @@ pub struct EncounterState {
     pub all_broken_noted: bool,
 }
 
-/// Stable identity of one subroutine on a piece of ice: (category rank per
-/// 9.8.2/9.8.3, source key, ordinal within that source). Category-d counts
-/// shrink last-first (9.8.3d), which is exactly highest-ordinal-first here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SubKey {
-    pub category: u8,
-    pub src: u64,
-    pub ord: u32,
-}
 
 /// The pure game state (cloneable for the 9.6.6a snapshot).
 #[derive(Debug, Clone)]
@@ -304,6 +296,8 @@ mod imminent {
         pub atoms: Vec<EffectAtom>,
         pub controller: Side,
         pub targets: Vec<ObjectId>,
+        /// CR 1.15.1: announced SUBROUTINE targets (9.8.6).
+        pub sub_targets: Vec<crate::ability::SubKey>,
         /// Ordinals per class at imminence time (9.9.5a), per-run scope.
         pub run_ordinal: BTreeMap<u64, u32>,
         /// Same, per-turn scope ("the first time each turn…").
@@ -658,7 +652,7 @@ impl Vm {
                         let instr = self.step_instruction(k);
                         let atoms = self.expected_atoms(&instr, self.st.turn_side, &[], None);
                         let asked =
-                            self.push_imminent(instr, self.st.turn_side, Vec::new(), atoms);
+                            self.push_imminent(instr, self.st.turn_side, Vec::new(), Vec::new(), atoms);
                         self.set_structure_phase(StepPhase::Exec);
                         if asked {
                             // 9.9.11 order Decision pending; the answer path
@@ -2190,6 +2184,7 @@ impl Vm {
         instr: Instruction,
         controller: Side,
         targets: Vec<ObjectId>,
+        sub_targets: Vec<crate::ability::SubKey>,
         atoms: Vec<EffectAtom>,
     ) -> bool {
         let seq = self.changes.next_group + 1_000_000; // distinct key-space
@@ -2214,6 +2209,7 @@ impl Vm {
             atoms,
             controller,
             targets,
+            sub_targets,
             run_ordinal,
             turn_ordinal,
             seq,
@@ -2653,6 +2649,9 @@ impl Vm {
             idx: 0,
             phase,
             targets: Vec::new(),
+            sub_targets: Vec::new(),
+            announce_slot: 0,
+            ability_targets: Vec::new(),
             imminent_index: None,
             instance,
             source_move_stamp: self.st.move_seq,
@@ -2886,6 +2885,11 @@ impl Vm {
                 let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
                 af.idx += 1;
                 af.phase = AbilityPhase::Targets;
+                // 1.15.2: the next instruction announces its own targets
+                // from scratch; 1.15.4 keeps the ability-wide list.
+                af.targets.clear();
+                af.sub_targets.clear();
+                af.announce_slot = 0;
             }
         }
     }
@@ -2942,9 +2946,28 @@ impl Vm {
         (payer, af.source.obj)
     }
 
+    /// CR 1.15.2: how many separate announcements this instruction requires
+    /// ("for each time the instruction requires a player to choose 1 or more
+    /// objects"). Every instruction in the vocabulary requires at most one
+    /// except a `TargetSpec::Each`, which requires one per element.
+    fn announcements_required(&self, instr: &Instruction) -> usize {
+        match instr {
+            Instruction::PerformedBy { instr, .. } => self.announcements_required(instr),
+            Instruction::TrashCards(TargetSpec::Each(specs)) => specs.len(),
+            _ => 1,
+        }
+    }
+
     /// Compute targets that need a Decision (9.3.4b).
     fn targets_needed(&self, instr: &Instruction) -> Option<(Side, DecisionSpec)> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
+        // 1.15.2: one Decision per announcement the instruction requires,
+        // and no more — once every slot is filled the instruction becomes
+        // imminent and 1.15.2f closes target selection for good.
+        if af.announce_slot >= self.announcements_required(instr) {
+            cite!("rule_targeting_only_once");
+            return None;
+        }
         match instr {
             // 1.14.5: the named player makes the choices this instruction
             // requires, in place of the ability's controller.
@@ -2952,10 +2975,46 @@ impl Vm {
                 cite!("rule_controller_choices");
                 self.targets_needed(instr).map(|(_, spec)| (*side, spec))
             }
-            Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
-                let candidates = self.filter_candidates(criteria, af.controller);
+            Instruction::TrashCards(spec) => {
+                self.announcement_for(spec).map(|s| (af.controller, s))
+            }
+            // CR 1.15.1 / 9.8.6: a break ability announces the subroutines
+            // it acts on. "All subroutines" (9.8.6a) announces nothing.
+            Instruction::BreakSubroutines { subs } => {
+                use crate::instr::SubroutineSpec as S;
+                let ice = self.st.encounter.as_ref()?.ice;
+                let all = self.current_subs(ice);
+                let e = self.st.encounter.as_ref()?;
+                let (count, up_to, candidates): (_, _, Vec<(SubKey, &'static str)>) = match subs {
+                    S::All => return None,
+                    // 9.8.6: only unbroken subroutines can be chosen as
+                    // targets for an ability that would break them.
+                    S::Chosen { count, up_to } => (
+                        count,
+                        *up_to,
+                        all.iter()
+                            .filter(|(k, _)| !e.broken.contains(k))
+                            .map(|(k, d)| (*k, d.label))
+                            .collect(),
+                    ),
+                    // 9.8.6b: the target is the subroutine that will NOT be
+                    // broken, so a broken one is a legal choice.
+                    S::AllBut { count } => (
+                        count,
+                        false,
+                        all.iter().map(|(k, d)| (*k, d.label)).collect(),
+                    ),
+                };
+                cite!("rule_unbroken_subroutines_target_for_break_abilities");
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((af.controller, self.announcement(candidates, want)))
+                Some((
+                    af.controller,
+                    DecisionSpec::ChooseSubroutines {
+                        count: want.min(candidates.len() as u32),
+                        up_to,
+                        candidates,
+                    },
+                ))
             }
             Instruction::NestedCostThen { cost, .. }
             | Instruction::NestedCostUnless { cost, .. } => {
@@ -3420,6 +3479,32 @@ impl Vm {
         DecisionSpec::ChooseTargets { candidates, count: n, up_to: false, min: n }
     }
 
+    /// CR 1.15.2: the announcement a target spec still owes, for the
+    /// announcement slot the frame is on — `None` once every slot is filled
+    /// (or for a spec that names its objects outright). A `Each` spec is
+    /// "each time the instruction requires a player to choose": one Decision
+    /// per element, in order, and already-announced targets of THIS
+    /// instruction are out of the running (1.15.2e's distinctness applies
+    /// per announcement; Colossus's program and resource cannot collide
+    /// anyway, but a "2 different pieces of ice" spec relies on it).
+    fn announcement_for(&self, spec: &TargetSpec) -> Option<DecisionSpec> {
+        let Some(Frame::Ability(af)) = self.frames.last() else { return None };
+        let slot = af.announce_slot;
+        let (count, criteria) = match spec {
+            TargetSpec::Choose { count, criteria } if slot == 0 => (count, criteria),
+            TargetSpec::Each(specs) => match specs.get(slot) {
+                Some(TargetSpec::Choose { count, criteria }) => (count, criteria),
+                Some(_) | None => return None,
+            },
+            _ => return None,
+        };
+        cite!("rule_announce_targets");
+        let mut candidates = self.filter_candidates(criteria, af.controller);
+        candidates.retain(|c| !af.targets.contains(c));
+        let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+        Some(self.announcement(candidates, want))
+    }
+
     /// Make the current instruction imminent: compute expected effects, open
     /// the interrupt window if relevant.
     fn begin_imminence(&mut self, instr: Instruction) {
@@ -3445,9 +3530,9 @@ impl Vm {
             }
             _ => {}
         }
-        let (controller, targets) = {
+        let (controller, targets, sub_targets) = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
-            (af.controller, af.targets.clone())
+            (af.controller, af.targets.clone(), af.sub_targets.clone())
         };
         let source_obj = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
@@ -3462,7 +3547,7 @@ impl Vm {
         // CR 9.6.12/9.8.8: independence at first-instruction imminence.
         cite!("rule_conditional_ability_independent");
         cite!("rule_subroutine_independent");
-        let asked = self.push_imminent(instr, controller, targets, atoms);
+        let asked = self.push_imminent(instr, controller, targets, sub_targets, atoms);
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.imminent_index = Some(0);
         }
@@ -3563,6 +3648,7 @@ impl Vm {
                 af.instructions.insert(at, Instruction::InstallRezFinish);
             }
             af.targets.clear();
+            af.announce_slot = 0;
             // Phase stays Targets: the next tick makes InstallStepPlace
             // imminent.
         }
@@ -3615,6 +3701,7 @@ impl Vm {
                 },
             );
             af.targets.clear();
+            af.announce_slot = 0;
             // Re-enter Targets: the InstallCard may itself need a
             // destination choice before expanding.
         }
@@ -3652,6 +3739,7 @@ impl Vm {
             af.instructions.insert(af.idx + 3, Instruction::PlayStepResolve);
             af.instructions.insert(af.idx + 4, Instruction::PlayStepFinish);
             af.targets.clear();
+            af.announce_slot = 0;
         }
     }
 
@@ -3682,6 +3770,7 @@ impl Vm {
                 Instruction::PlayCards { count: count - 1, from_hand_of, ignore_costs },
             );
             af.targets.clear();
+            af.announce_slot = 0;
         }
     }
 
@@ -4226,6 +4315,7 @@ impl Vm {
                         atoms: imm.atoms.clone(),
                         controller,
                         targets: imm.targets.clone(),
+                        sub_targets: imm.sub_targets.clone(),
                         run_ordinal: imm.run_ordinal.clone(),
                         turn_ordinal: imm.turn_ordinal.clone(),
                         seq: imm.seq,
@@ -4626,18 +4716,34 @@ impl Vm {
                     self.lingering.push(l);
                 }
             }
-            Instruction::BreakSubroutines { count } => {
+            Instruction::BreakSubroutines { subs } => {
                 cite!("rule_break_subroutine");
                 cite!("rule_unbroken_subroutines_target_for_break_abilities");
                 if let Some(ice) = self.st.encounter.as_ref().map(|e| e.ice) {
-                    let subs = self.current_subs(ice);
+                    let all = self.current_subs(ice);
+                    let announced = &imm.sub_targets;
                     let broken_now: Vec<SubKey> = {
                         let e = self.st.encounter.as_ref().unwrap();
-                        subs.iter()
-                            .filter(|(k, _)| !e.broken.contains(k))
-                            .take(*count as usize)
-                            .map(|(k, _)| *k)
-                            .collect()
+                        let unbroken =
+                            all.iter().filter(|(k, _)| !e.broken.contains(k)).map(|(k, _)| *k);
+                        match subs {
+                            // 9.8.6a: no targets — every unbroken subroutine.
+                            crate::instr::SubroutineSpec::All => {
+                                cite!("rule_break_all_subroutines_no_targets");
+                                unbroken.collect()
+                            }
+                            // 1.15.3: an announced target that is no longer
+                            // unbroken is simply not acted on.
+                            crate::instr::SubroutineSpec::Chosen { .. } => {
+                                cite!("rule_targets_gone");
+                                unbroken.filter(|k| announced.contains(k)).collect()
+                            }
+                            // 9.8.6b: everything unbroken EXCEPT the target.
+                            crate::instr::SubroutineSpec::AllBut { .. } => {
+                                cite!("rule_break_all_but_x_subroutines_targets");
+                                unbroken.filter(|k| !announced.contains(k)).collect()
+                            }
+                        }
                     };
                     if let Some(e) = self.st.encounter.as_mut() {
                         for k in broken_now {
@@ -5215,6 +5321,7 @@ impl Vm {
                         atoms,
                         controller,
                         targets: imm.targets.clone(),
+                        sub_targets: imm.sub_targets.clone(),
                         run_ordinal: imm.run_ordinal.clone(),
                         turn_ordinal: imm.turn_ordinal.clone(),
                         seq: imm.seq,
@@ -5263,7 +5370,25 @@ impl Vm {
             TargetSpec::EncounteredIce => {
                 self.st.encounter.as_ref().map(|e| e.ice).into_iter().collect()
             }
-            TargetSpec::Choose { .. } => announced.to_vec(),
+            // 1.15.2d/9.12.2a: one announcement, one set, one effect — and
+            // for a several-announcement instruction (1.15.2), the union of
+            // its announcements, which is what `announced` accumulated.
+            TargetSpec::Choose { .. } | TargetSpec::Each(_) => announced.to_vec(),
+            // CR 1.15.4: a target announced earlier by the SAME ability,
+            // acted on again without being re-selected.
+            TargetSpec::EarlierTarget { nth } => {
+                cite!("rule_target_beyond_move");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(af.ability_targets.get(*nth).copied()),
+                        _ => None,
+                    })
+                    .flatten()
+                    .into_iter()
+                    .collect()
+            }
             TargetSpec::TopOfDeck(side, n) => self.st.deck[side]
                 .iter()
                 .take(*n as usize)
@@ -6439,11 +6564,48 @@ impl Vm {
                 cite!("rule_targets_must_be_valid");
                 cite!("rule_distinct_targets");
                 let t = clamp_announcement(&spec, t);
-                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-                    af.targets = t;
-                    let instr = af.instructions[af.idx].clone();
-                    self.begin_imminence(instr);
+                let instr = {
+                    let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
+                    af.targets.extend(t.iter().copied());
+                    af.ability_targets.extend(t.iter().copied());
+                    af.announce_slot += 1;
+                    af.instructions[af.idx].clone()
+                };
+                // 1.15.2: an instruction requiring several announcements
+                // asks again before becoming imminent.
+                if let Some((side, next)) = self.targets_needed(&instr) {
+                    self.ask(side, next, DecisionCtx::Targets);
+                    return;
                 }
+                self.begin_imminence(instr);
+            }
+            (DecisionCtx::Targets, DecisionAnswer::Subroutines(subs)) => {
+                // CR 1.15.1/1.15.2b: subroutines are announced exactly like
+                // objects — validated against the candidate list, chosen at
+                // most once each, capped at the count.
+                cite!("rule_object_subroutine_targets");
+                let keep: Vec<SubKey> = match &spec {
+                    DecisionSpec::ChooseSubroutines { candidates, count, .. } => {
+                        let mut out: Vec<SubKey> = Vec::new();
+                        for k in subs {
+                            if candidates.iter().any(|(c, _)| *c == k)
+                                && !out.contains(&k)
+                                && (out.len() as u32) < *count
+                            {
+                                out.push(k);
+                            }
+                        }
+                        out
+                    }
+                    _ => subs,
+                };
+                let instr = {
+                    let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
+                    af.sub_targets.extend(keep);
+                    af.announce_slot += 1;
+                    af.instructions[af.idx].clone()
+                };
+                self.begin_imminence(instr);
             }
             (DecisionCtx::Targets, DecisionAnswer::PayNestedCost(pay)) => {
                 // The nested-cost choice ends an instruction (9.11.4f).

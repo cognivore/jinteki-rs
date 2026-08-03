@@ -190,8 +190,12 @@ pub enum Instruction {
     /// choice ends an instruction and must select a fully-resolvable option
     /// if any exists; the chosen effect is then separately interruptible.
     ChooseOne { options: Vec<(&'static str, Vec<Instruction>)> },
-    /// "Break up to N subroutines on the encountered ice." (first unbroken)
-    BreakSubroutines { count: u32 },
+    /// "Break N subroutines on the encountered ice." — the subroutines it
+    /// acts on are a target POSITION (1.15.1: subroutines are targets like
+    /// objects are), so "break up to 2 subroutines" (Cleaver class),
+    /// "break all subroutines" (9.8.6a, no targets) and "break all but 1
+    /// subroutine" (9.8.6b, Grappling Hook) are one instruction.
+    BreakSubroutines { subs: SubroutineSpec },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).
     BypassEncounteredIce,
     /// "+N strength" / "-N strength" on a card, for a duration. The TARGET
@@ -492,6 +496,33 @@ pub enum TargetSpec {
     /// facedown (4.8.4). This is how an install/play/add-to-hand instruction
     /// refers to them without a per-card hook.
     FoundBySearch,
+    /// CR 1.15.2: ONE instruction that requires SEVERAL announcements —
+    /// "Trash 1 installed program and 1 installed resource" (Colossus
+    /// class). Each element is announced in turn, as its own Decision, and
+    /// the instruction acts on the union when it resolves (9.12.2a: one
+    /// effect over a set).
+    Each(Vec<TargetSpec>),
+    /// CR 1.15.4: a target this ABILITY already announced, addressed by a
+    /// later instruction without re-announcing it (Howler class). `nth` is
+    /// 0-based over the ability's announcements in order.
+    EarlierTarget { nth: usize },
+}
+
+/// Which subroutines of the encountered ice a break ability acts on
+/// (§9.8.6). The count is a quantity position (§12 rule 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubroutineSpec {
+    /// "Break up to N subroutines." (Cleaver class.) CR 9.8.6: only
+    /// UNBROKEN subroutines can be chosen; `up_to` is the "up to" of the
+    /// printed text, since 1.15.2e otherwise forces as many as possible.
+    Chosen { count: Quantity, up_to: bool },
+    /// CR 9.8.6a: "break all subroutines" targets nothing at all, and can
+    /// be used while the ice has at least 1 unbroken subroutine.
+    All,
+    /// CR 9.8.6b: "break all but N subroutines" — the announced targets are
+    /// the ones that will NOT be broken, so already-broken subroutines are
+    /// valid targets (Grappling Hook).
+    AllBut { count: Quantity },
 }
 
 /// The shared object-filter language: announce-time target filters, the
