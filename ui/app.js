@@ -1038,13 +1038,24 @@ function showStrictRefusal(msg) {
   o.onclick = () => { o.style.display = "none"; };
 }
 
-/* ── build stamp: the binary is the single source of the build id ────── */
+/* ── build stamp + self-heal ─────────────────────────────────────────────
+   The binary is the single source of the build id; the server stamps it into
+   this script's own URL (app.js?v=<rev>). If the server has since moved on,
+   the page we are running came from some cache — an iOS PWA shell, a bfcache
+   entry, a proxy — so reload once through a URL that cannot be served stale.
+   Guarded by sessionStorage so a genuinely broken deploy can't loop. */
 (async function bootVersion() {
+  const mine = new URL(document.currentScript?.src || location.href, location.href)
+    .searchParams.get("v");
   try {
-    const rev = await (await fetch("/version")).text();
+    const rev = (await (await fetch("/version", { cache: "no-store" })).text()).trim();
     const short = rev.slice(0, 12);
     const b = $("build"); if (b) b.textContent = short;
     const bl = $("build-log"); if (bl) bl.textContent = short;
+    if (mine && rev && mine !== rev && sessionStorage.getItem("jrs_heal") !== rev) {
+      sessionStorage.setItem("jrs_heal", rev);
+      location.replace(`/?v=${encodeURIComponent(rev)}`);
+    }
   } catch (e) { /* offline: placeholders stay empty */ }
 })();
 
