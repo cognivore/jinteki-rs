@@ -6,7 +6,6 @@
 //! file — no hand-written `PrintedCard` — puts it on a board and drives it
 //! with the shared plan driver, then asserts the printed sentence's effect.
 
-use jinteki_cards::priority_decks;
 use jinteki_cr::change::GameChange;
 
 use jinteki_cr::instr::Instruction;
@@ -16,19 +15,23 @@ use jinteki_cr::timing::StructKind;
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::Vm;
 
-/// The card as the deck file writes it — and a check that the file still
+/// The card as the deck module writes it — and a check that the module still
 /// claims every one of its printed sentences is expressed.
 fn card(name: &str) -> PrintedCard {
-    let c = priority_decks()
-        .unwrap_or_else(|e| panic!("{e}"))
-        .into_iter()
-        .find(|c| c.printed.name == name)
+    let c = jinteki_cards::find(name)
         .unwrap_or_else(|| panic!("no card named {name} in either deck"));
     assert!(
         c.is_complete(),
-        "{name} still carries an `unimplemented:` marker — it cannot be asserted as playable"
+        "{name} still carries an `.unimplemented(…)` marker — it cannot be asserted as playable"
     );
     c.printed
+}
+
+/// A card that is still partial, for asserting the parts that ARE expressed.
+fn card_partial(name: &str) -> PrintedCard {
+    jinteki_cards::find(name)
+        .unwrap_or_else(|| panic!("no card named {name} in either deck"))
+        .printed
 }
 
 // ---------------------------------------------------------------------------
@@ -810,8 +813,8 @@ fn bukhgalter_pumps_then_breaks_a_sentry() {
             // pump has run (9.3.6c). Both happen inside the encounter, which
             // is where 3.9.5b makes the pump last (`duration: None`).
             .when(
-                Match::paid().during(StructKind::Encounter).offering("paid 1 credit").once(),
-                Reply::take("paid 1 credit"),
+                Match::paid().during(StructKind::Encounter).offering("pump").once(),
+                Reply::take("pump"),
             )
             .when(
                 Match::paid().during(StructKind::Encounter).offering("interface").once(),
@@ -849,40 +852,11 @@ fn andromeda_has_1_base_link() {
     assert_eq!(vm.runner_link(), 1);
 }
 
-/// A card that is still partial, for asserting the parts that ARE expressed.
-fn card_partial(name: &str) -> PrintedCard {
-    priority_decks()
-        .unwrap()
-        .into_iter()
-        .find(|c| c.printed.name == name)
-        .unwrap_or_else(|| panic!("no card named {name}"))
-        .printed
-}
-
-/// Every card the deck files call complete is denoted into at least one
-/// ability, or is a vanilla card with nothing but facts — a guard against a
-/// card being marked complete because nothing was written for it at all.
+/// The builder calls a designer writes land where the CR puts them: a
+/// `.declares(…)` is a static ability (9.4), `.paid(…)` is paid (9.5),
+/// `.when(…)` is conditional (9.6), `.subroutine(…)` is a subroutine (9.8).
 #[test]
-fn no_card_is_complete_by_saying_nothing() {
-    for c in priority_decks().unwrap() {
-        if !c.is_complete() {
-            continue;
-        }
-        assert!(
-            !c.printed.abilities.is_empty()
-                || c.printed.additional_steal_cost.is_some()
-                || c.printed.additional_play_cost.is_some(),
-            "{} is marked complete but denotes into nothing",
-            c.printed.name
-        );
-    }
-}
-
-/// The blocks a designer writes land where the CR puts them: a `static:`
-/// block is a static ability (9.4), `paid` is paid (9.5), `when` is
-/// conditional (9.6), `subroutine` is a subroutine (9.8).
-#[test]
-fn blocks_denote_into_the_right_ability_kinds() {
+fn builder_calls_denote_into_the_right_ability_kinds() {
     use jinteki_cr::ability::AbilityKind;
     let kinds = |name: &str| -> Vec<AbilityKind> {
         card_partial(name).abilities.iter().map(|a| a.kind).collect()
@@ -893,123 +867,63 @@ fn blocks_denote_into_the_right_ability_kinds() {
     assert_eq!(kinds("Shibboleth"), vec![AbilityKind::Paid, AbilityKind::Paid]);
     assert_eq!(kinds("Rebirth"), vec![AbilityKind::Static]);
     assert_eq!(kinds("Tomorrow's Headline"), vec![AbilityKind::Conditional; 2]);
+    assert_eq!(kinds("Resistor"), vec![AbilityKind::Static, AbilityKind::Subroutine]);
     // 1.16.10: an additional play cost is a printed property, not a
-    // declaration — so BOOM!'s `static:` block adds no ability at all.
+    // declaration — so BOOM!'s cost sentence adds no ability at all.
     let boom = card_partial("BOOM!");
     assert_eq!(boom.abilities.len(), 1, "only the play ability");
     assert_eq!(boom.additional_play_cost.as_ref().map(|c| c.clicks), Some(1));
 }
 
-/// A designer's mistake names the card, the line and a fix (SYS-D-3).
+/// The one mistake the compiler cannot catch is forgetting the printed text,
+/// so `.build()` catches it — naming the card and what to do (SYS-D-3).
 #[test]
-fn an_unknown_declaration_is_refused_with_a_fix() {
-    let src = "card \"X\"\n  side: corp\n  type: asset\n  text:\n    Something.\n  static:\n    this card is made of cheese\n";
-    let Err(e) = jinteki_cards::load("t.cards", src) else { panic!("this should not parse") };
-    let s = e.to_string();
-    assert!(s.starts_with("t.cards:7 in \"X\":"), "{s}");
-    assert!(s.contains("unknown declaration"), "{s}");
-    assert!(s.contains("unimplemented:"), "the fix is offered: {s}");
+#[should_panic(expected = "copy the printed text into .text")]
+fn a_card_without_its_printed_text_is_refused() {
+    let _ = jinteki_cards::card("Forgetful").corp().asset().cost(0).build();
 }
 
-/// The decision the driver never had to answer: a card file that denotes into
-/// a `DecisionSpec` the plan did not expect fails loudly rather than quietly
-/// doing nothing.
+/// …and the same for the two facts every card has.
 #[test]
-fn the_gap_list_only_shrinks_by_saying_things() {
-    let cards = priority_decks().unwrap();
-    let complete = cards.iter().filter(|c| c.is_complete()).count();
-    let sentences: usize = cards.iter().map(|c| c.unimplemented.len()).sum();
-    println!("{complete} complete, {sentences} sentences unsayable");
-    assert!(complete >= 11, "11 cards are fully expressed; got {complete}");
-    assert!(
-        sentences <= 60,
-        "the gap list should not grow without a reason recorded in docs/vm/WAVES.md; got {sentences}"
+#[should_panic(expected = "say what type of card it is")]
+fn a_card_without_a_type_is_refused() {
+    let _ = jinteki_cards::card("Shapeless").corp().text("Something.").build();
+}
+
+/// Resistor: "Resistor has +1 strength for each tag the Runner has."
+/// "[subroutine] Trace[4]. If successful, end the run."
+///
+/// The strength sentence is a calculated characteristic (9.12.1b), so it is
+/// re-evaluated as the game state changes rather than fixed when the ice was
+/// rezzed — which is the whole reason it is a `Quantity` and not a number.
+#[test]
+fn resistor_grows_with_the_runners_tags() {
+    let mut vm = Vm::empty(36);
+    let resistor = tk::install_ice(&mut vm, card("Resistor"), ServerId::Hq, true);
+    assert_eq!(vm.effective_strength(resistor), Some(0), "printed 0 at 0 tags");
+
+    vm.st.runner.tags = 3;
+    assert_eq!(vm.effective_strength(resistor), Some(3), "+1 for each of 3 tags");
+    vm.st.runner.tags = 1;
+    assert_eq!(vm.effective_strength(resistor), Some(1), "and back down again");
+
+    // And the subroutine still ends the run on a won trace.
+    vm.st.runner.tags = 0;
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
     );
-}
-
-// ---------------------------------------------------------------------------
-// The guide is the contract (SYS-D-2), so it is checked like one.
-// ---------------------------------------------------------------------------
-
-const GUIDE: &str = include_str!("../../../docs/cards/DSL.md");
-
-/// The lines of a fenced block in DSL.md carrying this info string.
-fn guide_block(kind: &str) -> Vec<&'static str> {
-    let mut out = Vec::new();
-    let mut inside = false;
-    for line in GUIDE.lines() {
-        if line.trim_start().starts_with("```") {
-            let info = line.trim().trim_start_matches('`');
-            inside = !inside && info == kind;
-            continue;
-        }
-        if inside && !line.trim().is_empty() {
-            out.push(line.trim());
-        }
-    }
-    assert!(!out.is_empty(), "docs/cards/DSL.md has no ```{kind} block");
-    out
-}
-
-/// Every sentence the guide lists really works. This test exists because the
-/// guide had been promising verbs — `gain 1 click`, `run hq`, `access N
-/// additional cards` — that were never implemented, and a designer reading it
-/// had no way to know. The guide is the contract with people who do not read
-/// Rust (DESIGN.md SYS-D-2); a contract nobody checks is a wish.
-#[test]
-fn every_sentence_the_guide_lists_is_one_you_can_write() {
-    for sentence in guide_block("sentences") {
-        let src = format!(
-            "card \"Guide Check\"\n  side: corp\n  type: operation\n  text:\n    Checked against docs/cards/DSL.md.\n  play:\n    {sentence}\n"
-        );
-        let cards = jinteki_cards::load("docs/cards/DSL.md", &src).unwrap_or_else(|e| {
-            panic!("docs/cards/DSL.md lists a sentence the DSL cannot write:\n{e}")
-        });
-        assert_eq!(
-            cards[0].printed.abilities.len(),
-            1,
-            "`{sentence}` denoted into nothing"
-        );
-    }
-}
-
-/// The same for the declarations a `static:` block can state.
-#[test]
-fn every_declaration_the_guide_lists_is_one_you_can_write() {
-    for decl in guide_block("declarations") {
-        let src = format!(
-            "card \"Guide Check\"\n  side: runner\n  type: resource\n  text:\n    Checked against docs/cards/DSL.md.\n  static:\n    {decl}\n"
-        );
-        let cards = jinteki_cards::load("docs/cards/DSL.md", &src).unwrap_or_else(|e| {
-            panic!("docs/cards/DSL.md lists a declaration the DSL cannot write:\n{e}")
-        });
-        let c = &cards[0].printed;
-        assert!(
-            !c.abilities.is_empty()
-                || c.additional_play_cost.is_some()
-                || c.additional_steal_cost.is_some(),
-            "`{decl}` denoted into nothing"
-        );
-    }
-}
-
-/// Every block header and trigger the guide names is one the parser accepts.
-#[test]
-fn every_trigger_the_guide_names_is_one_you_can_write() {
-    // The trigger table's left column, as the guide writes it.
-    let triggers: Vec<&str> = GUIDE
-        .lines()
-        .filter(|l| l.starts_with("| `when "))
-        .flat_map(|l| l.split('|').nth(1).unwrap().split(" / "))
-        .map(|c| c.trim().trim_matches('`'))
-        .collect();
-    assert!(triggers.len() >= 10, "the guide's trigger table went missing: {triggers:?}");
-    for trigger in triggers {
-        let src = format!(
-            "card \"Guide Check\"\n  side: corp\n  type: asset\n  text:\n    Checked against docs/cards/DSL.md.\n  {trigger}:\n    gain 1 credit\n"
-        );
-        jinteki_cards::load("docs/cards/DSL.md", &src).unwrap_or_else(|e| {
-            panic!("docs/cards/DSL.md names a trigger the DSL cannot write:\n{e}")
-        });
-    }
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "trace 4 beat 0 link and the run ended: {}",
+        t.tail(14)
+    );
 }

@@ -1,36 +1,39 @@
-//! The card DSL — printed card text as data (DESIGN.md §5.5, SYS-D-1…D-12).
+//! The card layer — printed card text as data (DESIGN.md §5.5, SYS-D-1…D-12).
 //!
-//! A card file is written by a card designer, not a programmer: facts, the
-//! printed text copied verbatim, and one line per printed sentence saying
-//! what it does (`docs/cards/DSL.md` is the guide, and it is the only thing a
-//! designer should have to read). The file is parsed to an AST and denoted
-//! into the CR VM's own instruction vocabulary — the DSL has no state access
-//! of its own (SYS-D-6) and adds no card-shaped kernel variants
-//! (ARCHITECTURE §12).
+//! Cards are written in an EMBEDDED DSL: typed builders over the CR VM's own
+//! vocabulary (`crate::edsl`). A card designer copies the printed text into
+//! `.text(…)` and then makes one call per printed sentence. Nothing here is
+//! programming — but it *is* Rust, which means the compiler is the
+//! proof-reader: a sentence the vocabulary cannot say does not compile, so it
+//! cannot be quietly approximated.
+//!
+//! `docs/cards/EDSL.md` is the designer's guide and the only thing a designer
+//! should have to read. (`docs/cards/DSL.md` is its tombstone: an external
+//! text format was tried first and judged the wrong basket for these eggs —
+//! covering Netrunner's real weirdness in a bespoke parser is a language
+//! project, not a card project.)
 //!
 //! Sentences the vocabulary cannot yet express are marked, never faked:
-//! `unimplemented: "<printed sentence>"` keeps the card honest, keeps it
+//! `.unimplemented("<printed sentence>")` keeps the card honest, keeps it
 //! visible everywhere but the table (SYS-D-12), and keeps the gap list
-//! measurable.
+//! measurable — `tests/decks.rs` prints it and ratchets it.
 
-pub mod denote;
-pub mod parse;
+pub mod decks;
+pub mod edsl;
 
-pub use denote::{denote, DenotedCard};
-pub use parse::{CardAst, CardError};
+pub use decks::{priority_decks, SOURCES};
+pub use edsl::{card, Card, CardBuilder};
 
-/// Parse and denote a whole card file.
-pub fn load(file: &str, src: &str) -> Result<Vec<DenotedCard>, CardError> {
-    parse::parse_file(file, src)?.iter().map(|a| denote::denote(file, a)).collect()
+/// One deck, by name — what a deck list will ask for at cutover.
+pub fn deck_named(name: &str) -> Option<Vec<Card>> {
+    match name {
+        "andromeda" => Some(decks::andromeda::deck()),
+        "gauntlet" => Some(decks::gauntlet::deck()),
+        _ => None,
+    }
 }
 
-/// The two priority decks, compiled in so tests and the server share one copy.
-pub const ANDROMEDA: &str = include_str!("../cards/andromeda.cards");
-pub const GAUNTLET: &str = include_str!("../cards/gauntlet.cards");
-
-/// Every card of both decks, or the first error a designer would need to fix.
-pub fn priority_decks() -> Result<Vec<DenotedCard>, CardError> {
-    let mut out = load("cards/andromeda.cards", ANDROMEDA)?;
-    out.extend(load("cards/gauntlet.cards", GAUNTLET)?);
-    Ok(out)
+/// Find one card of either priority deck by its printed name.
+pub fn find(name: &str) -> Option<Card> {
+    priority_decks().into_iter().find(|c| c.printed.name == name)
 }

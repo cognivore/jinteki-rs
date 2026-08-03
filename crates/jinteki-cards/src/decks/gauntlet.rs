@@ -1,0 +1,590 @@
+//! Gauntlet — NBN: Nebula Talent Management.
+//!
+//! Printed text copied from NSG's official card data; behaviour written from
+//! that text alone (SYS-D-10). Unsayable sentences carry `.unimplemented(…)`
+//! and the kernel capability each waits on is on the gap list in
+//! `docs/vm/WAVES.md`.
+
+use crate::edsl::*;
+
+/// Nebula Talent Management: Making Stars — Identity: Division.
+/// "When your action phase ends, if you played an operation this turn, gain
+///  1[credit] and flip this identity."
+///
+/// UNIMPLEMENTED: there is no "when your action phase ends" condition, and
+/// nothing flips a double-sided identity.
+pub fn nebula_talent_management() -> Card {
+    card("Nebula Talent Management: Making Stars")
+        .corp()
+        .identity()
+        .subtypes(&["Division"])
+        .text("When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.")
+        .unimplemented("When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.")
+        .build()
+}
+
+/// AstroScript Pilot Program — Agenda: Initiative. 3/2.
+/// "When you score this agenda, place 1 agenda counter on it.
+///  Hosted agenda counter: Place 1 advancement counter on an installed card
+///  you can advance."
+///
+/// UNIMPLEMENTED: the paid ability. 1.18.3's permission exists as
+/// `StaticDecl::CanBeAdvancedSelf`, but no `TargetFilter` reads it, so "a card
+/// you can advance" cannot be described — and describing it as "an installed
+/// card" instead would let the counter land on cards that cannot be advanced.
+pub fn astroscript_pilot_program() -> Card {
+    card("AstroScript Pilot Program")
+        .corp()
+        .agenda(3, 2)
+        .subtypes(&["Initiative"])
+        .text("When you score this agenda, place 1 agenda counter on it.")
+        .text("Hosted agenda counter: Place 1 advancement counter on an installed card you can advance.")
+        .when(scored(), [place(CounterKind::Agenda, 1)])
+        .unimplemented("Hosted agenda counter: Place 1 advancement counter on an installed card you can advance.")
+        .build()
+}
+
+/// Bellona — Agenda: Expansion. 5/3.
+/// "As an additional cost to steal this agenda, the Runner must pay 5[credit].
+///  When you score this agenda, gain 5[credit]."
+pub fn bellona() -> Card {
+    card("Bellona")
+        .corp()
+        .agenda(5, 3)
+        .subtypes(&["Expansion"])
+        .text("As an additional cost to steal this agenda, the Runner must pay 5[credit].")
+        .text("When you score this agenda, gain 5[credit].")
+        .additional_steal_cost(credits(5))
+        .when(scored(), [gain(Corp, 5)])
+        .build()
+}
+
+/// Breaking News — Agenda. 2/1.
+/// "When you score this agenda, give the Runner 2 tags.
+///  When a discard phase ends, if you scored this agenda this turn, the Runner
+///  removes 2 tags."
+///
+/// UNIMPLEMENTED: the second sentence — there is no "when a discard phase
+/// ends" condition (5.5.4).
+pub fn breaking_news() -> Card {
+    card("Breaking News")
+        .corp()
+        .agenda(2, 1)
+        .text("When you score this agenda, give the Runner 2 tags.")
+        .text("When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags.")
+        .when(scored(), [give_tags(2)])
+        .unimplemented("When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags.")
+        .build()
+}
+
+/// Tomorrow's Headline — Agenda: Ambush. 3/2.
+/// "When this agenda is scored or stolen, give the Runner 1 tag.
+///  Limit 1 per deck."
+pub fn tomorrows_headline() -> Card {
+    card("Tomorrow's Headline")
+        .corp()
+        .agenda(3, 2)
+        .subtypes(&["Ambush"])
+        .text("When this agenda is scored or stolen, give the Runner 1 tag.")
+        .text("Limit 1 per deck.")
+        .when(scored(), [give_tags(1)])
+        .when(stolen(), [give_tags(1)])
+        .build()
+}
+
+/// Rashida Jaheem — Asset: Character. Rez 0, trash 1. ◆
+/// "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and
+///  draw 3 cards."
+pub fn rashida_jaheem() -> Card {
+    card("Rashida Jaheem")
+        .corp()
+        .asset()
+        .subtypes(&["Character"])
+        .cost(0)
+        .trash_cost(1)
+        .unique()
+        .text("When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards.")
+        // 1.16.11a: the nested cost IS the "may" — paying trashes her, and the
+        // paid-for branch is the one printed sentence that follows.
+        .when(
+            turn_begins(Corp),
+            [may_pay(trash_this_card(), combined([gain(Corp, 3), draw(Corp, 3)]))],
+        )
+        .build()
+}
+
+/// Jackson Howard — Asset: Executive. Rez 0, trash 3. ◆
+/// "[click]: Draw 2 cards.
+///  Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives
+///  into R&D."
+///
+/// UNIMPLEMENTED: the second ability. `Cost` has no remove-from-game variant,
+/// and no instruction shuffles cards from a discard pile into a deck.
+pub fn jackson_howard() -> Card {
+    card("Jackson Howard")
+        .corp()
+        .asset()
+        .subtypes(&["Executive"])
+        .cost(0)
+        .trash_cost(3)
+        .unique()
+        .text("[click]: Draw 2 cards.")
+        .text("Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives into R&D.")
+        .paid(clicks(1), [draw(Corp, 2)])
+        .unimplemented("Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives into R&D.")
+        .build()
+}
+
+/// Humanoid Resources — Asset. Rez 1, trash 1.
+/// "[click][click][click], [trash]: Gain 4[credit] and draw 3 cards. Install
+///  up to 2 cards from HQ (one at a time). You may play 1 operation from HQ."
+pub fn humanoid_resources() -> Card {
+    card("Humanoid Resources")
+        .corp()
+        .asset()
+        .cost(1)
+        .trash_cost(1)
+        .text("[click][click][click], [trash]: Gain 4[credit] and draw 3 cards. Install up to 2 cards from HQ (one at a time). You may play 1 operation from HQ.")
+        .paid(
+            clicks(3).plus_cost(trash_this_card()),
+            [
+                combined([gain(Corp, 4), draw(Corp, 3)]),
+                install_cards_from_hand(2, Corp, InstallFilter::Any, InstallDest::DeclaredByInstaller),
+                // 8.6.3 chooses one at a time and "up to", so the printed
+                // "you may" is already the choice this instruction offers.
+                play_cards_from_hand(1, Corp),
+            ],
+        )
+        .build()
+}
+
+/// Hedge Fund — Operation: Transaction. Cost 5.
+/// "Gain 9[credit]."
+pub fn hedge_fund() -> Card {
+    card("Hedge Fund")
+        .corp()
+        .operation()
+        .subtypes(&["Transaction"])
+        .cost(5)
+        .text("Gain 9[credit].")
+        .play([gain(Corp, 9)])
+        .build()
+}
+
+/// Archived Memories — Operation. Cost 0.
+/// "Add 1 card from Archives to HQ."
+pub fn archived_memories() -> Card {
+    card("Archived Memories")
+        .corp()
+        .operation()
+        .cost(0)
+        .text("Add 1 card from Archives to HQ.")
+        .play([add_to_hand(choose(1, &[in_archives()]))])
+        .build()
+}
+
+/// BOOM! — Operation: Double - Black Ops. Cost 4, trash 1.
+/// "Play only if the Runner has at least 2 tags.
+///  As an additional cost to play this operation, spend [click].
+///  Do 7 meat damage."
+///
+/// UNIMPLEMENTED: the play restriction — nothing states a condition a card
+/// must meet to be played at all.
+pub fn boom() -> Card {
+    card("BOOM!")
+        .corp()
+        .operation()
+        .subtypes(&["Double", "Black Ops"])
+        .cost(4)
+        .trash_cost(1)
+        .text("Play only if the Runner has at least 2 tags.")
+        .text("As an additional cost to play this operation, spend [click].")
+        .text("Do 7 meat damage.")
+        .additional_play_cost(clicks(1))
+        .play([meat_damage(Corp, 7)])
+        .unimplemented("Play only if the Runner has at least 2 tags.")
+        .build()
+}
+
+/// Closed Accounts — Operation: Gray Ops. Cost 1.
+/// "Play only if the Runner is tagged.
+///  The Runner loses all credits in their credit pool."
+///
+/// UNIMPLEMENTED: both. No play restriction, and `LoseCredits` takes a `u32`
+/// rather than a quantity position, so "all credits" has no expression.
+pub fn closed_accounts() -> Card {
+    card("Closed Accounts")
+        .corp()
+        .operation()
+        .subtypes(&["Gray Ops"])
+        .cost(1)
+        .text("Play only if the Runner is tagged.")
+        .text("The Runner loses all credits in their credit pool.")
+        .unimplemented("Play only if the Runner is tagged.")
+        .unimplemented("The Runner loses all credits in their credit pool.")
+        .build()
+}
+
+/// Hard-Hitting News — Operation: Terminal. Cost 3.
+/// "After you resolve this operation, your action phase ends.
+///  Play only if the Runner made a run during their last turn.
+///  Trace[4]. If successful, give the Runner 4 tags."
+///
+/// UNIMPLEMENTED: the play restriction.
+pub fn hard_hitting_news() -> Card {
+    card("Hard-Hitting News")
+        .corp()
+        .operation()
+        .subtypes(&["Terminal"])
+        .cost(3)
+        .text("After you resolve this operation, your action phase ends.")
+        .text("Play only if the Runner made a run during their last turn.")
+        .text("Trace[4]. If successful, give the Runner 4 tags.")
+        .play([trace(4, [give_tags(4)])])
+        .when(after_this_resolves(), [end_action_phase(Corp)])
+        .unimplemented("Play only if the Runner made a run during their last turn.")
+        .build()
+}
+
+/// Petty Cash — Operation: Transaction. Cost 3.
+/// "Play only if you have not finished an action yet this turn.
+///  Gain 5[credit]. If you played this operation from anywhere except HQ, gain
+///  [click].
+///  [click]: Play this operation from Archives. After it resolves, remove it
+///  from the game."
+///
+/// UNIMPLEMENTED: three of the four. No play restriction, no instruction
+/// gains a [click] (`GainAllottedClicks` is the turn-structure step), and no
+/// ability plays its own source out of a discard pile.
+pub fn petty_cash() -> Card {
+    card("Petty Cash")
+        .corp()
+        .operation()
+        .subtypes(&["Transaction"])
+        .cost(3)
+        .text("Play only if you have not finished an action yet this turn.")
+        .text("Gain 5[credit]. If you played this operation from anywhere except HQ, gain [click].")
+        .text("[click]: Play this operation from Archives. After it resolves, remove it from the game.")
+        .play([gain(Corp, 5)])
+        .unimplemented("Play only if you have not finished an action yet this turn.")
+        .unimplemented("If you played this operation from anywhere except HQ, gain [click].")
+        .unimplemented("[click]: Play this operation from Archives. After it resolves, remove it from the game.")
+        .build()
+}
+
+/// Predictive Planogram — Operation: Transaction. Cost 0.
+/// "Resolve 1 of the following. If the Runner is tagged, you may resolve both
+///  instead.
+///  Gain 3[credit].
+///  Draw 3 cards."
+///
+/// UNIMPLEMENTED: the "both instead" clause — an option whose availability
+/// depends on the game state has no expression (`ChooseOne` offers a fixed
+/// list).
+pub fn predictive_planogram() -> Card {
+    card("Predictive Planogram")
+        .corp()
+        .operation()
+        .subtypes(&["Transaction"])
+        .cost(0)
+        .text("Resolve 1 of the following. If the Runner is tagged, you may resolve both instead.")
+        .text("Gain 3[credit].")
+        .text("Draw 3 cards.")
+        .play([choose_one([
+            ("Gain 3[credit].", vec![gain(Corp, 3)]),
+            ("Draw 3 cards.", vec![draw(Corp, 3)]),
+        ])])
+        .unimplemented("If the Runner is tagged, you may resolve both instead.")
+        .build()
+}
+
+/// Seamless Launch — Operation. Cost 1.
+/// "Place 2 advancement counters on 1 installed card that you did not install
+///  this turn."
+///
+/// UNIMPLEMENTED: no filter describes a card by when it was installed.
+pub fn seamless_launch() -> Card {
+    card("Seamless Launch")
+        .corp()
+        .operation()
+        .cost(1)
+        .text("Place 2 advancement counters on 1 installed card that you did not install this turn.")
+        .unimplemented("Place 2 advancement counters on 1 installed card that you did not install this turn.")
+        .build()
+}
+
+/// Self-Growth Program — Operation: Gray Ops. Cost 0.
+/// "Play only if the Runner is tagged.
+///  Add 2 installed Runner cards to the grip."
+///
+/// UNIMPLEMENTED: the play restriction.
+pub fn self_growth_program() -> Card {
+    card("Self-Growth Program")
+        .corp()
+        .operation()
+        .subtypes(&["Gray Ops"])
+        .cost(0)
+        .text("Play only if the Runner is tagged.")
+        .text("Add 2 installed Runner cards to the grip.")
+        .play([add_to_hand(choose(2, &[installed_runner_card()]))])
+        .unimplemented("Play only if the Runner is tagged.")
+        .build()
+}
+
+/// Subliminal Messaging — Operation: Gray Ops. Cost 0.
+/// "Gain 1[credit].
+///  The first time each turn you play a copy of Subliminal Messaging, gain
+///  [click].
+///  When your turn begins, if this card is in Archives and the Runner did not
+///  initiate any runs during their last turn, you may reveal this card and add
+///  it to HQ."
+///
+/// UNIMPLEMENTED: the second and third. No instruction gains a [click], and
+/// no condition is met by a card sitting in a discard pile (9.1.8b).
+pub fn subliminal_messaging() -> Card {
+    card("Subliminal Messaging")
+        .corp()
+        .operation()
+        .subtypes(&["Gray Ops"])
+        .cost(0)
+        .text("Gain 1[credit].")
+        .text("The first time each turn you play a copy of Subliminal Messaging, gain [click].")
+        .text("When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ.")
+        .play([gain(Corp, 1)])
+        .unimplemented("The first time each turn you play a copy of Subliminal Messaging, gain [click].")
+        .unimplemented("When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ.")
+        .build()
+}
+
+/// Targeted Marketing — Operation: Current. Cost 0.
+/// "This card is not trashed until another current is played or an agenda is
+///  stolen.
+///  Name a card. Gain 10[credit] whenever the Runner plays or installs a copy
+///  of that card."
+///
+/// UNIMPLEMENTED: the second sentence. Nothing names a card, and no condition
+/// is met by the Runner playing or installing a copy of a named one.
+pub fn targeted_marketing() -> Card {
+    card("Targeted Marketing")
+        .corp()
+        .operation()
+        .subtypes(&["Current"])
+        .cost(0)
+        .text("This card is not trashed until another current is played or an agenda is stolen.")
+        .text("Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card.")
+        .declares([not_trashed_until_an_agenda_is_stolen()])
+        .unimplemented("Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card.")
+        .build()
+}
+
+/// 24/7 News Cycle — Operation. Cost 0.
+/// "As an additional cost to play 24/7 News Cycle, forfeit an agenda.
+///  Resolve the \"when scored\" ability on an agenda in your score area."
+pub fn news_cycle() -> Card {
+    card("24/7 News Cycle")
+        .corp()
+        .operation()
+        .cost(0)
+        .text("As an additional cost to play 24/7 News Cycle, forfeit an agenda.")
+        .text("Resolve the \"when scored\" ability on an agenda in your score area.")
+        .additional_play_cost(forfeit_agenda(1))
+        .play([resolve_when_scored_ability_of(choose(1, &[in_score_area_of(Corp)]))])
+        .build()
+}
+
+/// Archangel — ICE: Code Gate - Tracer - Ambush. Rez 4, strength 6.
+/// "While the Runner is accessing this ice in R&D, they must reveal it.
+///  When the Runner accesses this ice anywhere except in Archives, you may pay
+///  3[credit]. If you do, they encounter it.
+///  [subroutine] Trace[6]. If successful, add 1 installed Runner card to the
+///  grip."
+///
+/// UNIMPLEMENTED: the first two. Nothing states a reveal requirement scoped to
+/// a zone, and a trigger condition cannot carry "anywhere except in Archives"
+/// — `TriggerRequirement` has one variant and it is about tags.
+pub fn archangel() -> Card {
+    card("Archangel")
+        .corp()
+        .ice(6)
+        .subtypes(&["Code Gate", "Tracer", "Ambush"])
+        .cost(4)
+        .text("While the Runner is accessing this ice in R&D, they must reveal it.")
+        .text("When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it.")
+        .text("[subroutine] Trace[6]. If successful, add 1 installed Runner card to the grip.")
+        .subroutine([trace(6, [add_to_hand(choose(1, &[installed_runner_card()]))])])
+        .unimplemented("While the Runner is accessing this ice in R&D, they must reveal it.")
+        .unimplemented("When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it.")
+        .build()
+}
+
+/// Data Raven — ICE: Sentry - Tracer - Observer. Rez 4, strength 4.
+/// "When the Runner encounters this ice, they must take 1 tag or end the run.
+///  Hosted power counter: Give the Runner 1 tag.
+///  [subroutine] Trace[3]. If successful, place 1 power counter on this ice."
+pub fn data_raven() -> Card {
+    card("Data Raven")
+        .corp()
+        .ice(4)
+        .subtypes(&["Sentry", "Tracer", "Observer"])
+        .cost(4)
+        .text("When the Runner encounters this ice, they must take 1 tag or end the run.")
+        .text("Hosted power counter: Give the Runner 1 tag.")
+        .text("[subroutine] Trace[3]. If successful, place 1 power counter on this ice.")
+        .when(
+            encountered(),
+            [choose_one([
+                ("take 1 tag", vec![give_tags(1)]),
+                ("end the run", vec![end_the_run()]),
+            ])],
+        )
+        .paid(hosted_counters(CounterKind::Power, 1), [give_tags(1)])
+        .subroutine([trace(3, [place(CounterKind::Power, 1)])])
+        .build()
+}
+
+/// Gold Farmer — ICE: Barrier. Rez 3, strength 1.
+/// "Whenever the Runner breaks a printed subroutine on this ice, they lose
+///  1[credit].
+///  [subroutine] End the run unless the Runner pays 3[credit].
+///  [subroutine] End the run unless the Runner pays 3[credit]."
+///
+/// UNIMPLEMENTED: the first sentence — no condition is met by a subroutine
+/// being broken.
+pub fn gold_farmer() -> Card {
+    card("Gold Farmer")
+        .corp()
+        .ice(1)
+        .subtypes(&["Barrier"])
+        .cost(3)
+        .text("Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit].")
+        .text("[subroutine] End the run unless the Runner pays 3[credit].")
+        .text("[subroutine] End the run unless the Runner pays 3[credit].")
+        .subroutine([unless_pays(Runner, credits(3), end_the_run())])
+        .subroutine([unless_pays(Runner, credits(3), end_the_run())])
+        .unimplemented("Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit].")
+        .build()
+}
+
+/// IP Block — ICE: Barrier - Tracer. Rez 2, strength 4.
+/// "When the Runner encounters this ice, give them 1 tag if there is an
+///  installed AI program.
+///  [subroutine] Trace[3]. If successful, give the Runner 1 tag.
+///  [subroutine] End the run if the Runner is tagged."
+///
+/// UNIMPLEMENTED: the first and third. No instruction is conditional on the
+/// board holding a described card, and `IfRunnerLinkAtLeast` is the only
+/// state-conditional instruction there is — there is no tagged equivalent.
+pub fn ip_block() -> Card {
+    card("IP Block")
+        .corp()
+        .ice(4)
+        .subtypes(&["Barrier", "Tracer"])
+        .cost(2)
+        .text("When the Runner encounters this ice, give them 1 tag if there is an installed AI program.")
+        .text("[subroutine] Trace[3]. If successful, give the Runner 1 tag.")
+        .text("[subroutine] End the run if the Runner is tagged.")
+        .subroutine([trace(3, [give_tags(1)])])
+        .unimplemented("When the Runner encounters this ice, give them 1 tag if there is an installed AI program.")
+        .unimplemented("[subroutine] End the run if the Runner is tagged.")
+        .build()
+}
+
+/// Resistor — ICE: Barrier - Tracer. Rez 0, strength 0.
+/// "Resistor has +1 strength for each tag the Runner has.
+///  [subroutine] Trace[4]. If successful, end the run."
+///
+/// The strength sentence is the Ice Wall reading (`cards.rs`): a card whose
+/// strength is "printed value plus 1 for each X" has its strength DEFINED by
+/// that expression, evaluated through the 9.12.1b characteristics pipeline.
+/// Printed 0 plus 1 per tag is `Quantity::RunnerTags`.
+pub fn resistor() -> Card {
+    card("Resistor")
+        .corp()
+        .ice(0)
+        .subtypes(&["Barrier", "Tracer"])
+        .cost(0)
+        .text("Resistor has +1 strength for each tag the Runner has.")
+        .text("[subroutine] Trace[4]. If successful, end the run.")
+        .declares([strength_is(plus(amount(0), times(1, per_runner_tag())))])
+        .subroutine([trace(4, [end_the_run()])])
+        .build()
+}
+
+/// Slot Machine — ICE: Code Gate. Rez 3, strength 5.
+/// "When the Runner encounters this ice, they put the top card of the stack on
+///  the bottom, then you reveal the top 3 cards of the stack.
+///  [subroutine] The Runner loses 3[credit].
+///  [subroutine] If you revealed 2 or more cards that share a type when this
+///  encounter began, gain 3[credit].
+///  [subroutine] If you revealed 3 or more cards that share a type when this
+///  encounter began, place 3 advancement tokens on an installed card."
+///
+/// UNIMPLEMENTED: everything but the first subroutine. There is no REVEAL
+/// instruction, nothing remembers what was revealed when an encounter began,
+/// and no quantity counts cards sharing a type.
+pub fn slot_machine() -> Card {
+    card("Slot Machine")
+        .corp()
+        .ice(5)
+        .subtypes(&["Code Gate"])
+        .cost(3)
+        .text("When the Runner encounters this ice, they put the top card of the stack on the bottom, then you reveal the top 3 cards of the stack.")
+        .text("[subroutine] The Runner loses 3[credit].")
+        .text("[subroutine] If you revealed 2 or more cards that share a type when this encounter began, gain 3[credit].")
+        .text("[subroutine] If you revealed 3 or more cards that share a type when this encounter began, place 3 advancement tokens on an installed card.")
+        .subroutine([lose(Runner, 3)])
+        .unimplemented("When the Runner encounters this ice, they put the top card of the stack on the bottom, then you reveal the top 3 cards of the stack.")
+        .unimplemented("[subroutine] If you revealed 2 or more cards that share a type when this encounter began, gain 3[credit].")
+        .unimplemented("[subroutine] If you revealed 3 or more cards that share a type when this encounter began, place 3 advancement tokens on an installed card.")
+        .build()
+}
+
+/// Crisium Grid — Upgrade: Region. Rez 3, trash 5.
+/// "Runs against this server cannot be declared successful. (This effect does
+///  not cause runs to become unsuccessful.)
+///  Limit 1 region per server."
+pub fn crisium_grid() -> Card {
+    card("Crisium Grid")
+        .corp()
+        .upgrade()
+        .subtypes(&["Region"])
+        .cost(3)
+        .trash_cost(5)
+        .text("Runs against this server cannot be declared successful. (This effect does not cause runs to become unsuccessful.)")
+        .text("Limit 1 region per server.")
+        .declares([runs_not_declared_successful()])
+        .build()
+}
+
+/// The whole deck, in the order the file lists it.
+pub fn deck() -> Vec<Card> {
+    vec![
+        nebula_talent_management(),
+        astroscript_pilot_program(),
+        bellona(),
+        breaking_news(),
+        tomorrows_headline(),
+        rashida_jaheem(),
+        jackson_howard(),
+        humanoid_resources(),
+        hedge_fund(),
+        archived_memories(),
+        boom(),
+        closed_accounts(),
+        hard_hitting_news(),
+        petty_cash(),
+        predictive_planogram(),
+        seamless_launch(),
+        self_growth_program(),
+        subliminal_messaging(),
+        targeted_marketing(),
+        news_cycle(),
+        archangel(),
+        data_raven(),
+        gold_farmer(),
+        ip_block(),
+        resistor(),
+        slot_machine(),
+        crisium_grid(),
+    ]
+}

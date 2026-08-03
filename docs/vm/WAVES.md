@@ -844,17 +844,19 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 
 ### The two priority decks: what the kernel cannot yet say
 
-Measured, not guessed: `crates/jinteki-cards` carries both decks as data and
-prints the count. At W15c it is **51 cards, 11 complete, 40 partial, 60
-printed sentences unsayable** (up from 80 unsayable across 5 complete cards,
-and up by 2 from the honest re-reading of two hosting restrictions that had
-previously been left unmarked). Every entry below is a sentence that a real
-card in those decks needs and that the DSL cannot denote *because the kernel
-has no variant for it* — never because a verb is missing (ARCHITECTURE §12:
-adding a card-shaped kernel variant is forbidden, so each of these is a
-GENERAL capability with the cards that want it named). The card files carry
-the matching `unimplemented:` markers, so this list and the test's count move
-together.
+Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
+prints the count. At W15d it is **51 cards, 12 complete, 39 partial, 59
+printed sentences unsayable** (from 80 unsayable across 5 complete cards).
+
+The card-authoring surface is now an EMBEDDED DSL — typed builders over the
+kernel vocabulary, `docs/cards/EDSL.md` — so a missing verb is no longer a
+reason for anything: the deck files reach the whole public vocabulary
+directly. **Every entry below is therefore a real kernel gap**, a sentence a
+card in these decks needs that the kernel has no way to express. ARCHITECTURE
+§12 forbids a card-shaped variant, so each is stated as a GENERAL capability
+with the cards that want it named. The deck modules carry the matching
+`.unimplemented(…)` markers as data, so this list and the test's count move
+together — and `tests/decks.rs` ratchets the count, so it cannot quietly grow.
 
 **A defect, not a gap — fix this one first.** `Vm::char_effects` gathers
 characteristic declarations behind `card_active(o)` alone and never consults
@@ -894,9 +896,11 @@ once `char_effects` filters the same way `active_statics` does.
   the Runner chooses from `allowed` — cannot be said (Clean Getaway, Pinhole
   Threading). "Run HQ" would be fine.
 - `Instruction::ModifyStrength.amount` and `StaticDecl::StrengthMod.delta`
-  are `i32`. "+X strength" (Paperclip) and "+1 strength for each tag the
-  Runner has" (Resistor) want a `Quantity`. `SelfStrength(Quantity)` SETS a
-  strength and is a different sentence.
+  are `i32`, so "+X strength" (Paperclip) has no expression. (The neighbouring
+  "+1 strength for each tag the Runner has" — Resistor — turned out NOT to be
+  a gap: `SelfStrength(Quantity)` is how `cards.rs` already reads Ice Wall's
+  "+1 strength for each hosted advancement counter", printed value included,
+  and Resistor is the same sentence. It is complete.)
 - `Instruction::LoseCredits(Side, u32)` — "loses all credits in their credit
   pool" (Closed Accounts).
 - `Cost::trash_from_hand: u32` — "trash all cards from your grip" as a cost
@@ -921,6 +925,13 @@ once `char_effects` filters the same way `active_statics` does.
   filter misses it (Employee Strike).
 - criteria on `TargetSpec::AccessedCard` — "the non-agenda card you are
   accessing" (Cupellation).
+
+*The three the coordinator is landing.* Account Siphon's breach replacement
+(a `ReplacementTransform` carrying arbitrary instructions), the quantity that
+reads the credits an ability has caused to be lost, and the plain "whenever
+you make a successful run" condition are being built in `jinteki-cr` now.
+Account Siphon and Desperado become complete when they land; the deck modules
+are written so that is a two-line change each.
 
 *One more defect-shaped gap.* `Vm::hosts_onto_itself` derives 1.13.6b by
 scanning an object's instruction lists for `HostCards { host: SelfSource }`.
