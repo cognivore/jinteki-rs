@@ -43,6 +43,11 @@ pub enum GameChange {
     CardDerezzed { obj: ObjectId },
     CardMoved { obj: ObjectId, from: Zone, to: Zone },
     CounterPlaced { obj: ObjectId, kind: crate::object::CounterKind, amount: u32 },
+    /// CR 1.18.1: a card was ADVANCED — an advancement counter was placed on
+    /// it by an advance. 1.18.2: placing an advancement counter directly, or
+    /// moving one from another card, is NOT advancing, and records only
+    /// `CounterPlaced`, so a "whenever you advance" condition is not met.
+    CardAdvanced { obj: ObjectId },
     /// Counters left a card or a player and returned to the bank (1.9.2) —
     /// spent, removed, or trashed with their host (1.13.13).
     CounterRemoved { obj: Option<ObjectId>, kind: crate::object::CounterKind, amount: u32 },

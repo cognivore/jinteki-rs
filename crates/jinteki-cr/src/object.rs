@@ -217,6 +217,40 @@ impl PrintedCard {
             abilities: Vec::new(),
         }
     }
+
+    /// CR 10.13.1: the **dividends** keyword. "Dividends N" IS a conditional
+    /// ability — "When you score this agenda, place N agenda counters on it
+    /// for each hosted advancement counter past its advancement requirement"
+    /// — so the keyword is expanded into that ability here, through the
+    /// public vocabulary, exactly as the §9.11 transcriber will.
+    ///
+    /// CR 10.13.2: the requirement and the counters are read as of the moment
+    /// the agenda began to be scored; both selectors resolve against the
+    /// 1.17.8 last-known snapshot once the agenda has moved.
+    pub fn with_dividends(mut self, n: i64) -> Self {
+        cite!("rule_dividends");
+        cite!("rule_dividends_timing");
+        use crate::instr::{Instruction, Quantity, TargetSpec};
+        self.abilities.push(
+            crate::ability::AbilityDef::conditional(
+                crate::ability::TriggerCond::SelfScored,
+                vec![Instruction::PlaceCounters {
+                    target: TargetSpec::SelfSource,
+                    kind: CounterKind::Agenda,
+                    amount: Quantity::Times(
+                        n,
+                        Box::new(Quantity::Minus(
+                            Box::new(Quantity::CountersOnSource(CounterKind::Advancement)),
+                            Box::new(Quantity::RequirementOfSource),
+                        )),
+                    ),
+                }],
+                false,
+            )
+            .labeled("dividends: agenda counters per excess advancement"),
+        );
+        self
+    }
 }
 
 /// A game object: a card (or card-as-counter) with position and state.
@@ -256,6 +290,13 @@ pub struct Object {
     /// `(id, generation)` is the object identity the CR talks about, and
     /// "the same card" is the id alone (1.12.6's previous-object relation).
     pub generation: u32,
+    /// CR 1.17.8 / 10.13.2: an agenda that has been scored or stolen keeps no
+    /// advancement counters (1.17.5), and any declaration modifying its
+    /// advancement requirement has stopped applying — so an ability that met
+    /// its condition FROM the scoring reads the last known values, captured
+    /// here as `(advancement counters, advancement requirement)` just before
+    /// the agenda moved.
+    pub scored_snapshot: Option<(u32, u32)>,
 }
 
 impl Object {

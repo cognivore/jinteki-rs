@@ -26,6 +26,14 @@ pub enum Quantity {
     CountersOnSource(crate::object::CounterKind),
     /// Sum of two quantities ("2 plus 1 for each …").
     Plus(Box<Quantity>, Box<Quantity>),
+    /// Difference of two quantities ("…past its advancement requirement").
+    Minus(Box<Quantity>, Box<Quantity>),
+    /// CR 2.4: the advancement requirement of the source agenda, as modified
+    /// (a SanSan-class declaration lowers it). CR 1.17.8 / 10.13.2: for an
+    /// agenda that has been scored or stolen, this — like
+    /// [`Quantity::CountersOnSource`] — reads the last known value from
+    /// before the move, since the real one no longer exists.
+    RequirementOfSource,
     /// Scale ("N for each …").
     Times(i64, Box<Quantity>),
     /// CR 9.12.2e: a value defined by X, where the ability defining X lives
@@ -250,8 +258,18 @@ pub enum Instruction {
         amount: i32,
         duration: Option<crate::lingering::WantedDuration>,
     },
-    /// "Place N advancement counters on <target>" / advance bookkeeping.
-    PlaceCounters { target: TargetSpec, kind: crate::object::CounterKind, amount: u32 },
+    /// "Place N <kind> counters on <target>." The count is a quantity
+    /// position (§12 rule 6): the dividends keyword's "N agenda counters for
+    /// each hosted advancement counter past its advancement requirement"
+    /// (10.13.1) is this instruction with a selector.
+    ///
+    /// CR 1.18.2: placing an advancement counter directly is NOT advancing —
+    /// that is [`Instruction::AdvanceCard`].
+    PlaceCounters { target: TargetSpec, kind: crate::object::CounterKind, amount: Quantity },
+    /// CR 1.18.1: "Advance <a card>." — place an advancement counter from the
+    /// bank on it, as an ADVANCE, so that "whenever you advance" conditions
+    /// are met (1.18.2 distinguishes this from placing the counter directly).
+    AdvanceCard { target: TargetSpec },
     /// "Trash this card." (self-referencing; strandable per 9.1.4)
     TrashSelf,
     /// Steal the accessed agenda (7.1.4 via access step 7.2.3).

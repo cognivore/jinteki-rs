@@ -270,7 +270,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     } = cond
                     {
                         cite!("rule_instruction_requirements_past_state");
-                        if let GameChange::CounterPlaced { obj, .. } = c {
+                        if let GameChange::CardAdvanced { obj } = c {
                             let had = vm
                                 .snapshot
                                 .as_ref()

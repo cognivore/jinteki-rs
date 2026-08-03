@@ -569,11 +569,7 @@ pub fn advance_button_card(name: &'static str, target: ObjectId) -> PrintedCard 
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::paid(
         Cost { clicks: 1, ..Default::default() },
-        vec![Instruction::PlaceCounters {
-            target: TargetSpec::Objects(vec![target]),
-            kind: crate::object::CounterKind::Advancement,
-            amount: 1,
-        }],
+        vec![Instruction::AdvanceCard { target: TargetSpec::Objects(vec![target]) }],
     )
     .labeled("advance target")];
     c
@@ -3130,7 +3126,7 @@ pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> P
             Instruction::PlaceCounters {
                 target: TargetSpec::EarlierTarget { nth: 0 },
                 kind: CounterKind::Advancement,
-                amount: 3,
+                amount: Quantity::c(3),
             },
         ],
     )
@@ -3592,5 +3588,74 @@ pub fn devil_charm_like(name: &'static str, amount: i32) -> PrintedCard {
     )
     .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
     .labeled("devil-charm: lower the encountered ice's strength for the run")];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W9b shapes: advancement (§1.18) and the dividends keyword (§10.13)
+// ---------------------------------------------------------------------------
+
+/// Oaktown Renovation shape (1.18.2): "Whenever you advance a card, gain
+/// 2[credit]." The point of the shape is the DISCRIMINATION — advancing meets
+/// the condition, placing an advancement counter directly does not.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card is an agenda that is always
+/// installed FACEUP, which is what makes its own ability active while it sits
+/// in a server; the kernel has no always-faceup install, and an inactive
+/// card's ability would not fire for either reason — so the ability lives on
+/// a rezzed card here and watches every advance, which is exactly the
+/// discrimination 1.18.2 states.
+pub fn advance_watcher(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::AdvancesCard { had_no_advancement: false },
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(2))],
+        false,
+    )
+    .labeled("oaktown: gain 2 on advance")];
+    c
+}
+
+/// Mushin No Shin shape (1.18.2): "Install 1 card from HQ and place 3
+/// advancement counters on it." The counters are PLACED, not advanced.
+///
+/// SIMPLIFICATION (§12 rule 3): the installed card is fixed at card-build
+/// time (the real card chooses from HQ) — which card is installed is
+/// orthogonal to whether placing counters is advancing.
+pub fn mushin_like(name: &'static str, card: ObjectId, server: ServerId) -> PrintedCard {
+    operation(
+        name,
+        0,
+        vec![
+            Instruction::InstallCard {
+                card: TargetSpec::Objects(vec![card]),
+                dest: crate::instr::InstallDest::Root(server),
+                and_rez: false,
+                ignore_costs: true,
+                reveal_check: None,
+                reduce_total: Quantity::c(0),
+            },
+            Instruction::PlaceCounters {
+                target: TargetSpec::Objects(vec![card]),
+                kind: CounterKind::Advancement,
+                amount: Quantity::c(3),
+            },
+        ],
+    )
+}
+
+/// An agenda carrying the **dividends** keyword (10.13.1), expanded into the
+/// conditional ability the keyword denotes.
+pub fn dividends_agenda(name: &'static str, req: u32, points: i32, n: i64) -> PrintedCard {
+    vanilla_agenda(name, req, points).with_dividends(n)
+}
+
+/// SanSan City Grid shape (1.17.3a): "The Corp can score agendas in this
+/// server with 1 fewer advancement counter." An upgrade whose declaration
+/// lowers the advancement requirement of the agendas in its server.
+pub fn sansan_like(name: &'static str, fewer: i32) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::ScoreRequirementModInSourceServer(-fewer)])
+    .labeled("sansan: score for 1 fewer advancement")];
     c
 }

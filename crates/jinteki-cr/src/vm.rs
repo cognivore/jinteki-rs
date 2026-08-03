@@ -479,6 +479,7 @@ impl Vm {
                 set_aside_for_ability: false,
                 staged: false,
                 generation: 0,
+                scored_snapshot: None,
             },
         );
         id
@@ -2170,6 +2171,7 @@ impl Vm {
     fn steal_agenda(&mut self, card: ObjectId) {
         cite!("rule_score_steal");
         let points = self.st.objects[&card].printed.agenda_points.unwrap_or(0);
+        self.capture_scored_snapshot(card);
         self.move_card(card, Zone::ScoreArea(Side::Runner));
         self.st.objects.get_mut(&card).unwrap().faceup = true;
         self.changes.record(GameChange::AgendaStolen { obj: card, points });
@@ -2179,9 +2181,54 @@ impl Vm {
     fn score_agenda(&mut self, card: ObjectId) {
         cite!("rule_score");
         let points = self.st.objects[&card].printed.agenda_points.unwrap_or(0);
+        self.capture_scored_snapshot(card);
         self.move_card(card, Zone::ScoreArea(Side::Corp));
         self.st.objects.get_mut(&card).unwrap().faceup = true;
         self.changes.record(GameChange::AgendaScored { obj: card, points });
+    }
+
+    /// CR 1.17.8 / 10.13.2: capture what an agenda's advancement counters and
+    /// advancement requirement WERE, at the moment it began to be scored or
+    /// stolen — before 1.17.5 returns the counters to the bank and before the
+    /// declarations modifying its requirement stop applying to it.
+    fn capture_scored_snapshot(&mut self, card: ObjectId) {
+        cite!("rule_advancement_counters_reference");
+        cite!("rule_dividends_timing");
+        let adv = self.st.objects[&card].counter(CounterKind::Advancement);
+        let req = self.advancement_requirement(card);
+        self.st.objects.get_mut(&card).unwrap().scored_snapshot = Some((adv, req));
+    }
+
+    /// CR 1.17.3a: the advancement requirement that governs scoring this
+    /// agenda — its printed one as modified by active declarations (a
+    /// SanSan-class upgrade in the same server lowers it). Never below 0.
+    /// 1.17.8/10.13.2: once the agenda has been scored or stolen, the last
+    /// known requirement is what any ability of that scoring still reads.
+    pub fn advancement_requirement(&self, card: ObjectId) -> u32 {
+        cite!("rule_advancement_requirement");
+        let Some(o) = self.st.objects.get(&card) else { return u32::MAX };
+        if let Some((_, req)) = o.scored_snapshot {
+            return req;
+        }
+        let Some(base) = o.printed.advancement_requirement else { return u32::MAX };
+        let mut req = base as i64;
+        let server = match o.zone {
+            Zone::Root(s) | Zone::Ice(s) => Some(s),
+            _ => None,
+        };
+        for (src, d) in self.active_statics() {
+            if let StaticDecl::ScoreRequirementModInSourceServer(delta) = d {
+                cite!("rule_active_exception_advancement_requirement");
+                let src_server = self.st.objects.get(&src).and_then(|s| match s.zone {
+                    Zone::Root(sv) | Zone::Ice(sv) => Some(sv),
+                    _ => None,
+                });
+                if src_server.is_some() && src_server == server {
+                    req += delta as i64;
+                }
+            }
+        }
+        req.max(0) as u32
     }
 
     /// "End the run" (6.8.1/`rule_end_the_run`): unwind every frame above the
@@ -2343,6 +2390,18 @@ impl Vm {
             Q::Const(n) => *n,
             Q::Count(f) => self.count_filter(*f, source),
             Q::CountersOnSource(kind) => {
+                // CR 1.17.8: an ability that met its condition from its source
+                // agenda being scored or stolen reads that agenda's LAST KNOWN
+                // number of advancement counters — the real ones went back to
+                // the bank with the move (1.17.5).
+                if *kind == CounterKind::Advancement {
+                    if let Some((adv, _)) =
+                        source.and_then(|s| self.st.objects.get(&s)).and_then(|o| o.scored_snapshot)
+                    {
+                        cite!("rule_advancement_counters_reference");
+                        return adv as i64;
+                    }
+                }
                 // CR 9.5.5: counters set aside by a [trash] trigger cost
                 // still count as hosted for this ability.
                 cite!("rule_trash_ability_keeps_track_of_hosted_objects");
@@ -2368,6 +2427,10 @@ impl Vm {
                 (on_card + set_aside) as i64
             }
             Q::Plus(a, b) => self.eval_quantity(a, source) + self.eval_quantity(b, source),
+            Q::Minus(a, b) => self.eval_quantity(a, source) - self.eval_quantity(b, source),
+            Q::RequirementOfSource => {
+                source.map(|s| self.advancement_requirement(s) as i64).unwrap_or(0)
+            }
             Q::Times(n, inner) => n * self.eval_quantity(inner, source),
             Q::XOfSource(inner) => {
                 // CR 9.12.2e: X is defined by an ability of the source; while
@@ -2545,7 +2608,13 @@ impl Vm {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::PlaceCounters { amount, .. } => {
-                vec![EffectAtom::new(EffectClass::Structural, *amount as i64, controller)]
+                // 9.12.2: the count is a selector; the atom's value is what it
+                // evaluates to when the instruction becomes imminent.
+                let n = self.eval_quantity(amount, source);
+                vec![EffectAtom::new(EffectClass::Structural, n, controller)]
+            }
+            Instruction::AdvanceCard { .. } => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::TrashSelf => {
                 let tgt: Vec<ObjectId> = source
@@ -5706,15 +5775,36 @@ impl Vm {
                 self.remove_player_counters(*side, *kind, n);
             }
             Instruction::PlaceCounters { target, kind, amount } => {
+                // 1.18.2: placing counters directly is NOT advancing, whatever
+                // kind they are — only `CounterPlaced` is recorded.
+                cite!("rule_placing_advancement_counter");
                 let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                let n = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                if n == 0 {
+                    return;
+                }
                 for t in targets {
                     let obj = self.st.objects.get_mut(&t).unwrap();
-                    *obj.counters.entry(*kind).or_insert(0) += amount;
+                    *obj.counters.entry(*kind).or_insert(0) += n;
+                    self.changes.record(GameChange::CounterPlaced { obj: t, kind: *kind, amount: n });
+                }
+            }
+            Instruction::AdvanceCard { target } => {
+                // 1.18.1: to advance a card is to place an advancement counter
+                // from the bank on it — and it IS an advance, so 1.18.2's
+                // distinction is carried by the extra change record.
+                cite!("rule_advance");
+                cite!("rule_advanced_card");
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                for t in targets {
+                    let Some(obj) = self.st.objects.get_mut(&t) else { continue };
+                    *obj.counters.entry(CounterKind::Advancement).or_insert(0) += 1;
                     self.changes.record(GameChange::CounterPlaced {
                         obj: t,
-                        kind: *kind,
-                        amount: *amount,
+                        kind: CounterKind::Advancement,
+                        amount: 1,
                     });
+                    self.changes.record(GameChange::CardAdvanced { obj: t });
                 }
             }
             Instruction::StealSelfAgenda => {
@@ -6756,8 +6846,7 @@ impl Vm {
             for o in self.st.objects.values() {
                 if o.printed.card_type == CardType::Agenda
                     && matches!(o.zone, Zone::Root(_))
-                    && o.counter(CounterKind::Advancement)
-                        >= o.printed.advancement_requirement.unwrap_or(u32::MAX)
+                    && o.counter(CounterKind::Advancement) >= self.advancement_requirement(o.id)
                 {
                     out.push(WindowOption::Score { card: o.id });
                 }

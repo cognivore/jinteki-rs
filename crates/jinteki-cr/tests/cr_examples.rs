@@ -212,6 +212,10 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_active_exception_encounter_not_installed_1",
     "example_rule_no_position_after_approach_server_1",
     "example_rule_ice_strength_modification_duration_1",
+    // Wave 9b: advancement (§1.18) and the dividends keyword (§10.13).
+    "example_rule_placing_advancement_counter_1",
+    "example_rule_dividends_1",
+    "example_rule_dividends_timing_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -7445,6 +7449,148 @@ fn example_rule_ice_strength_modification_duration_1() {
         vm.effective_strength(archangel),
         Some(6),
         "3.4.4a: with no run to outlive, the reduction lasted for the encounter only"
+    );
+}
+
+
+// ===========================================================================
+// §1.18 advancement and §10.13 dividends (W9b)
+// ===========================================================================
+
+/// example_rule_placing_advancement_counter_1 (1.18.2): a Mushin-No-Shin-class
+/// operation installs an Oaktown-Renovation-class agenda and PLACES 3
+/// advancement counters on it. Placing counters directly is not advancing, so
+/// Oaktown's "whenever you advance this card" ability gains the Corp nothing.
+/// Advancing the same card afterwards does meet the condition.
+#[test]
+fn example_rule_placing_advancement_counter_1() {
+    let mut vm = Vm::empty(910);
+    let oaktown = vm.new_object(tk::vanilla_agenda("Oaktown-like", 4, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(oaktown);
+    tk::install_root(&mut vm, tk::advance_watcher("Oaktown-Ability"), ServerId::Remote(4), true);
+    let mushin = vm.new_object(
+        tk::mushin_like("Mushin-like", oaktown, ServerId::Remote(1)),
+        Zone::Hand(Side::Corp),
+    );
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(mushin);
+    tk::install_root(&mut vm, tk::play_operation_button("Play-Op", mushin), ServerId::Remote(2), true);
+    tk::install_root(&mut vm, tk::advance_button_card("Advancer", oaktown), ServerId::Remote(3), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .uses("play-op")
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::action().once(), Reply::take("advance target"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&oaktown].counter(CounterKind::Advancement),
+        3,
+        "the three counters were placed on the installed agenda: {}",
+        script.transcript().tail(8)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 5,
+        "1.18.2: placing advancement counters directly is not advancing"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAdvanced { .. })),
+        "nothing was advanced: {:?}",
+        vm.changes.log
+    );
+    // The discrimination: an ADVANCE of the same card does meet the condition.
+    script.run(&mut vm);
+    assert_eq!(vm.st.objects[&oaktown].counter(CounterKind::Advancement), 4);
+    assert_eq!(vm.st.corp.credits, 7, "advancing meets 'whenever you advance this card'");
+}
+
+/// example_rule_dividends_1 (10.13.1): an Embedded-Reporting-class agenda with
+/// "dividends 2" is scored with 5 advancement counters and an advancement
+/// requirement of 3 — 2 excess counters, so 4 agenda counters are placed on it
+/// in the Corp's score area.
+#[test]
+fn example_rule_dividends_1() {
+    let mut vm = Vm::empty(911);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::dividends_agenda("EmbeddedReporting-like", 3, 1, 2),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::place_counters(&mut vm, agenda, CounterKind::Advancement, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().can_score().once(), Reply::score(agenda)).stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was scored: {}",
+        t.tail(6)
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].counter(CounterKind::Advancement),
+        0,
+        "1.17.5: the advancement counters went back to the bank with the move"
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].counter(CounterKind::Agenda),
+        4,
+        "10.13.1: 2 agenda counters for each of the 2 excess advancement counters"
+    );
+}
+
+/// example_rule_dividends_timing_1 (10.13.2): a Project-Ingatan-class agenda
+/// with "dividends 1" is advanced 3 times in a server with a SanSan-class
+/// upgrade, whose declaration lowers its advancement requirement to 2. Once it
+/// is scored, its counters are gone and the upgrade no longer applies to it —
+/// but the dividends ability reads the values as of the moment it began to be
+/// scored, so 1 agenda counter is placed.
+#[test]
+fn example_rule_dividends_timing_1() {
+    let mut vm = Vm::empty(912);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::dividends_agenda("ProjectIngatan-like", 3, 1, 1),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::install_root(&mut vm, tk::sansan_like("SanSan-like", 1), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::advance_button_card("Advancer", agenda), ServerId::Remote(2), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().times(3), Reply::take("advance target"))
+            // The (S) option appears as soon as the SanSan-class requirement of
+            // 2 is met; the Corp waits for the third advancement before scoring.
+            .when(Match::paid().can_score().nth(2), Reply::score(agenda))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(t.times_taken("advance target"), 3, "the agenda was advanced 3 times");
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Corp),
+        "1.17.3a: the SanSan-class declaration let it be scored with 3: {}",
+        t.tail(8)
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].counter(CounterKind::Agenda),
+        1,
+        "10.13.2: requirement 2 and 3 counters AS IT BEGAN TO BE SCORED — 1 excess"
     );
 }
 

@@ -73,7 +73,11 @@ pub enum TriggerCond {
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
     /// 9.6.6a "had"-condition read against the previous checkpoint snapshot.
+    /// CR 1.18.2: met by an ADVANCE only — never by an instruction that
+    /// places or moves an advancement counter directly.
     AdvancesCard { had_no_advancement: bool },
+    /// "When you score this agenda…" (1.17.6; the dividends keyword, 10.13.1).
+    SelfScored,
     /// Interrupt trigger: "…would do damage" (ordinal: Some(1) = "the first
     /// time each run you would…", Tori Hanzō class).
     WouldDamage { kind: Option<DamageKind>, first_each_run: bool },
@@ -329,6 +333,12 @@ pub enum StaticDecl {
     /// the 9.12.1d pipeline skips the effect and X is treated as 0
     /// (9.12.2e).
     SelfStrength(crate::instr::Quantity),
+    /// CR 1.17.3a / 9.1.8e: "The Corp can score agendas in this server with N
+    /// fewer advancement counters" (SanSan City Grid class) — a modification
+    /// of the advancement REQUIREMENT of every agenda in the source's server.
+    /// The scope is the source's server, exactly as
+    /// `TargetFilter::IceProtectingSourceServer` scopes ice.
+    ScoreRequirementModInSourceServer(i32),
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).
@@ -605,8 +615,20 @@ pub fn trigger_matches(
         (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {
             side == s
         }
-        (TriggerCond::AdvancesCard { .. }, GameChange::CounterPlaced { kind, .. }) => {
-            *kind == crate::object::CounterKind::Advancement
+        // 1.18.2: only an ADVANCE meets this condition. An instruction that
+        // places an advancement counter directly (Mushin No Shin class), or
+        // moves one from another card, records `CounterPlaced` and nothing
+        // else, so a "whenever you advance" ability does not fire for it.
+        (TriggerCond::AdvancesCard { .. }, GameChange::CardAdvanced { .. }) => {
+            cite!("rule_advance");
+            cite!("rule_placing_advancement_counter");
+            true
+        }
+        // 1.17.6: "when you score this agenda" — met after the Corp moves the
+        // agenda to their score area.
+        (TriggerCond::SelfScored, GameChange::AgendaScored { obj, .. }) => {
+            cite!("rule_agenda_scored");
+            *obj == source.id
         }
         (
             TriggerCond::CardInstalledInSourceServer,
