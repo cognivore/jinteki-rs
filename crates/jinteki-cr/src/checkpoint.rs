@@ -206,11 +206,23 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         vm.st.accessed,
                         vm.threat_level(),
                     );
-                let moved_to_inactive_in_window = window.iter().any(|(c, _)| match c {
-                    GameChange::CardTrashed { obj, .. }
-                    | GameChange::CardUninstalled { obj, .. } => *obj == obj_id,
-                    _ => false,
-                });
+                // 9.1.8g: "if an ACTIVE card moves to a zone where it is
+                // inactive…". The card must have been active before the move —
+                // a card trashed out of a hand or a deck was never active, so
+                // nothing of it lingers, and 9.1.8b is then the only rule that
+                // can keep such an ability active (in the zone it lands in).
+                let was_active = vm
+                    .snapshot
+                    .as_ref()
+                    .and_then(|st| st.objects.get(&obj_id))
+                    .map(crate::object::card_active)
+                    .unwrap_or(false);
+                let moved_to_inactive_in_window = was_active
+                    && window.iter().any(|(c, _)| match c {
+                        GameChange::CardTrashed { obj, .. }
+                        | GameChange::CardUninstalled { obj, .. } => *obj == obj_id,
+                        _ => false,
+                    });
                 let hangover_eligible = !active_now && moved_to_inactive_in_window;
                 if !active_now && !hangover_eligible {
                     continue;

@@ -377,7 +377,12 @@ pub fn card_active(obj: &Object) -> bool {
     match obj.zone {
         Zone::PlayArea(_) => true, // identity or resolving event/operation
         Zone::ScoreArea(_) => true,
-        Zone::Rig => true,
+        // 8.1.4a: "installed Runner cards that are facedown do not have any
+        // characteristics … and their abilities are not active."
+        Zone::Rig => {
+            cite!("rule_facedown_runner_cards_are_blank");
+            obj.faceup
+        }
         Zone::Root(_) | Zone::Ice(_) => match obj.printed.side {
             Side::Corp => obj.faceup,
             Side::Runner => true,

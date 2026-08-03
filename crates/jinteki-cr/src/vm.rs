@@ -5500,6 +5500,8 @@ impl Vm {
             // "each OTHER rezzed piece of ice": the description excludes the
             // describing ability's own source.
             TargetFilter::OtherThanSource => source != Some(o.id),
+            // 10.1.4: "this card" — the ability's own source, and only it.
+            TargetFilter::IsSource => source == Some(o.id),
             // 10.1.5: naming a card is not self-reference — "a copy of X"
             // matches every card named X, the source included.
             TargetFilter::HasName(n) => {
@@ -10117,7 +10119,7 @@ impl Vm {
         kind: DamageKind,
         amount: u32,
         chosen: &[ObjectId],
-        _responsible: Side,
+        responsible: Side,
     ) {
         cite!("rule_meat_net_damage");
         // 10.4.3: more than 1 damage of a type trashes the cards randomly and
@@ -10143,7 +10145,10 @@ impl Vm {
                 break;
             }
             if self.st.hand[&Side::Runner].contains(&c) {
-                self.move_card(c, Zone::Discard(Side::Runner));
+                // 10.4.2a: the responsible player TRASHES the card — it is a
+                // trash movement (8.2.12), not a bare move, so it records
+                // `CardTrashed` and 8.2.2's replaced destinations apply.
+                self.trash_card(c, responsible);
                 trashed.push(c);
             }
         }
@@ -10154,7 +10159,7 @@ impl Vm {
             }
             let i = self.rng.random_range(0..hand.len());
             let card = hand[i];
-            self.move_card(card, Zone::Discard(Side::Runner));
+            self.trash_card(card, responsible);
             trashed.push(card);
         }
         if kind == DamageKind::Core {
@@ -10344,8 +10349,50 @@ impl Vm {
                 }
             }
         }
+        // 8.2.2: the trash movement is recorded whether or not a replacement
+        // changed where the card ends up — "the modified effect is still an
+        // occurrence of that movement and can still meet trigger conditions
+        // relating to that type of movement". Only 8.2.2a's fully replaced or
+        // prevented trash records nothing, and that one never reaches here.
         self.changes.record(GameChange::CardTrashed { obj: id, by, was_zone: was });
-        self.move_card(id, Zone::Discard(owner));
+        match self.replaced_trash_destination(id) {
+            // 4.9: removed from the game instead of the discard pile.
+            Some(crate::instr::TrashDestination::RemovedFromGame) => {
+                cite!("sec_removed_from_game");
+                self.move_card(id, Zone::RemovedFromGame);
+            }
+            // 8.1.4/8.1.4d: the installed Runner card is turned facedown and
+            // stays in the play area — it is not uninstalled, so it never
+            // moves at all.
+            Some(crate::instr::TrashDestination::FacedownInPlay) => {
+                cite!("sec_facedown_runner_cards");
+                cite!("rule_flip_is_not_uninstall");
+                if let Some(o) = self.st.objects.get_mut(&id) {
+                    o.faceup = false;
+                }
+                self.changes.record(GameChange::CardDerezzed { obj: id });
+            }
+            None => self.move_card(id, Zone::Discard(owner)),
+        }
+    }
+
+    /// CR 9.9.8b / 8.2.2: an active static ability may stipulate that a card
+    /// being trashed goes somewhere other than its owner's discard pile. The
+    /// declaration is read where the movement happens, so it applies to every
+    /// trash — including the damage trashes of 10.4.2, which are not
+    /// instructions and so have no imminence for an interrupt to modify.
+    fn replaced_trash_destination(&self, id: ObjectId) -> Option<crate::instr::TrashDestination> {
+        cite!("rule_replacement_effect_from_static_ability");
+        cite!("sec_replacing_movements");
+        let o = self.st.objects.get(&id)?;
+        for (src, d) in self.active_statics() {
+            if let StaticDecl::ReplaceTrashDestination { criteria, to } = d {
+                if criteria.iter().all(|f| self.filter_matches(o, *f, Some(src))) {
+                    return Some(to);
+                }
+            }
+        }
+        None
     }
 
     /// Rez: pay cost (checkpoint per 8.1.2e), turn faceup, active stamp.

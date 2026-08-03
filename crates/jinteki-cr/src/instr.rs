@@ -932,6 +932,9 @@ pub enum TargetFilter {
     /// self-referential language: it describes every card with that name,
     /// including but not limited to the ability's own source.
     HasName(&'static str),
+    /// "this card" as a criterion — the ability's own source, and only it.
+    /// Self-referential language (10.1.4), the complement of `OtherThanSource`.
+    IsSource,
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma
@@ -997,6 +1000,19 @@ impl TargetFilter {
                 | TargetFilter::IceInSamePositionAs(_)
         )
     }
+}
+
+/// CR 8.2.2 / 9.9.8b: where a trashed card goes when a replacement effect has
+/// modified the trash movement without replacing it by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrashDestination {
+    /// CR 4.9: the removed-from-game zone (Skorpios class).
+    RemovedFromGame,
+    /// CR 8.1.4/8.1.4d: the installed Runner card is turned facedown and
+    /// stays where it is — "a Runner card turned facedown is not considered
+    /// to be uninstalled and simply remains in the play area" (Harbinger
+    /// class).
+    FacedownInPlay,
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

@@ -5519,3 +5519,65 @@ pub fn end_run_on_server_approach(name: &'static str) -> PrintedCard {
     .labeled("approach-etr: end the run when a server is approached")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// §8.2.2 / §9.1.8b — replacing a movement's destination
+// ---------------------------------------------------------------------------
+
+/// Harbinger shape (8.2.2): "If this card would be trashed while it is
+/// installed, instead turn it facedown." A static ability stipulating a
+/// replacement (9.9.8b) that modifies the trash movement WITHOUT replacing it
+/// by name — the card is still trashed, so a Wasteland-class condition about
+/// trashing an installed card is still met.
+pub fn harbinger_facedown_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(0);
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::ReplaceTrashDestination {
+            criteria: vec![
+                crate::instr::TargetFilter::IsSource,
+                crate::instr::TargetFilter::InstalledRunnerCard,
+            ],
+            to: crate::instr::TrashDestination::FacedownInPlay,
+        },
+    ])
+    .labeled("harbinger: turn facedown instead of going to the heap")];
+    c
+}
+
+/// Skorpios-Defense-Systems shape (9.1.8b): a Corp static ability replacing
+/// where a card trashed from the Runner's grip goes — "remove it from the game
+/// instead of adding it to the heap".
+///
+/// Simplification: the printed card's once-per-turn limit and its wider scope
+/// are left off; the rule under test is what the replaced destination does to
+/// 9.1.8b's zone stipulation.
+pub fn skorpios_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::ReplaceTrashDestination {
+            criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Runner)],
+            to: crate::instr::TrashDestination::RemovedFromGame,
+        },
+    ])
+    .labeled("skorpios: remove trashed grip cards from the game")];
+    c
+}
+
+/// I've-Had-Worse shape (9.1.8b): a Runner event with "When this card is
+/// trashed by damage, …". The condition can only ever be met by the card
+/// moving from the grip to the heap, so 9.1.8b keeps the ability active in the
+/// heap — and nowhere else.
+///
+/// Simplification: the printed card draws 3; gaining credits is the same
+/// occurrence and is what the example's assertion is about.
+pub fn ive_had_worse_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Event);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfTrashedByDamage,
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(3))],
+        false,
+    )
+    .labeled("ihw: when trashed by damage")];
+    c
+}

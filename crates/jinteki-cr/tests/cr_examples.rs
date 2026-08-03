@@ -37,6 +37,9 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_bluffing_1",
     // Wave 14d: 6.8.2c.
     "example_rule_run_ends_other_priority_windows_1",
+    // Wave 14e: 8.2.2 replaced movements, 9.1.8b zone-scoped activity.
+    "example_sec_replacing_movements_1",
+    "example_rule_active_exception_catchall_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11727,4 +11730,125 @@ fn example_rule_run_ends_other_priority_windows_1() {
     );
     assert!(vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })));
     assert!(vm.current_run.is_none());
+}
+
+// ===========================================================================
+// Wave 14e — §8.2.2 replacing a movement, 9.1.8b zone-scoped activity
+// ===========================================================================
+
+/// example_sec_replacing_movements_1 (8.2.2): a Harbinger-class ability
+/// "modifies the effects of trashing it by replacing adding Harbinger to the
+/// heap with turning it facedown. Harbinger is still trashed when the modified
+/// effect resolves" — so a Wasteland-class ability that counts the Runner's
+/// installed cards being trashed still meets its condition.
+#[test]
+fn example_sec_replacing_movements_1() {
+    for replaced in [false, true] {
+        let mut vm = Vm::empty(1408);
+        let harb = if replaced {
+            tk::install_rig(&mut vm, tk::harbinger_facedown_like("Harbinger-like"))
+        } else {
+            tk::install_rig(&mut vm, tk::vanilla_runner_card("Plain-Program", jinteki_cr::object::CardType::Program))
+        };
+        let waste = tk::install_rig(&mut vm, tk::trash_counter_like("Wasteland-like", Side::Runner));
+        tk::install_root(
+            &mut vm,
+            tk::corp_trash_button("TrashButton", vec![harb]),
+            ServerId::Remote(1),
+            true,
+        );
+        vm.start_turn(Side::Runner);
+
+        // The plan: the Corp trashes the Runner's installed program from a
+        // paid window.
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid().once(), Reply::take("trash")),
+            Plan::runner().stop_at_action(),
+        );
+        assert!(t.took("trash"), "the trash resolved: {}", t.tail(12));
+
+        // 8.2.2: whichever way it went, the trash HAPPENED.
+        assert!(vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == harb)));
+        assert_eq!(
+            vm.st.objects[&waste].counter(CounterKind::Power),
+            1,
+            "8.2.2: the modified effect is still an occurrence of the trash \
+             movement, so the condition about trashing an installed card is met"
+        );
+
+        if replaced {
+            // …but the card never reached the heap: it is facedown, in play,
+            // and 8.1.4d says it is not uninstalled.
+            assert_eq!(vm.st.objects[&harb].zone, Zone::Rig);
+            assert!(!vm.st.objects[&harb].faceup);
+            assert!(!vm
+                .changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::CardUninstalled { obj, .. } if *obj == harb)));
+        } else {
+            assert_eq!(vm.st.objects[&harb].zone, Zone::Discard(Side::Runner));
+        }
+    }
+}
+
+/// example_rule_active_exception_catchall_1 (9.1.8b): an I've-Had-Worse-class
+/// ability meets its condition when its source is trashed by damage, which can
+/// only ever happen by moving from the grip to the heap — "therefore, this
+/// ability is active in the heap". But if a Skorpios-class replacement removes
+/// the card from the game instead of adding it to the heap, the ability is not
+/// active and never resolves.
+#[test]
+fn example_rule_active_exception_catchall_1() {
+    for removed in [false, true] {
+        let mut vm = Vm::empty(1409);
+        tk::install_root(
+            &mut vm,
+            tk::net_damage_button("NetDamage", 1),
+            ServerId::Remote(1),
+            true,
+        );
+        if removed {
+            tk::install_root(&mut vm, tk::skorpios_like("Skorpios-like"), ServerId::Remote(2), true);
+        }
+        // The grip holds exactly the one card, so the random damage trash
+        // takes it (10.4.2a).
+        let ihw = vm.new_object(tk::ive_had_worse_like("IHW-like"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(ihw);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid().once(), Reply::take("do net damage")),
+            Plan::runner().stop_at_action(),
+        );
+        assert!(t.took("do net damage"), "the damage resolved: {}", t.tail(12));
+        assert!(vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::DamageSuffered { cards, .. } if cards.contains(&ihw))));
+
+        if removed {
+            assert_eq!(vm.st.objects[&ihw].zone, Zone::RemovedFromGame);
+            assert_eq!(
+                vm.st.runner.credits, 0,
+                "9.1.8b: the ability is active in the HEAP, and the card is not there"
+            );
+            assert!(!t.ever_offered("ihw"));
+        } else {
+            assert_eq!(vm.st.objects[&ihw].zone, Zone::Discard(Side::Runner));
+            assert_eq!(
+                vm.st.runner.credits, 3,
+                "9.1.8b: an ability that can only ever meet its condition in a \
+                 zone is active in that zone"
+            );
+        }
+    }
 }

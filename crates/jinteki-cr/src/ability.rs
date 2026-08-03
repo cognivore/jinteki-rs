@@ -82,6 +82,12 @@ pub enum TriggerCond {
     PlayerDrawsCards(Side),
     /// Interrupt trigger: "…this card would be trashed" (Harbinger class).
     SelfWouldBeTrashed,
+    /// CR 10.4.2 / 9.1.8b: "when this card is trashed by damage" (I've Had
+    /// Worse class). The condition can ONLY ever be met by the card moving
+    /// from the grip to the heap, which is why 9.1.8b keeps the ability
+    /// active THERE — and why a replacement that sends the card anywhere else
+    /// leaves it inactive.
+    SelfTrashedByDamage,
     /// "Whenever the Runner breaches this server…" (Ash class).
     ThisServerBreached,
     /// CR 7.3.8: "when the current breach ends" — the condition the kernel
@@ -442,6 +448,17 @@ pub enum HostRelation {
 /// resolve (9.4.1) — the VM queries them continuously.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StaticDecl {
+    /// CR 9.9.8b / 8.2.2: a static ability stipulating a REPLACEMENT of where
+    /// a trashed card goes — "instead of adding it to the heap, remove it
+    /// from the game" (Skorpios class), "if this card would be trashed,
+    /// instead turn it facedown" (Harbinger class). 8.2.2 is the point: the
+    /// modified effect "is still an occurrence of that movement and can still
+    /// meet trigger conditions relating to that type of movement", so the
+    /// trash is still recorded and only its destination changes.
+    ReplaceTrashDestination {
+        criteria: Vec<crate::instr::TargetFilter>,
+        to: crate::instr::TrashDestination,
+    },
     /// Characteristic modification of the source's host (Hush class) or self.
     StrengthMod { target_self: bool, delta: i32 },
     /// CR 9.1.9a: "<the related card> loses all of its abilities." The
@@ -852,8 +869,20 @@ pub fn ability_active(
     // layer adds them they gain activity here.
     cite!("rule_active_exception_advancement_requirement");
     cite!("rule_active_exception_can_be_advanced");
-    // 9.1.8b: zone-scoped abilities (none in the W1 vocabulary).
+    // 9.1.8b: "abilities that can only ever meet their conditions in a
+    // particular zone are active in that zone. … When determining whether
+    // these stipulations apply, refer only to the GAME RULES, not to any
+    // other effects that may be changing them." A "when this card is trashed
+    // by damage" condition can only be met by the card moving from the grip
+    // to the heap (10.4.2), so the ability is active in the heap — and only
+    // there: a replacement that sent the card elsewhere leaves it inactive,
+    // because the rule reads the zone the card is actually in.
     cite!("rule_active_exception_catchall");
+    if matches!(def.condition, Some(Condition::Trigger(TriggerCond::SelfTrashedByDamage)))
+        && obj.zone == crate::object::Zone::Discard(obj.owner)
+    {
+        return true;
+    }
     // 9.1.8g is instance-driven (hangover) and handled by the checkpoint scan.
     // 9.1.8i persistent: handled via lingering effects.
     false
@@ -1045,6 +1074,10 @@ pub fn trigger_matches(
             // which can read the trashed card's type.
             cite!("rule_cancelled_movement");
             was_zone.is_installed() && is_corp_card_side(trashed_is_corp(*obj)) == *side
+        }
+        (TriggerCond::SelfTrashedByDamage, GameChange::DamageSuffered { cards, .. }) => {
+            cite!("rule_meat_net_damage");
+            cards.contains(&source.id)
         }
         (TriggerCond::EncounterEnds, GameChange::EncounterEnded { .. }) => true,
         (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
