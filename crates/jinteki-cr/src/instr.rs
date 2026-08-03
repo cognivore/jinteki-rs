@@ -36,6 +36,12 @@ pub enum Quantity {
     RequirementOfSource,
     /// Scale ("N for each …").
     Times(i64, Box<Quantity>),
+    /// CR 9.12.2a: "…1 for every N <things>" (Project Beale's "1 agenda
+    /// counter for every 2 hosted advancement counters past 3"). The
+    /// complement of [`Quantity::Times`] — integer division, so a remainder
+    /// buys nothing — and a negative inner quantity yields 0, since there is
+    /// no such thing as a negative number of things to count.
+    PerEvery(Box<Quantity>, i64),
     /// "…for each credit lost" (Account Siphon class): credits the named
     /// player ACTUALLY lost during the resolution of the ability now
     /// resolving — the observed 1.10.3b loss, not the requested amount.
@@ -646,6 +652,18 @@ pub enum Instruction {
     /// ability's search" (8.7.4), a fixed card and an announced choice are
     /// all one instruction.
     AddCardsToHand { cards: TargetSpec },
+    /// CR 1.17.3e / 1.17.3f / 10.1.3: "Add <cards> to <side>'s score area
+    /// [as an agenda worth N agenda points]." An effect that DIRECTLY adds a
+    /// card to a score area — the agenda (or the converted card) "is not
+    /// considered scored or stolen", so nothing is recorded that a
+    /// scored/stolen trigger condition could meet, and the (S) option's
+    /// procedure is not involved at all.
+    ///
+    /// `as_agenda` carries 10.1.3's conversion: `Some(n)` converts a
+    /// non-agenda into an agenda worth n agenda points (Fan Site's 0), which
+    /// lasts until the card leaves the score area; `None` adds a card that is
+    /// already an agenda, keeping its own value (Film Critic class).
+    AddToScoreArea { cards: TargetSpec, to: Side, as_agenda: Option<i32> },
     /// "<side> trashes N random cards from their grip/HQ." (Personality
     /// Profiles class; the random selection is the mechanism 10.4.2 damage
     /// uses.) The count is a quantity position (§12 rule 6).
@@ -1041,6 +1059,12 @@ pub enum TargetFilter {
     /// CR 1.13.2: "cards hosted on this card" — the source's hosted cards,
     /// installed or not (1.13.2a).
     HostedOnSource,
+    /// CR 1.12.6: "a card you did not install this turn" (Seamless Launch) /
+    /// "an agenda installed during this turn" (Clot's prohibition). A GAME
+    /// HISTORY query, not a state one — the change log since the turn began,
+    /// which 10.2.1 makes open information to both players. The polarity is
+    /// content (§12 rule 2), so one atom says both sentences.
+    InstalledThisTurn(bool),
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma

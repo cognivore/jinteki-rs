@@ -15,7 +15,10 @@
 //! in CORPUS.md §5 cannot drift from the code. A partial card is legitimate
 //! only while the missing clause is orthogonal to every test using it.
 
-use crate::ability::{AbilityDef, AbilityFlag, Cost, StaticDecl, TriggerCond, TriggerRequirement};
+use crate::ability::{
+    AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TriggerCond,
+    TriggerRequirement,
+};
 use crate::effects::DamageKind;
 use crate::instr::{Instruction, Quantity, TargetFilter, TargetSpec};
 use crate::object::{CardType, CounterKind, PrintedCard, ServerId, Side};
@@ -399,23 +402,96 @@ pub fn government_takeover() -> PrintedCard {
     c
 }
 
-/// Project Beale — Agenda: Research. 3/2.
+/// Project Beale — Agenda: Research. 3/2. COMPLETE.
 /// "When you score this agenda, place 1 agenda counter on it for every 2
 ///  hosted advancement counters past 3.
 ///  This agenda is worth 1 more agenda point for each hosted agenda counter."
 ///
-/// The first sentence IS the dividends keyword (10.13), which the kernel
-/// carries as `PrintedCard::with_dividends`.
-/// UNIMPLEMENTED: the second sentence — the kernel has no modification of an
-/// agenda's POINT value (2.5), so a Beale scored with extra counters is worth
-/// its printed 2. Orthogonal to the install/advance tests that use it.
+/// NOT the dividends keyword (10.13.1 is "N agenda counters for EACH hosted
+/// advancement counter past its advancement requirement"): Beale prints the
+/// reciprocal rate — one counter per TWO excess advancements — and names the
+/// literal number 3, so a SanSan-lowered Beale still counts from 3. Both are
+/// quantity positions (§12 rule 6).
+///
+/// The second sentence is 2.5's point value as a modifiable characteristic,
+/// read through the 9.12.1a pipeline like strength: the agenda is active in
+/// the Corp's score area (4.5.4), so its own declaration applies there.
 pub fn project_beale() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Project Beale", Side::Corp, CardType::Agenda);
     c.subtypes = vec!["Research"];
     c.cost = None;
     c.advancement_requirement = Some(3);
     c.agenda_points = Some(2);
-    c.with_dividends(1)
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfScored { requires: Vec::new() },
+            vec![Instruction::PlaceCounters {
+                target: TargetSpec::SelfSource,
+                kind: CounterKind::Agenda,
+                // 1.17.8: the advancement counters are read from the moment
+                // the agenda began to be scored — they went to the bank with
+                // the move (1.17.5).
+                amount: Quantity::PerEvery(
+                    Box::new(Quantity::Minus(
+                        Box::new(Quantity::CountersOnSource(CounterKind::Advancement)),
+                        Box::new(Quantity::c(3)),
+                    )),
+                    2,
+                ),
+            }],
+            false,
+        )
+        .labeled("project beale: 1 agenda counter for every 2 advancements past 3"),
+        AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod(
+            Quantity::CountersOnSource(CounterKind::Agenda),
+        )])
+        .labeled("project beale: worth 1 more agenda point per hosted agenda counter"),
+    ];
+    c
+}
+
+/// Merger — Agenda: Expansion. 3/2. COMPLETE.
+/// "Merger is worth 1 additional agenda point while in the Runner's score
+///  area."
+///
+/// 4.5.4: an agenda in the Runner's score area is inactive "unless stated
+/// otherwise", and this ability states otherwise — 9.1.8b's "abilities
+/// stating that they are active in a particular zone are active in that
+/// zone". Its stated condition (9.3.7a) is that zone, so it does nothing
+/// while the Corp holds it.
+pub fn merger() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Merger", Side::Corp, CardType::Agenda);
+    c.subtypes = vec!["Expansion"];
+    c.cost = None;
+    c.advancement_requirement = Some(3);
+    c.agenda_points = Some(2);
+    let mut a = AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod(Quantity::c(1))])
+        .labeled("merger: worth 1 additional agenda point in the Runner's score area");
+    a.condition = Some(Condition::Static(StaticCond::SourceInScoreAreaOf(Side::Runner)));
+    c.abilities = vec![a];
+    c
+}
+
+/// Global Food Initiative — Agenda: Initiative. 5/3. COMPLETE.
+/// "Global Food Initiative is worth 1 fewer agenda point while in the
+///  Runner's score area."
+///
+/// Merger's mirror: the same declaration with a negative quantity, which is
+/// 9.12.1a's third stage.
+pub fn global_food_initiative() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Global Food Initiative", Side::Corp, CardType::Agenda);
+    c.subtypes = vec!["Initiative"];
+    c.cost = None;
+    c.advancement_requirement = Some(5);
+    c.agenda_points = Some(3);
+    let mut a = AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod(Quantity::Minus(
+        Box::new(Quantity::c(0)),
+        Box::new(Quantity::c(1)),
+    ))])
+    .labeled("global food initiative: worth 1 fewer agenda point in the Runner's score area");
+    a.condition = Some(Condition::Static(StaticCond::SourceInScoreAreaOf(Side::Runner)));
+    c.abilities = vec![a];
+    c
 }
 
 // ---------------------------------------------------------------------------
@@ -566,17 +642,29 @@ pub fn daily_casts() -> PrintedCard {
     c
 }
 
-/// Fan Site — Resource: Virtual. Install 0.
+/// Fan Site — Resource: Virtual. Install 0. COMPLETE.
 /// "Whenever the Corp scores an agenda, add Fan Site to your score area as an
 ///  agenda worth 0 agenda points."
 ///
-/// UNIMPLEMENTED: the ability. The kernel has no instruction that moves a
-/// non-agenda card into a score area (4.5/1.17.6), which is a movement of its
-/// own. The card's characteristics are exact.
+/// 10.1.3's conversion: the card "loses all its previous properties and gains
+/// only those properties specified in the effect converting it" — so in the
+/// score area it is an agenda worth 0, and 1.17.3f keeps it from being
+/// considered scored or stolen (nothing that watches for a steal fires, and
+/// Fan Site cannot trigger itself). The conversion ends if it ever leaves.
 pub fn fan_site() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Fan Site", Side::Runner, CardType::Resource);
     c.subtypes = vec!["Virtual"];
     c.cost = Some(0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::CorpScoresAgenda,
+        vec![Instruction::AddToScoreArea {
+            cards: TargetSpec::SelfSource,
+            to: Side::Runner,
+            as_agenda: Some(0),
+        }],
+        false,
+    )
+    .labeled("fan site: add to your score area as an agenda worth 0")];
     c
 }
 

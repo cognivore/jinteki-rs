@@ -400,6 +400,15 @@ pub struct Object {
     /// information (10.2) and the player carrying the effect out is the one
     /// who may look at them (8.3.3a).
     pub set_aside_group: Option<crate::view::SetAsideGroup>,
+    /// CR 10.1.3: this card was added to a score area **as an agenda**, and
+    /// this is the agenda point value the converting effect specified. "The
+    /// card loses all its previous properties and gains only those properties
+    /// specified in the effect converting it", so while this is set the card
+    /// is an agenda worth exactly this many points and nothing else about its
+    /// printed face applies. The conversion "lasts until the card moves to a
+    /// zone that is not a score area", which is where `Vm::move_card` clears
+    /// it.
+    pub converted_agenda: Option<i32>,
 }
 
 impl IcePosition {
@@ -494,7 +503,14 @@ pub fn card_active(obj: &Object) -> bool {
     }
     match obj.zone {
         Zone::PlayArea(_) => true, // identity or resolving event/operation
-        Zone::ScoreArea(_) => true,
+        // CR 4.5.4: "Agendas in the Corp's score area are active. Agendas in
+        // the Runner's score area are inactive unless stated otherwise." The
+        // "unless stated otherwise" half is 9.1.8b and lives in
+        // `ability_active`, where every other 9.1.8 exception does.
+        Zone::ScoreArea(s) => {
+            cite!("rule_score_area_active_inactive");
+            s == Side::Corp
+        }
         // 8.1.4a: "installed Runner cards that are facedown do not have any
         // characteristics … and their abilities are not active."
         Zone::Rig => {
@@ -523,6 +539,14 @@ pub enum CharOp {
     IncreaseStrength(i32),
     /// 9.12.1a third stage.
     DecreaseStrength(i32),
+    /// CR 2.5 through the same 9.12.1a stages: an agenda's POINT VALUE is a
+    /// characteristic like any other, so "this agenda is worth 1 more agenda
+    /// point for each hosted agenda counter" (Project Beale) and "worth 1
+    /// additional / 1 fewer agenda point while in the Runner's score area"
+    /// (Merger, Global Food Initiative) are increases and decreases applied
+    /// after any effect setting the value.
+    IncreaseAgendaPoints(i32),
+    DecreaseAgendaPoints(i32),
     /// 9.12.1b add/remove by counting.
     AddSubtype(&'static str),
     RemoveSubtype(&'static str),
@@ -550,6 +574,10 @@ pub struct CharEffect {
 #[derive(Debug, Clone, Default)]
 pub struct Effective {
     pub strength: Option<i32>,
+    /// CR 2.5 / 1.17.1: the agenda point value, after modification. `None`
+    /// for a card that prints none — 2.5.1: "the agenda point value appears
+    /// only on agendas".
+    pub agenda_points: Option<i32>,
     pub subtypes: BTreeSet<&'static str>,
     /// Indexes into `printed.abilities` that are present (9.1.9a: a lost
     /// ability is completely ignored).
@@ -588,6 +616,11 @@ fn compute_effective_inner(
     let obj = &objects[&target];
     let mut eff = Effective {
         strength: obj.printed.strength,
+        // 10.1.3: a card converted into an agenda in a score area "loses all
+        // its previous properties and gains only those properties specified
+        // in the effect converting it", so the specified point value IS the
+        // printed value for the duration of the conversion.
+        agenda_points: obj.converted_agenda.or(obj.printed.agenda_points),
         subtypes: obj.printed.subtypes.iter().copied().collect(),
         ability_present: vec![true; obj.printed.abilities.len()],
     };
@@ -666,6 +699,21 @@ fn compute_effective_inner(
     for e in &on_target {
         if let CharOp::DecreaseStrength(v) = e.op {
             eff.strength = Some(eff.strength.unwrap_or(0) - v);
+        }
+    }
+    // CR 2.5 / 2.5.2: the agenda point value runs through the same 9.12.1a
+    // stages. Only a card that has one at all can have it modified.
+    cite!("rule_agenda_points_location");
+    cite!("rule_agenda_points_citation");
+    for e in &on_target {
+        match e.op {
+            CharOp::IncreaseAgendaPoints(v) => {
+                eff.agenda_points = Some(eff.agenda_points.unwrap_or(0) + v);
+            }
+            CharOp::DecreaseAgendaPoints(v) => {
+                eff.agenda_points = Some(eff.agenda_points.unwrap_or(0) - v);
+            }
+            _ => {}
         }
     }
 

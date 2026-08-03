@@ -212,6 +212,12 @@ pub enum TriggerCond {
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples).
     RunnerStealsAgenda,
+    /// CR 1.17.6: "Whenever the Corp scores an agenda…" (Fan Site class) —
+    /// the scoring twin of [`TriggerCond::RunnerStealsAgenda`], met "after
+    /// the Corp moves the agenda from its current zone to their score area".
+    /// 1.17.3e/f: a card ADDED to a score area is not scored, so it cannot
+    /// meet this.
+    CorpScoresAgenda,
     /// "Whenever the Runner avoids receiving a tag…" (Thunder Art Gallery
     /// class — the 9.9.4c/d chain-reaction examples).
     RunnerAvoidsTag,
@@ -317,6 +323,11 @@ pub enum StaticCond {
     /// prohibition: it has no effect on breaches or candidates until a card
     /// has actually been accessed (7.3.6) during the run in progress.
     RunnerHasAccessedCardThisRun,
+    /// CR 4.5 / 9.3.7a: "…while this card is in <side>'s score area" (Merger,
+    /// Global Food Initiative). A stated condition on a static ability whose
+    /// source is in a score area — 9.1.8a keeps such a card active in BOTH
+    /// score areas, so the side is the whole content of the restriction.
+    SourceInScoreAreaOf(Side),
 }
 
 /// CR 9.6.1a: the primary condition is a trigger or static condition.
@@ -681,6 +692,14 @@ pub enum StaticDecl {
     /// the basic play action does not offer it (5.2.6e/5.2.7e) and an effect
     /// that would play a card cannot choose it (8.6.3).
     PlayOnlyIf(Vec<TriggerRequirement>),
+    /// CR 2.5 / 9.12.1a: "This agenda is worth N more agenda points."
+    /// (Project Beale's second sentence; Merger's and Global Food
+    /// Initiative's whole text, with a `StaticCond::SourceInScoreAreaOf`
+    /// stating when.) The amount is a quantity position (§12 rule 6), so
+    /// "1 more for each hosted agenda counter" is the same declaration as a
+    /// flat "1 more", and "1 fewer" is a negative quantity
+    /// (`Quantity::Minus`).
+    SelfAgendaPointsMod(crate::instr::Quantity),
 }
 
 /// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional
@@ -1133,14 +1152,57 @@ pub fn ability_active(
     // there: a replacement that sent the card elsewhere leaves it inactive,
     // because the rule reads the zone the card is actually in.
     cite!("rule_active_exception_catchall");
-    if matches!(def.condition, Some(Condition::Trigger(TriggerCond::SelfTrashedByDamage)))
-        && obj.zone == crate::object::Zone::Discard(obj.owner)
-    {
-        return true;
+    if let Some(Condition::Trigger(t)) = &def.condition {
+        if condition_only_met_in_zone(t, obj) == Some(obj.zone) {
+            return true;
+        }
+    }
+    // 9.1.8b's first sentence — "abilities STATING that they are active in a
+    // particular zone are active in that zone" — is 4.5.4's "unless stated
+    // otherwise" in person: an agenda in the Runner's score area is inactive,
+    // and Merger's "…while it is in the Runner's score area" is the statement
+    // that makes its one ability an exception.
+    if let Some(Condition::Static(StaticCond::SourceInScoreAreaOf(side))) = &def.condition {
+        if obj.zone == crate::object::Zone::ScoreArea(*side) {
+            return true;
+        }
     }
     // 9.1.8g is instance-driven (hangover) and handled by the checkpoint scan.
     // 9.1.8i persistent: handled via lingering effects.
     false
+}
+
+/// CR 9.1.8b, second sentence: "abilities that can only ever meet their
+/// conditions in a particular zone are active in that zone. … When
+/// determining whether these stipulations apply, refer only to the GAME
+/// RULES, not to any other effects that may be changing how cards move
+/// between zones."
+///
+/// So this reads the RULES that say where each condition's occurrence puts
+/// the source, and nothing else — a replacement that sent the card somewhere
+/// else leaves the ability inactive, because the zone the card is actually in
+/// is what is compared.
+fn condition_only_met_in_zone(cond: &TriggerCond, obj: &Object) -> Option<Zone> {
+    match cond {
+        // 10.4.2: damage trashes cards from the grip to the heap, so this
+        // condition can only ever be met with the card in its owner's heap.
+        TriggerCond::SelfTrashedByDamage => Some(Zone::Discard(obj.owner)),
+        // 1.17.3: only the Runner steals, and stealing moves the agenda to
+        // the Runner's score area (1.17.7) — where 4.5.4 would otherwise
+        // leave it inactive. Clone Retirement's "when you steal this agenda"
+        // is exactly the class the rule exists for.
+        TriggerCond::SelfStolen => {
+            cite!("rule_agenda_stolen");
+            Some(Zone::ScoreArea(Side::Runner))
+        }
+        // 1.17.6: the scoring twin, for symmetry — the Corp's score area is
+        // active anyway (4.5.4), so this changes nothing today.
+        TriggerCond::SelfScored { .. } => {
+            cite!("rule_agenda_scored");
+            Some(Zone::ScoreArea(Side::Corp))
+        }
+        _ => None,
+    }
 }
 
 /// Does a change record match a trigger condition? Returns per-occurrence
@@ -1382,6 +1444,10 @@ pub fn trigger_matches(
             *ice == source.id
         }
         (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
+        (TriggerCond::CorpScoresAgenda, GameChange::AgendaScored { .. }) => {
+            cite!("rule_agenda_scored");
+            true
+        }
         (TriggerCond::RunnerAvoidsTag, GameChange::TagsAvoided { .. }) => true,
         (TriggerCond::PlayerSearchesDeck(side), GameChange::ZoneSearched { by, zone }) => {
             cite!("rule_search_condition");

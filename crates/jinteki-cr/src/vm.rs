@@ -655,6 +655,7 @@ impl Vm {
                 scored_snapshot: None,
                 last_server: None,
                 set_aside_group: None,
+                converted_agenda: None,
             },
         );
         id
@@ -2321,6 +2322,13 @@ impl Vm {
                 cite!("rule_prohibiting_access_to_1");
                 self.current_run.is_some() && self.accesses_this_run() > 0
             }
+            // 4.5: the score area is a zone, one per player; 9.1.8a keeps a
+            // card there active whichever score area it is in, so which one
+            // is the whole content of the condition.
+            StaticCond::SourceInScoreAreaOf(side) => {
+                cite!("sec_score_area");
+                self.st.objects.get(&obj).map(|o| o.zone == Zone::ScoreArea(*side)).unwrap_or(false)
+            }
         }
     }
 
@@ -2355,7 +2363,7 @@ impl Vm {
     pub fn char_effects(&self) -> Vec<crate::object::CharEffect> {
         use crate::object::{CharEffect, CharOp};
         let mut out = Vec::new();
-        let threat = self.threat_level();
+        let threat = self.gather_threat_level();
         for o in self.st.objects.values() {
             for a in &o.printed.abilities {
                 if a.kind != AbilityKind::Static {
@@ -2468,6 +2476,25 @@ impl Vm {
                                     });
                                 }
                             }
+                        }
+                        StaticDecl::SelfAgendaPointsMod(q) => {
+                            // 2.5 through 9.12.1a: an increase or a decrease
+                            // of the source's own agenda point value,
+                            // evaluated continuously like every other
+                            // characteristic modification (so Project Beale's
+                            // "for each hosted agenda counter" tracks the
+                            // counters it actually has).
+                            cite!("rule_agenda_points_citation");
+                            let n = self.eval_quantity(q, Some(o.id)) as i32;
+                            out.push(CharEffect {
+                                source: o.id,
+                                target: o.id,
+                                op: if n >= 0 {
+                                    CharOp::IncreaseAgendaPoints(n)
+                                } else {
+                                    CharOp::DecreaseAgendaPoints(-n)
+                                },
+                            });
                         }
                         StaticDecl::SelfStrength(q) => {
                             // 9.12.2e: the strength-X selector, evaluated
@@ -3225,7 +3252,6 @@ impl Vm {
 
     fn steal_agenda(&mut self, card: ObjectId) {
         cite!("rule_score_steal");
-        let points = self.st.objects[&card].printed.agenda_points.unwrap_or(0);
         self.capture_scored_snapshot(card);
         self.move_card(card, Zone::ScoreArea(Side::Runner));
         self.st.objects.get_mut(&card).unwrap().faceup = true;
@@ -3237,16 +3263,19 @@ impl Vm {
             self.st.objects.get_mut(&card).unwrap().counters.insert(kind, have + amount);
             self.changes.record(GameChange::CounterPlaced { obj: card, kind, amount });
         }
+        // 2.5: the value recorded is the one the agenda has WHERE IT NOW IS —
+        // a Merger stolen by the Runner is worth 3 from the moment it arrives.
+        let points = self.effective_agenda_points(card).unwrap_or(0);
         self.changes.record(GameChange::AgendaStolen { obj: card, points });
     }
 
     /// CR 1.17.4-adjacent scoring via the (S) window option.
     fn score_agenda(&mut self, card: ObjectId) {
         cite!("rule_score");
-        let points = self.st.objects[&card].printed.agenda_points.unwrap_or(0);
         self.capture_scored_snapshot(card);
         self.move_card(card, Zone::ScoreArea(Side::Corp));
         self.st.objects.get_mut(&card).unwrap().faceup = true;
+        let points = self.effective_agenda_points(card).unwrap_or(0);
         self.changes.record(GameChange::AgendaScored { obj: card, points });
     }
 
@@ -3629,6 +3658,15 @@ impl Vm {
                 source.map(|s| self.advancement_requirement(s) as i64).unwrap_or(0)
             }
             Q::Times(n, inner) => n * self.eval_quantity(inner, source),
+            // 9.12.2a: "1 for every N" — the count of complete groups, so a
+            // remainder buys nothing and there is never a negative count.
+            Q::PerEvery(inner, per) => {
+                if *per <= 0 {
+                    0
+                } else {
+                    self.eval_quantity(inner, source).max(0) / per
+                }
+            }
             Q::XOfSource(inner) => {
                 // CR 9.12.2e: X is defined by an ability of the source; while
                 // that defining ability is inactive (source in Archives —
@@ -3927,6 +3965,7 @@ impl Vm {
             }
             Instruction::Search { .. }
             | Instruction::AddCardsToHand { .. }
+            | Instruction::AddToScoreArea { .. }
             | Instruction::HostCards { .. }
             | Instruction::SwapCards { .. }
             | Instruction::MoveIce { .. }
@@ -5229,6 +5268,7 @@ impl Vm {
             // 1.13.1: "host <cards> on this card" / "add <a card> to your
             // grip" announce which cards they act on (9.3.4b).
             Instruction::HostCards { cards: TargetSpec::Choose { count, criteria }, .. }
+            | Instruction::AddToScoreArea { cards: TargetSpec::Choose { count, criteria }, .. }
             | Instruction::AddCardsToHand { cards: TargetSpec::Choose { count, criteria } } => {
                 let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
@@ -9169,6 +9209,30 @@ impl Vm {
                     self.move_card(t, Zone::Hand(owner));
                 }
             }
+            Instruction::AddToScoreArea { cards, to, as_agenda } => {
+                // CR 1.17.3e/f: an effect that DIRECTLY adds a card to a
+                // score area — "that agenda is not considered scored or
+                // stolen", and neither is a card converted "as an agenda". So
+                // this is an ordinary move (8.2.1a) and records no
+                // AgendaScored/AgendaStolen: nothing a scored/stolen trigger
+                // condition can meet.
+                cite!("rule_add_agenda_to_score_area");
+                cite!("rule_added_agendas_not_scored_or_stolen");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                for t in targets {
+                    if let Some(points) = as_agenda {
+                        // 10.1.3: the conversion, recorded on the object; the
+                        // card "loses all its previous properties and gains
+                        // only those properties specified" until it leaves.
+                        cite!("rule_add_card_to_score_area");
+                        self.st.objects.get_mut(&t).unwrap().converted_agenda = Some(*points);
+                    }
+                    self.move_card(t, Zone::ScoreArea(*to));
+                    // 1.17.4: agendas are always added to a score area faceup.
+                    cite!("rule_score_area_faceup");
+                    self.st.objects.get_mut(&t).unwrap().faceup = true;
+                }
+            }
             Instruction::TrashRandomFromHand { side, .. } => {
                 // The value rides the atom so interrupts can modify it
                 // (9.9.6); 9.9.7d drops it entirely if it falls to 0.
@@ -11112,6 +11176,15 @@ impl Vm {
             cite!("rule_archives_faceup_facedown");
             o.faceup = true;
         }
+        // CR 10.1.3: a card converted into an agenda by being added to a score
+        // area keeps that conversion "until the card moves to a zone that is
+        // not a score area, at which point it returns to being its original
+        // printed card". A move between the two score areas (8.8.4c's swap)
+        // is not such a move, so the conversion survives it.
+        if !matches!(to, Zone::ScoreArea(_)) && o.converted_agenda.is_some() {
+            cite!("rule_add_card_to_score_area");
+            o.converted_agenda = None;
+        }
         // CR 1.21.6: a card a resolving ability showed a player "remains
         // visible to the relevant player(s) until the entire ability is
         // finished resolving OR THE CARD MOVES TO A DIFFERENT LOCATION" — so
@@ -11357,11 +11430,22 @@ impl Vm {
     /// agendas in their score area.
     pub fn score(&self, side: Side) -> i32 {
         cite!("rule_score");
+        let effects = self.char_effects();
         self.st.score_area[&side]
             .iter()
-            .filter_map(|id| self.st.objects.get(id))
-            .filter_map(|o| o.printed.agenda_points)
+            .filter(|id| self.st.objects.contains_key(id))
+            .filter_map(|id| {
+                crate::object::compute_effective(&self.st.objects, &effects, *id).agenda_points
+            })
             .sum()
+    }
+
+    /// CR 2.5 / 9.12.1a: this card's agenda point value as modified — the
+    /// printed number (or 10.1.3's converted one) after every active
+    /// declaration has been applied.
+    pub fn effective_agenda_points(&self, obj: ObjectId) -> Option<i32> {
+        let effects = self.char_effects();
+        crate::object::compute_effective(&self.st.objects, &effects, obj).agenda_points
     }
 
     /// CR 1.17.1a: the threat level is the greatest score of any player.
@@ -11369,6 +11453,28 @@ impl Vm {
     pub fn threat_level(&self) -> i32 {
         cite!("rule_threat_level");
         self.score(Side::Corp).max(self.score(Side::Runner))
+    }
+
+    /// The threat level as the characteristics pipeline's GATHER pass reads
+    /// it: printed (and 10.1.3-converted) agenda point values, without the
+    /// 2.5 modifications the pipeline is about to compute.
+    ///
+    /// Deviation 2b's reading, widened: gathering the pipeline's input cannot
+    /// ask for a value the pipeline produces, so the one place the two meet —
+    /// a `[threat N]` flag (9.3.6f) gating an ability on a board where a
+    /// Merger-class declaration straddles the threshold — reads the
+    /// unmodified score. Every other reader of the threat level goes through
+    /// [`Vm::threat_level`], which is exact.
+    fn gather_threat_level(&self) -> i32 {
+        cite!("rule_threat_level");
+        let of = |side: Side| -> i32 {
+            self.st.score_area[&side]
+                .iter()
+                .filter_map(|id| self.st.objects.get(id))
+                .filter_map(|o| o.converted_agenda.or(o.printed.agenda_points))
+                .sum()
+        };
+        of(Side::Corp).max(of(Side::Runner))
     }
 
     pub fn memory_limit(&self) -> i32 {

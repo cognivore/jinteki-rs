@@ -1846,8 +1846,13 @@ pub fn gagarin_like(name: &'static str) -> PrintedCard {
 /// R&D (returned cards are new objects — 7.4.7a example 1).
 pub fn bacterial_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_agenda(name, 3, 1);
+    // The printed card reads "when you score or steal THIS agenda", so the
+    // condition is 1.17.7's `SelfStolen` — which is also why the ability is
+    // active where the agenda lands (9.1.8b: it can only ever meet its
+    // condition in the Runner's score area, where 4.5.4 otherwise leaves an
+    // agenda inactive).
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerStealsAgenda,
+        TriggerCond::SelfStolen,
         vec![Instruction::CorpRearrangesRnd],
         false,
     )

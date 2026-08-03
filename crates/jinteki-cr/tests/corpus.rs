@@ -1223,6 +1223,157 @@ fn government_takeover() {
     assert_eq!(g.vm.st.corp.credits, 8, "the scored agenda's ability gained 3: {}", t.tail(12));
 }
 
+/// global-food-initiative: one printed agenda is worth 3 in the Corp's score
+/// area and 2 in the Runner's. CR 2.5's point value is a characteristic, read
+/// through the same 9.12.1a pipeline as strength; 4.5.4 makes an agenda in
+/// the Runner's score area inactive "unless stated otherwise", and this
+/// card's ability states otherwise (9.1.8b), which is the only reason it can
+/// apply there at all.
+#[test]
+fn global_food_initiative() {
+    let (corp, runner) = score_then_steal(cards::global_food_initiative, 5);
+    assert_eq!(corp, 3, "the Corp scored it for its printed 3");
+    assert_eq!(runner, 2, "the Runner stole it for 2, not 3");
+}
+
+/// merger: Global Food Initiative's mirror — 2 in the Corp's score area, 3 in
+/// the Runner's.
+#[test]
+fn merger() {
+    let (corp, runner) = score_then_steal(cards::merger, 3);
+    assert_eq!(corp, 2, "the Corp scored it for its printed 2");
+    assert_eq!(runner, 3, "the Runner stole it for 3");
+}
+
+/// The `(play-and-score …)` then `(run-empty-server …)` + "Steal" shape the
+/// agenda-point tests share: the Corp scores one copy out of remote 1, the
+/// Runner steals the other out of remote 2. Returns both scores (1.17.1).
+///
+/// The reference reaches the advancement count with `(core/gain :click 8)`
+/// and a run of `advance` calls; N advancement counters on the installed card
+/// is that same starting position expressed as setup, the way
+/// `government-takeover` already does it.
+fn score_then_steal(card: fn() -> PrintedCard, advancements: u32) -> (i32, i32) {
+    let mut g = Game::new(11).credits(Side::Corp, 10).credits(Side::Runner, 10).start(Side::Corp);
+    let scored = tk::install_root(&mut g.vm, card(), ServerId::Remote(1), false);
+    let stolen = tk::install_root(&mut g.vm, card(), ServerId::Remote(2), false);
+    tk::place_counters(&mut g.vm, scored, CounterKind::Advancement, advancements);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Score(scored)))
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Remote(2))))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    assert_eq!(
+        g.vm.st.objects[&scored].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the Corp scored one copy: {}",
+        t.tail(14)
+    );
+    assert_eq!(
+        g.vm.st.objects[&stolen].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the Runner stole the other: {}",
+        t.tail(14)
+    );
+    (g.vm.score(Side::Corp), g.vm.score(Side::Runner))
+}
+
+/// project-beale: 4 advancements score it for its printed 2; 5 advancements
+/// place one agenda counter (1 for every 2 past 3) and it is worth 3.
+#[test]
+fn project_beale() {
+    let mut g = Game::new(11).credits(Side::Corp, 10).start(Side::Corp);
+    let pb1 = tk::install_root(&mut g.vm, cards::project_beale(), ServerId::Remote(1), false);
+    let pb2 = tk::install_root(&mut g.vm, cards::project_beale(), ServerId::Remote(2), false);
+    tk::place_counters(&mut g.vm, pb1, CounterKind::Advancement, 4);
+    tk::place_counters(&mut g.vm, pb2, CounterKind::Advancement, 5);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Score(pb1)))
+            .when(Match::paid().once(), Reply::Halt)
+            .when(Match::paid().once(), Reply::Take(Pick::Score(pb2)))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.objects[&pb1].counter(CounterKind::Agenda),
+        0,
+        "only 4 advancements: nothing past 3 buys a counter"
+    );
+    assert_eq!(g.vm.score(Side::Corp), 2, "scored for the standard 2 points");
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.objects[&pb2].counter(CounterKind::Agenda),
+        1,
+        "5 advancements: 1 agenda counter for the 2 past 3: {}",
+        script.transcript().tail(14)
+    );
+    assert_eq!(g.vm.score(Side::Corp), 5, "2 + 3: the second Beale is worth 1 more per counter");
+}
+
+/// fan-site: when the Corp scores an agenda, the Runner's Fan Site is added
+/// to their score area as an agenda worth 0 agenda points (10.1.3). It is not
+/// STOLEN (1.17.3f), so nothing that watches for a steal fires and the
+/// Runner's score does not move.
+#[test]
+fn fan_site() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::fan_site()])
+        .credits(Side::Corp, 10)
+        .start(Side::Runner);
+    let fan = g.id("Fan Site");
+    let ht = tk::install_root(&mut g.vm, cards::hostile_takeover(), ServerId::Remote(1), false);
+    tk::place_counters(&mut g.vm, ht, CounterKind::Advancement, 2);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Score(ht)))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(fan)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    assert_eq!(
+        g.zone_of("Fan Site"),
+        Zone::ScoreArea(Side::Runner),
+        "Fan Site was added to the Runner's score area: {}",
+        t.tail(14)
+    );
+    assert_eq!(g.vm.score(Side::Runner), 0, "as an agenda worth 0 agenda points");
+    assert_eq!(g.vm.score(Side::Corp), 1, "the Corp's own score is unaffected");
+    assert!(
+        !g.vm.changes.log.iter().any(|c| matches!(c, GameChange::AgendaStolen { .. })),
+        "1.17.3f: a card ADDED to a score area is not considered stolen"
+    );
+}
+
 /// lt-todachine: rezzing a piece of ice gives the Runner a tag. The ice can
 /// only be rezzed where the CR lets it be — as the Runner approaches it
 /// (9.2.7e) — so the port runs at it.
@@ -1868,6 +2019,10 @@ const PORTED: &[&str] = &[
     "account-siphon-use-ability",
     "account-siphon-access",
     "hostile-takeover",
+    "global-food-initiative",
+    "merger",
+    "project-beale",
+    "fan-site",
     "government-takeover",
     "pad-campaign",
     "lt-todachine",
@@ -1909,8 +2064,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 60,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 60",
+        PORTED.len() >= 64,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 64",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is
@@ -1921,6 +2076,6 @@ fn dp7c_odometer() {
         .map(|(_, s)| *s)
         .expect("cards.rs is embedded");
     let partial = card_src.matches("/// UNIMPLEMENTED:").count();
-    assert_eq!(partial, 7, "partial cards (CORPUS.md §5): {partial}");
+    assert_eq!(partial, 5, "partial cards (CORPUS.md §5): {partial}");
     let _ = CardType::Agenda;
 }
