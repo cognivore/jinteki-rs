@@ -926,3 +926,90 @@ fn the_gap_list_only_shrinks_by_saying_things() {
         "the gap list should not grow without a reason recorded in docs/vm/WAVES.md; got {sentences}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The guide is the contract (SYS-D-2), so it is checked like one.
+// ---------------------------------------------------------------------------
+
+const GUIDE: &str = include_str!("../../../docs/cards/DSL.md");
+
+/// The lines of a fenced block in DSL.md carrying this info string.
+fn guide_block(kind: &str) -> Vec<&'static str> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for line in GUIDE.lines() {
+        if line.trim_start().starts_with("```") {
+            let info = line.trim().trim_start_matches('`');
+            inside = !inside && info == kind;
+            continue;
+        }
+        if inside && !line.trim().is_empty() {
+            out.push(line.trim());
+        }
+    }
+    assert!(!out.is_empty(), "docs/cards/DSL.md has no ```{kind} block");
+    out
+}
+
+/// Every sentence the guide lists really works. This test exists because the
+/// guide had been promising verbs — `gain 1 click`, `run hq`, `access N
+/// additional cards` — that were never implemented, and a designer reading it
+/// had no way to know. The guide is the contract with people who do not read
+/// Rust (DESIGN.md SYS-D-2); a contract nobody checks is a wish.
+#[test]
+fn every_sentence_the_guide_lists_is_one_you_can_write() {
+    for sentence in guide_block("sentences") {
+        let src = format!(
+            "card \"Guide Check\"\n  side: corp\n  type: operation\n  text:\n    Checked against docs/cards/DSL.md.\n  play:\n    {sentence}\n"
+        );
+        let cards = jinteki_cards::load("docs/cards/DSL.md", &src).unwrap_or_else(|e| {
+            panic!("docs/cards/DSL.md lists a sentence the DSL cannot write:\n{e}")
+        });
+        assert_eq!(
+            cards[0].printed.abilities.len(),
+            1,
+            "`{sentence}` denoted into nothing"
+        );
+    }
+}
+
+/// The same for the declarations a `static:` block can state.
+#[test]
+fn every_declaration_the_guide_lists_is_one_you_can_write() {
+    for decl in guide_block("declarations") {
+        let src = format!(
+            "card \"Guide Check\"\n  side: runner\n  type: resource\n  text:\n    Checked against docs/cards/DSL.md.\n  static:\n    {decl}\n"
+        );
+        let cards = jinteki_cards::load("docs/cards/DSL.md", &src).unwrap_or_else(|e| {
+            panic!("docs/cards/DSL.md lists a declaration the DSL cannot write:\n{e}")
+        });
+        let c = &cards[0].printed;
+        assert!(
+            !c.abilities.is_empty()
+                || c.additional_play_cost.is_some()
+                || c.additional_steal_cost.is_some(),
+            "`{decl}` denoted into nothing"
+        );
+    }
+}
+
+/// Every block header and trigger the guide names is one the parser accepts.
+#[test]
+fn every_trigger_the_guide_names_is_one_you_can_write() {
+    // The trigger table's left column, as the guide writes it.
+    let triggers: Vec<&str> = GUIDE
+        .lines()
+        .filter(|l| l.starts_with("| `when "))
+        .flat_map(|l| l.split('|').nth(1).unwrap().split(" / "))
+        .map(|c| c.trim().trim_matches('`'))
+        .collect();
+    assert!(triggers.len() >= 10, "the guide's trigger table went missing: {triggers:?}");
+    for trigger in triggers {
+        let src = format!(
+            "card \"Guide Check\"\n  side: corp\n  type: asset\n  text:\n    Checked against docs/cards/DSL.md.\n  {trigger}:\n    gain 1 credit\n"
+        );
+        jinteki_cards::load("docs/cards/DSL.md", &src).unwrap_or_else(|e| {
+            panic!("docs/cards/DSL.md names a trigger the DSL cannot write:\n{e}")
+        });
+    }
+}

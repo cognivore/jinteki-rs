@@ -98,47 +98,58 @@ Triggers are written the way the card writes them:
 
 ## The sentences you can write
 
-One line per printed sentence. The words are the card's words.
+One line per printed sentence. The words are the card's words. This is the
+whole list, and a test checks that every line of it really works — if it is
+written here, you can write it on a card.
 
-```
-gain 5 credits                     lose 3 credits
-the runner loses 2 credits         the corp loses 2 credits
+```sentences
+gain 5 credits
+lose 3 credits
+the runner loses 2 credits
+the corp loses 2 credits
 draw 3 cards
-do 3 net damage                    do 7 meat damage
-do 1 core damage                   prevent all meat damage
-give the runner 2 tags             take 1 tag
-remove 1 tag                       the runner removes 2 tags
-end the run                        trash self
-remove self from the game          purge virus counters
+do 3 net damage
+do 7 meat damage
+do 1 core damage
+prevent all meat damage
+prevent all net damage
+give the runner 2 tags
+take 1 tag
+remove 1 tag
+the runner removes 2 tags
+end the run
+trash self
+remove self from the game
+purge virus counters
 your action phase ends
 give the corp 1 bad publicity
-
-load 8 credits on self             load 3 power counters on self
-place 1 agenda counter on self     place 1 power counter on this ice
-
+load 8 credits on self
+load 3 power counters on self
+place 1 agenda counter on self
+place 1 power counter on this ice
+place 2 advancement counters on this card
 add 1 card from archives to hq
 add 2 installed runner cards to the grip
-
-+1 strength                        break 1 sentry subroutine
-break up to 2 subroutines          break all subroutines
-
-install up to 2 cards from hq      you may play 1 operation from hq
++1 strength
+-1 strength
+break 1 sentry subroutine
+break 1 code gate subroutine
+break up to 2 subroutines
+break all subroutines
+install up to 2 cards from hq
+you may play 1 operation from hq
 search your stack for 1 icebreaker
 resolve the "when scored" ability on an agenda in your score area
-```
-
-Two effects in one printed sentence are one line, joined by `and`:
-
-```
 gain 4 credits and draw 3 cards
-```
-
-A trace is one line, because the card writes it as one:
-
-```
 trace 4: give the runner 4 tags
 trace 3: place 1 power counter on this ice
+you may trash self to gain 3 credits and draw 3 cards
+you may pay 2 credits to draw 2 cards
+end the run unless the runner pays 3 credits
 ```
+
+Two effects in one printed sentence are one line, joined by `and`. A trace is
+one line too, because the card writes it as one.
 
 A choice is written as a list:
 
@@ -149,14 +160,9 @@ A choice is written as a list:
       - end the run
 ```
 
-An optional thing uses `you may`, and a cost inside a sentence uses the
-card's own `to` or `unless`:
-
-```
-you may trash self to gain 3 credits and draw 3 cards
-you may pay 2 credits to draw 2 cards
-end the run unless the runner pays 3 credits
-```
+An optional thing uses `you may`, and a cost inside a sentence uses the card's
+own `to` or `unless` — `you may trash self to …`, `you may pay 2 credits to …`,
+`end the run unless the runner pays 3 credits`.
 
 ### Break abilities know when they can be used
 
@@ -171,12 +177,12 @@ usable during any encounter.
 A `static:` block is for the sentences that are permanently true rather than
 things that happen.
 
-```
-+1 memory                          "+1[mu]"
-+1 link                            printed base link
-this program gets −2 strength      "This program gets −2 strength."
-this card can host a single agenda "Film Critic can host a single agenda."
-limit 1 hosted card                "Limit 1 hosted card."
+```declarations
++1 memory
++1 link
+this program gets −2 strength
+this card can host a single agenda
+limit 1 hosted card
 runs against this server cannot be declared successful
 remove this card from the game instead of trashing it
 this card is not trashed until another current is played or an agenda is stolen
@@ -185,6 +191,9 @@ as an additional cost to steal this agenda, the runner must pay 5 credits
 as an additional cost to play this operation, spend click
 as an additional cost to play this operation, forfeit an agenda
 ```
+
+`+1 memory` is "+1[mu]"; `+1 link` is the printed base link (write it as the
+`link:` fact instead if the card only prints a number).
 
 Note the difference between "steal **an** agenda" (every agenda, for as long
 as this card is around) and "steal **this** agenda" (printed on the agenda
