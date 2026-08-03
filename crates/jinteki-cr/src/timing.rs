@@ -11,13 +11,23 @@ use serde::Deserialize;
 pub const TIMING_STRUCTURES_JSON: &str =
     include_str!("../../../docs/rules/timing-structures.json");
 
-/// CR 9.2.2a-d: the five timing structures of the appendix tables. Phases
-/// are sub-structures (9.2.2a/b) tracked as spans inside the parent table.
+/// CR 9.2.2a-d: the five timing structures of the appendix tables, plus the
+/// one PHASE the kernel runs as a structure of its own.
+///
+/// 9.2.2b makes each of the 6 phases of a run a timing structure; the rest of
+/// them are tracked as spans inside the run's table, because they only ever
+/// occur in the run's own order. The Encounter Ice Phase is different: 6.5.9a
+/// resolves one on its own, outside that order and even outside a run, so it
+/// needs its own frame — and once it has one, 6.5.9c ("the instruction that
+/// created the encounter is not finished until the encounter is complete")
+/// and 6.1.4b (ending an encounter that is not inside a run) are what the
+/// frame stack already means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StructKind {
     CorpTurn,
     RunnerTurn,
     Run,
+    Encounter,
     Breach,
     Access,
 }
@@ -28,6 +38,8 @@ impl StructKind {
             StructKind::CorpTurn => "corp_turn",
             StructKind::RunnerTurn => "runner_turn",
             StructKind::Run => "run",
+            // Derived from the run table's phase-3 span (see `load_tables`).
+            StructKind::Encounter => "run",
             StructKind::Breach => "breach",
             StructKind::Access => "access",
         }
@@ -122,6 +134,19 @@ pub fn load_tables() -> Vec<StepTable> {
         flatten("", &s.steps, &mut steps);
         out.push(StepTable { kind, steps });
     }
+    // CR 9.2.2b: each of the 6 phases of a run is a timing structure too. The
+    // Encounter Ice Phase gets its own table — the same rows, read out of the
+    // same data — because 6.5.9a resolves one outside the run's progression.
+    cite!("rule_encounter_ice_phase");
+    cite!("rule_forced_encounter");
+    let run = out
+        .iter()
+        .find(|t| t.kind == StructKind::Run)
+        .expect("the run table is in the §11 data");
+    let first = run.index_of("step_encounter_begins");
+    let last = run.index_of("step_encounter_complete");
+    let steps = run.steps[first..=last].to_vec();
+    out.push(StepTable { kind: StructKind::Encounter, steps });
     out
 }
 
@@ -143,7 +168,6 @@ pub enum StepKind {
     SetPositionOutermost,
     ApproachIce,
     EncounterIce,
-    EncounterComplete,
     PassIce,
     JackOutChoice,
     MovePositionInward,
@@ -191,6 +215,10 @@ pub enum StepOp {
     Instr(StepKind),
     /// Instruction, then jump ("Go to (N)" steps).
     InstrThenGoto(StepKind, &'static str),
+    /// CR 9.2.2b: this step IS a phase that the kernel runs as its own timing
+    /// structure. The phase's frame opens here; when it completes, the parent
+    /// structure resumes at `then`.
+    OpenPhase { phase: StructKind, then: &'static str },
     /// A paid ability window step (9.2.7g).
     Paw(PawClasses),
     /// The mid-access ability window step (9.2.10d).
@@ -382,29 +410,47 @@ pub fn step_op(kind: StructKind, id: &str) -> StepOp {
                 no: "step_pass_ice",
             }
         }
+        // The run's Encounter Ice Phase (11.4 step 3) is resolved as its own
+        // structure (9.2.2b): the run opens it here and continues at the
+        // Movement Phase when it completes, which is what step 3e says.
         (StructKind::Run, "step_encounter_begins") => {
+            cite!("step_encounter_begins");
+            cite!("rule_encounter_ice_phase");
+            O::OpenPhase { phase: StructKind::Encounter, then: "step_pass_ice" }
+        }
+        (StructKind::Encounter, "step_encounter_begins") => {
             cite!("step_encounter_begins");
             O::Instr(K::EncounterIce)
         }
-        (StructKind::Run, "step_encounter_paw") => {
+        (StructKind::Run | StructKind::Encounter, "step_encounter_paw") => {
             cite!("step_encounter_paw");
+            cite!("rule_encounter_break_paw");
             O::Paw(C::p())
         }
-        (StructKind::Run, "step_resolve_subroutine") => {
+        (StructKind::Run | StructKind::Encounter, "step_resolve_subroutine") => {
             cite!("step_resolve_subroutine");
+            cite!("rule_encounter_sub_resolve");
             O::BodyOrGoto {
                 pred: BranchPred::UnbrokenSubsRemain,
                 body: StepBody::ResolveNextSubroutine,
                 skip_to: "step_encounter_complete",
             }
         }
-        (StructKind::Run, "step_resolve_subroutine_loop") => {
+        (StructKind::Run | StructKind::Encounter, "step_resolve_subroutine_loop") => {
             cite!("step_resolve_subroutine_loop");
             O::Goto("step_resolve_subroutine")
         }
+        // "Go to (4)" — reachable only through the phase's own frame, which
+        // completes here and hands the run back to its Movement Phase (6.5.6).
         (StructKind::Run, "step_encounter_complete") => {
             cite!("step_encounter_complete");
-            O::InstrThenGoto(K::EncounterComplete, "step_pass_ice")
+            cite!("rule_encounter_ice_next_phase");
+            O::Goto("step_pass_ice")
+        }
+        (StructKind::Encounter, "step_encounter_complete") => {
+            cite!("step_encounter_complete");
+            cite!("rule_encounter_ice_next_phase");
+            O::Complete
         }
         (StructKind::Run, "step_pass_ice") => {
             cite!("step_pass_ice");

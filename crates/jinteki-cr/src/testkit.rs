@@ -3421,3 +3421,176 @@ pub fn guru_like(name: &'static str) -> PrintedCard {
     .labeled("guru: prevent the net damage")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W9a shapes: encounters as a timing structure (§6.5.9, §6.1.4b, §6.5.8)
+// ---------------------------------------------------------------------------
+
+/// Chrysalis / Archangel shape (6.5.9a + 9.1.8h): a piece of ice reading
+/// "When the Runner accesses this card, they encounter it." The encounter
+/// happens wherever the card is — accessed from HQ or R&D it is not
+/// installed, and 9.1.8h is what keeps the subroutine below active for
+/// exactly that encounter.
+///
+/// SIMPLIFICATION (§12 rule 3): Archangel's printed ability is optional and
+/// costs the Corp 3[credit]; the forced encounter here is mandatory and free,
+/// because every example using this shape is about the encounter, not about
+/// who pays for it. Chrysalis's own text is exactly this shape.
+pub fn accessed_encounter_ice(name: &'static str, strength: i32, net: i64) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, strength);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfAccessed,
+            vec![Instruction::ForceEncounter { ice: TargetSpec::SelfSource }],
+            false,
+        )
+        .labeled("chrysalis: encounter this card on access"),
+        AbilityDef::subroutine(vec![Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(net),
+            responsible: Side::Corp,
+        }])
+        .labeled("[sub] net damage"),
+    ];
+    c
+}
+
+/// Ganked! shape (6.5.9a): "When the Runner accesses this card, force them to
+/// encounter a rezzed piece of ice you control."
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card is optional ("you may") and
+/// trashes itself; both are orthogonal to the forced encounter the examples
+/// using this shape are about.
+pub fn ganked_encounter_like(name: &'static str) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_asset(name, 0, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfAccessed,
+        vec![Instruction::ForceEncounter {
+            ice: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::Rezzed, F::CardTypeIs(CardType::Ice)],
+            },
+        }],
+        false,
+    )
+    .labeled("ganked: encounter a rezzed piece of ice")];
+    c
+}
+
+/// Loot Box shape (6.1.4b): a piece of ice whose FIRST subroutine ends the
+/// run and whose second one does something observable. Encountered outside a
+/// run, the first subroutine ends the encounter instead, and the second never
+/// resolves.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card's first subroutine is "end
+/// the run unless the Runner pays 2[credit]" and its second reveals and adds
+/// a card from the stack; the declinable cost and the reveal are orthogonal
+/// to what happens to the second subroutine.
+pub fn loot_box_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 4);
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
+        AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Corp, Quantity::c(3))])
+            .labeled("[sub] The Corp gains 3"),
+    ];
+    c
+}
+
+/// Shiro shape (6.5.9a): a piece of ice whose first subroutine causes a card
+/// to be accessed and whose second one does something observable, so the
+/// example's "return to resolving subroutines on Shiro" is checkable.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card accesses the BOTTOM card of
+/// R&D after looking at the top one; which card is accessed is orthogonal.
+pub fn shiro_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 4);
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::AccessCards {
+            cards: TargetSpec::TopOfDeck(Side::Corp, 1),
+        }])
+        .labeled("[sub] The Runner accesses the top card of R&D"),
+        AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Corp, Quantity::c(2))])
+            .labeled("[sub] The Corp gains 2"),
+    ];
+    c
+}
+
+/// The Twins shape (6.5.9b): "When the Runner passes this ice, they encounter
+/// it again." — a forced encounter opened from the Movement Phase.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card is a Corp asset that trashes
+/// a copy of the passed ice from HQ; where the ability LIVES is orthogonal to
+/// 6.5.9b's claim about ending the run during the extra encounter.
+pub fn twins_ice(name: &'static str, strength: i32) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, strength);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfPassed,
+            vec![Instruction::ForceEncounter { ice: TargetSpec::SelfSource }],
+            false,
+        )
+        .labeled("twins: encounter this ice again"),
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
+    ];
+    c
+}
+
+/// Cell Portal shape (6.2.5d): "The Runner moves to this piece of ice. Derez
+/// this ice." During the Success Phase the Runner has no position and cannot
+/// move to one, so only the derez happens.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card sends the Runner to the
+/// OUTERMOST position; "no position can be entered" is what the example turns
+/// on, and it is the same refusal for either destination.
+pub fn cell_portal_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 4);
+    c.abilities = vec![AbilityDef::subroutine(vec![
+        Instruction::MoveRunnerToIce { ice: TargetSpec::SelfSource, encounter: false },
+        Instruction::Derez { target: TargetSpec::SelfSource },
+    ])
+    .labeled("[sub] Move to this ice; derez it")];
+    c
+}
+
+/// Gang Sign / Détente shape: a paid ability accessing 1 card from HQ with no
+/// run in progress (§7.2 as an instruction — the access structure without a
+/// breach around it).
+pub fn hq_access_button(name: &'static str) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::AccessCards {
+            cards: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::CardsInHandOf(Side::Corp)],
+            },
+        }],
+    )
+    .labeled("access-hq: access 1 card from HQ")];
+    c
+}
+
+/// Devil Charm shape (3.4.4a): "Lower the strength of the encountered ice by
+/// 3 for the remainder of the run." Used during an encounter with no run in
+/// progress, the stated duration names a structure that is not in progress
+/// (9.10.4) and the modification lasts for the remainder of the encounter
+/// instead (3.4.4a, via the implicit encounter duration of 3.9.5c).
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card trashes itself as the cost;
+/// the cost is orthogonal to the duration this shape exists to measure.
+pub fn devil_charm_like(name: &'static str, amount: i32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::ModifyStrength {
+            target: TargetSpec::EncounteredIce,
+            amount: -amount,
+            duration: Some(crate::lingering::WantedDuration::ThisRun),
+        }],
+    )
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+    .labeled("devil-charm: lower the encountered ice's strength for the run")];
+    c
+}

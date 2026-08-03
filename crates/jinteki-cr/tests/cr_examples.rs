@@ -204,6 +204,14 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_install_and_rez_reducing_total_1",
     "example_rule_cost_quantities_1",
     "example_rule_cost_interrupt_static_mandatory_1",
+    // Wave 9a: encounters as a timing structure (§6.5.9, §6.1.4b, §6.5.8c).
+    "example_rule_forced_encounter_1",
+    "example_rule_forced_encounter_during_run_1",
+    "example_rule_end_encounter_outside_run_1",
+    "example_rule_bypass_during_encounter_1",
+    "example_rule_active_exception_encounter_not_installed_1",
+    "example_rule_no_position_after_approach_server_1",
+    "example_rule_ice_strength_modification_duration_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -7118,6 +7126,326 @@ fn example_rule_cost_interrupt_static_mandatory_1() {
     assert_eq!(vm.st.objects[&obokata].zone, Zone::Root(ServerId::Remote(1)), "not stolen");
     assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "and no damage was suffered");
     assert_eq!(vm.st.runner.credits, 10);
+}
+
+
+// ===========================================================================
+// §6.5.9 / §6.1.4b / §6.5.8c — encounters as a timing structure (W9a)
+// ===========================================================================
+
+/// example_rule_forced_encounter_1 (6.5.9a): a Shiro-class subroutine causes
+/// a Chrysalis-class card to be accessed; that card's access ability forces
+/// an encounter with itself. The Encounter Ice Phase is resolved on its own
+/// — the Runner's position never changes — and when it is over, resolution
+/// returns to Shiro's remaining subroutines.
+#[test]
+fn example_rule_forced_encounter_1() {
+    let mut vm = Vm::empty(900);
+    let shiro = tk::install_ice(&mut vm, tk::shiro_like("Shiro-like"), ServerId::Rnd, true);
+    let chrysalis = vm.new_object(tk::accessed_encounter_ice("Chrysalis-like", 2, 2), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(chrysalis);
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.start_turn(Side::Runner);
+
+    // The plan: run R&D and let both of Shiro's subroutines resolve. The
+    // Corp's neutral policy discharges the mandatory forced-encounter
+    // instance the access pends.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Rnd)
+            .when(Match::jack_out().once(), Reply::JackOut(true))
+            .stop_at_action(),
+    );
+    let log = &vm.changes.log;
+    let pos = |pred: &dyn Fn(&GameChange) -> bool| log.iter().position(pred);
+    let accessed = pos(&|c| matches!(c, GameChange::CardAccessed { obj } if *obj == chrysalis))
+        .expect("Shiro's first subroutine caused the access");
+    let began = pos(&|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == chrysalis))
+        .expect("the accessed card forced an encounter with itself");
+    let ended = pos(&|c| matches!(c, GameChange::EncounterEnded { ice, .. } if *ice == chrysalis))
+        .expect("the forced encounter completed");
+    let gained = pos(&|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 2 }))
+        .expect("Shiro's second subroutine resolved");
+    assert!(accessed < began && began < ended && ended < gained,
+        "6.5.9a: encounter the accessed card, then return to resolving subroutines: {:?}", log);
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "the forced encounter's subroutine resolved");
+    // The forced encounter interrupted the encounter with Shiro (6.5.9a);
+    // that one resumed and ran to its own end afterwards.
+    assert!(
+        log.iter()
+            .position(|c| matches!(c, GameChange::EncounterEnded { ice, .. } if *ice == shiro))
+            .expect("the Shiro encounter ended too")
+            > ended,
+        "the interrupted encounter was still in progress and ended after the forced one: {}",
+        t.tail(4)
+    );
+}
+
+/// example_rule_active_exception_encounter_not_installed_1 (9.1.8h): the
+/// Runner accesses an Archangel-class card in HQ and is forced to encounter
+/// it. The card is not installed and therefore inactive — but 9.1.8h makes
+/// its subroutines active for that encounter, so the subroutine resolves.
+#[test]
+fn example_rule_active_exception_encounter_not_installed_1() {
+    let mut vm = Vm::empty(901);
+    let archangel = vm.new_object(tk::accessed_encounter_ice("Archangel-like", 6, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(archangel);
+    tk::install_rig(&mut vm, tk::hq_access_button("GangSign-like"));
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().uses("access-hq").stop_at_action(),
+    );
+    assert!(t.took("access-hq"), "the access happened: {}", t.tail(6));
+    assert!(!vm.st.objects[&archangel].zone.is_installed(), "the encountered card is in HQ");
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == archangel)),
+        "the accessed card was encountered while not installed"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { ice, .. } if *ice == archangel)),
+        "9.1.8h: its subroutine was active during that encounter: {:?}",
+        vm.changes.log
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "and it did its 2 net damage");
+}
+
+/// example_rule_end_encounter_outside_run_1 (6.1.4b): with no run in
+/// progress, the Runner accesses a card in HQ; a Ganked!-class ability forces
+/// an encounter with an installed Loot-Box-class piece of ice. Its first
+/// subroutine tries to end the run — there is no run, but the ENCOUNTER ends,
+/// so the second subroutine never resolves.
+#[test]
+fn example_rule_end_encounter_outside_run_1() {
+    let mut vm = Vm::empty(902);
+    let loot = tk::install_ice(&mut vm, tk::loot_box_like("LootBox-like"), ServerId::Remote(1), true);
+    let ganked = vm.new_object(tk::ganked_encounter_like("Ganked-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ganked);
+    tk::install_rig(&mut vm, tk::hq_access_button("Detente-like"));
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().uses("access-hq").stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == loot)),
+        "the forced encounter began outside any run: {}",
+        t.tail(8)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterEnded { ice, .. } if *ice == loot)),
+        "6.1.4b: 'end the run' with no run ended the encounter instead"
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::SubroutineResolved { ice, .. } if *ice == loot))
+            .count(),
+        1,
+        "only the first subroutine resolved: {:?}",
+        vm.changes.log
+    );
+    assert_eq!(vm.st.corp.credits, 0, "the second subroutine never resolved");
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "6.1.4b: no step of the Run Ends Phase ran — there was no run"
+    );
+}
+
+/// example_rule_forced_encounter_during_run_1 (6.5.9b): a Twins-class ability
+/// forces the Runner to encounter a piece of ice again when they pass it. A
+/// subroutine of that extra encounter ends the run: both the forced encounter
+/// AND the Movement Phase it was initiated from are aborted, and the game
+/// proceeds to the Run Ends Phase.
+#[test]
+fn example_rule_forced_encounter_during_run_1() {
+    let mut vm = Vm::empty(903);
+    let twins = tk::install_ice(&mut vm, tk::twins_ice("Twins-Ice", 1), ServerId::Remote(1), true);
+    tk::install_rig(&mut vm, tk::break_button("Breaker"));
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the remote, break the ETR subroutine in the FIRST
+    // encounter so the ice is passed, then let the forced re-encounter
+    // resolve it — 6.5.3 gives every encounter its own unbroken statuses.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Remote(1))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("break"))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == twins))
+            .count(),
+        2,
+        "the passed ice was encountered a second time: {}",
+        t.tail(10)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { ice, .. } if *ice == twins)),
+        "the unbroken subroutine resolved in the extra encounter"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "6.5.9b: the Movement Phase was aborted too — the run never reached the Success Phase"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "the game proceeded to the Run Ends Phase: {:?}",
+        vm.changes.log
+    );
+    assert!(vm.st.encounter.is_none(), "no encounter survived the run");
+}
+
+/// example_rule_bypass_during_encounter_1 (6.5.8c): the Runner plays a
+/// Forked-class effect and encounters a Troll-class piece of ice — zero
+/// subroutines — which they bypass with a Femme-class ability. Step 6.9.3b
+/// is never reached, so the vacuous "all subroutines broken" of 9.12.2d is
+/// never noted, Forked's trigger condition is not met, and the ice is not
+/// trashed.
+#[test]
+fn example_rule_bypass_during_encounter_1() {
+    let mut vm = Vm::empty(904);
+    let troll = tk::install_ice(&mut vm, tk::troll_like("Troll-like"), ServerId::Remote(1), true);
+    tk::install_rig(&mut vm, tk::forked_button("Forked-like", ServerId::Remote(1)));
+    tk::install_rig(&mut vm, tk::femme_like("Femme-like"));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("forked"))
+            .always_uses("femme")
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert!(t.took("forked") && t.took("femme"), "both abilities were used: {}", t.tail(10));
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterEnded { ice, .. } if *ice == troll)),
+        "the encounter ended when the ice was bypassed"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::AllSubsBroken { ice } if *ice == troll)),
+        "6.5.8c: step 6.9.3b never occurred, so nothing was vacuously all-broken: {:?}",
+        vm.changes.log
+    );
+    assert_eq!(
+        vm.st.objects[&troll].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "the Forked-class condition was not met and the ice was not trashed"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::IcePassed { ice } if *ice == troll)),
+        "6.5.8a: the Runner immediately proceeded to pass that ice"
+    );
+}
+
+/// example_rule_no_position_after_approach_server_1 (6.2.5d): a Ganked!-class
+/// ability forces the Runner to encounter a Cell-Portal-class piece of ice in
+/// the middle of breaching a server. The run is already in its Success Phase,
+/// where the Runner has no position and cannot move to one — so the
+/// subroutine's move does nothing and only the derez happens.
+#[test]
+fn example_rule_no_position_after_approach_server_1() {
+    let mut vm = Vm::empty(905);
+    let portal = tk::install_ice(&mut vm, tk::cell_portal_like("CellPortal-like"), ServerId::Remote(2), true);
+    tk::install_root(&mut vm, tk::ganked_encounter_like("Ganked-like"), ServerId::Remote(1), false);
+    tk::install_rig(&mut vm, tk::break_button("Breaker"));
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the undefended remote; the breach accesses Ganked!, whose
+    // ability forces the encounter. Halt in the forced encounter's paid
+    // window, while the Success Phase is in progress.
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Remote(1))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.st.encounter.as_ref().map(|e| e.ice),
+        Some(portal),
+        "the forced encounter is in progress: {}",
+        script.transcript().tail(8)
+    );
+    assert!(
+        vm.run_ctx().expect("the run is still in progress").position.is_none(),
+        "6.2.5d: during the Success Phase the Runner has no position"
+    );
+    script.run(&mut vm);
+    assert!(!vm.st.objects[&portal].faceup, "the subroutine derezzed the ice");
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::IceApproached { ice } if *ice == portal)),
+        "6.2.5d: the Runner could not move to that position: {:?}",
+        vm.changes.log
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Remote(1))),
+        "the attacked server was never changed by the refused move"
+    );
+}
+
+/// example_rule_ice_strength_modification_duration_1 (3.4.4a): the Runner
+/// accesses an Archangel-class card in HQ with a Gang-Sign-class ability and
+/// is forced to encounter it. A Devil-Charm-class ability lowers the
+/// encountered ice's strength "for the remainder of the run" — but no run is
+/// in progress, so the modification lasts for the remainder of the ENCOUNTER
+/// instead.
+#[test]
+fn example_rule_ice_strength_modification_duration_1() {
+    let mut vm = Vm::empty(906);
+    let archangel = vm.new_object(tk::accessed_encounter_ice("Archangel-like", 6, 0), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(archangel);
+    tk::install_rig(&mut vm, tk::hq_access_button("GangSign-like"));
+    tk::install_rig(&mut vm, tk::devil_charm_like("DevilCharm-like", 3));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .uses("access-hq")
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("devil-charm"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert!(
+        vm.st.encounter.is_some() && vm.current_run.is_none(),
+        "an encounter with no run in progress: {}",
+        script.transcript().tail(8)
+    );
+    assert_eq!(
+        vm.effective_strength(archangel),
+        Some(3),
+        "the strength reduction applies during the encounter"
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(archangel),
+        Some(6),
+        "3.4.4a: with no run to outlive, the reduction lasted for the encounter only"
+    );
 }
 
 // ===========================================================================

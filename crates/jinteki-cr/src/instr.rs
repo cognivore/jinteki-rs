@@ -226,6 +226,17 @@ pub enum Instruction {
     BreakSubroutines { subs: SubroutineSpec },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).
     BypassEncounteredIce,
+    /// CR 6.5.9a: "The Runner encounters <a piece of ice>." — a FORCED
+    /// encounter: an Encounter Ice Phase resolved outside the run's normal
+    /// progression, without changing the Runner's position, after which
+    /// resolution returns to this instruction's ability and proceeds from
+    /// there (6.5.9c: this instruction is not finished until the encounter
+    /// is complete). The ice is a target POSITION, so a Chrysalis-class
+    /// "they encounter it" (itself, uninstalled — its subroutines are active
+    /// for exactly that encounter, 9.1.8h) and a Ganked!-class "force the
+    /// Runner to encounter a rezzed piece of ice you control" are the same
+    /// instruction.
+    ForceEncounter { ice: TargetSpec },
     /// "+N strength" / "-N strength" on a card, for a duration. The TARGET
     /// is a position (an icebreaker pumping itself is `SelfSource`; a Devil-
     /// Charm-class ability lowering a piece of ice's strength names the ice)

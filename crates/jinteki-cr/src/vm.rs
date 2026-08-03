@@ -661,6 +661,22 @@ impl Vm {
     // ------------------------------------------------------------------
 
     fn tick_structure(&mut self) {
+        // CR 6.5.8a / 6.2.7c / 6.1.4b: an aborted Encounter Ice Phase ends
+        // "without following any of its remaining steps" — the instruction
+        // that aborted it resolved to completion first (9.11.2), and the
+        // phase completes as soon as it is on top of the stack again.
+        let aborted = matches!(
+            self.frames.last(),
+            Some(Frame::Structure(StructureFrame { ctx: StructCtx::Encounter(e), .. }))
+                if e.aborted
+        );
+        if aborted {
+            cite!("rule_bypass");
+            cite!("rule_ice_change_encounter_uninstall_derez");
+            self.complete_structure();
+            self.checkpoint_and_react(None);
+            return;
+        }
         let (kind, cursor, phase) = {
             let Frame::Structure(sf) = self.frames.last().unwrap() else { unreachable!() };
             (sf.kind, sf.cursor, sf.phase)
@@ -712,6 +728,24 @@ impl Vm {
                     let idx = self.table(kind).index_of(target);
                     self.set_structure_jump_at(me, idx);
                     self.set_structure_phase_at(me, StepPhase::Checkpoint);
+                }
+                StepOp::OpenPhase { phase, then } => {
+                    // 9.2.2b: the phase runs as its own structure. This frame
+                    // is parked at `then` — the step the parent continues from
+                    // when the phase completes — and the phase's frame goes on
+                    // top of it.
+                    cite!("rule_run_timing_structure");
+                    let me = self.frames.len() - 1;
+                    let idx = self.table(kind).index_of(then);
+                    self.set_structure_jump_at(me, idx);
+                    self.set_structure_phase_at(me, StepPhase::Checkpoint);
+                    debug_assert_eq!(phase, crate::timing::StructKind::Encounter);
+                    // The ice in the Runner's position is the one encountered
+                    // (6.5.1); with the position vacated there is nothing to
+                    // encounter and the run moves on.
+                    if let Some(ice) = self.run_ctx().and_then(|r| self.approached_ice(r)) {
+                        self.open_encounter_phase(ice, false);
+                    }
                 }
                 StepOp::Paw(classes) => {
                     // 9.12.2d: for zero-sub ice, "all subroutines broken"
@@ -1038,6 +1072,16 @@ impl Vm {
             }
             return;
         };
+        // 6.2.7 governs "the piece of ice in the Runner's CURRENT POSITION",
+        // which is the ice the run's own Encounter Ice Phase was opened for.
+        // A forced encounter (6.5.9a) is resolved outside the run's
+        // progression — its ice need not be in the Runner's position and need
+        // not be installed at all (9.1.8h) — so none of 6.2.7 applies to it,
+        // and 6.5.9d says as much from the other direction.
+        if self.encounter_ctx().map(|c| c.forced).unwrap_or(false) {
+            cite!("rule_move_during_forced");
+            return;
+        }
         // 6.2.7c: uninstalled or derezzed while being encountered — the
         // Encounter Phase ends and the run continues to the Movement Phase.
         let gone = self
@@ -1047,11 +1091,11 @@ impl Vm {
             .map(|o| !o.zone.is_installed() || !o.faceup)
             .unwrap_or(true);
         if gone {
+            // The Encounter Ice Phase ends; the run (if there is one) is
+            // already parked at its Movement Phase, and a FORCED encounter
+            // ending here leaves the underlying run's timing alone (6.5.9d).
             cite!("rule_ice_change_encounter_uninstall_derez");
-            self.end_encounter();
-            if self.run_ctx().is_some() {
-                self.jump_run_to("step_pass_ice");
-            }
+            self.abort_encounter_phase();
             return;
         }
         // 6.2.7d: the encountered ice moved to another position, or was
@@ -1093,7 +1137,6 @@ impl Vm {
             StepKind::SetPositionOutermost => Instruction::SetPositionOutermost,
             StepKind::ApproachIce => Instruction::ApproachIce,
             StepKind::EncounterIce => Instruction::EncounterIce,
-            StepKind::EncounterComplete => Instruction::PassIce, // marker; exec handles
             StepKind::PassIce => Instruction::PassIce,
             StepKind::JackOutChoice => Instruction::JackOutChoice,
             StepKind::MovePositionInward => Instruction::MovePositionInward,
@@ -1234,14 +1277,14 @@ impl Vm {
                 }
             }
             StepKind::EncounterIce => {
-                let ice = {
-                    let r = self.run_ctx().unwrap();
-                    self.approached_ice(r).expect("encounter requires approached ice")
-                };
+                // 6.9.3a: the ice this phase was opened for — the one in the
+                // Runner's position for a run encounter, the named one for a
+                // forced encounter (6.5.9a).
+                let ice = self
+                    .encounter_ctx()
+                    .map(|c| c.ice)
+                    .expect("the Encounter Ice Phase carries the ice it was opened for");
                 self.begin_encounter(ice);
-            }
-            StepKind::EncounterComplete => {
-                self.end_encounter();
             }
             StepKind::PassIce => {
                 let (came, server, pos) = {
@@ -1665,10 +1708,58 @@ impl Vm {
     // Encounters and subroutines
     // ------------------------------------------------------------------
 
+    /// CR 6.5.1 + 9.2.2b: open an Encounter Ice Phase as its own timing
+    /// structure, on top of whatever is resolving. `forced` marks 6.5.9a's
+    /// forced encounter — one resolved outside the run's normal progression,
+    /// which does not change the Runner's position (and 6.5.9c: the
+    /// instruction that created it is not finished until it completes, which
+    /// is what putting the frame above that ability's frame means).
+    fn open_encounter_phase(&mut self, ice: ObjectId, forced: bool) {
+        cite!("rule_encounter_ice_phase");
+        if forced {
+            cite!("rule_forced_encounter");
+            cite!("rule_forced_encounter_end");
+        }
+        let id = self.next_structure;
+        self.next_structure += 1;
+        self.frames.push(Frame::Structure(StructureFrame {
+            kind: crate::timing::StructKind::Encounter,
+            instance_id: id,
+            cursor: 0,
+            phase: StepPhase::Enter,
+            pending_jump: None,
+            ctx: StructCtx::Encounter(crate::frames::EncounterCtx {
+                ice,
+                forced,
+                outer: None,
+                imminents_at_open: self.imminents.len(),
+                aborted: false,
+            }),
+        }));
+    }
+
+    /// The innermost Encounter Ice Phase in progress.
+    fn encounter_ctx(&self) -> Option<&crate::frames::EncounterCtx> {
+        self.frames.iter().rev().find_map(|f| match f {
+            Frame::Structure(StructureFrame { ctx: StructCtx::Encounter(e), .. }) => Some(e),
+            _ => None,
+        })
+    }
+
     fn begin_encounter(&mut self, ice: ObjectId) {
         cite!("rule_subroutines_initial_status_in_encounter");
         let id = self.next_encounter;
         self.next_encounter += 1;
+        // 6.5.9a: a forced encounter can begin while another encounter is in
+        // progress (Shiro → Chrysalis). Everything that reads "the encounter"
+        // reads the innermost one; the interrupted one is put back when this
+        // phase completes.
+        let outer = self.st.encounter.take();
+        if let Some(Frame::Structure(sf)) = self.frames.last_mut() {
+            if let StructCtx::Encounter(e) = &mut sf.ctx {
+                e.outer = outer;
+            }
+        }
         self.st.encounter = Some(EncounterState {
             id,
             ice,
@@ -1702,12 +1793,37 @@ impl Vm {
         }
     }
 
+    /// The encounter STATE ends (the change is recorded). The phase's frame is
+    /// wound up separately — by [`Vm::complete_encounter_phase`] at step
+    /// 6.9.3e, or by [`Vm::abort_encounter_phase`] where an effect ends it
+    /// early.
     fn end_encounter(&mut self) {
         if let Some(e) = self.st.encounter.take() {
             self.changes.record(GameChange::EncounterEnded {
                 ice: e.ice,
                 encounter_id: e.id,
             });
+        }
+    }
+
+    /// CR 6.5.8a / 6.2.7c: the Encounter Ice Phase is ABORTED. The encounter
+    /// itself ends now (so nothing else treats it as in progress); the phase's
+    /// frame is flagged and completes as soon as the instruction that aborted
+    /// it has finished resolving, without following any of its remaining steps
+    /// — so no further subroutine resolves (9.8.7c).
+    fn abort_encounter_phase(&mut self) {
+        self.end_encounter();
+        let Some(pos) = self.frames.iter().rposition(|f| {
+            matches!(f, Frame::Structure(StructureFrame { ctx: StructCtx::Encounter(_), .. }))
+        }) else {
+            return;
+        };
+        if let Some(Frame::Structure(sf)) = self.frames.get_mut(pos) {
+            if let StructCtx::Encounter(e) = &mut sf.ctx {
+                e.aborted = true;
+                // The interrupted encounter comes back with the phase (6.5.9a).
+                self.st.encounter = e.outer.take();
+            }
         }
     }
 
@@ -1736,10 +1852,21 @@ impl Vm {
         for (seq, def) in befores {
             out.push((SubKey { category: 1, src: seq, ord: 0 }, def));
         }
-        // (c) printed, in printed order (9.8.3c), honoring 9.1.9 losses.
+        // (c) printed, in printed order (9.8.3c), honoring 9.1.9 losses — and
+        // 9.1.7: only ACTIVE abilities do anything. For a piece of ice that is
+        // not installed, that activity comes from 9.1.8h and lasts exactly as
+        // long as the encounter with it, which is what makes a forced
+        // encounter with a card in HQ resolve its subroutines at all.
         cite!("rule_subroutine_origin_printed");
+        cite!("rule_ability_active");
+        cite!("rule_active_exception_encounter_not_installed");
+        let threat = self.threat_level();
+        let encountered = self.st.encounter.as_ref().map(|e| e.ice);
         for (i, a) in self.st.objects[&ice].printed.abilities.iter().enumerate() {
-            if a.kind == AbilityKind::Subroutine && self.ability_present(ice, i) {
+            if a.kind == AbilityKind::Subroutine
+                && self.ability_present(ice, i)
+                && ability_active(&self.st.objects[&ice], a, encountered, self.st.accessed, threat)
+            {
                 out.push((SubKey { category: 3, src: 0, ord: i as u32 }, a.clone()));
             }
         }
@@ -2065,19 +2192,37 @@ impl Vm {
         let Some(run_pos) = self.frames.iter().rposition(|f| {
             matches!(f, Frame::Structure(StructureFrame { ctx: StructCtx::Run(_), .. }))
         }) else {
-            // CR 6.1.4c: "end the run" with no run — if there is an
-            // encounter, it ends; otherwise nothing.
+            // CR 6.1.4b: no run, but an encounter in progress — THAT encounter
+            // ends without resolving any more of its steps, open priority
+            // windows are processed as in 6.8.2, and no step of the Run Ends
+            // Phase runs. Anything begun inside the encounter (a breach, an
+            // access, the ability resolving right now) is above the phase's
+            // frame and ends with it; anything already in progress when the
+            // encounter began is below it and is untouched. 6.1.4c: with no
+            // encounter either, the effect does nothing.
             cite!("rule_end_run_no_run_or_encounter");
-            self.end_encounter();
+            self.end_run_ends_encounter_phase();
             return;
         };
         while self.frames.len() > run_pos + 1 {
             let f = self.frames.pop().unwrap();
-            if let Frame::Window(w) = f {
-                // 6.8.2/9.2.8f: open windows close; pendings die untriggered.
-                cite!("rule_run_ends_close_paws");
-                cite!("rule_run_ends_close_reaction_window");
-                self.drop_window_pendings(&w);
+            match f {
+                Frame::Window(w) => {
+                    // 6.8.2/9.2.8f: open windows close; pendings die untriggered.
+                    cite!("rule_run_ends_close_paws");
+                    cite!("rule_run_ends_close_reaction_window");
+                    self.drop_window_pendings(&w);
+                }
+                // 6.5.9b: during a forced encounter, "end the run" applies to
+                // the Encounter Ice Phase being resolved AND to the phase it
+                // was initiated from — every encounter frame above the run
+                // unwinds, innermost first.
+                Frame::Structure(StructureFrame { ctx: StructCtx::Encounter(e), .. }) => {
+                    cite!("rule_forced_encounter_during_run");
+                    self.end_encounter();
+                    self.st.encounter = e.outer;
+                }
+                _ => {}
             }
         }
         self.imminents.clear();
@@ -2096,11 +2241,62 @@ impl Vm {
         self.checkpoint_and_react(None);
     }
 
+    /// CR 6.1.4b: "end the run" resolving with no run in progress but an
+    /// encounter in progress. The encounter ends without resolving any more of
+    /// its steps: every frame above the phase unwinds (open priority windows
+    /// are closed as in 6.8.2, dropping their pendings; a breach or access
+    /// begun inside the encounter ends with it), and then the phase itself
+    /// completes.
+    fn end_run_ends_encounter_phase(&mut self) {
+        let Some(pos) = self.frames.iter().rposition(|f| {
+            matches!(f, Frame::Structure(StructureFrame { ctx: StructCtx::Encounter(_), .. }))
+        }) else {
+            return;
+        };
+        cite!("rule_end_encounter_outside_run");
+        let depth = match &self.frames[pos] {
+            Frame::Structure(StructureFrame { ctx: StructCtx::Encounter(e), .. }) => {
+                e.imminents_at_open
+            }
+            _ => 0,
+        };
+        while self.frames.len() > pos + 1 {
+            let f = self.frames.pop().unwrap();
+            match f {
+                Frame::Window(w) => {
+                    cite!("rule_run_ends_close_paws");
+                    cite!("rule_run_ends_close_reaction_window");
+                    self.drop_window_pendings(&w);
+                }
+                Frame::Structure(StructureFrame { ctx: StructCtx::Access(a), .. }) => {
+                    self.st.accessed = None;
+                    self.changes.record(GameChange::AccessEnded { obj: a.card });
+                }
+                _ => {}
+            }
+        }
+        self.imminents.truncate(depth);
+        // 10.3.6: the phase's frame pops before its closing checkpoint.
+        self.complete_structure();
+        self.checkpoint_and_react(None);
+    }
+
     fn complete_structure(&mut self) {
         let Some(Frame::Structure(sf)) = self.frames.pop() else { unreachable!() };
-        match &sf.ctx {
+        match sf.ctx {
             StructCtx::Turn { .. } => {
                 // "…is complete, and the game moves to the other turn."
+            }
+            StructCtx::Encounter(e) => {
+                // 6.5.6 / 6.9.3e: the phase is over. An ABORTED phase already
+                // ended its encounter (and put back the one it interrupted);
+                // a phase reaching step (e) ends it here.
+                cite!("rule_encounter_ice_next_phase");
+                if !e.aborted {
+                    self.end_encounter();
+                    cite!("rule_forced_encounter");
+                    self.st.encounter = e.outer;
+                }
             }
             StructCtx::Run(r) => {
                 cite!("step_run_complete");
@@ -2341,6 +2537,7 @@ impl Vm {
             | Instruction::IncreaseImminentDamage { .. }
             | Instruction::PreventTrashOf(_)
             | Instruction::BypassEncounteredIce
+            | Instruction::ForceEncounter { .. }
             | Instruction::ModifyStrength { .. }
             | Instruction::ModifySubtypes { .. }
             | Instruction::Derez { .. }
@@ -3313,6 +3510,7 @@ impl Vm {
             | Instruction::AccessCards { cards: spec }
             | Instruction::ModifySubtypes { target: spec, .. }
             | Instruction::MoveIce { ice: spec, .. }
+            | Instruction::ForceEncounter { ice: spec }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -5228,10 +5426,31 @@ impl Vm {
                 });
             }
             Instruction::BypassEncounteredIce => {
+                // 6.5.8a: the Encounter Ice Phase is ABORTED and the Runner
+                // immediately proceeds to pass that ice — which is where the
+                // run was already parked when it opened the phase, so nothing
+                // redirects the run here. 6.5.8b/c: steps 6.9.3b and 6.9.3c
+                // simply never occur, so subroutines are neither broken nor
+                // resolved (and for zero-sub ice, 9.12.2d's vacuous "all
+                // broken" is never noted, because it is noted when step
+                // 6.9.3b BEGINS).
+                cite!("rule_bypass");
+                cite!("rule_bypass_start_of_encounter");
                 cite!("rule_bypass_during_encounter");
-                self.end_encounter();
-                // The run proceeds to the Movement Phase (6.5.8).
-                self.jump_run_to("step_pass_ice");
+                self.abort_encounter_phase();
+            }
+            Instruction::ForceEncounter { ice } => {
+                // 6.5.9a: resolve an Encounter Ice Phase WITHOUT changing the
+                // Runner's position, then return to this effect and proceed —
+                // which is what pushing the phase's frame above this ability's
+                // frame means (6.5.9c). The ice need not be installed: 9.1.8h
+                // keeps its subroutines active for this encounter.
+                cite!("rule_forced_encounter");
+                cite!("rule_active_exception_encounter_not_installed");
+                let targets = self.resolve_targets(ice, Some(source.obj), &imm.targets);
+                if let Some(&t) = targets.first() {
+                    self.open_encounter_phase(t, true);
+                }
             }
             Instruction::ModifyStrength { target, amount, duration } => {
                 let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);

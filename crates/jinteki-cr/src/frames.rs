@@ -47,6 +47,32 @@ pub struct RunCtx {
     pub jump_to_run_ends: bool,
 }
 
+/// Per-encounter-phase state (§6.5). The phase is a timing structure of its
+/// own (9.2.2b), so a forced encounter (6.5.9a) is a frame pushed anywhere —
+/// during another encounter, during a breach, or outside a run entirely.
+#[derive(Debug, Clone)]
+pub struct EncounterCtx {
+    /// The piece of ice being encountered. It need not be installed
+    /// (9.1.8h keeps its subroutines active for exactly this phase).
+    pub ice: ObjectId,
+    /// CR 6.5.9a: this phase is a FORCED encounter — resolved outside the
+    /// run's normal progression, without changing the Runner's position.
+    pub forced: bool,
+    /// CR 6.5.9a: the encounter this one interrupted, restored when this
+    /// phase completes ("return to the effect that caused the encounter and
+    /// proceed from there"). Only one encounter is "in progress" at a time
+    /// for everything that reads it, and it is the innermost.
+    pub outer: Option<crate::vm::EncounterState>,
+    /// Imminence-stack depth when the phase opened: an "end the run" that
+    /// unwinds this phase (6.1.4b) drops exactly the imminences raised inside
+    /// it.
+    pub imminents_at_open: usize,
+    /// CR 6.5.8a / 6.2.7c / 6.1.4b: the phase has been aborted and completes
+    /// without following any of its remaining steps, as soon as the
+    /// instruction that aborted it has finished resolving.
+    pub aborted: bool,
+}
+
 /// Per-breach state (§7.3-7.5).
 #[derive(Debug, Clone)]
 pub struct BreachCtx {
@@ -79,6 +105,7 @@ pub struct AccessCtx {
 pub enum StructCtx {
     Turn { side: Side },
     Run(RunCtx),
+    Encounter(EncounterCtx),
     Breach(BreachCtx),
     Access(AccessCtx),
 }
