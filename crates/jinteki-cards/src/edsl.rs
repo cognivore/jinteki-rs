@@ -82,15 +82,14 @@
 //! ```
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
-use jinteki_cr::effects::EffectClass;
-pub use jinteki_cr::effects::DamageKind;
-use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
+pub use jinteki_cr::effects::{DamageKind, EffectClass};
 use jinteki_cr::object::PrintedCard;
 
 // Re-exported so a deck file needs exactly one `use` line. These are the
 // kernel's own types: a designer who outgrows the helpers below can reach
 // for them directly and is still inside the public vocabulary.
 pub use jinteki_cr::ability::{Cost, StaticDecl, TriggerCond, TriggerRequirement};
+pub use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
 pub use jinteki_cr::instr::{
     InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, SubroutineSpec,
     TargetFilter, TargetSpec, TrashDestination,
@@ -1104,6 +1103,61 @@ pub fn prevent_all_damage(kind: DamageKind) -> Instruction {
 /// "…would suffer <kind> damage" as an interrupt condition (9.9.4).
 pub fn would_damage(kind: DamageKind) -> TriggerCond {
     TriggerCond::WouldDamage { kind: Some(kind), first_each_run: false }
+}
+/// "Host the <accessed> card on this program/resource." (Cupellation and
+/// Film Critic class; the accessed card is no longer being accessed.)
+pub fn host_accessed_on_self() -> Instruction {
+    Instruction::HostCards { cards: TargetSpec::AccessedCard, host: TargetSpec::SelfSource }
+}
+/// "…access 2 additional cards." (Cupellation class; 7.3.5.)
+pub fn additional_accesses(n: i64) -> Instruction {
+    Instruction::AdditionalAccesses(Quantity::c(n))
+}
+/// "Whenever you breach <server>, if <requirements>…"
+pub fn breaches_server_if(server: ServerId, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::BreachesServer { server, requires: reqs.to_vec() }
+}
+/// "…if this program has a hosted Corp card" (Cupellation class).
+pub fn source_hosts_corp_card() -> TriggerRequirement {
+    TriggerRequirement::SourceHostsCorpCard
+}
+/// "…this ice in R&D" / "…anywhere except in Archives" — zone stipulations
+/// on a trigger (9.6.5c class; Archangel).
+pub fn source_in_rnd() -> TriggerRequirement {
+    TriggerRequirement::SourceInDeck
+}
+pub fn source_not_in_archives() -> TriggerRequirement {
+    TriggerRequirement::SourceNotInDiscard
+}
+/// "…they encounter it." (6.5.9a; Archangel class.)
+pub fn force_encounter_self() -> Instruction {
+    Instruction::ForceEncounter { ice: TargetSpec::SelfSource }
+}
+/// "Reveal <this card>." (1.21.3.)
+pub fn reveal_self() -> Instruction {
+    Instruction::RevealCards { cards: TargetSpec::SelfSource }
+}
+/// "Add 1 installed Runner card to the grip." (Archangel class; 8.1.)
+pub fn add_installed_runner_card_to_grip() -> Instruction {
+    Instruction::AddCardsToHand {
+        cards: TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![TargetFilter::InstalledRunnerCard],
+            up_to: false,
+        },
+    }
+}
+/// "…access 1 card in the root of another server. If that card is an agenda,
+/// you cannot steal or trash it during this access." (Pinhole class.)
+pub fn access_one_root_of_another_server_restricted() -> Instruction {
+    Instruction::AccessCards {
+        cards: TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![TargetFilter::InRootOfServerOtherThanAttacked],
+            up_to: false,
+        },
+        restricted: true,
+    }
 }
 /// "…flip this identity." (rule_identity_double_sided.)
 pub fn flip_identity(side: Side) -> Instruction {

@@ -1694,6 +1694,19 @@ impl Vm {
             StepKind::StealIfAgenda => {
                 cite!("rule_after_mid_access_agenda");
                 let card = self.access_card().unwrap();
+                // Pinhole class: "you cannot steal or trash it during this
+                // access" — the printed "cannot" wins (1.2.2).
+                if self.access_restricted() {
+                    cite!("rule_cannot_precedence");
+                    return;
+                }
+                // Film Critic / Cupellation class: an accessed card HOSTED
+                // away mid-access is no longer being accessed — there is
+                // nothing left to steal.
+                if self.st.objects.get(&card).is_some_and(|o| o.host.is_some()) {
+                    cite!("rule_accessing");
+                    return;
+                }
                 if self.st.objects[&card].printed.card_type == CardType::Agenda {
                     let total = self.steal_cost_of(card);
                     // 1.16.1b: a cost that cannot be paid is not a choice —
@@ -3050,7 +3063,21 @@ impl Vm {
         }));
     }
 
+    /// Is the access in progress restricted (Pinhole class)?
+    fn access_restricted(&self) -> bool {
+        self.frames.iter().rev().find_map(|f| match f {
+            Frame::Structure(StructureFrame { ctx: StructCtx::Access(a), .. }) => {
+                Some(a.restricted)
+            }
+            _ => None,
+        }).unwrap_or(false)
+    }
+
     fn push_access(&mut self, card: ObjectId) {
+        self.push_access_with(card, false)
+    }
+
+    fn push_access_with(&mut self, card: ObjectId, restricted: bool) {
         let id = self.next_structure;
         self.next_structure += 1;
         self.frames.push(Frame::Structure(StructureFrame {
@@ -3059,7 +3086,7 @@ impl Vm {
             cursor: 0,
             phase: StepPhase::Enter,
             pending_jump: None,
-            ctx: StructCtx::Access(AccessCtx { card, must_trash: None }),
+            ctx: StructCtx::Access(AccessCtx { card, must_trash: None, restricted }),
         }));
     }
 
@@ -5220,7 +5247,7 @@ impl Vm {
             | Instruction::ShuffleCardsIntoDeck { targets: spec, .. }
             | Instruction::RemoveCardsFromGame { targets: spec }
             | Instruction::LookAtCards { cards: spec, .. }
-            | Instruction::AccessCards { cards: spec }
+            | Instruction::AccessCards { cards: spec, .. }
             | Instruction::ModifySubtypes { target: spec, .. }
             | Instruction::MoveIce { ice: spec, .. }
             | Instruction::ForceEncounter { ice: spec }
@@ -6041,6 +6068,14 @@ impl Vm {
                 cite!("rule_score_area");
                 o.zone == Zone::ScoreArea(side)
             }
+            TargetFilter::InRootOfServerOtherThanAttacked => {
+                cite!("rule_breaching_servers");
+                match (o.zone, self.current_run) {
+                    (Zone::Root(srv), Some((_, attacked, _))) => srv != attacked,
+                    (Zone::Root(_), None) => true,
+                    _ => false,
+                }
+            }
             TargetFilter::InDiscardOf(side) => {
                 cite!("rule_discard_pile");
                 o.zone == Zone::Discard(side)
@@ -6714,6 +6749,26 @@ impl Vm {
                     matches!(c, GameChange::CardPlayed { obj, side: s } if s == side
                         && self.st.objects.get(obj).is_some_and(|o| o.printed.card_type == CardType::Operation))
                 })
+            }
+            R::SourceInDeck => {
+                cite!("rule_condition_requirements_part_of_condition");
+                source.and_then(|c| self.st.objects.get(&c)).is_some_and(|o| {
+                    matches!(o.zone, Zone::Deck(_))
+                })
+            }
+            R::SourceNotInDiscard => {
+                cite!("rule_condition_requirements_part_of_condition");
+                source.and_then(|c| self.st.objects.get(&c)).is_some_and(|o| {
+                    !matches!(o.zone, Zone::Discard(_))
+                })
+            }
+            R::SourceHostsCorpCard => {
+                cite!("rule_host_via_ability");
+                let Some(src) = source else { return false };
+                self.st
+                    .objects
+                    .values()
+                    .any(|o| o.host == Some(src) && o.printed.side == Side::Corp)
             }
             R::RunnerMadeRunLastTurn { successful_only } => {
                 cite!("rule_hidden_or_open_information");
@@ -7619,14 +7674,24 @@ impl Vm {
                     }
                 });
             }
-            Instruction::AccessCards { cards } => {
+            Instruction::AdditionalAccesses(n) => {
+                // 7.3.5: the random-access limit for the breach in progress
+                // grows by the calculated amount (Cupellation class).
+                cite!("rule_counting_random_access_limit");
+                let extra = self.eval_quantity(n, Some(source.obj)).max(0) as u32;
+                if let Some(b) = self.breach_ctx_mut() {
+                    b.remaining_from_zone += extra;
+                }
+            }
+            Instruction::AccessCards { cards, restricted } => {
                 // CR 7.2: each announced card is accessed in its own access
                 // timing structure. Pushed innermost-last so the first
                 // announced card is accessed first (9.2.4d LIFO).
                 cite!("rule_accessing");
                 let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                let restricted = *restricted;
                 for c in targets.into_iter().rev() {
-                    self.push_access(c);
+                    self.push_access_with(c, restricted);
                 }
             }
             Instruction::BreachServer(server) => {
@@ -10314,7 +10379,9 @@ impl Vm {
                 + self.st.bp_fund
                 + self.spendable_hosted_credits(Side::Runner);
             if avail >= tc {
-                out.push(WindowOption::BasicTrash { card, cost: tc });
+                if !self.access_restricted() {
+                    out.push(WindowOption::BasicTrash { card, cost: tc });
+                }
             }
         }
         // Access-flagged paid abilities (9.3.6b).

@@ -101,6 +101,9 @@ pub enum TriggerCond {
     SelfTrashedByDamage,
     /// "Whenever the Runner breaches this server…" (Ash class).
     ThisServerBreached,
+    /// "Whenever you breach <this server>…" (Cupellation class — the server
+    /// is named by the sentence), with 9.6.5c requirements riding along.
+    BreachesServer { server: ServerId, requires: Vec<TriggerRequirement> },
     /// CR 7.3.8: "when the current breach ends" — the condition the kernel
     /// gives the conditional ability a delayed breach is treated as.
     BreachEnds,
@@ -315,6 +318,13 @@ pub enum TriggerRequirement {
     SelfScoredThisTurn,
     /// "…if you installed this resource this turn" (The Class Act class).
     SelfInstalledThisTurn,
+    /// Zone stipulations on a trigger (9.6.5c class): "…accesses this ice IN
+    /// R&D" (Archangel).
+    SourceInDeck,
+    /// "…anywhere except in Archives" (Archangel).
+    SourceNotInDiscard,
+    /// "…if this program has a hosted Corp card" (Cupellation class).
+    SourceHostsCorpCard,
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -1361,6 +1371,13 @@ pub fn trigger_matches(
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
             server_of_source == Some(*server)
         }
+        (
+            TriggerCond::BreachesServer { server, .. },
+            GameChange::BreachBegan { server: s },
+        ) => {
+            cite!("rule_breaching_servers");
+            server == s
+        }
         (TriggerCond::BreachEnds, GameChange::BreachEnded { .. }) => {
             cite!("rule_consecutive_breaches");
             true
@@ -1586,6 +1603,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         TriggerCond::SelfAccessed { requires }
         | TriggerCond::SelfScored { requires }
         | TriggerCond::ActionPhaseEnds { requires, .. }
+        | TriggerCond::BreachesServer { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
         _ => &[],
     }

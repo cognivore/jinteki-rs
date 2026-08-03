@@ -1692,3 +1692,134 @@ fn citadel_sanctuary_burns_everything_to_stop_the_meat() {
     assert_ne!(vm.st.objects[&cs].zone, Zone::Rig, "and so was Citadel Sanctuary");
     assert_eq!(vm.st.runner.tags, 2, "alive, tagged, and broke — but alive");
 }
+
+// ---------------------------------------------------------------------------
+// Wave 3: the access pack
+// ---------------------------------------------------------------------------
+
+/// Cupellation pockets a non-agenda out of an HQ access; the pocketed card is
+/// no longer being accessed, so no trash prompt follows.
+#[test]
+fn cupellation_pockets_the_accessed_card() {
+    let mut vm = Vm::empty(4600);
+    let cup = tk::install_rig(&mut vm, card("Cupellation"));
+    let pad = vm.new_object(tk::corp_filler("PAD-ish"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(pad);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::of(Kind::MidAccess).once(), Reply::take("pocket the evidence"))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&pad].host, Some(cup), "hosted on Cupellation: {}", t.tail(14));
+    assert_eq!(vm.st.runner.credits, 2, "paid 1");
+}
+
+/// Film Critic hosts an accessed agenda — no steal, no additional steal cost
+/// — and two clicks later adds it to the score area for its printed points.
+#[test]
+fn film_critic_shields_and_then_scores_the_agenda() {
+    let mut vm = Vm::empty(4601);
+    let fc = tk::install_rig(&mut vm, card("Film Critic"));
+    let bellona = vm.new_object(card("Bellona"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(bellona);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    vm.st.runner.credits = 1; // could never pay Bellona's 5-credit steal cost
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::reaction().once(), Reply::take("above the fray"))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::action().once(), Reply::take("publish the story"))
+            .when(Match::targets().once(), Reply::Targets(vec![bellona]))
+            .when(Match::action().once(), Reply::Halt),
+    );
+    script.run(&mut vm);
+    assert_eq!(vm.st.objects[&bellona].host, Some(fc), "hosted: {}", script.transcript().tail(14));
+    assert_eq!(vm.score(Side::Runner), 0, "not stolen, no cost paid");
+
+    script.run(&mut vm); // resume into the two-click publish
+    assert_eq!(
+        vm.st.objects[&bellona].zone,
+        Zone::ScoreArea(Side::Runner),
+        "entries={} {}",
+        script.transcript().entries.len(),
+        script.transcript().tail(30)
+    );
+    assert_eq!(vm.score(Side::Runner), 3, "Bellona's printed 3 points");
+}
+
+/// Archangel from HQ: the Corp pays 3 and the Runner ENCOUNTERS an ice that
+/// was never installed; its trace bounces an installed Runner card to grip.
+#[test]
+fn archangel_ambushes_from_hq() {
+    let mut vm = Vm::empty(4602);
+    let prog = tk::install_rig(&mut vm, tk::vanilla_runner_card("Some-Program", CardType::Program));
+    let arch = vm.new_object(card("Archangel"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(arch);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::reaction().once(), Reply::take("the ambush"))
+            .when(Match::of(Kind::NestedCost).once(), Reply::PayCost(true))
+            .when(Match::trace_spend(), Reply::Spend(0)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::trace_spend(), Reply::Spend(0))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == arch)),
+        "the ambush encounter happened: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Hand(Side::Runner), "bounced to grip: {}", t.tail(16));
+}
+
+/// Pinhole Threading: run one server, access a card in the ROOT OF ANOTHER —
+/// and an accessed agenda there can be neither stolen nor trashed.
+#[test]
+fn pinhole_threads_into_another_root_and_cannot_steal() {
+    let mut vm = Vm::empty(4603);
+    tk::install_root(&mut vm, tk::corp_filler("Decoy-Asset"), ServerId::Remote(1), true);
+    let agenda = tk::install_root(&mut vm, card("Bellona"), ServerId::Remote(2), false);
+    let ph = vm.new_object(card("Pinhole Threading"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(ph);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    vm.st.runner.credits = 9; // could afford Bellona's steal cost — but cannot steal
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(ph))
+            .when(Match::of(Kind::AttackedServer).once(), Reply::Server(ServerId::Remote(1)))
+            .when(Match::targets().once(), Reply::Targets(vec![agenda]))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == agenda)),
+        "accessed the OTHER server's root: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(2)), "not stolen, not trashed");
+    assert_eq!(vm.score(Side::Runner), 0);
+}

@@ -167,8 +167,20 @@ pub fn pinhole_threading() -> Card {
         .subtypes(&["Run"])
         .cost(1)
         .text("Run any server. If successful, instead of breaching the attacked server, access 1 card in the root of another server. If that card is an agenda, you cannot steal or trash it during this access.")
-        .unimplemented("Run any server. If successful, instead of breaching the attacked server, access 1 card in the root of another server.")
-        .unimplemented("If that card is an agenda, you cannot steal or trash it during this access.")
+        .play([Instruction::InitiateRun {
+            server: None,
+            allowed: RunServerSet::Any,
+            if_successful: vec![Instruction::CreateLingeringEffect {
+                payload: LingeringSpec::Replacement {
+                    applies_to: EffectClass::Breach,
+                    with: ReplacementTransform::SuppressAndResolve(vec![
+                        access_one_root_of_another_server_restricted(),
+                    ]),
+                    optional: false,
+                },
+                duration: WantedDuration::ThisRun,
+            }],
+        }])
         .build()
 }
 
@@ -344,9 +356,17 @@ pub fn cupellation() -> Card {
         .text("Limit 1 hosted card.")
         .text("Access → 1[credit]: Host the non-agenda card you are accessing faceup on this program. (If it was installed, it becomes uninstalled.)")
         .text("Whenever you breach HQ, if this program has a hosted Corp card, you may pay 1[credit] and trash this program to access 2 additional cards.")
-        .unimplemented("Limit 1 hosted card.")
-        .unimplemented("Access → 1[credit]: Host the non-agenda card you are accessing faceup on this program.")
-        .unimplemented("Whenever you breach HQ, if this program has a hosted Corp card, you may pay 1[credit] and trash this program to access 2 additional cards.")
+        .declares([can_host(&[], Some(1))])
+        .paid_access(credits(1), [host_accessed_on_self()])
+        .named("cupellation: pocket the evidence")
+        .may_when(
+            breaches_server_if(ServerId::Hq, &[source_hosts_corp_card()]),
+            [may_pay(
+                Cost { credits: Quantity::c(1), trash_self: true, ..Default::default() },
+                additional_accesses(2),
+            )],
+        )
+        .named("cupellation: deep dig")
         .build()
 }
 
@@ -469,16 +489,22 @@ pub fn film_critic() -> Card {
         .text("Film Critic can host a single agenda.")
         .text("Whenever you access an agenda, you may host that agenda on Film Critic (the agenda is no longer being accessed and is uninstalled).")
         .text("[click],[click]: Add an agenda hosted on Film Critic to your score area.")
-        .paid(
-            clicks(2),
-            [add_to_score_area(
-                choose(1, &[hosted_on_this_card(), of_type(CardType::Agenda)]),
-                Runner,
-                None,
-            )],
+        .declares([can_host(&[TargetFilter::CardTypeIs(CardType::Agenda)], Some(1))])
+        .may_when(
+            TriggerCond::RunnerAccessesCard { of_types: vec![CardType::Agenda] },
+            [host_accessed_on_self()],
         )
-        .unimplemented("Film Critic can host a single agenda.")
-        .unimplemented("Whenever you access an agenda, you may host that agenda on Film Critic.")
+        .named("film critic: above the fray")
+        .paid(clicks(2), [Instruction::AddToScoreArea {
+            cards: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![TargetFilter::HostedOnSource],
+                up_to: false,
+            },
+            to: Runner,
+            as_agenda: None,
+        }])
+        .named("film critic: publish the story")
         .build()
 }
 

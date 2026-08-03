@@ -457,9 +457,18 @@ pub fn archangel() -> Card {
         .text("While the Runner is accessing this ice in R&D, they must reveal it.")
         .text("When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it.")
         .text("[subroutine] Trace[6]. If successful, add 1 installed Runner card to the grip.")
-        .subroutine([trace(6, [add_to_hand(choose(1, &[installed_runner_card()]))])])
-        .unimplemented("While the Runner is accessing this ice in R&D, they must reveal it.")
-        .unimplemented("When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it.")
+        .when(
+            TriggerCond::SelfAccessed { requires: vec![source_in_rnd()] },
+            [reveal_self()],
+        )
+        .named("archangel: they must reveal it")
+        .may_when(
+            TriggerCond::SelfAccessed { requires: vec![source_not_in_archives()] },
+            [may_pay(credits(3), force_encounter_self())],
+        )
+        .named("archangel: the ambush")
+        .subroutine([trace(6, [add_installed_runner_card_to_grip()])])
+        .named("archangel: the hook")
         .build()
 }
 

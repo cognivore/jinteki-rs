@@ -329,7 +329,7 @@ impl Match {
     pub fn any() -> Match {
         Match::default()
     }
-    fn of(kind: Kind) -> Match {
+    pub fn of(kind: Kind) -> Match {
         Match { kind: Some(kind), ..Match::default() }
     }
     pub fn mulligan() -> Match {

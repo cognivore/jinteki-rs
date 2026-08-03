@@ -125,6 +125,8 @@ pub struct AccessCtx {
     /// in force for THIS access, and the means it stipulates (if any). The
     /// requirement lives exactly as long as the access does.
     pub must_trash: Option<crate::instr::TrashMeans>,
+    /// "…you cannot steal or trash it during this access." (Pinhole class.)
+    pub restricted: bool,
 }
 
 /// Structure-specific context.

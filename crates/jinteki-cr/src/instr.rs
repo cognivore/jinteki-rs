@@ -255,7 +255,15 @@ pub enum Instruction {
     /// time, each in its own access timing structure. The cards are a target
     /// POSITION, so "access the card you chose from the top of R&D" (Top Hat
     /// class) and "access this card" are the same instruction.
-    AccessCards { cards: TargetSpec },
+    AccessCards {
+        cards: TargetSpec,
+        /// "…you cannot steal or trash it during this access." (Pinhole
+        /// Threading class; a printed restriction on the access, 1.2.2.)
+        restricted: bool,
+    },
+    /// "…access 2 additional cards." (Cupellation class; raises 7.3.5's
+    /// random-access limit for the breach in progress.)
+    AdditionalAccesses(Quantity),
     /// CR 9.6.14d: "Resolve the <class> ability of <a card>." — an effect
     /// that attempts to resolve an ability of a card by naming its class
     /// rather than by the stipulation occurring. For the three conditional
@@ -1077,6 +1085,9 @@ pub enum TargetFilter {
     /// that names a HIDDEN-capable zone, which is what makes 4.1.2a's reveal
     /// necessary when the criteria also stipulate a characteristic.
     InDiscardOf(Side),
+    /// "…a card in the root of another server" (Pinhole class): installed in
+    /// the root of a server OTHER than the attacked one.
+    InRootOfServerOtherThanAttacked,
     /// CR 4.2.2: "1 of the top N cards of R&D" (Top Hat class) — a criterion
     /// that explicitly specifies the zone, which is what lets 1.15.2c's
     /// play-area restriction lift for it.
@@ -1174,6 +1185,14 @@ impl TargetFilter {
                 // 1.18.3: only an INSTALLED card can be advanced, so this
                 // criterion already names the play area.
                 | TargetFilter::CanBeAdvanced
+                // 1.13.2: a host relationship IS a location — "an agenda
+                // hosted on Film Critic" says where the card is as precisely
+                // as "a card in HQ" does. Without this the restriction never
+                // lifts for a card that is hosted but NOT installed (Film
+                // Critic's agenda, Bookmark's facedown cards), and such a
+                // card could never be targeted by the very ability that put
+                // it there.
+                | TargetFilter::HostedOnSource
         )
     }
 }

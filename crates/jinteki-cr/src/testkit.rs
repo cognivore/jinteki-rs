@@ -3305,6 +3305,7 @@ pub fn top_hat_like(name: &'static str, top: u32) -> PrintedCard {
                     side: Side::Corp,
                     n: top,
                 }], up_to: false },
+            restricted: false,
         }],
     )
     .labeled("top-hat: access 1 of the top 5 cards of R&D")];
@@ -3854,8 +3855,7 @@ pub fn shiro_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 4);
     c.abilities = vec![
         AbilityDef::subroutine(vec![Instruction::AccessCards {
-            cards: TargetSpec::TopOfDeck(Side::Corp, 1),
-        }])
+            cards: TargetSpec::TopOfDeck(Side::Corp, 1), restricted: false }])
         .labeled("[sub] The Runner accesses the top card of R&D"),
         AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Corp, Quantity::c(2))])
             .labeled("[sub] The Corp gains 2"),
@@ -3911,8 +3911,7 @@ pub fn hq_access_button(name: &'static str) -> PrintedCard {
         vec![Instruction::AccessCards {
             cards: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::CardsInHandOf(Side::Corp)], up_to: false },
-        }],
+                criteria: vec![F::CardsInHandOf(Side::Corp)], up_to: false }, restricted: false }],
     )
     .labeled("access-hq: access 1 card from HQ")];
     c
@@ -4522,7 +4521,7 @@ pub fn otoroshi_like(name: &'static str, card: ObjectId) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
-        vec![Instruction::AccessCards { cards: TargetSpec::Objects(vec![card]) }],
+        vec![Instruction::AccessCards { cards: TargetSpec::Objects(vec![card]), restricted: false }],
     )
     .labeled("otoroshi: the Runner accesses that card")];
     c
