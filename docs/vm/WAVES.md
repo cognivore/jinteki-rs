@@ -6,7 +6,7 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W16b)
+## Odometers (after W16c)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
@@ -14,7 +14,7 @@ truth.
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
 - **DP-7b: 831/1420** distinct rules cited (58.6%; 831 of the 1385 non-header ids); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **DP-7c: 52/3717** reference tests ported and passing
+- **DP-7c: 58/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
   `docs/vm/CORPUS.md`; the divergence ledger is

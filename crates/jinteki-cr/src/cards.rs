@@ -63,6 +63,32 @@ pub fn beanstalk_royalties() -> PrintedCard {
     c
 }
 
+/// Extract — Operation: Transaction. Cost 3. COMPLETE.
+/// "Gain 6[credit]. You may trash 1 of your installed cards to gain
+///  3[credit]."
+///
+/// The second sentence is 1.16.11a's "you may pay [cost] to [effect]", where
+/// the cost is trashing a card the Corp chooses — so with nothing installed
+/// there is no choice to make (1.16.1b) and the Corp is never asked.
+pub fn extract() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Extract", Side::Corp, CardType::Operation);
+    c.subtypes = vec!["Transaction"];
+    c.cost = Some(3);
+    c.abilities = vec![AbilityDef::play(vec![
+        Instruction::GainCredits(Side::Corp, Quantity::c(6)),
+        Instruction::NestedCostThen {
+            cost: Cost {
+                trash_matching: Some((1, vec![TargetFilter::InstalledCorpCard])),
+                ..Default::default()
+            },
+            effect: Box::new(Instruction::GainCredits(Side::Corp, Quantity::c(3))),
+            payer: Some(Side::Corp),
+        },
+    ])
+    .labeled("extract: gain 6, then may trash to gain 3")];
+    c
+}
+
 /// Cyberdex Trial — Operation. Cost 0.
 /// "Purge virus counters."
 pub fn cyberdex_trial() -> PrintedCard {
@@ -238,6 +264,35 @@ pub fn hostile_infrastructure() -> PrintedCard {
     c
 }
 
+/// Rashida Jaheem — Asset: Character. Rez 0, trash 1. COMPLETE.
+/// "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and
+///  draw 3 cards."
+///
+/// 9.6.9: "you may" makes the conditional ability optional; the trash is
+/// 1.16.11a's cost, paid before the two effects — and the draw is 8.4.2's
+/// procedure, so a deck that runs out during it loses the game at the next
+/// checkpoint (10.3.1b) rather than silently drawing fewer.
+pub fn rashida_jaheem() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Rashida Jaheem", Side::Corp, CardType::Asset);
+    c.subtypes = vec!["Character"];
+    c.cost = Some(0);
+    c.trash_cost = Some(1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::TurnBegins(Side::Corp),
+        vec![Instruction::NestedCostThen {
+            cost: Cost::trash_self(),
+            effect: Box::new(Instruction::Combined(vec![
+                Instruction::GainCredits(Side::Corp, Quantity::c(3)),
+                Instruction::Draw(Side::Corp, 3),
+            ])),
+            payer: Some(Side::Corp),
+        }],
+        true,
+    )
+    .labeled("rashida jaheem: trash to gain 3 and draw 3")];
+    c
+}
+
 /// Lt. Todachine — Asset. Rez 3, trash 2.
 /// "Whenever you rez a piece of ice, give the Runner 1 tag."
 ///
@@ -407,6 +462,35 @@ pub fn dirty_laundry() -> PrintedCard {
         },
     ])])
     .labeled("dirty laundry: run any server")];
+    c
+}
+
+/// Infiltration — Event. Cost 0. COMPLETE.
+/// "Gain 2[credit] or expose 1 card."
+///
+/// 9.11.4g: an "or" is one instruction with two optioned effects, and the
+/// player carrying it out chooses which to resolve.
+pub fn infiltration() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Infiltration", Side::Runner, CardType::Event);
+    c.cost = Some(0);
+    c.abilities = vec![AbilityDef::play(vec![Instruction::ChooseOne {
+        options: vec![
+            (
+                "gain 2 credits",
+                vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+            ),
+            (
+                "expose 1 card",
+                vec![Instruction::ExposeCards {
+                    cards: TargetSpec::Choose {
+                        count: Quantity::c(1),
+                        criteria: vec![TargetFilter::InstalledCorpCard],
+                    },
+                }],
+            ),
+        ],
+    }])
+    .labeled("infiltration: gain 2 credits or expose 1 card")];
     c
 }
 

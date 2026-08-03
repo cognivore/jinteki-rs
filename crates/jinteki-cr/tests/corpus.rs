@@ -1489,6 +1489,168 @@ fn hostile_infrastructure_basic_behavior() {
     );
 }
 
+/// extract-trash-to-gain-9: gain 6, then pay the optional cost — trashing an
+/// installed card — for 3 more. Net +6 over the 3-credit play cost.
+#[test]
+fn extract_trash_to_gain_9() {
+    let mut g = Game::new(11).hand(Side::Corp, vec![cards::extract()]).start(Side::Corp);
+    let extract = g.id("Extract");
+    let pad = tk::install_root(&mut g.vm, cards::pad_campaign(), ServerId::Remote(1), false);
+    let before = g.vm.st.corp.credits;
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(extract))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::targets().once(), Reply::Targets(vec![pad]))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(g.vm.st.corp.credits, before + 6, "3 in, 9 out: {}", t.tail(12));
+    assert_eq!(
+        g.vm.st.objects[&pad].zone,
+        Zone::Discard(Side::Corp),
+        "the installed card paid the cost"
+    );
+    assert_eq!(g.zone_of("Extract"), Zone::Discard(Side::Corp), "8.6.7g");
+}
+
+/// extract-skip-trash: declining the optional cost (1.16.11a) leaves the card
+/// installed and the Corp 3 up.
+#[test]
+fn extract_skip_trash() {
+    let mut g = Game::new(11).hand(Side::Corp, vec![cards::extract()]).start(Side::Corp);
+    let extract = g.id("Extract");
+    let pad = tk::install_root(&mut g.vm, cards::pad_campaign(), ServerId::Remote(1), false);
+    let before = g.vm.st.corp.credits;
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(extract))
+            .when(Match::nested_cost().once(), Reply::PayCost(false))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(g.vm.st.corp.credits, before + 3, "3 in, 6 out: {}", t.tail(12));
+    assert_eq!(
+        g.vm.st.objects[&pad].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "nothing was trashed"
+    );
+}
+
+/// extract-nothing-to-trash: with nothing installed the cost is unpayable
+/// (1.16.1b), so the Corp is never asked at all.
+#[test]
+fn extract_nothing_to_trash() {
+    let mut g = Game::new(11).hand(Side::Corp, vec![cards::extract()]).start(Side::Corp);
+    let extract = g.id("Extract");
+    let before = g.vm.st.corp.credits;
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(extract))
+            .when(Match::nested_cost(), Reply::Forbid)
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(g.vm.st.corp.credits, before + 3, "3 in, 6 out: {}", t.tail(12));
+}
+
+/// infiltration-gain-2: the first of the two optioned effects (9.11.4g).
+#[test]
+fn infiltration_gain_2() {
+    let mut g =
+        Game::new(11).hand(Side::Runner, vec![cards::infiltration()]).start(Side::Runner);
+    let inf = g.id("Infiltration");
+    let before = g.vm.st.runner.credits;
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(inf))
+            .when(Match::options().once(), Reply::ChooseNamed("gain 2 credits"))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(g.vm.st.runner.credits, before + 2, "the Runner gains 2: {}", t.tail(10));
+}
+
+/// infiltration-expose: the other option exposes an installed Corp card
+/// (10.2.2b — the Runner is shown it, and it stays unrezzed).
+#[test]
+fn infiltration_expose() {
+    let mut g =
+        Game::new(11).hand(Side::Runner, vec![cards::infiltration()]).start(Side::Runner);
+    let inf = g.id("Infiltration");
+    let wall = tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(inf))
+            .when(Match::options().once(), Reply::ChooseNamed("expose 1 card"))
+            .when(Match::targets().once(), Reply::Targets(vec![wall]))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass),
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardExposed { obj } if *obj == wall
+        )),
+        "Ice Wall protecting HQ was exposed: {}",
+        t.tail(10)
+    );
+    assert!(!g.vm.st.objects[&wall].faceup, "8.1.5: exposing is not rezzing");
+}
+
+/// rashida-jaheem-when-there-are-enough-cards-in-r-d: the optional turn-begins
+/// ability trashes its own source to gain 3 and draw 3.
+#[test]
+fn rashida_jaheem_when_there_are_enough_cards_in_r_d() {
+    let mut g = Game::new(11).credits(Side::Corp, 5).start(Side::Runner);
+    let rj = tk::install_root(&mut g.vm, cards::rashida_jaheem(), ServerId::Remote(1), true);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            // 9.6.9: "you may" — the instance is offered in the turn-begins
+            // reaction window and the Corp chooses to trigger it.
+            .when(Match::reaction().once(), Reply::take("rashida jaheem"))
+            .when(Match::nested_cost(), Reply::PayCost(true))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    let credits_before = g.vm.st.corp.credits;
+    let hand_before = g.vm.st.hand[&Side::Corp].len();
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.corp.credits,
+        credits_before + 3,
+        "gain 3: {}",
+        script.transcript().tail(12)
+    );
+    // 3 drawn plus the Corp's mandatory draw for the turn (5.6.1).
+    assert_eq!(g.vm.st.hand[&Side::Corp].len(), hand_before + 4, "draw 3");
+    assert_eq!(
+        g.vm.st.objects[&rj].zone,
+        Zone::Discard(Side::Corp),
+        "1.16.11a: the cost was trashing itself"
+    );
+}
+
 /// Take the basic play action with this card and let the play resolve.
 fn play_it(g: &mut Game, side: Side, card: ObjectId) {
     let acting = Plan::for_side(side)
@@ -1572,16 +1734,22 @@ const PORTED: &[&str] = &[
     "hedge-fund",
     "beanstalk-royalties",
     "ipo",
+    "extract-trash-to-gain-9",
+    "extract-skip-trash",
+    "extract-nothing-to-trash",
     "sure-gamble",
     "easy-mark",
     "diesel",
     "dirty-laundry",
+    "infiltration-gain-2",
+    "infiltration-expose",
     "account-siphon-use-ability",
     "account-siphon-access",
     "hostile-takeover",
     "government-takeover",
     "pad-campaign",
     "lt-todachine",
+    "rashida-jaheem-when-there-are-enough-cards-in-r-d",
     "desperado",
     "ice-wall",
     "enigma",
@@ -1619,8 +1787,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 52,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 52",
+        PORTED.len() >= 58,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 58",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is
