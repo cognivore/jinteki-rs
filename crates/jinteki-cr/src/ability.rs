@@ -437,14 +437,22 @@ pub struct AbilityInstance {
 
 /// CR 9.1.7 + 9.1.8: whether an ability is active. `encounter_ice` is the
 /// currently-encountered ice (for 9.1.8h), `accessed` the currently-accessed
-/// card (for 9.1.8a mid-access relevance).
+/// card (for 9.1.8a mid-access relevance), `threat` the current threat level
+/// (1.17.1a) that gates the "threat N" flag (9.3.6f).
 pub fn ability_active(
     obj: &Object,
     def: &AbilityDef,
     encountered_ice: Option<ObjectId>,
     accessed_card: Option<ObjectId>,
+    threat: i32,
 ) -> bool {
     cite!("rule_ability_active");
+    // 9.3.6f: the threat flag gates activity "regardless of section 9.1.8",
+    // so it is checked before every other rule here.
+    cite!("rule_threat_flag");
+    if def.flags.iter().any(|f| matches!(f, AbilityFlag::Threat(n) if threat < *n as i32)) {
+        return false;
+    }
     if crate::object::card_active(obj) {
         return true;
     }

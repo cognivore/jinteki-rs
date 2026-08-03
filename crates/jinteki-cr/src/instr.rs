@@ -327,6 +327,18 @@ pub enum Instruction {
     /// simultaneously (8.8.3/8.8.4), keeping whatever is hosted on either of
     /// them hosted on it (8.8.3a/8.8.4c).
     SwapCards { a: TargetSpec, b: TargetSpec },
+    /// CR 1.14.5: "<player> does X." — an instruction naming the player who
+    /// carries out the effect. By DEFAULT the ability's controller carries
+    /// out every effect and makes every choice it requires (1.14.5); where
+    /// the text specifies a player ("The Runner trashes 1 program"), that
+    /// player carries out that part and makes its choices instead. The
+    /// INSTRUCTION is the position and the named side is the content, so the
+    /// whole class — Rototurret's "Trash 1 installed program" (unwrapped,
+    /// Corp-carried) versus Bulwark's "The Runner trashes 1 installed
+    /// program" (wrapped) — is one variant. 1.14.5a then reads the same
+    /// attribution: a trigger condition about effects "performed by" a player
+    /// is met only when that player carried the effect out.
+    PerformedBy { side: Side, instr: Box<Instruction> },
     /// CR 1.9.5: "Remove N <kind> counters from <player>." (Scapegoat class
     /// for bad publicity.) Counters HOSTED on cards are not on a player, so
     /// this instruction can never reach them (1.13.3). The count is a

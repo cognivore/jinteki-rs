@@ -2456,3 +2456,139 @@ pub fn put_in_score_area(vm: &mut Vm, card: PrintedCard, side: Side) -> ObjectId
 // now lives in `plan` as the meaning of `plan::Reply::Default`. Nothing in
 // this module drives the VM any more: testkit builds cards, plan drives them.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// W6a shapes: credits, recurring credits, threat, memory, damage attribution
+// ---------------------------------------------------------------------------
+
+/// Fall-Guy shape (1.19.4): "[trash]: Gain 2[credit]." The [trash] symbol IS
+/// the trigger cost — the whole point of the example.
+pub fn fall_guy_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+    )
+    .labeled("fall-guy: [trash] gain 2")];
+    c
+}
+
+/// T400-Memory-Diamond shape (1.20.2): a static "+1[mu]".
+pub fn mem_chip_like(name: &'static str, plus: i32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::MemoryLimitMod(plus)]).labeled("+mu"),
+    ];
+    c
+}
+
+/// Spinal-Modem shape (1.10.5): "N[recurring]" — credits are placed when the
+/// card becomes active and topped back up to N as the turn begins, and the
+/// card's own text is what lets its controller spend them (1.10.3c).
+pub fn recurring_card(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.recurring_credits = Some(n);
+    c.hosted_credits_spendable = true;
+    c
+}
+
+/// A Corp asset carrying a "threat N"-flagged free paid ability (9.3.6f).
+pub fn threat_button(name: &'static str, n: u8, label: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
+    )
+    .with_flag(AbilityFlag::Threat(n))
+    .labeled(label)];
+    c
+}
+
+/// Argus-Security shape (10.4.1): "Whenever the Runner steals an agenda, they
+/// take 1 tag or suffer 2 meat damage." The suffered branch names the RUNNER
+/// as responsible, which is what The Cleaners' "damage done by the Corp"
+/// bonus does not reach.
+pub fn argus_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerStealsAgenda,
+        // 1.14.5: the text names the Runner as taking the tag or suffering
+        // the damage, so the RUNNER chooses, not the ability's controller.
+        vec![Instruction::PerformedBy {
+            side: Side::Runner,
+            instr: Box::new(Instruction::ChooseOne {
+                options: vec![
+                    ("take 1 tag", vec![Instruction::GainTags(1)]),
+                    (
+                        "suffer 2 meat damage",
+                        vec![Instruction::Damage {
+                            kind: DamageKind::Meat,
+                            amount: Quantity::c(2),
+                            responsible: Side::Runner,
+                        }],
+                    ),
+                ],
+            }),
+        }],
+        false,
+    )
+    .labeled("argus: tag or suffer 2 meat")];
+    c
+}
+
+/// Tollbooth shape (1.10.3c example 3): "When the Runner encounters this ice,
+/// they must pay N[credit] or the run ends."
+pub fn toll_ice(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_ice(name, 8, 5);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfEncountered,
+        vec![Instruction::NestedCostUnless {
+            cost: Cost::credits(n),
+            effect: Box::new(Instruction::EndTheRun),
+            payer: Some(Side::Runner),
+        }],
+        false,
+    )
+    .labeled("tollbooth: pay or the run ends")];
+    c
+}
+
+/// Rototurret/Bulwark shape (1.14.5): a piece of ice whose subroutine reads
+/// "Trash 1 installed program." — or, when `by` is set, "The <player> trashes
+/// 1 installed program.", which is the only difference between the two cards
+/// as far as the choice is concerned.
+pub fn trash_program_sub_ice(name: &'static str, by: Option<Side>) -> PrintedCard {
+    let mut c = vanilla_ice(name, 4, 4);
+    let trash = Instruction::TrashCards(TargetSpec::Choose {
+        count: 1,
+        criteria: vec![
+            crate::instr::TargetFilter::InstalledRunnerCard,
+            crate::instr::TargetFilter::CardTypeIs(CardType::Program),
+        ],
+    });
+    let instr = match by {
+        None => trash,
+        Some(side) => Instruction::PerformedBy { side, instr: Box::new(trash) },
+    };
+    c.abilities = vec![AbilityDef::subroutine(vec![instr]).labeled("[sub] trash 1 program")];
+    c
+}
+
+/// Alice-Merchant shape (1.14.5a): a RUNNER card whose ability states that
+/// "the Corp must trash 1 card from HQ" — the Corp carries the trashing out,
+/// so conditions about the Runner trashing Corp cards are not met.
+pub fn alice_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PerformedBy {
+            side: Side::Corp,
+            instr: Box::new(Instruction::TrashCards(TargetSpec::Choose {
+                count: 1,
+                criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
+            })),
+        }],
+    )
+    .labeled("alice: the Corp trashes 1 card from HQ")];
+    c
+}

@@ -132,6 +132,21 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_hosted_counters_not_on_player_2",
     "example_rule_hosted_counters_not_on_player_3",
     "example_rule_hosted_counter_used_condition_1",
+    // Wave 6a: credits (§1.10), score/threat (§1.17), [trash] (1.19.4),
+    // memory (1.20.2), damage attribution and simultaneity (§10.4).
+    "example_rule_lose_credits_1",
+    "example_rule_spend_credits_1",
+    "example_rule_spend_credits_2",
+    "example_rule_spend_credits_3",
+    "example_rule_recurring_credits_do_not_accumulate_1",
+    "example_rule_threat_level_1",
+    "example_rule_trash_symbol_1",
+    "example_rule_memory_limit_1",
+    "example_rule_suffer_or_take_damage_1",
+    "example_rule_multiple_damage_taken_simultaneously_1",
+    "example_rule_controller_choices_1",
+    "example_rule_trigger_condition_effect_by_player_1",
+    "example_rule_trigger_condition_effect_by_player_2",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -4659,6 +4674,491 @@ fn example_rule_hosted_counter_used_condition_1() {
         used.contains(&feeder),
         "9.1.6c: the card whose ability allowed the counter to be spent has been \
          used too, though the cost was paid for another card's ability"
+    );
+}
+
+
+// ===========================================================================
+// §1.14 — control, and who carries an effect out
+// ===========================================================================
+
+/// example_rule_controller_choices_1 (1.14.5): a Rototurret-class subroutine
+/// reads "Trash 1 installed program." — its controller, the Corp, chooses.
+/// A Bulwark-class subroutine reads "The Runner trashes 1 installed
+/// program." — the Runner is specified to carry the effect out, so the
+/// RUNNER chooses instead. Same effect, different chooser.
+#[test]
+fn example_rule_controller_choices_1() {
+    let mut vm = Vm::empty(612);
+    tk::install_ice(
+        &mut vm,
+        tk::trash_program_sub_ice("Rototurret-like", None),
+        ServerId::Hq,
+        true,
+    );
+    tk::install_ice(
+        &mut vm,
+        tk::trash_program_sub_ice("Bulwark-like", Some(Side::Runner)),
+        ServerId::Rnd,
+        true,
+    );
+    tk::install_rig(&mut vm, tk::program_mu("Program-a", 1));
+    tk::install_rig(&mut vm, tk::program_mu("Program-b", 1));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .stop_at_action(),
+    );
+    let choosers: Vec<Side> = t.of_kind(Kind::Targets).iter().map(|e| e.side).collect();
+    assert_eq!(
+        choosers,
+        vec![Side::Corp, Side::Runner],
+        "the unwrapped subroutine's controller chose; the one naming the \
+         Runner put the choice to the Runner: {}",
+        t.tail(8)
+    );
+}
+
+/// example_rule_trigger_condition_effect_by_player_1 (1.14.5a): an
+/// Apocalypse-class Runner card does not specify who trashes the installed
+/// Corp cards, so its controller — the Runner — is responsible, and a rezzed
+/// Hostile-Infrastructure-class ability meets its trigger condition.
+#[test]
+fn example_rule_trigger_condition_effect_by_player_1() {
+    let mut vm = Vm::empty(613);
+    let asset = tk::install_root(&mut vm, tk::corp_filler("Asset-like"), ServerId::Remote(1), true);
+    tk::install_root(
+        &mut vm,
+        tk::hostile_infra_like("HostileInfra-like"),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::install_rig(&mut vm, tk::trash_set_button("Apocalypse-like", vec![asset]));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("trash the set")).stop_at_action(),
+    );
+    assert!(t.took("trash the set"));
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardTrashed { obj, by: Side::Runner, .. } if *obj == asset
+        )),
+        "the Runner carried out the trashing"
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "so the Corp's ability did 1 net damage");
+}
+
+/// example_rule_trigger_condition_effect_by_player_2 (1.14.5a): an
+/// Alice-Merchant-class Runner card states that the CORP must trash a card
+/// from HQ. The Corp carries that out, so the same Hostile-Infrastructure
+/// class ability does NOT meet its trigger condition.
+#[test]
+fn example_rule_trigger_condition_effect_by_player_2() {
+    let mut vm = Vm::empty(614);
+    tk::install_root(
+        &mut vm,
+        tk::hostile_infra_like("HostileInfra-like"),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::install_rig(&mut vm, tk::alice_like("Alice-like"));
+    let hq = tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("alice")).stop_at_action(),
+    );
+    assert!(t.took("alice"));
+    let chooser = t.of_kind(Kind::Targets).first().map(|e| e.side);
+    assert_eq!(chooser, Some(Side::Corp), "the named player makes the choice: {}", t.tail(6));
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardTrashed { obj, by: Side::Corp, .. } if hq.contains(obj)
+        )),
+        "the Corp carried out the trashing"
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        3,
+        "the condition 'whenever the RUNNER trashes a Corp card' was not met"
+    );
+}
+
+// ===========================================================================
+// §1.10 — credits, spending, recurring credits
+// ===========================================================================
+
+/// example_rule_lose_credits_1 (1.10.3b): a DNA-Tracker-class subroutine
+/// makes the Runner lose 2[c]. With 1[c] in the pool they lose exactly 1;
+/// with an empty pool the effect does nothing. The loss is forced and takes
+/// as much as the pool holds — never more, never from cards.
+#[test]
+fn example_rule_lose_credits_1() {
+    let mut vm = Vm::empty(600);
+    tk::install_ice(&mut vm, tk::whitespace_like("DNATracker-like", 2), ServerId::Hq, true);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run HQ twice — once holding 1[c], once holding none.
+    plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().times(2), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+    let losses: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CreditsLost { side: Side::Runner, amount } => Some(*amount),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(losses, vec![1, 0], "lost 1 of the 2 demanded, then nothing at all");
+    assert_eq!(vm.st.runner.credits, 0);
+}
+
+/// example_rule_spend_credits_1 (1.10.3c): a Cyberfeeder-class card's ability
+/// lets the Runner spend the credits hosted on it. With an empty credit pool
+/// the 1[c] trigger cost of an Atman-class ability is still payable — and it
+/// is paid from the hosted credit, not from the pool.
+#[test]
+fn example_rule_spend_credits_1() {
+    let mut vm = Vm::empty(601);
+    let feeder = tk::install_rig(
+        &mut vm,
+        tk::hosted_credit_source("Cyberfeeder-like", jinteki_cr::object::CardType::Hardware),
+    );
+    tk::place_counters(&mut vm, feeder, CounterKind::Credit, 1);
+    let atman = tk::install_rig(&mut vm, tk::credit_cost_program("Atman-like"));
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("mimic")).stop_at_action(),
+    );
+    assert!(t.took("mimic"), "the ability was offered with an empty pool: {}", t.tail(4));
+    assert_eq!(vm.st.runner.credits, 0, "no credits came from the pool — it was empty");
+    assert_eq!(
+        vm.st.objects[&feeder].counter(CounterKind::Credit),
+        0,
+        "the credit was spent from the card that allows spending it"
+    );
+    assert!(vm.changes.log.iter().any(|c| matches!(
+        c,
+        GameChange::AbilityUsed { source } if *source == atman
+    )));
+}
+
+/// example_rule_spend_credits_2 (1.10.3c): credits hosted on a Ghost-Runner-
+/// class card can be spent secretly, when bidding for a psi ability — the
+/// legal bids are capped by everything the player can spend (10.14.3), not
+/// by their credit pool alone.
+#[test]
+fn example_rule_spend_credits_2() {
+    let mut vm = Vm::empty(602);
+    let ghost = tk::install_rig(&mut vm, tk::fencer_like("GhostRunner-like", 2));
+    tk::place_counters(&mut vm, ghost, CounterKind::Credit, 2);
+    tk::install_root(&mut vm, tk::psi_button("FuturePerfect-like"), ServerId::Remote(1), true);
+    vm.st.runner.credits = 0;
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    assert_eq!(
+        vm.psi_legal_bids(Side::Runner),
+        vec![0, 1, 2],
+        "1.10.3c: hosted credits the Runner may spend count towards a bid"
+    );
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("psi"))
+            .when(Match::psi_bid(), Reply::Bid(0)),
+        Plan::runner().when(Match::psi_bid(), Reply::Bid(2)).stop_at_action(),
+    );
+    assert!(t.took("psi"), "the psi game was played: {}", t.tail(4));
+    assert_eq!(vm.st.runner.credits, 0, "the pool was empty throughout");
+    assert_eq!(
+        vm.st.objects[&ghost].counter(CounterKind::Credit),
+        0,
+        "the bid was paid with the hosted credits"
+    );
+}
+
+/// example_rule_spend_credits_3 (1.10.3c): the Runner must use the credits
+/// hosted on a Ghost-Runner-class card when that is the only way to pay a
+/// Tollbooth-class encounter cost — with an empty pool the nested cost is
+/// still payable, and paying it keeps the run alive.
+#[test]
+fn example_rule_spend_credits_3() {
+    let mut vm = Vm::empty(603);
+    tk::install_ice(&mut vm, tk::toll_ice("Tollbooth-like", 3), ServerId::Hq, true);
+    let ghost = tk::install_rig(&mut vm, tk::fencer_like("GhostRunner-like", 3));
+    tk::place_counters(&mut vm, ghost, CounterKind::Credit, 3);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::nested_cost(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    let costs: Vec<u32> =
+        t.of_kind(Kind::NestedCost).iter().filter_map(|e| e.cost()).map(|c| c.credits).collect();
+    assert_eq!(costs, vec![3], "the 3[c] was put to the Runner even with an empty pool");
+    assert_eq!(
+        vm.st.objects[&ghost].counter(CounterKind::Credit),
+        0,
+        "the only credits that could pay it were the hosted ones"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "paying kept the run going: {}",
+        t.tail(6)
+    );
+}
+
+/// example_rule_recurring_credits_do_not_accumulate_1 (1.10.5d): a
+/// Spinal-Modem-class card with 2[recurring] gets 2 credits when it becomes
+/// active (1.10.5b). The Runner spends 1 later in the turn; at the start of
+/// their next turn the card is refilled UP TO 2 — one credit is placed, not
+/// two, and the total never becomes 3.
+#[test]
+fn example_rule_recurring_credits_do_not_accumulate_1() {
+    let mut vm = Vm::empty(604);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    let button = tk::install_rig(&mut vm, tk::runner_install_button("Install-button", 1));
+    let modem = vm.new_object(tk::recurring_card("SpinalModem-like", 2), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(modem);
+    let pump = tk::install_rig(&mut vm, tk::credit_cost_program("Pump-like"));
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+    let _ = (button, pump);
+
+    // The plan: install the modem, then spend one of its credits on a 1[c]
+    // paid ability, then stop.
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::target(modem))
+            .when(Match::paid().once(), Reply::take("mimic"))
+            .when(Match::action().nth(1), Reply::Halt)
+            .when(Match::action().times(4), Reply::credit())
+            .when(Match::action(), Reply::Halt),
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&modem].counter(CounterKind::Credit),
+        1,
+        "1.10.5b placed 2 on becoming active; one was just spent"
+    );
+
+    // Play out this turn and the Corp's; the Runner's next turn begins with
+    // the 5.7.1c refill step.
+    script.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&modem].counter(CounterKind::Credit),
+        2,
+        "1.10.5d: refilled only up to the printed number, never past it"
+    );
+}
+
+// ===========================================================================
+// §1.17 / §1.19 / §1.20 — score, threat, [trash], memory
+// ===========================================================================
+
+/// example_rule_threat_level_1 (1.17.1a): with the Runner on 4 agenda points
+/// and the Corp on 3, the threat level is 4 — the GREATEST score, not the
+/// sum and not the active player's. A "threat 4" ability is therefore active
+/// (9.3.6f) while a "threat 5" ability is not.
+#[test]
+fn example_rule_threat_level_1() {
+    let mut vm = Vm::empty(605);
+    tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Runner-agenda", 3, 4), Side::Runner);
+    tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Corp-agenda", 3, 3), Side::Corp);
+    tk::install_root(&mut vm, tk::threat_button("Threat4-like", 4, "t4"), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::threat_button("Threat5-like", 5, "t5"), ServerId::Remote(2), true);
+    vm.start_turn(Side::Corp);
+
+    assert_eq!(vm.score(Side::Runner), 4);
+    assert_eq!(vm.score(Side::Corp), 3);
+    assert_eq!(vm.threat_level(), 4, "the greatest score of any player");
+
+    let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+    assert!(t.ever_offered("t4"), "threat 4 ≤ 4: the ability is active");
+    assert!(!t.ever_offered("t5"), "threat 5 > 4: the ability is not active");
+}
+
+/// example_rule_trash_symbol_1 (1.19.4): Fall Guy's "[trash]: Gain 2[credit]"
+/// — the [trash] symbol IS the trigger cost, so using the ability trashes the
+/// source as payment (before the effect resolves, 9.5.7).
+#[test]
+fn example_rule_trash_symbol_1() {
+    let mut vm = Vm::empty(606);
+    let guy = tk::install_rig(&mut vm, tk::fall_guy_like("FallGuy-like"));
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("fall-guy")).stop_at_action(),
+    );
+    assert!(t.took("fall-guy"));
+    assert_eq!(
+        vm.st.objects[&guy].zone,
+        Zone::Discard(Side::Runner),
+        "the cost was paid by trashing the card the symbol appears on"
+    );
+    assert_eq!(vm.st.runner.credits, 2, "and then the effect resolved");
+}
+
+/// example_rule_memory_limit_1 (1.20.2): a starting memory limit of 4[mu]
+/// plus a T400-class "+1[mu]" lets the Runner keep 5[mu] of programs
+/// installed. Without the hardware the fifth point of memory is a
+/// restriction violation and the minimal set is trashed at the checkpoint.
+#[test]
+fn example_rule_memory_limit_1() {
+    let mut with_chip = Vm::empty(607);
+    tk::install_rig(&mut with_chip, tk::mem_chip_like("T400-like", 1));
+    let big = tk::install_rig(&mut with_chip, tk::program_mu("Program-4mu", 4));
+    let small = tk::install_rig(&mut with_chip, tk::program_mu("Program-1mu", 1));
+    with_chip.start_turn(Side::Runner);
+    assert_eq!(with_chip.memory_limit(), 5, "4 base + 1 from the hardware");
+    plan::play(&mut with_chip, Plan::corp(), Plan::runner().stop_at_action());
+    assert_eq!(with_chip.st.objects[&big].zone, Zone::Rig);
+    assert_eq!(with_chip.st.objects[&small].zone, Zone::Rig, "5[mu] of programs fit under 5[mu]");
+
+    let mut without = Vm::empty(608);
+    let big2 = tk::install_rig(&mut without, tk::program_mu("Program-4mu", 4));
+    let small2 = tk::install_rig(&mut without, tk::program_mu("Program-1mu", 1));
+    without.start_turn(Side::Runner);
+    assert_eq!(without.memory_limit(), 4);
+    plan::play(&mut without, Plan::corp(), Plan::runner().stop_at_action());
+    assert!(
+        without.st.objects[&big2].zone == Zone::Discard(Side::Runner)
+            || without.st.objects[&small2].zone == Zone::Discard(Side::Runner),
+        "over the limit, a program is trashed"
+    );
+}
+
+// ===========================================================================
+// §10.4 — damage
+// ===========================================================================
+
+/// example_rule_suffer_or_take_damage_1 (10.4.1): an Argus-class ability lets
+/// the Runner choose to SUFFER 2 meat damage. The Cleaners only adds to
+/// damage the Corp DOES, so the suffered damage stays at 2 — while the same
+/// Cleaners raises a Corp-done 2 to 3.
+#[test]
+fn example_rule_suffer_or_take_damage_1() {
+    let mut vm = Vm::empty(609);
+    tk::install_identity(&mut vm, tk::argus_like("Argus-like"), Side::Corp);
+    tk::put_in_score_area(&mut vm, tk::cleaners_static_like("Cleaners-like"), Side::Corp);
+    let steal = vm.new_object(tk::vanilla_agenda("HostileTakeover-like", 2, 1), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(steal);
+    tk::fill_hand(&mut vm, Side::Runner, 8);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Rnd)
+            .when(Match::options(), Reply::ChooseNamed("suffer"))
+            .stop_at_action(),
+    );
+    assert!(vm.changes.log.iter().any(|c| matches!(c, GameChange::AgendaStolen { .. })));
+    let suffered: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::DamageSuffered { amount, .. } => Some(*amount),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        suffered,
+        vec![2],
+        "the Runner is responsible for damage they suffer, so The Cleaners' \
+         'damage done by the Corp' bonus does not apply: {}",
+        t.tail(6)
+    );
+    assert_eq!(vm.st.runner.tags, 0, "the other option was not taken");
+
+    // Control: the same Cleaners raises damage the CORP does from 2 to 3.
+    let mut done = Vm::empty(610);
+    tk::put_in_score_area(&mut done, tk::cleaners_static_like("Cleaners-like"), Side::Corp);
+    tk::install_root(&mut done, tk::meat_damage_button("Scorch-like", 2), ServerId::Remote(1), true);
+    tk::fill_hand(&mut done, Side::Runner, 8);
+    done.start_turn(Side::Corp);
+    plan::play(
+        &mut done,
+        Plan::corp().when(Match::paid().once(), Reply::take("do meat damage")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(done.changes.log.iter().any(
+        |c| matches!(c, GameChange::DamageSuffered { amount: 3, .. })
+    ));
+}
+
+/// example_rule_multiple_damage_taken_simultaneously_1 (10.4.3): a BOOM!-class
+/// 7 meat damage against a 4-card grip. The cards are trashed randomly and
+/// simultaneously — ONE occurrence — and because the Runner suffered more
+/// damage than they had cards, they flatline.
+#[test]
+fn example_rule_multiple_damage_taken_simultaneously_1() {
+    let mut vm = Vm::empty(611);
+    tk::install_root(&mut vm, tk::meat_damage_button("BOOM-like", 7), ServerId::Remote(1), true);
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.st.runner.tags = 2;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("do meat damage")).stop_at_action(),
+        Plan::runner(),
+    );
+    let events: Vec<&GameChange> = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .collect();
+    assert_eq!(events.len(), 1, "one damage occurrence, not seven");
+    match events[0] {
+        GameChange::DamageSuffered { amount, cards, .. } => {
+            assert_eq!(*amount, 7);
+            assert_eq!(cards.len(), 4, "the whole grip went at once");
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(
+        t.result,
+        Some(jinteki_cr::decision::GameResult::Flatline),
+        "more damage suffered than cards in the grip"
     );
 }
 

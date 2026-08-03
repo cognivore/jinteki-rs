@@ -92,6 +92,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     &inst.def,
                     vm.st.encounter.as_ref().map(|e| e.ice),
                     vm.st.accessed,
+                    vm.threat_level(),
                 ),
             }
         })
@@ -180,6 +181,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         &def,
                         vm.st.encounter.as_ref().map(|e| e.ice),
                         vm.st.accessed,
+                        vm.threat_level(),
                     );
                 let moved_to_inactive_in_window = window.iter().any(|(c, _)| match c {
                     GameChange::CardTrashed { obj, .. }
@@ -335,6 +337,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     &def,
                     vm.st.encounter.as_ref().map(|e| e.ice),
                     vm.st.accessed,
+                    vm.threat_level(),
                 ) {
                     continue;
                 }
@@ -463,15 +466,8 @@ fn step_b_durations(vm: &mut Vm) {
 /// 10.3.1c: 7+ agenda points wins; simultaneous → draw.
 fn step_c_agenda_points(vm: &mut Vm) {
     cite!("step_checkpoint_agenda_points");
-    let score = |side: Side| -> i32 {
-        vm.st.score_area[&side]
-            .iter()
-            .filter_map(|id| vm.st.objects.get(id))
-            .filter_map(|o| o.printed.agenda_points)
-            .sum()
-    };
-    let corp = score(Side::Corp) >= 7;
-    let runner = score(Side::Runner) >= 7;
+    let corp = vm.score(Side::Corp) >= 7;
+    let runner = vm.score(Side::Runner) >= 7;
     cite!("rule_game_win");
     match (corp, runner) {
         (true, true) => vm.game_over = Some(GameResult::Draw),

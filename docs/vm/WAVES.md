@@ -8,9 +8,9 @@ truth.
 
 ## Odometers (during W5)
 
-- **DP-7a: 99/243** CR examples as example-named passing tests (40.7%).
+- **DP-7a: 112/243** CR examples as example-named passing tests (46.1%).
   Unfrozen since FT-0 landed; the climb to 243/243 has resumed.
-- **DP-7b: 429/1420** distinct rules cited (30.2%); traceability test fails
+- **DP-7b: 441/1420** distinct rules cited (31.1%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -86,7 +86,8 @@ prefer a slightly larger honest primitive and note it here.
 | `469c09c` | W4e | 14 examples migrated (§9.9 interrupts, traces, psi, subroutine origins, access prohibition); `GrantSubroutinesToSelf` → `GrantSubroutines { to, count, sub, before, duration }` | 82 |
 | `-` | W4f | 22 + 19 examples migrated — the suite is now 100% declarative; every `tk::inject_*` and `grant_external_sub` DELETED, their effects created by real cards; legacy script drivers deleted from testkit; `tests_are_plans_not_loops` enforcement test. **FT-0 exit gate met.** | 82 |
 | `e044046` | W5a | §8.7 searching/finding/shuffling: `Instruction::Search { zone, criteria, count, may_fail }` as a §9.11 instruction, found cards set aside facedown (4.8.4) and addressed by `TargetSpec::FoundBySearch`, 8.7.3 shuffle-before-anything, 8.7.5/9.11.4d pend timing; the 8.7.2b legality query (`could_install_found_card` / `could_play_found_card`) incl. Patchwork-class cost reduction; `TargetFilter` extended with card-characteristic atoms; 8.5.13d reveal for an unaffordable rez. Deviation (9) retired. | 87 |
-| _(this)_ | W5b | §1.13 hosting: `StaticDecl::{CanHost, HostedInstallDiscount, InstallOnlyHostedOn}`, `Instruction::{HostCards, SwapCards, RemoveCountersFromPlayer}`; the 8.5.16b destination declaration now offers every eligible host (1.13.6a) and refuses the ones that host only through their own abilities (1.13.6b); 1.13.6c install-legality gate; 1.13.12 zone-following + 1.13.2a/b hosted-not-installed; 1.13.13 rebuilt as a change-driven checkpoint rule with the score-area→score-area exception (8.8.4c); 1.13.3 hosted counters (`CounterKind::BadPublicity`); 9.1.6c hosted-credit spending marks both cards used | 99 |
+| `9d1d5c3` | W5b | §1.13 hosting: `StaticDecl::{CanHost, HostedInstallDiscount, InstallOnlyHostedOn}`, `Instruction::{HostCards, SwapCards, RemoveCountersFromPlayer}`; the 8.5.16b destination declaration now offers every eligible host (1.13.6a) and refuses the ones that host only through their own abilities (1.13.6b); 1.13.6c install-legality gate; 1.13.12 zone-following + 1.13.2a/b hosted-not-installed; 1.13.13 rebuilt as a change-driven checkpoint rule with the score-area→score-area exception (8.8.4c); 1.13.3 hosted counters (`CounterKind::BadPublicity`); 9.1.6c hosted-credit spending marks both cards used | 99 |
+| _(this)_ | W6a | small rules with real machinery: §1.10 credits (1.10.3b lose-as-much-as-possible, 1.10.3c hosted-credit spending incl. psi bids, 1.10.5a/b/d recurring credits placed on becoming active and refilled UP TO the printed number), 1.14.5 `Instruction::PerformedBy` — the player named to carry an effect out makes its choices and is the one attributed (1.14.5a), 1.17.1 `Vm::score` + 1.17.1a `threat_level` with the 9.3.6f threat-flag activity gate, 1.19.4 [trash] costs, 1.20.2 memory limit, 10.4.1 suffer-vs-do attribution, 10.4.3 simultaneous damage trashes | 112 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -144,6 +145,15 @@ prefer a slightly larger honest primitive and note it here.
    instead of asking the payer, because `pay_cost` is synchronous
    everywhere. A Decision here means suspending cost payment; revisit when
    an example distinguishes which card is trashed.
+
+18. **The division of a credit payment is not put to the player** (W6a,
+    `Vm::spend_flexible`) — 1.10.3c says a player spending credits "chooses
+    how to divide the credits they are spending from among the allowed
+    locations"; the kernel spends the credit pool first and then hosted
+    credits in object order. Every tested case is forced (an empty pool, or
+    hosted credits that are the only way to pay), so no example distinguishes
+    them; a real choice means suspending payment, which `pay_cost` cannot do
+    (see deviation 11).
 
 12. **Plan-driver approximations** (W4, all annotated in `src/plan.rs`):
     `Reply::Pass` in a window where 9.2.8e forbids passing discharges the

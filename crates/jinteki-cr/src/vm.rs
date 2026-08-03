@@ -895,8 +895,11 @@ impl Vm {
                 self.changes.record(GameChange::ClicksGained { side, amount: n });
             }
             StepKind::RefillRecurring => {
-                // CR 1.10.5: recurring credits refill to the printed amount.
+                // CR 1.10.5a/c: at step 5.6.1c/5.7.1c, before any ability
+                // meets a turn-begins condition, every recurring card of the
+                // active player is topped up to its printed number.
                 cite!("rule_recurring_credits");
+                cite!("rule_refill_recurring_credits");
                 let ids: Vec<ObjectId> = self
                     .st
                     .objects
@@ -909,13 +912,26 @@ impl Vm {
                     .map(|o| o.id)
                     .collect();
                 for id in ids {
+                    // 1.10.5d: recurring credits do not accumulate — the card
+                    // is refilled UP TO the printed number, never past it, so
+                    // the top-up is a set, not an add.
+                    cite!("rule_recurring_credits_do_not_accumulate");
                     let n = self.st.objects[&id].printed.recurring_credits.unwrap();
+                    let have = self.st.objects[&id].counter(CounterKind::Credit);
+                    if have >= n {
+                        continue;
+                    }
                     self.st
                         .objects
                         .get_mut(&id)
                         .unwrap()
                         .counters
                         .insert(CounterKind::Credit, n);
+                    self.changes.record(GameChange::CounterPlaced {
+                        obj: id,
+                        kind: CounterKind::Credit,
+                        amount: n - have,
+                    });
                 }
             }
             StepKind::TurnFormallyBegins => {
@@ -1248,6 +1264,7 @@ impl Vm {
     pub fn active_statics(&self) -> Vec<(ObjectId, StaticDecl)> {
         cite!("rule_static_ability");
         let mut out = Vec::new();
+        let threat = self.threat_level();
         for o in self.st.objects.values() {
             for (i, a) in o.printed.abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Static {
@@ -1256,7 +1273,7 @@ impl Vm {
                 if !self.ability_present(o.id, i) {
                     continue;
                 }
-                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
                     continue;
                 }
@@ -1895,6 +1912,12 @@ impl Vm {
     ) -> Vec<EffectAtom> {
         cite!("rule_expected_effects");
         match instr {
+            // 1.14.5: the named player carries out the effect, so everything
+            // the atoms attribute to "the controller" is attributed to them.
+            Instruction::PerformedBy { side, instr } => {
+                cite!("rule_controller_choices");
+                self.expected_atoms(instr, *side, targets, source)
+            }
             Instruction::GainCredits(side, q) => {
                 // 9.12.2b/c: credits are an aggregated class — one atom with
                 // the aggregated value.
@@ -2300,12 +2323,13 @@ impl Vm {
         // Conditional-ability interrupts: fixed pending set at open (9.9.4b).
         cite!("rule_pending_status_for_interrupt_windows");
         let mut to_pend: Vec<(ObjectId, usize, AbilityDef, Side)> = Vec::new();
+        let threat = self.threat_level();
         for o in self.st.objects.values() {
             for (i, a) in o.printed.abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Conditional || !a.is_interrupt() {
                     continue;
                 }
-                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
                     continue;
                 }
@@ -2526,6 +2550,7 @@ impl Vm {
     ) -> Vec<WindowOption> {
         cite!("rule_trigger_paid_ability_interrupt");
         let mut out = Vec::new();
+        let threat = self.threat_level();
         for o in self.st.objects.values() {
             if o.controller != side {
                 continue;
@@ -2534,7 +2559,7 @@ impl Vm {
                 if a.kind != AbilityKind::Paid || !a.is_interrupt() {
                     continue;
                 }
-                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
                     continue;
                 }
@@ -2756,16 +2781,22 @@ impl Vm {
                     }
                     _ => {}
                 }
-                if let Instruction::ChooseOne { options } = &instr {
+                // 1.14.5: a choice named for a player is made by that
+                // player; unwrapped, the controller makes it.
+                let (chooser_override, peeled) = match &instr {
+                    Instruction::PerformedBy { side, instr } => (Some(*side), (**instr).clone()),
+                    other => (None, other.clone()),
+                };
+                if let Instruction::ChooseOne { options } = &peeled {
                     // 9.11.4g: the choice ends an instruction; 9.12.3c: a
                     // "must" choice is restricted to fully-resolvable
                     // options — if none is resolvable, nothing happens.
                     cite!("rule_choice_instruction");
                     cite!("rule_mandatory_choice");
-                    let controller = {
+                    let controller = chooser_override.unwrap_or({
                         let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                         af.controller
-                    };
+                    });
                     let resolvable: Vec<usize> = options
                         .iter()
                         .enumerate()
@@ -2781,7 +2812,7 @@ impl Vm {
                         }
                         1 => {
                             let only = resolvable[0];
-                            let inject = options[only].1.clone();
+                            let inject = wrap_all(options[only].1.clone(), chooser_override);
                             if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                                 for (k, ins) in inject.into_iter().enumerate() {
                                     af.instructions.insert(af.idx + 1 + k, ins);
@@ -2843,6 +2874,7 @@ impl Vm {
     /// 9.12.3c: can an option's effects be fully resolved right now?
     fn option_resolvable(&self, instrs: &[Instruction]) -> bool {
         instrs.iter().all(|i| match i {
+            Instruction::PerformedBy { instr, .. } => self.option_resolvable(std::slice::from_ref(instr)),
             Instruction::LoseCredits(side, n) => self.st.player(*side).credits >= *n,
             Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
                 self.filter_candidates(criteria, Side::Runner).len() >= *count as usize
@@ -2879,6 +2911,12 @@ impl Vm {
     fn targets_needed(&self, instr: &Instruction) -> Option<(Side, DecisionSpec)> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
         match instr {
+            // 1.14.5: the named player makes the choices this instruction
+            // requires, in place of the ability's controller.
+            Instruction::PerformedBy { side, instr } => {
+                cite!("rule_controller_choices");
+                self.targets_needed(instr).map(|(_, spec)| (*side, spec))
+            }
             Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
                 let candidates = self.filter_candidates(criteria, af.controller);
                 Some((
@@ -4007,8 +4045,19 @@ impl Vm {
     ) {
         cite!("rule_expected_effects_resolve");
         let instr = imm.instr.clone();
+        // 1.14.5: peel the "<player> does this" wrapper — the named player is
+        // the one carrying the effect out from here on.
+        let (controller, instr) = match instr {
+            Instruction::PerformedBy { side, instr } => {
+                cite!("rule_controller_choices");
+                (side, *instr)
+            }
+            other => (controller, other),
+        };
         match &instr {
             Instruction::GainCredits(side, _) => {
+                // 1.10.3a: credits enter the pool from the bank.
+                cite!("rule_gain_credits");
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     let n = a.value.max(0) as u32;
                     self.st.player_mut(*side).credits += n;
@@ -4016,6 +4065,11 @@ impl Vm {
                 }
             }
             Instruction::LoseCredits(side, _) => {
+                // 1.10.3b: a forced loss moves credits from the pool to the
+                // bank — as many as the pool holds and no more, and credits
+                // on cards can never be lost this way (1.13.3 keeps the two
+                // populations apart).
+                cite!("rule_lose_credits");
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     let have = self.st.player(*side).credits;
                     let n = (a.value.max(0) as u32).min(have);
@@ -4766,6 +4820,8 @@ impl Vm {
                         o.active_since = seq;
                     }
                 }
+                // 1.10.5b: recurring credits arrive at step 8.5.16e.
+                self.place_recurring_credits(c);
                 // (f) "when installed" conditions meet their trigger
                 // conditions; the install effect is complete.
                 let side = self.st.objects[&c].printed.side;
@@ -4866,6 +4922,7 @@ impl Vm {
                     o.faceup = true;
                     o.active_since = seq;
                     self.changes.record(GameChange::CardRezzed { obj: c });
+                    self.place_recurring_credits(c);
                 }
                 self.install_terminal_reveal(&p);
             }
@@ -4909,6 +4966,8 @@ impl Vm {
                     o.staged = false;
                     o.active_since = seq;
                 }
+                // 1.10.5b: recurring credits arrive at step 8.6.7c.
+                self.place_recurring_credits(c);
                 // (d) conditions related to playing the card are met. The
                 // post-instruction checkpoint IS the 8.6.7e checkpoint.
                 self.changes.record(GameChange::CardPlayed { obj: c, side });
@@ -5422,6 +5481,7 @@ impl Vm {
             }
         }
         // Card actions ([click]-cost paid abilities, 5.2.1).
+        let threat = self.threat_level();
         for o in self.st.objects.values() {
             if o.controller != side {
                 continue;
@@ -5430,7 +5490,7 @@ impl Vm {
                 if !a.is_action() {
                     continue;
                 }
-                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
                     continue;
                 }
@@ -5464,6 +5524,7 @@ impl Vm {
     fn paid_window_options(&self, side: Side, classes: PawClasses) -> Vec<WindowOption> {
         cite!("rule_paid_ability_window_options");
         let mut out = Vec::new();
+        let threat = self.threat_level();
         // (P): regular paid abilities (not actions/interrupts/mid-access).
         for o in self.st.objects.values() {
             if o.controller != side {
@@ -5478,7 +5539,7 @@ impl Vm {
                     continue;
                 }
                 cite!("rule_other_paid_abilities");
-                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
                     continue;
                 }
@@ -5653,6 +5714,7 @@ impl Vm {
             }
         }
         // Access-flagged paid abilities (9.3.6b).
+        let threat = self.threat_level();
         for src in self.st.objects.values() {
             if src.controller != Side::Runner {
                 continue;
@@ -5660,7 +5722,7 @@ impl Vm {
             for (i, a) in src.printed.abilities.iter().enumerate() {
                 if a.kind == AbilityKind::Paid
                     && a.has_flag(AbilityFlag::Access)
-                    && ability_active(src, a, None, self.st.accessed)
+                    && ability_active(src, a, None, self.st.accessed, threat)
                     && self.cost_payable(
                         Side::Runner,
                         src.id,
@@ -5801,6 +5863,7 @@ impl Vm {
 
     /// Would an active MANDATORY interrupt avoid a tag the Runner takes now?
     fn tag_cost_blocked(&self) -> bool {
+        let threat = self.threat_level();
         for o in self.st.objects.values() {
             for (i, a) in o.printed.abilities.iter().enumerate() {
                 if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
@@ -5817,7 +5880,7 @@ impl Vm {
                 if !a.instructions.iter().any(|x| matches!(x, Instruction::AvoidTags(_))) {
                     continue;
                 }
-                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed)
+                if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                     || !self.ability_present(o.id, i)
                 {
                     continue;
@@ -5841,13 +5904,18 @@ impl Vm {
             self.st.bp_fund -= from_fund;
             credits_to_pay -= from_fund;
         }
-        // 1.10.3c: credits hosted on a card whose ability lets its
-        // controller spend them are spent from that card; 9.1.6c makes that
-        // card used, alongside the card whose ability is being paid for.
+        // 1.10.3c: "spend" and "pay" are the same thing — the credits go
+        // back to the bank, by default from the pool, and from credits hosted
+        // on a card only where an ability allows it. 9.1.6c then makes that
+        // card used alongside the card whose ability is being paid for.
+        cite!("rule_spend_credits");
         self.spend_flexible(side, credits_to_pay);
         self.st.player_mut(side).clicks -= cost.clicks;
         let mut trashed = Vec::new();
         if cost.trash_self {
+            // 1.19.4: [trash] on a card means "trash this object", used as a
+            // trigger cost.
+            cite!("rule_trash_symbol");
             self.trash_card(source, side);
             trashed.push(source);
             self.changes.record(GameChange::TrashAbilityUsed { source, side });
@@ -5920,6 +5988,13 @@ impl Vm {
     /// takes a core damage counter. Flatline if damage > grip (1.7.2b).
     pub fn do_damage(&mut self, kind: DamageKind, amount: u32, _responsible: Side) {
         cite!("rule_meat_net_damage");
+        // 10.4.3: more than 1 damage of a type trashes the cards randomly and
+        // SIMULTANEOUSLY — one occurrence, recorded as one change below, so a
+        // conditional watching for the trashes sees a single event. 10.4.3a's
+        // sequential-selection case (Chronos Protocol class) still trashes
+        // simultaneously; only the selection order differs.
+        cite!("rule_multiple_damage_taken_simultaneously");
+        cite!("rule_multiple_damage_selected_sequentially");
         if amount == 0 {
             return;
         }
@@ -6059,6 +6134,8 @@ impl Vm {
         o.faceup = true;
         o.active_since = seq;
         self.changes.record(GameChange::CardRezzed { obj: id });
+        // 1.10.5b: recurring credits arrive as soon as the card is faceup.
+        self.place_recurring_credits(id);
     }
 
     fn discard_step(&mut self, side: Side) {
@@ -6087,6 +6164,50 @@ impl Vm {
     pub fn max_hand_size(&self, side: Side) -> i32 {
         cite!("rule_max_hand_size");
         self.st.player(side).max_hand_size_base
+    }
+
+    /// CR 1.10.5b: recurring credits are first placed on a card as soon as it
+    /// becomes active — step 8.5.16e of installing it active, step 8.6.7c of
+    /// playing it, or when it is turned faceup or scored. "N[recurring]" is
+    /// shorthand for that placement plus the 1.10.5c turn-begins refill, so
+    /// this is the same top-up rule, not an addition: a card that already
+    /// holds N gains nothing (1.10.5d).
+    pub fn place_recurring_credits(&mut self, id: ObjectId) {
+        cite!("rule_placing_recurring_credits");
+        let Some(o) = self.st.objects.get(&id) else { return };
+        let Some(n) = o.printed.recurring_credits else { return };
+        if !card_active(o) {
+            return;
+        }
+        let have = o.counter(CounterKind::Credit);
+        if have >= n {
+            return;
+        }
+        cite!("rule_recurring_credits_do_not_accumulate");
+        self.st.objects.get_mut(&id).unwrap().counters.insert(CounterKind::Credit, n);
+        self.changes.record(GameChange::CounterPlaced {
+            obj: id,
+            kind: CounterKind::Credit,
+            amount: n - have,
+        });
+    }
+
+    /// CR 1.17.1: a player's score is the sum of the agenda points on
+    /// agendas in their score area.
+    pub fn score(&self, side: Side) -> i32 {
+        cite!("rule_score");
+        self.st.score_area[&side]
+            .iter()
+            .filter_map(|id| self.st.objects.get(id))
+            .filter_map(|o| o.printed.agenda_points)
+            .sum()
+    }
+
+    /// CR 1.17.1a: the threat level is the greatest score of any player.
+    /// It is what the "threat N" ability flag reads (9.3.6f).
+    pub fn threat_level(&self) -> i32 {
+        cite!("rule_threat_level");
+        self.score(Side::Corp).max(self.score(Side::Runner))
     }
 
     pub fn memory_limit(&self) -> i32 {
@@ -6210,6 +6331,10 @@ impl Vm {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
                     (af.idx, af.instructions[af.idx].clone())
                 };
+                let (chooser_override, instr) = match instr {
+                    Instruction::PerformedBy { side, instr } => (Some(side), *instr),
+                    other => (None, other),
+                };
                 if let Instruction::ChooseOne { options } = instr {
                     // The answer indexes the RESOLVABLE label list; map back.
                     let resolvable: Vec<usize> = options
@@ -6219,7 +6344,7 @@ impl Vm {
                         .map(|(k, _)| k)
                         .collect();
                     let chosen = resolvable.get(i).copied().unwrap_or(0);
-                    let inject = options[chosen].1.clone();
+                    let inject = wrap_all(options[chosen].1.clone(), chooser_override);
                     if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                         for (k, ins) in inject.into_iter().enumerate() {
                             af.instructions.insert(idx + 1 + k, ins);
@@ -6688,5 +6813,17 @@ fn class_key(c: EffectClass) -> u64 {
         EffectClass::Structural => 14,
         EffectClass::Breach => 15,
         EffectClass::AccessCard => 16,
+    }
+}
+
+/// CR 1.14.5: re-wrap a chosen option's instructions so the player named as
+/// carrying out the choice also carries out what the choice produces.
+fn wrap_all(instrs: Vec<Instruction>, by: Option<Side>) -> Vec<Instruction> {
+    match by {
+        None => instrs,
+        Some(side) => instrs
+            .into_iter()
+            .map(|i| Instruction::PerformedBy { side, instr: Box::new(i) })
+            .collect(),
     }
 }
