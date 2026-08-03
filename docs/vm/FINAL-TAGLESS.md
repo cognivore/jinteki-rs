@@ -197,17 +197,33 @@ variant's example test passing unchanged.
 
 ## 7. Staged migration — each stage green, odometer never regresses
 
+**Order of work (user-set, 2026-08-03): the rules ship first.** Completing the
+CR — all 243 examples, then the reference corpus, then the two decks — comes
+before the mechanical refactors. The stages below are therefore split into
+what runs *now* and what is *deferred*.
+
+Now:
+
 | stage | content | exit gate |
 |---|---|---|
-| **FT-0** | plan-driver harness; all tests declarative; injections retired (in flight) | 82/243 green, no `vm.step()` loops, no `tk::inject_*` |
-| **FT-1** | extract the traits; `Vm` implements them; move the 254 arms into family denotations. **No behavior change.** | 82/243 green; `vm.rs` no longer contains card semantics |
+| **FT-0** | plan-driver harness: tests are data (setup + one plan per player), one shared driver, injections retired. The "good testing interpreters". | 82/243 green, no `vm.step()` loops, no `tk::inject_*` |
+| **CR-∞** | wave after wave of examples until the odometer reads 243/243 | DP-7a green, DP-7b climbing |
+| **DP-7c** | port jinteki-reference's corpus, triaged against the CR | corpus green or defects filed |
+| **DECKS** | estrike Andromeda + Gauntlet NTM from printed oracle text | both playable |
+
+Deferred until the above is done:
+
+| stage | content | exit gate |
+|---|---|---|
+| **FT-1** | extract the traits; `Vm` implements them; move the 254 arms into family denotations. **No behavior change.** | odometer unchanged; `vm.rs` no longer contains card semantics |
 | **FT-2** | collapse the vocabulary per §6; `Filter`/`Duration` languages land | ≤45 variants; every example still green; zero card-shaped variants |
 | **FT-3** | second interpreters: `Legality`, `Viewpoint`, `Replay` | each trait has ≥2 impls; DP-2/DP-5 wired; CT compile-fail tests |
-| **FT-4** | resume the odometer on the clean substrate → 243/243 | DP-7a green, DP-7b coverage climbing |
-| **FT-5** | DP-7c corpus port, then the two decks | DP-7c triaged green |
 
-FT-1 and FT-2 are mechanical, large, and boring; that is the point. They are
-cheap at 82 examples and ruinous at 243.
+The deferral is a scheduling decision, not a retraction: this document stays
+normative as the target, and the in-flight discipline that keeps the refactor
+cheap stays binding while examples are implemented (ARCHITECTURE §12 — no
+card-named vocabulary, quantities as selectors, tests as plans, no test-only
+backdoors). Write it so FT-1/FT-2 remain mechanical; do not perform them yet.
 
 ## 8. Enforcement (make the structure unfakeable)
 
