@@ -5240,3 +5240,44 @@ pub fn additional_click_operation(name: &'static str, cost: u32) -> PrintedCard 
     c.additional_play_cost = Some(Cost { clicks: 1, ..Cost::free() });
     c
 }
+
+/// Accelerated Beta Test shape (1.12.3): "Look at the top N cards of R&D …
+/// trash the cards you are looking at." Between the two instructions there is
+/// a checkpoint, so a chain reaction can shuffle R&D out from under it — and
+/// 1.12.3 makes those cards NEW objects, which this ability can no longer act
+/// on.
+pub fn abt_like(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::LookAtCards {
+                cards: TargetSpec::Choose {
+                    count: Quantity::c(n as i64),
+                    criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }],
+                },
+                by: Side::Corp,
+            },
+            Instruction::GainCredits(Side::Corp, Quantity::c(1)),
+            Instruction::TrashCards(TargetSpec::Choose {
+                count: Quantity::c(n as i64),
+                criteria: vec![crate::instr::TargetFilter::LookedAtByThisAbility],
+            }),
+        ],
+    )
+    .labeled("abt: look at the top of R&D, then trash them")];
+    c
+}
+
+/// The Foundry shape (1.12.3): a chain-reaction ability that shuffles R&D —
+/// the cards another ability is looking at go to an unknown location.
+pub fn shuffle_on_credit_asset(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerGainsCredits(Side::Corp),
+        vec![Instruction::CorpRearrangesRnd],
+        false,
+    )
+    .labeled("foundry: shuffle R&D")];
+    c
+}

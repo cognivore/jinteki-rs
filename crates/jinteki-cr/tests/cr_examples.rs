@@ -25,6 +25,7 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 /// Example ids implemented as tests in this file (the DP-7a ledger).
 const IMPLEMENTED: &[&str] = &[
     "example_rule_alternate_payment_1",
+    "example_rule_object_move_location_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11083,5 +11084,52 @@ fn example_rule_inherent_cost_aggregates_1() {
              action's own and the operation's additional cost: {}",
             t.tail(12)
         );
+    }
+}
+
+/// example_rule_object_move_location_1 (1.12.3): the Corp resolves an
+/// Accelerated-Beta-Test-class ability, looking at the top cards of R&D. As a
+/// chain reaction, another ability shuffles R&D, so the cards being looked at
+/// move to an unknown location and become NEW objects. The looking ability can
+/// no longer act on them: they are not trashed.
+#[test]
+fn example_rule_object_move_location_1() {
+    for shuffled in [false, true] {
+        let mut vm = Vm::empty(1312);
+        tk::install_root(&mut vm, tk::abt_like("ABT-like", 3), ServerId::Remote(1), true);
+        if shuffled {
+            tk::install_root(&mut vm, tk::shuffle_on_credit_asset("Foundry-like"), ServerId::Remote(2), true);
+        }
+        let deck = tk::fill_deck(&mut vm, Side::Corp, 6);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().offering("abt").once(), Reply::take("abt"))
+                .when(Match::reaction().offering("foundry"), Reply::take("foundry"))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert!(t.took("abt"), "the looking ability resolved: {}", t.tail(12));
+        let trashed = deck
+            .iter()
+            .filter(|c| matches!(vm.st.objects[c].zone, Zone::Discard(Side::Corp)))
+            .count();
+        if shuffled {
+            assert!(t.took("foundry"), "the chain reaction shuffled R&D: {}", t.tail(12));
+            assert_eq!(
+                trashed, 0,
+                "1.12.3: the looked-at cards moved to an unknown location and became \
+                 NEW objects, so the ability can no longer act on them"
+            );
+        } else {
+            assert_eq!(
+                trashed, 3,
+                "without the shuffle the same ability trashes exactly the cards it \
+                 is looking at: {}",
+                t.tail(12)
+            );
+        }
     }
 }

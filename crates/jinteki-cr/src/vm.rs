@@ -4150,6 +4150,7 @@ impl Vm {
             set_aside_counters: Vec::new(),
             set_aside_cards: Vec::new(),
             found_cards: Vec::new(),
+            looked_at: Vec::new(),
         }));
     }
 
@@ -5129,6 +5130,24 @@ impl Vm {
                     .rev()
                     .find_map(|fr| match fr {
                         Frame::Ability(af) => Some(af.set_aside_cards.contains(&o.id)),
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+            }
+            // 1.12.3: the cards this ability is looking at, minus any whose
+            // object has ceased to exist because a shuffle or a rearrangement
+            // moved it to an unknown location.
+            TargetFilter::LookedAtByThisAbility => {
+                cite!("rule_object_move_location");
+                cite!("rule_look");
+                let gen = self.generation(o.id);
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|fr| match fr {
+                        Frame::Ability(af) => {
+                            Some(af.looked_at.iter().any(|(id, g)| *id == o.id && *g == gen))
+                        }
                         _ => None,
                     })
                     .unwrap_or(false)
@@ -6997,6 +7016,15 @@ impl Vm {
                 cite!("rule_look_reveal_instruction");
                 cite!("rule_look_reveal_expose_access_distinct");
                 let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                // 1.12.3: remember WHICH objects are being looked at. A card
+                // that then moves to an unknown location becomes a new object
+                // and this ability cannot act on it any more.
+                cite!("rule_object_move_location");
+                let stamped: Vec<(ObjectId, u32)> =
+                    targets.iter().map(|t| (*t, self.generation(*t))).collect();
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    af.looked_at = stamped;
+                }
                 for t in targets {
                     self.changes.record(GameChange::CardLookedAt { obj: t, by: *by });
                 }

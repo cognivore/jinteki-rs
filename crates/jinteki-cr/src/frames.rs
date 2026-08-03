@@ -235,6 +235,11 @@ pub struct AbilityFrame {
     /// resolves to these; anything still here when the ability finishes goes
     /// back where it came from (nothing in the CR trashes an unused find).
     pub found_cards: Vec<(crate::object::ObjectId, crate::object::Zone)>,
+    /// CR 1.12.3: the cards this ability is LOOKING AT, with the generation
+    /// each had when it was looked at. A card moved to an unknown location —
+    /// a shuffle, a rearrangement — becomes a NEW object, so the ability can
+    /// no longer act on it, and the stale entry is exactly how that shows.
+    pub looked_at: Vec<(crate::object::ObjectId, u32)>,
 }
 
 /// A frame on the control stack.

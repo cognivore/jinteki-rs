@@ -875,6 +875,12 @@ pub enum TargetFilter {
     /// set-aside zone at all (Street Peddler class). A zone-naming criterion,
     /// so 1.15.2c's play-area restriction lifts for it.
     SetAsideByThisAbility,
+    /// CR 1.12.3 / 1.21.2: a card THIS ability is currently looking at. An
+    /// entry whose object has been re-made — a shuffle or a rearrangement
+    /// moves cards to an unknown location, and 1.12.3 makes each a NEW object
+    /// — no longer matches, so the ability can no longer act on it. A
+    /// zone-naming criterion, so 1.15.2c's play-area restriction lifts.
+    LookedAtByThisAbility,
     /// CR 4.5: "an agenda in the Runner's score area".
     InScoreAreaOf(Side),
     /// CR 4.4: "a card in Archives" / "a card in your heap" — a criterion
@@ -951,6 +957,7 @@ impl TargetFilter {
                 | TargetFilter::InScoreAreaOf(_)
                 | TargetFilter::InDiscardOf(_)
                 | TargetFilter::SetAsideByThisAbility
+                | TargetFilter::LookedAtByThisAbility
                 | TargetFilter::TopOfDeckOf { .. }
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.
