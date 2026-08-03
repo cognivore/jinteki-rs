@@ -392,10 +392,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 @media (orientation: landscape) {
   .zoom-overlay .zoom-card {
     display: grid;
-    /* Art column is sized BY the image, and the image is sized BY viewport
-       height — so the card never forces a vertical scroll on account of art.
-       Text gets whatever width remains. */
-    grid-template-columns: auto minmax(200px, 1fr);
+    /* The art column is a fixed share of the card, NOT `auto`: an auto column
+       measures the image, so it collapses to 0 until the art loads and the
+       whole reader reflows when it arrives. The image then fits inside that
+       column, bounded by viewport height so art never forces a scroll. */
+    grid-template-columns: minmax(170px, 36%) minmax(200px, 1fr);
     column-gap: 16px;
     align-items: start;
     align-content: start;
@@ -406,11 +407,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .zoom-overlay .zoom-card .zart {
     grid-column: 1;
     grid-row: 1 / span 40;
-    height: min(74vh, 460px);
-    width: auto;
-    max-width: 44vw;
-    max-height: none;
+    width: 100%;
+    height: auto;
+    max-height: 76vh;
     object-fit: contain;
+    align-self: start;
     margin: 0;
     border-radius: 10px;
   }
@@ -426,7 +427,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     column-gap: 12px;
     row-gap: 4px;
   }
-  .zoom-overlay .zoom-card .zart { height: min(80vh, 460px); }
+  .zoom-overlay .zoom-card .zart { max-height: 84vh; }
   .zoom-overlay .zoom-card h3 { font-size: 17px; }
   .zoom-overlay .zoom-card .ztext { font-size: 12.5px; line-height: 1.35; }
   .zoom-overlay .zoom-card .zline { font-size: 11px; }
