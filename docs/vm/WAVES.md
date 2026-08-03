@@ -6,11 +6,10 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (during W5)
+## Odometers (after W7)
 
-- **DP-7a: 123/243** CR examples as example-named passing tests (50.6%).
-  Unfrozen since FT-0 landed; the climb to 243/243 has resumed.
-- **DP-7b: 454/1420** distinct rules cited (32.0%); traceability test fails
+- **DP-7a: 145/243** CR examples as example-named passing tests (59.7%).
+- **DP-7b: 472/1420** distinct rules cited (33.2%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -21,7 +20,8 @@ truth.
   build while every test passes. Flag any such new dependency in the commit
   message and to the coordinator; do NOT edit `nix/package.nix` (outside the
   staging paths). Also: `nix build` reads the git tree — `git add` a NEW
-  file before building or it is invisible to the sandbox.
+  file before building or it is invisible to the sandbox. (W7e hit this
+  exactly, with `crates/jinteki-cr/src/deck.rs`.)
 
 ## Stage: FT-0 (the algebra cut, `docs/vm/FINAL-TAGLESS.md`)
 
@@ -96,7 +96,7 @@ prefer a slightly larger honest primitive and note it here.
 | `5db3719` | W7c | 1.15.4 targets beyond a move (`bind_targets` substitutes an `EarlierTarget` reference into an ability the SAME ability creates — Howler's delayed conditional), `TargetFilter::TopOfDeckOf` as a zone-naming criterion (1.15.2c lifts for it), `Instruction::AccessCards { cards: TargetSpec }` (§7.2 as an instruction, the access structure pushed per announced card). **Bug fixed:** 9.2.8f window binding was a "look back 12 changes for an EncounterBegan" heuristic that bound a post-encounter reaction window to the encounter that had just ended and dropped its mandatory pendings; it is now the encounter actually in progress | 130 |
 | `30992fe` | W7d | subtypes as modifiable characteristics and §9.11 instruction identification: `Instruction::ModifySubtypes { target, add, remove, duration }` + `Payload::SubtypeMod` + `StaticDecl::SubtypeModSelf` feeding the 9.12.1b counting pipeline (2.16.5 — a subtype is present while its adds outnumber its removals); 9.11.4c the choose-and-modify sentence pair as ONE instruction; 9.11.4b split-up instructions, 9.11.4g choice instructions and 9.11.2a's "no checkpoint inside a checkpoint" asserted against existing machinery | 135 |
 | `bc1a920` | W7e | small rules riding existing machinery: §1.4 deck construction as pure functions (`src/deck.rs` — 1.4.5a influence counted by copy, 1.4.6d agenda-point requirement), `Cost::lose_clicks` so 5.2.1a's "Lose [click]" ability is used in a paid window and never offered as an action, 5.2.2b action completion, 6.1.4c "end the run" with no run and no encounter, 7.4.1a root cards are candidates for EVERY server (a real gap: Archives ignored its root), and `Object::generation` — CR 1.12.3's "a card that changes zone becomes a new object" as a stamp, which is what lets a trashed upgrade become an Archives candidate again (7.4.5) | 141 |
-| _(this)_ | W7f | §1.12 object identity: `Zone::zone_class` makes the play area ONE zone so 1.12.4 moves within it keep the object while 1.12.3 moves between zones make a new one; once-per-turn use (9.3.6g) is keyed by `(AbilityRef, generation)`, so a reinstalled card's ability is fresh (1.12.2) and a derezzed-then-rezzed one's is not (1.12.5); `Instruction::Derez { target }` | 145 |
+| `8126ef9` | W7f | §1.12 object identity: `Zone::zone_class` makes the play area ONE zone so 1.12.4 moves within it keep the object while 1.12.3 moves between zones make a new one; once-per-turn use (9.3.6g) is keyed by `(AbilityRef, generation)`, so a reinstalled card's ability is fresh (1.12.2) and a derezzed-then-rezzed one's is not (1.12.5); `Instruction::Derez { target }` | 145 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -222,6 +222,47 @@ prefer a slightly larger honest primitive and note it here.
     an install EFFECT; 1.13.6c's legality gate lives in the same place either
     way (`Vm::install_destination_available`).
 
+21. **1.15.2c is a criteria-level test** (W7a, `Vm::filter_candidates_from`)
+    — the play-area restriction lifts when ANY criterion of the announcement
+    names a zone (`TargetFilter::names_zone`). The CR phrases it as a
+    property of the instruction; the criteria are the kernel's only
+    representation of what the instruction specifies, so the two coincide
+    for every shape in the vocabulary. A future instruction that names a
+    zone in prose without a criterion would need a flag.
+22. **`TargetSpec::Each` announcements are per-element, not per-"time"**
+    (W7b) — 1.15.2's "for each time the instruction requires a player to
+    choose 1 or more objects" is one Decision per element of the `Each`
+    list, and `announcements_required` returns 1 for every other
+    instruction. An instruction needing two announcements of a shape other
+    than `TrashCards(Each(..))` needs its arm added there.
+23. **Subroutine announcements have no `min`** (W7b,
+    `DecisionSpec::ChooseSubroutines`) — 1.15.2e's "as many distinct as
+    possible" floor is applied to object announcements
+    (`Vm::announcement`) but subroutine announcements only carry `count`
+    and `up_to`, since the two examples are an "up to N" break and a
+    "break all but N". A mandatory "break 2 subroutines" would want the
+    floor too.
+24. **`bind_targets` covers the instructions that carry a target** (W7c) —
+    1.15.4's cross-ability binding rewrites `EarlierTarget` inside
+    `TrashCards`, `PlaceCounters`, `ModifyStrength`, `Combined` and
+    `PerformedBy`. Other instructions pass through unchanged; add arms as
+    shapes need them. Only `CreateDelayedConditional` calls it — a
+    `GrantSubroutines` whose granted subroutine refers to an earlier target
+    would need the same call.
+25. **`Instruction::AccessCards` skips additional access costs** (W7c) —
+    §7.2 accessing as an instruction pushes the access structure directly;
+    the 7.4.3/1.16.10 additional-access-cost Decision lives only on the
+    candidate path (`StepKind::AccessChosenCandidate`). No example
+    exercises a Top-Hat-class access with a Gagarin-class cost.
+26. **`Object::generation` bumps on zone CLASS, and nothing reads history**
+    (W7e/W7f) — 1.12.3's new object is a `(ObjectId, generation)` pair, with
+    the whole play area one class so 1.12.4 moves keep the object. What is
+    NOT built: 1.12.3's "moved to an unknown location" cases (a shuffle or a
+    rearrangement makes new objects — `object_move_location_1/2`), and
+    1.12.6's game-history queries (`previous_object_1`,
+    `previous_object_source_1`), which want the change log indexed by
+    object rather than scanned.
+
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real
 Runner declaration Decision with 7.4.6a declined-tracking); **W3's
@@ -263,9 +304,8 @@ New card shapes go in `testkit.rs` and are built EXCLUSIVELY through
 shape is annotated in its doc comment and is legitimate only while
 orthogonal to every example using it.
 
-## Next targets — resume the odometer (120 examples left, cluster-ordered)
+## Next targets — 98 examples left, re-measured after W7
 
-Measured from `docs/rules/examples.json` minus the `IMPLEMENTED` ledger.
 Re-run the count before choosing a cluster:
 
 ```
@@ -274,81 +314,92 @@ import json,re
 v=json.load(open('docs/rules/examples.json'))
 src=open('crates/jinteki-cr/tests/cr_examples.rs').read()
 i=src.index('const IMPLEMENTED'); j=src.index('];', i)
-impl=set(re.findall(r'"(example_[a-z0-9_]+)"', src[i:j]))
+impl=set(re.findall(r'"(example_[a-z0-9_+]+)"', src[i:j]))
 missing=[e['id'] for e in v['examples'] if e['id'] not in impl]
 print(len(missing)); [print(m) for m in missing]
 EOF
 ```
 
-Remaining by section: 1.12 Objects 9 · 1.16 Costs 8 · 6.2 Position 8 ·
-1.15 Targets 7 · 9.11 Instructions 7 · 9.12 Other 7 · 9.1 General 6 ·
-4.6 Play Area 4 · 6.1 General 4 · 7.3 Breaching 4 · 9.8 Subroutines 4 ·
-5.2 Actions 3 · 6.5 Encounters 3 · 7.4 Candidates 3 · 8.8 Swaps 3 ·
-9.9 Interrupts 3 · 9.10 Lingering 3 · 10.1 General 3 · rest ≤ 2.
+Remaining by section: 1.16 Costs 8 · 6.2 Position 8 · 9.12 Other 7 ·
+9.1 General 6 · 1.12 Objects 5 · 4.6 Play Area 4 · 7.3 Breaching 4 ·
+6.1/6.5/8.8/9.8/9.9/9.10/9.11/10.1 three each · rest ≤ 2.
 
-1. **§1.15 targets + §9.8.6 subroutine targets** (~8): `target_1..4`,
-   `targets_must_be_in_play_area_1`, `distinct_targets_1`,
-   `target_beyond_move_1`, `break_all_but_x_subroutines_targets_1`. The
-   machinery is scoped and half-built (W6a already added the 1.14.5 chooser
-   the "The Runner trashes 1 program" example needs, and W6c added `min` to
-   `ChooseTargets` for 1.15.2e's "as many distinct targets as possible"):
-   - `TargetSpec::Choose { count }` should take a `Quantity` (§12 rule 6) —
-     Aggressive Secretary's X is advancement counters on the source;
-   - several announcements per instruction (1.15.2, Colossus's "1 program
-     and 1 resource") — a slot counter on `AbilityFrame` plus a
-     `TargetSpec` combinator, since `targets_needed` asks exactly once now;
-   - 1.15.2c: `filter_candidates` must restrict to INSTALLED cards unless a
-     criterion names a zone (`CardsInHandOf`, `InScoreAreaOf`);
-   - 1.15.3: re-validate announced targets at resolution;
-   - 1.15.4: bind already-chosen targets into instructions that follow
-     (Howler's delayed conditional);
-   - subroutine targets need a `DecisionSpec` over `SubKey`, which
-     `Grappling Hook` (9.8.6b) needs too.
-2. **§1.12 object identity and movement** (~9): `object_move_location_1/2`,
-   `object_move_known_location_1`, `previous_object_1/2`,
-   `previous_object_source_1`, `identify_object_after_move_1`,
-   `no_memory_1`, `object_turn_faceup_facedown_1`. A card that changes zone
-   becomes a NEW object (1.12.3) — the kernel keeps one `ObjectId` and fakes
-   the consequence in two places (`CorpRearrangesRnd`, `source_moved_since`).
-   This cluster wants a real object generation stamp; `previous_object`
-   (1.12.6) then falls out as "the game history says these two objects are
-   the same card".
-3. **§6.2 positions + §8.8 swaps** (~11): `count_positions_1/2`,
-   `ice_change_inward_1`, `_outward_1`, `_during_movement_1/2`,
-   `_encounter_move_swap_1`, `no_position_after_approach_server_1`,
+1. **§6.2 positions + §8.8 swaps (~11)** — the biggest single cluster and
+   the one with a clear design. `count_positions_1/2`,
+   `no_position_after_approach_server_1`, `ice_change_outward_1`,
+   `_inward_1`, `_encounter_move_swap_1`, `_during_movement_1/2`,
    `swap_become_installed_1`, `swap_installed_cards_preserves_hosting_1`,
-   `swap_only_to_valid_location_1`, `drawn_card_swapped_1`. Positions are
-   counted from the innermost outward (6.2.3) and the Runner's position
-   survives ice appearing/disappearing/moving; the swap examples share the
-   machinery and retire deviation 15.
-4. **§1.16 costs** (~8): `cost_x_1`, `cost_quantities_1`, `cost_restrictions_2`,
-   `alternate_payment_1`, `inherent_cost_aggregates_1`,
+   `swap_only_to_valid_location_1`, plus `drawn_card_swapped_1`.
+   **6.2.6 is explicit that the Runner's position is "a specific element of
+   the sequence of positions, not an index into that sequence"**, and
+   `RunCtx.position` is an index today — so this cluster is a position-id
+   refactor: give each server a list of position ids alongside its ice list
+   (6.2.2 creates a position, 6.2.4 destroys it, 6.2.2f swaps do neither),
+   and make `RunCtx.position: Option<u64>`. 6.2.3's "same position" then
+   reads as "same number of positions inward", which is what
+   `TargetFilter::IceAtPosition { n }` (Rook) wants. §8.8 rides along and
+   retires deviation 15.
+2. **§1.16 costs (~8)** — `cost_x_1` (X chosen at announce, 1.16.2c),
+   `alternate_payment_1` (1.16.2e), `cost_quantities_1`,
+   `cost_restrictions_2`, `inherent_cost_aggregates_1`,
    `additional_cost_checkpoint_1`, `install_and_rez_reducing_total_1`,
-   `cost_interrupt_static_mandatory_1`. X-costs chosen at announce (1.16.2c)
-   and alternate payments (1.16.2e) are the two new mechanisms.
-5. **Forced encounters outside a run** (~4): `forced_encounter_1`,
+   `cost_interrupt_static_mandatory_1`. X-costs and alternate payments are
+   the two new mechanisms; note deviations 11 and 18 both say the same
+   thing — `pay_cost` is synchronous and cannot suspend for a Decision.
+   Taking this cluster probably means making cost payment a phase of the
+   ability frame, which would retire 11, 18 and part of 8 at once.
+3. **§1.12's remaining 5 + §4.6 "this server" (~9)** — `previous_object_1`,
+   `previous_object_source_1`, `object_move_location_1/2`,
+   `object_move_known_location_1`, `this_server_1/2/3`,
+   `limit_remote_servers_1`. `Object::generation` (W7e/f) is the stamp;
+   what is missing is (a) unknown-location moves bumping it (shuffle,
+   rearrange) and (b) a game-history query keyed by object, which 1.12.6
+   needs and which `previous_object_source_1` shares with 4.6.6i's "this
+   server" (the server a card was in when it left). `MaintainedChoice`
+   exists but nothing creates one — `object_move_known_location_1` and the
+   three `lingering_effect_maintaining_choice_*` examples all want
+   `Instruction::MaintainChoice`, which is one more instruction.
+4. **Forced encounters outside a run (~5)** — `forced_encounter_1`,
    `forced_encounter_during_run_1`, `end_encounter_outside_run_1`,
-   `active_exception_encounter_not_installed_1` — plus
-   `ice_strength_modification_duration_1`, which W6b implemented the
-   duration half of and could not test for want of a standalone encounter
-   (the union-of-durations model already gives the right answer; it needs an
-   encounter with no run in progress to observe). An encounter is currently
-   a phase of the run structure, not a structure of its own.
-6. **§9.11 instruction identification** (~7): `step_sequences_1/2`,
-   `use_restrictions_1`, `split_up_instruction_1`, `choose_instruction_1`,
-   `choice_instruction_1`, `look_reveal_instruction_1`. Note that
-   `step_sequences_1` contradicts deviation 4 head-on (it says the ONLY
-   checkpoint while installing is 8.5.16d) — taking this cluster means
-   retiring that deviation, which is worth doing before the §8.5 surface
-   grows further.
+   `active_exception_encounter_not_installed_1`,
+   `no_position_after_approach_server_1`, plus
+   `ice_strength_modification_duration_1` (W6b built the duration half and
+   could not test it for want of a standalone encounter — the union-of-
+   durations model already gives the right answer). `EncounterState` is
+   already a `Vm` field rather than a run-frame field and its doc comment
+   already says encounters can exist without a run; what is missing is an
+   encounter TIMING STRUCTURE (§11) to push, and `Instruction::
+   ForceEncounter { ice }`.
+5. **§9.12.1's dependency examples (~4)** — `independent_effects_1/2`
+   (Mother Goddess/Warden Fatuma/Hush; Hush/Magnet), `modify_ability_
+   with_choice_1`, `calculated_quantity_3`. Deviation 2 says the dependency
+   analysis covers the ability-removal class only; `independent_effects_1`
+   is the subtype-grant class, and W7d just added the subtype ops the
+   pipeline needs, so this got cheaper.
+6. **§9.11's last three** — `step_sequences_1` contradicts deviation 4 head
+   on (it says the ONLY checkpoint while installing is 8.5.16d), so taking
+   it means retiring that deviation; `use_restrictions_1` wants a
+   payment restriction ("only by spending credits from a stealth card");
+   `look_reveal_instruction_1` wants `Instruction::LookAt { zone, count }`
+   — with W7c's `TargetFilter::TopOfDeckOf` the second instruction is
+   already expressible.
 
-Singletons worth taking opportunistically: `this_server_1/2/3` (3, one
-mechanism), `dividends_1`/`dividends_timing_1` (2), `lingering_effect_
-maintaining_choice_*` (3 — `Payload::MaintainedChoice` exists but nothing
-creates one yet), `multiple_damage_selected_sequentially_1`,
-`suffer_or_take_damage`-adjacent `mandatory_infinite_loop_1` (hard),
-`influence_by_copy_1` + `54+_1` (§1.4 deck construction — two pure
-arithmetic functions, no kernel involvement).
+Cheap singletons worth taking opportunistically: `dividends_1` +
+`dividends_timing_1` (2, one keyword — `PrintedCard.dividends` plus a
+score-time snapshot, since 10.13.2 reads the values as the agenda began to
+be scored); `bluffing_1` + `cannot_hide_open_info_1` (§10.2 information —
+the kernel has no per-side visibility model at all, see deviation 20);
+`multiple_damage_selected_sequentially_1`; `mandatory_infinite_loop_1`
+(hard — 10.1.6a draws the game).
+
+**Blocked / deferred, with reasons:**
+- `target_3` (Trick of Light, 1.15.1) — the targets are ADVANCEMENT
+  COUNTERS. Counters are a `BTreeMap<CounterKind, u32>` on the object, not
+  `ObjectId`-addressed objects, so they cannot be announced. Deferred to
+  the §1.12 cluster, which is where counters-as-objects belongs (1.12.1
+  says counters are objects).
+- `candidates_leaving_server_1` was blocked on object identity and is now
+  DONE (W7e) — the generation stamp was what it needed.
 
 ## Discipline (unchanged, binding)
 
