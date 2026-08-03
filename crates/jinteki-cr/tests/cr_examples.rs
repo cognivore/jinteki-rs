@@ -278,6 +278,9 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_calculated_quantity_3",
     "example_rule_modifiable_value_cost_1",
     "example_rule_trash_ability_keeps_track_of_hosted_objects_2",
+    // Wave 12d: §9.8 subroutine origins and order declarations.
+    "example_rule_subroutine_origin_external_before_1",
+    "example_rule_gain_subroutines_in_any_order_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -10002,4 +10005,188 @@ fn example_rule_trash_ability_keeps_track_of_hosted_objects_2() {
             "the cards still set aside were trashed at the next checkpoint (1.13.13)"
         );
     }
+}
+
+// ===========================================================================
+// Wave 12d — §9.8 subroutine origins and order declarations
+// ===========================================================================
+
+/// example_rule_subroutine_origin_external_before_1 (9.8.3a): the Runner
+/// encounters a Loki-class piece of ice while a Stick-and-Poke-class grant and
+/// a Warden-Fatuma-class static grant apply. Every one of those grants is
+/// category (a) — external, before — so they sort newest first; the two
+/// subroutines Loki copies from the chosen ice were added by ONE effect and
+/// keep the order they had there.
+#[test]
+fn example_rule_subroutine_origin_external_before_1() {
+    let mut vm = Vm::empty(1213);
+    // Tithe: "[sub] Do 1 net damage." then "[sub] Gain 1[credit]."
+    let mut tithe = tk::vanilla_ice("Tithe-like", 0, 1);
+    tithe.abilities = vec![
+        jinteki_cr::ability::AbilityDef::subroutine(vec![jinteki_cr::instr::Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(1),
+            responsible: Side::Corp,
+        }])
+        .labeled("[sub] tithe net"),
+        jinteki_cr::ability::AbilityDef::subroutine(vec![
+            jinteki_cr::instr::Instruction::GainCredits(Side::Corp, Quantity::c(1)),
+        ])
+        .labeled("[sub] tithe credit"),
+    ];
+    let tithe = tk::install_ice(&mut vm, tithe, ServerId::Rnd, true);
+    // Warden Fatuma's static grant is present before the encounter begins.
+    tk::install_ice(
+        &mut vm,
+        tk::warden_fatuma_like(
+            "WardenFatuma-like",
+            "Bioroid",
+            jinteki_cr::ability::AbilityDef::subroutine(vec![
+                jinteki_cr::instr::Instruction::LoseCredits(Side::Runner, 1),
+            ])
+            .labeled("[sub] fatuma"),
+        ),
+        ServerId::Archives,
+        true,
+    );
+    let mut loki = tk::loki_like(
+        "Loki-like",
+        jinteki_cr::ability::AbilityDef::subroutine(vec![jinteki_cr::instr::Instruction::EndTheRun])
+            .labeled("[sub] loki printed"),
+    );
+    loki.subtypes.push("Bioroid");
+    let loki = tk::install_ice(&mut vm, loki, ServerId::Hq, true);
+    // SIMPLIFICATION: the printed Stick and Poke is a Runner card; the kernel
+    // shape is the Corp-side Marker granter, because what 9.8.3a turns on is
+    // the CATEGORY of the grant (external, before) and when it began to
+    // apply, not who controls the granting card.
+    tk::install_root(
+        &mut vm,
+        tk::subroutine_granter(
+            "StickAndPoke-like",
+            loki,
+            jinteki_cr::ability::AbilityDef::subroutine(vec![
+                jinteki_cr::instr::Instruction::Damage {
+                    kind: DamageKind::Net,
+                    amount: Quantity::c(1),
+                    responsible: Side::Corp,
+                },
+            ])
+            .labeled("[sub] stick and poke"),
+            true,
+            jinteki_cr::lingering::WantedDuration::ThisTurn,
+        ),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: the Stick-and-Poke-class grant is made first (so it is the
+    // OLDER of the two effect-grants), then the Runner runs HQ and the
+    // Loki-class ability copies Tithe as the encounter begins.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("marker").once(), Reply::take("marker"))
+            .when(Match::targets().once(), Reply::target(tithe)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::jack_out(), Reply::JackOut(true))
+            .stop_at_action(),
+    );
+    assert!(t.took("marker"), "the older external grant was made first: {}", t.tail(12));
+    let subs: Vec<&str> = vm.current_subs(loki).into_iter().map(|(_, d)| d.label).collect();
+    assert_eq!(
+        subs,
+        vec![
+            "[sub] tithe net",
+            "[sub] tithe credit",
+            "[sub] stick and poke",
+            "[sub] fatuma",
+            "[sub] loki printed",
+        ],
+        "9.8.3a: external-before grants newest first, and the two copied by ONE \
+         effect keep the order they had on the ice they came from"
+    );
+}
+
+/// example_rule_gain_subroutines_in_any_order_1 (9.8.2c): the Runner
+/// encounters a piece of ice with a printed subroutine and one granted by a
+/// Sub-Boost-class condition counter. A Merlin-class ability adds a
+/// subroutine "in the order of your choice", and the Corp declares its
+/// position relative to BOTH of them, regardless of categories.
+#[test]
+fn example_rule_gain_subroutines_in_any_order_1() {
+    let mut vm = Vm::empty(1214);
+    let mut lancelot = tk::vanilla_ice("Lancelot-like", 0, 4);
+    lancelot.abilities = vec![jinteki_cr::ability::AbilityDef::subroutine(vec![
+        jinteki_cr::instr::Instruction::TrashCards(jinteki_cr::instr::TargetSpec::Objects(
+            Vec::new(),
+        )),
+    ])
+    .labeled("[sub] trash 1 program")];
+    let lancelot = tk::install_ice(&mut vm, lancelot, ServerId::Hq, true);
+    // The Sub-Boost-class "End the run." subroutine, granted after.
+    tk::install_root(
+        &mut vm,
+        tk::subroutine_granter(
+            "SubBoost-like",
+            lancelot,
+            jinteki_cr::ability::AbilityDef::subroutine(vec![
+                jinteki_cr::instr::Instruction::EndTheRun,
+            ])
+            .labeled("[sub] end the run"),
+            false,
+            jinteki_cr::lingering::WantedDuration::ThisTurn,
+        ),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(
+        &mut vm,
+        tk::any_order_granter(
+            "Merlin-like",
+            lancelot,
+            jinteki_cr::ability::AbilityDef::subroutine(vec![
+                jinteki_cr::instr::Instruction::Damage {
+                    kind: DamageKind::Net,
+                    amount: Quantity::c(2),
+                    responsible: Side::Corp,
+                },
+            ])
+            .labeled("[sub] do 2 net damage"),
+            jinteki_cr::lingering::WantedDuration::ThisTurn,
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    vm.start_turn(Side::Corp);
+
+    // The plan: the Corp arms the Sub-Boost-class grant, then uses the
+    // Merlin-class ability and declares that its subroutine goes BETWEEN the
+    // printed one and the granted "End the run."
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("marker").once(), Reply::take("marker"))
+            .when(Match::paid().offering("merlin").once(), Reply::take("merlin"))
+            .when(Match::sub_order().once(), Reply::SubOrder(vec![1]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("marker") && t.took("merlin"));
+    let decl = t.first_window(Kind::SubOrder, Side::Corp);
+    assert!(
+        matches!(&decl.spec, DecisionSpec::DeclareSubroutineOrder { existing, granted }
+                 if existing.len() == 2 && granted.len() == 1),
+        "9.8.2c: the declaration is made against every subroutine the ice has \
+         at that time, regardless of categories"
+    );
+    let subs: Vec<&str> = vm.current_subs(lancelot).into_iter().map(|(_, d)| d.label).collect();
+    assert_eq!(
+        subs,
+        vec!["[sub] trash 1 program", "[sub] do 2 net damage", "[sub] end the run"],
+        "the declared position is honoured across categories"
+    );
 }

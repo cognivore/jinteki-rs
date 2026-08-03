@@ -243,9 +243,14 @@ pub enum Instruction {
     /// self-grants and external grants are one variant (§12 rule 2).
     GrantSubroutines {
         to: TargetSpec,
-        count: u32,
-        sub: Box<crate::ability::AbilityDef>,
+        /// WHICH subroutines are granted (§12 rule 2: the instruction is the
+        /// position, this is the content).
+        grant: SubroutineGrant,
         before: bool,
+        /// CR 9.8.2c: "in the order of your choice" — the granting player
+        /// declares where the granted subroutines sit relative to every
+        /// subroutine the ice has at that time, regardless of categories.
+        any_order: bool,
         duration: crate::lingering::WantedDuration,
     },
     /// "The Corp discards N cards from HQ." (Utopia Shard class driver.)
@@ -655,6 +660,17 @@ pub enum LingeringSpec {
     /// run" (Hudson 1.0 class). The bound is a quantity position (§12 rule 6)
     /// evaluated when the effect is created.
     AccessLimit { limit: Quantity },
+}
+
+/// CR 9.8.2/9.8.3: what an ability grants when it grants subroutines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubroutineGrant {
+    /// "…gains \"[subroutine] …\"", N copies of one stated subroutine.
+    Stated { count: u32, sub: Box<crate::ability::AbilityDef> },
+    /// "…gains the subroutines of that ice" (Loki class): ONE effect grants
+    /// several subroutines at once, and 9.8.3a orders them among themselves
+    /// in the order they have on the card they were copied from.
+    CopiedFrom(TargetSpec),
 }
 
 /// CR 9.10.3: what a maintained choice is a choice OF.

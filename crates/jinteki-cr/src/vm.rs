@@ -158,6 +158,9 @@ pub enum DecisionCtx {
     StealCost(ObjectId),
     /// 10.8.6c/d trace spends.
     TraceSpend(Side),
+    /// CR 9.8.2c: the granting player declares where the subroutines just
+    /// granted go.
+    SubroutineOrder,
     /// 10.14.6 sealed psi bids.
     PsiBid(Side),
     /// 10.3.1j: the Runner declares candidacy of a mid-breach root entry.
@@ -321,6 +324,9 @@ pub struct Vm {
     /// Run context mirror for conditions when the run frame is deep in the
     /// stack: (run_id, server, reached_success) while a run is in progress.
     pub current_run: Option<(u64, ServerId, bool)>,
+    /// CR 9.8.2c: the ice and grant stamp a `DeclareSubroutineOrder` Decision
+    /// is about, while it is outstanding.
+    pub pending_sub_order: Option<(ObjectId, u64)>,
     /// Trace of resolutions for tests: labels of resolved ability frames.
     pub resolution_log: Vec<String>,
 }
@@ -447,6 +453,7 @@ impl Vm {
             would: WouldCounters::default(),
             throttled: HashSet::new(),
             once_per_turn_used: HashSet::new(),
+            pending_sub_order: None,
             snapshot: None,
             last_scan_window: Vec::new(),
             last_minimal_sets: None,
@@ -2141,20 +2148,28 @@ impl Vm {
         let mut out: Vec<(SubKey, AbilityDef)> = Vec::new();
         // (a) external before, newest first (9.8.3a).
         cite!("rule_subroutine_origin_external_before");
-        let mut befores: Vec<(u64, AbilityDef)> = self
+        let mut befores: Vec<(u64, u32, AbilityDef)> = self
             .lingering
             .iter()
             .filter_map(|l| match &l.payload {
-                Payload::GrantedSubroutine { to, sub, before: true, seq } if *to == ice => {
-                    Some((*seq, sub.clone()))
-                }
+                Payload::GrantedSubroutine {
+                    to,
+                    sub,
+                    before: true,
+                    seq,
+                    ord,
+                    placement: None,
+                } if *to == ice => Some((*seq, *ord, sub.clone())),
                 _ => None,
             })
             .collect();
         befores.extend(self.static_subroutine_grants(ice, true));
-        befores.sort_by(|x, y| y.0.cmp(&x.0));
-        for (seq, def) in befores {
-            out.push((SubKey { category: 1, src: seq, ord: 0 }, def));
+        // 9.8.3a: "the most recently added subroutines first" orders the
+        // GRANTS; several subroutines added by ONE effect keep the order they
+        // had where they came from (Loki copying another ice's subroutines).
+        befores.sort_by(|x, y| y.0.cmp(&x.0).then(x.1.cmp(&y.1)));
+        for (seq, ord, def) in befores {
+            out.push((SubKey { category: 1, src: seq, ord }, def));
         }
         // (c) printed, in printed order (9.8.3c), honoring 9.1.9 losses — and
         // 9.1.7: only ACTIVE abilities do anything. For a piece of ice that is
@@ -2194,22 +2209,95 @@ impl Vm {
         }
         // (e) external after/unspecified, oldest first (9.8.3e).
         cite!("rule_subroutine_origin_external_after");
-        let mut afters: Vec<(u64, AbilityDef)> = self
+        let mut afters: Vec<(u64, u32, AbilityDef)> = self
             .lingering
             .iter()
             .filter_map(|l| match &l.payload {
-                Payload::GrantedSubroutine { to, sub, before: false, seq } if *to == ice => {
-                    Some((*seq, sub.clone()))
-                }
+                Payload::GrantedSubroutine {
+                    to,
+                    sub,
+                    before: false,
+                    seq,
+                    ord,
+                    placement: None,
+                } if *to == ice => Some((*seq, *ord, sub.clone())),
                 _ => None,
             })
             .collect();
         afters.extend(self.static_subroutine_grants(ice, false));
-        afters.sort_by(|x, y| x.0.cmp(&y.0));
-        for (seq, def) in afters {
-            out.push((SubKey { category: 5, src: seq, ord: 0 }, def));
+        afters.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.cmp(&y.1)));
+        for (seq, ord, def) in afters {
+            out.push((SubKey { category: 5, src: seq, ord }, def));
+        }
+        // 9.8.2c: subroutines granted "in the order of your choice" sit where
+        // the granting player declared, relative to every subroutine the ice
+        // had at that time, REGARDLESS OF CATEGORIES — so the declaration is
+        // applied after the category sort, to the list it produced.
+        cite!("rule_gain_subroutines_in_any_order");
+        let mut placed: Vec<(usize, u64, u32, AbilityDef)> = self
+            .lingering
+            .iter()
+            .filter_map(|l| match &l.payload {
+                Payload::GrantedSubroutine { to, sub, seq, ord, placement: Some(at), .. }
+                    if *to == ice =>
+                {
+                    Some((*at, *seq, *ord, sub.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        placed.sort_by_key(|(at, seq, ord, _)| (*at, *seq, *ord));
+        for (k, (at, seq, ord, def)) in placed.into_iter().enumerate() {
+            let idx = (at + k).min(out.len());
+            out.insert(idx, (SubKey { category: 2, src: seq, ord }, def));
         }
         out
+    }
+
+    /// CR 9.8.2c: ask the granting player where the subroutines just granted
+    /// to `ice` go, relative to every subroutine the ice has at this time.
+    fn ask_subroutine_placement(&mut self, ice: ObjectId) {
+        cite!("rule_gain_subroutines_in_any_order");
+        let pending: Vec<(u64, u32, &'static str)> = self
+            .lingering
+            .iter()
+            .filter_map(|l| match &l.payload {
+                Payload::GrantedSubroutine { to, sub, seq, ord, placement: None, .. }
+                    if *to == ice =>
+                {
+                    Some((*seq, *ord, sub.label))
+                }
+                _ => None,
+            })
+            .collect();
+        // The declaration is made against the list WITHOUT the new ones.
+        let newest = pending.iter().map(|(s, _, _)| *s).max();
+        let Some(newest) = newest else { return };
+        let mut granted: Vec<(u64, u32, &'static str)> =
+            pending.into_iter().filter(|(s, _, _)| *s == newest).collect();
+        granted.sort_by_key(|(_, o, _)| *o);
+        if granted.is_empty() {
+            return;
+        }
+        self.pending_sub_order = Some((ice, newest));
+        // "relative to each subroutine the ice has AT THAT TIME": the list the
+        // declaration is made against is the one WITHOUT the subroutines being
+        // placed.
+        let existing: Vec<(SubKey, &'static str)> = self
+            .current_subs(ice)
+            .into_iter()
+            .filter(|(k, _)| k.src != newest)
+            .map(|(k, d)| (k, d.label))
+            .collect();
+        let side = self.st.objects[&ice].controller;
+        self.ask(
+            side,
+            DecisionSpec::DeclareSubroutineOrder {
+                existing,
+                granted: granted.into_iter().map(|(_, _, l)| l).collect(),
+            },
+            DecisionCtx::SubroutineOrder,
+        );
     }
 
     /// CR 9.8.3a/e: subroutines granted to `ice` by a static ability on ANOTHER
@@ -2218,7 +2306,7 @@ impl Vm {
     /// apply" stamp is the moment its source became active — the same clock
     /// `Payload::GrantedSubroutine`'s `seq` is drawn from, so the two kinds of
     /// external grant sort against each other.
-    fn static_subroutine_grants(&self, ice: ObjectId, before: bool) -> Vec<(u64, AbilityDef)> {
+    fn static_subroutine_grants(&self, ice: ObjectId, before: bool) -> Vec<(u64, u32, AbilityDef)> {
         cite!("rule_subroutine_origins");
         let threat = self.threat_level();
         let encountered = self.st.encounter.as_ref().map(|e| e.ice);
@@ -2243,7 +2331,7 @@ impl Vm {
                     }
                     let target = &self.st.objects[&ice];
                     if criteria.iter().all(|f| self.filter_matches(target, *f, Some(o.id))) {
-                        out.push((o.active_since, (**sub).clone()));
+                        out.push((o.active_since, 0, (**sub).clone()));
                     }
                 }
             }
@@ -4070,6 +4158,12 @@ impl Vm {
             Instruction::MaintainChoice { of: crate::instr::ChoiceSpec::Object(spec), .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
+            // 9.8.3a: "choose another rezzed piece of ice" — the ice whose
+            // subroutines are copied is a 1.15.2 target announcement.
+            Instruction::GrantSubroutines {
+                grant: crate::instr::SubroutineGrant::CopiedFrom(spec),
+                ..
+            } => self.announcement_for(spec).map(|s| (af.controller, s)),
             Instruction::TrashCards(spec)
             | Instruction::AccessCards { cards: spec }
             | Instruction::ModifySubtypes { target: spec, .. }
@@ -6029,7 +6123,7 @@ impl Vm {
                     DecisionCtx::PsiBid(Side::Corp),
                 );
             }
-            Instruction::GrantSubroutines { to, count, sub, before, duration } => {
+            Instruction::GrantSubroutines { to, grant, before, any_order, duration } => {
                 // 9.8.3a/e: externally-granted subroutines, ordered by grant
                 // time within their category; they arrive unbroken (9.8.4b).
                 cite!("rule_subroutine_origins");
@@ -6043,22 +6137,53 @@ impl Vm {
                     TargetSpec::SelfSource => vec![source.obj],
                     other => self.resolve_targets(other, Some(source.obj), &imm.targets),
                 };
+                // WHICH subroutines: a stated one repeated, or the effective
+                // subroutines of another card (Loki class), in ITS order.
+                let subs: Vec<AbilityDef> = match grant {
+                    crate::instr::SubroutineGrant::Stated { count, sub } => {
+                        (0..*count).map(|_| (**sub).clone()).collect()
+                    }
+                    crate::instr::SubroutineGrant::CopiedFrom(spec) => {
+                        cite!("rule_subroutine_origin_external_before");
+                        self.resolve_targets(spec, Some(source.obj), &imm.targets)
+                            .into_iter()
+                            .flat_map(|from| {
+                                self.current_subs(from).into_iter().map(|(_, d)| d)
+                            })
+                            .collect()
+                    }
+                };
                 for obj in ice {
-                    for _ in 0..*count {
+                    // 9.8.3a/e order by "when the effect granting them began
+                    // to apply"; `active_seq` is the kernel's clock for that,
+                    // shared with static grants (`static_subroutine_grants`)
+                    // so the two compare. ONE effect granting several
+                    // subroutines is ONE moment, so they share the stamp and
+                    // are ordered among themselves by `ord`.
+                    self.st.active_seq += 1;
+                    let seq = self.st.active_seq;
+                    for (ord, sub) in subs.iter().enumerate() {
                         let id = self.next_lingering;
                         self.next_lingering += 1;
-                        // 9.8.3a/e order by "when the effect granting them
-                        // began to apply"; `active_seq` is the kernel's clock
-                        // for that, shared with static grants
-                        // (`static_subroutine_grants`) so the two compare.
-                        self.st.active_seq += 1;
-                        let seq = self.st.active_seq;
-                        self.lingering.push(LingeringEffect::new(id, source.obj, Payload::GrantedSubroutine {
+                        self.lingering.push(LingeringEffect::new(
+                            id,
+                            source.obj,
+                            Payload::GrantedSubroutine {
                                 to: obj,
-                                sub: (**sub).clone(),
+                                sub: sub.clone(),
                                 before: *before,
                                 seq,
-                            }, dur));
+                                ord: ord as u32,
+                                placement: None,
+                            },
+                            dur,
+                        ));
+                    }
+                    // 9.8.2c: with the order declared, the Corp says where
+                    // each granted subroutine goes relative to the ones the
+                    // ice has at this moment.
+                    if *any_order {
+                        self.ask_subroutine_placement(obj);
                     }
                 }
             }
@@ -9104,6 +9229,40 @@ impl Vm {
                     }
                     // Structure steps already advanced to Exec; they
                     // continue naturally.
+                }
+            }
+            (DecisionCtx::SubroutineOrder, DecisionAnswer::SubroutineOrder(at)) => {
+                // 9.8.2c: apply the declared positions to the grant that was
+                // just made. The declaration is stored on the lingering
+                // effects, so `current_subs` reads it back for the rest of
+                // the grant's duration.
+                cite!("rule_gain_subroutines_in_any_order");
+                let Some((ice, seq)) = self.pending_sub_order.take() else { return };
+                let n = self.current_subs(ice).len();
+                let mut k = 0usize;
+                let mut targets: Vec<(u64, u32)> = self
+                    .lingering
+                    .iter()
+                    .filter_map(|l| match &l.payload {
+                        Payload::GrantedSubroutine { to, seq: s, ord, placement: None, .. }
+                            if *to == ice && *s == seq =>
+                        {
+                            Some((l.id, *ord))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                targets.sort_by_key(|(_, o)| *o);
+                for (lid, _) in targets {
+                    let want = at.get(k).copied().unwrap_or(n).min(n);
+                    k += 1;
+                    for l in self.lingering.iter_mut() {
+                        if l.id == lid {
+                            if let Payload::GrantedSubroutine { placement, .. } = &mut l.payload {
+                                *placement = Some(want);
+                            }
+                        }
+                    }
                 }
             }
             (DecisionCtx::CostDivision, DecisionAnswer::DivideReduction(n)) => {

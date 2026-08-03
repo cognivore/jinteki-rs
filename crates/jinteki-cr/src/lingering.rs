@@ -63,7 +63,20 @@ pub enum Payload {
     PersistedAbility { def: AbilityDef, run_id: u64 },
     /// CR 9.8.3a/e: a subroutine granted to a piece of ice by an external
     /// ability; ordering inside its category is by grant sequence.
-    GrantedSubroutine { to: ObjectId, sub: AbilityDef, before: bool, seq: u64 },
+    /// `ord` is the position of this subroutine WITHIN its grant: one effect
+    /// granting several subroutines (Loki class) orders them among themselves
+    /// by the order they had on the card they came from, while 9.8.3a/e order
+    /// the GRANTS against each other by `seq`. `placement` is 9.8.2c's
+    /// declared position in the ice's whole subroutine list, applied after the
+    /// category sort ("regardless of categories").
+    GrantedSubroutine {
+        to: ObjectId,
+        sub: AbilityDef,
+        before: bool,
+        seq: u64,
+        ord: u32,
+        placement: Option<usize>,
+    },
     /// CR 7.4.2: "the Runner cannot access any card other than <obj> for
     /// the remainder of the run" (Ash class).
     RestrictCandidatesTo(ObjectId),

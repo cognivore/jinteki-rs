@@ -78,6 +78,8 @@ pub enum Kind {
     PsiBid,
     /// 1.16.2f: dividing a "total N less" modifier between two costs.
     CostDivision,
+    /// 9.8.2c: declaring where granted subroutines go.
+    SubOrder,
 }
 
 impl Kind {
@@ -103,6 +105,7 @@ impl Kind {
             DecisionSpec::TraceSpend { .. } => Kind::TraceSpend,
             DecisionSpec::PsiBid { .. } => Kind::PsiBid,
             DecisionSpec::DivideCostReduction { .. } => Kind::CostDivision,
+            DecisionSpec::DeclareSubroutineOrder { .. } => Kind::SubOrder,
         }
     }
 }
@@ -316,6 +319,10 @@ impl Match {
     pub fn psi_bid() -> Match {
         Match::of(Kind::PsiBid)
     }
+    /// 9.8.2c: the granted-subroutine order declaration.
+    pub fn sub_order() -> Match {
+        Match::of(Kind::SubOrder)
+    }
     pub fn cost_division() -> Match {
         Match::of(Kind::CostDivision)
     }
@@ -504,6 +511,9 @@ pub enum Reply {
     /// 1.16.2f: apply n credits of the "total" modifier to the install cost;
     /// the rest goes to the rez cost.
     Divide(u32),
+    /// 9.8.2c: declare where each granted subroutine goes — one insertion
+    /// index into the ice's current subroutine list per granted subroutine.
+    SubOrder(Vec<usize>),
     Keep,
     Mulligan,
     /// Suspend the driver here, leaving the decision UNANSWERED so the test
@@ -975,6 +985,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
             )
         }
         Reply::Divide(n) => DecisionAnswer::DivideReduction(*n),
+        Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
         Reply::Candidate(o) => DecisionAnswer::Candidate(*o),
@@ -1055,6 +1066,12 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         // 1.16.2f: the neutral policy puts the whole modifier on the install
         // cost; plans that care declare the split themselves.
         DecisionSpec::DivideCostReduction { total } => DecisionAnswer::DivideReduction(*total),
+        // 9.8.2c: the neutral policy puts the granted subroutines last, which
+        // is where the category rules would have put an "after"-category
+        // grant anyway; plans that care declare a position.
+        DecisionSpec::DeclareSubroutineOrder { existing, granted } => {
+            DecisionAnswer::SubroutineOrder(granted.iter().map(|_| existing.len()).collect())
+        }
     }
 }
 

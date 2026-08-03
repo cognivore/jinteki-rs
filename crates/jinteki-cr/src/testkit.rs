@@ -1018,17 +1018,20 @@ pub fn brainstorm_like(name: &'static str) -> PrintedCard {
         TriggerCond::SelfEncountered,
         vec![Instruction::GrantSubroutines {
             to: TargetSpec::SelfSource,
-            count: 2,
             duration: crate::lingering::WantedDuration::ThisEncounter,
-            sub: Box::new(
-                AbilityDef::subroutine(vec![Instruction::Damage {
-                    kind: DamageKind::Core,
-                    amount: Quantity::c(1),
-                    responsible: Side::Corp,
-                }])
-                .labeled("[sub] 1 core"),
-            ),
+            grant: crate::instr::SubroutineGrant::Stated {
+                count: 2,
+                sub: Box::new(
+                    AbilityDef::subroutine(vec![Instruction::Damage {
+                        kind: DamageKind::Core,
+                        amount: Quantity::c(1),
+                        responsible: Side::Corp,
+                    }])
+                    .labeled("[sub] 1 core"),
+                ),
+            },
             before: false,
+            any_order: false,
         }],
         false,
     )
@@ -1077,9 +1080,9 @@ pub fn subroutine_granter(
         Cost::free(),
         vec![Instruction::GrantSubroutines {
             to: TargetSpec::Objects(vec![ice]),
-            count: 1,
-            sub: Box::new(sub),
+            grant: crate::instr::SubroutineGrant::Stated { count: 1, sub: Box::new(sub) },
             before,
+            any_order: false,
             duration,
         }],
     )
@@ -4837,5 +4840,65 @@ pub fn street_peddler_like(name: &'static str) -> PrintedCard {
         )
         .labeled("peddler: install one of the hosted cards"),
     ];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W12d shapes: §9.8 subroutine origins, order declarations, replacements
+// ---------------------------------------------------------------------------
+
+/// Loki shape (9.8.3a): "When the Runner encounters this ice, choose another
+/// rezzed piece of ice. This ice gains the subroutines of that ice before its
+/// other subroutines." ONE effect granting SEVERAL subroutines, which 9.8.3a
+/// orders among themselves in the order they had on the card they came from.
+pub fn loki_like(name: &'static str, printed_sub: AbilityDef) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 5);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfEncountered,
+            vec![Instruction::GrantSubroutines {
+                to: TargetSpec::SelfSource,
+                grant: crate::instr::SubroutineGrant::CopiedFrom(TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![
+                        crate::instr::TargetFilter::Rezzed,
+                        crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+                        crate::instr::TargetFilter::OtherThanSource,
+                    ],
+                }),
+                before: true,
+                any_order: false,
+                duration: crate::lingering::WantedDuration::ThisEncounter,
+            }],
+            false,
+        )
+        .labeled("loki: gain the subroutines of that ice"),
+        printed_sub,
+    ];
+    c
+}
+
+/// Merlin shape (9.8.2c): "Reveal this card from HQ to give a piece of ice
+/// 1 subroutine, in the order of your choice." The duration is a parameter
+/// because 9.8.2c is about the DECLARATION, not about how long the granted
+/// subroutine lasts.
+pub fn any_order_granter(
+    name: &'static str,
+    ice: ObjectId,
+    sub: AbilityDef,
+    duration: crate::lingering::WantedDuration,
+) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::GrantSubroutines {
+            to: TargetSpec::Objects(vec![ice]),
+            grant: crate::instr::SubroutineGrant::Stated { count: 1, sub: Box::new(sub) },
+            before: false,
+            any_order: true,
+            duration,
+        }],
+    )
+    .labeled("merlin: add a subroutine in any order")];
     c
 }

@@ -97,6 +97,15 @@ pub enum DecisionSpec {
     /// CR 9.11.4g: choose between optioned effects; each option is its own
     /// instruction chain.
     ChooseOption { options: Vec<&'static str> },
+    /// CR 9.8.2c: "in the order of your choice" — the granting player declares
+    /// where each newly granted subroutine goes relative to every subroutine
+    /// the ice has at that time, regardless of categories. `existing` is that
+    /// list, in order, and `granted` the labels being placed; the answer is
+    /// one insertion index per granted subroutine, in `0..=existing.len()`.
+    DeclareSubroutineOrder {
+        existing: Vec<(SubKey, &'static str)>,
+        granted: Vec<&'static str>,
+    },
     /// CR 9.11.4f / 1.16.10-11: pay a (nested or additional) cost or decline.
     NestedCost { cost: crate::ability::Cost },
     /// Decline or resolve an optional part (9.6.9c).
@@ -148,4 +157,6 @@ pub enum DecisionAnswer {
     /// CR 1.16.2f: credits of the "total" modifier applied to the install
     /// cost; the rest goes to the rez cost.
     DivideReduction(u32),
+    /// CR 9.8.2c: one insertion index per granted subroutine.
+    SubroutineOrder(Vec<usize>),
 }
