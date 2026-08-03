@@ -1361,6 +1361,7 @@ pub fn corp_install_button(
             and_rez: false,
             ignore_costs: false,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
     )
     .labeled("corp-install: fixed card")];
@@ -1385,6 +1386,7 @@ pub fn corp_install_rez_button(
             and_rez: true,
             ignore_costs,
             reveal_check,
+            reduce_total: Quantity::c(0),
         }],
     )
     .labeled("corp-install-rez: fixed card")];
@@ -1401,6 +1403,7 @@ pub fn bran_like(name: &'static str, installee: ObjectId) -> PrintedCard {
         and_rez: false,
         ignore_costs: true,
         reveal_check: None,
+        reduce_total: Quantity::c(0),
     }])
     .labeled("[sub] install ice directly inward")];
     c
@@ -1452,6 +1455,7 @@ pub fn reaper_like(name: &'static str, installee: ObjectId) -> PrintedCard {
                 and_rez: true,
                 ignore_costs: false,
                 reveal_check: None,
+                reduce_total: Quantity::c(0),
             },
         ],
         true,
@@ -1485,6 +1489,7 @@ pub fn adt_button(name: &'static str, installee: ObjectId) -> PrintedCard {
             and_rez: true,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
     )
     .labeled("adt: install and rez ignoring costs")];
@@ -1504,6 +1509,7 @@ pub fn ganked_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
         true,
     )
@@ -1661,6 +1667,7 @@ pub fn supplier_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
         true,
     )
@@ -1895,6 +1902,7 @@ pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
         true,
     )
@@ -1983,6 +1991,7 @@ pub fn artist_colony_like(name: &'static str) -> PrintedCard {
                 and_rez: false,
                 ignore_costs: false,
                 reveal_check: None,
+                reduce_total: Quantity::c(0),
             },
         ],
     )
@@ -2010,6 +2019,7 @@ pub fn smc_like(name: &'static str) -> PrintedCard {
                 and_rez: false,
                 ignore_costs: false,
                 reveal_check: None,
+                reduce_total: Quantity::c(0),
             },
         ],
     )
@@ -2052,6 +2062,7 @@ pub fn tucana_like(name: &'static str, server: ServerId) -> PrintedCard {
                 and_rez: true,
                 ignore_costs: false,
                 reveal_check: None,
+                reduce_total: Quantity::c(0),
             },
         ],
     )
@@ -2079,6 +2090,7 @@ pub fn tech_startup_like(name: &'static str) -> PrintedCard {
                 and_rez: false,
                 ignore_costs: false,
                 reveal_check: None,
+                reduce_total: Quantity::c(0),
             },
         ],
     )
@@ -2320,6 +2332,7 @@ pub fn ip_enforcement_like(name: &'static str) -> PrintedCard {
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
     )
 }
@@ -2897,6 +2910,7 @@ pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
             and_rez: true,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         },
         Instruction::CreateDelayedConditional {
             def: Box::new(
@@ -3111,6 +3125,7 @@ pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> P
                 and_rez: false,
                 ignore_costs: true,
                 reveal_check: None,
+                reduce_total: Quantity::c(0),
             },
             Instruction::PlaceCounters {
                 target: TargetSpec::EarlierTarget { nth: 0 },
@@ -3155,6 +3170,7 @@ pub fn drafter_like(name: &'static str, installee: ObjectId, server: ServerId) -
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         },
         Instruction::TrashCards(TargetSpec::Choose {
             count: Quantity::c(2),
@@ -3307,9 +3323,101 @@ pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> P
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
         true,
     )
     .labeled("a-teia: install a card in another remote")];
+    c
+}
+
+/// Tucana shape with the 1.16.2f "total" modifier: "Install and rez 1 piece
+/// of ice from HQ protecting <server>, paying a total of N[credit] less."
+/// SIMPLIFICATION: the ice is fixed at card-build time (the real card
+/// searches R&D — `tucana_like` above covers the search half; this shape is
+/// about how the "total" modifier is divided).
+pub fn total_discount_install_rez(
+    name: &'static str,
+    ice: ObjectId,
+    server: ServerId,
+    total: i64,
+) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![ice]),
+            dest: crate::instr::InstallDest::Protecting(server),
+            and_rez: true,
+            ignore_costs: false,
+            reveal_check: None,
+            reduce_total: Quantity::c(total),
+        }],
+    )
+    .labeled("tucana-total: install and rez for a total less")];
+    c
+}
+
+/// Cayambe Grid shape (1.16.2b): "When the Runner approaches this server,
+/// end the run unless they pay 2[credit] for each piece of ice protecting the
+/// attacked server." SIMPLIFICATION: the printed card counts only ADVANCED
+/// ice; the example's point is that a "for each" calculation in a cost is one
+/// aggregated payment, which the advancement qualifier is orthogonal to.
+pub fn cayambe_like(name: &'static str) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::EncounterBegins,
+        vec![Instruction::NestedCostUnless {
+            cost: Cost::credits_q(Quantity::Times(
+                2,
+                Box::new(Quantity::Count(F::IceProtectingAttackedServer)),
+            )),
+            effect: Box::new(Instruction::EndTheRun),
+            payer: Some(Side::Runner),
+        }],
+        false,
+    )
+    .labeled("cayambe: pay 2 per ice or end the run")];
+    c
+}
+
+/// GameNET shape (1.16.2b): "Whenever the Runner spends credits, gain
+/// 1[credit]." One instance per PAYMENT, which is what the Cayambe example
+/// measures.
+pub fn gamenet_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerPaysCredits(Side::Runner),
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
+        false,
+    )
+    .labeled("gamenet: the Runner spent credits")];
+    c
+}
+
+/// Guru Davinder shape (1.16.1b): a MANDATORY conditional interrupt —
+/// "The first time you would suffer net damage, prevent it; trash this card
+/// unless you pay 4[credit]." Because it is mandatory and it prevents, a
+/// "suffer 4 net damage" COST cannot be paid at all (1.16.1b), which is what
+/// the Obokata example turns on. SIMPLIFICATION: net damage only, and the
+/// "first time each turn" limit is not modeled — the example is about the
+/// cost being unpayable while the ability is active.
+pub fn guru_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::WouldDamage { kind: Some(DamageKind::Net), first_each_run: false },
+        vec![
+            Instruction::PreventAllDamage { kind: DamageKind::Net },
+            Instruction::NestedCostUnless {
+                cost: Cost::credits(4),
+                effect: Box::new(Instruction::TrashSelf),
+                payer: Some(Side::Runner),
+            },
+        ],
+        false,
+    )
+    .with_flag(AbilityFlag::Interrupt)
+    .labeled("guru: prevent the net damage")];
     c
 }

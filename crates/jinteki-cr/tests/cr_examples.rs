@@ -200,6 +200,10 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_swap_installed_cards_preserves_hosting_1",
     "example_rule_swap_only_to_valid_location_1",
     "example_rule_swap_become_installed_1",
+    // Wave 8c: costs, continued (§1.16).
+    "example_rule_install_and_rez_reducing_total_1",
+    "example_rule_cost_quantities_1",
+    "example_rule_cost_interrupt_static_mandatory_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -324,7 +328,7 @@ fn example_rule_reaction_window_closing_timing_structure_1() {
     );
     assert!(t.took("femme"));
     let costs: Vec<u32> =
-        t.of_kind(Kind::NestedCost).iter().filter_map(|e| e.cost()).map(|c| c.credits).collect();
+        t.of_kind(Kind::NestedCost).iter().filter_map(|e| e.cost()).map(|c| c.flat_credits()).collect();
     assert_eq!(costs, vec![1], "the only cost put to a player was Femme's 1[c]");
     assert_eq!(vm.st.runner.credits, 4, "paid exactly the 1[c] bypass cost, never 3");
     assert!(
@@ -1036,7 +1040,7 @@ fn example_rule_additonal_cost_simultaenous_1() {
         t.of_kind(Kind::NestedCost)
             .iter()
             .filter_map(|e| e.cost())
-            .map(|c| (c.net_damage, c.credits))
+            .map(|c| (c.net_damage, c.flat_credits()))
             .collect::<Vec<_>>(),
         vec![(6, 2)],
         "4 + 2 net and 2[c] arrived as ONE aggregated cost"
@@ -1082,7 +1086,7 @@ fn example_rule_nested_cost_unless_1() {
     );
     let costs = t.of_kind(Kind::NestedCost);
     assert_eq!(
-        costs.iter().filter_map(|e| e.cost()).map(|c| c.credits).collect::<Vec<_>>(),
+        costs.iter().filter_map(|e| e.cost()).map(|c| c.flat_credits()).collect::<Vec<_>>(),
         vec![1],
         "the only cost put to a player was the subroutine's 1[c]"
     );
@@ -2689,6 +2693,7 @@ vm.push_ability_frame(
             and_rez: false,
             ignore_costs: true,
             reveal_check: None,
+            reduce_total: Quantity::c(0),
         }],
         None,
         Some(0),
@@ -2927,6 +2932,7 @@ fn example_rule_playing_lingering_effects_1() {
                     and_rez: false,
                     ignore_costs: true,
                     reveal_check: None,
+                    reduce_total: Quantity::c(0),
                 },
                 jinteki_cr::instr::Instruction::CreateDelayedConditional {
                     def: Box::new(jinteki_cr::ability::AbilityDef::conditional(
@@ -4976,7 +4982,7 @@ fn example_rule_spend_credits_3() {
             .stop_at_action(),
     );
     let costs: Vec<u32> =
-        t.of_kind(Kind::NestedCost).iter().filter_map(|e| e.cost()).map(|c| c.credits).collect();
+        t.of_kind(Kind::NestedCost).iter().filter_map(|e| e.cost()).map(|c| c.flat_credits()).collect();
     assert_eq!(costs, vec![3], "the 3[c] was put to the Runner even with an empty pool");
     assert_eq!(
         vm.st.objects[&ghost].counter(CounterKind::Credit),
@@ -6964,6 +6970,154 @@ fn example_rule_swap_become_installed_1() {
         .position(|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 4 }))
         .expect("gained 4");
     assert!(teia_at < gain_at, "the reaction resolved before the next instruction (9.1.2a)");
+}
+
+// ===========================================================================
+// §1.16 — costs, continued (W8c)
+// ===========================================================================
+
+/// example_rule_install_and_rez_reducing_total_1 (1.16.2f): a Tucana-class
+/// ability installs and rezzes a piece of ice "paying a total of 3[credit]
+/// less". The server already has 1 piece of ice, so the install cost is
+/// 1[credit] and the rez cost 6[credit]. The Corp declares the split —
+/// 1[credit] off the install, 2[credit] off the rez — leaving 0 and 4.
+#[test]
+fn example_rule_install_and_rez_reducing_total_1() {
+    let mut vm = Vm::empty(740);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Guard", 0, 1), ServerId::Remote(1), false);
+    let logjam = vm.new_object(tk::vanilla_ice("Logjam", 6, 4), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(logjam);
+    tk::install_root(
+        &mut vm,
+        tk::total_discount_install_rez("Tucana-total", logjam, ServerId::Remote(1), 3),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.corp.credits = 4;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("tucana-total"))
+            // 1[credit] of the 3 goes to the install cost, 2 to the rez cost.
+            .when(Match::cost_division().once(), Reply::Divide(1))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let div = t.first_window(Kind::CostDivision, Side::Corp);
+    assert!(
+        matches!(div.spec, DecisionSpec::DivideCostReduction { total: 3 }),
+        "the whole modifier is declared at once: {:?}",
+        div.spec
+    );
+    assert_eq!(vm.st.objects[&logjam].zone, Zone::Ice(ServerId::Remote(1)));
+    assert!(vm.st.objects[&logjam].faceup, "installed AND rezzed: {}", t.tail(8));
+    assert_eq!(
+        vm.st.corp.credits,
+        0,
+        "install cost 1-1 = 0, rez cost 6-2 = 4, paid out of 4 credits"
+    );
+    let paid: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CostPaid { side: Side::Corp, credits, .. } => Some(*credits),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        paid.contains(&0) && paid.contains(&4),
+        "one 0-credit install payment and one 4-credit rez payment: {paid:?}"
+    );
+}
+
+/// example_rule_cost_quantities_1 (1.16.2b): a Cayambe-class nested cost of
+/// "2[credit] for each piece of ice protecting the attacked server" is ONE
+/// payment of 6[credit] against 3 pieces of ice, not 3 payments of 2 — so a
+/// GameNET-class "whenever the Runner spends credits" ability meets its
+/// trigger condition exactly once.
+#[test]
+fn example_rule_cost_quantities_1() {
+    let mut vm = Vm::empty(741);
+    for i in 0..3 {
+        let name: &'static str =
+            Box::leak(format!("Ice-{i}").into_boxed_str());
+        tk::install_ice(&mut vm, tk::vanilla_ice(name, 0, 1), ServerId::Remote(1), i == 2);
+    }
+    tk::install_root(&mut vm, tk::cayambe_like("Cayambe-like"), ServerId::Remote(1), true);
+    tk::install_identity(&mut vm, tk::gamenet_like("GameNET-like"), Side::Corp);
+    vm.st.runner.credits = 10;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().uses("gamenet"),
+        Plan::runner()
+            .runs(ServerId::Remote(1))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.credits, 4, "one payment of 6, not three of 2: {}", t.tail(10));
+    let payments: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CostPaid { side: Side::Runner, credits, .. } if *credits > 0 => {
+                Some(*credits)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(payments, vec![6], "1.16.2b: the calculation is taken as an aggregate");
+    assert_eq!(
+        t.offers("gamenet"),
+        1,
+        "so only 1 instance of the credit-spending ability ever pends"
+    );
+    assert_eq!(vm.st.corp.credits, 1, "and it resolved once");
+}
+
+/// example_rule_cost_interrupt_static_mandatory_1 (1.16.1b): the Runner
+/// cannot pay Obokata's additional steal cost of 4 net damage while a
+/// Guru-Davinder-class card is installed — its MANDATORY interrupt would
+/// prevent that damage, so the cost cannot be paid, and the choice is never
+/// put to them.
+#[test]
+fn example_rule_cost_interrupt_static_mandatory_1() {
+    let mut vm = Vm::empty(742);
+    let obokata = tk::install_root(
+        &mut vm,
+        tk::obokata_like("Obokata-like", 3),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::install_rig(&mut vm, tk::guru_like("Guru-like"));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the remote, access Obokata, and pay any cost offered.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Remote(1))
+            .when(Match::nested_cost(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert!(
+        t.of_kind(Kind::NestedCost).is_empty(),
+        "1.16.1b: an unpayable cost is never offered: {}",
+        t.tail(8)
+    );
+    assert_eq!(vm.st.objects[&obokata].zone, Zone::Root(ServerId::Remote(1)), "not stolen");
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "and no damage was suffered");
+    assert_eq!(vm.st.runner.credits, 10);
 }
 
 // ===========================================================================

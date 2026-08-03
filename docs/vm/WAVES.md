@@ -6,10 +6,10 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W8b)
+## Odometers (after W8c)
 
-- **DP-7a: 155/243** CR examples as example-named passing tests (63.8%).
-- **DP-7b: 495/1420** distinct rules cited (34.9%); traceability test fails
+- **DP-7a: 158/243** CR examples as example-named passing tests (65.0%).
+- **DP-7b: 498/1420** distinct rules cited (35.1%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -98,7 +98,8 @@ prefer a slightly larger honest primitive and note it here.
 | `bc1a920` | W7e | small rules riding existing machinery: §1.4 deck construction as pure functions (`src/deck.rs` — 1.4.5a influence counted by copy, 1.4.6d agenda-point requirement), `Cost::lose_clicks` so 5.2.1a's "Lose [click]" ability is used in a paid window and never offered as an action, 5.2.2b action completion, 6.1.4c "end the run" with no run and no encounter, 7.4.1a root cards are candidates for EVERY server (a real gap: Archives ignored its root), and `Object::generation` — CR 1.12.3's "a card that changes zone becomes a new object" as a stamp, which is what lets a trashed upgrade become an Archives candidate again (7.4.5) | 141 |
 | `8126ef9` | W7f | §1.12 object identity: `Zone::zone_class` makes the play area ONE zone so 1.12.4 moves within it keep the object while 1.12.3 moves between zones make a new one; once-per-turn use (9.3.6g) is keyed by `(AbilityRef, generation)`, so a reinstalled card's ability is fresh (1.12.2) and a derezzed-then-rezzed one's is not (1.12.5); `Instruction::Derez { target }` | 145 |
 | `613433e` | W8a | **§6.2 positions are OBJECTS, not indices** (6.2.6): `object::IcePosition { id, ice }`, `CoreState.ice: BTreeMap<ServerId, Vec<IcePosition>>` and `RunCtx.position: Option<u64>` — a position id. 6.2.2 creation (a outermost / b innermost / c directly inward / f swaps create none), 6.2.4 destruction as a REAL 10.3.1i with both its exceptions (the Runner's position, and an install in progress protecting that server), 6.2.3 "same position" as `TargetFilter::IceInSamePositionAs(PositionRef::{Source,Runner})`, 6.2.7a/c/d/e as `Vm::apply_ice_change_to_run`; `Instruction::{MoveIce, MoveRunnerToIce}` (6.2.2 / 6.2.8a-d); `swap_cards` re-occupies the existing positions (6.2.2f) and no longer no-ops on two ice protecting the SAME server; the HOST position of `HostCards` is now announceable and `announcement_for` passes the source so source-relative criteria work in announcements | 152 |
-| `pending` | W8b | **§8.8 swapping cards**: 8.8.2 destination legality (`Vm::swap_legal` / `may_occupy` — card type per location, and 4.6.6e/3.6.1 root limits with the vacating card discounted) applied BOTH as a gate on the swap and as a filter on the two 1.15.2 announcements a `SwapCards { Choose, Choose }` requires; 8.8.4b's mixed installed/uninstalled case (the leaver uninstalls and everything hosted on it is trashed, the joiner becomes installed in the exact position with no install procedure, entering unrezzed per 8.8.4a, and `Card{Un,}Installed` are recorded so the trigger conditions meet at the next checkpoint); `TriggerCond::SelfPassed`. Deviation 15 retired | 155 |
+| `24020b2` | W8b | **§8.8 swapping cards**: 8.8.2 destination legality (`Vm::swap_legal` / `may_occupy` — card type per location, and 4.6.6e/3.6.1 root limits with the vacating card discounted) applied BOTH as a gate on the swap and as a filter on the two 1.15.2 announcements a `SwapCards { Choose, Choose }` requires; 8.8.4b's mixed installed/uninstalled case (the leaver uninstalls and everything hosted on it is trashed, the joiner becomes installed in the exact position with no install procedure, entering unrezzed per 8.8.4a, and `Card{Un,}Installed` are recorded so the trigger conditions meet at the next checkpoint); `TriggerCond::SelfPassed`. Deviation 15 retired | 155 |
+| `pending` | W8c | §1.16 costs, continued: **`Cost.credits` is a `Quantity`** (§12 rule 6) evaluated when the cost is to be paid and taken as ONE aggregate (1.16.2b), with `TriggerCond::PlayerPaysCredits` to observe it; 1.16.2f's "total N less" as `Instruction::InstallCard.reduce_total` + `DecisionSpec::DivideCostReduction` declared at the top of step 8.5.16d and applied to both costs by 1.16.2a; 1.16.1b extended from tags to a DAMAGE component (`Vm::damage_cost_blocked`) and the 7.2.3 steal-cost offer now gated on `cost_payable`, so an unpayable additional cost is never a choice | 158 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -296,6 +297,20 @@ prefer a slightly larger honest primitive and note it here.
     announcement can express "another piece of ice" — nothing in the filter
     vocabulary excludes the source — so a Thimblerig-class shape offers itself
     as its own partner, where the swap is a no-op.
+31. **1.16.2f's split is one number, and it is not re-offered** (W8c) —
+    `DecisionSpec::DivideCostReduction { total }` asks for the credits going
+    on the install cost and derives the rez share, which is exactly 1.16.2f's
+    "nonnegative numbers whose sum is equal to" for two costs. A modifier
+    spanning three costs would need a vector. The declaration happens once, at
+    the beginning of step 8.5.16d, and is not revisited if the rez is then
+    declined (8.5.13d) — no example distinguishes that.
+32. **1.16.1b's damage check is the prevention CLASS, not a simulation**
+    (W8c, `Vm::damage_cost_blocked`) — the kernel asks "is there an active,
+    mandatory, interrupt-flagged conditional whose trigger is `WouldDamage` of
+    this kind and whose instructions include a prevention of that kind?", the
+    same shape `tag_cost_blocked` uses. It does not run the payment as a
+    hypothetical effect through the imminence pipeline, so a prevention that
+    only applies under a further condition would be treated as blocking.
 
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real
@@ -338,7 +353,7 @@ New card shapes go in `testkit.rs` and are built EXCLUSIVELY through
 shape is annotated in its doc comment and is legitimate only while
 orthogonal to every example using it.
 
-## Next targets — 98 examples left, re-measured after W7
+## Next targets — 85 examples left, re-measured after W8c
 
 Re-run the count before choosing a cluster:
 
@@ -349,82 +364,80 @@ v=json.load(open('docs/rules/examples.json'))
 src=open('crates/jinteki-cr/tests/cr_examples.rs').read()
 i=src.index('const IMPLEMENTED'); j=src.index('];', i)
 impl=set(re.findall(r'"(example_[a-z0-9_+]+)"', src[i:j]))
-missing=[e['id'] for e in v['examples'] if e['id'] not in impl]
-print(len(missing)); [print(m) for m in missing]
+missing=[(e['section_number'], e['id']) for e in v['examples'] if e['id'] not in impl]
+from collections import Counter
+print(len(missing)); [print(s, n) for s, n in Counter(s for s,_ in missing).most_common()]
+[print(s, i) for s, i in sorted(missing)]
 EOF
 ```
 
-Remaining by section: 1.16 Costs 8 · 6.2 Position 8 · 9.12 Other 7 ·
-9.1 General 6 · 1.12 Objects 5 · 4.6 Play Area 4 · 7.3 Breaching 4 ·
-6.1/6.5/8.8/9.8/9.9/9.10/9.11/10.1 three each · rest ≤ 2.
+Remaining by section: 9.12 Other 7 · 9.1 General 6 · 1.12 Objects 5 ·
+1.16 Costs 5 · 4.6 Play Area 4 · 7.3 Breaching 4 ·
+6.1/6.5/9.8/9.9/9.10/9.11/10.1 three each · rest <= 2.
 
-1. **§6.2 positions + §8.8 swaps (~11)** — the biggest single cluster and
-   the one with a clear design. `count_positions_1/2`,
-   `no_position_after_approach_server_1`, `ice_change_outward_1`,
-   `_inward_1`, `_encounter_move_swap_1`, `_during_movement_1/2`,
-   `swap_become_installed_1`, `swap_installed_cards_preserves_hosting_1`,
-   `swap_only_to_valid_location_1`, plus `drawn_card_swapped_1`.
-   **6.2.6 is explicit that the Runner's position is "a specific element of
-   the sequence of positions, not an index into that sequence"**, and
-   `RunCtx.position` is an index today — so this cluster is a position-id
-   refactor: give each server a list of position ids alongside its ice list
-   (6.2.2 creates a position, 6.2.4 destroys it, 6.2.2f swaps do neither),
-   and make `RunCtx.position: Option<u64>`. 6.2.3's "same position" then
-   reads as "same number of positions inward", which is what
-   `TargetFilter::IceAtPosition { n }` (Rook) wants. §8.8 rides along and
-   retires deviation 15.
-2. **§1.16 costs (~8)** — `cost_x_1` (X chosen at announce, 1.16.2c),
-   `alternate_payment_1` (1.16.2e), `cost_quantities_1`,
-   `cost_restrictions_2`, `inherent_cost_aggregates_1`,
-   `additional_cost_checkpoint_1`, `install_and_rez_reducing_total_1`,
-   `cost_interrupt_static_mandatory_1`. X-costs and alternate payments are
-   the two new mechanisms; note deviations 11 and 18 both say the same
-   thing — `pay_cost` is synchronous and cannot suspend for a Decision.
-   Taking this cluster probably means making cost payment a phase of the
-   ability frame, which would retire 11, 18 and part of 8 at once.
+CLUSTER RANKING (measured, best first):
+
+1. **Encounters as a timing structure (~7)** — `forced_encounter_1`,
+   `forced_encounter_during_run_1`, `end_encounter_outside_run_1`,
+   `bypass_during_encounter_1`, `active_exception_encounter_not_installed_1`
+   (9.1.8h), `no_position_after_approach_server_1` (6.2.5d — the LAST §6.2
+   example, blocked only on a forced encounter mid-breach) and
+   `ice_strength_modification_duration_1` (W6b built the duration half and
+   could not test it for want of a standalone encounter). `EncounterState` is
+   already a `Vm` field and W8a made positions objects, so what is missing is
+   an ENCOUNTER TIMING STRUCTURE (§11, steps 6.9.3a-e already exist inside the
+   run table — they need lifting into their own `StructKind::Encounter`) plus
+   `Instruction::ForceEncounter { ice }`. 6.2.8b/c is already implemented
+   (`MoveRunnerToIce` refuses during the Success and Run Ends phases), which
+   is half of `no_position_after_approach_server_1`.
+2. **§9.12.1 dependency + must-choices (~7)** — `independent_effects_1/2`
+   (Mother Goddess/Warden Fatuma/Hush; Hush/Magnet), `modify_ability_with_
+   choice_1`, `calculated_quantity_3`, `must_with_choice_1`,
+   `must_without_choice_1`, `must_cannot_force_additional_cost_1`. Deviation 2
+   says the dependency analysis covers the ability-removal class only;
+   `independent_effects_1` is the SUBTYPE-GRANT class, and W7d added the
+   subtype ops the pipeline needs, so this got cheaper. The three `must_*`
+   examples extend 9.12.3, which W2f already built.
 3. **§1.12's remaining 5 + §4.6 "this server" (~9)** — `previous_object_1`,
    `previous_object_source_1`, `object_move_location_1/2`,
    `object_move_known_location_1`, `this_server_1/2/3`,
-   `limit_remote_servers_1`. `Object::generation` (W7e/f) is the stamp;
-   what is missing is (a) unknown-location moves bumping it (shuffle,
-   rearrange) and (b) a game-history query keyed by object, which 1.12.6
-   needs and which `previous_object_source_1` shares with 4.6.6i's "this
-   server" (the server a card was in when it left). `MaintainedChoice`
-   exists but nothing creates one — `object_move_known_location_1` and the
-   three `lingering_effect_maintaining_choice_*` examples all want
-   `Instruction::MaintainChoice`, which is one more instruction.
-4. **Forced encounters outside a run (~5)** — `forced_encounter_1`,
-   `forced_encounter_during_run_1`, `end_encounter_outside_run_1`,
-   `active_exception_encounter_not_installed_1`,
-   `no_position_after_approach_server_1`, plus
-   `ice_strength_modification_duration_1` (W6b built the duration half and
-   could not test it for want of a standalone encounter — the union-of-
-   durations model already gives the right answer). `EncounterState` is
-   already a `Vm` field rather than a run-frame field and its doc comment
-   already says encounters can exist without a run; what is missing is an
-   encounter TIMING STRUCTURE (§11) to push, and `Instruction::
-   ForceEncounter { ice }`.
-5. **§9.12.1's dependency examples (~4)** — `independent_effects_1/2`
-   (Mother Goddess/Warden Fatuma/Hush; Hush/Magnet), `modify_ability_
-   with_choice_1`, `calculated_quantity_3`. Deviation 2 says the dependency
-   analysis covers the ability-removal class only; `independent_effects_1`
-   is the subtype-grant class, and W7d just added the subtype ops the
-   pipeline needs, so this got cheaper.
-6. **§9.11's last three** — `step_sequences_1` contradicts deviation 4 head
-   on (it says the ONLY checkpoint while installing is 8.5.16d), so taking
-   it means retiring that deviation; `use_restrictions_1` wants a
-   payment restriction ("only by spending credits from a stealth card");
-   `look_reveal_instruction_1` wants `Instruction::LookAt { zone, count }`
-   — with W7c's `TargetFilter::TopOfDeckOf` the second instruction is
-   already expressible.
+   `limit_remote_servers_1`. `Object::generation` (W7e/f) is the stamp; what
+   is missing is (a) unknown-location moves bumping it (shuffle, rearrange)
+   and (b) a game-history query keyed by object, which 1.12.6 needs and which
+   `previous_object_source_1` shares with 4.6.6i's "this server" (the server a
+   card was in when it left). `MaintainedChoice` exists but nothing creates
+   one — `object_move_known_location_1` and the three
+   `lingering_effect_maintaining_choice_*` examples all want
+   `Instruction::MaintainChoice`, which is one more instruction (+3 in §9.10).
+4. **§1.16's last 5** — `cost_x_1` (X announced before payment, 1.16.2c —
+   wants a numeric Decision like W8c's `DivideCostReduction`),
+   `alternate_payment_1` (1.16.2e — Biawak: needs the payment DIVISION to be
+   put to the payer, which is deviations 11 and 18; `pay_cost` is synchronous
+   and cannot suspend, so this is the "cost payment becomes a phase of the
+   ability frame" refactor), `cost_restrictions_2` (1.16.1c — wants
+   advancement-requirement modification and an additional cost to SCORE),
+   `additional_cost_checkpoint_1` (1.16.10c — additional cost to score, paid
+   with its checkpoint before the agenda moves), `inherent_cost_aggregates_1`
+   (1.16.4d — wants the basic play action, deviation 17).
+5. **§7.3 breaching (~4)** — `number_of_accesses_1/2`, `consecutive_breaches_1`,
+   `visibility_after_access_1`. 7.3.6 access counts already exist
+   (`BreachCtx.remaining_from_zone`); these are about several breaches in one
+   run and about what the Runner has seen.
+6. **§9.1's six** — `is_resolving_1/2` (9.1.3), `abilities_resolution_
+   independent_1`, `active_exception_catchall_1`,
+   `active_exception_conditional_move_to_inactive_zone_2`,
+   `active_exception_encounter_not_installed_1` (goes with cluster 1).
 
 Cheap singletons worth taking opportunistically: `dividends_1` +
 `dividends_timing_1` (2, one keyword — `PrintedCard.dividends` plus a
-score-time snapshot, since 10.13.2 reads the values as the agenda began to
-be scored); `bluffing_1` + `cannot_hide_open_info_1` (§10.2 information —
-the kernel has no per-side visibility model at all, see deviation 20);
-`multiple_damage_selected_sequentially_1`; `mandatory_infinite_loop_1`
-(hard — 10.1.6a draws the game).
+score-time snapshot, since 10.13.2 reads the values as the agenda began to be
+scored); `placing_advancement_counter_1` (1.18.2 — counters PLACED directly
+do not meet an "advance" trigger condition; `AdvancesCard` already exists and
+this is a discrimination test); `multiple_damage_selected_sequentially_1`;
+`reveal_from_hidden_1` (4.1.4). Hard/blocked: `bluffing_1` +
+`cannot_hide_open_info_1` (§10.2 information — the kernel has no per-side
+visibility model at all, see deviation 20); `mandatory_infinite_loop_1`
+(10.1.6a draws the game).
 
 **Blocked / deferred, with reasons:**
 - `target_3` (Trick of Light, 1.15.1) — the targets are ADVANCEMENT
@@ -432,8 +445,10 @@ the kernel has no per-side visibility model at all, see deviation 20);
   `ObjectId`-addressed objects, so they cannot be announced. Deferred to
   the §1.12 cluster, which is where counters-as-objects belongs (1.12.1
   says counters are objects).
-- `candidates_leaving_server_1` was blocked on object identity and is now
-  DONE (W7e) — the generation stamp was what it needed.
+- `drawn_card_swapped_1` (8.4.3b) — the last piece of §8.8 (8.8.4d, swapping
+  with a SET-ASIDE card) plus the §8.4 drawing procedure's set-aside step.
+  Take it with §8.4, not with §8.8.
+
 
 ## Discipline (unchanged, binding)
 

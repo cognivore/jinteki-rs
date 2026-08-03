@@ -76,6 +76,8 @@ pub enum Kind {
     TraceSpend,
     /// 10.14.6b sealed psi bid.
     PsiBid,
+    /// 1.16.2f: dividing a "total N less" modifier between two costs.
+    CostDivision,
 }
 
 impl Kind {
@@ -100,6 +102,7 @@ impl Kind {
             DecisionSpec::MinimalSet { .. } => Kind::MinimalSet,
             DecisionSpec::TraceSpend { .. } => Kind::TraceSpend,
             DecisionSpec::PsiBid { .. } => Kind::PsiBid,
+            DecisionSpec::DivideCostReduction { .. } => Kind::CostDivision,
         }
     }
 }
@@ -313,6 +316,9 @@ impl Match {
     pub fn psi_bid() -> Match {
         Match::of(Kind::PsiBid)
     }
+    pub fn cost_division() -> Match {
+        Match::of(Kind::CostDivision)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()
@@ -495,6 +501,9 @@ pub enum Reply {
     Spend(u32),
     /// 10.14.6b: bid n.
     Bid(u32),
+    /// 1.16.2f: apply n credits of the "total" modifier to the install cost;
+    /// the rest goes to the rez cost.
+    Divide(u32),
     Keep,
     Mulligan,
     /// Suspend the driver here, leaving the decision UNANSWERED so the test
@@ -963,6 +972,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
                     .unwrap_or_else(|| panic!("plan wanted option {n:?}; offered: {opts:?}")),
             )
         }
+        Reply::Divide(n) => DecisionAnswer::DivideReduction(*n),
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
         Reply::Candidate(o) => DecisionAnswer::Candidate(*o),
@@ -1033,6 +1043,9 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::MinimalSet { .. } => DecisionAnswer::ChooseSet(0),
         DecisionSpec::TraceSpend { .. } => DecisionAnswer::SpendCredits(0),
         DecisionSpec::PsiBid { .. } => DecisionAnswer::Bid(0),
+        // 1.16.2f: the neutral policy puts the whole modifier on the install
+        // cost; plans that care declare the split themselves.
+        DecisionSpec::DivideCostReduction { total } => DecisionAnswer::DivideReduction(*total),
     }
 }
 

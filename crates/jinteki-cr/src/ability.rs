@@ -112,6 +112,10 @@ pub enum TriggerCond {
     /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
     /// at run step 6.9.4a (`rule_pass_ice`).
     SelfPassed,
+    /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
+    /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
+    /// condition once however many "for each" terms the calculation had.
+    PlayerPaysCredits(Side),
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -144,7 +148,11 @@ pub enum Condition {
 /// apply an effect; must be payable all at once).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Cost {
-    pub credits: u32,
+    /// CR 1.16.2b: a quantity position (§12 rule 6). "2[credit] for each
+    /// advanced piece of ice protecting this server" is a selector evaluated
+    /// AT THE TIME THE COST IS TO BE PAID, and the result is taken as an
+    /// aggregate — one payment of 6, not three payments of 2.
+    pub credits: crate::instr::Quantity,
     pub clicks: u32,
     /// [trash]: trash this card as part of the cost.
     pub trash_self: bool,
@@ -164,7 +172,11 @@ pub struct Cost {
 
 impl Cost {
     pub fn credits(n: u32) -> Self {
-        Cost { credits: n, ..Default::default() }
+        Cost { credits: crate::instr::Quantity::c(n as i64), ..Default::default() }
+    }
+    /// A credit cost whose amount is calculated when it is paid (1.16.2b).
+    pub fn credits_q(q: crate::instr::Quantity) -> Self {
+        Cost { credits: q, ..Default::default() }
     }
     pub fn trash_self() -> Self {
         Cost { trash_self: true, ..Default::default() }
@@ -185,13 +197,30 @@ impl Cost {
     pub fn free() -> Self {
         Cost::default()
     }
+    /// The CONSTANT credit amount of this cost, for assertions and displays
+    /// that do not have a source to evaluate a 1.16.2b calculation against.
+    /// A calculated amount reads as 0 here, exactly as 1.16.2d treats an X
+    /// out of context.
+    pub fn flat_credits(&self) -> u32 {
+        match self.credits {
+            crate::instr::Quantity::Const(n) if n > 0 => n as u32,
+            _ => 0,
+        }
+    }
     pub fn is_free(&self) -> bool {
         *self == Cost::default()
     }
     /// 1.16.10b: additional costs combine into one all-at-once payment.
     pub fn plus(&self, other: &Cost) -> Cost {
         Cost {
-            credits: self.credits + other.credits,
+            // 1.16.10b combines additional costs into ONE payment; constant
+            // amounts fold so `is_free` still recognises an empty cost.
+            credits: match (&self.credits, &other.credits) {
+                (crate::instr::Quantity::Const(a), crate::instr::Quantity::Const(b)) => {
+                    crate::instr::Quantity::Const(a + b)
+                }
+                (a, b) => crate::instr::Quantity::Plus(Box::new(a.clone()), Box::new(b.clone())),
+            },
             clicks: self.clicks + other.clicks,
             trash_self: self.trash_self || other.trash_self,
             tags: self.tags + other.tags,
@@ -559,6 +588,10 @@ pub fn trigger_matches(
             *ice == source.id
         }
         (TriggerCond::EncounterBegins, GameChange::EncounterBegan { .. }) => true,
+        (TriggerCond::PlayerPaysCredits(side), GameChange::CostPaid { side: s, credits, .. }) => {
+            cite!("rule_cost_quantities");
+            side == s && *credits > 0
+        }
         (TriggerCond::SelfPassed, GameChange::IcePassed { ice }) => {
             cite!("rule_pass_ice");
             *ice == source.id

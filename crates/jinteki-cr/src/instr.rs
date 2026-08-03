@@ -35,6 +35,13 @@ pub enum Quantity {
     XOfSource(Box<Quantity>),
 }
 
+impl Default for Quantity {
+    /// A quantity position with nothing in it is 0 (`Cost::default`).
+    fn default() -> Self {
+        Quantity::Const(0)
+    }
+}
+
 impl Quantity {
     /// Shorthand for a printed constant.
     pub fn c(n: i64) -> Quantity {
@@ -252,6 +259,13 @@ pub enum Instruction {
         /// 8.5.13c: a requirement imposed by the installing ability that
         /// must be verified by revealing a hidden card.
         reveal_check: Option<RevealCheck>,
+        /// CR 1.16.2f: "…paying a total of N[credit] less" on an install-AND-
+        /// rez effect. "Total" means the Corp divides the modifier between
+        /// the install cost and the rez cost, declaring the split at the
+        /// beginning of step 8.5.16d. A quantity position (§12 rule 6); 0 is
+        /// "no total modifier", and the modifier is inert without `and_rez`,
+        /// since there is no second cost to divide it with.
+        reduce_total: Quantity,
     },
     /// 8.5.5: an effect installing more than one card — the cards are chosen
     /// and installed ONE AT A TIME, each as a separate instruction

@@ -157,6 +157,9 @@ pub enum DecisionCtx {
     /// 8.5.13d/1.16.4c: pay or decline the additional rez cost during an
     /// "install and rez" effect.
     RezAdditionalCost,
+    /// 1.16.2f: the Corp divides an install-and-rez "total N less" modifier
+    /// between the install cost and the rez cost.
+    CostDivision,
     /// 9.9.11: choose the order in which replacement effects apply.
     ReplacementOrder,
     /// 7.4.3 example 2 (Gagarin class): pay or decline an additional cost
@@ -196,6 +199,11 @@ pub struct InstallProgress {
     /// CR 6.2.2: the position created for this ice when its destination was
     /// declared (8.5.16b); the ice occupies it at 8.5.16e.
     pub ice_position: Option<u64>,
+    /// CR 1.16.2f: the "total N[credit] less" modifier this install-and-rez
+    /// carries, and how much of it the Corp declared against the INSTALL cost
+    /// at the beginning of step 8.5.16d. The remainder goes to the rez cost.
+    pub reduce_total: u32,
+    pub reduce_install: u32,
 }
 
 /// CR 8.7.2b: the instruction a search is "followed by", when it refers to
@@ -1422,7 +1430,12 @@ impl Vm {
                 let card = self.access_card().unwrap();
                 if self.st.objects[&card].printed.card_type == CardType::Agenda {
                     let total = self.steal_cost_of(card);
-                    if total.is_free() {
+                    // 1.16.1b: a cost that cannot be paid is not a choice —
+                    // it is never put to the Runner, and the agenda is not
+                    // stolen (Obokata vs Guru Davinder).
+                    if !total.is_free() && !self.cost_payable(Side::Runner, card, &total) {
+                        cite!("rule_cost_interrupt_static_mandatory");
+                    } else if total.is_free() {
                         // 7.2.3/1.17.3: stealing is mandatory with no
                         // additional cost.
                         cite!("rule_decline_to_steal");
@@ -4069,7 +4082,14 @@ impl Vm {
     /// announced targets carry either the chosen card (TargetSpec::Choose)
     /// or the chosen host (InstallDest::RunnerChoiceHostOrRig).
     fn expand_install_card(&mut self, instr: Instruction) {
-        let Instruction::InstallCard { card, dest, and_rez, ignore_costs, reveal_check } = instr
+        let Instruction::InstallCard {
+            card,
+            dest,
+            and_rez,
+            ignore_costs,
+            reveal_check,
+            reduce_total,
+        } = instr
         else {
             unreachable!()
         };
@@ -4137,6 +4157,14 @@ impl Vm {
             revealed: false,
             resolved_zone: None,
             ice_position: None,
+            // 1.16.2f: the "total" modifier is inert without a second cost
+            // to divide it with.
+            reduce_total: if and_rez {
+                self.eval_quantity(&reduce_total, Some(source_obj)).max(0) as u32
+            } else {
+                0
+            },
+            reduce_install: 0,
         });
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.instructions[af.idx] = Instruction::InstallStepPlace;
@@ -4191,6 +4219,7 @@ impl Vm {
                 and_rez,
                 ignore_costs,
                 reveal_check: None,
+                reduce_total: crate::instr::Quantity::c(0),
             };
             af.instructions.insert(
                 af.idx + 1,
@@ -4369,6 +4398,27 @@ impl Vm {
     /// could not otherwise pay ("they must use Patchwork" — the 8.7.2b
     /// example's own words), largest first, and the choice of whether to use
     /// an affordable-anyway reduction is not offered.
+    /// Step 8.5.16d proper: pay the install cost, net of the reductions the
+    /// installer must use (1.16.6) and of the share of a 1.16.2f "total"
+    /// modifier the Corp declared against it.
+    fn pay_install_cost(&mut self) {
+        let Some(p) = self.installs.last().cloned() else { return };
+        // 1.16.5c: "ignoring all costs" reduces the cost to 0, but the step
+        // still happens and is still followed by a checkpoint (1.16.3a).
+        let payer = self.st.objects[&p.card].printed.side;
+        // 1.16.6: a Patchwork-class reduction the player needs is used here,
+        // and its own cost is part of the same all-at-once payment (1.16.10b).
+        let cost = if p.ignore_costs {
+            Cost::free()
+        } else {
+            let (net, extra) = self.install_payment(p.card, p.dest, p.resolved_zone, payer);
+            // 1.16.2a: apply the lowering effect, then floor at 0.
+            cite!("rule_cost_calculation");
+            extra.plus(&Cost::credits(net.saturating_sub(p.reduce_install)))
+        };
+        self.pay_cost(payer, p.card, &cost);
+    }
+
     fn install_payment(
         &self,
         card: ObjectId,
@@ -5570,18 +5620,19 @@ impl Vm {
                 // checkpoint (1.16.3a — the 9.6.5b THG example).
                 cite!("rule_ignore_all_costs");
                 cite!("rule_cost_checkpoint_cost_zero");
-                let payer = self.st.objects[&p.card].printed.side;
-                // 1.16.6: a Patchwork-class reduction the player needs is
-                // used here, and its own cost is part of the same all-at-once
-                // payment (1.16.10b).
-                let cost = if p.ignore_costs {
-                    Cost::free()
-                } else {
-                    let (net, extra) =
-                        self.install_payment(p.card, p.dest, p.resolved_zone, payer);
-                    extra.plus(&Cost::credits(net))
-                };
-                self.pay_cost(payer, p.card, &cost);
+                // 1.16.2f: an install-and-rez effect reducing the TOTAL cost
+                // is divided by the Corp HERE, "at the beginning of step
+                // 8.5.16d, before calculating the value of the install cost".
+                if p.reduce_total > 0 {
+                    cite!("rule_install_and_rez_reducing_total");
+                    self.ask(
+                        Side::Corp,
+                        DecisionSpec::DivideCostReduction { total: p.reduce_total },
+                        DecisionCtx::CostDivision,
+                    );
+                    return;
+                }
+                self.pay_install_cost();
             }
             Instruction::InstallStepComplete => {
                 cite!("rule_steps_installing_become_installed");
@@ -5658,14 +5709,25 @@ impl Vm {
                 // happen and 8.5.13d forces the reveal — this is what lets
                 // 8.7.2b permit finding a card that can be installed but not
                 // rezzed (the Tucana example).
+                // 1.16.2f: the share of the "total" modifier the Corp did NOT
+                // put on the install cost comes off the rez cost here
+                // (1.16.2a: lower, then floor at 0).
+                let rez_reduction = p.reduce_total.saturating_sub(p.reduce_install);
                 let base_rez = if p.ignore_costs {
                     Cost::free()
                 } else {
-                    Cost::credits(self.st.objects[&c].printed.cost.unwrap_or(0))
+                    cite!("rule_cost_calculation");
+                    Cost::credits(
+                        self.st.objects[&c]
+                            .printed
+                            .cost
+                            .unwrap_or(0)
+                            .saturating_sub(rez_reduction),
+                    )
                 };
                 let full_rez = match &self.st.objects[&c].printed.additional_rez_cost {
                     Some(add) => base_rez.plus(add),
-                    None => base_rez,
+                    None => base_rez.clone(),
                 };
                 if !self.cost_payable(Side::Corp, c, &full_rez) {
                     cite!("rule_cost");
@@ -5683,11 +5745,7 @@ impl Vm {
                 let additional = self.st.objects[&c].printed.additional_rez_cost.clone();
                 if let Some(add) = additional {
                     cite!("rule_inherent_and_additional_cost");
-                    let base = if p.ignore_costs {
-                        Cost::free()
-                    } else {
-                        Cost::credits(self.st.objects[&c].printed.cost.unwrap_or(0))
-                    };
+                    let base = base_rez.clone();
                     let total = base.plus(&add);
                     self.ask(
                         Side::Corp,
@@ -5696,16 +5754,11 @@ impl Vm {
                     );
                     return;
                 }
-                let amount = if p.ignore_costs {
-                    0
-                } else {
-                    self.st.objects[&c].printed.cost.unwrap_or(0)
-                };
                 // The cost-paid checkpoint that follows is the checkpoint
                 // that processes the CardInstalled change, while the card is
                 // still facedown (the 9.6.5b THG example).
                 cite!("rule_cost_checkpoint_cost_zero");
-                self.pay_cost(Side::Corp, c, &Cost::credits(amount));
+                self.pay_cost(Side::Corp, c, &base_rez);
             }
             Instruction::InstallRezFinish => {
                 let Some(p) = self.installs.pop() else { return };
@@ -6590,6 +6643,11 @@ impl Vm {
     // Costs (§1.16)
     // ------------------------------------------------------------------
 
+    /// CR 1.16.2b: the credit component of a cost, calculated now.
+    pub fn cost_credits(&self, cost: &Cost, source: ObjectId) -> u32 {
+        self.eval_quantity(&cost.credits, Some(source)).max(0) as u32
+    }
+
     /// CR 1.16.1: a cost must be payable all at once.
     pub fn cost_payable(&self, side: Side, source: ObjectId, cost: &Cost) -> bool {
         cite!("rule_cost");
@@ -6603,7 +6661,9 @@ impl Vm {
             } else {
                 0
             };
-        if credits_avail < cost.credits || p.clicks < cost.clicks + cost.lose_clicks {
+        // 1.16.2b: the calculation is performed when the cost is to be paid.
+        let want_credits = self.cost_credits(cost, source);
+        if credits_avail < want_credits || p.clicks < cost.clicks + cost.lose_clicks {
             return false;
         }
         if cost.trash_self && !self.st.objects[&source].zone.is_installed() {
@@ -6621,7 +6681,60 @@ impl Vm {
             cite!("rule_cost_interrupt_static_mandatory");
             return false;
         }
+        // The same rule for a damage component: a Guru-Davinder-class
+        // mandatory interrupt that would prevent the damage makes "suffer 4
+        // net damage" a cost that cannot be paid (the Obokata example).
+        if cost.net_damage > 0 && self.damage_cost_blocked(DamageKind::Net) {
+            cite!("rule_cost_interrupt_static_mandatory");
+            return false;
+        }
         true
+    }
+
+    /// CR 1.16.1b for a damage component: is there an ACTIVE, MANDATORY
+    /// conditional interrupt that would prevent damage of this kind if the
+    /// payment's steps were performed as an effect?
+    fn damage_cost_blocked(&self, kind: DamageKind) -> bool {
+        let threat = self.threat_level();
+        for o in self.st.objects.values() {
+            for (i, a) in o.printed.abilities.iter().enumerate() {
+                if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
+                    continue;
+                }
+                let Some(Condition::Trigger(TriggerCond::WouldDamage {
+                    kind: k,
+                    first_each_run,
+                })) = &a.condition
+                else {
+                    continue;
+                };
+                if k.is_some_and(|k| k != kind) {
+                    continue;
+                }
+                if *first_each_run && self.current_run.is_none() {
+                    continue;
+                }
+                let prevents = a.instructions.iter().any(|x| {
+                    matches!(x, Instruction::PreventAllDamage { kind: pk } if *pk == kind)
+                        || matches!(x, Instruction::PreventDamage { kind: pk, .. } if *pk == kind)
+                });
+                if !prevents {
+                    continue;
+                }
+                if !ability_active(
+                    o,
+                    a,
+                    self.st.encounter.as_ref().map(|e| e.ice),
+                    self.st.accessed,
+                    threat,
+                ) || !self.ability_present(o.id, i)
+                {
+                    continue;
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// CR 1.10.3c-adjacent: credits a player can actually spend — pool plus
@@ -6743,7 +6856,12 @@ impl Vm {
     pub fn pay_cost(&mut self, side: Side, source: ObjectId, cost: &Cost) {
         cite!("rule_cost_zero");
         cite!("rule_checkpoint_after_paying_cost");
-        let mut credits_to_pay = cost.credits;
+        // 1.16.2b: "the result of that calculation is determined at the time
+        // the cost is to be paid. The result is taken as an aggregate, so that
+        // paying the cost is a single instance of whatever was paid."
+        cite!("rule_cost_quantities");
+        let want_credits = self.cost_credits(cost, source);
+        let mut credits_to_pay = want_credits;
         // Bad publicity fund credits spend first during runs (6.4.3-ish).
         if side == Side::Runner && self.current_run.is_some() && self.st.bp_fund > 0 {
             cite!("rule_bad_publicity_fund");
@@ -6794,7 +6912,7 @@ impl Vm {
         }
         self.changes.record(GameChange::CostPaid {
             side,
-            credits: cost.credits,
+            credits: want_credits,
             clicks: cost.clicks,
             trashed,
         });
@@ -7469,6 +7587,23 @@ impl Vm {
                     }
                     // Structure steps already advanced to Exec; they
                     // continue naturally.
+                }
+            }
+            (DecisionCtx::CostDivision, DecisionAnswer::DivideReduction(n)) => {
+                // 1.16.2f: "the numbers declared this way must be nonnegative
+                // numbers whose sum is equal to the number of credits
+                // specified by the original modifier" — one number determines
+                // both, and it is clamped to the total.
+                cite!("rule_install_and_rez_reducing_total");
+                if let Some(p) = self.installs.last_mut() {
+                    p.reduce_install = n.min(p.reduce_total);
+                }
+                self.pay_install_cost();
+                // Step 8.5.16d completes; its checkpoint is the cost-paid one.
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    if af.phase == AbilityPhase::Resolve {
+                        af.phase = AbilityPhase::Checkpoint;
+                    }
                 }
             }
             (DecisionCtx::RezAdditionalCost, DecisionAnswer::PayNestedCost(pay)) => {

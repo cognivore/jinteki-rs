@@ -114,6 +114,11 @@ pub enum DecisionSpec {
     TraceSpend { max: u32, strength_so_far: i64, corp_side: bool },
     /// 10.14.6b: a sealed Psi-Game bid; `legal` per 10.14.3.
     PsiBid { legal: Vec<u32> },
+    /// CR 1.16.2f: an install-and-rez effect reducing the TOTAL cost — the
+    /// Corp declares how many of the `total` credits come off the install
+    /// cost. The remainder comes off the rez cost, so one number is the whole
+    /// declaration.
+    DivideCostReduction { total: u32 },
 }
 
 /// Defunctionalized answers.
@@ -137,4 +142,7 @@ pub enum DecisionAnswer {
     ChooseSet(usize),
     SpendCredits(u32),
     Bid(u32),
+    /// CR 1.16.2f: credits of the "total" modifier applied to the install
+    /// cost; the rest goes to the rez cost.
+    DivideReduction(u32),
 }
