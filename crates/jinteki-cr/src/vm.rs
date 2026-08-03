@@ -2919,6 +2919,7 @@ impl Vm {
             | Instruction::ModifySubtypes { .. }
             | Instruction::Derez { .. }
             | Instruction::ExposeCards { .. }
+            | Instruction::LookAtCards { .. }
             | Instruction::RezCard { .. }
             | Instruction::ResolveAbilityOf { .. }
             | Instruction::BreakSubroutines { .. } => {
@@ -3396,14 +3397,29 @@ impl Vm {
         // (a)/(b): effects that could prevent/avoid or modify a value.
         for i in &def.instructions {
             match i {
-                Instruction::PreventDamage { kind, .. }
-                | Instruction::PreventAllDamage { kind } => {
+                Instruction::PreventDamage { kind, .. } => {
+                    // A numeric prevention needs something to subtract from:
+                    // at 0 it could not change the expected effects.
                     cite!("rule_prevent_relevant");
                     if atoms.iter().any(|a| {
                         a.expected()
                             && a.class == EffectClass::Damage(*kind)
                             && a.value > 0
                             && !a.unpreventable
+                    }) {
+                        return true;
+                    }
+                }
+                Instruction::PreventAllDamage { kind } => {
+                    // 9.9.7b: "prevent all damage" REMOVES the damage from the
+                    // expected effects, so it changes them even when the value
+                    // has already been reduced to 0 — and that removal is
+                    // observable, because there is then no longer a value for
+                    // a Cleaners-class ability to modify (the 9.9.7f example).
+                    cite!("rule_prevent_relevant");
+                    cite!("rule_prevent_all");
+                    if atoms.iter().any(|a| {
+                        a.expected() && a.class == EffectClass::Damage(*kind) && !a.unpreventable
                     }) {
                         return true;
                     }
@@ -5505,6 +5521,28 @@ impl Vm {
                     cite!("rule_once_per_turn_flag");
                     self.changes.record(GameChange::AbilityUsed { source: source.obj });
                     self.once_per_turn_used.insert((source, self.generation(source.obj)));
+                    // An inner instruction that EXPANDS into a step sequence
+                    // (installing, playing, a trace — 9.2.2e procedures) has to
+                    // go back through imminence to be expanded and to announce
+                    // its own targets, so it is spliced in as the next
+                    // instruction, exactly as a nested cost's paid-for branch
+                    // is (9.11.4f).
+                    if matches!(
+                        **inner,
+                        Instruction::InstallCard { .. }
+                            | Instruction::InstallCards { .. }
+                            | Instruction::PlayCard { .. }
+                            | Instruction::PlayCards { .. }
+                            | Instruction::Trace { .. }
+                    ) {
+                        cite!("rule_nested_cost_instruction");
+                        let next = (**inner).clone();
+                        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                            let at = af.idx + 1;
+                            af.instructions.insert(at, next);
+                        }
+                        return;
+                    }
                     let inner_imm = ImminentWrap {
                         instr: (**inner).clone(),
                         atoms: imm.atoms.clone(),
@@ -5554,6 +5592,9 @@ impl Vm {
                 }
             }
             Instruction::PreventDamage { kind, amount } => {
+                // 9.9.7f: the condition is met only if the value was ABOVE 0
+                // before this interrupt decreased it.
+                let before = self.imminent_damage_value(*kind);
                 self.modify_parent_imminent(|atom| {
                     if atom.class == EffectClass::Damage(*kind) {
                         atom.prevent(*amount as i64);
@@ -5562,8 +5603,19 @@ impl Vm {
                         false
                     }
                 });
+                if before > 0 {
+                    cite!("rule_prevent_as_trigger_condition");
+                    let after = self.imminent_damage_value(*kind);
+                    let prevented = (before - after).max(0) as u32;
+                    self.changes.record(GameChange::DamagePrevented {
+                        by: source.obj,
+                        kind: *kind,
+                        amount: prevented,
+                    });
+                }
             }
             Instruction::PreventAllDamage { kind } => {
+                let before = self.imminent_damage_value(*kind);
                 self.modify_parent_imminent(|atom| {
                     if atom.class == EffectClass::Damage(*kind) {
                         atom.prevent_all();
@@ -5572,6 +5624,14 @@ impl Vm {
                         false
                     }
                 });
+                if before > 0 {
+                    cite!("rule_prevent_as_trigger_condition");
+                    self.changes.record(GameChange::DamagePrevented {
+                        by: source.obj,
+                        kind: *kind,
+                        amount: before as u32,
+                    });
+                }
             }
             Instruction::AvoidTags(n) => {
                 self.modify_parent_imminent(|atom| {
@@ -6115,6 +6175,19 @@ impl Vm {
                             self.pending_from_effect.extend(ids);
                         }
                     }
+                }
+            }
+            Instruction::LookAtCards { cards, by } => {
+                // 1.21.2: the looking player sees the front faces. 9.11.4e:
+                // this ENDS an instruction — the post-instruction checkpoint
+                // is the one the rule calls for, and the next instruction
+                // announces its targets with the cards already visible.
+                cite!("rule_look");
+                cite!("rule_look_reveal_instruction");
+                cite!("rule_look_reveal_expose_access_distinct");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                for t in targets {
+                    self.changes.record(GameChange::CardLookedAt { obj: t, by: *by });
                 }
             }
             Instruction::ExposeCards { cards } => {
@@ -6916,6 +6989,22 @@ impl Vm {
 
     /// Apply a modification to the top-most OTHER imminence (the instruction
     /// this interrupt is modifying).
+    /// CR 9.9.7f: the value the innermost imminent instruction currently
+    /// expects for damage of this kind (0 when there is no such effect —
+    /// which 9.9.7b tombstoning is exactly the case of).
+    fn imminent_damage_value(&self, kind: DamageKind) -> i64 {
+        self.imminents
+            .last()
+            .map(|imm| {
+                imm.atoms
+                    .iter()
+                    .filter(|a| a.expected() && a.class == EffectClass::Damage(kind))
+                    .map(|a| a.value)
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
     fn modify_parent_imminent(&mut self, mut f: impl FnMut(&mut EffectAtom) -> bool) {
         cite!("rule_negative_values_imminent");
         if let Some(imm) = self.imminents.last_mut() {

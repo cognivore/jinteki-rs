@@ -26,12 +26,21 @@ pub enum GameChange {
     /// CR 9.9.5-adjacent: the Runner AVOIDED receiving tags (Thunder Art
     /// Gallery class conditions).
     TagsAvoided { amount: u32 },
+    /// CR 9.9.7f: an interrupt from `by` decreased — or removed — the amount
+    /// of an imminent damage effect whose value was GREATER THAN 0. That last
+    /// clause is the whole rule: preventing an effect already reduced to 0
+    /// prevents no damage (the Guru Davinder example).
+    DamagePrevented { by: ObjectId, kind: DamageKind, amount: u32 },
     /// A card was trashed. `by` is the player whose effect trashed it.
     CardTrashed { obj: ObjectId, by: Side, was_zone: Zone },
     CardDiscarded { obj: ObjectId, side: Side },
     CardInstalled { obj: ObjectId, side: Side },
     /// CR 8.5.13c/d: a card was revealed to verify an installation.
     CardRevealed { obj: ObjectId },
+    /// CR 1.21.2: a player LOOKED at a card — they may see its front face
+    /// without showing it to the other player. 1.21.5 keeps it distinct from
+    /// revealing, exposing and accessing.
+    CardLookedAt { obj: ObjectId, by: Side },
     /// CR 1.21.4: a card was EXPOSED — revealed, except that only installed
     /// unrezzed cards can be exposed. 1.21.5 keeps it distinct from a reveal.
     CardExposed { obj: ObjectId },

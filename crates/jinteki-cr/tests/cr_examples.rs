@@ -251,6 +251,8 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_condition_met_multiple_times_2",
     "example_rule_cancelled_movement_1",
     "example_rule_run_ends_close_paws_1",
+    "example_rule_prevent_as_trigger_condition_1",
+    "example_rule_look_reveal_instruction_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -9016,3 +9018,164 @@ fn example_rule_run_ends_close_paws_1() {
     assert_eq!(vm.st.bp_fund, 0, "6.9.6b: the fund is emptied when the run ends");
     assert_eq!(vm.st.runner.credits, 0, "…and nothing was spent from it");
 }
+
+/// example_rule_prevent_as_trigger_condition_1 (9.9.7f): 2 meat damage is
+/// imminent. A Plascrete-class interrupt prevents 2, leaving the expected
+/// effect at 0 — a value The Cleaners could still modify. Then a
+/// Guru-Davinder-class interrupt removes the damage effect altogether. Since
+/// the value was already 0, Guru Davinder's conditional ability does NOT meet
+/// its trigger condition, and with no imminent damage effect left the Corp
+/// cannot use The Cleaners.
+#[test]
+fn example_rule_prevent_as_trigger_condition_1() {
+    for plascrete_first in [true, false] {
+        let mut vm = Vm::empty(939);
+        tk::put_in_score_area(&mut vm, tk::cleaners_like("Cleaners-like"), Side::Corp);
+        tk::install_root(
+            &mut vm,
+            tk::meat_damage_button("Angelique-like", 2),
+            ServerId::Remote(1),
+            true,
+        );
+        let guru = tk::install_rig(&mut vm, tk::guru_davinder_like("Guru-like", DamageKind::Meat));
+        if plascrete_first {
+            tk::install_rig(&mut vm, tk::biometric_like("Plascrete-like", DamageKind::Meat));
+        }
+        tk::fill_hand(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 4;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("do meat damage"))
+                .stop_at_action(),
+            Plan::runner()
+                .when(Match::interrupt(), Reply::take("biometric"))
+                .when(Match::interrupt(), Reply::take("guru: prevent"))
+                .when(Match::nested_cost(), Reply::PayCost(true)),
+        );
+        let guru_at = t
+            .entries
+            .iter()
+            .find(|e| e.took("guru: prevent"))
+            .map(|e| e.seq)
+            .unwrap_or(usize::MAX);
+        assert!(
+            t.entries.iter().any(|e| e.seq < guru_at && e.offered("cleaners")),
+            "9.9.7b: a 0 value is still a value The Cleaners could modify: {}",
+            t.tail(14)
+        );
+        assert!(
+            t.entries.iter().all(|e| e.seq <= guru_at || !e.offered("cleaners")),
+            "…and once the damage effect is removed entirely there is nothing \
+             left for the Corp to modify: {}",
+            t.tail(14)
+        );
+        assert!(t.took("guru: prevent"), "the prevent-all interrupt resolved: {}", t.tail(14));
+        assert!(
+            !vm.changes.log.iter().any(|c| matches!(
+                c,
+                GameChange::DamageSuffered { kind: DamageKind::Meat, .. }
+            )),
+            "no meat damage was suffered either way"
+        );
+        if plascrete_first {
+            assert!(t.took("biometric"), "…after the value was already reduced to 0");
+            assert!(
+                !t.ever_offered("guru: pay 4"),
+                "9.9.7f: the damage value was 0, so removing the effect prevented \
+                 nothing and the conditional ability was never pending: {}",
+                t.tail(14)
+            );
+            assert_eq!(vm.st.runner.credits, 4, "…and nothing was paid");
+            assert_eq!(vm.st.objects[&guru].zone, Zone::Rig, "…and nothing was trashed");
+        } else {
+            assert!(
+                t.took("guru: pay 4"),
+                "with a value above 0 the same removal DOES meet the condition: {}",
+                t.tail(14)
+            );
+            assert_eq!(vm.st.runner.credits, 0, "…and the Runner paid 4");
+        }
+    }
+}
+
+/// example_rule_look_reveal_instruction_1 (9.11.4e): an Architect-class
+/// subroutine looks at the top 5 cards of R&D and installs one of them, in one
+/// printed sentence. Making the cards visible ENDS an instruction: the Corp
+/// sees those 5 cards before the second instruction's target announcement, and
+/// the announcement offers exactly them. The install is optional, so declining
+/// leaves the second instruction with no effect.
+#[test]
+fn example_rule_look_reveal_instruction_1() {
+    for install in [true, false] {
+        let mut vm = Vm::empty(940);
+        tk::install_ice(
+            &mut vm,
+            tk::architect_look_install("Architect-like", 5, ServerId::Remote(1)),
+            ServerId::Hq,
+            true,
+        );
+        let deck = tk::fill_deck(&mut vm, Side::Corp, 7);
+        vm.start_turn(Side::Runner);
+
+        let runner = Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::jack_out(), Reply::JackOut(true))
+            .stop_at_action();
+        let corp = if install {
+            Plan::corp()
+                .when(Match::optional(), Reply::Optional(true))
+                .when(Match::targets().once(), Reply::target(deck[2]))
+        } else {
+            Plan::corp().when(Match::optional(), Reply::Optional(false))
+        };
+        let t = plan::play(&mut vm, corp, runner);
+
+        let looked: Vec<ObjectIdShim> = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::CardLookedAt { obj, .. } => Some(ObjectIdShim(*obj)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(looked.len(), 5, "1.21.2: the Corp looked at the top 5 cards of R&D");
+        if install {
+            let ann = t
+                .of_kind(Kind::Targets)
+                .into_iter()
+                .find(|e| e.side == Side::Corp)
+                .unwrap_or_else(|| panic!("the second instruction announced a target: {}", t.tail(20)));
+            assert_eq!(
+                ann.candidates().len(),
+                5,
+                "9.11.4e: the choice is made among the cards now visible: {:?}",
+                ann.candidates()
+            );
+            assert_eq!(
+                vm.st.objects[&deck[2]].zone,
+                Zone::Root(ServerId::Remote(1)),
+                "…and the chosen card was installed"
+            );
+        } else {
+            assert!(
+                t.of_kind(Kind::Targets).iter().all(|e| e.side != Side::Corp),
+                "9.6.9c: declining the optional install means no target is chosen"
+            );
+            assert!(
+                !vm.changes.log.iter().any(|c| matches!(
+                    c,
+                    GameChange::CardInstalled { side: Side::Corp, .. }
+                )),
+                "…and the second instruction had no effect"
+            );
+        }
+    }
+}
+
+/// Newtype so the look-log assertion above reads as a count, not as ids.
+#[derive(Debug, PartialEq, Eq)]
+struct ObjectIdShim(jinteki_cr::object::ObjectId);

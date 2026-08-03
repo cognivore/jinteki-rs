@@ -4304,3 +4304,57 @@ pub fn smc_credit_button(name: &'static str, cost: u32) -> PrintedCard {
     .labeled("smc: a credit-costed paid ability")];
     c
 }
+
+/// Guru Davinder shape (9.9.7f): a Runner resource with an interrupt that
+/// prevents all damage of a kind, and a NON-interrupt conditional ability
+/// whose trigger condition is "whenever this card prevents 1 or more damage"
+/// — which the Runner answers by paying 4[credit] or trashing the resource.
+pub fn guru_davinder_like(name: &'static str, kind: DamageKind) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![
+        AbilityDef::paid(Cost::free(), vec![Instruction::PreventAllDamage { kind }])
+            .with_flag(AbilityFlag::Interrupt)
+            .labeled("guru: prevent all damage"),
+        AbilityDef::conditional(
+            TriggerCond::SourcePreventedDamage,
+            vec![Instruction::NestedCostUnless {
+                cost: Cost::credits(4),
+                effect: Box::new(Instruction::TrashSelf),
+                payer: Some(Side::Runner),
+            }],
+            false,
+        )
+        .labeled("guru: pay 4 or trash"),
+    ];
+    c
+}
+
+/// Architect shape (9.11.4e): ONE printed sentence that looks at the top N
+/// cards of R&D and installs one of them. Transcribed as the 9.11.4e split —
+/// making the cards visible ends the first instruction; the install is the
+/// second, and it is optional, so the Corp may decline to choose a target.
+///
+/// SIMPLIFICATION (§12 rule 3): the install destination is fixed at card-build
+/// time; where the card goes is orthogonal to what 9.11.4e decides.
+pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 5);
+    c.abilities = vec![AbilityDef::subroutine(vec![
+        Instruction::LookAtCards {
+            cards: TargetSpec::TopOfDeck(Side::Corp, n),
+            by: Side::Corp,
+        },
+        Instruction::DeclineableChoice(Box::new(Instruction::InstallCard {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }],
+            },
+            dest: crate::instr::InstallDest::Root(dest),
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+            reduce_total: Quantity::c(0),
+        })),
+    ])
+    .labeled("[sub] look at the top of R&D and install one of those cards")];
+    c
+}

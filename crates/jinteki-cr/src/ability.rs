@@ -129,6 +129,10 @@ pub enum TriggerCond {
     /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
     /// at run step 6.9.4a (`rule_pass_ice`).
     SelfPassed,
+    /// "Whenever this card prevents 1 or more damage…" (Guru Davinder class,
+    /// 9.9.7f). Met only when the imminent damage value was greater than 0
+    /// before the interrupt from the SAME source decreased or removed it.
+    SourcePreventedDamage,
     /// "Whenever a card is exposed…" (Blackguard class). CR 9.6.4b: exposing
     /// several cards in ONE instruction meets this condition once per card,
     /// because exposing is not one of 9.12.2c's aggregated effect classes.
@@ -772,6 +776,10 @@ pub fn trigger_matches(
             // Server comparison happens in the checkpoint scan (it has state
             // access); this arm only matches the change class.
             true
+        }
+        (TriggerCond::SourcePreventedDamage, GameChange::DamagePrevented { by, .. }) => {
+            cite!("rule_prevent_as_trigger_condition");
+            *by == source.id
         }
         (TriggerCond::CardExposed, GameChange::CardExposed { .. }) => {
             cite!("rule_expose");

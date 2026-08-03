@@ -152,6 +152,13 @@ pub enum Instruction {
     /// 8.1.2d: the rez cost is paid first unless the ability states that it
     /// is ignored (1.16.5c), which is what `ignore_costs` says.
     RezCard { target: TargetSpec, ignore_costs: bool },
+    /// CR 1.21.2: "Look at <cards>." — the looking player sees their front
+    /// faces without showing them to the other player. CR 9.11.4e: where an
+    /// older card puts the look in the SAME sentence as what is then done to
+    /// those cards, making the cards visible is the end of an instruction, so
+    /// the look is its own instruction and a checkpoint occurs before the
+    /// next one announces its targets among them.
+    LookAtCards { cards: TargetSpec, by: Side },
     /// CR 1.21.4: "Expose <cards>." — the named cards are revealed, except
     /// that only INSTALLED, UNREZZED cards can be exposed. 1.21.5 keeps
     /// exposing distinct from looking, revealing and accessing, and 9.12.2
