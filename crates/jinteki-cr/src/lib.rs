@@ -26,6 +26,7 @@ pub mod object;
 pub mod plan;
 pub mod testkit;
 pub mod timing;
+pub mod view;
 pub mod vm;
 pub mod window;
 
@@ -34,6 +35,7 @@ pub const EMBEDDED_SOURCES: &[(&str, &str)] = &[
     ("ability.rs", include_str!("ability.rs")),
     ("change.rs", include_str!("change.rs")),
     ("checkpoint.rs", include_str!("checkpoint.rs")),
+    ("deck.rs", include_str!("deck.rs")),
     ("decision.rs", include_str!("decision.rs")),
     ("effects.rs", include_str!("effects.rs")),
     ("frames.rs", include_str!("frames.rs")),
@@ -43,6 +45,7 @@ pub const EMBEDDED_SOURCES: &[(&str, &str)] = &[
     ("plan.rs", include_str!("plan.rs")),
     ("testkit.rs", include_str!("testkit.rs")),
     ("timing.rs", include_str!("timing.rs")),
+    ("view.rs", include_str!("view.rs")),
     ("vm.rs", include_str!("vm.rs")),
     ("window.rs", include_str!("window.rs")),
 ];

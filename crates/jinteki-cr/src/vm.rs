@@ -135,6 +135,14 @@ pub struct CoreState {
     /// that just ended) began — the window a history query about "this run"
     /// reviews.
     pub run_log_start: usize,
+    /// CR 10.2.2b: the hidden information each player has been SHOWN by a game
+    /// effect — looking (1.21.2), revealing (1.21.3), exposing (1.21.4). Every
+    /// other kind of visibility is derived from the state by
+    /// `Vm::identity_visible_to`, so this holds only what a rule or an ability
+    /// actively disclosed.
+    pub seen: crate::view::Sightings,
+    /// CR 4.8.7: the next distinct facedown set-aside group.
+    pub next_set_aside_group: u64,
     /// Move stamps: bumped on every zone change (9.1.4 stranding checks).
     pub move_seq: u64,
     /// Active-since stamps (10.3.1d).
@@ -555,6 +563,8 @@ impl Vm {
             run_requirement_discharged: false,
             current_action: None,
             turn_log_start: 0,
+                seen: Default::default(),
+                next_set_aside_group: 1,
                 move_seq: 0,
                 active_seq: 0,
             },
@@ -628,6 +638,7 @@ impl Vm {
                 generation: 0,
                 scored_snapshot: None,
                 last_server: None,
+                set_aside_group: None,
             },
         );
         id
@@ -1754,6 +1765,187 @@ impl Vm {
             }
             _ => None,
         })
+    }
+
+    // ------------------------------------------------------------------
+    // §10.2 information: what each player is entitled to know
+    // ------------------------------------------------------------------
+
+    /// CR 10.2.2a / 10.2.3a: is this card's IDENTITY — its front face —
+    /// available to `side`?
+    ///
+    /// The answer is derived from the state, in the order the CR gives the
+    /// entitlements:
+    ///
+    /// * 10.2.2b — a game effect has SHOWN it to this player (looking 1.21.2,
+    ///   revealing 1.21.3, exposing 1.21.4), recorded in `CoreState::seen`.
+    /// * 7.3.1a — the Runner accessed it during the breach in progress, so it
+    ///   "remains visible to the Runner for the remainder of the breach".
+    ///   That entitlement survives the card MOVING, which is the exception
+    ///   1.21.6 points at: the Runner watched the card leave.
+    /// * otherwise the zone it is in says, per §4.
+    pub fn identity_visible_to(&self, id: ObjectId, side: Side) -> bool {
+        cite!("rule_hidden_information");
+        cite!("rule_open_information");
+        let Some(o) = self.st.objects.get(&id) else { return false };
+        if self.st.seen.shown(side, id) {
+            cite!("rule_bluffing");
+            return true;
+        }
+        // 7.1.2: "While the Runner is accessing a card, the Runner is allowed
+        // to look at that card, even if it would normally not be visible to
+        // them" — and the Corp may too, EXCEPT from R&D, which falls out of
+        // 4.2.2 below without a clause of its own.
+        if side == Side::Runner && self.st.accessed == Some(id) {
+            cite!("rule_accessing");
+            cite!("rule_accessing_who_can_look");
+            return true;
+        }
+        // 7.3.1a: an accessed card remains visible to the Runner for the
+        // remainder of the breach — including after it has been moved out of
+        // the zone it was accessed in. That is the exception 1.21.6 points to
+        // when it ends a disclosure at the card's next move: the Runner
+        // watched this one leave.
+        if side == Side::Runner && self.breach_ctx().is_some_and(|b| b.accessed.contains(&id)) {
+            cite!("rule_visibility_after_access");
+            return true;
+        }
+        match o.zone {
+            // 4.3.2: "A player may look at the cards in their own hand, but
+            // not at any of the cards in their opponent's hands."
+            Zone::Hand(s) => {
+                cite!("rule_hand_secret");
+                s == side
+            }
+            // 4.2.2: decks are kept hidden from BOTH players — the Corp may
+            // not look at R&D any more than the Runner may.
+            Zone::Deck(_) => {
+                cite!("rule_deck_hidden");
+                false
+            }
+            // 4.4.6c: the faceup cards in Archives are open information; the
+            // facedown ones are visible only to the Corp. 4.4.7b: the whole
+            // heap is open information.
+            Zone::Discard(Side::Corp) => {
+                cite!("rule_archives_faceup_open_info");
+                o.faceup || side == Side::Corp
+            }
+            Zone::Discard(Side::Runner) => {
+                cite!("rule_heap_open_info");
+                true
+            }
+            // 4.5: score areas are open — an agenda's points are the score.
+            Zone::ScoreArea(_) => true,
+            // 1.21.1: faceup cards in the play area are freely visible to all
+            // players; 1.21.2a: "a player may look at facedown cards they
+            // control at any time".
+            Zone::Root(_) | Zone::Ice(_) | Zone::Rig | Zone::PlayArea(_) => {
+                cite!("rule_faceup_facedown");
+                cite!("rule_look_at_controlled_facedown");
+                o.faceup || o.controller == side
+            }
+            // 4.8.6: cards set aside by an ability are faceup unless the
+            // ability said facedown; 4.8.7/8.3.3a: a facedown group belongs to
+            // the player carrying that effect out, and the opponent "cannot
+            // look at the set-aside cards during this process".
+            Zone::SetAside => {
+                cite!("rule_set_aside_default_faceup");
+                cite!("rule_arrange_opponent");
+                match o.set_aside_group {
+                    Some(g) => g.by == side,
+                    None => o.faceup || o.controller == side,
+                }
+            }
+            Zone::RemovedFromGame => o.faceup || o.controller == side,
+            Zone::Bank => true,
+        }
+    }
+
+    /// CR 10.2: one card as `side` sees it (`Unseen` for hidden identities).
+    pub fn card_view(&self, id: ObjectId, side: Side) -> crate::view::CardView {
+        if self.identity_visible_to(id, side) {
+            crate::view::CardView::Seen(id)
+        } else {
+            crate::view::CardView::Unseen
+        }
+    }
+
+    /// CR 4.8.7: the facedown set-aside groups in existence, in creation
+    /// order, each with the cards it holds.
+    pub fn set_aside_groups(&self) -> Vec<(crate::view::SetAsideGroup, Vec<ObjectId>)> {
+        cite!("rule_facedown_set_aside_distinct_groups");
+        cite!("rule_hosted_cards_treated_as_group");
+        let mut out: Vec<(crate::view::SetAsideGroup, Vec<ObjectId>)> = Vec::new();
+        for (id, o) in &self.st.objects {
+            if o.zone != Zone::SetAside {
+                continue;
+            }
+            let Some(g) = o.set_aside_group else { continue };
+            match out.iter_mut().find(|(gg, _)| gg.id == g.id) {
+                Some((_, v)) => v.push(*id),
+                None => out.push((g, vec![*id])),
+            }
+        }
+        out.sort_by_key(|(g, _)| g.id);
+        out
+    }
+
+    /// CR §10.2: the whole game state as `side` is entitled to see it.
+    ///
+    /// Everything here is derived; a `View` is a snapshot for asserting on,
+    /// never a second copy of the state. The number of cards in every zone is
+    /// present for both players because 10.2.3a makes counts open information
+    /// even where the identities are not.
+    pub fn view_of(&self, side: Side) -> crate::view::View {
+        cite!("sec_information");
+        cite!("rule_hidden_or_open_information");
+        cite!("rule_hand_size_open_info");
+        cite!("rule_deck_size_open_info");
+        cite!("rule_discard_pile_open_info");
+        let remotes: Vec<ServerId> = self.remote_servers().into_iter().collect();
+        let zones = crate::view::viewable_zones(&remotes)
+            .into_iter()
+            .map(|z| {
+                let cards: Vec<crate::view::CardView> = self
+                    .cards_in_zone(z)
+                    .into_iter()
+                    .map(|c| self.card_view(c, side))
+                    .collect();
+                (z, cards)
+            })
+            .collect();
+        let groups = self
+            .set_aside_groups()
+            .into_iter()
+            .map(|(g, cards)| {
+                (g.id, cards.into_iter().map(|c| self.card_view(c, side)).collect())
+            })
+            .collect();
+        // 10.2.3b: a maintained choice was announced (1.15.2) and stays
+        // available to both players — "open information cannot be hidden from
+        // an opponent", and the opponent may ask again later.
+        cite!("rule_cannot_hide_open_info");
+        let choices = self
+            .lingering
+            .iter()
+            .filter_map(|l| match &l.payload {
+                Payload::MaintainedChoice {
+                    key,
+                    choice: crate::lingering::ChoiceValue::Object(o),
+                } => Some((*key, *o)),
+                _ => None,
+            })
+            .collect();
+        crate::view::View {
+            side,
+            zones,
+            groups,
+            choices,
+            credits: vec![
+                (Side::Corp, self.st.corp.credits),
+                (Side::Runner, self.st.runner.credits),
+            ],
+        }
     }
 
     /// CR 4.6.6i: what an ability on `obj` means by **"this server"**.
@@ -5872,8 +6064,9 @@ impl Vm {
     // §8.7 searching, finding, shuffling
     // ------------------------------------------------------------------
 
-    /// The cards in a searched zone (8.7.1: the player looks at ALL of them).
-    fn cards_in_zone(&self, zone: Zone) -> Vec<ObjectId> {
+    /// The cards in a searched zone (8.7.1: the player looks at ALL of them),
+    /// in whatever order that zone maintains (4.2.3: decks are ordered).
+    pub fn cards_in_zone(&self, zone: Zone) -> Vec<ObjectId> {
         match zone {
             Zone::Deck(s) => self.st.deck[&s].clone(),
             Zone::Hand(s) => self.st.hand[&s].clone(),
@@ -6024,6 +6217,10 @@ impl Vm {
             }
             p.revealed = true;
         }
+        // 1.21.3 / 10.2.2b: revealing shows the front face to ALL players,
+        // which is one of the game effects by which a player learns hidden
+        // information.
+        self.st.seen.show_all(card);
         self.changes.record(GameChange::CardRevealed { obj: card });
     }
 
@@ -6036,6 +6233,7 @@ impl Vm {
         }
         if p.was_hidden && p.reveal_check.is_some() && !self.st.objects[&p.card].faceup {
             cite!("rule_reveal_for_ability_limitations");
+            self.st.seen.show_all(p.card);
             self.changes.record(GameChange::CardRevealed { obj: p.card });
         }
     }
@@ -7026,6 +7224,9 @@ impl Vm {
                     af.looked_at = stamped;
                 }
                 for t in targets {
+                    // 1.21.2 / 10.2.2b: looking lets THAT player see the front
+                    // face without showing it to the other one.
+                    self.st.seen.show(*by, t);
                     self.changes.record(GameChange::CardLookedAt { obj: t, by: *by });
                 }
             }
@@ -7041,6 +7242,8 @@ impl Vm {
                     if o.faceup || !self.is_installed(o) {
                         continue;
                     }
+                    // 1.21.4: exposing IS revealing, so both players see it.
+                    self.st.seen.show_all(t);
                     self.changes.record(GameChange::CardExposed { obj: t });
                 }
             }
@@ -7911,6 +8114,7 @@ impl Vm {
                     if stipulated && !self.st.objects[&t].faceup {
                         cite!("rule_reveal_from_hidden");
                         cite!("rule_reveal");
+                        self.st.seen.show_all(t);
                         self.changes.record(GameChange::CardRevealed { obj: t });
                     }
                     let owner = self.st.objects[&t].owner;
@@ -9663,6 +9867,14 @@ impl Vm {
     /// Move a card between zones, maintaining zone lists.
     pub fn move_card(&mut self, id: ObjectId, to: Zone) {
         let from = self.st.objects[&id].zone;
+        // CR 4.4.6b: "If a Corp card is visible to the Runner when it is
+        // trashed or discarded, it is put in Archives faceup. If a Corp card
+        // is not visible to the Runner when it is trashed or discarded, then
+        // it is put in Archives facedown." The state that decides it is the
+        // one BEFORE the move, so it is read here.
+        let archives_faceup = to == Zone::Discard(Side::Corp)
+            && self.st.objects[&id].printed.side == Side::Corp
+            && self.identity_visible_to(id, Side::Runner);
         // CR 4.8.3: a card moving out of the set-aside zone is treated as
         // having entered its destination directly from where it was before it
         // was set aside — for every ability except the one that set it aside,
@@ -9728,7 +9940,22 @@ impl Vm {
         // ability again the moment it is put somewhere else.
         if to != Zone::SetAside {
             o.set_aside_for_ability = false;
+            // 4.8.7: and it leaves its facedown group.
+            o.set_aside_group = None;
         }
+        if archives_faceup {
+            cite!("rule_archives_faceup_facedown");
+            o.faceup = true;
+        }
+        // CR 1.21.6: a card a resolving ability showed a player "remains
+        // visible to the relevant player(s) until the entire ability is
+        // finished resolving OR THE CARD MOVES TO A DIFFERENT LOCATION" — so
+        // a disclosure does not survive the move. What a player is
+        // CONTINUOUSLY entitled to (their own hand, their own facedown cards,
+        // faceup cards anywhere) is derived from the new zone instead, and
+        // 7.3.1a's access sighting is derived from the breach, so neither is
+        // lost here.
+        self.st.seen.forget(id);
         // CR 1.13.12: if a hosted object is moved to another zone, the
         // hosting relationship ends. (A 9.5.5 set-aside does not go through
         // here, so those relationships survive their host's trashing.)

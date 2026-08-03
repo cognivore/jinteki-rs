@@ -2046,6 +2046,27 @@ pub fn security_testing_choice_like(name: &'static str, servers: &[ServerId]) ->
 /// (9.10.3c, `WhileSourceActive`) is stated on the choice itself and is
 /// unaffected.
 pub fn femme_choice_like(name: &'static str) -> PrintedCard {
+    femme_choice_over(
+        name,
+        vec![
+            crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+            crate::instr::TargetFilter::Rezzed,
+        ],
+    )
+}
+
+/// As [`femme_choice_like`], but the chosen ice need NOT be rezzed. CR
+/// 10.2.3b's example chooses "a piece of ice protecting HQ", which is normally
+/// an unrezzed card: its own identity stays hidden information (10.2.2a) while
+/// the CHOICE is open information that "cannot be hidden from an opponent".
+pub fn femme_choice_any_ice_like(name: &'static str) -> PrintedCard {
+    femme_choice_over(name, vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)])
+}
+
+fn femme_choice_over(
+    name: &'static str,
+    criteria: Vec<crate::instr::TargetFilter>,
+) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(1);
     c.abilities = vec![
@@ -2055,10 +2076,7 @@ pub fn femme_choice_like(name: &'static str) -> PrintedCard {
                 key: "femme-ice",
                 of: crate::instr::ChoiceSpec::Object(TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![
-                        crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
-                        crate::instr::TargetFilter::Rezzed,
-                    ],
+                    criteria,
                 }),
                 duration: crate::lingering::WantedDuration::WhileSourceActive,
             }],
@@ -2071,6 +2089,35 @@ pub fn femme_choice_like(name: &'static str) -> PrintedCard {
         )
         .labeled("femme: act on the remembered ice"),
     ];
+    c
+}
+
+/// Poêtrï-Luxury-Brands shape (7.3.1a): a Corp card with "Whenever the Runner
+/// accesses a card, install a card from R&D in a new remote server."
+///
+/// Simplification: the printed card installs from HQ and the install is
+/// optional; here it installs from the top `n` of R&D so the example's
+/// contrast — a card the Runner has accessed versus one they have not — can
+/// be arranged without depending on which random HQ card the breach presents.
+/// The rule under test (7.3.1a's visibility) is indifferent to the zone.
+pub fn poetri_like(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerAccessesCard,
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }],
+            },
+            dest: crate::instr::InstallDest::NewRemoteRoot,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+            reduce_total: Quantity::c(0),
+        }],
+        false,
+    )
+    .labeled("poetri: install a card from R&D")];
     c
 }
 

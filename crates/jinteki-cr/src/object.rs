@@ -329,6 +329,13 @@ pub struct Object {
     /// position protecting it. An ability on a card that has left a server
     /// still says "this server" about the one it left (see `Vm::this_server`).
     pub last_server: Option<ServerId>,
+    /// CR 4.8.7 / 1.21.1b: the facedown set-aside GROUP this card belongs to.
+    /// Facedown cards set aside at the same time by the same effect "must be
+    /// kept in distinct groups according to the effect that sets them aside",
+    /// and within a group they are not ordered — so the group is the unit of
+    /// information (10.2) and the player carrying the effect out is the one
+    /// who may look at them (8.3.3a).
+    pub set_aside_group: Option<crate::view::SetAsideGroup>,
 }
 
 impl Object {

@@ -26,6 +26,9 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 const IMPLEMENTED: &[&str] = &[
     "example_rule_alternate_payment_1",
     "example_rule_object_move_location_1",
+    // Wave 14a: §10.2 information.
+    "example_rule_cannot_hide_open_info_1",
+    "example_rule_visibility_after_access_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11132,4 +11135,152 @@ fn example_rule_object_move_location_1() {
             );
         }
     }
+}
+
+// ===========================================================================
+// Wave 14a — §10.2 information: what each player is entitled to know
+// ===========================================================================
+
+/// example_rule_cannot_hide_open_info_1 (10.2.3b): the Runner installs a
+/// Femme-Fatale-class program and chooses a piece of ice protecting HQ. The
+/// choice is OPEN information — "the Runner must explicitly state to the Corp
+/// which ice has been chosen and must continue to do so if the Corp asks for
+/// Femme Fatale's target during a later turn" — even though the chosen card
+/// is unrezzed and its own identity is hidden information (10.2.2a).
+#[test]
+fn example_rule_cannot_hide_open_info_1() {
+    use jinteki_cr::view::CardView;
+    let mut vm = Vm::empty(1401);
+    // 6.2.2a: each newly installed piece of ice takes the OUTERMOST position,
+    // so the first one installed here is the inner one.
+    let inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner-HQ-Ice", 3, 2), ServerId::Hq, false);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer-HQ-Ice", 3, 2), ServerId::Hq, false);
+    tk::install_rig(&mut vm, tk::femme_choice_any_ice_like("Femme-like"));
+    vm.start_turn(Side::Runner);
+
+    // The plan: the turn-begins conditional makes the choice, naming the
+    // OUTER piece of ice; stop at the first action window.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::targets().once(), Reply::Targets(vec![outer]))
+            .stop_at_action(),
+    );
+    assert!(t.halted, "the choice was made: {}", t.tail(8));
+
+    // 10.2.3b: the Corp is entitled to the choice.
+    assert_eq!(
+        vm.view_of(Side::Corp).choice("femme-ice"),
+        Some(outer),
+        "10.2.3b: which ice was chosen cannot be hidden from the opponent"
+    );
+    // ...while the chosen card's own identity is still hidden information:
+    // 10.2.2a lists "facedown cards in play", and neither piece of ice is
+    // distinguishable from the other in the Runner's view.
+    assert!(!vm.identity_visible_to(outer, Side::Runner));
+    assert_eq!(
+        vm.view_of(Side::Runner).in_zone(Zone::Ice(ServerId::Hq)),
+        &[CardView::Unseen, CardView::Unseen],
+        "10.2.2a: an unrezzed installed card is a card the Runner can point \
+         at but not read"
+    );
+    // ...and the Corp, who controls them, sees both (1.21.2a).
+    assert_eq!(
+        vm.view_of(Side::Corp).in_zone(Zone::Ice(ServerId::Hq)),
+        &[CardView::Seen(inner), CardView::Seen(outer)],
+        "1.21.2a: a player may look at facedown cards they control"
+    );
+
+    // "…and must continue to do so if the Corp asks during a later turn."
+    vm.start_turn(Side::Corp);
+    vm.checkpoint_and_react(None);
+    assert_eq!(
+        vm.view_of(Side::Corp).choice("femme-ice"),
+        Some(outer),
+        "10.2.3b: open information stays available; the opponent may ask again"
+    );
+}
+
+/// example_rule_visibility_after_access_1 (7.3.1a): the Runner accesses cards
+/// during a breach and the Corp then installs a card. "The Runner will know
+/// whether the Corp installs the Scatter Field, the Palisade, or an unknown
+/// card" — an accessed object "remains visible to the Runner for the remainder
+/// of the breach", so an installed card the Runner accessed is named in their
+/// view while one they never accessed is not.
+#[test]
+fn example_rule_visibility_after_access_1() {
+    use jinteki_cr::view::CardView;
+    let mut vm = Vm::empty(1402);
+    tk::install_root(&mut vm, tk::poetri_like("Poetri-like", 4), ServerId::Remote(1), true);
+    // 7.3.5b: an ability that lets the Runner "access an additional card"
+    // raises the random access limit, so the breach performs two accesses.
+    tk::install_rig(&mut vm, tk::additional_access_card("Legwork-like", ServerId::Rnd, 1));
+    // R&D, top first. Each card has a trash cost so the 9.2.10 mid-access
+    // window opens and the plan has somewhere to stop.
+    let mut deck = Vec::new();
+    for name in ["Rnd-1", "Rnd-2", "Rnd-3", "Rnd-4"] {
+        let id = vm.new_object(tk::vanilla_asset(name, 0, 2), Zone::Deck(Side::Corp));
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+        deck.push(id);
+    }
+    vm.st.runner.credits = 9;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run R&D. During the FIRST access's reaction window the Corp
+    // installs `deck[2]` — a card the Runner has never accessed. During the
+    // SECOND, it installs `deck[0]` — the card accessed first. Both target
+    // rules are `.once()`: an ordinal counts per rule and only advances on
+    // decisions the driver evaluates that rule against.
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(vec![deck[2]]))
+            .when(Match::targets().once(), Reply::Targets(vec![deck[0]])),
+        Plan::runner()
+            // 7.3.5b: the additional access is arranged before the run, so the
+            // random access limit is 2 when the breach determines it.
+            .when(Match::paid().once(), Reply::take("makers-eye"))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            // Halt at the mid-access window of the SECOND access — inside the
+            // breach, after both installs.
+            .when(Match::mid_access().nth(2), Reply::Halt)
+            .stop_at_action(),
+    );
+    let t = script.run(&mut vm).clone();
+    assert!(t.halted, "stopped inside the breach: {}", t.tail(30));
+
+    let accessed_zone = vm.st.objects[&deck[0]].zone;
+    let unknown_zone = vm.st.objects[&deck[2]].zone;
+    assert_ne!(accessed_zone, Zone::Deck(Side::Corp), "the accessed card was installed");
+    assert_ne!(unknown_zone, Zone::Deck(Side::Corp), "the unknown card was installed");
+    assert_ne!(accessed_zone, unknown_zone, "each install made its own remote");
+
+    let runner = vm.view_of(Side::Runner);
+    assert_eq!(
+        runner.in_zone(accessed_zone),
+        &[CardView::Seen(deck[0])],
+        "7.3.1a: an accessed object remains visible to the Runner for the \
+         remainder of the breach, so they know which card this is"
+    );
+    assert_eq!(
+        runner.in_zone(unknown_zone),
+        &[CardView::Unseen],
+        "10.2.2a: the card the Runner never accessed is hidden information"
+    );
+    // 7.1.2: the Corp may NOT look at a card being accessed from R&D — and
+    // 4.2.2 keeps the rest of R&D hidden from them too.
+    assert!(!vm.identity_visible_to(deck[1], Side::Corp), "7.1.2 / 4.2.2");
+
+    // "…for the remainder of the breach" is a real scope: once the breach is
+    // over, the Runner is no longer entitled to the accessed card's identity.
+    script.run(&mut vm);
+    assert!(vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::BreachEnded { .. })));
+    assert!(
+        !vm.identity_visible_to(deck[0], Side::Runner),
+        "7.3.1a scopes the visibility to the breach"
+    );
 }
