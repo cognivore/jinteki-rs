@@ -6,20 +6,20 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W16e)
+## Odometers (after W17d)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 833/1420** distinct rules cited (58.7%; 833 of the 1385 non-header ids); traceability test fails
+- **DP-7b: 854/1420** distinct rules cited (60.1%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **DP-7c: 60/3717** reference tests ported and passing
+- **DP-7c: 68/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
   `docs/vm/CORPUS.md`; the divergence ledger is
   `docs/vm/UPSTREAM-DEFECTS.md`.
-- Full workspace: 18 suites green; jinteki-core/-server untouched by VM work
+- Full workspace: 24 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
   --workspace` AND `nix build .#default` (then `rm -f result`). Workspace
   green does NOT imply the artifact builds — `nix/package.nix` filters the
@@ -77,6 +77,10 @@ prefer a slightly larger honest primitive and note it here.
 
 | commit | wave | delivered | DP-7a |
 |---|---|---|---|
+| `93fceec` | W17d | **DP-7c sub-wave 12 — the coordinator's gap requests, and the `Combined` defect.** **Defect: `Instruction::Combined` silently dropped STRUCTURAL sub-instructions.** `Combined` exists because the CR forces it (Snare!'s "3 net damage and 1 tag" is ONE instruction, so one interrupt window sees both) and works by MERGING the sub-instructions' expected atoms — a sub-instruction whose expected effect is structural carries no value to merge and resolved as nothing (Earthrise Hotel removed no counter). Those are 9.11.3's separate instructions and are now spliced in after the merged one (DEVIATION, annotated: a spliced sub-instruction resolves after every merged one, so printed order is not preserved between the two kinds). **`TriggerRequirement::RunnerTagsAtLeast(u32)`** replaces `RunnerTagged` — the threshold is content (§12 rule 2), so BOOM!'s "at least 2 tags" is sayable and `RunnerTagsAtLeast(1)` IS "tagged". **`TriggerCond::DiscardPhaseEnds { side, requires }`** — 5.5.4's condition can now carry a 9.6.5c state requirement (Citadel Sanctuary needs no new predicate, only this field). **`TriggerCond::RunnerAccessesCard { of_types }`** — a card-type stipulation, mirroring `CorpRezzesCard` (Film Critic's "whenever you access an agenda"); `trigger_matches` takes the printed type through a lookup closure. **`TargetFilter::CanBeAdvanced`** — 1.18.3's permission as a criterion, derived from the SAME `Vm::advanceable_cards` the basic advance action reads, so criterion and action cannot disagree | 243 |
+| `5e3004f` | W17c | **DP-7c sub-wave 11 — BREAKING: quantity positions on `ModifyStrength.amount` and `LoseCredits`.** Both signature changes in ONE commit so the card layer takes one break: `LoseCredits(Side, u32)` → `LoseCredits(Side, Quantity)` and `ModifyStrength { amount: i32 }` → `{ amount: Quantity }`. `Quantity::CreditsInPoolOf(Side)` (1.10.2 — the credit POOL, which 1.13.3 keeps distinct from credits hosted on cards) is Closed Accounts' "loses all credits in their credit pool"; `Quantity::AnnouncedX` in a strength modification is Corporate Troubleshooter's and Paperclip's "+X strength". `crates/jinteki-cards/src/edsl.rs`'s two-helper compile fix (the cards agent's) is committed in the same atomic break. **Defect fixed: 1.16.2c keyed the X announcement on the wrong thing** — "some costs CONTAIN the variable X", but the kernel asked only when the ability also stated a RESTRICTION, so a cost of plain X silently announced 0. The announcement is now owed by the cost's SHAPE (`Quantity::mentions_announced_x`) and `Vm::x_bound` is the bound: the stated restriction where there is one, and in every case what 1.16.1c leaves. **Defect fixed: `ModifyStrength` never announced its target** (same class as W14b's `MoveToDeck`, W17b's `PlaceCounters`) — 1.15.1/9.11.4c make the ice the target of "choose 1 rezzed piece of ice … that ice gets +X strength". Cards: Closed Accounts, Corporate Troubleshooter, Quandary. Ported: `closed-accounts`, `corporate-troubleshooter` | 243 |
+| `b31eac8` | W17b | **DP-7c sub-wave 10 — "installed this turn", and a prohibition on scoring.** **`TargetFilter::InstalledThisTurn(bool)`** — CR 1.12.6, a GAME HISTORY query over the change log since the turn began (10.2.1 makes the history open information), the polarity as content (§12 rule 2) so one atom says both Clot's "an agenda installed this turn" and Seamless Launch's "1 installed card that you did not install this turn". **`StaticDecl::CannotScoreMatching { criteria }`** — CR 1.2.2: "if a rule or ability directs something to happen, but another effect states that it cannot happen, the 'cannot' ability takes precedence", so the declaration removes the (S) option (9.2.7d) rather than competing with it; scoring is not an ability (1.17.3c), so 9.1.9's restriction machinery could never have reached it. The description is re-read whenever a paid window opens, which is why the prohibition lifts by itself next turn and why installing Clot AFTER the agenda still blocks. **Defect fixed: a counter instruction's card position never announced its targets** — `PlaceCounters`, `LoadCounters`, `RemoveCounters`, `TakeHostedCredits` and `AdvanceCard` were missing from `targets_needed`, so a `TargetSpec::Choose` position silently did nothing (W14b's `MoveToDeck` bug again). Cards: Seamless Launch; Clot COMPLETE. Ported: `clot`, `seamless-launch` | 243 |
+| `533a748` | W17a | **DP-7c sub-wave 9 — agenda points as a modifiable value (2.5), and adding a card to a score area (10.1.3).** `Effective` grows `agenda_points`; `CharOp::{IncreaseAgendaPoints, DecreaseAgendaPoints}` are 9.12.1a's second and third stages for it; `StaticDecl::SelfAgendaPointsMod(Quantity)` is the one declaration behind Project Beale's "1 more for each hosted agenda counter", Merger's "1 additional … while in the Runner's score area" and Global Food Initiative's negative. `Vm::score` reads the pipeline, so 1.17.2's win condition and the score/steal records report the value the agenda has WHERE IT NOW IS. `StaticCond::SourceInScoreAreaOf(Side)` is the stated condition (9.3.7a). **Defect fixed: CR 4.5.4** — "agendas in the Corp's score area are active; agendas in the Runner's score area are inactive unless stated otherwise" — `card_active` returned true for BOTH; it is now Corp-only, and the "unless stated otherwise" half is 9.1.8b in `ability_active` (`condition_only_met_in_zone` for 10.4.2's damage trash, 1.17.7's steal and 1.17.6's score, plus an ability STATING a zone). Without the second half a Clone-Retirement-class "when you steal this agenda" would never resolve, and the DP-7a suite caught exactly that. **`Instruction::AddToScoreArea { cards, to, as_agenda }`** — 1.17.3e/f: not scored, not stolen, so nothing that watches for either can fire; `as_agenda: Some(n)` is 10.1.3's conversion, carried on `Object::converted_agenda` and cleared by `move_card` the moment the card leaves a score area. `TriggerCond::CorpScoresAgenda` is 1.17.6's twin of `RunnerStealsAgenda`. Also `Quantity::PerEvery(q, n)` ("1 for every N", the complement of `Times` — Beale prints a rate the dividends keyword cannot say). Cards: Merger, Global Food Initiative; Project Beale and Fan Site COMPLETE. Ported: `global-food-initiative`, `merger`, `project-beale`, `fan-site` | 243 |
 | `1c0fd24` | W15a | **DP-7c sub-wave 1 — the basic actions the corpus needs, and the card layer.** `ActionOption::{BasicInstall, BasicAdvance, BasicTrashResource, BasicPurge}` (5.2.6d/f/g/h, 5.2.7d) resolve the ordinary procedures in rules ability frames; the install's destination is declared where the CR puts it, step 8.5.16b, through `InstallDest::DeclaredByInstaller` + `DecisionSpec::DeclareInstallDestination` — ONE declaration listing every legal location "including any host relationships" — with `InstallDest::NewRemoteProtecting` for 8.5.2a's other half. **1.18.3** is real: `StaticDecl::CanBeAdvancedSelf` + `Vm::advanceable_cards`, active while installed-but-inactive per 9.1.8f (an unrezzed Ice Wall can be advanced). **10.1.2** is `Instruction::PurgeVirusCounters` + `GameChange::VirusCountersPurged` + `TriggerCond::CorpPurgesVirusCounters`. **`src/cards.rs`** is the card layer: real cards re-derived from printed text (oracle: the reference's `data/cards.edn`), unexpressible clauses marked `UNIMPLEMENTED:` and counted by a test. Deviation 17 retired. Fixed: `BasicPlayOperation` cited 5.2.7d, which is the Runner's INSTALL action | 243 |
 | `db77549` | W15b | **DP-7c sub-wave 2 — 5.6.2 ends a phase properly.** Porting `no-scoring-after-terminal` found OUR defect: `Instruction::EndActionPhase` took the player's clicks, so 5.6.2's loop returned to step (a) — a paid window offering (P)(R)(S) — and only then skipped to (d), leaving the Corp a window to score after a TERMINAL operation. Ending the action phase is a jump to step (d); 5.2.2a keeps the action itself intact. Ported: `run-timing-with-{no-ice,an-ice}`, `no-scoring-after-terminal`, `purge-corp`. `docs/vm/UPSTREAM-DEFECTS.md` opens the triage ledger | 243 |
 | `4f88dd4` | W16e | **DP-7c sub-wave 8 — three more deck-gate instructions, additive.** **1.21.3** `Instruction::RevealCards` (Mutual Favor, Archangel, Slot Machine, Subliminal Messaging) — revealing is showing a front face and returning the card to its previous state, so 1.21.3a keeps a facedown card facedown and the whole effect lands on what each player has SEEN (10.2.2b). **1.10.3a** `Instruction::TakeHostedCredits` — hosted credits ENTER a pool, so taking them is a gain (Daily Casts, the Crowdfunding class); `MoveSetAsideCounters` is 9.5.5's set-aside move and was never this. **1.9.2** `Instruction::RemoveCounters` — the mandatory-effect counterpart of `Cost::spend_counters` (Earthrise Hotel). Card + port: Daily Casts (a deck card), `daily-casts`, which also proves 10.9.1/10.9.2 end to end — the card is LOADED, so "when it is empty" has a kind to be linked to, and the first draft using `PlaceCounters` correctly failed to trash it | 243 |
@@ -927,14 +931,19 @@ classify will cut someone again.
 - ~~`InitiateRun.server` is a concrete `ServerId`~~ — **done, W16b**: it is
   `Option<ServerId>`, and `None` puts 6.9.1a's announcement to the Runner
   (Clean Getaway, Pinhole Threading, Dirty Laundry).
-- `Instruction::ModifyStrength.amount` and `StaticDecl::StrengthMod.delta`
-  are `i32`, so "+X strength" (Paperclip) has no expression. (The neighbouring
+- ~~`Instruction::ModifyStrength.amount` is `i32`~~ — **done, W17c
+  (BREAKING)**: it is a `Quantity`, so "+X strength" (Paperclip, Corporate
+  Troubleshooter) is sayable, and `ModifyStrength` now ANNOUNCES its target
+  (it never did — the same defect class as `MoveToDeck` and `PlaceCounters`).
+  `StaticDecl::StrengthMod.delta` is still `i32`; a static "+N strength"
+  reads through `SelfStrength(Quantity)` instead. (The neighbouring
   "+1 strength for each tag the Runner has" — Resistor — turned out NOT to be
   a gap: `SelfStrength(Quantity)` is how `cards.rs` already reads Ice Wall's
   "+1 strength for each hosted advancement counter", printed value included,
   and Resistor is the same sentence. It is complete.)
-- `Instruction::LoseCredits(Side, u32)` — "loses all credits in their credit
-  pool" (Closed Accounts).
+- ~~`Instruction::LoseCredits(Side, u32)`~~ — **done, W17c (BREAKING)**: it
+  takes a `Quantity`, and `Quantity::CreditsInPoolOf(Side)` is "loses all
+  credits in their credit pool". Closed Accounts is COMPLETE.
 - `Cost::trash_from_hand: u32` — "trash all cards from your grip" as a cost
   (Citadel Sanctuary).
 - `InstallCard::reduce_total` is evaluated only when `and_rez` is set, since
@@ -952,9 +961,9 @@ classify will cut someone again.
 
 *Criteria the shared filter vocabulary lacks (§12 rule 5):*
 
-- "a card you can advance" (1.18.3) — AstroScript Pilot Program, Slot
-  Machine. The permission exists as `StaticDecl::CanBeAdvancedSelf`; there is
-  no `TargetFilter` reading it.
+- ~~"a card you can advance" (1.18.3)~~ — **done, W17d**:
+  `TargetFilter::CanBeAdvanced`, derived from the same
+  `Vm::advanceable_cards` the basic advance action reads.
 - "a card you did not install this turn" (Seamless Launch).
 - "the Corp's identity" — an identity is not installed, so every side-scoped
   filter misses it (Employee Strike).
@@ -982,9 +991,9 @@ scan of its instructions.
   condition with a state requirement, and `ability::trigger_requirements`
   reaches only `SelfAccessed`/`SelfScored`, so a `TriggerCond` variant with no
   `requires` field cannot carry one at all.
-  - "…while you are tagged" (Citadel Sanctuary) needs NO new predicate —
-    `RunnerTagged` already exists — only somewhere on this condition to put
-    it. Cheapest of the three by far.
+  - ~~"…while you are tagged" (Citadel Sanctuary) has nowhere to put its
+    requirement~~ — **done, W17d**: `DiscardPhaseEnds { side, requires }`
+    carries a 9.6.5c requirement like every other condition.
   - "…if you scored this agenda this turn" (Breaking News) and "…if you
     installed this resource this turn" (The Class Act) need a predicate that
     reads what a player did this turn.
@@ -996,8 +1005,9 @@ scan of its instructions.
   single object" — which is what Bukhgalter needs — is not.)
 - "When your action phase ends" (Nebula Talent Management).
 - a subtype stipulation on `EncounterBegins` — "whenever you encounter a
-  barrier" (Paperclip) — and a card-type stipulation on
-  `RunnerAccessesCard` — "whenever you access an agenda" (Film Critic).
+  barrier" (Paperclip). (The card-type stipulation on `RunnerAccessesCard` —
+  Film Critic's "whenever you access an agenda" — is **done, W17d**:
+  `RunnerAccessesCard { of_types }`.)
 - "whenever the Runner plays or installs a copy of <a named card>" (Targeted
   Marketing), which also needs naming a card at all.
 - "when an agenda is scored **or** stolen", by either player (The Source);
@@ -1014,11 +1024,9 @@ scan of its instructions.
   News and Self-Growth Program are COMPLETE; Closed Accounts carries its
   restriction. Three cards still wait, and each wants one more PREDICATE
   rather than more machinery:
-  - "Play only if the Runner has **at least 2 tags**" (BOOM!). The vocabulary
-    counts tags only as "tagged" (≥ 1), so `RunnerTagged` would make BOOM!
-    playable at 1 tag — a wrong card, so the marker stays. A
-    `RunnerTagsAtLeast(n)` requirement closes it, and would subsume
-    `RunnerTagged`.
+  - ~~"Play only if the Runner has **at least 2 tags**" (BOOM!)~~ — **done,
+    W17d**: `TriggerRequirement::RunnerTagsAtLeast(u32)` replaced
+    `RunnerTagged` outright; `RunnerTagsAtLeast(1)` IS "tagged".
   - "Play only if you have not finished an action yet this turn" (Petty Cash).
   - Predictive Planogram's "if the Runner is tagged, you may resolve both
     instead" is a different sentence — a requirement on an OPTION, not on the

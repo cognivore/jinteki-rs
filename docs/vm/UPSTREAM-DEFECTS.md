@@ -16,7 +16,7 @@ plumbing rather than the rules (§2).
 
 ## 1. Reference divergences from the CR
 
-*No entries yet.* Through DP-7c sub-wave 2 (23 tests ported), every
+*No entries yet.* Through DP-7c sub-wave 12 (68 tests ported), every
 divergence found has been ours, not the reference's. The one substantive
 disagreement so far — whether the Corp may still score after playing a
 terminal operation — was **our** defect: see W15b, `Instruction::
