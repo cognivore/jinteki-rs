@@ -116,12 +116,39 @@ pub struct LingeringEffect {
     pub source: ObjectId,
     pub payload: Payload,
     pub duration: Duration,
+    /// CR 3.9.5c: a SECOND duration the effect also lives under — it expires
+    /// only once BOTH have expired. An icebreaker's paid ability that states
+    /// a duration carries the stated one here alongside the implicit
+    /// "remainder of the current encounter" (3.9.5b), which is exactly what
+    /// makes "+1 for the remainder of this run" resolved during an encounter
+    /// outside a run last for the remainder of that encounter (and 3.4.4a
+    /// say the same thing about a piece of ice's strength).
+    pub also: Option<Duration>,
+    /// CR 9.10.5 / 9.9.9a: a duration-modifying replacement effect has
+    /// already rewritten this effect's duration once. The rewrite happens at
+    /// the checkpoint where the original duration expires and only while the
+    /// replacement is active, so the flag keeps it to once per effect
+    /// (9.9.9c).
+    pub duration_extended: bool,
     /// CR 9.9.9c: effects this replacement has already applied to (at most
     /// once per effect). Keyed by imminence sequence numbers.
     pub applied_to: Vec<u64>,
 }
 
 impl LingeringEffect {
+    /// The common shape: one duration, nothing applied yet.
+    pub fn new(id: u64, source: ObjectId, payload: Payload, duration: Duration) -> LingeringEffect {
+        LingeringEffect {
+            id,
+            source,
+            payload,
+            duration,
+            also: None,
+            duration_extended: false,
+            applied_to: Vec::new(),
+        }
+    }
+
     /// CR 9.10.1 + step 10.3.1b: has this duration passed, given the current
     /// structure instances?
     pub fn expired(
@@ -132,7 +159,27 @@ impl LingeringEffect {
         source_active: bool,
     ) -> bool {
         cite!("step_checkpoint_duration_abilities");
-        match self.duration {
+        if let Some(also) = self.also {
+            // 3.9.5c: both the stated and the implicit duration must expire.
+            cite!("rule_icebreaker_strength_increase_specified");
+            cite!("rule_ice_strength_modification_duration");
+            if !expired_one(also, current_encounter, current_run, current_turn, source_active) {
+                return false;
+            }
+        }
+        expired_one(self.duration, current_encounter, current_run, current_turn, source_active)
+    }
+}
+
+fn expired_one(
+    duration: Duration,
+    current_encounter: Option<u64>,
+    current_run: Option<u64>,
+    current_turn: u64,
+    source_active: bool,
+) -> bool {
+    {
+        match duration {
             Duration::Encounter(e) => current_encounter != Some(e),
             Duration::Run(r) => current_run != Some(r),
             Duration::Turn(t) => current_turn != t,

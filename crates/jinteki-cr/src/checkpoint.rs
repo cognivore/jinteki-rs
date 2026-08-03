@@ -448,6 +448,61 @@ fn step_b_durations(vm: &mut Vm) {
             _ => None,
         })
         .collect();
+    // CR 9.10.5 + 9.9.9a: a duration-modifying ability keeps the lingering
+    // effects it applies to alive until an ADDITIONAL duration expires. It is
+    // a replacement effect on a duration, so it applies only while it is
+    // itself active — which is checked here, at the moment the original
+    // duration runs out (9.9.9a: once the replacement or the effect it
+    // modifies goes inactive, the modification no longer applies). Static
+    // abilities are untouched: their effects have no durations and create no
+    // lingering effects at all (9.4.4).
+    cite!("rule_modify_duration_of_lingering_effect");
+    cite!("rule_replacement_on_static_ability_must_remain_active");
+    cite!("rule_static_no_lingering_effects");
+    let extenders: Vec<(ObjectId, crate::lingering::WantedDuration)> = vm
+        .active_statics()
+        .into_iter()
+        .filter_map(|(src, d)| match d {
+            crate::ability::StaticDecl::ExtendStrengthDurations { target_host, until } => {
+                let target = if target_host {
+                    vm.st.objects.get(&src).and_then(|o| o.host)?
+                } else {
+                    src
+                };
+                Some((target, until))
+            }
+            _ => None,
+        })
+        .collect();
+    let mut extend: Vec<(u64, crate::lingering::Duration)> = Vec::new();
+    for l in &vm.lingering {
+        if l.duration_extended {
+            continue;
+        }
+        let Payload::StrengthMod { target, .. } = l.payload else { continue };
+        let source_active = vm.st.objects.get(&l.source).map(card_active).unwrap_or(false);
+        if !l.expired(current_encounter, current_run, current_turn, source_active) {
+            continue;
+        }
+        if let Some((_, until)) = extenders.iter().find(|(t, _)| *t == target) {
+            extend.push((
+                l.id,
+                crate::lingering::bind_duration(
+                    *until,
+                    current_encounter,
+                    current_run,
+                    current_turn,
+                ),
+            ));
+        }
+    }
+    for (id, dur) in extend {
+        if let Some(l) = vm.lingering.iter_mut().find(|l| l.id == id) {
+            l.duration = dur;
+            l.duration_extended = true;
+        }
+    }
+
     let objects = &vm.st.objects;
     vm.lingering.retain(|l| {
         if let Payload::PersistedAbility { run_id, .. } = &l.payload {

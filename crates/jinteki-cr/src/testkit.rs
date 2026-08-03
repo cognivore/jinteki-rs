@@ -495,7 +495,11 @@ pub fn pump_breaker(name: &'static str, base_strength: i32) -> PrintedCard {
     c.subtypes = vec!["icebreaker"];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(1),
-        vec![Instruction::PumpStrengthSelf { amount: 2 }],
+        vec![Instruction::ModifyStrength {
+            target: TargetSpec::SelfSource,
+            amount: 2,
+            duration: None,
+        }],
     )
     .labeled("pump: +2 strength")];
     c
@@ -2376,7 +2380,11 @@ pub fn credit_cost_program(name: &'static str) -> PrintedCard {
     c.subtypes = vec!["icebreaker"];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(1),
-        vec![Instruction::PumpStrengthSelf { amount: 1 }],
+        vec![Instruction::ModifyStrength {
+            target: TargetSpec::SelfSource,
+            amount: 1,
+            duration: None,
+        }],
     )
     .labeled("mimic: 1c pump")];
     c
@@ -2590,5 +2598,114 @@ pub fn alice_like(name: &'static str) -> PrintedCard {
         }],
     )
     .labeled("alice: the Corp trashes 1 card from HQ")];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W6b shapes: strengths and durations (§3.9.5, §9.10)
+// ---------------------------------------------------------------------------
+
+/// Corroder shape (3.9.5b): an icebreaker whose paid ability states NO
+/// duration — "1[credit]: +1 strength."
+pub fn implicit_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.strength = Some(base);
+    c.memory_cost = Some(1);
+    c.subtypes = vec!["icebreaker"];
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(1),
+        vec![Instruction::ModifyStrength {
+            target: TargetSpec::SelfSource,
+            amount: 1,
+            duration: None,
+        }],
+    )
+    .labeled("corroder: +1 strength")];
+    c
+}
+
+/// Gordian-Blade shape (3.9.5c): an icebreaker whose paid ability STATES a
+/// duration — "1[credit]: +1 strength for the remainder of this run."
+pub fn run_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.strength = Some(base);
+    c.memory_cost = Some(1);
+    c.subtypes = vec!["icebreaker"];
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(1),
+        vec![Instruction::ModifyStrength {
+            target: TargetSpec::SelfSource,
+            amount: 1,
+            duration: Some(crate::lingering::WantedDuration::ThisRun),
+        }],
+    )
+    .labeled("gordian: +1 strength for the run")];
+    c
+}
+
+/// Na'Not'K shape (9.10.5): an icebreaker whose STATIC ability sets its
+/// strength to the number of ice protecting the attacked server — so the
+/// static contribution lapses the moment the run ends — plus a paid pump
+/// with no stated duration.
+pub fn attacked_server_breaker(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.strength = Some(0);
+    c.memory_cost = Some(1);
+    c.subtypes = vec!["icebreaker"];
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::SelfStrength(Quantity::Count(
+            crate::instr::TargetFilter::IceProtectingAttackedServer,
+        ))])
+        .labeled("nanotk-static"),
+        AbilityDef::paid(
+            Cost::credits(1),
+            vec![Instruction::ModifyStrength {
+                target: TargetSpec::SelfSource,
+                amount: 2,
+                duration: None,
+            }],
+        )
+        .labeled("nanotk: +2 strength"),
+    ];
+    c
+}
+
+/// Puffer shape (9.4.4): an icebreaker whose static ability computes its
+/// strength from its hosted virus counters — no duration, no lingering
+/// effect — alongside a paid pump that DOES create one.
+pub fn counter_strength_breaker(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.strength = Some(0);
+    c.memory_cost = Some(1);
+    c.subtypes = vec!["icebreaker"];
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::SelfStrength(
+            Quantity::base_plus_per_counter(1, 1, CounterKind::Virus),
+        )])
+        .labeled("puffer-static"),
+        AbilityDef::paid(
+            Cost::credits(1),
+            vec![Instruction::ModifyStrength {
+                target: TargetSpec::SelfSource,
+                amount: 1,
+                duration: None,
+            }],
+        )
+        .labeled("puffer: +1 strength"),
+    ];
+    c
+}
+
+/// Gebrselassie shape (9.10.5 / 9.9.9a): a program hosted on an icebreaker
+/// whose static ability replaces the durations of lingering effects
+/// modifying its HOST's strength with "for the remainder of the turn".
+pub fn duration_extender(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(0);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::ExtendStrengthDurations {
+        target_host: true,
+        until: crate::lingering::WantedDuration::ThisTurn,
+    }])
+    .labeled("gebrselassie: host strength effects last the turn")];
     c
 }

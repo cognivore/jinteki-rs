@@ -147,6 +147,13 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_controller_choices_1",
     "example_rule_trigger_condition_effect_by_player_1",
     "example_rule_trigger_condition_effect_by_player_2",
+    // Wave 6b: strength modifications and their durations (§3.9.5, §9.10).
+    "example_rule_icebreaker_strength_increase_implicit_1",
+    "example_rule_icebreaker_strength_increase_specified_1",
+    "example_rule_icebreaker_strength_increase_outside_of_encounter_1",
+    "example_rule_modify_duration_of_lingering_effect_1",
+    "example_rule_static_no_lingering_effects_1",
+    "example_rule_replacement_on_static_ability_must_remain_active_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5159,6 +5166,231 @@ fn example_rule_multiple_damage_taken_simultaneously_1() {
         t.result,
         Some(jinteki_cr::decision::GameResult::Flatline),
         "more damage suffered than cards in the grip"
+    );
+}
+
+// ===========================================================================
+// §3.9.5 / §9.10 — strength modifications and their durations
+// ===========================================================================
+
+/// example_rule_icebreaker_strength_increase_implicit_1 (3.9.5b): Corroder's
+/// "1[credit]: +1 strength" states no duration, so the increase lasts for
+/// the remainder of the current encounter — and no longer.
+#[test]
+fn example_rule_icebreaker_strength_increase_implicit_1() {
+    let mut vm = Vm::empty(620);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Ice-a", 0, 3), ServerId::Hq, true);
+    let breaker = tk::install_rig(&mut vm, tk::implicit_pump_breaker("Corroder-like", 2));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("corroder"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(3),
+        "inside the encounter the +1 applies: {}",
+        script.transcript().tail(5)
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(2),
+        "the implicit 'remainder of the current encounter' duration expired"
+    );
+}
+
+/// example_rule_icebreaker_strength_increase_specified_1 (3.9.5c): Gordian
+/// Blade's "+1 strength for the remainder of this run" is triggered during
+/// an encounter and still applies after that encounter ends, because the
+/// stated run duration outlives the implicit encounter one. It expires when
+/// the run does.
+#[test]
+fn example_rule_icebreaker_strength_increase_specified_1() {
+    let mut vm = Vm::empty(621);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Ice-a", 0, 3), ServerId::Hq, true);
+    let breaker = tk::install_rig(&mut vm, tk::run_pump_breaker("Gordian-like", 2));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("gordian"))
+            .when(Match::jack_out().once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(3),
+        "the encounter is over, but the run is not: {}",
+        script.transcript().tail(5)
+    );
+    script.run(&mut vm);
+    assert_eq!(vm.effective_strength(breaker), Some(2), "the run ended and the increase went");
+}
+
+/// example_rule_icebreaker_strength_increase_outside_of_encounter_1 (3.9.5d):
+/// the same Corroder ability used with no encounter in progress states no
+/// applicable duration, so the modification expires during the very next
+/// checkpoint — the credit is spent and nothing lasts.
+#[test]
+fn example_rule_icebreaker_strength_increase_outside_of_encounter_1() {
+    let mut vm = Vm::empty(622);
+    let breaker = tk::install_rig(&mut vm, tk::implicit_pump_breaker("Corroder-like", 2));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("corroder")).stop_at_action(),
+    );
+    assert!(t.took("corroder"), "the ability really was used: {}", t.tail(4));
+    assert_eq!(vm.st.runner.credits, 4, "and paid for");
+    assert!(vm.lingering.is_empty(), "the modification did not survive the next checkpoint");
+    assert_eq!(vm.effective_strength(breaker), Some(2));
+}
+
+/// example_rule_modify_duration_of_lingering_effect_1 (9.10.5): Na'Not'K's
+/// static ability sets its strength from the ice protecting the attacked
+/// server, and its paid ability adds +2 during an encounter. With a
+/// Gebrselassie-class card hosted on it, the +2 lingering effect is kept
+/// alive to the end of the turn; the static contribution simply lapses with
+/// the run, because static abilities have no durations to modify.
+#[test]
+fn example_rule_modify_duration_of_lingering_effect_1() {
+    let mut vm = Vm::empty(623);
+    for i in 0..3 {
+        let name: &'static str = Box::leak(format!("Ice-{i}").into_boxed_str());
+        tk::install_ice(&mut vm, tk::vanilla_ice(name, 0, 3), ServerId::Hq, true);
+    }
+    let breaker = tk::install_rig(&mut vm, tk::attacked_server_breaker("NaNotK-like"));
+    let geb = tk::install_rig(&mut vm, tk::duration_extender("Gebrselassie-like"));
+    tk::host_on(&mut vm, geb, breaker);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("nanotk"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(5),
+        "3 ice protecting the attacked server, plus the paid +2: {}",
+        script.transcript().tail(5)
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(2),
+        "the run ended: the static ability provides nothing, but the +2 \
+         lingering effect was kept alive to the end of the turn"
+    );
+}
+
+/// example_rule_static_no_lingering_effects_1 (9.4.4): a Puffer-class
+/// icebreaker's strength comes from a STATIC ability, which creates no
+/// lingering effect and has no duration — so the Gebrselassie-class card
+/// hosted on it has nothing to modify there. Only the paid pump makes a
+/// lingering effect, and only that one gets its duration replaced.
+#[test]
+fn example_rule_static_no_lingering_effects_1() {
+    let mut vm = Vm::empty(624);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Ice-a", 0, 3), ServerId::Hq, true);
+    let puffer = tk::install_rig(&mut vm, tk::counter_strength_breaker("Puffer-like"));
+    tk::place_counters(&mut vm, puffer, CounterKind::Virus, 2);
+    let geb = tk::install_rig(&mut vm, tk::duration_extender("Gebrselassie-like"));
+    tk::host_on(&mut vm, geb, puffer);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("puffer"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert_eq!(vm.effective_strength(puffer), Some(4), "1 + 2 virus counters + the paid 1");
+    let strength_effects = vm
+        .lingering
+        .iter()
+        .filter(|l| matches!(l.payload, jinteki_cr::lingering::Payload::StrengthMod { .. }))
+        .count();
+    assert_eq!(
+        strength_effects, 1,
+        "9.4.4: only the PAID ability created a lingering effect; the static \
+         ability contributes through the characteristics pipeline instead"
+    );
+    script.run(&mut vm);
+    assert_eq!(
+        vm.effective_strength(puffer),
+        Some(4),
+        "the paid increase was extended to the turn; the static contribution \
+         never had a duration to extend and is still 1 + 2"
+    );
+}
+
+/// example_rule_replacement_on_static_ability_must_remain_active_1 (9.9.9a):
+/// the duration replacement applies only while its own source is active. If
+/// the Gebrselassie-class card is trashed before the modified effect's
+/// original duration runs out, the effect reverts to that duration and
+/// expires on time.
+#[test]
+fn example_rule_replacement_on_static_ability_must_remain_active_1() {
+    let mut vm = Vm::empty(625);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Ice-a", 0, 3), ServerId::Hq, true);
+    let breaker = tk::install_rig(&mut vm, tk::implicit_pump_breaker("Corroder-like", 2));
+    let geb = tk::install_rig(&mut vm, tk::duration_extender("Gebrselassie-like"));
+    tk::host_on(&mut vm, geb, breaker);
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Skorpios-like", vec![geb]),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        // The Corp trashes the duration-modifier during the encounter,
+        // before the pump's own duration runs out.
+        Plan::corp().when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("corp-trash")),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("corroder"))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&geb].zone,
+        Zone::Discard(Side::Runner),
+        "the replacement's source left play: {}",
+        t.tail(6)
+    );
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(2),
+        "with the replacement gone, the increase expired at the end of the \
+         encounter as originally stated"
     );
 }
 

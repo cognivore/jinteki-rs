@@ -1370,6 +1370,13 @@ impl Vm {
         crate::object::compute_effective(&self.st.objects, &effects, obj).strength
     }
 
+    /// CR 2.16 through the 9.12.1b pipeline: does this object currently have
+    /// the named subtype?
+    pub fn has_subtype(&self, obj: ObjectId, s: &str) -> bool {
+        let effects = self.char_effects();
+        crate::object::compute_effective(&self.st.objects, &effects, obj).subtypes.contains(s)
+    }
+
     // ------------------------------------------------------------------
     // Encounters and subroutines
     // ------------------------------------------------------------------
@@ -1896,6 +1903,10 @@ impl Vm {
                     _ => None,
                 })
                 .unwrap_or(0),
+            TargetFilter::IceProtectingAttackedServer => self
+                .current_run
+                .map(|(_, sv, _)| self.ice_at(sv).len() as i64)
+                .unwrap_or(0),
             TargetFilter::CardsInHandOf(side) => self.st.hand[&side].len() as i64,
             other => self.filter_candidates_from(&[other], source).len() as i64,
         }
@@ -2025,7 +2036,7 @@ impl Vm {
             | Instruction::IncreaseImminentDamage { .. }
             | Instruction::PreventTrashOf(_)
             | Instruction::BypassEncounteredIce
-            | Instruction::PumpStrengthSelf { .. }
+            | Instruction::ModifyStrength { .. }
             | Instruction::BreakSubroutines { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
@@ -3305,6 +3316,9 @@ impl Vm {
     /// the zone separately.
     pub fn filter_matches(&self, o: &Object, f: TargetFilter, source: Option<ObjectId>) -> bool {
         match f {
+            TargetFilter::IceProtectingAttackedServer => {
+                matches!((o.zone, self.current_run), (Zone::Ice(a), Some((_, b, _))) if a == b)
+            }
             TargetFilter::InstalledCorpCard => self.is_installed(o) && is_corp_card(o.printed.card_type),
             TargetFilter::InstalledRunnerCard => {
                 self.is_installed(o) && !is_corp_card(o.printed.card_type)
@@ -4387,18 +4401,12 @@ impl Vm {
                     for _ in 0..*count {
                         let id = self.next_lingering;
                         self.next_lingering += 1;
-                        self.lingering.push(LingeringEffect {
-                            id,
-                            source: source.obj,
-                            payload: Payload::GrantedSubroutine {
+                        self.lingering.push(LingeringEffect::new(id, source.obj, Payload::GrantedSubroutine {
                                 to: obj,
                                 sub: (**sub).clone(),
                                 before: *before,
                                 seq: id,
-                            },
-                            duration: dur,
-                            applied_to: Vec::new(),
-                        });
+                            }, dur));
                     }
                 }
             }
@@ -4423,13 +4431,7 @@ impl Vm {
                 );
                 let id = self.next_lingering;
                 self.next_lingering += 1;
-                self.lingering.push(LingeringEffect {
-                    id,
-                    source: source.obj,
-                    payload: Payload::RestrictCandidatesTo(source.obj),
-                    duration: dur,
-                    applied_to: Vec::new(),
-                });
+                self.lingering.push(LingeringEffect::new(id, source.obj, Payload::RestrictCandidatesTo(source.obj), dur));
             }
             Instruction::CreateDelayedConditional { def, duration } => {
                 cite!("rule_delayed_conditional_ability");
@@ -4454,13 +4456,7 @@ impl Vm {
                     );
                     let id = self.next_lingering;
                     self.next_lingering += 1;
-                    self.lingering.push(LingeringEffect {
-                        id,
-                        source: source.obj,
-                        payload: Payload::DelayedConditional { def: (**def).clone() },
-                        duration: dur,
-                        applied_to: Vec::new(),
-                    });
+                    self.lingering.push(LingeringEffect::new(id, source.obj, Payload::DelayedConditional { def: (**def).clone() }, dur));
                 }
             }
             Instruction::CreateLingeringEffect { payload, duration } => {
@@ -4494,25 +4490,13 @@ impl Vm {
                 };
                 let id = self.next_lingering;
                 self.next_lingering += 1;
-                self.lingering.push(LingeringEffect {
-                    id,
-                    source: source.obj,
-                    payload,
-                    duration: dur,
-                    applied_to: Vec::new(),
-                });
+                self.lingering.push(LingeringEffect::new(id, source.obj, payload, dur));
             }
             Instruction::ReduceRunnerMemoryThisTurn(n) => {
                 cite!("rule_memory_limit");
                 let id = self.next_lingering;
                 self.next_lingering += 1;
-                self.lingering.push(LingeringEffect {
-                    id,
-                    source: source.obj,
-                    payload: Payload::MemoryLimitMod { delta: -(*n as i32) },
-                    duration: Duration::Turn(self.st.turn_seq),
-                    applied_to: Vec::new(),
-                });
+                self.lingering.push(LingeringEffect::new(id, source.obj, Payload::MemoryLimitMod { delta: -(*n as i32) }, Duration::Turn(self.st.turn_seq)));
             }
             Instruction::ChooseOne { .. } => {
                 // Handled at answer time (the choice ends the instruction;
@@ -4555,25 +4539,57 @@ impl Vm {
                     }
                 }
             }
-            Instruction::PumpStrengthSelf { amount } => {
-                // 9.10.4a: implicit duration = remainder of the current
-                // encounter.
-                cite!("rule_icebreaker_strength_increase_implicit_link");
-                let dur = crate::lingering::bind_duration(
-                    crate::lingering::WantedDuration::ThisEncounter,
-                    self.st.encounter.as_ref().map(|e| e.id),
-                    self.current_run.map(|(r, _, _)| r),
-                    self.st.turn_seq,
-                );
-                let id = self.next_lingering;
-                self.next_lingering += 1;
-                self.lingering.push(LingeringEffect {
-                    id,
-                    source: source.obj,
-                    payload: Payload::StrengthMod { target: source.obj, delta: *amount },
-                    duration: dur,
-                    applied_to: Vec::new(),
-                });
+            Instruction::ModifyStrength { target, amount, duration } => {
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                let enc = self.st.encounter.as_ref().map(|e| e.id);
+                let run = self.current_run.map(|(r, _, _)| r);
+                let turn = self.st.turn_seq;
+                for t in targets {
+                    // 3.9.5b / 9.10.4a: an ability ON AN ICEBREAKER that
+                    // modifies ITS OWN strength implicitly lasts for the
+                    // remainder of the current encounter — and 3.9.5d makes
+                    // that "until the next checkpoint" when there is no
+                    // encounter, which is what binding an inapplicable
+                    // structure already does (9.10.4).
+                    let self_icebreaker = t == source.obj
+                        && self.has_subtype(t, "icebreaker");
+                    let (stated, implicit) = match duration {
+                        Some(w) => (Some(*w), self_icebreaker),
+                        None => (None, true),
+                    };
+                    let base = match stated {
+                        Some(w) => crate::lingering::bind_duration(w, enc, run, turn),
+                        None => {
+                            cite!("rule_icebreaker_strength_increase_implicit");
+                            cite!("rule_icebreaker_strength_increase_implicit_link");
+                            cite!("rule_icebreaker_strength_increase_outside_of_encounter");
+                            crate::lingering::bind_duration(
+                                crate::lingering::WantedDuration::ThisEncounter,
+                                enc,
+                                run,
+                                turn,
+                            )
+                        }
+                    };
+                    let id = self.next_lingering;
+                    self.next_lingering += 1;
+                    let mut l = LingeringEffect::new(
+                        id,
+                        source.obj,
+                        Payload::StrengthMod { target: t, delta: *amount },
+                        base,
+                    );
+                    // 3.9.5c / 3.4.4a: a STATED duration runs alongside the
+                    // implicit encounter one; the effect ends when both have.
+                    if stated.is_some() && (implicit || !self.st.objects[&t].zone.is_installed()) {
+                        cite!("rule_icebreaker_strength_increase_specified");
+                    }
+                    if stated.is_some() {
+                        cite!("rule_ice_strength_modification_duration");
+                        l.also = enc.map(crate::lingering::Duration::Encounter);
+                    }
+                    self.lingering.push(l);
+                }
             }
             Instruction::BreakSubroutines { count } => {
                 cite!("rule_break_subroutine");
@@ -5016,13 +5032,7 @@ impl Vm {
                         cite!("rule_play_not_trashed_until");
                         let id = self.next_lingering;
                         self.next_lingering += 1;
-                        self.lingering.push(LingeringEffect {
-                            id,
-                            source: c,
-                            payload: Payload::PlayedTrashShield { card: c },
-                            duration: Duration::UntilResolved,
-                            applied_to: Vec::new(),
-                        });
+                        self.lingering.push(LingeringEffect::new(id, c, Payload::PlayedTrashShield { card: c }, Duration::UntilResolved));
                     } else {
                         // (g) trash the card.
                         let owner = self.st.objects[&c].owner;
@@ -6107,13 +6117,7 @@ impl Vm {
                     cite!("rule_persistent_continuous");
                     let lid = self.next_lingering;
                     self.next_lingering += 1;
-                    self.lingering.push(LingeringEffect {
-                        id: lid,
-                        source: id,
-                        payload: Payload::PersistedAbility { def, run_id },
-                        duration: Duration::PersistUntilAfterRun(run_id),
-                        applied_to: Vec::new(),
-                    });
+                    self.lingering.push(LingeringEffect::new(lid, id, Payload::PersistedAbility { def, run_id }, Duration::PersistUntilAfterRun(run_id)));
                 }
             }
         }

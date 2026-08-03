@@ -194,9 +194,19 @@ pub enum Instruction {
     BreakSubroutines { count: u32 },
     /// "Bypass the ice you are encountering." — ends the encounter (6.5.8).
     BypassEncounteredIce,
-    /// Icebreaker pump: "+N strength" with implicit remainder-of-encounter
-    /// duration (9.10.4a).
-    PumpStrengthSelf { amount: i32 },
+    /// "+N strength" / "-N strength" on a card, for a duration. The TARGET
+    /// is a position (an icebreaker pumping itself is `SelfSource`; a Devil-
+    /// Charm-class ability lowering a piece of ice's strength names the ice)
+    /// and so is the DURATION: `None` is "no duration stated", which on an
+    /// icebreaker modifying its own strength means "for the remainder of the
+    /// current encounter" (3.9.5b / 9.10.4a) and outside an encounter means
+    /// "until the next checkpoint" (3.9.5d). A stated duration runs
+    /// ALONGSIDE that implicit one, not instead of it (3.9.5c / 3.4.4a).
+    ModifyStrength {
+        target: TargetSpec,
+        amount: i32,
+        duration: Option<crate::lingering::WantedDuration>,
+    },
     /// "Place N advancement counters on <target>" / advance bookkeeping.
     PlaceCounters { target: TargetSpec, kind: crate::object::CounterKind, amount: u32 },
     /// "Trash this card." (self-referencing; strandable per 9.1.4)
@@ -483,6 +493,10 @@ pub enum TargetFilter {
     /// Ice protecting the server the source is protecting (Surveyor-class
     /// counting; empty when the source is not protecting a server).
     IceProtectingSourceServer,
+    /// CR 6.1.2: ice protecting the server currently under attack (Na'Not'K
+    /// class). Empty when no run is in progress, which is what makes the
+    /// modification it feeds lapse the moment the run ends.
+    IceProtectingAttackedServer,
     /// Cards in a player's hand (Ashigaru-class counting).
     CardsInHandOf(Side),
     // ---- card-characteristic atoms (§2), location-agnostic --------------

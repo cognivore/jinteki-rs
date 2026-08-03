@@ -256,6 +256,14 @@ pub enum StaticDecl {
     /// reduction is only available while its own cost is payable, which is
     /// exactly what makes it part of 8.7.2b's affordability query.
     InstallDiscount { cost: Cost, amount: u32 },
+    /// CR 9.10.5 / 9.9.9a: "Lingering effects that would modify <this card's
+    /// host / this card's> strength instead expire at <duration>."
+    /// (Gebrselassie class.) The ability keeps the corresponding lingering
+    /// effect alive until the additional duration expires, applies
+    /// continuously only while this static ability is active (9.9.9a), and
+    /// never touches the effects of static abilities — they have no
+    /// durations and create no lingering effects (9.4.4).
+    ExtendStrengthDurations { target_host: bool, until: crate::lingering::WantedDuration },
     /// "This ice's strength is X" where X is a quantity selector (Surveyor
     /// class: X = 2 × ice protecting this server). Evaluated through the
     /// characteristics pipeline; while the defining ability is lost (Hush)
