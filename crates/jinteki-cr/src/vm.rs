@@ -4557,6 +4557,10 @@ impl Vm {
                 cite!("rule_score_area");
                 o.zone == Zone::ScoreArea(side)
             }
+            TargetFilter::InDiscardOf(side) => {
+                cite!("rule_discard_pile");
+                o.zone == Zone::Discard(side)
+            }
             // CR 4.2.2: the deck is ordered; "the top N cards" are its first
             // N, and a card must still be there to be a valid target.
             TargetFilter::TopOfDeckOf { side, n } => {
@@ -6945,7 +6949,24 @@ impl Vm {
                 if matches!(cards, TargetSpec::FoundBySearch) {
                     self.take_found_cards();
                 }
+                // CR 4.1.2a: a card moving out of a hidden or secret zone must
+                // be REVEALED when it has to be demonstrated that it meets the
+                // ability's stipulations. The criteria are the kernel's only
+                // representation of what the ability stipulated (deviation
+                // 21's reading), so a characteristic criterion plus a card
+                // that is not otherwise visible is exactly that case.
+                let stipulated = match cards {
+                    TargetSpec::Choose { criteria, .. } => {
+                        criteria.iter().any(|f| f.stipulates_characteristic())
+                    }
+                    _ => false,
+                };
                 for t in targets {
+                    if stipulated && !self.st.objects[&t].faceup {
+                        cite!("rule_reveal_from_hidden");
+                        cite!("rule_reveal");
+                        self.changes.record(GameChange::CardRevealed { obj: t });
+                    }
                     let owner = self.st.objects[&t].owner;
                     self.move_card(t, Zone::Hand(owner));
                 }

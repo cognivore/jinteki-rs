@@ -6,10 +6,10 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W11e)
+## Odometers (after W11f)
 
-- **DP-7a: 198/243** CR examples as example-named passing tests (81.5%).
-- **DP-7b: 548/1420** distinct rules cited (38.6%); traceability test fails
+- **DP-7a: 199/243** CR examples as example-named passing tests (81.9%).
+- **DP-7b: 552/1420** distinct rules cited (38.9%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -103,6 +103,7 @@ prefer a slightly larger honest primitive and note it here.
 | `0b9cd6d` | W9a | **encounters as a timing structure** (§6.5): `StructKind::Encounter`, whose table IS the run table's phase-3 span (9.2.2b makes each run phase a structure), opened by the run's step 3a as a child frame parked at 4a; `Instruction::ForceEncounter { ice: TargetSpec }` for 6.5.9a, with 6.5.9c ("not finished until the encounter is complete") and "return to the effect that caused it" free from the frame stack; nested encounters (Shiro→Chrysalis) stash and restore the interrupted one; 6.1.4b unwinds exactly the phase (everything begun inside it, no Run Ends steps) and 6.5.9b unwinds it with the run; 6.5.8a/6.2.7c ABORT the phase (the aborting instruction finishes, then no further step — 9.8.7c) instead of poking the run's cursor. **Bugs fixed:** 6.2.7 was applied to any encountered ice, killing a forced encounter with a card in HQ instantly; `current_subs` never checked 9.1.7 activity, so 9.1.8h was unimplemented-but-passing | 165 |
 | `7629564` | W9b | §1.18 advancing vs placing: `Instruction::AdvanceCard` + `GameChange::CardAdvanced`, so 1.18.2's distinction exists at all (`TriggerCond::AdvancesCard` keyed on the advance, 9.6.6a's "had" check moved with it); `PlaceCounters.amount` is a `Quantity` (§12 rule 6) with `Minus`/`RequirementOfSource` joining the selector language; §10.13 **dividends** as a keyword expanded into the conditional ability it denotes (`PrintedCard::with_dividends`, `TriggerCond::SelfScored`); 1.17.8/10.13.2 `Object::scored_snapshot` — the counters and requirement as the agenda began to be scored — plus `Vm::advancement_requirement` and `StaticDecl::ScoreRequirementModInSourceServer` (SanSan class) | 168 |
 | `55056b3` | W9c | the attacked server: `Instruction::ChangeAttackedServer` (6.1.2d — changed DIRECTLY, so the timing step does not change and the new server's ice is never approached), `StaticDecl::CannotInitiateRunOnSourceServer` (6.3.2a — removes the basic run action for that server and reaches no further, so a run can still be moved onto it); 9.11.4a/9.3.3f as tests over machinery already right (a use-restriction gates every window the ability is offered in and resolves nothing; an X definition is a static ability with no instructions) | 172 |
+| `-` | W11f | 4.1.2a revealing from a hidden zone: `TargetFilter::InDiscardOf(Side)` (a zone-naming criterion, so 1.15.2c lifts for it) and `TargetFilter::stipulates_characteristic`, so `AddCardsToHand` reveals a card that is not otherwise visible exactly when the criteria stipulate something about the card itself — the criteria being the kernel's only representation of what the ability stipulated (deviation 21's reading again) | 199 |
 | `-` | W11e | §9.7.1 ability taxonomy on one card: `TriggerCond::SelfPlayResolved` (8.6.7h — the condition is met after the played card has already been trashed at 8.6.7g, so 9.1.8g's hangover is what keeps the ability active to resolve) and `Instruction::EndActionPhase` (5.6.2b: the action loop takes an action only while the player has unspent [click]). The Oppo-Research-class shape carries FOUR abilities of three types — a static that is nothing but a restriction, a conditional, and two play abilities that resolve in sequence inside 8.6.7f | 198 |
 | `a52c406` | W11d | **9.9.7f preventing as a trigger condition**: `TriggerCond::SourcePreventedDamage` + `GameChange::DamagePrevented`, recorded ONLY when the imminent damage value was above 0 before the interrupt applied (the whole content of the rule — removing an effect already at 0 prevents nothing, so Guru Davinder's second ability never pends); `Instruction::LookAtCards { cards, by }` (1.21.2) + `GameChange::CardLookedAt`, which makes 9.11.4e's split expressible. **Bugs fixed:** `interrupt_relevant` demanded a damage value ABOVE 0 for a *prevent all* interrupt, so a value already reduced to 0 could never be removed — which is precisely what the 9.9.7f example does, and it is observable (The Cleaners has nothing left to modify); and `DeclineableChoice` applied its inner instruction directly, bypassing imminence, so an install/play/trace inside a "you may" did NOTHING silently — those kinds are now spliced in as the next instruction, the same shape 9.11.4f uses | 197 |
 | `332bcee` | W11c | `Instruction::ExposeCards` (1.21.4 — revealing, restricted to installed unrezzed cards; 1.21.5 keeps it distinct) + `TriggerCond::CardExposed`: exposing is not one of 9.12.2c's aggregated classes, so two cards exposed by ONE instruction meet a Blackguard-class condition twice (9.6.4b); `TriggerCond::InstalledCardTrashed { side, of_types }` (District 99 / Wasteland), where 8.2.2a falls straight out of the change buffer — a prevented trash records nothing; 6.8.2a as a test over W9a's frame unwinding (the paid window open when the run ends closes, and the Runner never gets another offer to spend the run's bad publicity fund) | 195 |
@@ -515,7 +516,7 @@ encounter's paid window yields no Decision at all when neither player has a
 usable paid ability — a plan that wants to halt mid-encounter must give
 someone something to be offered (`tk::break_button` is the usual one).
 
-## Next targets — 45 examples left, re-measured after W11e
+## Next targets — 44 examples left, re-measured after W11f
 
 Re-run the count before choosing a cluster:
 
@@ -533,10 +534,10 @@ print(len(missing)); [print(s, n) for s, n in Counter(s for s,_ in missing).most
 EOF
 ```
 
-Remaining by section (45 after W11e): 1.16 Costs 5 · 7.3 Breaching 4 ·
+Remaining by section (44 after W11f): 1.16 Costs 5 · 7.3 Breaching 4 ·
 1.12/9.8/9.12 three each · 4.8/6.7/7.4/9.1/9.9/10.2 two each · rest 1.
 
-CLUSTER RANKING (measured after W11e, best first):
+CLUSTER RANKING (measured after W11f, best first):
 
 1. **§7.3/§7.4 breaching (5 reachable of 6).** The biggest live cluster and
    it shares ONE mechanism: 7.4.2b's "the Runner cannot access more than 1
@@ -585,11 +586,6 @@ CLUSTER RANKING (measured after W11e, best first):
    (1.16.4d — wants the basic play action, deviation 17).
 4. **The cheap singletons, now the best examples-per-token in the file.**
    Each is one small mechanism plus a test:
-   - `reveal_from_hidden_1` (4.1.2a) — a card leaving a hidden zone must be
-     revealed to demonstrate it meets the ability's stipulation. Needs a
-     `TargetFilter` naming the discard pile (`InDiscardOf(Side)`, added to
-     `names_zone`) and a reveal recorded by `AddCardsToHand`; 8.5.13's
-     reveal machinery from W5a is the model.
    - `calculated_quantity_3` (9.12.2b, realloc/NASX) — if ANY part of an
      instruction is a non-aggregated class, NONE of it aggregates, so the
      credit gains arrive as separate occurrences and a "whenever you gain

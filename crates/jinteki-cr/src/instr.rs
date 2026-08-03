@@ -741,6 +741,10 @@ pub enum TargetFilter {
     Rezzed,
     /// CR 4.5: "an agenda in the Runner's score area".
     InScoreAreaOf(Side),
+    /// CR 4.4: "a card in Archives" / "a card in your heap" — a criterion
+    /// that names a HIDDEN-capable zone, which is what makes 4.1.2a's reveal
+    /// necessary when the criteria also stipulate a characteristic.
+    InDiscardOf(Side),
     /// CR 4.2.2: "1 of the top N cards of R&D" (Top Hat class) — a criterion
     /// that explicitly specifies the zone, which is what lets 1.15.2c's
     /// play-area restriction lift for it.
@@ -760,6 +764,22 @@ pub enum TargetFilter {
     /// both need it, and a swap that must name "another piece of ice" is the
     /// same atom — see deviation 30).
     OtherThanSource,
+}
+
+impl TargetFilter {
+    /// CR 4.1.2a: does this criterion stipulate a CHARACTERISTIC of the card
+    /// (rather than merely where it is)? A stipulation of this kind has to be
+    /// demonstrated when the chosen card is not otherwise visible, which is
+    /// what forces the reveal.
+    pub fn stipulates_characteristic(self) -> bool {
+        matches!(
+            self,
+            TargetFilter::CardTypeIs(_)
+                | TargetFilter::HasSubtype(_)
+                | TargetFilter::PrintedCostAtMost(_)
+                | TargetFilter::HasName(_)
+        )
+    }
 }
 
 /// CR 6.2.3: what a "same position" criterion is measured against.
@@ -793,6 +813,7 @@ impl TargetFilter {
                 | TargetFilter::IceProtectingAttackedServer
                 | TargetFilter::CardsInHandOf(_)
                 | TargetFilter::InScoreAreaOf(_)
+                | TargetFilter::InDiscardOf(_)
                 | TargetFilter::TopOfDeckOf { .. }
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.

@@ -4401,3 +4401,24 @@ pub fn oppo_research_like(name: &'static str) -> PrintedCard {
     ];
     c
 }
+
+/// Clone Suffrage Movement shape (4.1.2a): "You may add 1 operation from
+/// Archives to HQ." The criteria stipulate a CHARACTERISTIC (card type) of a
+/// card in a zone where it may be facedown, which is what forces the reveal.
+pub fn clone_suffrage_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::AddCardsToHand {
+            cards: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![
+                    crate::instr::TargetFilter::InDiscardOf(Side::Corp),
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Operation),
+                ],
+            },
+        }],
+    )
+    .labeled("clone-suffrage: add an operation from Archives to HQ")];
+    c
+}

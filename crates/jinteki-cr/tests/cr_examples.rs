@@ -254,6 +254,7 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_prevent_as_trigger_condition_1",
     "example_rule_look_reveal_instruction_1",
     "example_rule_play_ability_1",
+    "example_rule_reveal_from_hidden_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -9247,4 +9248,57 @@ fn example_rule_play_ability_1() {
     assert!(resolved < lost, "…and ended the Corp's action phase, after all of that");
     assert_eq!(vm.st.corp.credits, 1);
     assert_eq!(vm.st.runner.tags, 1);
+}
+
+/// example_rule_reveal_from_hidden_1 (4.1.2a): a Clone-Suffrage-Movement-class
+/// ability adds an operation from Archives to HQ. The chosen card is facedown
+/// in Archives, and the ability stipulates that it be an operation, so it must
+/// be REVEALED before it is added — otherwise nothing would demonstrate that
+/// the requirement was met.
+#[test]
+fn example_rule_reveal_from_hidden_1() {
+    let mut vm = Vm::empty(942);
+    let op = vm.new_object(tk::operation("FastBreak-like", 0, vec![]), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(op);
+    let asset = vm.new_object(tk::vanilla_asset("Bait", 0, 3), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(asset);
+    tk::install_root(
+        &mut vm,
+        tk::clone_suffrage_like("CloneSuffrage-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("clone-suffrage"))
+            .when(Match::targets().once(), Reply::target(op))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let ann = t
+        .of_kind(Kind::Targets)
+        .into_iter()
+        .next()
+        .expect("the ability announced its target");
+    assert_eq!(
+        ann.candidates(),
+        &[op],
+        "1.15.2c: the criteria name the zone, and only the operation matches"
+    );
+    let revealed = change_at(&vm, |c| matches!(c, GameChange::CardRevealed { obj } if *obj == op));
+    let moved = change_at(&vm, |c| {
+        matches!(c, GameChange::CardMoved { obj, to: Zone::Hand(Side::Corp), .. } if *obj == op)
+    });
+    assert!(
+        revealed < moved,
+        "4.1.2a: the card is revealed BEFORE it is added, to demonstrate that it \
+         meets the ability's stipulation: {}",
+        t.tail(10)
+    );
+    assert_eq!(vm.st.objects[&op].zone, Zone::Hand(Side::Corp));
+    assert_eq!(vm.st.objects[&asset].zone, Zone::Discard(Side::Corp));
 }
