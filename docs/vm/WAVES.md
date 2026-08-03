@@ -853,7 +853,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W17a it is **50 cards, 19 complete, 31 partial, 48
+prints the count. At W17b it is **50 cards, 20 complete, 30 partial, 47
 printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -910,17 +910,12 @@ classify will cut someone again.
   (`Instruction::AddToScoreArea`). Film Critic's paid ability is expressed;
   the card is still partial on its other two sentences.
 
-*A capability that landed one step short.* `TargetFilter::InstalledThisTurn`
-(W17a) says exactly what Seamless Launch needs — but
-`Instruction::PlaceCounters` is NOT in the kernel's target-announcement
-dispatch (`Vm::needs_decision`), so a `TargetSpec::Choose` on it is never put
-to the player and the instruction silently places nothing. Measured, not
-guessed: the operation resolves, no `ChooseTargets` decision appears, and no
-counter lands. `TrashCards`, `HostCards`, `AddToScoreArea` and
-`AddCardsToHand` all have their arm; `PlaceCounters` needs the same one.
-Three cards wait on it — Seamless Launch, AstroScript Pilot Program's paid
-ability, and Slot Machine's third subroutine — so it is the cheapest deck
-capability outstanding.
+- ~~"a card you did not install this turn"~~ — **done, W17a/b**
+  (`TargetFilter::InstalledThisTurn`, plus `PlaceCounters` joining the
+  target-announcement dispatch in W17b, which is what actually made it work).
+  Seamless Launch is complete. AstroScript's paid ability still waits on a
+  criterion for 1.18.3's "a card you can advance"; Slot Machine's third
+  subroutine waits on the reveal-counting its first sentence needs.
 - "shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
   shuffles from the heap into the stack). `MoveToDeck` puts cards on top or
   bottom and does not shuffle.

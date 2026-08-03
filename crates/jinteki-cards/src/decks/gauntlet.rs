@@ -311,20 +311,21 @@ pub fn predictive_planogram() -> Card {
 /// "Place 2 advancement counters on 1 installed card that you did not install
 ///  this turn."
 ///
-/// UNIMPLEMENTED: "that you did not install this turn" IS sayable now
-/// (`TargetFilter::InstalledThisTurn`, W17a) — but `Instruction::PlaceCounters`
-/// is not in the kernel's target-announcement dispatch, so a `Choose` target
-/// on it is never put to the player and the instruction silently places
-/// nothing. Measured, not guessed: the operation resolves and no
-/// `ChooseTargets` decision appears. AstroScript's paid ability and Slot
-/// Machine's third subroutine want the same thing.
+/// "That you did not install this turn" is a game-history criterion (1.12.6),
+/// read from the change log since the turn began. 1.18.2: placing an
+/// advancement counter is not ADVANCING, so no "whenever you advance"
+/// condition is met by it.
 pub fn seamless_launch() -> Card {
     card("Seamless Launch")
         .corp()
         .operation()
         .cost(1)
         .text("Place 2 advancement counters on 1 installed card that you did not install this turn.")
-        .unimplemented("Place 2 advancement counters on 1 installed card that you did not install this turn.")
+        .play([place_on(
+            choose(1, &[installed_corp_card(), installed_this_turn(false)]),
+            CounterKind::Advancement,
+            2,
+        )])
         .build()
 }
 

@@ -1347,3 +1347,51 @@ fn film_critic_adds_a_hosted_agenda_to_the_score_area() {
         t.tail(12)
     );
 }
+
+/// Seamless Launch: "Place 2 advancement counters on 1 installed card that you
+/// did not install this turn." (1.12.6 — a game-history criterion; 1.18.2 —
+/// placing an advancement counter is not ADVANCING.)
+#[test]
+fn seamless_launch_cannot_target_what_was_installed_this_turn() {
+    let mut vm = Vm::empty(47);
+    // One card installed before this turn, one installed during it.
+    let old = tk::install_root(&mut vm, tk::vanilla_agenda("Old Plan", 3, 1), ServerId::Remote(1), false);
+    let op = vm.new_object(card("Seamless Launch"), Zone::Hand(Side::Corp));
+    let fresh = vm.new_object(tk::vanilla_asset("Fresh Asset", 0, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().extend([op, fresh]);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(jinteki_cr::plan::Pick::InstallCard(fresh)))
+            .when(Match::action().once(), Reply::play_card(op))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    // The announcement is where the criterion bites.
+    let announce = t
+        .entries
+        .iter()
+        .find(|e| e.kind() == Kind::Targets)
+        .unwrap_or_else(|| panic!("no target announcement: {}", t.tail(16)));
+    assert!(announce.candidates().contains(&old), "the older card is a candidate");
+    assert!(
+        !announce.candidates().contains(&fresh),
+        "1.12.6: the card installed this turn is not: {:?}",
+        announce.candidates()
+    );
+    assert_eq!(
+        vm.st.objects[&old].counter(CounterKind::Advancement),
+        2,
+        "2 advancement counters placed: {}",
+        t.tail(16)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAdvanced { .. })),
+        "1.18.2: placing a counter is not advancing"
+    );
+}
