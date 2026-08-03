@@ -191,6 +191,9 @@ pub enum AbilityPhase {
 /// One resolving ability.
 #[derive(Debug, Clone)]
 pub struct AbilityFrame {
+    /// Index into the change log at the moment this frame was pushed —
+    /// what scopes "…this way" quantities (credits lost by this ability).
+    pub log_mark: usize,
     pub kind: ResolutionKind,
     /// Source ability (may be stranded per 9.1.4 once independent).
     pub source: AbilityRef,

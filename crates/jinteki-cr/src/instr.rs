@@ -36,6 +36,10 @@ pub enum Quantity {
     RequirementOfSource,
     /// Scale ("N for each …").
     Times(i64, Box<Quantity>),
+    /// "…for each credit lost" (Account Siphon class): credits the named
+    /// player ACTUALLY lost during the resolution of the ability now
+    /// resolving — the observed 1.10.3b loss, not the requested amount.
+    CreditsLostThisAbility(Side),
     /// CR 7.3.6: "for each time they accessed a card during the run" — the
     /// number of accesses ACTUALLY PERFORMED during the run in progress (or
     /// the run that just ended, for a "when this run ends" ability). An

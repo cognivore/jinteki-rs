@@ -17,7 +17,7 @@
 
 use crate::ability::{AbilityDef, AbilityFlag, Cost, StaticDecl, TriggerCond};
 use crate::instr::{Instruction, Quantity, TargetFilter, TargetSpec};
-use crate::object::{CardType, CounterKind, PrintedCard, Side};
+use crate::object::{CardType, CounterKind, PrintedCard, ServerId, Side};
 
 // ---------------------------------------------------------------------------
 // Corp — operations
@@ -433,6 +433,73 @@ pub fn botulus() -> PrintedCard {
             }],
         )
         .labeled("botulus: break 1 subroutine on host ice"),
+    ];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// Runner — Criminal staples (the Andromeda deck's spine)
+// ---------------------------------------------------------------------------
+
+/// Account Siphon — Event: Run - Sabotage. Cost 0. COMPLETE.
+/// "Run HQ. If successful, instead of breaching HQ, you may force the Corp to
+///  lose up to 5[credit], then you gain 2[credit] for each credit lost and
+///  take 2 tags."
+///
+/// The whole card is CR machinery that already exists: an initiated run whose
+/// effect carries the "if successful" ability (6.7.4), an OPTIONAL breach
+/// replacement decided at step 6.9.5b (6.7.4c/9.9.2), a forced loss that
+/// takes only what the pool holds (1.10.3b — the "up to"), a gain calculated
+/// from the credits ACTUALLY lost, and tags that go through the ordinary
+/// imminence pipeline, which is exactly what makes them avoidable.
+pub fn account_siphon() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Account Siphon", Side::Runner, CardType::Event);
+    c.subtypes = vec!["Run", "Sabotage"];
+    c.cost = Some(0);
+    c.abilities = vec![AbilityDef::play(vec![Instruction::InitiateRun {
+        server: ServerId::Hq,
+        allowed: crate::instr::RunServerSet::These(vec![ServerId::Hq]),
+        if_successful: vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Replacement {
+                applies_to: crate::effects::EffectClass::Breach,
+                with: crate::lingering::ReplacementTransform::SuppressAndResolve(vec![
+                    Instruction::LoseCredits(Side::Corp, 5),
+                    Instruction::GainCredits(
+                        Side::Runner,
+                        Quantity::Times(2, Box::new(Quantity::CreditsLostThisAbility(Side::Corp))),
+                    ),
+                    Instruction::GainTags(2),
+                ]),
+                optional: true,
+            },
+            duration: crate::lingering::WantedDuration::ThisRun,
+        }],
+    }])
+    .labeled("account siphon: run hq")];
+    c
+}
+
+/// Desperado — Hardware: Console. Cost 3. Unique. COMPLETE.
+/// "+1[mu]
+///  Gain 1[credit] whenever you make a successful run.
+///  Limit 1 console per player."
+///
+/// (The console limit is checkpoint step 10.3.1d, driven by `console: true`.)
+pub fn desperado() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Desperado", Side::Runner, CardType::Hardware);
+    c.subtypes = vec!["Console"];
+    c.cost = Some(3);
+    c.unique = true;
+    c.console = true;
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::MemoryLimitMod(1)])
+            .labeled("desperado: +1 memory"),
+        AbilityDef::conditional(
+            TriggerCond::MakesSuccessfulRun,
+            vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+            false,
+        )
+        .labeled("desperado: gain 1 credit (successful run)"),
     ];
     c
 }

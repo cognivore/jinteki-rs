@@ -130,6 +130,13 @@ pub enum ReplacementTransform {
     /// "Instead of breaching, gain N[c]" (Security Testing / Account Siphon
     /// class): removes the atom and pays out to the effect's controller.
     SuppressAndGainCredits(u32),
+    /// The general 9.9.2 form: "instead of <the effect class>, <do these
+    /// instructions>". The replaced effect's atom is removed and the
+    /// replacement's own instructions resolve in its place, as a rules
+    /// ability of the lingering effect's source — so they go through the
+    /// full pipeline (imminence, windows, prevention: Account Siphon's tags
+    /// are avoidable exactly because of this).
+    SuppressAndResolve(Vec<crate::instr::Instruction>),
     /// "Instead of accessing the chosen candidate, remove it from the game"
     /// (Archives Interface class). The access does not happen, so it is not
     /// counted by 7.3.6 — and the chosen candidate is still consumed (7.4.3).

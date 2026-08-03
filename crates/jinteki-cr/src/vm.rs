@@ -3494,6 +3494,30 @@ impl Vm {
         match q {
             Q::Const(n) => *n,
             Q::Count(f) => self.count_filter(*f, source),
+            Q::CreditsLostThisAbility(side) => {
+                // "…for each credit lost" — credits the named player ACTUALLY
+                // lost during the resolution of the ability now resolving
+                // (the observed 1.10.3b loss, not the requested amount).
+                // Scope: changes recorded since this ability frame began.
+                let mark = self
+                    .frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(af.log_mark),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                self.changes.log[mark..]
+                    .iter()
+                    .map(|c| match c {
+                        GameChange::CreditsLost { side: s, amount } if s == side => {
+                            *amount as i64
+                        }
+                        _ => 0,
+                    })
+                    .sum()
+            }
             Q::AccessesThisRun => self.accesses_this_run() as i64,
             Q::DistinctIcePassedThisRun => {
                 // 1.12.6: the game history, not the present game state — an
@@ -4019,9 +4043,11 @@ impl Vm {
     fn apply_replacement(&mut self, lid: u64) {
         let Some(imm_seq) = self.imminents.last().map(|i| i.seq) else { return };
         let Some(l) = self.lingering.iter_mut().find(|l| l.id == lid) else { return };
+        let src_obj = l.source;
         let Payload::ReplacementEffect { applies_to, replace_with, .. } = &l.payload else { return };
         let applies_to = *applies_to;
         let replace_with = replace_with.clone();
+        let mut resolve_instead: Option<Vec<Instruction>> = None;
         l.applied_to.push(imm_seq);
         let controller = self.imminents.last().map(|i| i.controller).unwrap_or(Side::Runner);
         let Some(imm) = self.imminents.last_mut() else { return };
@@ -4035,6 +4061,13 @@ impl Vm {
                 if let EffectClass::Damage(_) = atom.class {
                     atom.class = EffectClass::Damage(k);
                 }
+            }
+            crate::lingering::ReplacementTransform::SuppressAndResolve(instrs) => {
+                // 9.9.2b: the replacing effect's instructions resolve in
+                // place of what they replaced.
+                cite!("rule_applying_replacement_effects");
+                atom.removed = true;
+                resolve_instead = Some(instrs);
             }
             crate::lingering::ReplacementTransform::SuppressAndGainCredits(n) => {
                 atom.removed = true;
@@ -4072,6 +4105,16 @@ impl Vm {
         // the lingering effect. Multi-application replacement durations
         // arrive with the card layer.
         self.lingering.retain(|l| l.id != lid);
+        if let Some(instrs) = resolve_instead {
+            self.push_ability_frame(
+                ResolutionKind::Conditional,
+                AbilityRef { obj: src_obj, index: 0 },
+                controller,
+                instrs,
+                None,
+                None,
+            );
+        }
     }
 
     /// Apply replacements one at a time; when several could apply, the order
@@ -4502,14 +4545,21 @@ impl Vm {
     /// so the ability-frame suffix never repeats.
     fn loop_period(&self, next: AbilityRef) -> Option<usize> {
         cite!("sec_infinite_loops");
+        // Only the CONTIGUOUS ability-frame suffix counts: a frame of any
+        // other kind on the way — a timing structure, a window — means this
+        // is not "the same abilities resolving each other with nothing on
+        // the way out". (An event whose run contains an if-successful
+        // ability of the same card is nesting, not looping.)
         let mut seq: Vec<AbilityRef> = self
             .frames
             .iter()
-            .filter_map(|f| match f {
+            .rev()
+            .map_while(|f| match f {
                 Frame::Ability(af) => Some(af.source),
                 _ => None,
             })
             .collect();
+        seq.reverse();
         seq.push(next);
         for k in 1..=4usize {
             if seq.len() < 2 * k {
@@ -4588,6 +4638,7 @@ impl Vm {
             // condition being met and the ability resolving is stranded even
             // though the frame was pushed after the move (the Compile/Mayfly
             // example).
+            log_mark: self.changes.log.len(),
             source_generation: instance
                 .and_then(|i| self.instances.get(&i))
                 .map(|i| i.source_generation)

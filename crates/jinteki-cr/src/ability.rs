@@ -164,6 +164,9 @@ pub enum TriggerCond {
     /// resolves in the reaction window that step's checkpoint opens — before
     /// the breach step where 6.7.4c puts the Runner's decision.
     SuccessfulRunOnServer,
+    /// "Whenever you make a successful run" (Desperado class): the run is
+    /// declared successful (6.8.4), whichever server it was on.
+    MakesSuccessfulRun,
     /// CR 10.9.2: "when this card is empty…" (Crowdfunding class). The
     /// condition can only be met after the card has been LOADED with counters
     /// of this kind by a preceding ability of the same card — a card with no
@@ -1143,6 +1146,10 @@ pub fn trigger_matches(
         ) => {
             cite!("rule_successful_run");
             server_of_source == Some(*server)
+        }
+        (TriggerCond::MakesSuccessfulRun, GameChange::RunDeclaredSuccessful { .. }) => {
+            cite!("rule_successful_run");
+            true
         }
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
