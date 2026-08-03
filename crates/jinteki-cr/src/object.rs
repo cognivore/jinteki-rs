@@ -297,6 +297,11 @@ pub struct Object {
     /// here as `(advancement counters, advancement requirement)` just before
     /// the agenda moved.
     pub scored_snapshot: Option<(u32, u32)>,
+    /// CR 4.6.6i: "the server associated with the previous location of the
+    /// card" — stamped whenever the card leaves a server, its root, or a
+    /// position protecting it. An ability on a card that has left a server
+    /// still says "this server" about the one it left (see `Vm::this_server`).
+    pub last_server: Option<ServerId>,
 }
 
 impl Object {

@@ -177,7 +177,7 @@ pub fn hostile_infra_like(name: &'static str) -> PrintedCard {
 pub fn warroid_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 5);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerTrashesAtLeastOneCorpCard,
+        TriggerCond::RunnerTrashesAtLeastOneCorpCard { in_this_server: false },
         vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
@@ -1946,6 +1946,63 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
         }])
         .labeled("[sub] trace X"),
     ];
+    c
+}
+
+/// Warroid Tracker shape (4.6.6i): an asset whose ability meets its condition
+/// when the Runner trashes at least 1 card in THIS SERVER — including the
+/// asset itself — and whose effect reads "this server" a second time, by
+/// gaining 1 credit for each piece of ice protecting it.
+///
+/// Simplification: the printed card traces and trashes installed cards; the
+/// examples using this shape are about which server "this server" names, so
+/// the effect is the smallest observable reading of it.
+pub fn warroid_this_server_like(name: &'static str, trash_cost: u32) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
+    c.trash_cost = Some(trash_cost);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerTrashesAtLeastOneCorpCard { in_this_server: true },
+        vec![Instruction::GainCredits(
+            Side::Corp,
+            Quantity::Count(crate::instr::TargetFilter::IceProtectingSourceServer),
+        )],
+        false,
+    )
+    .labeled("warroid: credits per ice protecting this server")];
+    c
+}
+
+/// Border Control shape (4.6.6i): a piece of ice with a [trash] ability whose
+/// effect gains 1 credit for each piece of ice protecting "this server".
+///
+/// Simplification: the CR's example delivers this effect through ZATO City
+/// Grid's granted "trash that ice and resolve 1 of its subroutines", which the
+/// kernel has no instruction for yet. Border Control's own "[trash]: End the
+/// run" is the same branch of 4.6.6i — an ability *initiated by a cost*
+/// involving its source moving out of the server it was protecting — so the
+/// shape carries the counting effect on that ability instead.
+pub fn border_control_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 2, 3);
+    let count_this_server = Instruction::GainCredits(
+        Side::Corp,
+        Quantity::Count(crate::instr::TargetFilter::IceProtectingSourceServer),
+    );
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![count_this_server.clone()])
+            .labeled("[sub] credits per ice protecting this server"),
+        AbilityDef::paid(Cost::trash_self(), vec![count_this_server])
+            .labeled("border control: trash for credits per ice protecting this server"),
+    ];
+    c
+}
+
+/// Earth Station shape (4.6.8f): a card declaring a limit on the number of
+/// remote servers that may exist.
+pub fn remote_limit_like(name: &'static str, limit: u32) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
+    c.abilities =
+        vec![AbilityDef::static_ability(vec![StaticDecl::RemoteServerLimit(limit)])
+            .labeled("earth station: limit remote servers")];
     c
 }
 

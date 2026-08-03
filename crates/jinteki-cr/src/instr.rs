@@ -652,6 +652,10 @@ pub enum TargetFilter {
     /// has from its own. Which position is the reference is the content
     /// (§12 rule 2), so the Rook class and the Slipstream class are one atom.
     IceInSamePositionAs(PositionRef),
+    /// CR 2.1 / 10.1.5: "a copy of <name>" — a card's NAME, which is not
+    /// self-referential language: it describes every card with that name,
+    /// including but not limited to the ability's own source.
+    HasName(&'static str),
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma

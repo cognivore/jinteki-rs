@@ -49,8 +49,10 @@ pub enum TriggerCond {
     /// (per-occurrence, 9.6.4b / 9.12.2a Hostile Infrastructure).
     RunnerTrashesCorpCard,
     /// "Whenever the Runner trashes at least 1 Corp card." — one instance per
-    /// event (Warroid Tracker class, 9.12.2a).
-    RunnerTrashesAtLeastOneCorpCard,
+    /// event (Warroid Tracker class, 9.12.2a). `in_this_server` adds 4.6.6i's
+    /// scope ("…at least 1 card installed in or protecting this server"),
+    /// which for a card trashed FROM that server means the server it left.
+    RunnerTrashesAtLeastOneCorpCard { in_this_server: bool },
     /// "When you access this card." (active while inactive, 9.1.8a)
     SelfAccessed,
     /// "When the Runner encounters this ice."
@@ -370,6 +372,10 @@ pub enum StaticDecl {
     /// The scope is the source's server, exactly as
     /// `TargetFilter::IceProtectingSourceServer` scopes ice.
     ScoreRequirementModInSourceServer(i32),
+    /// CR 4.6.8f: "Limit N remote servers." (Earth Station class.) While
+    /// active, the Corp cannot create a new remote server that would take the
+    /// total above N.
+    RemoteServerLimit(u32),
     /// CR 6.3.2a: "The Runner cannot initiate a run on this server."
     /// (Off the Grid class.) The declaration refers to the ANNOUNCEMENT of
     /// the attacked server at step 6.9.1a and to nothing else — an ability
@@ -626,9 +632,13 @@ pub fn trigger_matches(
             *by == Side::Runner && trashed_is_corp(*obj)
         }
         (
-            TriggerCond::RunnerTrashesAtLeastOneCorpCard,
+            TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. },
             GameChange::CardTrashed { by, obj, .. },
-        ) => *by == Side::Runner && trashed_is_corp(*obj),
+        ) => {
+            // The server scope (4.6.6i) is applied by the checkpoint scan,
+            // which has the state access to resolve "this server".
+            *by == Side::Runner && trashed_is_corp(*obj)
+        }
         (TriggerCond::SelfAccessed, GameChange::CardAccessed { obj }) => *obj == source.id,
         (TriggerCond::SelfEncountered, GameChange::EncounterBegan { ice, .. }) => {
             *ice == source.id
@@ -708,7 +718,7 @@ pub fn trigger_matches(
 /// group)?
 pub fn trigger_per_event(cond: &TriggerCond) -> bool {
     cite!("rule_act_on_multiple_cards");
-    matches!(cond, TriggerCond::RunnerTrashesAtLeastOneCorpCard)
+    matches!(cond, TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. })
 }
 
 /// Is a card a Corp card by printed side (for trash-trigger filters)?

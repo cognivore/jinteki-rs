@@ -226,7 +226,11 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 });
                 let mut occurrences: Vec<u64> = Vec::new();
                 for (c, group) in &window {
-                    if !trigger_matches(cond, c, source_obj, vm.server_of(obj_id), is_corp)
+                    // 4.6.6i: "this server" in a trigger condition is read
+                    // through `Vm::this_server`, so a condition met BY the
+                    // source leaving its server still names the server it
+                    // left (Warroid Tracker class).
+                    if !trigger_matches(cond, c, source_obj, vm.this_server(obj_id), is_corp)
                         && !persisted_server_override(vm, from_lingering, cond, c)
                     {
                         continue;
@@ -238,8 +242,23 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         GameChange::CardInstalled { obj, .. },
                     ) = (cond, c)
                     {
-                        let sv = vm.server_of(obj_id);
+                        let sv = vm.this_server(obj_id);
                         if sv.is_none() || vm.server_of(*obj) != sv {
+                            continue;
+                        }
+                    }
+                    // Warroid Tracker class: the trashed card must have been
+                    // in the source's server — which for a card trashed FROM
+                    // that server is the server it left (4.6.6i again).
+                    if let (
+                        crate::ability::TriggerCond::RunnerTrashesAtLeastOneCorpCard {
+                            in_this_server: true,
+                        },
+                        GameChange::CardTrashed { obj, .. },
+                    ) = (cond, c)
+                    {
+                        let sv = vm.this_server(obj_id);
+                        if sv.is_none() || vm.this_server(*obj) != sv {
                             continue;
                         }
                     }

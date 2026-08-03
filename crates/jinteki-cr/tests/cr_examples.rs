@@ -115,6 +115,12 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_values_defined_by_x_2",
     "example_rule_independent_effects_1",
     "example_rule_independent_effects_2",
+    "example_rule_this_server_1",
+    "example_rule_this_server_2",
+    "example_rule_previous_object_source_1",
+    "example_rule_limit_remote_servers_1",
+    "example_sec_old_self_reference_rules_1",
+    "example_sec_old_self_reference_rules_2",
     // Wave 5a: searching, finding and shuffling (§8.7), 9.11.4d.
     "example_rule_valid_search_target_install_play_1",
     "example_rule_valid_search_target_install_play_2",
@@ -3877,6 +3883,240 @@ fn example_rule_independent_effects_2() {
         vm.ability_present(hush, 0),
         "Magnet's ability no longer exists, so its effect is never applied"
     );
+}
+
+// ===========================================================================
+// §4.6.6i / §4.6.8f — "this server", and limits on remote servers
+// ===========================================================================
+
+/// example_rule_this_server_1 (4.6.6i): the Runner trashes a rezzed Warroid
+/// Tracker. By the time the checkpoint pends its instance the card is in
+/// Archives, but "this server" in the condition — and in the effect — still
+/// names the server it was trashed from.
+#[test]
+fn example_rule_this_server_1() {
+    let mut vm = Vm::empty(1101);
+    // Two ice protect the remote and one protects Archives, so each candidate
+    // reading of "this server" gives a different number of credits.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Remote-Ice-A", 0, 1), ServerId::Remote(1), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Remote-Ice-B", 0, 1), ServerId::Remote(1), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Archives-Ice", 0, 1), ServerId::Archives, false);
+    let warroid =
+        tk::install_root(&mut vm, tk::warroid_this_server_like("Warroid-like", 2), ServerId::Remote(1), true);
+    vm.st.runner.credits = 5;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the remote, pass the unrezzed ice, trash the asset on
+    // access; every optional part either side is offered is resolved.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::trash_accessed())
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert!(
+        t.entries.iter().any(|e| matches!(
+            &e.answer,
+            Some(DecisionAnswer::Take(WindowOption::BasicTrash { card, .. })) if *card == warroid
+        )),
+        "the Runner trashed the asset"
+    );
+    assert_eq!(
+        vm.st.objects[&warroid].zone,
+        Zone::Discard(Side::Corp),
+        "the source is in Archives when the ability resolves"
+    );
+    assert_eq!(
+        vm.this_server(warroid),
+        Some(ServerId::Remote(1)),
+        "4.6.6i: 'this server' is the server it was trashed FROM, not Archives"
+    );
+    assert_eq!(
+        vm.st.corp.credits, 2,
+        "the effect counted the 2 ice protecting the remote, not the 1 protecting Archives"
+    );
+}
+
+/// example_rule_this_server_2 (4.6.6i): an ability initiated by a COST that
+/// trashes its own source out of the server it was protecting still reads
+/// "this server" as that server — and the source, no longer protecting it, is
+/// not among the ice counted.
+#[test]
+fn example_rule_this_server_2() {
+    let mut vm = Vm::empty(1102);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Other-Ice", 0, 1), ServerId::Remote(1), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Archives-Ice-A", 0, 1), ServerId::Archives, false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Archives-Ice-B", 0, 1), ServerId::Archives, false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Archives-Ice-C", 0, 1), ServerId::Archives, false);
+    let bc =
+        tk::install_ice(&mut vm, tk::border_control_like("Border-Control-like"), ServerId::Remote(1), true);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    // The plan: the Corp uses the [trash] ability in its first paid window.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().first(), Reply::take("border control")).stop_at_action(),
+        Plan::runner().stopping_at_the_rest(),
+    );
+    assert!(t.ever_offered("border control"), "the [trash] ability was offered");
+    assert_eq!(
+        vm.st.objects[&bc].zone,
+        Zone::Discard(Side::Corp),
+        "the source was trashed to pay the cost"
+    );
+    assert_eq!(
+        vm.this_server(bc),
+        Some(ServerId::Remote(1)),
+        "4.6.6i: 'this server' is the server the source was protecting"
+    );
+    assert_eq!(
+        vm.st.corp.credits, 1,
+        "1 ice still protects that server — the trashed source is not counted"
+    );
+}
+
+/// example_rule_previous_object_source_1 (1.12.6a): the source of a persistent
+/// ability is the object that was trashed during access, so "this server" in
+/// that ability still names the attacked server even though the card is now a
+/// new object in Archives.
+#[test]
+fn example_rule_previous_object_source_1() {
+    let mut vm = Vm::empty(1103);
+    let amaze = tk::install_root(
+        &mut vm,
+        tk::amaze_persistent_like("AMAZE-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run the remote and trash the upgrade on access; the persisting
+    // ability then resolves out of the run's own ending.
+    let gen_before = vm.st.objects[&amaze].generation;
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::trash_accessed())
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert!(t.halted);
+    assert!(
+        vm.st.objects[&amaze].generation > gen_before,
+        "1.12.3: the trashed card is a NEW object in Archives"
+    );
+    assert_eq!(
+        vm.this_server(amaze),
+        Some(ServerId::Remote(1)),
+        "1.12.6a/4.6.6i: the persistent ability's source still names the attacked server"
+    );
+    assert_eq!(vm.st.runner.tags, 2, "so the ability resolved when the run ended");
+}
+
+/// example_rule_limit_remote_servers_1 (4.6.8f): while "Limit 1 remote server"
+/// is active and a remote exists, the Corp cannot create a new remote server —
+/// an install naming one has no identifiable destination (8.5.14).
+#[test]
+fn example_rule_limit_remote_servers_1() {
+    let mut vm = Vm::empty(1104);
+    tk::install_identity(&mut vm, tk::remote_limit_like("Earth-Station-like", 1), Side::Corp);
+    assert!(vm.can_create_new_remote(), "no remote exists yet");
+    tk::install_root(&mut vm, tk::corp_filler("Asset-A"), ServerId::Remote(1), false);
+    assert_eq!(vm.remote_servers().len(), 1);
+    assert!(
+        !vm.can_create_new_remote(),
+        "4.6.8f: a remote already exists, so the limit forbids creating another"
+    );
+
+    // The install effect still runs; its destination just cannot be identified.
+    let hand = vm.new_object(tk::vanilla_asset("Asset-B", 0, 3), Zone::Hand(Side::Corp));
+    tk::install_root(&mut vm, tk::adt_button("Installer", hand), ServerId::Hq, true);
+    vm.start_turn(Side::Corp);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().first(), Reply::take("adt")).stop_at_action(),
+        Plan::runner().stopping_at_the_rest(),
+    );
+    assert!(t.ever_offered("adt"), "the installing ability was used");
+    assert_eq!(
+        vm.st.objects[&hand].zone,
+        Zone::Hand(Side::Corp),
+        "8.5.14: no destination could be identified, so no installation took place"
+    );
+    assert_eq!(vm.remote_servers().len(), 1, "and no second remote server exists");
+}
+
+// ===========================================================================
+// §10.1.5 — old self-reference rules
+// ===========================================================================
+
+/// example_sec_old_self_reference_rules_1 (10.1.5): a card naming itself in its
+/// own text means "this card" — the original Kitsune's "trash Kitsune" is
+/// `TrashSelf`, and it trashes the ice the subroutine is on, not another copy.
+#[test]
+fn example_sec_old_self_reference_rules_1() {
+    use jinteki_cr::ability::AbilityDef;
+    use jinteki_cr::instr::Instruction;
+    let mut vm = Vm::empty(1105);
+    let mut kitsune = tk::vanilla_ice("Kitsune-like", 0, 1);
+    kitsune.abilities =
+        vec![AbilityDef::subroutine(vec![Instruction::TrashSelf]).labeled("[sub] trash Kitsune")];
+    let other = tk::install_ice(&mut vm, kitsune.clone(), ServerId::Remote(1), true);
+    let encountered = tk::install_ice(&mut vm, kitsune, ServerId::Hq, true);
+    vm.start_turn(Side::Runner);
+
+    // The plan: run HQ, meet the ice, break nothing; the subroutine resolves.
+    let _t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&encountered].zone,
+        Zone::Discard(Side::Corp),
+        "10.1.5: 'trash Kitsune' means 'trash this ice'"
+    );
+    assert_eq!(
+        vm.st.objects[&other].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "the other copy of the same card is untouched"
+    );
+}
+
+/// example_sec_old_self_reference_rules_2 (10.1.5): "a copy of Boomerang" is
+/// NOT self-referential — it describes any card with that name, so the other
+/// copy is a valid target for the ability naming it.
+#[test]
+fn example_sec_old_self_reference_rules_2() {
+    use jinteki_cr::instr::TargetFilter;
+    let mut vm = Vm::empty(1106);
+    let a = tk::install_rig(&mut vm, tk::vanilla_runner_card("Boomerang-like", jinteki_cr::object::CardType::Hardware));
+    let b = tk::install_rig(&mut vm, tk::vanilla_runner_card("Boomerang-like", jinteki_cr::object::CardType::Hardware));
+    let unrelated =
+        tk::install_rig(&mut vm, tk::vanilla_runner_card("Other-Card", jinteki_cr::object::CardType::Hardware));
+
+    // "a copy of Boomerang", read from the source `a`, describes both copies.
+    let named = vm.candidates_matching(&[TargetFilter::HasName("Boomerang-like")], Some(a));
+    assert!(named.contains(&a) && named.contains(&b), "both copies match the name: {named:?}");
+    assert!(!named.contains(&unrelated));
+    // "this card" (self-reference) describes only the source, which is what
+    // 10.1.5's other reading covers.
+    let others = vm.candidates_matching(
+        &[TargetFilter::HasName("Boomerang-like"), TargetFilter::OtherThanSource],
+        Some(a),
+    );
+    assert_eq!(others, vec![b], "and 'another copy' excludes the source itself");
 }
 
 // ===========================================================================

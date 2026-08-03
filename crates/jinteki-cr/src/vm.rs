@@ -480,6 +480,7 @@ impl Vm {
                 staged: false,
                 generation: 0,
                 scored_snapshot: None,
+                last_server: None,
             },
         );
         id
@@ -1554,6 +1555,78 @@ impl Vm {
         }
     }
 
+    /// CR 4.6.6i: what an ability on `obj` means by **"this server"**.
+    ///
+    /// Three readings, in the order the rule gives them:
+    /// 1. 4.6.6k — a hosted object reads its HOST's server.
+    /// 2. The card is in a server, its root, or protecting it: that server.
+    /// 3. The card has LEFT one: "the server associated with the previous
+    ///    location of the card" (`last_server`) — which is why a trashed
+    ///    Warroid Tracker still means the server it was trashed from and not
+    ///    Archives, and why a Border-Control-class subroutine resolved after
+    ///    the ice was trashed counts the ice of the server it protected
+    ///    (without counting itself, since it no longer protects it).
+    /// 4. Otherwise the central server corresponding to the zone the card is
+    ///    in, which is the parenthesis in 4.6.6i's first sentence — a card in
+    ///    Archives that never left a server says "Archives".
+    ///
+    /// Approximation (deviation 38): the rule scopes reading 3 to abilities
+    /// *initiated by* the move. The kernel applies it to any ability of a card
+    /// that has left a server, because the only abilities that resolve from
+    /// such a card are the ones 9.1.8 keeps active across the move — which
+    /// are exactly the move-initiated ones.
+    pub fn this_server(&self, obj: ObjectId) -> Option<ServerId> {
+        cite!("rule_this_server");
+        let o = self.st.objects.get(&obj)?;
+        if let Some(h) = o.host {
+            cite!("rule_host_server");
+            return self.this_server(h);
+        }
+        match o.zone {
+            Zone::Root(s) | Zone::Ice(s) => Some(s),
+            _ if o.last_server.is_some() => o.last_server,
+            Zone::Hand(Side::Corp) => Some(ServerId::Hq),
+            Zone::Deck(Side::Corp) => Some(ServerId::Rnd),
+            Zone::Discard(Side::Corp) => Some(ServerId::Archives),
+            _ => None,
+        }
+    }
+
+    /// CR 4.6.8f: may the Corp create a new remote server right now? An
+    /// active limit forbids it once the limit is reached. The declaration is
+    /// a restriction (9.3.4), so it applies to the *destination declaration*
+    /// at step 8.5.16b: an install that names a new remote when the limit is
+    /// reached has no identifiable destination and does nothing (8.5.14).
+    pub fn can_create_new_remote(&self) -> bool {
+        cite!("rule_limit_remote_servers");
+        let remotes = self.remote_servers().len() as i64;
+        self.active_statics()
+            .iter()
+            .filter_map(|(_, d)| match d {
+                StaticDecl::RemoteServerLimit(n) => Some(*n as i64),
+                _ => None,
+            })
+            .all(|limit| remotes < limit)
+    }
+
+    /// CR 4.6.8d: the remote servers that exist — those with at least one card
+    /// in their root or protecting them.
+    pub fn remote_servers(&self) -> std::collections::BTreeSet<ServerId> {
+        cite!("rule_remote_server_existence");
+        self.st
+            .objects
+            .values()
+            .filter_map(|o| match o.zone {
+                Zone::Root(s @ ServerId::Remote(_)) | Zone::Ice(s @ ServerId::Remote(_))
+                    if self.is_installed(o) =>
+                {
+                    Some(s)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
     /// All (source object, declaration) pairs of active static abilities.
     pub fn active_statics(&self) -> Vec<(ObjectId, StaticDecl)> {
         cite!("rule_static_ability");
@@ -2541,12 +2614,13 @@ impl Vm {
     /// relative to `source` where the filter is source-relative.
     fn count_filter(&self, f: TargetFilter, source: Option<ObjectId>) -> i64 {
         match f {
+            // 4.6.6i: "ice protecting this server" reads the server the
+            // source means by "this server" — which is the one it LEFT when
+            // it is no longer installed (and it is no longer among the ice
+            // counted there).
             TargetFilter::IceProtectingSourceServer => source
-                .and_then(|s| self.st.objects.get(&s))
-                .and_then(|o| match o.zone {
-                    Zone::Ice(sv) => Some(self.ice_at(sv).len() as i64),
-                    _ => None,
-                })
+                .and_then(|s| self.this_server(s))
+                .map(|sv| self.ice_at(sv).len() as i64)
                 .unwrap_or(0),
             TargetFilter::IceProtectingAttackedServer => self
                 .current_run
@@ -4268,11 +4342,8 @@ impl Vm {
                 self.is_installed(o) && is_corp_card(o.printed.card_type) && o.faceup
             }
             TargetFilter::IceProtectingSourceServer => source
-                .and_then(|s| self.st.objects.get(&s))
-                .and_then(|src| match src.zone {
-                    Zone::Ice(sv) => Some(self.ice_at(sv).contains(&o.id)),
-                    _ => None,
-                })
+                .and_then(|s| self.this_server(s))
+                .map(|sv| self.ice_at(sv).contains(&o.id))
                 .unwrap_or(false),
             TargetFilter::CardsInHandOf(side) => o.zone == Zone::Hand(side),
             TargetFilter::CardTypeIs(t) => o.printed.card_type == t,
@@ -4298,6 +4369,12 @@ impl Vm {
             // "each OTHER rezzed piece of ice": the description excludes the
             // describing ability's own source.
             TargetFilter::OtherThanSource => source != Some(o.id),
+            // 10.1.5: naming a card is not self-reference — "a copy of X"
+            // matches every card named X, the source included.
+            TargetFilter::HasName(n) => {
+                cite!("sec_old_self_reference_rules");
+                o.printed.name == n
+            }
         }
     }
 
@@ -4331,6 +4408,16 @@ impl Vm {
     /// restricted to the play area unless a criterion names a zone (1.15.2c).
     fn filter_candidates(&self, criteria: &[TargetFilter], _controller: Side) -> Vec<ObjectId> {
         self.filter_candidates_from(criteria, None)
+    }
+
+    /// The objects a description picks out, read from `source` — the public
+    /// face of the shared criteria vocabulary (1.15.2's candidate set).
+    pub fn candidates_matching(
+        &self,
+        criteria: &[TargetFilter],
+        source: Option<ObjectId>,
+    ) -> Vec<ObjectId> {
+        self.filter_candidates_from(criteria, source)
     }
 
     fn filter_candidates_from(
@@ -5956,9 +6043,16 @@ impl Vm {
                     crate::instr::InstallDest::Root(s) => Some((Zone::Root(s), None)),
                     crate::instr::InstallDest::NewRemoteRoot => {
                         cite!("rule_corp_install_choose_destination_server");
-                        let s = ServerId::Remote(self.next_remote);
-                        self.next_remote += 1;
-                        Some((Zone::Root(s), None))
+                        // 4.6.8f: a limit on remote servers makes "a new
+                        // remote server" an unavailable destination, so the
+                        // destination cannot be identified (8.5.14).
+                        if !self.can_create_new_remote() {
+                            None
+                        } else {
+                            let s = ServerId::Remote(self.next_remote);
+                            self.next_remote += 1;
+                            Some((Zone::Root(s), None))
+                        }
                     }
                     crate::instr::InstallDest::Protecting(s) => {
                         cite!("rule_ice_outermost_position");
@@ -7462,6 +7556,15 @@ impl Vm {
             _ => {}
         }
         self.st.move_seq += 1;
+        // CR 4.6.6i: leaving a server, its root, or a position protecting it
+        // records the server so an ability of the card that moved still
+        // refers to it as "this server".
+        if let Zone::Root(s) | Zone::Ice(s) = from {
+            if !matches!(to, Zone::Root(t) | Zone::Ice(t) if t == s) {
+                cite!("rule_this_server");
+                self.st.objects.get_mut(&id).unwrap().last_server = Some(s);
+            }
+        }
         let o = self.st.objects.get_mut(&id).unwrap();
         // CR 1.12.3: changing ZONES makes a NEW object out of the card —
         // and 1.12.4 says moving within a zone to a known location does not,
