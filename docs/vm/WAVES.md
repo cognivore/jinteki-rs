@@ -6,10 +6,10 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W8c)
+## Odometers (after W9c)
 
-- **DP-7a: 158/243** CR examples as example-named passing tests (65.0%).
-- **DP-7b: 498/1420** distinct rules cited (35.1%); traceability test fails
+- **DP-7a: 172/243** CR examples as example-named passing tests (70.8%).
+- **DP-7b: 519/1420** distinct rules cited (36.5%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -100,6 +100,9 @@ prefer a slightly larger honest primitive and note it here.
 | `613433e` | W8a | **§6.2 positions are OBJECTS, not indices** (6.2.6): `object::IcePosition { id, ice }`, `CoreState.ice: BTreeMap<ServerId, Vec<IcePosition>>` and `RunCtx.position: Option<u64>` — a position id. 6.2.2 creation (a outermost / b innermost / c directly inward / f swaps create none), 6.2.4 destruction as a REAL 10.3.1i with both its exceptions (the Runner's position, and an install in progress protecting that server), 6.2.3 "same position" as `TargetFilter::IceInSamePositionAs(PositionRef::{Source,Runner})`, 6.2.7a/c/d/e as `Vm::apply_ice_change_to_run`; `Instruction::{MoveIce, MoveRunnerToIce}` (6.2.2 / 6.2.8a-d); `swap_cards` re-occupies the existing positions (6.2.2f) and no longer no-ops on two ice protecting the SAME server; the HOST position of `HostCards` is now announceable and `announcement_for` passes the source so source-relative criteria work in announcements | 152 |
 | `24020b2` | W8b | **§8.8 swapping cards**: 8.8.2 destination legality (`Vm::swap_legal` / `may_occupy` — card type per location, and 4.6.6e/3.6.1 root limits with the vacating card discounted) applied BOTH as a gate on the swap and as a filter on the two 1.15.2 announcements a `SwapCards { Choose, Choose }` requires; 8.8.4b's mixed installed/uninstalled case (the leaver uninstalls and everything hosted on it is trashed, the joiner becomes installed in the exact position with no install procedure, entering unrezzed per 8.8.4a, and `Card{Un,}Installed` are recorded so the trigger conditions meet at the next checkpoint); `TriggerCond::SelfPassed`. Deviation 15 retired | 155 |
 | `22caf54` | W8c | §1.16 costs, continued: **`Cost.credits` is a `Quantity`** (§12 rule 6) evaluated when the cost is to be paid and taken as ONE aggregate (1.16.2b), with `TriggerCond::PlayerPaysCredits` to observe it; 1.16.2f's "total N less" as `Instruction::InstallCard.reduce_total` + `DecisionSpec::DivideCostReduction` declared at the top of step 8.5.16d and applied to both costs by 1.16.2a; 1.16.1b extended from tags to a DAMAGE component (`Vm::damage_cost_blocked`) and the 7.2.3 steal-cost offer now gated on `cost_payable`, so an unpayable additional cost is never a choice | 158 |
+| `0b9cd6d` | W9a | **encounters as a timing structure** (§6.5): `StructKind::Encounter`, whose table IS the run table's phase-3 span (9.2.2b makes each run phase a structure), opened by the run's step 3a as a child frame parked at 4a; `Instruction::ForceEncounter { ice: TargetSpec }` for 6.5.9a, with 6.5.9c ("not finished until the encounter is complete") and "return to the effect that caused it" free from the frame stack; nested encounters (Shiro→Chrysalis) stash and restore the interrupted one; 6.1.4b unwinds exactly the phase (everything begun inside it, no Run Ends steps) and 6.5.9b unwinds it with the run; 6.5.8a/6.2.7c ABORT the phase (the aborting instruction finishes, then no further step — 9.8.7c) instead of poking the run's cursor. **Bugs fixed:** 6.2.7 was applied to any encountered ice, killing a forced encounter with a card in HQ instantly; `current_subs` never checked 9.1.7 activity, so 9.1.8h was unimplemented-but-passing | 165 |
+| `7629564` | W9b | §1.18 advancing vs placing: `Instruction::AdvanceCard` + `GameChange::CardAdvanced`, so 1.18.2's distinction exists at all (`TriggerCond::AdvancesCard` keyed on the advance, 9.6.6a's "had" check moved with it); `PlaceCounters.amount` is a `Quantity` (§12 rule 6) with `Minus`/`RequirementOfSource` joining the selector language; §10.13 **dividends** as a keyword expanded into the conditional ability it denotes (`PrintedCard::with_dividends`, `TriggerCond::SelfScored`); 1.17.8/10.13.2 `Object::scored_snapshot` — the counters and requirement as the agenda began to be scored — plus `Vm::advancement_requirement` and `StaticDecl::ScoreRequirementModInSourceServer` (SanSan class) | 168 |
+| `55056b3` | W9c | the attacked server: `Instruction::ChangeAttackedServer` (6.1.2d — changed DIRECTLY, so the timing step does not change and the new server's ice is never approached), `StaticDecl::CannotInitiateRunOnSourceServer` (6.3.2a — removes the basic run action for that server and reaches no further, so a run can still be moved onto it); 9.11.4a/9.3.3f as tests over machinery already right (a use-restriction gates every window the ability is offered in and resolves nothing; an X definition is a static ability with no instructions) | 172 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -312,6 +315,42 @@ prefer a slightly larger honest primitive and note it here.
     hypothetical effect through the imminence pipeline, so a prevention that
     only applies under a further condition would be treated as blocking.
 
+33. **An aborted Encounter Ice Phase finishes the instruction that aborted
+    it** (W9a, `Vm::abort_encounter_phase`) — 6.5.8a's bypass and 6.2.7c's
+    uninstall/derez end the encounter STATE immediately and flag the phase's
+    frame, which completes without following any of its remaining steps as
+    soon as it is on top again (9.8.7c: no more subroutines resolve). The
+    resolving instruction is not cut short, which is what 9.11.2's atomicity
+    wants and what the CR's "the phase is aborted" says about the phase, not
+    about the ability. Ending the RUN is different and stays different:
+    6.1.4/6.1.4b unwind every frame above the run (or above the phase),
+    resolving ability included.
+34. **6.2.7 is skipped entirely during a forced encounter** (W9a,
+    `Vm::apply_ice_change_to_run`) — 6.2.7 governs "the piece of ice in the
+    Runner's CURRENT POSITION", and a forced encounter (6.5.9a) is resolved
+    outside the run's progression with an ice that need not be in that
+    position or installed at all. So a forced encounter is never ended by
+    6.2.7c/d. The narrow case this gives up: a forced re-encounter with the
+    very ice the Runner is standing in front of (The Twins) that is then
+    uninstalled mid-encounter would, on a strict reading of 6.2.7c, end.
+    No example.
+35. **A priority window open above an aborted encounter is not force-closed**
+    (W9a) — 9.2.8f already closes reaction windows bound to the ended
+    encounter, which covers every tested case. A PAID window open at step
+    6.9.3b when a paid ability ends the encounter would, strictly, close too;
+    the kernel lets it run out. No example.
+36. **1.18.3's "you can advance" is not modeled** (W9b) — `AdvanceCard`
+    advances whatever it names. The basic advance action (5.2.6f) is still
+    missing too (deviation 17), so nothing yet needs the "can be advanced"
+    permission that 9.1.8f keeps active on unrezzed cards.
+37. **The scored snapshot is two numbers** (W9b, `Object::scored_snapshot`) —
+    1.17.8 says "the agenda's last known number of advancement counters" and
+    10.13.2 adds the advancement requirement, so those two are captured just
+    before an agenda moves to a score area. A future ability referring to
+    some other last-known characteristic of a scored agenda would want the
+    same treatment, and the honest form of that is a whole last-known-state
+    snapshot rather than two fields.
+
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real
 Runner declaration Decision with 7.4.6a declined-tracking); **W3's
@@ -353,7 +392,14 @@ New card shapes go in `testkit.rs` and are built EXCLUSIVELY through
 shape is annotated in its doc comment and is legitimate only while
 orthogonal to every example using it.
 
-## Next targets — 85 examples left, re-measured after W8c
+Since W9a the Encounter Ice Phase is its own timing structure, so
+`Match::during(StructKind::Encounter)` joins `at_step("step_encounter_paw")`
+as a way to scope a plan rule, and `Entry::stack` shows it. Note that the
+encounter's paid window yields no Decision at all when neither player has a
+usable paid ability — a plan that wants to halt mid-encounter must give
+someone something to be offered (`tk::break_button` is the usual one).
+
+## Next targets — 71 examples left, re-measured after W9c
 
 Re-run the count before choosing a cluster:
 
@@ -371,34 +417,22 @@ print(len(missing)); [print(s, n) for s, n in Counter(s for s,_ in missing).most
 EOF
 ```
 
-Remaining by section: 9.12 Other 7 · 9.1 General 6 · 1.12 Objects 5 ·
-1.16 Costs 5 · 4.6 Play Area 4 · 7.3 Breaching 4 ·
-6.1/6.5/9.8/9.9/9.10/9.11/10.1 three each · rest <= 2.
+Remaining by section: 9.12 Other 7 · 1.12 Objects 5 · 1.16 Costs 5 ·
+9.1 General 5 · 4.6 Play Area 4 · 7.3 Breaching 4 ·
+9.8/9.9/9.10/10.1 three each · rest <= 2.
 
-CLUSTER RANKING (measured, best first):
+CLUSTER RANKING (measured after W9c, best first):
 
-1. **Encounters as a timing structure (~7)** — `forced_encounter_1`,
-   `forced_encounter_during_run_1`, `end_encounter_outside_run_1`,
-   `bypass_during_encounter_1`, `active_exception_encounter_not_installed_1`
-   (9.1.8h), `no_position_after_approach_server_1` (6.2.5d — the LAST §6.2
-   example, blocked only on a forced encounter mid-breach) and
-   `ice_strength_modification_duration_1` (W6b built the duration half and
-   could not test it for want of a standalone encounter). `EncounterState` is
-   already a `Vm` field and W8a made positions objects, so what is missing is
-   an ENCOUNTER TIMING STRUCTURE (§11, steps 6.9.3a-e already exist inside the
-   run table — they need lifting into their own `StructKind::Encounter`) plus
-   `Instruction::ForceEncounter { ice }`. 6.2.8b/c is already implemented
-   (`MoveRunnerToIce` refuses during the Success and Run Ends phases), which
-   is half of `no_position_after_approach_server_1`.
-2. **§9.12.1 dependency + must-choices (~7)** — `independent_effects_1/2`
+1. **§9.12.1 dependency + must-choices (~7)** — `independent_effects_1/2`
    (Mother Goddess/Warden Fatuma/Hush; Hush/Magnet), `modify_ability_with_
    choice_1`, `calculated_quantity_3`, `must_with_choice_1`,
    `must_without_choice_1`, `must_cannot_force_additional_cost_1`. Deviation 2
-   says the dependency analysis covers the ability-removal class only;
-   `independent_effects_1` is the SUBTYPE-GRANT class, and W7d added the
-   subtype ops the pipeline needs, so this got cheaper. The three `must_*`
-   examples extend 9.12.3, which W2f already built.
-3. **§1.12's remaining 5 + §4.6 "this server" (~9)** — `previous_object_1`,
+   says the dependency analysis covers the ability-removal class only, and
+   `independent_effects_2` (Hush/Magnet) is exactly that class — check whether
+   it already passes before building anything. `independent_effects_1` is the
+   SUBTYPE-GRANT class and W7d added the subtype ops the pipeline needs. The
+   three `must_*` examples extend 9.12.3 (W2f).
+2. **§1.12's remaining 5 + §4.6 "this server" (~9)** — `previous_object_1`,
    `previous_object_source_1`, `object_move_location_1/2`,
    `object_move_known_location_1`, `this_server_1/2/3`,
    `limit_remote_servers_1`. `Object::generation` (W7e/f) is the stamp; what
@@ -409,35 +443,62 @@ CLUSTER RANKING (measured, best first):
    one — `object_move_known_location_1` and the three
    `lingering_effect_maintaining_choice_*` examples all want
    `Instruction::MaintainChoice`, which is one more instruction (+3 in §9.10).
+   `target_3` (Trick of Light) belongs here too: counters must become
+   `ObjectId`-addressed objects (1.12.1) before they can be announced.
+3. **§7.3/§7.4 breaching (~6)** — `number_of_accesses_1/2`,
+   `consecutive_breaches_1`, `visibility_after_access_1`,
+   `prohibiting_access_to_1_1`, `prohibition_removed_1`. 7.3.6 access counts
+   already exist (`BreachCtx.remaining_from_zone`) and 7.4.2's Ash-class
+   prohibition exists as `Payload::RestrictCandidatesTo`; these are about
+   several breaches in one run (7.3.8 delayed breaches), about accesses that
+   were REPLACED not counting, and about a prohibition going inactive
+   mid-breach (7.4.2a's candidate re-evaluation — `refresh_candidates_after_
+   access` is the hook).
 4. **§1.16's last 5** — `cost_x_1` (X announced before payment, 1.16.2c —
    wants a numeric Decision like W8c's `DivideCostReduction`),
    `alternate_payment_1` (1.16.2e — Biawak: needs the payment DIVISION to be
    put to the payer, which is deviations 11 and 18; `pay_cost` is synchronous
    and cannot suspend, so this is the "cost payment becomes a phase of the
-   ability frame" refactor), `cost_restrictions_2` (1.16.1c — wants
-   advancement-requirement modification and an additional cost to SCORE),
-   `additional_cost_checkpoint_1` (1.16.10c — additional cost to score, paid
-   with its checkpoint before the agenda moves), `inherent_cost_aggregates_1`
-   (1.16.4d — wants the basic play action, deviation 17).
-5. **§7.3 breaching (~4)** — `number_of_accesses_1/2`, `consecutive_breaches_1`,
-   `visibility_after_access_1`. 7.3.6 access counts already exist
-   (`BreachCtx.remaining_from_zone`); these are about several breaches in one
-   run and about what the Runner has seen.
-6. **§9.1's six** — `is_resolving_1/2` (9.1.3), `abilities_resolution_
-   independent_1`, `active_exception_catchall_1`,
-   `active_exception_conditional_move_to_inactive_zone_2`,
-   `active_exception_encounter_not_installed_1` (goes with cluster 1).
+   ability frame" refactor), `cost_restrictions_2` (1.16.1c — advancement-
+   requirement modification, which W9b now HAS as
+   `StaticDecl::ScoreRequirementModInSourceServer`, plus an additional cost to
+   SCORE), `additional_cost_checkpoint_1` (1.16.10c — additional cost to
+   score, paid with its checkpoint before the agenda moves),
+   `inherent_cost_aggregates_1` (1.16.4d — wants the basic play action,
+   deviation 17).
+5. **§9.1's five** — `is_resolving_1/2` (9.1.3: an ability "is resolving"
+   from first imminence to last resolution — wants a scope predicate the
+   kernel can already compute from the frame stack, plus
+   `StaticDecl::CannotSpendCredits` which exists),
+   `abilities_resolution_independent_1` (9.1.4 Compile/Mayfly — the kernel's
+   `source_moved_since` is a stub that always returns false, so this one is a
+   real gap worth closing), `active_exception_catchall_1` (9.1.8b),
+   `active_exception_conditional_move_to_inactive_zone_2` (9.1.8g).
+6. **The rest of §6 (~5)** — `run_ends_close_paws_1` and
+   `run_ends_other_priority_windows_1` (6.8.2a/c: what survives an ETR —
+   W9a's frame unwinding is most of it; (c) wants "other windows complete
+   normally but no new timing structure may be initiated"),
+   `if_successful_tied_to_server_1` (6.7.4a — `InitiateRun` must carry the
+   servers the initiating effect allowed), `if_successful_ability_optional_1`
+   (6.7.4c), `abilities_during_a_run_1` (6.3.4 — wants an additional cost to
+   initiate a run, and a "spends [click] during a run" trigger),
+   `run_phase_after_1` (6.1.3e — wants a pass-replacement and an "encounter
+   after approach" adjacency check; hardest of the six).
 
-Cheap singletons worth taking opportunistically: `dividends_1` +
-`dividends_timing_1` (2, one keyword — `PrintedCard.dividends` plus a
-score-time snapshot, since 10.13.2 reads the values as the agenda began to be
-scored); `placing_advancement_counter_1` (1.18.2 — counters PLACED directly
-do not meet an "advance" trigger condition; `AdvancesCard` already exists and
-this is a discrimination test); `multiple_damage_selected_sequentially_1`;
-`reveal_from_hidden_1` (4.1.4). Hard/blocked: `bluffing_1` +
-`cannot_hide_open_info_1` (§10.2 information — the kernel has no per-side
-visibility model at all, see deviation 20); `mandatory_infinite_loop_1`
-(10.1.6a draws the game).
+Cheap singletons worth taking opportunistically:
+`multiple_damage_selected_sequentially_1` (10.4.3a — damage cards selected
+sequentially, trashed simultaneously); `reveal_from_hidden_1` (4.1.2a —
+reveal before moving a facedown card when the effect requires an attribute;
+8.5.13's reveal machinery from W5a is the model); `play_ability_1` (9.7.1 —
+an operation with two play abilities resolving in sequence plus a conditional
+that fires after; needs a "when this operation finishes resolving" trigger);
+`empty_requires_loading_1` (10.9); `defferent_actions_1` (5.2).
+Hard/blocked: `bluffing_1` + `cannot_hide_open_info_1` (§10.2 information —
+the kernel has no per-side visibility model at all, see deviation 20);
+`mandatory_infinite_loop_1` (10.1.6a draws the game); `step_sequences_1`
+(9.11.2a — asserts installing has exactly ONE checkpoint, which deviation 4
+says the kernel does not honour; take it WITH the deviation-4 fix or not at
+all).
 
 **Blocked / deferred, with reasons:**
 - `target_3` (Trick of Light, 1.15.1) — the targets are ADVANCEMENT
