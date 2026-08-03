@@ -208,6 +208,12 @@ pub struct Object {
     /// CR 8.5.16a / 8.6.7a: placed into the play area as the first step of
     /// installing/playing — "It is not yet installed or active."
     pub staged: bool,
+    /// CR 1.12.3: a card that changes zones becomes a NEW object. The kernel
+    /// keeps one [`ObjectId`] per physical card and stamps each existence
+    /// with a generation, bumped whenever the card changes zone — so
+    /// `(id, generation)` is the object identity the CR talks about, and
+    /// "the same card" is the id alone (1.12.6's previous-object relation).
+    pub generation: u32,
 }
 
 impl Object {

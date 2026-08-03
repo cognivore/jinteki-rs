@@ -2982,3 +2982,79 @@ pub fn morph_ice(name: &'static str, prints: &'static str, loses: &'static str) 
     }];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W7e shapes
+// ---------------------------------------------------------------------------
+
+/// Lycian-Multi-Munition shape (6.1.4c): a Corp card whose free paid ability
+/// gains 1 credit and ends the run — the "no further effect" half of 6.1.4c
+/// when it is used with no run and no encounter in progress.
+pub fn gain_and_etr_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::Combined(vec![
+            Instruction::GainCredits(Side::Corp, Quantity::c(1)),
+            Instruction::EndTheRun,
+        ])],
+    )
+    .labeled("munition: gain 1 and end the run")];
+    c
+}
+
+/// Eli-1.0 shape (5.2.1a): a "Lose [click]: Break 1 subroutine on the
+/// encountered ice." ability. Spending a click is its cost, but the ability
+/// is NOT an action — it is used during a paid ability window.
+///
+/// Simplification (§12 rule 3): the printed card is a piece of ice whose
+/// ability says "Only the Runner can use this ability"; the kernel offers a
+/// card's paid abilities to its controller and has no who-may-use modifier,
+/// so the shape is a Runner card. The example's claim — where a
+/// Lose-[click] ability is offered — is unaffected.
+pub fn lose_click_break_program(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::lose_clicks(1),
+        vec![Instruction::BreakSubroutines {
+            subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
+        }],
+    )
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+    .labeled("lose-click: lose [click] to break 1 subroutine")];
+    c
+}
+
+/// Professional-Contacts shape (5.2.1a): a card with a "[click]: Gain
+/// 1[credit] and draw 1 card." ability — a [click] cost makes it an action.
+pub fn click_action_card(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost { clicks: 1, ..Cost::default() },
+        vec![Instruction::Combined(vec![
+            Instruction::GainCredits(Side::Runner, Quantity::c(1)),
+            Instruction::Draw(Side::Runner, 1),
+        ])],
+    )
+    .labeled("procon: [click] gain 1 and draw 1")];
+    c
+}
+
+/// Stimhack shape (5.2.2b): a Runner event whose play ability runs a server
+/// and then does 1 core damage — the action is not complete until the run
+/// ends, the damage is suffered and the event is trashed.
+pub fn stimhack_like(name: &'static str, server: ServerId) -> PrintedCard {
+    event(
+        name,
+        0,
+        vec![
+            Instruction::InitiateRun(server),
+            Instruction::Damage {
+                kind: DamageKind::Core,
+                amount: Quantity::c(1),
+                responsible: Side::Runner,
+            },
+        ],
+    )
+}

@@ -453,6 +453,7 @@ impl Vm {
                 active_since: 0,
                 set_aside_for_ability: false,
                 staged: false,
+                generation: 0,
             },
         );
         id
@@ -1631,22 +1632,35 @@ impl Vm {
     fn compute_candidates(&mut self) {
         cite!("sec_determining_candidates");
         let server = self.breach_ctx().unwrap().server;
-        let cands: Vec<ObjectId> = match server {
-            ServerId::Remote(_) => {
-                let mut v: Vec<ObjectId> =
-                    self.st.root.get(&server).cloned().unwrap_or_default();
-                // Ice protecting the server is not a candidate (7.4.1c-ish);
-                // roots only in the kernel wave.
-                v.reverse();
-                v
+        // 7.4.1a: each card in the ROOT of the breached server is a
+        // candidate — for every server, central ones included. Ice
+        // protecting the server is not in its root and is not a candidate.
+        cite!("rule_candidates_in_server_root");
+        let mut cands: Vec<ObjectId> = self.st.root.get(&server).cloned().unwrap_or_default();
+        cands.reverse();
+        match server {
+            // 7.4.1d: plus every card in the Corp's discard pile.
+            ServerId::Archives => {
+                cite!("rule_candidates_in_archives");
+                cands.extend(self.st.discard[&Side::Corp].iter().copied());
             }
-            ServerId::Archives => self.st.discard[&Side::Corp].clone(),
-            ServerId::Rnd => Vec::new(),  // filled per-access from the top
-            ServerId::Hq => Vec::new(),   // filled per-access at random
-        };
+            // 7.4.1b/c: filled per access at random / from the top.
+            ServerId::Hq | ServerId::Rnd | ServerId::Remote(_) => {}
+        }
         if let Some(b) = self.breach_ctx_mut() {
             b.candidates = cands;
         }
+    }
+
+    /// CR 1.12.3: the current existence of this card as an object.
+    pub fn generation(&self, id: ObjectId) -> u32 {
+        self.st.objects.get(&id).map(|o| o.generation).unwrap_or(0)
+    }
+
+    /// Is this OBJECT (card + generation) in the list? A card that has since
+    /// changed zones is a different object and is not (1.12.3).
+    fn same_object_listed(&self, c: ObjectId, list: &[(ObjectId, u32)]) -> bool {
+        list.iter().any(|(o, g)| *o == c && *g == self.generation(c))
     }
 
     /// CR 7.4.2: apply active access prohibitions to a candidate list.
@@ -1676,12 +1690,19 @@ impl Vm {
         let Some(b) = self.breach_ctx() else { return Vec::new() };
         match b.server {
             ServerId::Archives => {
+                // 7.4.1a + 7.4.6d: the root list is maintained (root entries
+                // go through the 10.3.1j declaration), while the discard-pile
+                // half is derived continuously — a card entering Archives
+                // during the breach becomes a candidate.
                 cite!("rule_candidates_entering_archives");
-                self.st.discard[&Side::Corp]
-                    .iter()
-                    .copied()
-                    .filter(|c| !b.chosen_ever.contains(c) && !b.declined.contains(c))
-                    .collect()
+                let mut v = b.candidates.clone();
+                for c in self.st.discard[&Side::Corp].iter().copied() {
+                    if !v.contains(&c) {
+                        v.push(c);
+                    }
+                }
+                v.retain(|c| !self.same_object_listed(*c, &b.chosen_ever) && !b.declined.contains(c));
+                v
             }
             _ => b.candidates.clone(),
         }
@@ -1692,12 +1713,13 @@ impl Vm {
         let candidates = self.restrict_candidates(self.breach_candidates_now());
         if candidates.len() == 1 {
             let only = candidates[0];
+            // 7.4.3: a chosen candidate ceases to be one for the remainder
+            // of the breach, accessed or not — as THAT object (1.12.3).
+            cite!("rule_candidates_already_accessed");
+            let g = self.generation(only);
             if let Some(b) = self.breach_ctx_mut() {
                 b.chosen = Some(only);
-                // 7.4.3: a chosen candidate ceases to be one for the
-                // remainder of the breach, accessed or not.
-                cite!("rule_candidates_already_accessed");
-                b.chosen_ever.push(only);
+                b.chosen_ever.push((only, g));
                 b.candidates.retain(|&c| c != only);
             }
             self.set_structure_phase(StepPhase::Checkpoint);
@@ -1734,7 +1756,7 @@ impl Vm {
                     let top = self.st.deck[&Side::Corp]
                         .iter()
                         .copied()
-                        .find(|c| !chosen_ever.contains(c));
+                        .find(|c| !chosen_ever.iter().any(|(o, _)| o == c));
                     if let Some(b) = self.breach_ctx_mut() {
                         b.candidates = top.into_iter().collect();
                     }
@@ -1749,7 +1771,7 @@ impl Vm {
                     let pool: Vec<ObjectId> = self.st.hand[&Side::Corp]
                         .iter()
                         .copied()
-                        .filter(|c| !chosen_ever.contains(c))
+                        .filter(|c| !chosen_ever.iter().any(|(o, _)| o == c))
                         .collect();
                     let pick = if pool.is_empty() {
                         None
@@ -5312,7 +5334,7 @@ impl Vm {
                 cite!("rule_rnd_topmost_eligibile_candidate");
                 let deck: Vec<ObjectId> = self.st.deck[&Side::Corp].clone();
                 if let Some(b) = self.breach_ctx_mut() {
-                    b.chosen_ever.retain(|c| !deck.contains(c));
+                    b.chosen_ever.retain(|(c, _)| !deck.contains(c));
                     b.accessed.retain(|c| !deck.contains(c));
                 }
                 self.refresh_candidates_after_access();
@@ -6072,7 +6094,7 @@ impl Vm {
             } else {
                 0
             };
-        if credits_avail < cost.credits || p.clicks < cost.clicks {
+        if credits_avail < cost.credits || p.clicks < cost.clicks + cost.lose_clicks {
             return false;
         }
         if cost.trash_self && !self.st.objects[&source].zone.is_installed() {
@@ -6226,7 +6248,10 @@ impl Vm {
         // card used alongside the card whose ability is being paid for.
         cite!("rule_spend_credits");
         self.spend_flexible(side, credits_to_pay);
-        self.st.player_mut(side).clicks -= cost.clicks;
+        // 5.2.1a: a "Lose [click]" component spends clicks exactly like a
+        // [click] cost — the difference is only that it is not an action.
+        cite!("rule_costs_with_click");
+        self.st.player_mut(side).clicks -= cost.clicks + cost.lose_clicks;
         let mut trashed = Vec::new();
         if cost.trash_self {
             // 1.19.4: [trash] on a card means "trash this object", used as a
@@ -6369,6 +6394,11 @@ impl Vm {
         }
         self.st.move_seq += 1;
         let o = self.st.objects.get_mut(&id).unwrap();
+        // CR 1.12.3: changing zones makes a NEW object out of the card.
+        if from != to {
+            cite!("rule_object_move_location");
+            o.generation += 1;
+        }
         o.zone = to;
         // CR 4.8: leaving the set-aside zone ends the set-aside state, so a
         // 9.5.5 hosted card or an 8.7.2 found card becomes visible to every
@@ -6618,11 +6648,12 @@ impl Vm {
                 self.set_structure_phase(StepPhase::Checkpoint);
             }
             (DecisionCtx::Candidate, DecisionAnswer::Candidate(c)) => {
+                let gen = self.generation(c);
                 if let Some(b) = self.breach_ctx_mut() {
                     b.chosen = Some(c);
                     // 7.4.3: chosen → never a candidate again this breach.
                     cite!("rule_candidates_already_accessed");
-                    b.chosen_ever.push(c);
+                    b.chosen_ever.push((c, gen));
                     b.candidates.retain(|&x| x != c);
                 }
                 self.set_structure_phase(StepPhase::Checkpoint);

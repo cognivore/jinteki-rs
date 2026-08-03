@@ -149,6 +149,10 @@ pub struct Cost {
     pub tags: u32,
     /// "suffer N net damage" as a cost (Obokata class).
     pub net_damage: u32,
+    /// CR 5.2.1a: "Lose [click]" as a cost — clicks are spent, but the
+    /// ability is NOT an action (Eli 1.0's break ability), so it is used
+    /// during a paid ability window and not in an action window.
+    pub lose_clicks: u32,
     /// "trash N cards from your grip/HQ" as a cost (Patchwork class).
     /// KERNEL APPROXIMATION: which cards are trashed is not put to the payer
     /// (the front of the hand is taken); no example distinguishes them.
@@ -168,6 +172,10 @@ impl Cost {
     pub fn net_damage(n: u32) -> Self {
         Cost { net_damage: n, ..Default::default() }
     }
+    /// CR 5.2.1a: a "Lose [click]" cost — spent clicks, but not an action.
+    pub fn lose_clicks(n: u32) -> Self {
+        Cost { lose_clicks: n, ..Default::default() }
+    }
     pub fn trash_from_hand(n: u32) -> Self {
         Cost { trash_from_hand: n, ..Default::default() }
     }
@@ -185,6 +193,7 @@ impl Cost {
             trash_self: self.trash_self || other.trash_self,
             tags: self.tags + other.tags,
             net_damage: self.net_damage + other.net_damage,
+            lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
         }
     }

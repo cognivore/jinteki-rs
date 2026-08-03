@@ -64,7 +64,7 @@ pub struct BreachCtx {
     /// CR 7.4.3: every candidate the Runner has CHOSEN this breach —
     /// whether or not it was actually accessed, it cannot become a
     /// candidate again (and 7.4.7a's "already chosen" eligibility test).
-    pub chosen_ever: Vec<ObjectId>,
+    pub chosen_ever: Vec<(ObjectId, u32)>,
 }
 
 /// Per-access state (§7.1-7.2).

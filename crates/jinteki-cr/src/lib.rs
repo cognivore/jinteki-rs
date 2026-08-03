@@ -16,6 +16,7 @@ pub mod cite;
 pub mod ability;
 pub mod change;
 pub mod checkpoint;
+pub mod deck;
 pub mod decision;
 pub mod effects;
 pub mod frames;

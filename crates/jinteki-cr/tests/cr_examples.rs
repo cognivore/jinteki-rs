@@ -176,6 +176,13 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_choice_instruction_1",
     "example_rule_split_up_instruction_1",
     "example_rule_step_sequences_2",
+    // Wave 7e: deck construction (§1.4), actions (§5.2), stray run rules.
+    "example_rule_influence_by_copy_1",
+    "example_rule_54+_1",
+    "example_rule_costs_with_click_1",
+    "example_rule_action_timing_structure_completion_1",
+    "example_rule_end_run_no_run_or_encounter_1",
+    "example_rule_candidates_leaving_server_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -6112,6 +6119,180 @@ fn example_rule_step_sequences_2() {
         "10.3.2: the checkpoint finished — including its repeated 10.3.1f/g \
          steps — before its reaction window's ability resolved"
     );
+}
+
+// ===========================================================================
+// §1.4 / §5.2 / §6.1 / §7.4 — deck construction, actions, stray run rules
+// ===========================================================================
+
+/// example_rule_influence_by_copy_1 (1.4.5a): the total influence cost of
+/// out-of-faction cards is counted BY COPY, not by name — one copy of a
+/// 2-influence card adds 2, two copies add 4.
+#[test]
+fn example_rule_influence_by_copy_1() {
+    use jinteki_cr::deck::total_influence;
+    let one = [(Some("anarch"), Some(2))];
+    let two = [(Some("anarch"), Some(2)), (Some("anarch"), Some(2))];
+    assert_eq!(total_influence(&one, "shaper"), 2);
+    assert_eq!(total_influence(&two, "shaper"), 4);
+    // In faction, the same cards cost nothing.
+    assert_eq!(total_influence(&two, "anarch"), 0);
+}
+
+/// example_rule_54+_1 (1.4.6d): a 66-card deck requires 6 additional agenda
+/// points — 3 full sets of 5 cards beyond 50 — giving 28 or 29.
+#[test]
+fn example_rule_54_1() {
+    use jinteki_cr::deck::agenda_points_required;
+    assert_eq!(agenda_points_required(66), (28, 29));
+    // The banded cases the same rule sits on top of.
+    assert_eq!(agenda_points_required(44), (18, 19));
+    assert_eq!(agenda_points_required(45), (20, 21));
+    assert_eq!(agenda_points_required(54), (22, 23));
+    assert_eq!(agenda_points_required(55), (24, 25), "55 is one full set of 5 over 50");
+}
+
+/// example_rule_costs_with_click_1 (5.2.1a): a "[click]: Gain 1[credit] and
+/// draw 1 card." ability is an ACTION and is offered in the action window; a
+/// "Lose [click]: Break 1 subroutine on this ice." ability is not an action
+/// and is used during a paid ability window.
+#[test]
+fn example_rule_costs_with_click_1() {
+    let mut vm = Vm::empty(713);
+    tk::install_ice(&mut vm, tk::etr_ice("Plain-Ice", 0, 1), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::lose_click_break_program("LoseClick-Breaker"));
+    tk::install_rig(&mut vm, tk::click_action_card("ProCon-like"));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().offering("lose-click").once(), Reply::take("lose-click"))
+            .when(Match::sub_targets().once(), Reply::Default)
+            .stop_at_action(),
+    );
+    // The [click] ability is an action; the Lose-[click] one never is.
+    let actions = t.of_kind(Kind::Action);
+    assert!(
+        actions.iter().any(|e| e.actions().iter().any(|a| matches!(
+            a,
+            ActionOption::CardAction { label, .. } if label.contains("procon")
+        ))),
+        "5.2.1a: a [click] cost makes the ability an action: {}",
+        t.tail(10)
+    );
+    assert!(
+        actions
+            .iter()
+            .all(|e| !e.actions().iter().any(|a| matches!(
+                a,
+                ActionOption::CardAction { label, .. } if label.contains("eli")
+            ))),
+        "a Lose-[click] ability is not an action"
+    );
+    assert!(t.took("lose-click"), "it was used from a paid ability window instead");
+    assert_eq!(vm.st.runner.clicks, 2, "the run took 1 click, losing [click] took another");
+}
+
+/// example_rule_action_timing_structure_completion_1 (5.2.2b): the Runner
+/// takes the "play an event" action with a Stimhack-class event. The action
+/// is not complete until the run it initiated ends, the core damage is
+/// suffered and the event is trashed following its resolution.
+#[test]
+fn example_rule_action_timing_structure_completion_1() {
+    let mut vm = Vm::empty(714);
+    let stim = vm.new_object(tk::stimhack_like("Stimhack-like", ServerId::Hq), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(stim);
+    tk::install_rig(&mut vm, tk::play_event_action("Play-Button", stim));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().uses("play-event-action").stop_at_action_nth(2),
+    );
+    let log = &vm.changes.log;
+    let run_ended = log
+        .iter()
+        .position(|c| matches!(c, GameChange::RunEnded { .. }))
+        .expect("the run ended");
+    let damaged = log
+        .iter()
+        .position(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .expect("core damage suffered");
+    let trashed = log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == stim))
+        .expect("the event was trashed after resolving");
+    assert!(run_ended < damaged && damaged < trashed, "5.2.2b order: {log:?}");
+    assert_eq!(vm.st.runner.core_damage, 1);
+    // Only THEN does the next action window open.
+    let last = t.last().expect("a decision");
+    assert_eq!(last.kind(), Kind::Action, "the action completed first: {}", t.tail(6));
+    assert!(last.seq > 1);
+}
+
+/// example_rule_end_run_no_run_or_encounter_1 (6.1.4c): a Lycian-class
+/// ability gains 1 credit and ends the run. Used with no run and no encounter
+/// in progress, the Corp gains the credit and nothing else happens.
+#[test]
+fn example_rule_end_run_no_run_or_encounter_1() {
+    let mut vm = Vm::empty(715);
+    tk::install_root(
+        &mut vm,
+        tk::gain_and_etr_button("Munition-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().uses("munition").stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("munition"), "the ability resolved: {}", t.tail(6));
+    assert_eq!(vm.st.corp.credits, 1, "the credit was gained");
+    assert!(vm.current_run.is_none() && vm.st.encounter.is_none());
+    assert!(vm.game_over.is_none(), "no further effect");
+}
+
+/// example_rule_candidates_leaving_server_1 (7.4.5): the Runner trashes an
+/// installed upgrade during a breach of Archives. The card moves to the
+/// Corp's discard pile, and the NEW object for it there becomes a candidate,
+/// so the Runner accesses the same physical card twice in one breach.
+#[test]
+fn example_rule_candidates_leaving_server_1() {
+    let mut vm = Vm::empty(716);
+    let mut up = tk::vanilla_upgrade("Archives-Upgrade", 0);
+    up.trash_cost = Some(1);
+    let upgrade = tk::install_root(&mut vm, up, ServerId::Archives, true);
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Archives).trashes_on_access().stop_at_action(),
+    );
+    let accesses = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == upgrade))
+        .count();
+    assert_eq!(
+        accesses, 2,
+        "7.4.5/7.4.6d: the discard-pile object is derived continuously, so the \
+         trashed upgrade becomes a candidate again: {}",
+        t.tail(12)
+    );
+    assert_eq!(vm.st.objects[&upgrade].zone, Zone::Discard(Side::Corp));
 }
 
 // ===========================================================================
