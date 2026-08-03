@@ -700,6 +700,14 @@ pub enum StaticDecl {
     /// flat "1 more", and "1 fewer" is a negative quantity
     /// (`Quantity::Minus`).
     SelfAgendaPointsMod(crate::instr::Quantity),
+    /// CR 1.17.3 / 9.12.4: "The Corp cannot score <the described agendas>."
+    /// (Clot's first sentence, scoped by "during the same turn they installed
+    /// that agenda".) A prohibition on the (S) OPTION rather than on an
+    /// ability — 9.1.9's restrictions reach abilities, and scoring is not one
+    /// (1.17.3c) — so it is applied where the option is offered, in the paid
+    /// windows of the Corp's turn (9.2.7d). The described set is the shared
+    /// criteria vocabulary (§12 rule 2).
+    CannotScoreMatching { criteria: Vec<crate::instr::TargetFilter> },
 }
 
 /// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional

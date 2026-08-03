@@ -1780,6 +1780,25 @@ impl Vm {
             )
     }
 
+    /// CR 1.2.2 / 1.17.3: is the Corp prohibited from scoring this agenda?
+    /// "If a rule or ability directs something to happen, but another effect
+    /// states that it cannot happen, the 'cannot' ability takes precedence" —
+    /// so a Clot-class declaration removes the (S) option rather than
+    /// competing with it. The description is re-read every time the window
+    /// opens, which is what makes "during the same turn they installed that
+    /// agenda" lift by itself at the start of the next turn.
+    fn score_prohibited(&self, card: ObjectId) -> bool {
+        cite!("rule_cannot_precedence");
+        cite!("rule_score_not_an_action");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        self.active_statics().iter().any(|(obj, d)| match d {
+            StaticDecl::CannotScoreMatching { criteria } => {
+                criteria.iter().all(|f| self.filter_matches(o, *f, Some(*obj)))
+            }
+            _ => false,
+        })
+    }
+
     fn run_success_prohibited(&self, server: ServerId) -> bool {
         // Crisium-class static: "Runs on this server cannot be declared
         // successful."
@@ -5174,6 +5193,16 @@ impl Vm {
             // 8.2/1.15.1: "add 1 of the drawn cards to the bottom of R&D"
             // chooses its card, so the card position announces like any other.
             | Instruction::MoveToDeck { card: spec, .. }
+            // 1.15.1: "place 2 advancement counters on 1 installed card" —
+            // the CARD is the target of the instruction, so every counter
+            // instruction whose card position is a choice announces it. (For
+            // the usual `SelfSource` position `announcement_for` returns
+            // `None` and nothing changes.)
+            | Instruction::PlaceCounters { target: spec, .. }
+            | Instruction::LoadCounters { target: spec, .. }
+            | Instruction::RemoveCounters { target: spec, .. }
+            | Instruction::TakeHostedCredits { from: spec, .. }
+            | Instruction::AdvanceCard { target: spec }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -5917,6 +5946,18 @@ impl Vm {
                         _ => None,
                     })
                     .unwrap_or(false)
+            }
+            // 1.12.6: the game history since the turn began, which 10.2.1
+            // makes open information — an install that happened this turn is
+            // a fact about the past, so it is read from the change log and
+            // not from any state the object carries.
+            TargetFilter::InstalledThisTurn(want) => {
+                cite!("rule_previous_object");
+                cite!("rule_open_information");
+                let installed = self.changes.log[self.st.turn_log_start..].iter().any(|c| {
+                    matches!(c, GameChange::CardInstalled { obj, .. } if *obj == o.id)
+                });
+                installed == want
             }
             TargetFilter::InstalledCorpCard => self.is_installed(o) && is_corp_card(o.printed.card_type),
             TargetFilter::InstalledRunnerCard => {
@@ -9964,6 +10005,7 @@ impl Vm {
                     && matches!(o.zone, Zone::Root(_))
                     && o.counter(CounterKind::Advancement) >= self.advancement_requirement(o.id)
                     && self.score_cost_payable(o.id)
+                    && !self.score_prohibited(o.id)
                 {
                     out.push(WindowOption::Score { card: o.id });
                 }

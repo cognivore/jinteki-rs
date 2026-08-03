@@ -1374,6 +1374,141 @@ fn fan_site() {
     );
 }
 
+/// clot: with Clot installed, the Corp cannot score an agenda during the same
+/// turn they installed it — but an agenda installed on an earlier turn is
+/// scored normally, and the blocked one becomes scorable on the next turn.
+/// The prohibition is on the (S) OPTION (1.2.2: a "cannot" takes precedence
+/// over the rule that would offer it), and its description is a 1.12.6
+/// history query re-read whenever a paid window opens, which is the whole
+/// reason it lifts by itself.
+#[test]
+fn clot() {
+    let mut g = Game::new(11)
+        .hand(Side::Corp, vec![cards::hostile_takeover()])
+        .credits(Side::Corp, 10)
+        .start(Side::Corp);
+    let ht2 = g.id("Hostile Takeover");
+    // The agenda from an earlier turn, fully advanced: `tk::install_root` is
+    // a starting position, not an action, so nothing this turn installed it.
+    let ht1 = tk::install_root(&mut g.vm, cards::hostile_takeover(), ServerId::Remote(1), false);
+    tk::place_counters(&mut g.vm, ht1, CounterKind::Advancement, 2);
+    let clot = tk::install_rig(&mut g.vm, cards::clot());
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Score(ht1)))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(ht2)))
+            .when(Match::destination(), Reply::Destination(InstallDest::NewRemoteRoot))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(ht2)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(ht2)))
+            .when(Match::paid().once(), Reply::Take(Pick::Score(ht2)))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    assert_eq!(
+        g.vm.st.objects[&ht1].zone,
+        Zone::ScoreArea(Side::Corp),
+        "Clot does not block an agenda installed on an earlier turn: {}",
+        t.tail(14)
+    );
+    assert_eq!(
+        g.vm.st.objects[&ht2].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the second agenda was scored eventually: {}",
+        t.tail(14)
+    );
+    assert_eq!(g.vm.st.objects[&clot].zone, Zone::Rig, "Clot is still installed");
+    // The sentence itself, read off the game history: the score of the second
+    // agenda came only after the turn that installed it had ended.
+    let log = &g.vm.changes.log;
+    let installed = log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == ht2))
+        .expect("the second agenda was installed by an action");
+    let scored = log
+        .iter()
+        .position(|c| matches!(c, GameChange::AgendaScored { obj, .. } if *obj == ht2))
+        .expect("the second agenda was scored");
+    let turn_ended = log[installed..scored]
+        .iter()
+        .any(|c| matches!(c, GameChange::TurnEnded { side: Side::Corp }));
+    assert!(
+        turn_ended,
+        "the Corp cannot score an agenda during the same turn they installed it: {}",
+        t.tail(14)
+    );
+}
+
+/// seamless-launch: "1 installed card that you did not install this turn" is
+/// a criterion on the 1.15.2 announcement, so on the turn the only installed
+/// card was installed there is nothing to announce and the Corp is not asked
+/// (1.15.2b caps the announcement at the valid targets available). Next turn
+/// the same card is a legal target and takes 2 advancement counters — PLACED,
+/// not advanced (1.18.2).
+#[test]
+fn seamless_launch() {
+    let mut g = Game::new(11)
+        .hand(
+            Side::Corp,
+            vec![cards::seamless_launch(), cards::seamless_launch(), cards::hostile_takeover()],
+        )
+        .credits(Side::Corp, 10)
+        .start(Side::Corp);
+    let (sl1, sl2, ht) = (g.named[0].1, g.named[1].1, g.named[2].1);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(ht)))
+            .when(Match::destination(), Reply::Destination(InstallDest::NewRemoteRoot))
+            .when(Match::action().once(), Reply::play_card(sl1))
+            // Burn the rest of the turn, then stop at the first action window
+            // of the Corp's NEXT turn.
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::action().once(), Reply::play_card(sl2))
+            .when(Match::targets().once(), Reply::Targets(vec![ht]))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    assert_eq!(
+        g.vm.st.objects[&ht].counter(CounterKind::Advancement),
+        0,
+        "the only installed card was installed this turn: nothing was placed: {}",
+        t.tail(10)
+    );
+    assert!(
+        t.entries.iter().all(|e| e.candidates().is_empty()),
+        "1.16.1b/1.15.2b: with no legal target the Corp was never asked to choose: {}",
+        t.tail(10)
+    );
+    assert_eq!(g.zone_of("Seamless Launch"), Zone::Discard(Side::Corp), "8.6.7g: trashed");
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.objects[&ht].counter(CounterKind::Advancement),
+        2,
+        "next turn the same card is a legal target: 2 advancement counters: {}",
+        script.transcript().tail(12)
+    );
+}
+
 /// lt-todachine: rezzing a piece of ice gives the Runner a tag. The ice can
 /// only be rezzed where the CR lets it be — as the Runner approaches it
 /// (9.2.7e) — so the port runs at it.
@@ -2019,6 +2154,8 @@ const PORTED: &[&str] = &[
     "account-siphon-use-ability",
     "account-siphon-access",
     "hostile-takeover",
+    "clot",
+    "seamless-launch",
     "global-food-initiative",
     "merger",
     "project-beale",
@@ -2064,8 +2201,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 64,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 64",
+        PORTED.len() >= 66,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 66",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is
@@ -2076,6 +2213,6 @@ fn dp7c_odometer() {
         .map(|(_, s)| *s)
         .expect("cards.rs is embedded");
     let partial = card_src.matches("/// UNIMPLEMENTED:").count();
-    assert_eq!(partial, 5, "partial cards (CORPUS.md §5): {partial}");
+    assert_eq!(partial, 4, "partial cards (CORPUS.md §5): {partial}");
     let _ = CardType::Agenda;
 }

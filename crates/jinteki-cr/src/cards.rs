@@ -118,6 +118,33 @@ pub fn neural_emp() -> PrintedCard {
     c
 }
 
+/// Seamless Launch — Operation. Cost 1. COMPLETE.
+/// "Place 2 advancement counters on 1 installed card that you did not install
+///  this turn."
+///
+/// 1.18.2: PLACING advancement counters is not advancing, so nothing meets an
+/// "advances a card" condition and the card need not be advanceable (1.18.3)
+/// at all. "That you did not install this turn" is a 1.12.6 history criterion
+/// on the announcement (1.15.2), so with no eligible card the Corp is never
+/// asked (1.15.2b caps the announcement at the valid targets available).
+pub fn seamless_launch() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Seamless Launch", Side::Corp, CardType::Operation);
+    c.cost = Some(1);
+    c.abilities = vec![AbilityDef::play(vec![Instruction::PlaceCounters {
+        target: TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![
+                TargetFilter::InstalledCorpCard,
+                TargetFilter::InstalledThisTurn(false),
+            ],
+        },
+        kind: CounterKind::Advancement,
+        amount: Quantity::c(2),
+    }])
+    .labeled("seamless launch: place 2 advancement counters")];
+    c
+}
+
 /// Cyberdex Trial — Operation. Cost 0.
 /// "Purge virus counters."
 pub fn cyberdex_trial() -> PrintedCard {
@@ -835,27 +862,35 @@ pub fn corroder() -> PrintedCard {
 // Runner — viruses (the purge corner of the corpus)
 // ---------------------------------------------------------------------------
 
-/// Clot — Program: Virus. Install 2, 1[mu].
+/// Clot — Program: Virus. Install 2, 1[mu]. COMPLETE.
 /// "The Corp cannot score an agenda during the same turn they installed that
 ///  agenda.
 ///  When the Corp purges virus counters, trash this program."
 ///
-/// UNIMPLEMENTED: the first sentence. The kernel has no prohibition on
-/// SCORING scoped to when the agenda was installed (9.1.9's restrictions
-/// cover abilities, not the (S) option), and the score-turn history it would
-/// read is not recorded. The purge clause is exact.
+/// 1.2.2: a "cannot" takes precedence over the rule that would let the Corp
+/// score, so the first sentence removes the (S) option (9.2.7d) for the
+/// agendas it describes rather than interrupting the score. The description
+/// is a 1.12.6 history query — read afresh whenever a paid window opens,
+/// which is why the prohibition lifts of its own accord next turn and why
+/// installing Clot AFTER the agenda still blocks it.
 pub fn clot() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Clot", Side::Runner, CardType::Program);
     c.subtypes = vec!["Virus"];
     c.cost = Some(2);
     c.memory_cost = Some(1);
     c.strength = None;
-    c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::CorpPurgesVirusCounters,
-        vec![Instruction::TrashSelf],
-        false,
-    )
-    .labeled("clot: trash this program")];
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::CannotScoreMatching {
+            criteria: vec![TargetFilter::InstalledThisTurn(true)],
+        }])
+        .labeled("clot: the Corp cannot score an agenda installed this turn"),
+        AbilityDef::conditional(
+            TriggerCond::CorpPurgesVirusCounters,
+            vec![Instruction::TrashSelf],
+            false,
+        )
+        .labeled("clot: trash this program"),
+    ];
     c
 }
 
