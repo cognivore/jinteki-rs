@@ -356,8 +356,8 @@ cargo test -p jinteki-cards
 The deck tests print the manifest:
 
 ```text
-priority decks: 51 cards, 14 complete, 37 partial, 57 printed sentences still unsayable
-complete: ["Sure Gamble", "Diesel", "Account Siphon", "Desperado", …]
+priority decks: 50 cards, 17 complete, 33 partial, 52 printed sentences still unsayable
+complete: ["Sure Gamble", "Diesel", "Clean Getaway", "Account Siphon", …]
 ```
 
 That count is ratcheted: a change that makes it worse fails, so the gap list

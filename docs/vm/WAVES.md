@@ -6,15 +6,15 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W16d)
+## Odometers (after W16e)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 832/1420** distinct rules cited (58.6%; 832 of the 1385 non-header ids); traceability test fails
+- **DP-7b: 833/1420** distinct rules cited (58.7%; 833 of the 1385 non-header ids); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **DP-7c: 59/3717** reference tests ported and passing
+- **DP-7c: 60/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
   `docs/vm/CORPUS.md`; the divergence ledger is
@@ -872,18 +872,17 @@ strength and subtype modification. Shibboleth is complete.
 
 *Instructions with no variant at all:*
 
-- "take N[credit] from this card" — hosted credits to the pool (Daily Casts,
-  the Crowdfunding class). `MoveSetAsideCounters` is 9.5.5's set-aside move
-  and is emphatically not this; the DSL previously denoted Daily Casts into
-  it, which is why that card is now honestly partial.
-- "remove N hosted <kind> counters" from a card, outside a cost (Earthrise
-  Hotel). `Cost::spend_counters` is the paid-ability half; a mandatory
-  conditional has nowhere to go.
+- ~~"take N[credit] from this card"~~ — **done, W16e**:
+  `Instruction::TakeHostedCredits { from, amount, to }` (1.10.3a — the credits
+  enter the pool, so it is a GAIN). Daily Casts is complete in `cards.rs` and
+  ported.
+- ~~"remove N hosted <kind> counters" from a card, outside a cost~~ — **done,
+  W16e**: `Instruction::RemoveCounters { target, kind, amount, up_to }`.
 - ~~"gain [click]" (Petty Cash, Subliminal Messaging)~~ — **done, W16a**:
   `Instruction::GainClicks(Side, Quantity)` and its `LoseClicks` twin
   (1.11.3a/b).
-- 1.21.3 REVEAL (Mutual Favor, Archangel, Slot Machine, Subliminal
-  Messaging). `LookAtCards` and `ExposeCards` are the neighbours.
+- ~~1.21.3 REVEAL~~ — **done, W16e**: `Instruction::RevealCards { cards }`,
+  with 1.21.3a (revealing is not turning faceup) exact.
 - "remove <a card that is not the source> from the game" (Bloo Moose; also
   Jackson Howard's trigger cost).
 - "add <a card> to your score area" (Film Critic).
