@@ -32,6 +32,9 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 14b: §8.4 drawing, §4.8.7 facedown groups.
     "example_rule_facedown_set_aside_distinct_groups_1",
     "example_rule_drawn_card_swapped_1",
+    // Wave 14c: §8.3 arranging, 10.2.2b bluffing.
+    "example_rule_arrange_and_other_effect_1",
+    "example_rule_bluffing_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11465,4 +11468,185 @@ fn example_rule_drawn_card_swapped_1() {
         }
         assert!(vm.set_aside_groups().is_empty());
     }
+}
+
+// ===========================================================================
+// Wave 14c — §8.3 arranging cards, and bluffing (10.2.2b)
+// ===========================================================================
+
+/// example_rule_arrange_and_other_effect_1 (8.3.3b): the Corp plays a
+/// Cultivate-class operation, acting on the top 5 cards of R&D by trashing 1,
+/// adding 1 to HQ, and arranging the rest in any order. The other effects are
+/// performed while the cards are set aside facedown, and "they do not tell the
+/// Runner what location in R&D the trashed card came from, nor what location
+/// the card added to HQ came from".
+#[test]
+fn example_rule_arrange_and_other_effect_1() {
+    use jinteki_cr::view::CardView;
+    let mut vm = Vm::empty(1405);
+    tk::install_root(&mut vm, tk::cultivate_like("Cultivate-like", 5), ServerId::Remote(1), true);
+    let mut deck = Vec::new();
+    for name in ["Rnd-1", "Rnd-2", "Rnd-3", "Rnd-4", "Rnd-5", "Rnd-6"] {
+        let id = vm.new_object(tk::corp_filler(name), Zone::Deck(Side::Corp));
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+        deck.push(id);
+    }
+    vm.start_turn(Side::Runner);
+
+    // The plan: the Corp uses the Cultivate-class ability from its first paid
+    // window. The driver halts at the trash choice, which is put to the Corp
+    // while all 5 cards are set aside.
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("cultivate"))
+            .when(Match::targets().once(), Reply::Halt)
+            // …then trash the 3rd card and add the 5th to HQ: which LOCATION
+            // in R&D each came from is exactly what the Runner may not learn.
+            .when(Match::targets().once(), Reply::Targets(vec![deck[2]]))
+            .when(Match::targets().once(), Reply::Targets(vec![deck[4]]))
+            .when(Match::arrange().once(), Reply::Arrange(vec![deck[3], deck[0], deck[1]])),
+        Plan::runner().stop_at_action(),
+    );
+    let t = script.run(&mut vm).clone();
+    assert!(t.halted, "stopped while the cards are set aside: {}", t.tail(12));
+
+    // 8.3.3 / 4.8.7: one facedown group of 5. The Corp looks at them
+    // (8.3.3a says the OPPONENT may not); the Runner sees five cards it
+    // cannot tell apart.
+    let groups = vm.set_aside_groups();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].1.len(), 5);
+    assert_eq!(vm.view_of(Side::Runner).group(0), &[CardView::Unseen; 5]);
+    assert!(vm.view_of(Side::Corp).group(0).iter().all(|c| c.is_seen()));
+
+    script.run(&mut vm);
+    // 8.3.3b: the effects happened while the cards were set aside — the
+    // trashed card and the card added to HQ.
+    assert_eq!(vm.st.objects[&deck[2]].zone, Zone::Discard(Side::Corp));
+    assert_eq!(vm.st.objects[&deck[4]].zone, Zone::Hand(Side::Corp));
+    // 4.4.6b: it was not visible to the Runner when it was trashed, so it is
+    // in Archives FACEDOWN and stays hidden information.
+    assert!(!vm.st.objects[&deck[2]].faceup);
+
+    let runner = vm.view_of(Side::Runner);
+    let corp = vm.view_of(Side::Corp);
+    assert_eq!(
+        runner.in_zone(Zone::Discard(Side::Corp)),
+        &[CardView::Unseen],
+        "the Runner cannot tell WHICH of the five was trashed"
+    );
+    assert_eq!(
+        runner.in_zone(Zone::Hand(Side::Corp)),
+        &[CardView::Unseen],
+        "…nor which was added to HQ"
+    );
+    assert!(
+        runner.in_zone(Zone::Deck(Side::Corp)).iter().all(|c| *c == CardView::Unseen),
+        "…nor what the arrangement left on top"
+    );
+    // 4.4.6c: the Corp may look through the facedown cards in Archives, and
+    // 8.3.3 leaves them knowing the order they declared.
+    assert!(corp.sees(deck[2]));
+    assert_eq!(
+        corp.in_zone(Zone::Deck(Side::Corp))[..3].to_vec(),
+        vec![CardView::Seen(deck[3]), CardView::Seen(deck[0]), CardView::Seen(deck[1])],
+        "8.3.3: the arranging player put them in the order of their choice"
+    );
+    // 8.3.3: every arranged card is a NEW object.
+    assert!(vm.st.objects[&deck[0]].generation > 0);
+}
+
+/// example_rule_bluffing_1 (10.2.2b): the Runner uses an Indexing-class
+/// ability and places one card on top of R&D followed by another. The Corp
+/// draws both, installs a card in an empty remote, and tells the Runner it is
+/// the first one. A player "cannot learn hidden information without the aid of
+/// a game effect, rule, or another player verbally communicating the
+/// information" — and a player who does communicate "is not required to tell
+/// the truth". The kernel has no channel for the claim at all, so the Runner's
+/// view of the installed card is a card they cannot read.
+#[test]
+fn example_rule_bluffing_1() {
+    use jinteki_cr::view::CardView;
+    let mut vm = Vm::empty(1406);
+    tk::install_rig(&mut vm, tk::indexing_like("Indexing-like", 3));
+    tk::install_root(&mut vm, tk::draw_button("Draw2", 2), ServerId::Remote(1), true);
+    tk::install_root(
+        &mut vm,
+        tk::install_from_hq_button("InstallHQ"),
+        ServerId::Remote(2),
+        true,
+    );
+    let mut deck = Vec::new();
+    for name in ["Snare-like", "Braintrust-like", "Rnd-3", "Rnd-4"] {
+        let id = vm.new_object(tk::corp_filler(name), Zone::Deck(Side::Corp));
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+        deck.push(id);
+    }
+    let (snare, braintrust) = (deck[0], deck[1]);
+    vm.start_turn(Side::Runner);
+
+    // The plan: the Runner rearranges the top 3 of R&D, putting the
+    // Braintrust-class card on top followed by the Snare-class one, and the
+    // driver halts so the two views can be compared.
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("indexing"))
+            .when(
+                Match::arrange().once(),
+                Reply::Arrange(vec![braintrust, snare, deck[2]]),
+            )
+            .when(Match::paid().once(), Reply::Halt),
+    );
+    let t = script.run(&mut vm).clone();
+    assert!(t.took("indexing"), "the Runner rearranged R&D: {}", t.tail(12));
+    assert!(t.halted);
+
+    // The Runner knows what they placed and where (8.3.3 + 4.2.3); the Corp
+    // may not look at R&D at all (4.2.2) — this is hidden information one
+    // player has and the other does not.
+    assert_eq!(
+        vm.view_of(Side::Runner).in_zone(Zone::Deck(Side::Corp))[..2].to_vec(),
+        vec![CardView::Seen(braintrust), CardView::Seen(snare)]
+    );
+    assert!(
+        vm.view_of(Side::Corp)
+            .in_zone(Zone::Deck(Side::Corp))
+            .iter()
+            .all(|c| *c == CardView::Unseen),
+        "4.2.2: decks are hidden from BOTH players"
+    );
+
+    // The Corp draws both cards and installs one of them in a new remote.
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("draw-button"))
+            .when(Match::paid().once(), Reply::take("install-hq"))
+            .when(Match::targets().once(), Reply::Targets(vec![braintrust])),
+        Plan::runner().stop_at_action(),
+    );
+    script.run(&mut vm);
+    let remote = vm.st.objects[&braintrust].zone;
+    assert!(matches!(remote, Zone::Root(ServerId::Remote(_))), "installed in a remote");
+
+    let runner = vm.view_of(Side::Runner);
+    // 10.2.2a: cards in HQ are hidden information, so drawing them ended the
+    // Runner's knowledge of where each card was (1.21.6), and the installed
+    // card is a facedown card in play.
+    assert_eq!(runner.in_zone(remote), &[CardView::Unseen]);
+    assert!(!runner.sees(braintrust) && !runner.sees(snare));
+    assert!(
+        runner.in_zone(Zone::Hand(Side::Corp)).iter().all(|c| *c == CardView::Unseen),
+        "the other drawn card is equally unreadable"
+    );
+    // The Corp, of course, knows exactly what it installed — the asymmetry a
+    // bluff trades on. Nothing the Corp SAYS is part of the game state: the
+    // kernel offers no instruction, decision or record by which a player
+    // asserts a card's identity, so the Runner's view is unchanged by it.
+    assert!(vm.view_of(Side::Corp).sees(braintrust));
+    assert!(!vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == braintrust)));
 }

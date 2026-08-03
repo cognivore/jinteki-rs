@@ -240,6 +240,12 @@ pub struct AbilityFrame {
     /// a shuffle, a rearrangement — becomes a NEW object, so the ability can
     /// no longer act on it, and the stale entry is exactly how that shows.
     pub looked_at: Vec<(crate::object::ObjectId, u32)>,
+    /// CR 8.3.3 / 4.8.7: the facedown set-aside GROUP this ability created —
+    /// the cards it set aside from the top of a deck to arrange them. It is
+    /// what `TargetFilter::SetAsideByThisAbility` names while 8.3.3b's "other
+    /// effects on cards in a deck" are performed, and what
+    /// `Instruction::ArrangeSetAside` returns to the deck.
+    pub set_aside_group: Option<u64>,
 }
 
 /// A frame on the control stack.

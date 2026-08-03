@@ -109,6 +109,13 @@ pub enum DecisionSpec {
         existing: Vec<(SubKey, &'static str)>,
         granted: Vec<&'static str>,
     },
+    /// CR 8.3.1 / 8.3.3: "arrange these cards in any order" — the arranging
+    /// player declares the order the set-aside cards go back in. Not a target
+    /// announcement (1.15.1: nothing is chosen to be acted ON), and 8.3.3
+    /// makes it SECRET: the answer is never shown to the opponent, which is
+    /// what 8.3.3's "they do not declare which cards moved to which
+    /// locations" means. The answer is the cards, first (topmost) first.
+    ArrangeCards { cards: Vec<ObjectId> },
     /// CR 9.11.4f / 1.16.10-11: pay a (nested or additional) cost or decline.
     NestedCost { cost: crate::ability::Cost },
     /// Decline or resolve an optional part (9.6.9c).
@@ -181,6 +188,8 @@ pub enum DecisionAnswer {
     DivideReduction(u32),
     /// CR 9.8.2c: one insertion index per granted subroutine.
     SubroutineOrder(Vec<usize>),
+    /// CR 8.3.1: the declared order of an arrangement, first (topmost) first.
+    Arrangement(Vec<ObjectId>),
     /// CR 1.16.2c: the announced value of X.
     DeclaredX(u32),
     /// CR 1.10.3c: credits taken from each allowed location, in the order the

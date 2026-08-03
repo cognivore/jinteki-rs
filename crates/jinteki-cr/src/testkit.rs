@@ -5407,3 +5407,71 @@ pub fn draw_on_breach_end(name: &'static str, n: u32) -> PrintedCard {
     .labeled("breach-draw: draw when a breach ends")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// §8.3 — arranging cards
+// ---------------------------------------------------------------------------
+
+/// Indexing shape (8.3.3): "Look at the top N cards of R&D. Rearrange them."
+/// The Runner arranges an OPPONENT'S deck, so 8.3.3a keeps the Corp from
+/// seeing the set-aside cards, and 8.3.3's "secretly puts them in the order of
+/// their choice" leaves the Runner — and only the Runner — knowing what is
+/// where.
+pub fn indexing_like(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::SetAsideTopOfDeck { deck_of: Side::Corp, count: Quantity::c(n as i64) },
+            Instruction::ArrangeSetAside { to_top_of: Side::Corp },
+        ],
+    )
+    .labeled("indexing: rearrange the top of R&D")];
+    c
+}
+
+/// Cultivate shape (8.3.3b): "Look at the top N cards of R&D. Trash 1 card,
+/// add 1 card to HQ, and arrange the rest in any order." The other effects are
+/// performed while the cards are set aside, and the Corp "does not declare
+/// which cards are acted on".
+pub fn cultivate_like(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    let set_aside = |k: u32| TargetSpec::Choose {
+        count: Quantity::c(k as i64),
+        criteria: vec![crate::instr::TargetFilter::SetAsideByThisAbility],
+    };
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::SetAsideTopOfDeck { deck_of: Side::Corp, count: Quantity::c(n as i64) },
+            Instruction::TrashCards(set_aside(1)),
+            Instruction::AddCardsToHand { cards: set_aside(1) },
+            Instruction::ArrangeSetAside { to_top_of: Side::Corp },
+        ],
+    )
+    .labeled("cultivate: trash 1, add 1 to HQ, arrange the rest")];
+    c
+}
+
+/// A Corp card whose paid ability installs a chosen card from HQ in a new
+/// remote server — the "install a card in an empty remote" half of CR
+/// 10.2.2b's bluffing example.
+pub fn install_from_hq_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
+            },
+            dest: crate::instr::InstallDest::NewRemoteRoot,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+            reduce_total: Quantity::c(0),
+        }],
+    )
+    .labeled("install-hq: install a card from HQ in a new remote")];
+    c
+}

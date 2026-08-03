@@ -500,6 +500,17 @@ pub enum Instruction {
     /// the INSTRUCTIONS, not the trigger condition (9.6.5d): it is checked
     /// when this instruction resolves.
     IfRunnerLinkAtLeast { n: u32, then: Box<Instruction> },
+    /// CR 8.3.3 / 4.8.2: "set aside the top N cards of <a deck> facedown."
+    /// The first half of the 8.3.3 arranging procedure, and the point at which
+    /// 8.3.3b's "other effects on cards in a deck" become possible: while the
+    /// cards are set aside, `TargetFilter::SetAsideByThisAbility` names them.
+    SetAsideTopOfDeck { deck_of: Side, count: Quantity },
+    /// CR 8.3.3: "…secretly puts them in the order of their choice, and
+    /// returns them to the top of that deck." The order is a declaration, not
+    /// a target announcement (nothing is chosen to be acted ON), and 8.3.3
+    /// makes every returned card a NEW object (1.12.3). 8.3.1a: arranging 1
+    /// or fewer cards does nothing.
+    ArrangeSetAside { to_top_of: Side },
     /// The Corp rearranges (or looks at and returns) cards in R&D
     /// (Bacterial Programming class). The returned cards are NEW OBJECTS
     /// (1.12.3), so 7.4.7a's "already chosen" bookkeeping forgets them and

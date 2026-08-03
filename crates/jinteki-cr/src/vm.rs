@@ -187,6 +187,9 @@ pub enum DecisionCtx {
     /// CR 9.8.2c: the granting player declares where the subroutines just
     /// granted go.
     SubroutineOrder,
+    /// CR 8.3.3: the arranging player declares, secretly, the order the
+    /// set-aside cards go back on top of this deck.
+    Arrange { to_top_of: Side },
     /// CR 10.4.3a: which cards the selecting player trashes for this damage.
     DamageSelection { kind: crate::effects::DamageKind, amount: u32 },
     /// 10.14.6 sealed psi bids.
@@ -3467,6 +3470,11 @@ impl Vm {
             Instruction::DrawStepAddToHand { side, .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, *side)]
             }
+            // 8.3.3: the two halves of arranging — setting the cards aside and
+            // putting them back. Nothing about either is a modifiable value.
+            Instruction::SetAsideTopOfDeck { .. } | Instruction::ArrangeSetAside { .. } => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
+            }
             Instruction::DamageUnpreventable { kind, amount, responsible } => {
                 cite!("rule_static_modification_keep_restrictions");
                 let mut v = self.eval_quantity(amount, source);
@@ -4351,6 +4359,7 @@ impl Vm {
             set_aside_cards: Vec::new(),
             found_cards: Vec::new(),
             looked_at: Vec::new(),
+            set_aside_group: None,
         }));
     }
 
@@ -5357,7 +5366,15 @@ impl Vm {
                     .iter()
                     .rev()
                     .find_map(|fr| match fr {
-                        Frame::Ability(af) => Some(af.set_aside_cards.contains(&o.id)),
+                        Frame::Ability(af) => Some(
+                            af.set_aside_cards.contains(&o.id)
+                                // 8.3.3b: the cards this ability set aside from
+                                // the top of a deck, while it performs "other
+                                // effects on cards in a deck before arranging
+                                // them".
+                                || (af.set_aside_group.is_some()
+                                    && o.set_aside_group.map(|g| g.id) == af.set_aside_group),
+                        ),
                         _ => None,
                     })
                     .unwrap_or(false)
@@ -5713,6 +5730,58 @@ impl Vm {
             // Phase stays Targets: the next tick makes InstallStepPlace
             // imminent.
         }
+    }
+
+    /// CR 8.3.3: the cards the resolving ability set aside to arrange.
+    fn ability_set_aside_group_cards(&self) -> Vec<ObjectId> {
+        let Some(group) = self.frames.iter().rev().find_map(|f| match f {
+            Frame::Ability(af) => Some(af.set_aside_group),
+            _ => None,
+        }).flatten() else {
+            return Vec::new();
+        };
+        self.st
+            .objects
+            .iter()
+            .filter(|(_, o)| {
+                o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.id == group)
+            })
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// CR 8.3.3: "…and returns them to the top of that deck", in the declared
+    /// order. "All of the arranged cards become new objects" (1.12.3), which
+    /// is what strands any ability still referring to them; and the arranging
+    /// player knows what they put where — 4.2.3 keeps decks ordered — so the
+    /// arrangement leaves them seeing those cards, while 8.3.3a keeps the
+    /// other player from seeing them at all.
+    fn finish_arrangement(&mut self, to_top_of: Side, order: Vec<ObjectId>) {
+        cite!("rule_arrange_secretly");
+        cite!("rule_deck_ordered");
+        for (i, c) in order.iter().enumerate() {
+            self.move_card(*c, Zone::Deck(to_top_of));
+            let deck = self.st.deck.get_mut(&to_top_of).unwrap();
+            deck.retain(|x| x != c);
+            deck.insert(i, *c);
+        }
+        // 8.3.3: every arranged card becomes a new object.
+        self.new_objects_for_unknown_location(&order);
+        let arranger = self.current_controller().unwrap_or(to_top_of);
+        for c in &order {
+            self.st.seen.show(arranger, *c);
+        }
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.set_aside_group = None;
+        }
+    }
+
+    /// The controller of the innermost resolving ability.
+    fn current_controller(&self) -> Option<Side> {
+        self.frames.iter().rev().find_map(|f| match f {
+            Frame::Ability(af) => Some(af.controller),
+            _ => None,
+        })
     }
 
     /// CR 8.4.2 / 8.4.5: expand a draw into its step sequence. Drawing is a
@@ -8121,6 +8190,54 @@ impl Vm {
                 cite!("rule_play_no_trash_left_play_area");
                 if !source_moved {
                     self.move_card(source.obj, Zone::RemovedFromGame);
+                }
+            }
+            Instruction::SetAsideTopOfDeck { deck_of, count } => {
+                // 8.3.3 / 4.8.2: "that player sets aside the appropriate
+                // number of cards facedown". 4.8.7 keeps them as one distinct
+                // group; 8.3.3a is why only the arranging player may look.
+                cite!("rule_arrange_secretly");
+                cite!("rule_set_aside");
+                cite!("rule_facedown_set_aside_distinct_groups");
+                let n = self.eval_quantity(count, Some(source.obj)).max(0) as usize;
+                let group = self.st.next_set_aside_group;
+                self.st.next_set_aside_group += 1;
+                let take: Vec<ObjectId> =
+                    self.st.deck[deck_of].iter().copied().take(n).collect();
+                for c in &take {
+                    self.st.deck.get_mut(deck_of).unwrap().retain(|x| x != c);
+                    let o = self.st.objects.get_mut(c).unwrap();
+                    // 4.8.3: an ability that does not refer to the set-aside
+                    // zone sees a move straight from the deck.
+                    o.set_aside_from = Some(Zone::Deck(*deck_of));
+                    o.zone = Zone::SetAside;
+                    o.faceup = false;
+                    o.set_aside_group = Some(crate::view::SetAsideGroup {
+                        id: group,
+                        by: controller,
+                        drawn: false,
+                    });
+                }
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    af.set_aside_group = Some(group);
+                }
+            }
+            Instruction::ArrangeSetAside { to_top_of } => {
+                cite!("rule_arrange_rearrange");
+                cite!("rule_arrange_secretly");
+                let cards = self.ability_set_aside_group_cards();
+                // 8.3.1a: "if a player is instructed to arrange 1 or fewer
+                // cards, instead that player does nothing" — but the cards
+                // still have to go back.
+                if cards.len() < 2 {
+                    cite!("rule_arrange_1_or_fewer");
+                    self.finish_arrangement(*to_top_of, cards);
+                } else {
+                    self.ask(
+                        controller,
+                        DecisionSpec::ArrangeCards { cards },
+                        DecisionCtx::Arrange { to_top_of: *to_top_of },
+                    );
                 }
             }
             Instruction::CorpRearrangesRnd => {
@@ -10664,6 +10781,23 @@ impl Vm {
                 }
                 // The breach step's Exec already advanced to Checkpoint;
                 // a paid access pushed its structure frame on top.
+            }
+            (DecisionCtx::Arrange { to_top_of }, DecisionAnswer::Arrangement(order)) => {
+                // 8.3.3: the declared order is applied to the cards this
+                // ability set aside. Anything the answer omitted keeps the
+                // order it had, behind what was named — an arrangement
+                // repositions cards among their current locations (8.3.1) and
+                // cannot lose one.
+                let mut cards = self.ability_set_aside_group_cards();
+                let mut ordered: Vec<ObjectId> = Vec::new();
+                for c in order {
+                    if cards.contains(&c) && !ordered.contains(&c) {
+                        ordered.push(c);
+                    }
+                }
+                cards.retain(|c| !ordered.contains(c));
+                ordered.extend(cards);
+                self.finish_arrangement(to_top_of, ordered);
             }
             (DecisionCtx::Sabotage { count }, DecisionAnswer::Targets(from_hq)) => {
                 // 10.12.2: the chosen HQ cards and the top of R&D are trashed

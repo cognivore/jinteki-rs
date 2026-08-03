@@ -89,6 +89,8 @@ pub enum Kind {
     AlternatePayment,
     /// 1.10.3c: dividing a credit payment among the allowed locations.
     Division,
+    /// 8.3.1/8.3.3: declaring the order of an arrangement.
+    Arrange,
 }
 
 impl Kind {
@@ -119,6 +121,7 @@ impl Kind {
             DecisionSpec::DeclareX { .. } => Kind::DeclareX,
             DecisionSpec::AlternatePayment { .. } => Kind::AlternatePayment,
             DecisionSpec::DivideCreditPayment { .. } => Kind::Division,
+            DecisionSpec::ArrangeCards { .. } => Kind::Arrange,
         }
     }
 }
@@ -363,6 +366,10 @@ impl Match {
     pub fn division() -> Match {
         Match::of(Kind::Division)
     }
+    /// 8.3.1/8.3.3: the arranging player's secret order declaration.
+    pub fn arrange() -> Match {
+        Match::of(Kind::Arrange)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()
@@ -556,6 +563,8 @@ pub enum Reply {
     /// 1.10.3c: take these credits from the allowed locations, in the order
     /// the decision listed them (the credit pool first).
     Division(Vec<u32>),
+    /// 8.3.1: put the arranged cards back in this order, topmost first.
+    Arrange(Vec<ObjectId>),
     Keep,
     Mulligan,
     /// Suspend the driver here, leaving the decision UNANSWERED so the test
@@ -1051,6 +1060,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::Divide(n) => DecisionAnswer::DivideReduction(*n),
         Reply::DeclareX(n) => DecisionAnswer::DeclaredX(*n),
         Reply::Division(v) => DecisionAnswer::Division(v.clone()),
+        Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
@@ -1147,6 +1157,10 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::DeclareX { max } => DecisionAnswer::DeclaredX(*max),
         // 1.16.2e: the neutral policy declines the alternate payment.
         DecisionSpec::AlternatePayment { .. } => DecisionAnswer::ResolveOptional(false),
+        // 8.3.3: the neutral policy leaves an arrangement in the order the
+        // cards already had — 8.3.1's "reposition them among their current
+        // locations" with nothing repositioned.
+        DecisionSpec::ArrangeCards { cards } => DecisionAnswer::Arrangement(cards.clone()),
         // 1.10.3c: the neutral policy spends from the credit pool first,
         // which is what the kernel did before the division was a choice.
         DecisionSpec::DivideCreditPayment { total, locations } => {
