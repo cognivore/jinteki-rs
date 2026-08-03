@@ -12,7 +12,7 @@ truth.
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented.
-- **DP-7b: 712/1420** distinct rules cited (50.1%); traceability test fails
+- **DP-7b: 820/1420** distinct rules cited (57.7%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -87,7 +87,7 @@ prefer a slightly larger honest primitive and note it here.
 | `59056cf` | W14g | **10.1.6a**: `Vm::loop_period` detects a repeating suffix of the ability-frame sequence — only MANDATORY loops, which is the rule's own scope (an optional loop has a priority window in it, and a window is a frame of another kind). `DecisionSpec::LoopCount { period }` puts the number to the player resolving it and `Vm::loop_budget` counts the turns down, refusing the push that would begin one too many. Also: `ResolveAbilityOf`'s subroutine class now records `SubroutineResolved` (9.8.10) | 241 |
 | `f14776a` | W14h | **1.15.1 counters are targets**: `object::CounterRef { host, kind, index }` gives a counter an address; `DecisionSpec::ChooseCounters` / `AbilityFrame::counter_targets` / `ImminentWrap::counter_targets` make it the THIRD kind of target. `Instruction::MoveCounters { kind, count, up_to, to, from_criteria }` announces the destination first and the counters second, keeping only counters that share the host of the first named — "if 2 tokens are chosen, they must be hosted on the same card" enforced where the choice is made. 1.18.2 stays true | 242 |
 | `0a370c4` | W14i | **9.11.2a**: the steps of installing are not instructions — step 8.5.16a is followed by NO checkpoint, so the only one during the procedure is 8.5.16d (the checkpoint after 8.5.16f IS the instruction's own post-instruction checkpoint). That makes 1.13.13 exact where deviation 14 said it was one checkpoint early. **DP-7a 243/243** | 243 |
-| `-` | W14j | DP-7b sweep: ~70 rules the kernel genuinely implements but had never cited — §8.2's movement vocabulary, §9.1's ability/source/use model, §4.6's play-area and server rules, §6.2's position rules, §8.1's rez/derez, §7.1.4/7.1.5a-b. Rules realised structurally rather than at one call site are cited at a doc-commented **citation anchor** (`instr::movements`, `ability::ability_model`, `ability::ability_source_model`, `Vm::ability_use_model`, `View::play_area_information`), which is labelled as such. DP-7b 643 → 712 | 243 |
+| `-` | W14j | DP-7b sweep: ~180 rules the kernel genuinely implements but had never cited — §8.2's movement vocabulary, §9.1's ability/source/use model, §9.2's priority-window rules, §9.3's whole text classification, §4.1's zone visibility classes (public/hidden/secret, which `identity_visible_to` reads directly), §4.6's play-area and server rules, §5.2's action model, §6.2's position rules, §8.1's rez/derez, §1.9's counter types, §1.14's ownership and control, §1.16's cost taxonomy, §9.6's conditional-ability model, §7.1.4/7.1.5a-b. Rules realised structurally rather than at one call site are cited at a doc-commented **citation anchor** (`Zone::visibility_class`, `CounterKind::types`, `IcePosition::id`, `instr::movements`, `ability::{ability_model, ability_source_model, text_classification_model, ownership_and_control_model, cost_and_conditional_model}`, `Vm::{ability_use_model, action_model}`, `View::play_area_information`, `PawClasses::occurrences`), each labelled as such so nobody mistakes it for an implementation. DP-7b 643 → 820 | 243 |
 | `07e386e` | W1 | kernel: objects/characteristics 9.12.1, change-buffer checkpoints 10.3.1(a–l), five windows 9.2.6–9.2.10, frames + §11 step tables as data, imminence/expected effects §9.9, decision-yielding coroutine | 15 |
 | `f50c063` | W2a | cost system §1.16 (tag/damage components, all-at-once aggregation, declinable steal costs, nested Then/Unless payers, unpayability 1.16.1b), paid abilities §9.5 (set-aside 9.5.5, timing 9.5.6) | 27 |
 | `713b25d` | W2b | §9.9 complete for example set (statics-shaped expected effects, unpreventable retention, replacement-at-resolution w/ relevance re-eval); persistent 9.12.5 ARMED incl. run-binding 9.12.5d | 34 |
@@ -800,9 +800,11 @@ example needs** (this is the honest gap list, not a backlog):
 - 8.5.6's optional "may first trash any number" (deviation 8).
 - the 4.6.8f remote-server limit's second half (deviation 39).
 
-**DP-7b is 712/1420 (50.1%).** The remaining ~700 uncited rules are dominated
-by §4.6 layout/orientation prose, §9.3's ability-timing taxonomy, §1.5 setup,
-§2.16 subtypes and §1.9 counters. Raising it further is honest work — but only
+**DP-7b is 820/1420 (57.7%).** The remaining ~600 uncited rules are dominated
+by §4.6 layout/orientation prose with no game effect, §1.5 setup, §2.16
+subtypes, §3.x card-type prose, and the several dozen "one card, X, has the
+ability…" rules the kernel has no card for yet — the corpus port is what will
+move those. Raising it further is honest work — but only
 where the kernel really implements the rule. Where a rule is realised
 structurally rather than at one call site, W14j's convention is a doc-commented
 **citation anchor** (`instr::movements`, `ability::ability_model`,

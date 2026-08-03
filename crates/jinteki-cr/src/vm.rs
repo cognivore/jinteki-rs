@@ -1786,6 +1786,31 @@ impl Vm {
     /// shape of the types and the records, not at one call site — so this is
     /// where the traceability registry records it.
     ///
+    /// A **citation anchor**: CR 5.2's action model.
+    ///
+    /// 5.2.1: "an action is any paid ability where the cost begins with a
+    /// [click] symbol" — `AbilityDef::is_action`. 5.2.2a: once initiated, an
+    /// action must be completed before the game advances; 5.2.2b: a timing
+    /// structure initiated during it keeps it incomplete until that structure
+    /// finishes; 5.2.2c/d: an ability meeting its condition because of the
+    /// action resolves after the action, which is where the action window's
+    /// own checkpoint puts it. 5.2.3: each player has basic actions they can
+    /// always perform. 5.2.4: actions are taken only during the action phase,
+    /// which is where the §11 turn table opens the 9.2.6 window. 5.2.5: what
+    /// makes two actions the same or different — `ActionIdentity`.
+    pub fn action_model() {
+        cite!("rule_action_definition");
+        cite!("rule_action_completion");
+        cite!("rule_action_timing_structure_completion");
+        cite!("rule_action_conditional_ability_trigger");
+        cite!("rule_finish_action_trigger_condition");
+        cite!("rule_basic_actions");
+        cite!("rule_actions_outside_action_phase");
+        cite!("rule_same_different_actions");
+        cite!("runner_basic_action_credit");
+        cite!("runner_basic_action_card");
+    }
+
     /// CR 9.1.6: a player USES an ability whenever they choose to resolve an
     /// optional ability or an optional part of one, and 9.1.6b puts the moment
     /// at the end of the relevant optional effects — which is where
@@ -4811,6 +4836,9 @@ impl Vm {
                 self.begin_imminence(instr);
             }
             AbilityPhase::Imminent => {
+                // 9.6.15c: the interrupt window during which abilities can
+                // modify, prevent or avoid the imminent effects.
+                cite!("step_conditional_ability_interrupt_window");
                 // The interrupt window above us closed → resolve.
                 self.set_ability_phase(AbilityPhase::Resolve);
             }
@@ -4854,6 +4882,10 @@ impl Vm {
                 let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
                 af.idx += 1;
                 af.phase = AbilityPhase::Targets;
+                // 9.6.15f (and its 9.5.7/9.7.2/9.8.10 counterparts): if there
+                // are more instructions, announce targets for the next one and
+                // return to the interrupt window.
+                cite!("step_conditional_ability_loop");
                 // 1.15.2: the next instruction announces its own targets
                 // from scratch; 1.15.4 keeps the ability-wide list.
                 af.targets.clear();
@@ -9184,6 +9216,9 @@ impl Vm {
         // cost must be payable, and 1.16.10a's additional cost is combined
         // with it at step 8.6.7b.
         cite!("rule_corp_basic_action_operation");
+        // 5.2.7e: the Runner's counterpart is "[click]: Play 1 event from the
+        // grip"; the card type is the only difference.
+        cite!("runner_basic_action_event");
         let want_type = if side == Side::Corp { CardType::Operation } else { CardType::Event };
         for c in self.st.hand[&side].clone() {
             let o = &self.st.objects[&c];

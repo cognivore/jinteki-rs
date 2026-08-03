@@ -21,6 +21,12 @@ pub struct PawClasses {
 }
 
 impl PawClasses {
+    /// CR 9.2.7g: paid ability windows occur throughout the timing steps of
+    /// turns and runs — which is why the classes are DATA on the step tables
+    /// (§11) rather than a property of any one call site.
+    pub fn occurrences() {
+        cite!("rule_paid_ability_window_occurrence");
+    }
     pub fn p() -> Self {
         PawClasses { paid: true, ..Default::default() }
     }
@@ -72,6 +78,8 @@ pub struct WindowFrame {
     /// open: 9.2.8a / 9.9.4b).
     pub pending: Vec<u64>,
     /// Interrupt: which imminence this window modifies (top-of-stack index).
+    /// CR 9.2.9a: "each interrupt window is associated with the single
+    /// imminent instruction being modified by the abilities in that window."
     pub imminent_index: Option<usize>,
     /// 9.2.8f: the structure instance whose beginning opened this reaction
     /// window; if that structure ends mid-window the window closes at once.
@@ -91,13 +99,29 @@ pub struct WindowFrame {
 
 impl WindowFrame {
     pub fn new(id: u64, kind: WindowKind, active_player: Side) -> Self {
+        // 9.2.4: a priority window is a timing step in which one or both
+        // players receive priority; 9.2.3: priority is a player's opportunity
+        // to act, and at most one player has it at a time — which is why this
+        // is one field. 9.2.1: the active player is the player whose turn it
+        // is, and 9.2.4d: windows NEST, which is what makes them frames.
+        cite!("rule_priority_window");
+        cite!("rule_priority");
+        cite!("rule_active_player");
+        cite!("rule_nested_priority_window");
+        cite!("rule_reaction_window");
         cite!("rule_priority_window_types");
         let priority = match kind {
             // 9.2.10a: only the Runner receives priority mid-access.
-            WindowKind::MidAccess => Side::Runner,
+            WindowKind::MidAccess => {
+                cite!("rule_mid_access_window_priority");
+                Side::Runner
+            }
             // 9.2.6a: action windows give only the active player priority.
             // 9.2.7a/9.2.8b/9.2.9c: both players, starting with the active.
-            _ => active_player,
+            _ => {
+                cite!("rule_action_window_priority");
+                active_player
+            }
         };
         WindowFrame {
             id,
@@ -164,6 +188,15 @@ impl WindowFrame {
     /// priority again (except action/mid-access one-shots). Resets the
     /// consecutive-pass latch because an option was resolved.
     pub fn option_resolved(&mut self) {
+        // 9.2.7f: the player with priority in a paid ability window may use
+        // any of the options available to them any number of times; 9.2.8d and
+        // 9.2.9e say the same for pending abilities and interrupts — they are
+        // triggered in any order until the player passes, and each must fully
+        // resolve before another is chosen, which is what returning priority
+        // to the same player after a resolution means.
+        cite!("rule_paid_ability_window_multiple_options");
+        cite!("rule_reaction_window_pending_abilities_unordered");
+        cite!("rule_interrupt_window_abilities_unordered");
         cite!("rule_keep_priority_until_pass");
         self.previous_passed = false;
         self.checkpoint_done_for_priority = false;

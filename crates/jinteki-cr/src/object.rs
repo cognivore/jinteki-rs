@@ -106,6 +106,43 @@ pub enum Zone {
 }
 
 impl Zone {
+    /// CR 4.1.4/4.1.5/4.1.6: a zone is PUBLIC (cards freely visible to both
+    /// players unless facedown), HIDDEN (visible to neither) or SECRET
+    /// (visible only to their controller). That three-way split is what
+    /// `Vm::identity_visible_to` reads off the zone, and 4.1.1a's eight zone
+    /// types are the variants of this enum — 4.1.1b: each player has their own
+    /// deck, hand, discard pile and score area, and the rest are shared.
+    /// 4.1.1c: a card is in exactly one zone, which is why `Object::zone` is
+    /// one field; 4.1.2b: a move is instantaneous, so `Vm::move_card` never
+    /// leaves a card in two places.
+    pub fn visibility_class(self) -> &'static str {
+        cite!("rule_zone");
+        cite!("rule_zone_types");
+        cite!("rule_player_zones");
+        cite!("rule_card_in_one_zone");
+        cite!("rule_move_between_zones");
+        cite!("rule_move_instantaneous");
+        cite!("rule_location");
+        cite!("rule_deck_location");
+        cite!("rule_play_area_location");
+        cite!("rule_hosted_object_location");
+        cite!("rule_default_location");
+        match self {
+            Zone::Deck(_) => {
+                cite!("rule_hidden_zone");
+                "hidden"
+            }
+            Zone::Hand(_) => {
+                cite!("rule_secret_zone");
+                "secret"
+            }
+            _ => {
+                cite!("rule_public_zone");
+                "public"
+            }
+        }
+    }
+
     /// Hidden/inactive zones for card activity purposes (CR 1.8.3-adjacent).
     pub fn is_installed(self) -> bool {
         matches!(self, Zone::Root(_) | Zone::Ice(_) | Zone::Rig)
@@ -156,6 +193,8 @@ pub enum CardType {
 /// populations apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CounterKind {
+    /// CR 1.9.5f: advancement counters, used mainly on installed agendas to
+    /// track the Corp's progress toward the advancement requirement (§1.18).
     Advancement,
     Credit,
     Power,
@@ -375,6 +414,34 @@ impl IcePosition {
         cite!("rule_ice_change_outward");
         cite!("rule_ice_change_inward");
         self.id
+    }
+}
+
+impl CounterKind {
+    /// A **citation anchor**: CR 1.9's counter types, which this enum and
+    /// `PlayerState` between them carry.
+    ///
+    /// 1.9.1: counters are game pieces tracking resources, effects and
+    /// statuses; 1.9.1a: "counter" and "token" are interchangeable. 1.9.2a:
+    /// counters placed on a card without a designated source come from the
+    /// bank. 1.9.5a-i: credit (the pools), click (`PlayerState::clicks`), tag
+    /// (`tags`), bad publicity (`bad_publicity`), core damage
+    /// (`core_damage`), advancement, virus, power and agenda counters.
+    /// 1.9.5j's CONDITION counters — counters with rules text — are the one
+    /// type the kernel has no representation for.
+    pub fn types() {
+        cite!("rule_counters_cards");
+        cite!("rule_counter_token");
+        cite!("rule_bank_default");
+        cite!("rule_type_credit_counter");
+        cite!("rule_type_click_counter");
+        cite!("rule_type_tag_counter");
+        cite!("rule_type_bad_pub_counter");
+        cite!("rule_type_core_damage_counter");
+        cite!("rule_type_advancement_counter");
+        cite!("rule_type_virus_counter");
+        cite!("rule_type_power_counter");
+        cite!("rule_type_agenda_counter");
     }
 }
 

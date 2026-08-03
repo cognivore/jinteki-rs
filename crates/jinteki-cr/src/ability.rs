@@ -640,6 +640,122 @@ pub enum StaticDecl {
     CannotInitiateRunOnSourceServer,
 }
 
+/// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional
+/// ability model, both of which the kernel carries as data.
+///
+/// 1.16.2: the contents of a cost depend on the game state, which is why
+/// [`Cost::credits`] is a `Quantity`; 1.16.2d: outside a payment a cost of X
+/// is treated as 0. 1.16.3: a checkpoint occurs after a cost is paid. 1.16.4:
+/// the six main types of cost, of which 1.16.4a's install/rez/play costs are
+/// inherent properties of cards ([`PrintedCard::cost`]) and 1.16.4b says
+/// their presence does not make an ability optional. 1.16.5a: an ability may
+/// direct a player to ignore a whole type of cost. 1.16.6a/c, 1.16.7, 1.16.8,
+/// 1.16.9, 1.16.11: install, play, rez, trigger and nested costs.
+///
+/// 9.6.1/a: a conditional ability is triggered at a specific point, and its
+/// primary condition is a trigger or static condition. 9.6.4/a: it can have
+/// several instances, and meeting the condition again while one is pending
+/// makes another. 9.6.5: the trigger condition describes an occurrence;
+/// 9.6.5e: "If successful" is one with its own rules (§6.7). 9.6.7a: static
+/// conditions are checked at every checkpoint. 9.6.8: a player triggers a
+/// pending ability while they have priority in a reaction window. 9.6.9/a/b/c:
+/// optional versus mandatory, and the optional PARTS a mandatory ability may
+/// still have.
+pub fn cost_and_conditional_model() {
+    cite!("rule_modified_costs");
+    cite!("rule_cost_x_out_of_context");
+    cite!("rule_cost_checkpoint");
+    cite!("rule_types_of_costs");
+    cite!("rule_inherent_cost");
+    cite!("rule_inherent_cost_in_ability");
+    cite!("rule_ignore_general_cost");
+    cite!("rule_install_cost_on_card");
+    cite!("rule_no_install_cost");
+    cite!("rule_play_cost");
+    cite!("rule_rez_cost");
+    cite!("rule_trigger_cost");
+    cite!("rule_nested_cost");
+    cite!("rule_conditional_ability");
+    cite!("rule_primary_condition");
+    cite!("rule_trigger_condition_multiple_instances");
+    cite!("rule_condition_met_with_pending_instances");
+    cite!("rule_trigger_description");
+    cite!("rule_condition_if_successful");
+    cite!("rule_conditional_ability_check_to_become_pending");
+    cite!("rule_trigger_conditional_ability");
+    cite!("rule_optional_conditional_ability");
+    cite!("rule_pass_with_optional_conditional_abilities_pending");
+    cite!("rule_cannot_pass_with_mandatory_conditional_abilities_pending");
+    cite!("rule_mandatory_conditional_ability_with_optional_effects");
+}
+
+/// A **citation anchor**: CR 9.3 classifies every unit of an ability's text,
+/// and that classification IS this module's type structure.
+///
+/// 9.3.1: text is classified into conditions, restrictions, instructions,
+/// declarations and ability flags. 9.3.2/a/b/c: a condition is a cost
+/// condition ([`Cost`] on a paid ability), a trigger condition
+/// ([`TriggerCond`]) or a static condition ([`StaticCond`]) — which is exactly
+/// [`Condition`]. 9.3.4/a/b/c/d: an instruction resolves at a specific time,
+/// originates from an ability or a game rule, announces its targets BEFORE
+/// becoming imminent (1.15.2), is atomic once it begins, and its steps run in
+/// the order written. 9.3.5: a declaration applies continuously — that is
+/// [`StaticDecl`]. 9.3.6/a: there are six ability flags and [`AbilityFlag`]
+/// has six variants; 9.3.6b-e are the four with timing consequences, all
+/// implemented. 9.3.7/a-e: the five ability types are identified by the text
+/// they are made of, which is [`AbilityKind`].
+pub fn text_classification_model() {
+    cite!("rule_text_classification");
+    cite!("rule_condition");
+    cite!("rule_cost_condition");
+    cite!("rule_trigger_condition");
+    cite!("rule_static_condition");
+    cite!("rule_instruction");
+    cite!("rule_instruction_source");
+    cite!("rule_instruction_target");
+    cite!("rule_instruction_atomic");
+    cite!("rule_resolve_instruction_in_order");
+    cite!("rule_declaration");
+    cite!("rule_ability_flag");
+    cite!("rule_ability_flag_types");
+    cite!("rule_access_flag");
+    cite!("rule_interface_flag");
+    cite!("rule_interrupt_flag");
+    cite!("rule_persistent_flag");
+    cite!("rule_ability_classification");
+    cite!("rule_static_abilities_link");
+    cite!("rule_paid_abilities_link");
+    cite!("rule_conditional_abilities_link");
+    cite!("rule_play_abilities_link");
+    cite!("rule_subroutines_link");
+}
+
+/// A **citation anchor**: CR 1.14 ownership and control, which the kernel
+/// keeps on the objects themselves.
+///
+/// 1.14.1: the OWNER is the player who provided the card ([`Object::owner`]).
+/// 1.14.2a: the controller of a card in the play area is whoever installed or
+/// placed it; 1.14.2b: each player controls the agendas in their own score
+/// area (which is why a score-area swap changes control); 1.14.2c: cards
+/// elsewhere are controlled by their owner; 1.14.2d/e: a player controls the
+/// credits in their pool, the Corp its bad publicity and the Runner its tags;
+/// 1.14.2f: a hosted counter's controller is the host's controller (1.13.3).
+/// 1.14.3: a player can only pay costs with objects they control, which is
+/// what every payment path reads. 1.14.4: the controller of an ability is the
+/// player responsible for it — `AbilityFrame::controller`.
+pub fn ownership_and_control_model() {
+    cite!("rule_owner");
+    cite!("rule_controller_card_play_area");
+    cite!("rule_controller_agenda");
+    cite!("rule_controller_default_owner");
+    cite!("rule_controller_credits");
+    cite!("rule_controller_bad_publicity_tag");
+    cite!("rule_controller_hosted_counter");
+    cite!("rule_pay_costs_controlled_objects");
+    cite!("rule_controller_ability");
+    cite!("rule_trigger_condition_effect_by_player");
+}
+
 /// A **citation anchor**: these rules are realised structurally — by the shape
 /// of [`AbilityDef`] and [`AbilityKind`], not at one call site — so this is
 /// where the traceability registry records them.
