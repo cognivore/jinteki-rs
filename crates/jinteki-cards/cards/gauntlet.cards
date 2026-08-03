@@ -1,0 +1,395 @@
+# Gauntlet — NBN: Nebula Talent Management.
+#
+# Printed text copied from NSG's official card data; behaviour written from
+# that text alone (SYS-D-10). Unsayable sentences carry `unimplemented:`.
+
+card "Nebula Talent Management: Making Stars"
+  side: corp
+  type: identity
+  subtypes: Division
+  faction: NBN
+  set: Elevation
+  text:
+    When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.
+  unimplemented: "When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity."
+
+card "AstroScript Pilot Program"
+  side: corp
+  type: agenda
+  subtypes: Initiative
+  advancement: 3
+  points: 2
+  faction: NBN
+  set: Core Set
+  text:
+    When you score this agenda, place 1 agenda counter on it.
+    Hosted agenda counter: Place 1 advancement counter on an installed card you can advance.
+  when scored:
+    load 1 agenda counter on self
+  unimplemented: "Hosted agenda counter: Place 1 advancement counter on an installed card you can advance."
+
+card "Bellona"
+  side: corp
+  type: agenda
+  subtypes: Expansion
+  advancement: 5
+  points: 3
+  faction: NBN
+  set: Uprising
+  text:
+    As an additional cost to steal this agenda, the Runner must pay 5[credit].
+    When you score this agenda, gain 5[credit].
+  when scored:
+    gain 5 credits
+  unimplemented: "As an additional cost to steal this agenda, the Runner must pay 5[credit]."
+
+card "Breaking News"
+  side: corp
+  type: agenda
+  advancement: 2
+  points: 1
+  faction: NBN
+  set: Core Set
+  text:
+    When you score this agenda, give the Runner 2 tags.
+    When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags.
+  when scored:
+    give the runner 2 tags
+  unimplemented: "When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags."
+
+card "Tomorrow's Headline"
+  side: corp
+  type: agenda
+  subtypes: Ambush
+  advancement: 3
+  points: 2
+  faction: NBN
+  set: System Gateway
+  text:
+    When this agenda is scored or stolen, give the Runner 1 tag.
+    Limit 1 per deck.
+  when scored:
+    give the runner 1 tag
+  when stolen:
+    give the runner 1 tag
+
+card "Rashida Jaheem"
+  side: corp
+  type: asset
+  subtypes: Character
+  cost: 0
+  trash cost: 1
+  unique: yes
+  faction: Neutral
+  set: The Devil and the Dragon
+  text:
+    When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards.
+  unimplemented: "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
+
+card "Jackson Howard"
+  side: corp
+  type: asset
+  subtypes: Executive
+  cost: 0
+  trash cost: 3
+  unique: yes
+  faction: NBN
+  set: Opening Moves
+  text:
+    [click]: Draw 2 cards.
+    Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives into R&D.
+  paid click:
+    draw 2 cards
+  unimplemented: "Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives into R&D."
+
+card "Humanoid Resources"
+  side: corp
+  type: asset
+  cost: 1
+  trash cost: 1
+  faction: Haas-Bioroid
+  set: Elevation
+  text:
+    [click][click][click], [trash]: Gain 4[credit] and draw 3 cards. Install up to 2 cards from HQ (one at a time). You may play 1 operation from HQ.
+  unimplemented: "[click][click][click], [trash]: Gain 4[credit] and draw 3 cards. Install up to 2 cards from HQ (one at a time). You may play 1 operation from HQ."
+
+card "Hedge Fund"
+  side: corp
+  type: operation
+  subtypes: Transaction
+  cost: 5
+  faction: Neutral
+  set: Core Set
+  text:
+    Gain 9[credit].
+  play:
+    gain 9 credits
+
+card "Archived Memories"
+  side: corp
+  type: operation
+  cost: 0
+  faction: Haas-Bioroid
+  set: System Update 2021
+  text:
+    Add 1 card from Archives to HQ.
+  unimplemented: "Add 1 card from Archives to HQ."
+
+card "BOOM!"
+  side: corp
+  type: operation
+  subtypes: Double, Black Ops
+  cost: 4
+  trash cost: 1
+  faction: Weyland Consortium
+  set: Escalation
+  text:
+    Play only if the Runner has at least 2 tags.
+    As an additional cost to play this operation, spend [click].
+    Do 7 meat damage.
+  play:
+    do 7 meat damage
+  unimplemented: "Play only if the Runner has at least 2 tags."
+  unimplemented: "As an additional cost to play this operation, spend [click]."
+
+card "Closed Accounts"
+  side: corp
+  type: operation
+  subtypes: Gray Ops
+  cost: 1
+  faction: NBN
+  set: System Core 2019
+  text:
+    Play only if the Runner is tagged.
+    The Runner loses all credits in their credit pool.
+  unimplemented: "Play only if the Runner is tagged."
+  unimplemented: "The Runner loses all credits in their credit pool."
+
+card "Hard-Hitting News"
+  side: corp
+  type: operation
+  subtypes: Terminal
+  cost: 3
+  faction: NBN
+  set: 23 Seconds
+  text:
+    After you resolve this operation, your action phase ends.
+    Play only if the Runner made a run during their last turn.
+    Trace[4]. If successful, give the Runner 4 tags.
+  play:
+    trace 4: give the runner 4 tags
+  unimplemented: "After you resolve this operation, your action phase ends."
+  unimplemented: "Play only if the Runner made a run during their last turn."
+
+card "Petty Cash"
+  side: corp
+  type: operation
+  subtypes: Transaction
+  cost: 3
+  faction: Neutral
+  set: Elevation
+  text:
+    Play only if you have not finished an action yet this turn.
+    Gain 5[credit]. If you played this operation from anywhere except HQ, gain [click].
+    [click]: Play this operation from Archives. After it resolves, remove it from the game.
+  play:
+    gain 5 credits
+  unimplemented: "Play only if you have not finished an action yet this turn."
+  unimplemented: "If you played this operation from anywhere except HQ, gain [click]."
+  unimplemented: "[click]: Play this operation from Archives. After it resolves, remove it from the game."
+
+card "Predictive Planogram"
+  side: corp
+  type: operation
+  subtypes: Transaction
+  cost: 0
+  faction: NBN
+  set: System Gateway
+  text:
+    Resolve 1 of the following. If the Runner is tagged, you may resolve both instead.
+    Gain 3[credit].
+    Draw 3 cards.
+  play:
+    choose one:
+      - gain 3 credits
+      - draw 3 cards
+  unimplemented: "If the Runner is tagged, you may resolve both instead."
+
+card "Seamless Launch"
+  side: corp
+  type: operation
+  cost: 1
+  faction: Haas-Bioroid
+  set: System Gateway
+  text:
+    Place 2 advancement counters on 1 installed card that you did not install this turn.
+  unimplemented: "Place 2 advancement counters on 1 installed card that you did not install this turn."
+
+card "Self-Growth Program"
+  side: corp
+  type: operation
+  subtypes: Gray Ops
+  cost: 0
+  faction: NBN
+  set: Sovereign Sight
+  text:
+    Play only if the Runner is tagged.
+    Add 2 installed Runner cards to the grip.
+  unimplemented: "Play only if the Runner is tagged."
+  unimplemented: "Add 2 installed Runner cards to the grip."
+
+card "Subliminal Messaging"
+  side: corp
+  type: operation
+  subtypes: Gray Ops
+  cost: 0
+  faction: Neutral
+  set: System Update 2021
+  text:
+    Gain 1[credit].
+    The first time each turn you play a copy of Subliminal Messaging, gain [click].
+    When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ.
+  play:
+    gain 1 credit
+  unimplemented: "The first time each turn you play a copy of Subliminal Messaging, gain [click]."
+  unimplemented: "When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ."
+
+card "Targeted Marketing"
+  side: corp
+  type: operation
+  subtypes: Current
+  cost: 0
+  faction: NBN
+  set: The Spaces Between
+  text:
+    This card is not trashed until another current is played or an agenda is stolen.
+    Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card.
+  unimplemented: "This card is not trashed until another current is played or an agenda is stolen."
+  unimplemented: "Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card."
+
+card "24/7 News Cycle"
+  side: corp
+  type: operation
+  cost: 0
+  faction: NBN
+  set: Data and Destiny
+  text:
+    As an additional cost to play 24/7 News Cycle, forfeit an agenda.
+    Resolve the "when scored" ability on an agenda in your score area.
+  unimplemented: "As an additional cost to play 24/7 News Cycle, forfeit an agenda."
+  unimplemented: "Resolve the \"when scored\" ability on an agenda in your score area."
+
+card "Archangel"
+  side: corp
+  type: ice
+  subtypes: Code Gate, Tracer, Ambush
+  cost: 4
+  strength: 6
+  faction: NBN
+  set: Data and Destiny
+  text:
+    While the Runner is accessing this ice in R&D, they must reveal it.
+    When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it.
+    [subroutine] Trace[6]. If successful, add 1 installed Runner card to the grip.
+  unimplemented: "While the Runner is accessing this ice in R&D, they must reveal it."
+  unimplemented: "When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it."
+  unimplemented: "[subroutine] Trace[6]. If successful, add 1 installed Runner card to the grip."
+
+card "Data Raven"
+  side: corp
+  type: ice
+  subtypes: Sentry, Tracer, Observer
+  cost: 4
+  strength: 4
+  faction: NBN
+  set: System Core 2019
+  text:
+    When the Runner encounters this ice, they must take 1 tag or end the run.
+    Hosted power counter: Give the Runner 1 tag.
+    [subroutine] Trace[3]. If successful, place 1 power counter on this ice.
+  when encountered:
+    choose one:
+      - take 1 tag
+      - end the run
+  unimplemented: "Hosted power counter: Give the Runner 1 tag."
+  unimplemented: "[subroutine] Trace[3]. If successful, place 1 power counter on this ice."
+
+card "Gold Farmer"
+  side: corp
+  type: ice
+  subtypes: Barrier
+  cost: 3
+  strength: 1
+  faction: NBN
+  set: Uprising
+  text:
+    Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit].
+    [subroutine] End the run unless the Runner pays 3[credit].
+    [subroutine] End the run unless the Runner pays 3[credit].
+  unimplemented: "Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit]."
+  unimplemented: "[subroutine] End the run unless the Runner pays 3[credit]. (x2)"
+
+card "IP Block"
+  side: corp
+  type: ice
+  subtypes: Barrier, Tracer
+  cost: 2
+  strength: 4
+  faction: NBN
+  set: Martial Law
+  text:
+    When the Runner encounters this ice, give them 1 tag if there is an installed AI program.
+    [subroutine] Trace[3]. If successful, give the Runner 1 tag.
+    [subroutine] End the run if the Runner is tagged.
+  subroutine:
+    trace 3: give the runner 1 tag
+  unimplemented: "When the Runner encounters this ice, give them 1 tag if there is an installed AI program."
+  unimplemented: "[subroutine] End the run if the Runner is tagged."
+
+card "Resistor"
+  side: corp
+  type: ice
+  subtypes: Barrier, Tracer
+  cost: 0
+  strength: 0
+  faction: NBN
+  set: Data and Destiny
+  text:
+    Resistor has +1 strength for each tag the Runner has.
+    [subroutine] Trace[4]. If successful, end the run.
+  subroutine:
+    trace 4: end the run
+  unimplemented: "Resistor has +1 strength for each tag the Runner has."
+
+card "Slot Machine"
+  side: corp
+  type: ice
+  subtypes: Code Gate
+  cost: 3
+  strength: 5
+  faction: NBN
+  set: Magnum Opus Reprint
+  text:
+    When the Runner encounters this ice, they put the top card of the stack on the bottom, then you reveal the top 3 cards of the stack.
+    [subroutine] The Runner loses 3[credit].
+    [subroutine] If you revealed 2 or more cards that share a type when this encounter began, gain 3[credit].
+    [subroutine] If you revealed 3 or more cards that share a type when this encounter began, place 3 advancement tokens on an installed card.
+  subroutine:
+    the runner loses 3 credits
+  unimplemented: "When the Runner encounters this ice, they put the top card of the stack on the bottom, then you reveal the top 3 cards of the stack."
+  unimplemented: "[subroutine] If you revealed 2 or more cards that share a type when this encounter began, gain 3[credit]."
+  unimplemented: "[subroutine] If you revealed 3 or more cards that share a type when this encounter began, place 3 advancement tokens on an installed card."
+
+card "Crisium Grid"
+  side: corp
+  type: upgrade
+  subtypes: Region
+  cost: 3
+  trash cost: 5
+  unique: yes
+  faction: Weyland Consortium
+  set: System Update 2021
+  text:
+    Runs against this server cannot be declared successful. (This effect does not cause runs to become unsuccessful.)
+    Limit 1 region per server.
+  unimplemented: "Runs against this server cannot be declared successful."

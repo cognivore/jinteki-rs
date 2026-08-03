@@ -583,6 +583,221 @@ fn purge_corp() {
 }
 
 // ---------------------------------------------------------------------------
+// test/clj/game/cards/programs_test.clj — the icebreaker class
+// ---------------------------------------------------------------------------
+
+/// corroder: pump once, then break Ice Wall's subroutine — the [interface]
+/// gate (9.3.6c) and the barrier restriction (9.5.6c) both hold while it
+/// happens.
+#[test]
+fn corroder() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::corroder()])
+        .credits(Side::Runner, 15)
+        .credits(Side::Corp, 10)
+        .start(Side::Runner);
+    let cor = g.id("Corroder");
+    let wall = tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(cor)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::paid().once(), Reply::take("+1 strength"))
+            .when(Match::paid().once(), Reply::take("break 1 barrier"))
+            .when(Match::sub_targets(), Reply::SubroutineNamed("End the run"))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    assert_eq!(
+        t.times_taken("break 1 barrier"),
+        1,
+        "the [interface] break ability was usable and used: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        g.vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
+        0,
+        "9.8.6/9.8.8: the broken subroutine did not resolve — the run reached HQ"
+    );
+    assert!(
+        g.vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "Ice Wall's only subroutine was broken, so the run was not ended: {}",
+        t.tail(12)
+    );
+    let _ = wall;
+}
+
+// ---------------------------------------------------------------------------
+// test/clj/game/cards/{operations,agendas,assets,ice,events}_test.clj
+// ---------------------------------------------------------------------------
+
+/// hedge-fund: 5 credits in, 9 out.
+#[test]
+fn hedge_fund() {
+    let mut g = Game::new(11).hand(Side::Corp, vec![cards::hedge_fund()]).start(Side::Corp);
+    let card = g.id("Hedge Fund");
+    assert_eq!(g.vm.st.corp.credits, 5, "the Corp starts with 5 credits");
+    play_it(&mut g, Side::Corp, card);
+    assert_eq!(g.vm.st.corp.credits, 9, "Hedge Fund: pay 5, gain 9");
+}
+
+/// beanstalk-royalties: gain 3.
+#[test]
+fn beanstalk_royalties() {
+    let mut g =
+        Game::new(11).hand(Side::Corp, vec![cards::beanstalk_royalties()]).start(Side::Corp);
+    let card = g.id("Beanstalk Royalties");
+    let before = g.vm.st.corp.credits;
+    play_it(&mut g, Side::Corp, card);
+    assert_eq!(g.vm.st.corp.credits, before + 3, "Beanstalk Royalties: gain 3");
+}
+
+/// ipo: gain 13, and the terminal clause leaves no clicks.
+#[test]
+fn ipo() {
+    let mut g = Game::new(11).hand(Side::Corp, vec![cards::ipo()]).credits(Side::Corp, 8).start(Side::Corp);
+    let card = g.id("IPO");
+    play_it(&mut g, Side::Corp, card);
+    assert_eq!(g.vm.st.corp.credits, 13, "IPO: pay 8, gain 13");
+    // "Terminal ends turns": the Corp's remaining clicks went, and the action
+    // phase ended with the play as its only action. (Asserted on the change
+    // log because the driver runs on into the Runner's turn, where the Corp
+    // has clicks again.)
+    let phase_end = g
+        .vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::ActionPhaseEnded { side: Side::Corp }))
+        .expect("the Corp's action phase ended");
+    assert_eq!(
+        g.vm.changes.log[..phase_end]
+            .iter()
+            .filter(|c| matches!(c, GameChange::ActionTaken { side: Side::Corp, .. }))
+            .count(),
+        1,
+        "the terminal operation was the only action of the phase"
+    );
+    assert!(
+        g.vm.changes.log[..phase_end]
+            .iter()
+            .any(|c| matches!(c, GameChange::ClicksLost { side: Side::Corp, amount: 2 })),
+        "the Corp's remaining 2 clicks went with the action phase"
+    );
+}
+
+/// sure-gamble: the Runner's 5-for-9.
+#[test]
+fn sure_gamble() {
+    let mut g = Game::new(11).hand(Side::Runner, vec![cards::sure_gamble()]).start(Side::Runner);
+    let card = g.id("Sure Gamble");
+    let before = g.vm.st.runner.credits;
+    play_it(&mut g, Side::Runner, card);
+    assert_eq!(g.vm.st.runner.credits, before + 4, "Sure Gamble: pay 5, gain 9");
+}
+
+/// hostile-takeover: scoring it gains 7 and takes 1 bad publicity.
+#[test]
+fn hostile_takeover() {
+    let mut g = Game::new(11).credits(Side::Corp, 5).start(Side::Corp);
+    let ht = tk::install_root(&mut g.vm, cards::hostile_takeover(), ServerId::Remote(1), false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::Advance(ht)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(ht)))
+            .when(Match::paid().once(), Reply::Take(Pick::Score(ht)))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner().when(Match::paid(), Reply::Pass),
+    );
+    assert_eq!(
+        g.vm.st.objects[&ht].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was scored: {}",
+        t.tail(10)
+    );
+    // 5 - 2 (the two advance actions' credits) + 7.
+    assert_eq!(g.vm.st.corp.credits, 10, "gain 7 credits");
+    assert_eq!(g.vm.st.corp.bad_publicity, 1, "take 1 bad publicity");
+}
+
+/// pad-campaign: 1 credit as the Corp's turn begins.
+#[test]
+fn pad_campaign() {
+    let mut g = Game::new(11).credits(Side::Corp, 5).start(Side::Runner);
+    tk::install_root(&mut g.vm, cards::pad_campaign(), ServerId::Remote(1), true);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    assert_eq!(g.vm.st.corp.credits, 6, "PAD Campaign: gain 1 credit when your turn begins");
+}
+
+/// ice-wall: an advancement counter is +1 strength, and the subroutine ends
+/// the run.
+#[test]
+fn ice_wall() {
+    let mut g = Game::new(11).credits(Side::Corp, 10).start(Side::Corp);
+    let wall = tk::install_ice(&mut g.vm, cards::ice_wall(), ServerId::Remote(1), true);
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::Advance(wall)))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Remote(1))))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.effective_strength(wall),
+        Some(2),
+        "9.12.1b: +1 strength for the hosted advancement counter"
+    );
+    script.run(&mut g.vm);
+    assert!(g.vm.current_run.is_none(), "the subroutine ended the run");
+    assert!(
+        !g.vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "the run never reached the Success Phase"
+    );
+}
+
+/// Take the basic play action with this card and let the play resolve.
+fn play_it(g: &mut Game, side: Side, card: ObjectId) {
+    let acting = Plan::for_side(side)
+        .when(Match::action().once(), Reply::play_card(card))
+        .stop_at_action()
+        .when(Match::paid(), Reply::Pass);
+    let idle = Plan::for_side(side.other()).when(Match::paid(), Reply::Pass);
+    let (corp, runner) =
+        if side == Side::Corp { (acting, idle) } else { (idle, acting) };
+    plan::play(&mut g.vm, corp, runner);
+}
+
+// ---------------------------------------------------------------------------
 // Shared shape: install one card with the basic install action
 // ---------------------------------------------------------------------------
 
@@ -638,6 +853,16 @@ const PORTED: &[&str] = &[
     // test/clj/game/core/rules_test.clj
     "no-scoring-after-terminal",
     "purge-corp",
+    // test/clj/game/cards/programs_test.clj
+    "corroder",
+    // test/clj/game/cards/{operations,events,agendas,assets,ice}_test.clj
+    "hedge-fund",
+    "beanstalk-royalties",
+    "ipo",
+    "sure-gamble",
+    "hostile-takeover",
+    "pad-campaign",
+    "ice-wall",
 ];
 
 /// Every ported name exists as a `#[test] fn` in this file, spelled the
@@ -669,8 +894,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 23,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 23",
+        PORTED.len() >= 31,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 31",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is

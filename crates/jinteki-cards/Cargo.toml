@@ -1,0 +1,9 @@
+[package]
+name = "jinteki-cards"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "The card DSL: printed card text as data, denoted into the CR VM's instruction vocabulary (SYS-D-1, SYS-D-6, SYS-D-10, SYS-D-11)"
+
+[dependencies]
+jinteki-cr = { path = "../jinteki-cr" }

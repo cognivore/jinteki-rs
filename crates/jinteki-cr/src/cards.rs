@@ -296,6 +296,50 @@ pub fn misdirection() -> PrintedCard {
     c
 }
 
+/// Corroder — Program: Icebreaker - Fracter. Install 2, 1[mu], strength 2.
+/// "Interface → <strong>1[credit]:</strong> Break 1 <strong>barrier</strong>
+///  subroutine.
+///  <strong>1[credit]:</strong> +1 strength."
+///
+/// The two abilities are the whole icebreaker class: 9.3.6c's [interface]
+/// flag (usable only while the breaker's strength is at least the encountered
+/// ice's), 9.5.6c's restriction to an encounter with ice of a stated subtype,
+/// and a strength modification whose duration is the implicit one 3.9.5b/d
+/// gives a pump — the current encounter.
+pub fn corroder() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Corroder", Side::Runner, CardType::Program);
+    c.subtypes = vec!["Icebreaker", "Fracter"];
+    c.cost = Some(2);
+    c.memory_cost = Some(1);
+    c.strength = Some(2);
+    c.abilities = vec![
+        AbilityDef::paid(
+            Cost::credits(1),
+            vec![Instruction::BreakSubroutines {
+                subs: crate::instr::SubroutineSpec::Chosen {
+                    count: Quantity::c(1),
+                    up_to: false,
+                },
+            }],
+        )
+        .with_flag(AbilityFlag::Interface)
+        .with_timing(crate::ability::TimingRestriction::EncounterOnly {
+            required_subtype: Some("Barrier"),
+        })
+        .labeled("corroder: break 1 barrier subroutine"),
+        AbilityDef::paid(
+            Cost::credits(1),
+            vec![Instruction::ModifyStrength {
+                target: TargetSpec::SelfSource,
+                amount: 1,
+                duration: None,
+            }],
+        )
+        .labeled("corroder: +1 strength"),
+    ];
+    c
+}
+
 // ---------------------------------------------------------------------------
 // Runner — viruses (the purge corner of the corpus)
 // ---------------------------------------------------------------------------

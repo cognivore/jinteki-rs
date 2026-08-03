@@ -1,0 +1,331 @@
+# estrike Regular Andromeda — Criminal.
+#
+# Printed text is copied from NSG's official card data. Behaviour is written
+# from that text and from nowhere else (SYS-D-10). Sentences the vocabulary
+# cannot say yet carry an `unimplemented:` marker rather than an approximation.
+
+card "Andromeda: Dispossessed Ristie"
+  side: runner
+  type: identity
+  subtypes: Natural
+  faction: Criminal
+  set: Humanity's Shadow
+  text:
+    You draw a starting hand of 9 cards.
+  unimplemented: "You draw a starting hand of 9 cards."
+
+card "Sure Gamble"
+  side: runner
+  type: event
+  cost: 5
+  faction: Neutral
+  set: System Gateway
+  text:
+    Gain 9[credit].
+  play:
+    gain 9 credits
+
+card "Diesel"
+  side: runner
+  type: event
+  cost: 0
+  faction: Shaper
+  set: System Update 2021
+  text:
+    Draw 3 cards.
+  play:
+    draw 3 cards
+
+card "Clean Getaway"
+  side: runner
+  type: event
+  subtypes: Run
+  cost: 3
+  faction: Criminal
+  set: Elevation
+  text:
+    Run any server. If successful, gain 6[credit].
+  unimplemented: "Run any server. If successful, gain 6[credit]."
+
+card "Account Siphon"
+  side: runner
+  type: event
+  subtypes: Run, Sabotage
+  cost: 0
+  faction: Criminal
+  set: Core Set
+  text:
+    Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags.
+  unimplemented: "Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags."
+
+card "Career Fair"
+  side: runner
+  type: event
+  cost: 0
+  faction: Criminal
+  set: System Update 2021
+  text:
+    Install 1 resource from your grip, paying 3[credit] less.
+  unimplemented: "Install 1 resource from your grip, paying 3[credit] less."
+
+card "Employee Strike"
+  side: runner
+  type: event
+  subtypes: Current
+  cost: 1
+  faction: Neutral
+  set: Data and Destiny
+  text:
+    This event is not trashed until another current is played or an agenda is scored.
+    The Corp's identity loses its printed abilities.
+  unimplemented: "This event is not trashed until another current is played or an agenda is scored."
+  unimplemented: "The Corp's identity loses its printed abilities."
+
+card "Mutual Favor"
+  side: runner
+  type: event
+  cost: 0
+  faction: Criminal
+  set: System Gateway
+  text:
+    Search your stack for 1 icebreaker and reveal it. (Shuffle your stack after searching it.) If you made a successful run this turn, you may install that program. If you do not, add it to your grip.
+  unimplemented: "Search your stack for 1 icebreaker and reveal it."
+  unimplemented: "If you made a successful run this turn, you may install that program. If you do not, add it to your grip."
+
+card "Pinhole Threading"
+  side: runner
+  type: event
+  subtypes: Run
+  cost: 1
+  faction: Criminal
+  set: Midnight Sun
+  text:
+    Run any server. If successful, instead of breaching the attacked server, access 1 card in the root of another server. If that card is an agenda, you cannot steal or trash it during this access.
+  unimplemented: "Run any server. If successful, instead of breaching the attacked server, access 1 card in the root of another server."
+  unimplemented: "If that card is an agenda, you cannot steal or trash it during this access."
+
+card "Rebirth"
+  side: runner
+  type: event
+  cost: 0
+  faction: Neutral
+  set: The Liberated Mind
+  text:
+    Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it.
+    Limit 1 per deck.
+  unimplemented: "Switch your identity with another identity from the same faction."
+  unimplemented: "Remove Rebirth from the game instead of trashing it."
+
+card "Boomerang"
+  side: runner
+  type: hardware
+  cost: 2
+  unique: yes
+  faction: Criminal
+  set: Uprising
+  text:
+    When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice.
+    [trash]: Break up to 2 subroutines. When this run ends, if it was successful, you may shuffle 1 copy of Boomerang from your heap into your stack.
+  unimplemented: "When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice."
+  unimplemented: "[trash]: Break up to 2 subroutines. When this run ends, if it was successful, you may shuffle 1 copy of Boomerang from your heap into your stack."
+
+card "Desperado"
+  side: runner
+  type: hardware
+  subtypes: Console
+  cost: 3
+  unique: yes
+  console: yes
+  faction: Criminal
+  set: Core Set
+  text:
+    +1[mu]
+    Gain 1[credit] whenever you make a successful run.
+    Limit 1 console per player.
+  unimplemented: "+1[mu]"
+  unimplemented: "Gain 1[credit] whenever you make a successful run."
+
+card "Bukhgalter"
+  side: runner
+  type: program
+  subtypes: Icebreaker, Killer
+  cost: 3
+  strength: 1
+  memory: 1
+  faction: Criminal
+  set: Downfall
+  text:
+    Interface → 1[credit]: Break 1 sentry subroutine.
+    1[credit]: +1 strength.
+    The first time each turn this program fully breaks a piece of ice, gain 2[credit].
+  unimplemented: "Interface → 1[credit]: Break 1 sentry subroutine."
+  unimplemented: "1[credit]: +1 strength."
+  unimplemented: "The first time each turn this program fully breaks a piece of ice, gain 2[credit]."
+
+card "Paperclip"
+  side: runner
+  type: program
+  subtypes: Icebreaker, Fracter
+  cost: 4
+  strength: 1
+  memory: 1
+  faction: Anarch
+  set: Blood Money
+  text:
+    Whenever you encounter a barrier, you may install this program from your heap.
+    X[credit]: +X strength. Then, if this program can interface with the barrier you are encountering, break up to X subroutines.
+  unimplemented: "Whenever you encounter a barrier, you may install this program from your heap."
+  unimplemented: "X[credit]: +X strength. Then, if this program can interface with the barrier you are encountering, break up to X subroutines."
+
+card "Shibboleth"
+  side: runner
+  type: program
+  subtypes: Icebreaker, Decoder
+  cost: 1
+  strength: 3
+  memory: 1
+  faction: Criminal
+  set: The Automata Initiative
+  text:
+    Threat 4 → This program gets −2 strength. (This ability is active if any player has 4 or more agenda points.)
+    Interface → 1[credit]: Break 1 code gate subroutine.
+    2[credit]: +2 strength.
+  unimplemented: "Threat 4 → This program gets −2 strength."
+  unimplemented: "Interface → 1[credit]: Break 1 code gate subroutine."
+  unimplemented: "2[credit]: +2 strength."
+
+card "Cupellation"
+  side: runner
+  type: program
+  cost: 1
+  strength: 0
+  memory: 1
+  faction: Criminal
+  set: Rebellion Without Rehearsal
+  text:
+    Limit 1 hosted card.
+    Access → 1[credit]: Host the non-agenda card you are accessing faceup on this program. (If it was installed, it becomes uninstalled.)
+    Whenever you breach HQ, if this program has a hosted Corp card, you may pay 1[credit] and trash this program to access 2 additional cards.
+  unimplemented: "Access → 1[credit]: Host the non-agenda card you are accessing faceup on this program."
+  unimplemented: "Whenever you breach HQ, if this program has a hosted Corp card, you may pay 1[credit] and trash this program to access 2 additional cards."
+
+card "Daily Casts"
+  side: runner
+  type: resource
+  cost: 3
+  faction: Neutral
+  set: Uprising
+  text:
+    When you install this resource, load 8[credit] onto it. When it is empty, trash it.
+    When your turn begins, take 2[credit] from this resource.
+  when installed:
+    load 8 credits on self
+  when empty:
+    trash self
+  when your turn begins:
+    take 2 credits from self
+
+card "Earthrise Hotel"
+  side: runner
+  type: resource
+  subtypes: Location, Ritzy
+  cost: 4
+  unique: yes
+  faction: Neutral
+  set: System Update 2021
+  text:
+    When you install this resource, load 3 power counters onto it. When it is empty, trash it.
+    When your turn begins, remove 1 hosted power counter and draw 2 cards.
+  when installed:
+    load 3 power counters on self
+  when empty:
+    trash self
+  unimplemented: "When your turn begins, remove 1 hosted power counter and draw 2 cards."
+
+card "Bloo Moose"
+  side: runner
+  type: resource
+  subtypes: Location, Seedy
+  cost: 4
+  unique: yes
+  faction: Neutral
+  set: Free Mars
+  text:
+    When your turn begins, you may remove 1 card in the heap from the game. If you do, gain 2[credit].
+  unimplemented: "When your turn begins, you may remove 1 card in the heap from the game. If you do, gain 2[credit]."
+
+card "Citadel Sanctuary"
+  side: runner
+  type: resource
+  subtypes: Location
+  cost: 2
+  unique: yes
+  faction: Neutral
+  set: Intervention
+  text:
+    When your discard phase ends while you are tagged, the Corp must trace[1]. If unsuccessful, remove 1 tag.
+    [interrupt] → [trash], trash all cards from your grip: Prevent all meat damage.
+  unimplemented: "When your discard phase ends while you are tagged, the Corp must trace[1]. If unsuccessful, remove 1 tag."
+  unimplemented: "[interrupt] → [trash], trash all cards from your grip: Prevent all meat damage."
+
+card "Film Critic"
+  side: runner
+  type: resource
+  subtypes: Connection
+  cost: 1
+  faction: Shaper
+  set: Old Hollywood
+  text:
+    Film Critic can host a single agenda.
+    Whenever you access an agenda, you may host that agenda on Film Critic (the agenda is no longer being accessed and is uninstalled).
+    [click],[click]: Add an agenda hosted on Film Critic to your score area.
+  unimplemented: "Film Critic can host a single agenda."
+  unimplemented: "Whenever you access an agenda, you may host that agenda on Film Critic."
+  unimplemented: "[click],[click]: Add an agenda hosted on Film Critic to your score area."
+
+card "Miss Bones"
+  side: runner
+  type: resource
+  subtypes: Connection
+  cost: 2
+  unique: yes
+  faction: Criminal
+  set: Reign and Reverie
+  text:
+    Place 12[credit] from the bank on Miss Bones when she is installed. When there are no credits left on Miss Bones, trash her.
+    Use these credits to trash installed cards.
+  when installed:
+    load 12 credits on self
+  when empty:
+    trash self
+  unimplemented: "Use these credits to trash installed cards."
+
+card "The Class Act"
+  side: runner
+  type: resource
+  subtypes: Connection, Ritzy
+  cost: 4
+  unique: yes
+  faction: Criminal
+  set: Downfall
+  text:
+    When a discard phase ends, if you installed this resource this turn, draw 4 cards.
+    [interrupt] → The first time each turn you would draw any number of cards, look at the top X cards of your stack. Add 1 of those cards to the bottom of your stack. X is equal to the number of cards you would draw plus 1.
+  unimplemented: "When a discard phase ends, if you installed this resource this turn, draw 4 cards."
+  unimplemented: "[interrupt] → The first time each turn you would draw any number of cards, look at the top X cards of your stack. Add 1 of those cards to the bottom of your stack."
+
+card "The Source"
+  side: runner
+  type: resource
+  subtypes: Connection
+  cost: 2
+  unique: yes
+  faction: Neutral
+  set: Creation and Control
+  text:
+    The advancement requirement of all agendas is increased by 1.
+    As an additional cost to steal an agenda, you must pay 3[credit].
+    Trash The Source when an agenda is scored or stolen.
+  unimplemented: "The advancement requirement of all agendas is increased by 1."
+  unimplemented: "As an additional cost to steal an agenda, you must pay 3[credit]."
+  unimplemented: "Trash The Source when an agenda is scored or stolen."
