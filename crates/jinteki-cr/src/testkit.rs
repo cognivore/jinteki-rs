@@ -194,8 +194,7 @@ pub fn aesops_like(name: &'static str) -> PrintedCard {
         vec![
             Instruction::TrashCards(TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::InstalledResource],
-            }),
+                criteria: vec![crate::instr::TargetFilter::InstalledResource], up_to: false }),
             Instruction::GainCredits(Side::Runner, Quantity::c(3)),
         ],
         true,
@@ -683,8 +682,7 @@ pub fn reconstruction_like(name: &'static str) -> PrintedCard {
             kind: CounterKind::Advancement,
             target: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
-            },
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard], up_to: false },
         }],
     )
     .labeled("reconstruction: move counters")];
@@ -1258,8 +1256,7 @@ pub fn fairchild_like(name: &'static str) -> PrintedCard {
                 "trash installed",
                 vec![Instruction::TrashCards(TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![crate::instr::TargetFilter::InstalledRunnerCard],
-                })],
+                    criteria: vec![crate::instr::TargetFilter::InstalledRunnerCard], up_to: false })],
             ),
         ],
     }])
@@ -2081,8 +2078,7 @@ fn femme_choice_over(
                 key: "femme-ice",
                 of: crate::instr::ChoiceSpec::Object(TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria,
-                }),
+                    criteria, up_to: false }),
                 duration: crate::lingering::WantedDuration::WhileSourceActive,
             }],
             false,
@@ -2112,8 +2108,7 @@ pub fn poetri_like(name: &'static str, n: u32) -> PrintedCard {
         vec![Instruction::InstallCard {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }],
-            },
+                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }], up_to: false },
             dest: crate::instr::InstallDest::NewRemoteRoot,
             and_rez: false,
             ignore_costs: true,
@@ -2590,8 +2585,7 @@ pub fn glenn_station_like(name: &'static str) -> PrintedCard {
             vec![Instruction::HostCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
-                },
+                    criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)], up_to: false },
                 host: TargetSpec::SelfSource,
             }],
         )
@@ -2641,8 +2635,7 @@ pub fn madani_like(name: &'static str, count: u32) -> PrintedCard {
                 criteria: vec![
                     crate::instr::TargetFilter::CardsInHandOf(Side::Runner),
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
-                ],
-            },
+                ], up_to: false },
             host: TargetSpec::SelfSource,
         }],
     )
@@ -2661,8 +2654,7 @@ pub fn detente_like(name: &'static str) -> PrintedCard {
         vec![Instruction::HostCards {
             cards: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
-            },
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard], up_to: false },
             host: TargetSpec::SelfSource,
         }],
     )
@@ -2682,8 +2674,7 @@ pub fn rejig_like(name: &'static str) -> PrintedCard {
                 criteria: vec![
                     crate::instr::TargetFilter::InstalledRunnerCard,
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
-                ],
-            },
+                ], up_to: false },
         }],
     )
 }
@@ -2699,8 +2690,7 @@ pub fn ip_enforcement_like(name: &'static str) -> PrintedCard {
                 criteria: vec![
                     crate::instr::TargetFilter::CardTypeIs(CardType::Agenda),
                     crate::instr::TargetFilter::InScoreAreaOf(Side::Runner),
-                ],
-            },
+                ], up_to: false },
             dest: crate::instr::InstallDest::NewRemoteRoot,
             and_rez: false,
             ignore_costs: true,
@@ -2966,8 +2956,7 @@ pub fn trash_program_sub_ice(name: &'static str, by: Option<Side>) -> PrintedCar
     let mut c = vanilla_ice(name, 4, 4);
     let trash = Instruction::TrashCards(TargetSpec::Choose {
         count: Quantity::c(1),
-        criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
-    });
+        criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)], up_to: false });
     let instr = match by {
         None => trash,
         Some(side) => Instruction::PerformedBy { side, instr: Box::new(trash) },
@@ -2987,8 +2976,7 @@ pub fn alice_like(name: &'static str) -> PrintedCard {
             side: Side::Corp,
             instr: Box::new(Instruction::TrashCards(TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
-            })),
+                criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)], up_to: false })),
         }],
     )
     .labeled("alice: the Corp trashes 1 card from HQ")];
@@ -3170,8 +3158,7 @@ pub fn aggressive_secretary_like(name: &'static str) -> PrintedCard {
             cost: Cost::credits(2),
             effect: Box::new(Instruction::TrashCards(TargetSpec::Choose {
                 count: Quantity::CountersOnSource(CounterKind::Advancement),
-                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
-            })),
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)], up_to: false })),
             payer: Some(Side::Corp),
         }],
         true,
@@ -3194,12 +3181,10 @@ pub fn colossus_like(name: &'static str) -> PrintedCard {
         vec![
             TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::InstalledRunnerCard, F::CardTypeIs(CardType::Program)],
-            },
+                criteria: vec![F::InstalledRunnerCard, F::CardTypeIs(CardType::Program)], up_to: false },
             TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::InstalledResource],
-            },
+                criteria: vec![F::InstalledResource], up_to: false },
         ],
     ))])
     .labeled("[sub] trash 1 program and 1 resource")];
@@ -3277,8 +3262,7 @@ pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
         Instruction::InstallCard {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::CardsInHandOf(Side::Corp), F::CardTypeIs(CardType::Ice)],
-            },
+                criteria: vec![F::CardsInHandOf(Side::Corp), F::CardTypeIs(CardType::Ice)], up_to: false },
             dest: crate::instr::InstallDest::Protecting(protecting),
             and_rez: true,
             ignore_costs: true,
@@ -3320,8 +3304,7 @@ pub fn top_hat_like(name: &'static str, top: u32) -> PrintedCard {
                 criteria: vec![crate::instr::TargetFilter::TopOfDeckOf {
                     side: Side::Corp,
                     n: top,
-                }],
-            },
+                }], up_to: false },
         }],
     )
     .labeled("top-hat: access 1 of the top 5 cards of R&D")];
@@ -3343,8 +3326,7 @@ pub fn tinkering_like(name: &'static str) -> PrintedCard {
         vec![Instruction::ModifySubtypes {
             target: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)],
-            },
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)], up_to: false },
             add: vec!["sentry", "code gate", "barrier"],
             remove: Vec::new(),
             duration: crate::lingering::WantedDuration::ThisTurn,
@@ -3492,8 +3474,7 @@ pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> P
             Instruction::InstallCard {
                 card: TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![F::CardsInHandOf(Side::Corp), F::CardTypeIs(CardType::Ice)],
-                },
+                    criteria: vec![F::CardsInHandOf(Side::Corp), F::CardTypeIs(CardType::Ice)], up_to: false },
                 dest: crate::instr::InstallDest::Protecting(protecting),
                 and_rez: false,
                 ignore_costs: true,
@@ -3547,8 +3528,7 @@ pub fn drafter_like(name: &'static str, installee: ObjectId, server: ServerId) -
         },
         Instruction::TrashCards(TargetSpec::Choose {
             count: Quantity::c(2),
-            criteria: vec![F::IceProtectingAttackedServer],
-        }),
+            criteria: vec![F::IceProtectingAttackedServer], up_to: false }),
     ])
     .labeled("[sub] install ice outermost, trash 2 ice")];
     c
@@ -3569,8 +3549,7 @@ pub fn rook_like(name: &'static str) -> PrintedCard {
             cards: TargetSpec::SelfSource,
             host: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::IceInSamePositionAs(PositionRef::Source)],
-            },
+                criteria: vec![F::IceInSamePositionAs(PositionRef::Source)], up_to: false },
         }],
     )
     .labeled("rook: move to ice in the same position")];
@@ -3592,8 +3571,7 @@ pub fn slipstream_like(name: &'static str) -> PrintedCard {
         vec![Instruction::MoveRunnerToIce {
             ice: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::IceInSamePositionAs(PositionRef::Runner)],
-            },
+                criteria: vec![F::IceInSamePositionAs(PositionRef::Runner)], up_to: false },
             encounter: false,
         }],
     )
@@ -3629,8 +3607,7 @@ pub fn thimblerig_like(name: &'static str) -> PrintedCard {
             a: TargetSpec::SelfSource,
             b: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::InstalledCorpCard, F::CardTypeIs(CardType::Ice)],
-            },
+                criteria: vec![F::InstalledCorpCard, F::CardTypeIs(CardType::Ice)], up_to: false },
         }],
     )
     .labeled("thimblerig: swap this ice with another")];
@@ -3646,12 +3623,10 @@ pub fn metamorph_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::subroutine(vec![Instruction::SwapCards {
         a: TargetSpec::Choose {
             count: Quantity::c(1),
-            criteria: vec![F::InstalledCorpCard],
-        },
+            criteria: vec![F::InstalledCorpCard], up_to: false },
         b: TargetSpec::Choose {
             count: Quantity::c(1),
-            criteria: vec![F::InstalledCorpCard],
-        },
+            criteria: vec![F::InstalledCorpCard], up_to: false },
     }])
     .labeled("[sub] swap 2 installed cards")];
     c
@@ -3842,8 +3817,7 @@ pub fn ganked_encounter_like(name: &'static str) -> PrintedCard {
         vec![Instruction::ForceEncounter {
             ice: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::Rezzed, F::CardTypeIs(CardType::Ice)],
-            },
+                criteria: vec![F::Rezzed, F::CardTypeIs(CardType::Ice)], up_to: false },
         }],
         false,
     )
@@ -3937,8 +3911,7 @@ pub fn hq_access_button(name: &'static str) -> PrintedCard {
         vec![Instruction::AccessCards {
             cards: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![F::CardsInHandOf(Side::Corp)],
-            },
+                criteria: vec![F::CardsInHandOf(Side::Corp)], up_to: false },
         }],
     )
     .labeled("access-hq: access 1 card from HQ")];
@@ -4125,8 +4098,7 @@ pub fn news_cycle_like(name: &'static str) -> PrintedCard {
                 criteria: vec![
                     crate::instr::TargetFilter::InScoreAreaOf(Side::Corp),
                     crate::instr::TargetFilter::CardTypeIs(CardType::Agenda),
-                ],
-            },
+                ], up_to: false },
             which: AbilityClass::WhenScored,
         }],
     );
@@ -4151,8 +4123,7 @@ pub fn nanisivik_like(name: &'static str) -> PrintedCard {
             Instruction::RezCard {
                 target: TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)],
-                },
+                    criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)], up_to: false },
                 ignore_costs: true,
             },
             Instruction::ResolveAbilityOf {
@@ -4284,8 +4255,7 @@ pub fn satellite_uplink_like(name: &'static str, count: i64) -> PrintedCard {
         vec![Instruction::ExposeCards {
             cards: TargetSpec::Choose {
                 count: Quantity::c(count),
-                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
-            },
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard], up_to: false },
         }],
     )
     .labeled("satellite-uplink: expose cards")];
@@ -4335,8 +4305,7 @@ pub fn rototurret_like(name: &'static str) -> PrintedCard {
             criteria: vec![
                 crate::instr::TargetFilter::InstalledRunnerCard,
                 crate::instr::TargetFilter::CardTypeIs(CardType::Program),
-            ],
-        },
+            ], up_to: false },
     )])
     .labeled("[sub] trash 1 installed program")];
     c
@@ -4408,8 +4377,7 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
         Instruction::DeclineableChoice(Box::new(Instruction::InstallCard {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }],
-            },
+                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }], up_to: false },
             dest: crate::instr::InstallDest::Root(dest),
             and_rez: false,
             ignore_costs: true,
@@ -4477,8 +4445,7 @@ pub fn clone_suffrage_like(name: &'static str) -> PrintedCard {
                 criteria: vec![
                     crate::instr::TargetFilter::InDiscardOf(Side::Corp),
                     crate::instr::TargetFilter::CardTypeIs(CardType::Operation),
-                ],
-            },
+                ], up_to: false },
         }],
     )
     .labeled("clone-suffrage: add an operation from Archives to HQ")];
@@ -4824,8 +4791,7 @@ pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
                 Instruction::Derez {
                     target: TargetSpec::Choose {
                         count: Quantity::c(1),
-                        criteria: vec![crate::instr::TargetFilter::Rezzed],
-                    },
+                        criteria: vec![crate::instr::TargetFilter::Rezzed], up_to: false },
                 },
             ],
         }],
@@ -4889,8 +4855,7 @@ pub fn street_peddler_like(name: &'static str) -> PrintedCard {
             vec![Instruction::InstallCard {
                 card: TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![crate::instr::TargetFilter::SetAsideByThisAbility],
-                },
+                    criteria: vec![crate::instr::TargetFilter::SetAsideByThisAbility], up_to: false },
                 dest: crate::instr::InstallDest::Rig,
                 and_rez: false,
                 ignore_costs: true,
@@ -4924,8 +4889,7 @@ pub fn loki_like(name: &'static str, printed_sub: AbilityDef) -> PrintedCard {
                         crate::instr::TargetFilter::Rezzed,
                         crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
                         crate::instr::TargetFilter::OtherThanSource,
-                    ],
-                }),
+                    ], up_to: false }),
                 before: true,
                 any_order: false,
                 duration: crate::lingering::WantedDuration::ThisEncounter,
@@ -4985,8 +4949,7 @@ pub fn chronos_protocol_like(name: &'static str) -> PrintedCard {
             vec![Instruction::LookAtCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(1),
-                    criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Runner)],
-                },
+                    criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Runner)], up_to: false },
                 by: Side::Corp,
             }],
             false,
@@ -5311,15 +5274,13 @@ pub fn abt_like(name: &'static str, n: u32) -> PrintedCard {
             Instruction::LookAtCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(n as i64),
-                    criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }],
-                },
+                    criteria: vec![crate::instr::TargetFilter::TopOfDeckOf { side: Side::Corp, n }], up_to: false },
                 by: Side::Corp,
             },
             Instruction::GainCredits(Side::Corp, Quantity::c(1)),
             Instruction::TrashCards(TargetSpec::Choose {
                 count: Quantity::c(n as i64),
-                criteria: vec![crate::instr::TargetFilter::LookedAtByThisAbility],
-            }),
+                criteria: vec![crate::instr::TargetFilter::LookedAtByThisAbility], up_to: false }),
         ],
     )
     .labeled("abt: look at the top of R&D, then trash them")];
@@ -5368,8 +5329,7 @@ pub fn daily_business_show_like(name: &'static str) -> PrintedCard {
         vec![Instruction::MoveToDeck {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::DrawnCards],
-            },
+                criteria: vec![crate::instr::TargetFilter::DrawnCards], up_to: false },
             top: false,
         }],
         false,
@@ -5391,12 +5351,10 @@ pub fn raman_rai_like(name: &'static str) -> PrintedCard {
         vec![Instruction::SwapCards {
             a: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::DrawnCards],
-            },
+                criteria: vec![crate::instr::TargetFilter::DrawnCards], up_to: false },
             b: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::InDiscardOf(Side::Corp)],
-            },
+                criteria: vec![crate::instr::TargetFilter::InDiscardOf(Side::Corp)], up_to: false },
         }],
         false,
     )
@@ -5448,8 +5406,7 @@ pub fn cultivate_like(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     let set_aside = |k: u32| TargetSpec::Choose {
         count: Quantity::c(k as i64),
-        criteria: vec![crate::instr::TargetFilter::SetAsideByThisAbility],
-    };
+        criteria: vec![crate::instr::TargetFilter::SetAsideByThisAbility], up_to: false };
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
         vec![
@@ -5473,8 +5430,7 @@ pub fn install_from_hq_button(name: &'static str) -> PrintedCard {
         vec![Instruction::InstallCard {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
-            },
+                criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)], up_to: false },
             dest: crate::instr::InstallDest::NewRemoteRoot,
             and_rez: false,
             ignore_costs: true,
@@ -5684,8 +5640,7 @@ pub fn miraju_like(name: &'static str) -> PrintedCard {
                     criteria: vec![
                         crate::instr::TargetFilter::IceProtectingSourceServer,
                         crate::instr::TargetFilter::OtherThanSource,
-                    ],
-                },
+                    ], up_to: false },
                 encounter: false,
             }],
             true,
@@ -5708,8 +5663,7 @@ pub fn wormhole_like(name: &'static str) -> PrintedCard {
                 crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
                 crate::instr::TargetFilter::Rezzed,
                 crate::instr::TargetFilter::OtherThanSource,
-            ],
-        },
+            ], up_to: false },
         which: crate::ability::AbilityClass::Subroutine(0),
     }])
     .labeled("[sub] wormhole: resolve a subroutine on another rezzed ice")];
@@ -5730,8 +5684,7 @@ pub fn trick_of_light_like(name: &'static str, n: u32) -> PrintedCard {
             up_to: true,
             to: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
-            },
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard], up_to: false },
             from_criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
         }],
     )

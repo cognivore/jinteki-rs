@@ -414,7 +414,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // 9.6.5c: requirements listed in the trigger condition
                     // must hold when the condition would occur (QPM class:
                     // the Runner must already be tagged).
-                    if !vm.trigger_requirements_met(cond) {
+                    if !vm.trigger_requirements_met_for(cond, Some(obj_id)) {
                         cite!("rule_condition_requirements_part_of_condition");
                         continue;
                     }

@@ -1549,3 +1549,146 @@ fn boom_is_not_offered_below_two_tags() {
     });
     assert!(!offered, "one tag is not 'at least 2 tags': {}", t.tail(6));
 }
+
+// ---------------------------------------------------------------------------
+// Wave 2: the discard-phase pack and the zone movers
+// ---------------------------------------------------------------------------
+
+/// Breaking News, both sentences in one scored game: 2 tags on scoring, and
+/// when the discard phase of that same turn ends, the Runner removes them.
+#[test]
+fn breaking_news_tags_blow_over_at_end_of_turn() {
+    let mut vm = Vm::empty(4500);
+    let bn = vm.new_object(card("Breaking News"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(bn);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(bn)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(bn)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(bn)))
+            .when(Match::paid().once(), Reply::score(bn)),
+        Plan::runner().stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&bn].zone, Zone::ScoreArea(Side::Corp), "{}", t.tail(12));
+    // The tags were given on scoring AND removed at the discard phase's end —
+    // by the Runner, per the printed text.
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::TagsTaken { amount: 2 })),
+        "2 tags on scoring: {}",
+        t.tail(14)
+    );
+    assert_eq!(vm.st.runner.tags, 0, "the tags blew over at end of turn: {}", t.tail(14));
+}
+
+/// Jackson Howard: the RFG ability shuffles up to 3 Archives cards into R&D —
+/// "up to" proven by answering with 2.
+#[test]
+fn jackson_shuffles_archives_back_and_leaves_the_game() {
+    let mut vm = Vm::empty(4501);
+    let jh = tk::install_root(&mut vm, card("Jackson Howard"), ServerId::Remote(1), true);
+    let d1 = vm.new_object(tk::corp_filler("Dead-1"), Zone::Discard(Side::Corp));
+    let d2 = vm.new_object(tk::corp_filler("Dead-2"), Zone::Discard(Side::Corp));
+    let d3 = vm.new_object(tk::corp_filler("Dead-3"), Zone::Discard(Side::Corp));
+    for d in [d1, d2, d3] {
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(d);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 2);
+    vm.start_turn(Side::Corp);
+
+    let deck_before = vm.st.deck[&Side::Corp].len();
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("jackson: shuffle archives into r&d"))
+            .when(Match::targets().once(), Reply::Targets(vec![d1, d2]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(vm.st.objects[&jh].zone, Zone::RemovedFromGame, "the cost was paid: {}", t.tail(12));
+    // deck_before − 1 (the turn's mandatory draw) + the 2 shuffled in.
+    assert_eq!(vm.st.deck[&Side::Corp].len(), deck_before + 1, "two of up to three went back: {}", t.tail(14));
+    assert_eq!(vm.st.discard[&Side::Corp].len(), 1, "the third stayed in Archives: {}", t.tail(6));
+}
+
+/// Bloo Moose: at turn start, exile one heap card for 2[credit] — optionally.
+#[test]
+fn bloo_moose_cashes_in_a_heap_card() {
+    let mut vm = Vm::empty(4502);
+    tk::install_rig(&mut vm, card("Bloo Moose"));
+    let dead = vm.new_object(tk::vanilla_runner_card("Dead-Event", CardType::Event), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(dead);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().once(), Reply::take("cash in a memory"))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::targets().once(), Reply::Targets(vec![dead]))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&dead].zone, Zone::RemovedFromGame, "{}", t.tail(12));
+    assert_eq!(vm.st.runner.credits, 2, "and the 2 credits: {}", t.tail(12));
+}
+
+/// Citadel Sanctuary's trace: tagged at the end of the discard phase, the
+/// Corp MUST trace[1]; the Runner outbids it, so the trace is unsuccessful
+/// and a tag comes off.
+#[test]
+fn citadel_sanctuary_traces_and_the_runner_escapes_a_tag() {
+    let mut vm = Vm::empty(4503);
+    tk::install_rig(&mut vm, card("Citadel Sanctuary"));
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 3;
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::trace_spend(), Reply::Spend(0)).stop_at_action(),
+        Plan::runner().when(Match::trace_spend(), Reply::Spend(2)),
+    );
+    assert_eq!(vm.st.runner.tags, 0, "unsuccessful trace removed the tag: {}", t.tail(14));
+}
+
+/// Citadel Sanctuary's interrupt: trash it and the whole grip to prevent ALL
+/// meat damage — BOOM!'s 7 land as zero.
+#[test]
+fn citadel_sanctuary_burns_everything_to_stop_the_meat() {
+    let mut vm = Vm::empty(4504);
+    vm.st.runner.tags = 2;
+    let cs = tk::install_rig(&mut vm, card("Citadel Sanctuary"));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    let boom = vm.new_object(card("BOOM!"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(boom);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.st.corp.credits = 6;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action().once(), Reply::play_card(boom)).stop_at_action(),
+        Plan::runner().when(Match::interrupt().once(), Reply::take("burn it all")),
+    );
+
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::DamageSuffered { .. })),
+        "all 7 meat prevented: {}",
+        t.tail(14)
+    );
+    assert!(vm.st.hand[&Side::Runner].is_empty(), "the grip was the price: {}", t.tail(14));
+    assert_ne!(vm.st.objects[&cs].zone, Zone::Rig, "and so was Citadel Sanctuary");
+    assert_eq!(vm.st.runner.tags, 2, "alive, tagged, and broke — but alive");
+}

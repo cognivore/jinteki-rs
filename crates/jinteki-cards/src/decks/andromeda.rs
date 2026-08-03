@@ -407,7 +407,11 @@ pub fn bloo_moose() -> Card {
         .cost(4)
         .unique()
         .text("When your turn begins, you may remove 1 card in the heap from the game. If you do, gain 2[credit].")
-        .unimplemented("When your turn begins, you may remove 1 card in the heap from the game. If you do, gain 2[credit].")
+        .may_when(
+            TriggerCond::TurnBegins(Runner),
+            [remove_from_heap_from_game(1), gain(Runner, 2)],
+        )
+        .named("bloo moose: cash in a memory")
         .build()
 }
 
@@ -429,8 +433,16 @@ pub fn citadel_sanctuary() -> Card {
         .unique()
         .text("When your discard phase ends while you are tagged, the Corp must trace[1]. If unsuccessful, remove 1 tag.")
         .text("[interrupt] → [trash], trash all cards from your grip: Prevent all meat damage.")
-        .unimplemented("When your discard phase ends while you are tagged, the Corp must trace[1]. If unsuccessful, remove 1 tag.")
-        .unimplemented("[interrupt] → [trash], trash all cards from your grip: Prevent all meat damage.")
+        .when(
+            discard_phase_ends_if(Runner, &[runner_tags_at_least(1)]),
+            [performed_by(Corp, trace_if_unsuccessful(1, [performed_by(Runner, remove_tags(1))]))],
+        )
+        .named("citadel sanctuary: the corp must trace")
+        .interrupt_paid(
+            trash_self_and_grip(),
+            [prevent_all_damage(DamageKind::Meat)],
+        )
+        .named("citadel sanctuary: burn it all")
         .build()
 }
 

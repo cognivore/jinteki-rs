@@ -82,7 +82,8 @@
 //! ```
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
-use jinteki_cr::effects::{DamageKind, EffectClass};
+use jinteki_cr::effects::EffectClass;
+pub use jinteki_cr::effects::DamageKind;
 use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
 use jinteki_cr::object::PrintedCard;
 
@@ -382,6 +383,19 @@ impl CardBuilder {
     ) -> Self {
         self.ability(
             AbilityDef::conditional(cond, instrs.into_iter().collect(), true)
+                .with_flag(AbilityFlag::Interrupt),
+        )
+    }
+    /// "[interrupt] → <cost>: …" — a PAID ability carrying the interrupt
+    /// flag (9.3.6d; the Decoy class): it joins open interrupt windows
+    /// freely (9.9.4d), offered where its effect is relevant (9.9.7f).
+    pub fn interrupt_paid(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
                 .with_flag(AbilityFlag::Interrupt),
         )
     }
@@ -860,7 +874,7 @@ pub fn encountered_ice() -> TargetSpec {
 /// criteria are a conjunction: `&[installed_runner_card(), program()]` is
 /// "an installed program".
 pub fn choose(count: i64, criteria: &[TargetFilter]) -> TargetSpec {
-    TargetSpec::Choose { count: Quantity::c(count), criteria: criteria.to_vec() }
+    TargetSpec::Choose { count: Quantity::c(count), criteria: criteria.to_vec(), up_to: false }
 }
 
 // The filter atoms, named the way a card describes cards.
@@ -1031,6 +1045,65 @@ pub fn loses_credits(side: Side, amount: Quantity) -> Instruction {
 /// IS "tagged").
 pub fn runner_tags_at_least(n: u32) -> TriggerRequirement {
     TriggerRequirement::RunnerTagsAtLeast(n)
+}
+/// "When a discard phase ends, if <requirements>…" (5.5.4 / Breaking News class.)
+pub fn discard_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::DiscardPhaseEnds { side, requires: reqs.to_vec() }
+}
+/// "…if you scored this agenda this turn" (Breaking News class).
+pub fn self_scored_this_turn() -> TriggerRequirement {
+    TriggerRequirement::SelfScoredThisTurn
+}
+/// "…if you installed this resource this turn" (The Class Act class).
+pub fn self_installed_this_turn() -> TriggerRequirement {
+    TriggerRequirement::SelfInstalledThisTurn
+}
+/// "Trace[N]. If unsuccessful, …" (10.8.6.)
+pub fn trace_if_unsuccessful(base: i64, if_unsuccessful: impl IntoIterator<Item = Instruction>) -> Instruction {
+    Instruction::Trace {
+        base: Quantity::c(base),
+        if_successful: Vec::new(),
+        if_unsuccessful: if_unsuccessful.into_iter().collect(),
+        determined_min: None,
+    }
+}
+/// "Shuffle up to N cards from <side>'s discard into their deck" (Jackson
+/// class; the targets are announced, "up to" makes the floor zero).
+pub fn shuffle_from_discard_into_deck(side: Side, up_to: i64) -> Instruction {
+    Instruction::ShuffleCardsIntoDeck {
+        targets: TargetSpec::Choose {
+            count: Quantity::c(up_to),
+            criteria: vec![TargetFilter::InDiscardOf(side)],
+            up_to: true,
+        },
+        to: side,
+    }
+}
+/// "Remove 1 card in the heap from the game." (Bloo Moose class; §4.9.)
+pub fn remove_from_heap_from_game(count: i64) -> Instruction {
+    Instruction::RemoveCardsFromGame {
+        targets: TargetSpec::Choose {
+            count: Quantity::c(count),
+            criteria: vec![TargetFilter::InDiscardOf(Side::Runner)],
+            up_to: false,
+        },
+    }
+}
+/// "Remove <this card> from the game:" as a trigger cost (Jackson class).
+pub fn remove_self_cost() -> Cost {
+    Cost { remove_self_from_game: true, ..Default::default() }
+}
+/// "[trash], trash all cards from your grip:" (Citadel Sanctuary class).
+pub fn trash_self_and_grip() -> Cost {
+    Cost { trash_self: true, trash_all_from_hand: true, ..Default::default() }
+}
+/// "Prevent all <kind> damage." (9.9.7b.)
+pub fn prevent_all_damage(kind: DamageKind) -> Instruction {
+    Instruction::PreventAllDamage { kind }
+}
+/// "…would suffer <kind> damage" as an interrupt condition (9.9.4).
+pub fn would_damage(kind: DamageKind) -> TriggerCond {
+    TriggerCond::WouldDamage { kind: Some(kind), first_each_run: false }
 }
 /// "…flip this identity." (rule_identity_double_sided.)
 pub fn flip_identity(side: Side) -> Instruction {

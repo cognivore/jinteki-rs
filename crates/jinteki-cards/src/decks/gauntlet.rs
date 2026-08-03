@@ -99,7 +99,11 @@ pub fn breaking_news() -> Card {
         .text("When you score this agenda, give the Runner 2 tags.")
         .text("When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags.")
         .when(scored(), [give_tags(2)])
-        .unimplemented("When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags.")
+        .when(
+            discard_phase_ends_if(Corp, &[self_scored_this_turn()]),
+            [performed_by(Runner, remove_tags(2))],
+        )
+        .named("breaking news: the tags blow over")
         .build()
 }
 
@@ -157,7 +161,9 @@ pub fn jackson_howard() -> Card {
         .text("[click]: Draw 2 cards.")
         .text("Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives into R&D.")
         .paid(clicks(1), [draw(Corp, 2)])
-        .unimplemented("Remove Jackson Howard from the game: Shuffle up to 3 cards from Archives into R&D.")
+        .named("jackson: draw 2")
+        .paid(remove_self_cost(), [shuffle_from_discard_into_deck(Corp, 3)])
+        .named("jackson: shuffle archives into r&d")
         .build()
 }
 

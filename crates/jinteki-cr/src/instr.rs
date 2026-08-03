@@ -542,6 +542,13 @@ pub enum Instruction {
     PurgeVirusCounters,
     /// "…flip this identity." (rule_identity_double_sided; Nebula class.)
     FlipIdentity(Side),
+    /// "Shuffle up to 3 cards from Archives into R&D." (Jackson class;
+    /// 8.1.4/1.12.3 — entering the deck makes new objects, and the shuffle
+    /// follows.) The targets are announced (1.15.2).
+    ShuffleCardsIntoDeck { targets: TargetSpec, to: Side },
+    /// "Remove 1 card in the heap from the game." (Bloo Moose class; §4.9.)
+    /// Distinct from RemoveSelfFromGame: the card is a TARGET.
+    RemoveCardsFromGame { targets: TargetSpec },
     /// "Trash this card." (self-referencing; strandable per 9.1.4)
     TrashSelf,
     /// Steal the accessed agenda (7.1.4 via access step 7.2.3).
@@ -981,7 +988,7 @@ pub enum TargetSpec {
     /// constant, "trash X programs, where X is the number of advancement
     /// counters on this card" (Aggressive Secretary class) is a selector.
     /// CR 1.15.2e caps it at the number of distinct valid targets available.
-    Choose { count: Quantity, criteria: Vec<TargetFilter> },
+    Choose { count: Quantity, criteria: Vec<TargetFilter>, up_to: bool },
     /// The top N cards of a deck (Breached Dome-style).
     TopOfDeck(Side, u32),
     /// CR 8.7.4: the cards found by this ability's search, still set aside

@@ -310,6 +310,11 @@ pub enum TriggerRequirement {
     /// "…if you played an operation this turn" (Nebula class) — the game
     /// history since the current turn began (1.12.6, 10.2.1).
     PlayedOperationThisTurn(Side),
+    /// "…if you scored this agenda this turn" (Breaking News class) — the
+    /// SOURCE was scored since the turn began (1.12.6 history).
+    SelfScoredThisTurn,
+    /// "…if you installed this resource this turn" (The Class Act class).
+    SelfInstalledThisTurn,
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -379,6 +384,13 @@ pub struct Cost {
     /// KERNEL APPROXIMATION: which cards are trashed is not put to the payer
     /// (the front of the hand is taken); no example distinguishes them.
     pub trash_from_hand: u32,
+    /// "Remove <this card> from the game:" as a trigger cost (Jackson class;
+    /// 1.16.1 — the payment moves the source to the removed-from-game zone).
+    pub remove_self_from_game: bool,
+    /// "…trash all cards from your grip:" as a trigger cost (Citadel
+    /// Sanctuary class) — however many that is, including zero (1.16.2b's
+    /// calculated cost is payable at any value).
+    pub trash_all_from_hand: bool,
     /// CR 1.9.2: "spend N <kind> counters hosted on this card" (Imp class).
     /// The counters come off the ability's SOURCE, which is what makes an
     /// empty card's ability unusable rather than free.
@@ -484,6 +496,8 @@ impl Cost {
             net_damage: self.net_damage + other.net_damage,
             lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
+            remove_self_from_game: self.remove_self_from_game || other.remove_self_from_game,
+            trash_all_from_hand: self.trash_all_from_hand || other.trash_all_from_hand,
             spend_counters: self.spend_counters.or(other.spend_counters),
             forfeit_agenda: self.forfeit_agenda + other.forfeit_agenda,
             trash_matching: self.trash_matching.clone().or_else(|| other.trash_matching.clone()),

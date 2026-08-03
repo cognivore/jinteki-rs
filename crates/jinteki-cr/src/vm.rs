@@ -2117,10 +2117,18 @@ impl Vm {
     /// the pending instance being created at all — both when the stipulation
     /// really occurs and when 9.6.14d resolves the ability by class.
     pub fn trigger_requirements_met(&self, cond: &crate::ability::TriggerCond) -> bool {
+        self.trigger_requirements_met_for(cond, None)
+    }
+
+    pub fn trigger_requirements_met_for(
+        &self,
+        cond: &crate::ability::TriggerCond,
+        source: Option<ObjectId>,
+    ) -> bool {
         cite!("rule_condition_requirements_part_of_condition");
         crate::ability::trigger_requirements(cond)
             .iter()
-            .all(|r| self.state_requirement_holds(r))
+            .all(|r| self.state_requirement_holds_for(r, source))
     }
 
     /// CR 9.6.14d: mark the abilities of `obj` in the named class pending, as
@@ -2160,7 +2168,7 @@ impl Vm {
             // 9.6.14d: "Any additional requirements of the trigger condition
             // in question must still be met by the game state."
             if let Some(crate::ability::Condition::Trigger(cond)) = &def.condition {
-                if !self.trigger_requirements_met(cond) {
+                if !self.trigger_requirements_met_for(cond, Some(obj)) {
                     continue;
                 }
             }
@@ -3947,7 +3955,11 @@ impl Vm {
                     vec![EffectAtom::new(EffectClass::Draw, 1, Side::Corp)]
                 }
             }
-            Instruction::ReplaceImminentDamageKind { .. } | Instruction::InitiateRun { .. } => {
+            Instruction::ReplaceImminentDamageKind { .. }
+            | Instruction::InitiateRun { .. }
+            | Instruction::ShuffleCardsIntoDeck { .. }
+            | Instruction::RemoveCardsFromGame { .. }
+            | Instruction::FlipIdentity(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::BreachServer(_) => {
@@ -4808,7 +4820,7 @@ impl Vm {
                 // aside its hosted counters and cards as the cost is paid.
                 // They still count as "hosted" for this ability and are
                 // invisible to everything else (4.8.3).
-                if cost.trash_self {
+                if cost.trash_self || cost.remove_self_from_game {
                     cite!("rule_trash_ability_keeps_track_of_hosted_objects");
                     let counters: Vec<(CounterKind, u32)> = self.st.objects[&source.obj]
                         .counters
@@ -4889,6 +4901,18 @@ impl Vm {
                 // is evaluated HERE, when the trace initiates (9.12.2e:
                 // X-based traces read X at initiation; an orphaned XOfSource
                 // selector yields 0 — the ZATO example).
+                let instr = match &instr {
+                    Instruction::PerformedBy { instr: inner, .. }
+                        if matches!(**inner, Instruction::Trace { .. }) =>
+                    {
+                        // "the Corp must trace[1]" (Citadel Sanctuary class):
+                        // 10.8.6's steps name their own actors, so the
+                        // 1.14.5 wrapper is inert once the trace expands.
+                        cite!("rule_controller_choices");
+                        (**inner).clone()
+                    }
+                    other => other.clone(),
+                };
                 if let Instruction::Trace { base, if_successful, if_unsuccessful, determined_min } =
                     &instr
                 {
@@ -5109,7 +5133,7 @@ impl Vm {
                 self.st.player(*side).credits as i64
                     >= self.eval_quantity(q, self.current_source())
             }
-            Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
+            Instruction::TrashCards(TargetSpec::Choose { count, criteria, up_to: false }) => {
                 let want = self.eval_quantity(count, self.current_source()).max(0) as usize;
                 self.filter_candidates(criteria, Side::Runner).len() >= want
             }
@@ -5193,6 +5217,8 @@ impl Vm {
                 ..
             } => self.announcement_for(spec).map(|s| (af.controller, s)),
             Instruction::TrashCards(spec)
+            | Instruction::ShuffleCardsIntoDeck { targets: spec, .. }
+            | Instruction::RemoveCardsFromGame { targets: spec }
             | Instruction::LookAtCards { cards: spec, .. }
             | Instruction::AccessCards { cards: spec }
             | Instruction::ModifySubtypes { target: spec, .. }
@@ -5301,7 +5327,7 @@ impl Vm {
                 Some((payer, DecisionSpec::NestedCost { cost: cost.clone() }))
             }
             Instruction::MoveSetAsideCounters {
-                target: TargetSpec::Choose { count, criteria }, ..
+                target: TargetSpec::Choose { count, criteria, up_to: false }, ..
             } => {
                 let candidates = self.filter_candidates(criteria, af.controller);
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
@@ -5313,9 +5339,9 @@ impl Vm {
             )),
             // 1.13.1: "host <cards> on this card" / "add <a card> to your
             // grip" announce which cards they act on (9.3.4b).
-            Instruction::HostCards { cards: TargetSpec::Choose { count, criteria }, .. }
-            | Instruction::AddToScoreArea { cards: TargetSpec::Choose { count, criteria }, .. }
-            | Instruction::AddCardsToHand { cards: TargetSpec::Choose { count, criteria } } => {
+            Instruction::HostCards { cards: TargetSpec::Choose { count, criteria, up_to: false }, .. }
+            | Instruction::AddToScoreArea { cards: TargetSpec::Choose { count, criteria, up_to: false }, .. }
+            | Instruction::AddCardsToHand { cards: TargetSpec::Choose { count, criteria, up_to: false } } => {
                 let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((
@@ -5342,7 +5368,7 @@ impl Vm {
                     .into_iter()
                     .filter(|s| matches!(s, TargetSpec::Choose { .. }))
                     .collect();
-                let TargetSpec::Choose { count, criteria } = specs.get(slot)? else {
+                let TargetSpec::Choose { count, criteria, up_to: false } = specs.get(slot)? else {
                     return None;
                 };
                 let all = self.filter_candidates_from(criteria, Some(af.source.obj));
@@ -5364,7 +5390,7 @@ impl Vm {
             // WHICH CARD becomes the host (a Rook-class ability moving itself
             // onto another piece of ice). 1.15.2e applies: as many distinct
             // valid targets as the instruction asks for, or as many as exist.
-            Instruction::HostCards { host: TargetSpec::Choose { count, criteria }, .. } => {
+            Instruction::HostCards { host: TargetSpec::Choose { count, criteria, up_to: false }, .. } => {
                 let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((af.controller, self.announcement(candidates, want)))
@@ -5409,7 +5435,7 @@ impl Vm {
             }
             // 8.5.16b: the Runner declares a host or defaults to the rig.
             Instruction::InstallCard {
-                card: TargetSpec::Choose { count, criteria },
+                card: TargetSpec::Choose { count, criteria, up_to: false },
                 ..
             } => {
                 let candidates = self.filter_candidates(criteria, af.controller);
@@ -6129,10 +6155,10 @@ impl Vm {
     fn announcement_for(&self, spec: &TargetSpec) -> Option<DecisionSpec> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
         let slot = af.announce_slot;
-        let (count, criteria) = match spec {
-            TargetSpec::Choose { count, criteria } if slot == 0 => (count, criteria),
+        let (count, criteria, up_to) = match spec {
+            TargetSpec::Choose { count, criteria, up_to } if slot == 0 => (count, criteria, *up_to),
             TargetSpec::Each(specs) => match specs.get(slot) {
-                Some(TargetSpec::Choose { count, criteria }) => (count, criteria),
+                Some(TargetSpec::Choose { count, criteria, up_to }) => (count, criteria, *up_to),
                 Some(_) | None => return None,
             },
             _ => return None,
@@ -6141,6 +6167,12 @@ impl Vm {
         let mut candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
         candidates.retain(|c| !af.targets.contains(c));
         let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+        if up_to {
+            // "up to N": the floor is zero (1.15.2e's completion rule applies
+            // only to the ceiling the player chose to reach for).
+            let n = want.min(candidates.len() as u32);
+            return Some(DecisionSpec::ChooseTargets { candidates, count: n, up_to: true, min: 0 });
+        }
         Some(self.announcement(candidates, want))
     }
 
@@ -6630,8 +6662,40 @@ impl Vm {
     /// (`TriggerRequirement`), evaluated against the present state and the
     /// public game history (10.2.1).
     pub fn state_requirement_holds(&self, req: &crate::ability::TriggerRequirement) -> bool {
+        self.state_requirement_holds_for(req, None)
+    }
+
+    pub fn state_requirement_holds_for(
+        &self,
+        req: &crate::ability::TriggerRequirement,
+        source: Option<ObjectId>,
+    ) -> bool {
         use crate::ability::TriggerRequirement as R;
         match req {
+            R::SelfScoredThisTurn => {
+                cite!("rule_hidden_or_open_information");
+                let Some(src) = source else { return false };
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                    .unwrap_or(0);
+                log[start..]
+                    .iter()
+                    .any(|c| matches!(c, GameChange::AgendaScored { obj, .. } if *obj == src))
+            }
+            R::SelfInstalledThisTurn => {
+                cite!("rule_hidden_or_open_information");
+                let Some(src) = source else { return false };
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                    .unwrap_or(0);
+                log[start..]
+                    .iter()
+                    .any(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == src))
+            }
             R::RunnerTagsAtLeast(n) => {
                 cite!("rule_tagged");
                 self.st.runner.tags >= *n
@@ -8653,6 +8717,26 @@ impl Vm {
                             self.changes.record(GameChange::IdentityFlipped { side: *side });
                         }
                     }
+                }
+            }
+            Instruction::ShuffleCardsIntoDeck { targets, to } => {
+                // Jackson class: the announced cards enter the deck (1.12.3
+                // makes them new objects on entering a hidden zone) and the
+                // deck is shuffled (8.1.4).
+                cite!("rule_shuffle_deck_after_search");
+                let to = *to;
+                let ts = self.resolve_targets(targets, Some(source.obj), &imm.targets);
+                for t in ts {
+                    self.move_card(t, Zone::Deck(to));
+                }
+                self.shuffle_deck(to);
+            }
+            Instruction::RemoveCardsFromGame { targets } => {
+                // §4.9: removed from the game.
+                cite!("sec_removed_from_game");
+                let ts = self.resolve_targets(targets, Some(source.obj), &imm.targets);
+                for t in ts {
+                    self.move_card(t, Zone::RemovedFromGame);
                 }
             }
             Instruction::PurgeVirusCounters => {
@@ -11107,6 +11191,12 @@ impl Vm {
             trashed.push(source);
             self.changes.record(GameChange::TrashAbilityUsed { source, side });
         }
+        if cost.remove_self_from_game {
+            // "Remove <this card> from the game:" as a trigger cost (Jackson
+            // class) — §4.9, paid by moving the source out of the game.
+            cite!("sec_removed_from_game");
+            self.move_card(source, Zone::RemovedFromGame);
+        }
         // 1.16.10: "trash 1 of your other installed cards" — the cards the
         // payer chose while the payment gathered its choices.
         for c in p.trashed.clone().unwrap_or_default() {
@@ -11121,6 +11211,15 @@ impl Vm {
         {
             self.trash_card(c, side);
             trashed.push(c);
+        }
+        // "…trash all cards from your grip:" (Citadel Sanctuary class) — the
+        // whole grip, whatever it holds; no choice to gather.
+        if cost.trash_all_from_hand {
+            cite!("rule_calculated_quantity");
+            for c in self.st.hand[&side].clone() {
+                self.trash_card(c, side);
+                trashed.push(c);
+            }
         }
         // 8.2.5 / 4.9.3: "forfeit an agenda" moves it from the score area to
         // the removed-from-game zone; its agenda points stop counting because
@@ -12615,8 +12714,7 @@ impl Vm {
                     side,
                     vec![Instruction::TrashCards(TargetSpec::Choose {
                         count: crate::instr::Quantity::Const(1),
-                        criteria: vec![TargetFilter::InstalledResource],
-                    })],
+                        criteria: vec![TargetFilter::InstalledResource], up_to: false })],
                     None,
                     None,
                 );
@@ -12998,6 +13096,12 @@ fn bind_targets(instr: Instruction, announced: &[ObjectId]) -> Instruction {
     }
     match instr {
         Instruction::TrashCards(s) => Instruction::TrashCards(bind_spec(s, announced)),
+        Instruction::ShuffleCardsIntoDeck { targets, to } => {
+            Instruction::ShuffleCardsIntoDeck { targets: bind_spec(targets, announced), to }
+        }
+        Instruction::RemoveCardsFromGame { targets } => {
+            Instruction::RemoveCardsFromGame { targets: bind_spec(targets, announced) }
+        }
         Instruction::PlaceCounters { target, kind, amount } => {
             Instruction::PlaceCounters { target: bind_spec(target, announced), kind, amount }
         }

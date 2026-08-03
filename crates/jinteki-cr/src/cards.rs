@@ -136,8 +136,7 @@ pub fn seamless_launch() -> PrintedCard {
             criteria: vec![
                 TargetFilter::InstalledCorpCard,
                 TargetFilter::InstalledThisTurn(false),
-            ],
-        },
+            ], up_to: false },
         kind: CounterKind::Advancement,
         amount: Quantity::c(2),
     }])
@@ -444,8 +443,7 @@ pub fn corporate_troubleshooter() -> PrintedCard {
         vec![Instruction::ModifyStrength {
             target: TargetSpec::Choose {
                 count: Quantity::c(1),
-                criteria: vec![TargetFilter::Rezzed, TargetFilter::IceProtectingSourceServer],
-            },
+                criteria: vec![TargetFilter::Rezzed, TargetFilter::IceProtectingSourceServer], up_to: false },
             amount: Quantity::AnnouncedX,
             duration: Some(crate::lingering::WantedDuration::ThisTurn),
         }],
@@ -682,8 +680,7 @@ pub fn infiltration() -> PrintedCard {
                 vec![Instruction::ExposeCards {
                     cards: TargetSpec::Choose {
                         count: Quantity::c(1),
-                        criteria: vec![TargetFilter::InstalledCorpCard],
-                    },
+                        criteria: vec![TargetFilter::InstalledCorpCard], up_to: false },
                 }],
             ),
         ],
@@ -779,8 +776,7 @@ pub fn bookmark() -> PrintedCard {
     let hosted_to_grip = || Instruction::AddCardsToHand {
         cards: TargetSpec::Choose {
             count: Quantity::Count(TargetFilter::HostedOnSource),
-            criteria: vec![TargetFilter::HostedOnSource],
-        },
+            criteria: vec![TargetFilter::HostedOnSource], up_to: false },
     };
     c.abilities = vec![
         AbilityDef::paid(
@@ -788,8 +784,7 @@ pub fn bookmark() -> PrintedCard {
             vec![Instruction::HostCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(3),
-                    criteria: vec![TargetFilter::CardsInHandOf(Side::Runner)],
-                },
+                    criteria: vec![TargetFilter::CardsInHandOf(Side::Runner)], up_to: false },
                 host: TargetSpec::SelfSource,
             }],
         )
