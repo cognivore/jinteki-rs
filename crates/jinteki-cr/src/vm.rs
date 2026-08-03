@@ -2199,6 +2199,21 @@ impl Vm {
         self.st.objects.get_mut(&card).unwrap().scored_snapshot = Some((adv, req));
     }
 
+    /// CR 6.3.2a: is the Runner prohibited from ANNOUNCING this server as the
+    /// attacked server? An Off-the-Grid-class declaration protects the server
+    /// its source is in, and reaches no further than the announcement: a run
+    /// already in progress can still be moved onto that server (6.1.2d).
+    pub fn run_initiation_prohibited(&self, server: ServerId) -> bool {
+        cite!("rule_cannot_run_abilities");
+        self.active_statics().iter().any(|(src, d)| {
+            matches!(d, StaticDecl::CannotInitiateRunOnSourceServer)
+                && self.st.objects.get(src).is_some_and(|o| match o.zone {
+                    Zone::Root(s) | Zone::Ice(s) => s == server,
+                    _ => false,
+                })
+        })
+    }
+
     /// CR 1.17.3a: the advancement requirement that governs scoring this
     /// agenda — its printed one as modified by active declarations (a
     /// SanSan-class upgrade in the same server lowers it). Never below 0.
@@ -2613,7 +2628,7 @@ impl Vm {
                 let n = self.eval_quantity(amount, source);
                 vec![EffectAtom::new(EffectClass::Structural, n, controller)]
             }
-            Instruction::AdvanceCard { .. } => {
+            Instruction::AdvanceCard { .. } | Instruction::ChangeAttackedServer { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::TrashSelf => {
@@ -5789,6 +5804,23 @@ impl Vm {
                     self.changes.record(GameChange::CounterPlaced { obj: t, kind: *kind, amount: n });
                 }
             }
+            Instruction::ChangeAttackedServer { server } => {
+                // 6.1.2d: the attacked server changes DIRECTLY, without
+                // reference to the Runner's position — so the run's current
+                // timing step does not change and the Runner does not approach
+                // or encounter the ice protecting the new server. (Their
+                // position is left exactly as it was; 6.2.5 keeps it a
+                // position of whatever server it belonged to, and the run
+                // proceeds from the step it was already at.)
+                cite!("rule_change_attacked_server_directly");
+                cite!("rule_attacked_server");
+                if let Some(r) = self.run_ctx_mut() {
+                    r.server = *server;
+                }
+                if let Some((_, s, _)) = self.current_run.as_mut() {
+                    *s = *server;
+                }
+            }
             Instruction::AdvanceCard { target } => {
                 // 1.18.1: to advance a card is to place an advancement counter
                 // from the bank on it — and it IS an advance, so 1.18.2's
@@ -6677,6 +6709,15 @@ impl Vm {
         if side == Side::Runner {
             cite!("runner_basic_action_run");
             for server in self.all_servers() {
+                // 6.3.2a: "the Runner cannot initiate a run on this server"
+                // refers to the ANNOUNCEMENT of the attacked server in the
+                // Initiation Phase — so it removes the action, and nothing
+                // more (an ability that changes the attacked server later is
+                // untouched by it).
+                if self.run_initiation_prohibited(server) {
+                    cite!("rule_cannot_run_abilities");
+                    continue;
+                }
                 out.push(ActionOption::BasicRun { server });
             }
             if self.st.runner.tags > 0 && self.st.runner.credits >= 2 {

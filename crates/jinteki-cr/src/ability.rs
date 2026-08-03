@@ -339,6 +339,11 @@ pub enum StaticDecl {
     /// The scope is the source's server, exactly as
     /// `TargetFilter::IceProtectingSourceServer` scopes ice.
     ScoreRequirementModInSourceServer(i32),
+    /// CR 6.3.2a: "The Runner cannot initiate a run on this server."
+    /// (Off the Grid class.) The declaration refers to the ANNOUNCEMENT of
+    /// the attacked server at step 6.9.1a and to nothing else — an ability
+    /// that changes the attacked server mid-run (6.1.2d) is not affected.
+    CannotInitiateRunOnSourceServer,
 }
 
 /// One ability as printed/granted: the unit of rules text (9.1.1).

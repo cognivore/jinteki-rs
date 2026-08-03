@@ -266,6 +266,14 @@ pub enum Instruction {
     /// CR 1.18.2: placing an advancement counter directly is NOT advancing —
     /// that is [`Instruction::AdvanceCard`].
     PlaceCounters { target: TargetSpec, kind: crate::object::CounterKind, amount: Quantity },
+    /// CR 6.1.2d: "The attacked server becomes <server>." (Sneakdoor Beta
+    /// class.) A few abilities change the attacked server DIRECTLY, without
+    /// referring to the Runner's position — so the run's current timing step
+    /// does not change, and the Runner does not approach or encounter the ice
+    /// protecting the new server. (Contrast `MoveRunnerToIce`, 6.2.8a, which
+    /// changes the attacked server BY moving the Runner and does change the
+    /// timing step.)
+    ChangeAttackedServer { server: ServerId },
     /// CR 1.18.1: "Advance <a card>." — place an advancement counter from the
     /// bank on it, as an ADVANCE, so that "whenever you advance" conditions
     /// are met (1.18.2 distinguishes this from placing the counter directly).

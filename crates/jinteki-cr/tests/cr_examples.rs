@@ -216,6 +216,12 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_placing_advancement_counter_1",
     "example_rule_dividends_1",
     "example_rule_dividends_timing_1",
+    // Wave 9c: the attacked server (§6.1.2d, §6.3.2a) and restrictions (§9.3.3f,
+    // §9.11.4a).
+    "example_rule_change_attacked_server_directly_1",
+    "example_rule_cannot_run_abilities_1",
+    "example_rule_use_restrictions_1",
+    "example_rule_variable_restriction_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -7592,6 +7598,187 @@ fn example_rule_dividends_timing_1() {
         1,
         "10.13.2: requirement 2 and 3 counters AS IT BEGAN TO BE SCORED — 1 excess"
     );
+}
+
+
+// ===========================================================================
+// §6.1.2d / §6.3.2a — the attacked server; §9.3.3f / §9.11.4a — restrictions
+// ===========================================================================
+
+/// example_rule_change_attacked_server_directly_1 (6.1.2d): a Sneakdoor-Beta-
+/// class ability changes the attacked server from Archives to HQ without
+/// referring to the Runner's position. The run's current timing step does not
+/// change, so the Runner does not approach or encounter the ice protecting
+/// HQ — and the breach at step 6.9.5b is a breach of HQ.
+#[test]
+fn example_rule_change_attacked_server_directly_1() {
+    let mut vm = Vm::empty(920);
+    let hq_ice = tk::install_ice(&mut vm, tk::etr_ice("Ice-Wall", 0, 1), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::sneakdoor_like("Sneakdoor-like", ServerId::Hq));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.start_turn(Side::Runner);
+
+    // The plan: run Archives (undefended), then change the attacked server
+    // from inside the run.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Archives)
+            .when(
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("sneakdoor"),
+            )
+            .stop_at_action(),
+    );
+    assert!(t.took("sneakdoor"), "the attacked server was changed mid-run: {}", t.tail(8));
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::IceApproached { ice } if *ice == hq_ice)),
+        "6.1.2d: the timing step did not change — HQ's ice was never approached: {:?}",
+        vm.changes.log
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == hq_ice)),
+        "…nor encountered"
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::BreachBegan { server } if *server == ServerId::Hq)),
+        "the run continued from where it was, against its new attacked server"
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunEnded { server, .. } if *server == ServerId::Hq)),
+        "and ended as a run on HQ"
+    );
+}
+
+/// example_rule_cannot_run_abilities_1 (6.3.2a): an Off-the-Grid-class
+/// declaration prohibits ANNOUNCING its server as the attacked server — the
+/// basic run action is not offered for it. It says nothing about a run that
+/// is already in progress: an ability that changes the attacked server to
+/// that server is unaffected.
+#[test]
+fn example_rule_cannot_run_abilities_1() {
+    let mut vm = Vm::empty(921);
+    tk::install_root(&mut vm, tk::off_the_grid_like("OffTheGrid-like"), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 0), ServerId::Remote(2), false);
+    tk::install_rig(
+        &mut vm,
+        tk::sneakdoor_like("Sneakdoor-like", ServerId::Remote(1)),
+    );
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Remote(2))
+            .when(
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("sneakdoor"),
+            )
+            .stop_at_action(),
+    );
+    let first = t.first_window(Kind::Action, Side::Runner);
+    assert!(
+        !first
+            .actions()
+            .iter()
+            .any(|a| matches!(a, ActionOption::BasicRun { server } if *server == ServerId::Remote(1))),
+        "6.3.2a: the protected server cannot be announced as the attacked server: {:?}",
+        first.actions()
+    );
+    assert!(
+        first
+            .actions()
+            .iter()
+            .any(|a| matches!(a, ActionOption::BasicRun { server } if *server == ServerId::Remote(2))),
+        "every other server is still runnable"
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunEnded { server, .. } if *server == ServerId::Remote(1))),
+        "…and the prohibition did not interfere with the run being moved there: {}",
+        t.tail(8)
+    );
+}
+
+/// example_rule_use_restrictions_1 (9.11.4a): a sentence that only restricts
+/// when an ability can be used is not an instruction and not part of one. The
+/// kernel keeps such a sentence as a restriction on the ability, so it gates
+/// the ability's availability and contributes nothing to its resolution.
+#[test]
+fn example_rule_use_restrictions_1() {
+    let mut vm = Vm::empty(922);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Ice-a", 0, 1), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::arruaceiras_like("Arruaceiras-like"));
+    vm.start_turn(Side::Runner);
+
+    // The restricted ability is offered only where its restriction allows —
+    // never in the action-phase paid windows before the run.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("arruaceiras"))
+            .stop_at_action(),
+    );
+    let offers: Vec<&plan::Entry> =
+        t.entries.iter().filter(|e| e.offered("arruaceiras")).collect();
+    assert!(!offers.is_empty(), "the ability was offered somewhere: {}", t.tail(10));
+    assert!(
+        offers.iter().all(|e| e.step.as_deref() == Some("step_encounter_paw")),
+        "9.11.4a: the restriction sentence gates the whole ability: {:?}",
+        offers.iter().map(|e| e.step.clone()).collect::<Vec<_>>()
+    );
+    // The restriction is not an instruction: resolving the ability performed
+    // exactly the one effect its instruction list holds.
+    assert_eq!(vm.st.runner.tags, 1, "one instruction, one effect");
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::TagsTaken { .. })).count(),
+        1
+    );
+}
+
+/// example_rule_variable_restriction_1 (9.3.3f): a definition for a variable
+/// ("X is the number of ice protecting this server") is a RESTRICTION, not an
+/// instruction — it lives in a static ability that never resolves (9.4.1) and
+/// only constrains the value X takes elsewhere. Remove the ability and X is
+/// treated as 0 (9.12.2e).
+#[test]
+fn example_rule_variable_restriction_1() {
+    let mut vm = Vm::empty(923);
+    let surveyor = tk::install_ice(&mut vm, tk::surveyor_like("Surveyor-like"), ServerId::Remote(1), true);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Ice-b", 0, 1), ServerId::Remote(1), true);
+    vm.start_turn(Side::Runner);
+
+    let defining: Vec<&jinteki_cr::ability::AbilityDef> = vm.st.objects[&surveyor]
+        .printed
+        .abilities
+        .iter()
+        .filter(|a| !a.statics.is_empty())
+        .collect();
+    assert!(!defining.is_empty(), "the X definition is carried by a static ability");
+    assert!(
+        defining.iter().all(|a| a.instructions.is_empty()),
+        "9.3.3f: the definition is a restriction — it is not an instruction"
+    );
+    // And it does what a restriction does: it constrains the value X takes.
+    assert_eq!(
+        vm.effective_strength(surveyor),
+        Some(4),
+        "X = 2 per piece of ice protecting this server"
+    );
+    let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+    assert!(t.of_kind(Kind::Targets).is_empty(), "a static ability resolves nothing");
 }
 
 // ===========================================================================

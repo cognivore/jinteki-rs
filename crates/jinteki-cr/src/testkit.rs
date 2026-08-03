@@ -3659,3 +3659,35 @@ pub fn sansan_like(name: &'static str, fewer: i32) -> PrintedCard {
     .labeled("sansan: score for 1 fewer advancement")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W9c shapes: the attacked server (§6.1.2d, §6.3.2a)
+// ---------------------------------------------------------------------------
+
+/// Sneakdoor Beta shape (6.1.2d): a paid ability that changes the attacked
+/// server directly, without referring to the Runner's position.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card's ability is an "if
+/// successful" one on a run it initiates itself; the initiation and the
+/// success condition are orthogonal to 6.1.2d's claim about the timing step.
+pub fn sneakdoor_like(name: &'static str, to: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::ChangeAttackedServer { server: to }],
+    )
+    .labeled("sneakdoor: the attacked server becomes HQ")];
+    c
+}
+
+/// Off the Grid shape (6.3.2a): "The Runner cannot initiate a run on this
+/// server." A declaration about the ANNOUNCEMENT of the attacked server.
+pub fn off_the_grid_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::CannotInitiateRunOnSourceServer,
+    ])
+    .labeled("off-the-grid: cannot initiate a run here")];
+    c
+}
