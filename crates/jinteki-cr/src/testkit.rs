@@ -2935,3 +2935,50 @@ pub fn top_hat_like(name: &'static str, top: u32) -> PrintedCard {
     .labeled("top-hat: access 1 of the top 5 cards of R&D")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W7d shapes: subtypes as modifiable characteristics (§2.16.5, §9.11.4c)
+// ---------------------------------------------------------------------------
+
+/// Tinkering shape (9.11.4c / 2.16.5): "Choose a piece of ice. That ice gains
+/// sentry, code gate, and barrier until the end of the turn." Two printed
+/// sentences, ONE instruction: the first only directs the player to select a
+/// target.
+pub fn tinkering_like(name: &'static str) -> PrintedCard {
+    event(
+        name,
+        0,
+        vec![Instruction::ModifySubtypes {
+            target: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)],
+            },
+            add: vec!["sentry", "code gate", "barrier"],
+            remove: Vec::new(),
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+}
+
+/// Lycan/Morph shape (2.16.5): a piece of ice that prints a subtype and whose
+/// own static ability removes ONE instance of it. Subtype presence is a
+/// COUNT, so a card that also gains an instance from elsewhere keeps it.
+///
+/// Simplification (§12 rule 3): the real morph ice swaps subtypes on being
+/// advanced; the counting is the whole point here.
+pub fn morph_ice(name: &'static str, prints: &'static str, loses: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 3, 3);
+    c.subtypes = vec![prints];
+    c.abilities = vec![AbilityDef {
+        kind: crate::ability::AbilityKind::Static,
+        flags: Vec::new(),
+        condition: None,
+        cost: None,
+        instructions: Vec::new(),
+        statics: vec![StaticDecl::SubtypeModSelf { add: Vec::new(), remove: vec![loses] }],
+        optional: false,
+        timing: None,
+        label: "morph: lose 1 instance of a subtype",
+    }];
+    c
+}

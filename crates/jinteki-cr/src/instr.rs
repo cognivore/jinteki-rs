@@ -189,6 +189,18 @@ pub enum Instruction {
         payload: LingeringSpec,
         duration: crate::lingering::WantedDuration,
     },
+    /// "Choose <targets>. <They> gain/lose <subtypes> [for a duration]."
+    /// (Tinkering class.) CR 9.11.4c: the choosing sentence and the
+    /// modifying sentence form ONE instruction — the target is announced as
+    /// the instruction becomes imminent and the subtypes change when it
+    /// resolves. Both the target and the duration are positions; 2.16.5
+    /// counts instances, so an add and a printed subtype coexist.
+    ModifySubtypes {
+        target: TargetSpec,
+        add: Vec<&'static str>,
+        remove: Vec<&'static str>,
+        duration: crate::lingering::WantedDuration,
+    },
     /// "The Runner loses N memory units until end of turn." (Bad Times.)
     ReduceRunnerMemoryThisTurn(u32),
     /// CR 9.11.4g / 9.12.3c-d: choose one of several optioned effects; the

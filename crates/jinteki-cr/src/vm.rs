@@ -1318,6 +1318,23 @@ impl Vm {
                                 });
                             }
                         }
+                        StaticDecl::SubtypeModSelf { add, remove } => {
+                            cite!("rule_add_remove_subtypes");
+                            for t in add {
+                                out.push(CharEffect {
+                                    source: o.id,
+                                    target: o.id,
+                                    op: CharOp::AddSubtype(t),
+                                });
+                            }
+                            for t in remove {
+                                out.push(CharEffect {
+                                    source: o.id,
+                                    target: o.id,
+                                    op: CharOp::RemoveSubtype(t),
+                                });
+                            }
+                        }
                         StaticDecl::RemoveHostAbilities => {
                             if let Some(h) = o.host {
                                 out.push(CharEffect {
@@ -1347,6 +1364,23 @@ impl Vm {
             }
         }
         for l in &self.lingering {
+            if let Payload::SubtypeMod { target, add, remove } = &l.payload {
+                cite!("rule_add_remove_subtypes");
+                for t in add {
+                    out.push(crate::object::CharEffect {
+                        source: l.source,
+                        target: *target,
+                        op: crate::object::CharOp::AddSubtype(t),
+                    });
+                }
+                for t in remove {
+                    out.push(crate::object::CharEffect {
+                        source: l.source,
+                        target: *target,
+                        op: crate::object::CharOp::RemoveSubtype(t),
+                    });
+                }
+            }
             if let Payload::StrengthMod { target, delta } = l.payload {
                 out.push(crate::object::CharEffect {
                     source: l.source,
@@ -2034,6 +2068,7 @@ impl Vm {
             | Instruction::PreventTrashOf(_)
             | Instruction::BypassEncounteredIce
             | Instruction::ModifyStrength { .. }
+            | Instruction::ModifySubtypes { .. }
             | Instruction::BreakSubroutines { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
@@ -2991,7 +3026,9 @@ impl Vm {
                 cite!("rule_controller_choices");
                 self.targets_needed(instr).map(|(_, spec)| (*side, spec))
             }
-            Instruction::TrashCards(spec) | Instruction::AccessCards { cards: spec } => {
+            Instruction::TrashCards(spec)
+            | Instruction::AccessCards { cards: spec }
+            | Instruction::ModifySubtypes { target: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
             // CR 1.15.1 / 9.8.6: a break ability announces the subroutines
@@ -4760,6 +4797,34 @@ impl Vm {
                         l.also = enc.map(crate::lingering::Duration::Encounter);
                     }
                     self.lingering.push(l);
+                }
+            }
+            Instruction::ModifySubtypes { target, add, remove, duration } => {
+                // CR 9.11.4c: the "choose" sentence and the modifying
+                // sentence are ONE instruction — the targets were announced
+                // when it became imminent, the subtypes change now.
+                cite!("rule_choose_instruction");
+                cite!("rule_add_remove_subtypes");
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                let dur = crate::lingering::bind_duration(
+                    *duration,
+                    self.st.encounter.as_ref().map(|e| e.id),
+                    self.current_run.map(|(r, _, _)| r),
+                    self.st.turn_seq,
+                );
+                for t in targets {
+                    let id = self.next_lingering;
+                    self.next_lingering += 1;
+                    self.lingering.push(LingeringEffect::new(
+                        id,
+                        source.obj,
+                        Payload::SubtypeMod {
+                            target: t,
+                            add: add.clone(),
+                            remove: remove.clone(),
+                        },
+                        dur,
+                    ));
                 }
             }
             Instruction::BreakSubroutines { subs } => {

@@ -40,6 +40,10 @@ pub enum Payload {
     StrengthMod { target: ObjectId, delta: i32 },
     /// Memory limit modifier (Bad Times class).
     MemoryLimitMod { delta: i32 },
+    /// CR 2.16.5 / 9.12.1b: subtypes added to or removed from an object for
+    /// a duration (Tinkering class). Instances COUNT — a subtype is present
+    /// while its adds outnumber its removals.
+    SubtypeMod { target: ObjectId, add: Vec<&'static str>, remove: Vec<&'static str> },
     /// CR 9.1.9/9.10.2: an ability granted to an object for a duration.
     GrantedAbility { to: ObjectId, def: AbilityDef },
     /// CR 9.9.8c: a replacement effect created ahead of time. `applies_to`

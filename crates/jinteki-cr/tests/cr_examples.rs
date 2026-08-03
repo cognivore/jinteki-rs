@@ -170,6 +170,12 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 7c: 1.15.4 targets beyond a move.
     "example_rule_target_beyond_move_1",
     "example_rule_target_1",
+    // Wave 7d: identifying instructions (§9.11.2/9.11.4), subtypes (2.16.5).
+    "example_rule_choose_instruction_1",
+    "example_rule_add_remove_subtypes_1",
+    "example_rule_choice_instruction_1",
+    "example_rule_split_up_instruction_1",
+    "example_rule_step_sequences_2",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5917,6 +5923,194 @@ fn example_rule_target_1() {
             .any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == rnd[2])),
         "the announced card was accessed: {:?}",
         vm.changes.log
+    );
+}
+
+// ===========================================================================
+// §9.11 — identifying instructions (W7d), and subtypes as characteristics
+// ===========================================================================
+
+/// example_rule_choose_instruction_1 (9.11.4c) and
+/// example_rule_add_remove_subtypes_1 (2.16.5): a Tinkering-class play
+/// ability reads "Choose a piece of ice. That ice gains sentry, code gate,
+/// and barrier until the end of the turn." The first sentence only directs
+/// the player to select a target, so the two sentences form ONE instruction:
+/// the target is announced as it becomes imminent and the subtypes are gained
+/// when it resolves. Played on a Lycan-class morph ice, which prints sentry
+/// and removes one instance of sentry with its own ability, the counting of
+/// 2.16.5 leaves the ice a sentry.
+#[test]
+fn example_rule_choose_instruction_1() {
+    let mut vm = Vm::empty(708);
+    let lycan = tk::install_ice(&mut vm, tk::morph_ice("Lycan-like", "sentry", "sentry"), ServerId::Hq, true);
+    let other = tk::install_ice(&mut vm, tk::vanilla_ice("Plain-Ice", 1, 1), ServerId::Rnd, true);
+    let tinkering = vm.new_object(tk::tinkering_like("Tinkering-like"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(tinkering);
+    tk::install_rig(&mut vm, tk::play_event_action("Play-Button", tinkering));
+    vm.start_turn(Side::Runner);
+
+    // Before: the morph ice's printed sentry is cancelled by its own ability.
+    assert!(!vm.has_subtype(lycan, "sentry"), "printed once, removed once");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .uses("play-event-action")
+            .when(Match::targets().once(), Reply::target(lycan))
+            .stop_at_action(),
+    );
+    let announce = t.of_kind(Kind::Targets);
+    assert_eq!(
+        announce.len(),
+        1,
+        "9.11.4c: choosing and modifying are ONE instruction, one announcement: {}",
+        t.tail(10)
+    );
+    assert!(announce[0].candidates().contains(&lycan) && announce[0].candidates().contains(&other));
+    // 2.16.5: printed once + gained once - removed once = still a sentry.
+    assert!(vm.has_subtype(lycan, "sentry"), "two instances added, one removed");
+    assert!(vm.has_subtype(lycan, "code gate"));
+    assert!(vm.has_subtype(lycan, "barrier"));
+    assert!(!vm.has_subtype(other, "barrier"), "only the announced target");
+}
+
+/// example_rule_add_remove_subtypes_1 (2.16.5) — asserted above, from the
+/// other side: the morph ice's own removal cancels the printed instance, so
+/// the subtype is present exactly while the adds outnumber the removals.
+#[test]
+fn example_rule_add_remove_subtypes_1() {
+    let mut vm = Vm::empty(709);
+    let lycan = tk::install_ice(&mut vm, tk::morph_ice("Lycan-like", "sentry", "sentry"), ServerId::Hq, true);
+    assert!(!vm.has_subtype(lycan, "sentry"), "1 printed - 1 removed = not a sentry");
+    let plain = tk::install_ice(&mut vm, tk::morph_ice("Plain-Morph", "sentry", "code gate"), ServerId::Rnd, true);
+    assert!(vm.has_subtype(plain, "sentry"), "removing an absent subtype changes nothing");
+    assert!(!vm.has_subtype(plain, "code gate"));
+}
+
+/// example_rule_choice_instruction_1 (9.11.4g): a Data-Raven-class ability
+/// forces the Runner to resolve either "take 1 tag" or "end the run". Making
+/// the choice ENDS the first instruction; the chosen option becomes the next
+/// instruction and becomes imminent after a checkpoint — so it can still be
+/// interrupted in its own right.
+#[test]
+fn example_rule_choice_instruction_1() {
+    let mut vm = Vm::empty(710);
+    tk::install_ice(&mut vm, tk::data_raven_like("DataRaven-like"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::decoy_like("Decoy-like"));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::options().once(), Reply::ChooseNamed("take 1 tag"))
+            .when(Match::interrupt().once(), Reply::take("decoy"))
+            .stop_at_action(),
+    );
+    let choice = t.of_kind(Kind::Options);
+    assert_eq!(choice.len(), 1, "one choice instruction: {}", t.tail(10));
+    assert_eq!(choice[0].choices(), &["take 1 tag", "end the run"]);
+    // The chosen option became a SEPARATE instruction, imminent after a
+    // checkpoint — which is exactly what let the interrupt reach it.
+    assert!(t.took("decoy"), "the chosen effect became imminent in its own right");
+    assert_eq!(vm.st.runner.tags, 0, "the tag was avoided");
+    assert!(vm.current_run.is_none() || vm.st.runner.tags == 0);
+}
+
+/// example_rule_split_up_instruction_1 (9.11.4b): a Shipment-from-MirrorMorph
+/// -class single sentence directing the player to install up to 3 cards is
+/// treated as three separate instructions — three announcements, three
+/// installs, each with its own checkpoint.
+#[test]
+fn example_rule_split_up_instruction_1() {
+    let mut vm = Vm::empty(711);
+    let a = vm.new_object(tk::program_cost("Prog-A", 0), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(a);
+    let b = vm.new_object(tk::program_cost("Prog-B", 0), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(b);
+    let c = vm.new_object(tk::program_cost("Prog-C", 0), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(c);
+    tk::install_rig(&mut vm, tk::mass_install_button("Shipment-like", 3));
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().uses("mass-install").stop_at_action(),
+    );
+    // Three separate announcements, each offering only the cards still in
+    // hand — "You may install a card from HQ." three times, not one
+    // announcement of three cards.
+    let announce = t.of_kind(Kind::Targets);
+    assert!(announce.len() >= 3, "one announcement per install: {}", t.tail(14));
+    assert_eq!(announce[0].candidates().len(), 3);
+    assert!(
+        announce.iter().all(|e| matches!(
+            e.spec,
+            DecisionSpec::ChooseTargets { count: 1, up_to: true, .. }
+        )),
+        "each is its own optional install"
+    );
+    for id in [a, b, c] {
+        assert_eq!(vm.st.objects[&id].zone, Zone::Rig, "all three were installed");
+    }
+}
+
+/// example_rule_step_sequences_2 (9.11.2a): the steps of a checkpoint are not
+/// instructions, and no checkpoint takes place in the middle of another
+/// checkpoint. One instruction trashes the top of a 3-deep hosting chain; the
+/// checkpoint repeats steps 10.3.1f/g to a fixpoint INSIDE itself, and its
+/// reaction window opens only afterwards (10.3.2) — so the hosted cards are
+/// already gone by the time the window's ability resolves.
+#[test]
+fn example_rule_step_sequences_2() {
+    let mut vm = Vm::empty(712);
+    let host = tk::install_root(&mut vm, tk::corp_filler("Host-Asset"), ServerId::Remote(1), true);
+    let guest = tk::install_root(&mut vm, tk::corp_filler("Guest-Asset"), ServerId::Remote(1), true);
+    let grand = tk::install_root(&mut vm, tk::corp_filler("Grand-Asset"), ServerId::Remote(1), true);
+    tk::host_on(&mut vm, guest, host);
+    tk::host_on(&mut vm, grand, guest);
+    tk::install_root(
+        &mut vm,
+        tk::hostile_infra_like("HostileInfra-like"),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::install_rig(&mut vm, tk::trash_set_button("Apocalypse-like", vec![host]));
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().uses("trash the set").stop_at_action(),
+    );
+    // The orphan cascade ran to a fixpoint inside ONE checkpoint.
+    for id in [host, guest, grand] {
+        assert_eq!(vm.st.objects[&id].zone, Zone::Discard(Side::Corp));
+    }
+    assert_eq!(
+        t.of_kind(Kind::Reaction).len(),
+        1,
+        "one reaction window, opened after the checkpoint completed: {}",
+        t.tail(12)
+    );
+    let log = &vm.changes.log;
+    let last_trash = log
+        .iter()
+        .rposition(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == grand))
+        .expect("the deepest guest was trashed");
+    let damage = log
+        .iter()
+        .position(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .expect("the reaction resolved");
+    assert!(
+        last_trash < damage,
+        "10.3.2: the checkpoint finished — including its repeated 10.3.1f/g \
+         steps — before its reaction window's ability resolved"
     );
 }
 

@@ -210,6 +210,11 @@ pub enum StaticDecl {
     StrengthMod { target_self: bool, delta: i32 },
     /// Remove all abilities of the host (Hush) — 9.12.1d/e material.
     RemoveHostAbilities,
+    /// "This card gains/loses <subtypes>." (Morph class — Lycan's own
+    /// ability removes one instance of a subtype it also prints.) 2.16.5
+    /// counts instances, so removing one instance of a doubly-added subtype
+    /// leaves the card with it.
+    SubtypeModSelf { add: Vec<&'static str>, remove: Vec<&'static str> },
     /// "This ice cannot be trashed by <side>'s card abilities."
     /// (Architect class; a restriction active per 9.1.8.)
     CannotBeTrashed,
