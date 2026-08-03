@@ -19,6 +19,30 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::services::ServeDir;
 
+/// The build this binary was compiled from (nix passes it; "dev" otherwise).
+fn build_rev() -> &'static str {
+    option_env!("JINTEKI_BUILD_REV").unwrap_or("dev")
+}
+
+/// Serve index.html with its asset URLs stamped with the build id. The file on
+/// disk carries the neutral `?v=dev`; the response carries `?v=<rev>`, so a
+/// deploy changes every asset URL and no stale copy can be reused. Read per
+/// request (one small file) so editing the UI in dev needs no restart.
+async fn index_page(dir: Arc<str>) -> axum::response::Response {
+    let path = std::path::Path::new(dir.as_ref()).join("index.html");
+    match std::fs::read_to_string(&path) {
+        Ok(html) => (
+            [(axum::http::header::CACHE_CONTROL, "no-store")],
+            axum::response::Html(html.replace("?v=dev", &format!("?v={}", build_rev()))),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!("index.html unreadable at {}: {e}", path.display());
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "no UI").into_response()
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt().init();
@@ -71,15 +95,25 @@ async fn main() {
         });
     }
 
+    let ui_root: Arc<str> = Arc::from(ui_dir.as_str());
     let app = Router::new()
         .route("/ws/local", any(ws_local))
         .route("/ws/bridge", any(ws_bridge))
         .route("/health", get(|| async { "ok" }))
         // Build id baked in by nix (env.JINTEKI_BUILD_REV); "dev" locally.
-        .route(
-            "/version",
-            get(|| async { option_env!("JINTEKI_BUILD_REV").unwrap_or("dev") }),
-        )
+        .route("/version", get(|| async { build_rev() }))
+        // The page is served, not shipped: its asset URLs get the build id so
+        // every deploy is a new URL. Header-only cache control cannot save a
+        // cache that was poisoned before the headers existed (nix-store mtimes
+        // are 1970, and browsers infer freshness from age) — a changed URL can.
+        .route("/", get({
+            let d = ui_root.clone();
+            move || index_page(d.clone())
+        }))
+        .route("/index.html", get({
+            let d = ui_root.clone();
+            move || index_page(d.clone())
+        }))
         .merge(api::router())
         .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true))
         .with_state(state);
