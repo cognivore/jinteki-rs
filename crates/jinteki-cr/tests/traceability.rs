@@ -65,6 +65,40 @@ fn report_rule_coverage() {
     assert!(cited.len() >= 100, "kernel wave cites at least 100 rules");
 }
 
+/// ARCHITECTURE §12 rule 5, made unfakeable: tests are plans, not loops.
+///
+/// The ONE driver is `plan::Script`. A test that answers the VM itself is a
+/// hand-rolled step loop by another name, and `tk::inject_*`-style state
+/// manufacture is effects appearing by test fiat instead of being created by
+/// a card through the public vocabulary. Neither may come back.
+#[test]
+fn tests_are_plans_not_loops() {
+    let sources: &[(&str, &str)] = &[
+        ("cr_examples.rs", include_str!("cr_examples.rs")),
+        ("playable_slice.rs", include_str!("playable_slice.rs")),
+    ];
+    let mut bad: Vec<String> = Vec::new();
+    for (name, text) in sources {
+        for (i, line) in text.lines().enumerate() {
+            let n = i + 1;
+            if line.contains("vm.answer(") || line.contains("answer_step(") {
+                bad.push(format!("{name}:{n}: answers the VM directly; use a plan rule"));
+            }
+            if line.contains("while vm.step") || line.contains("loop {") {
+                bad.push(format!("{name}:{n}: hand-rolled step loop"));
+            }
+            if line.contains("inject_") || line.contains("vm.lingering.push") {
+                bad.push(format!("{name}:{n}: state manufacture; build a card instead"));
+            }
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "ARCHITECTURE §12 rule 5 violations:\n{}",
+        bad.join("\n")
+    );
+}
+
 /// Every step id in timing-structures.json has executable semantics, and the
 /// tables load (SYS-F-9: step tables as data).
 #[test]

@@ -1,13 +1,15 @@
-//! Test support: minimal card definitions and script drivers for the CR
-//! example suite and the playable-slice test. The real card layer arrives in
-//! a later wave; these builders exist so kernel tests can express the CR's
-//! worked examples with faithful minimal cards.
+//! Test support: minimal card definitions for the CR example suite and the
+//! playable-slice test. The real card layer arrives in a later wave; these
+//! builders exist so kernel tests can express the CR's worked examples with
+//! faithful minimal cards, built EXCLUSIVELY through the public vocabulary
+//! (`PrintedCard` + `AbilityDef` + `Instruction`) — no privileged kernel
+//! hooks, no state manufacture (ARCHITECTURE §12 rules 3 and 5). Driving
+//! those cards is `plan`'s job, not this module's.
 
 use crate::ability::{
     AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TimingRestriction,
     TriggerCond,
 };
-use crate::decision::{DecisionAnswer, DecisionSpec, WindowOption, Yield};
 use crate::effects::DamageKind;
 use crate::instr::{Instruction, Quantity, TargetSpec};
 use crate::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
@@ -1909,191 +1911,12 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
-// Script drivers
+// Script drivers: RETIRED.
+//
+// The hand-rolled `until_decision` / `drain_to_game_over` / `take_labeled` /
+// `option_labeled` scaffold is gone (ARCHITECTURE §12 rule 5, FT-0). Tests
+// declare setup, one `plan::Plan` per player, and assertions; the ONE shared
+// driver is `plan::Script`, and the neutral policy that was `default_answer`
+// now lives in `plan` as the meaning of `plan::Reply::Default`. Nothing in
+// this module drives the VM any more: testkit builds cards, plan drives them.
 // ---------------------------------------------------------------------------
-
-/// Step until the next Decision (panics on Progressed-forever or GameOver).
-pub fn until_decision(vm: &mut Vm) -> (Side, DecisionSpec) {
-    loop {
-        match vm.step() {
-            Yield::Decision(s, d) => return (s, d),
-            Yield::Progressed => continue,
-            Yield::GameOver(r) => panic!("unexpected game over: {r:?}"),
-        }
-    }
-}
-
-/// Step until GameOver (auto-passing every window, keeping mandatory
-/// obligations: triggers the first mandatory option when passing is illegal).
-pub fn drain_to_game_over(vm: &mut Vm, max_decisions: usize) -> crate::decision::GameResult {
-    for _ in 0..max_decisions {
-        match vm.step() {
-            Yield::GameOver(r) => return r,
-            Yield::Progressed => continue,
-            Yield::Decision(_, spec) => {
-                vm.answer(default_answer(&spec));
-            }
-        }
-    }
-    panic!("no game over within {max_decisions} decisions");
-}
-
-/// The neutral default answer now lives with the plan language (§12 rule 5)
-/// as the meaning of `Reply::Default`; re-exported while the migration to
-/// plans completes.
-pub use crate::plan::default_answer;
-
-/// Find a window option whose label contains `needle`.
-pub fn option_labeled(options: &[WindowOption], needle: &str) -> Option<WindowOption> {
-    options
-        .iter()
-        .find(|o| match o {
-            WindowOption::TriggerInstance { label, .. } | WindowOption::TriggerPaid { label, .. } => {
-                label.contains(needle)
-            }
-            _ => false,
-        })
-        .cloned()
-}
-
-/// Drive until a decision for `side` whose options include a label matching
-/// `needle`; answer by taking it. Auto-passes everything else.
-/// Returns when the option has been taken.
-pub fn take_labeled(vm: &mut Vm, side: Side, needle: &str, budget: usize) {
-    for _ in 0..budget {
-        let (s, spec) = until_decision(vm);
-        let options = match &spec {
-            DecisionSpec::PaidWindow { options, .. }
-            | DecisionSpec::ReactionWindow { options, .. }
-            | DecisionSpec::InterruptWindow { options, .. }
-            | DecisionSpec::MidAccessWindow { options } => options.clone(),
-            _ => Vec::new(),
-        };
-        if s == side {
-            if let Some(opt) = option_labeled(&options, needle) {
-                vm.answer(DecisionAnswer::Take(opt));
-                return;
-            }
-        }
-        vm.answer(default_answer(&spec));
-    }
-    panic!("option labeled {needle:?} never offered to {side:?}");
-}
-
-// ---------------------------------------------------------------------------
-// RETIRING (§12 rule 5): state-manufacture injections, kept only until their
-// last call site is migrated to a real card in this same sub-wave.
-// ---------------------------------------------------------------------------
-
-/// Inject a breach-replacement lingering effect (Security Testing / Account
-/// Siphon / Showing Off class), turn-bound.
-pub fn inject_breach_replacement(
-    vm: &mut Vm,
-    source: ObjectId,
-    transform: crate::lingering::ReplacementTransform,
-) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::ReplacementEffect {
-            applies_to: crate::effects::EffectClass::Breach,
-            replace_with: transform,
-        },
-        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
-        applied_to: Vec::new(),
-    });
-}
-
-/// Inject a Chum-class delayed conditional: "when this encounter ends, do 3
-/// net damage." (one-shot).
-pub fn inject_chum_delayed(vm: &mut Vm, source: ObjectId) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::DelayedConditional {
-            def: AbilityDef::conditional(
-                TriggerCond::EncounterEnds,
-                vec![Instruction::Damage {
-                    kind: DamageKind::Net,
-                    amount: Quantity::c(3),
-                    responsible: Side::Corp,
-                }],
-                false,
-            )
-            .labeled("chum-delayed: 3 net when encounter ends"),
-        },
-        duration: crate::lingering::Duration::UntilResolved,
-        applied_to: Vec::new(),
-    });
-}
-
-/// Inject a Noble-Path-class prevent-all-damage shield bound to the current
-/// run (6.8.5: expires at step 6.9.6d).
-pub fn inject_run_damage_shield(vm: &mut Vm, source: ObjectId) {
-    let run_id = vm.current_run.map(|(r, _, _)| r).expect("a run in progress");
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::DamagePreventionAll,
-        duration: crate::lingering::Duration::Run(run_id),
-        applied_to: Vec::new(),
-    });
-}
-
-/// Inject an Immolation-Script-class access replacement: "instead of
-/// accessing the chosen card, trash <victim>" (turn-bound).
-pub fn inject_access_replacement(vm: &mut Vm, source: ObjectId, victim: ObjectId) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::ReplacementEffect {
-            applies_to: crate::effects::EffectClass::AccessCard,
-            replace_with: crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(
-                victim,
-            ),
-        },
-        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
-        applied_to: Vec::new(),
-    });
-}
-
-/// Inject a Maker's-Eye-class additional-access effect (turn-bound).
-pub fn inject_additional_access(vm: &mut Vm, server: ServerId, extra: u32) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source: ObjectId(0),
-        payload: crate::lingering::Payload::AdditionalAccess { server, extra },
-        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
-        applied_to: Vec::new(),
-    });
-}
-
-
-/// RETIRING (§12 rule 5): direct lingering-effect manufacture, kept only
-/// until its last call site moves to `subroutine_granter`.
-pub fn grant_external_sub(
-    vm: &mut Vm,
-    ice: ObjectId,
-    sub: AbilityDef,
-    before: bool,
-    run_bound: bool,
-) {
-    let id = vm.next_lingering_id();
-    let duration = if run_bound {
-        crate::lingering::Duration::Run(vm.current_run.map(|(r, _, _)| r).unwrap_or(0))
-    } else {
-        crate::lingering::Duration::Turn(vm.st.turn_seq)
-    };
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source: ice,
-        payload: crate::lingering::Payload::GrantedSubroutine { to: ice, sub, before, seq: id },
-        duration,
-        applied_to: Vec::new(),
-    });
-}
