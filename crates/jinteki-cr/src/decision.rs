@@ -116,6 +116,15 @@ pub enum DecisionSpec {
     /// what 8.3.3's "they do not declare which cards moved to which
     /// locations" means. The answer is the cards, first (topmost) first.
     ArrangeCards { cards: Vec<ObjectId> },
+    /// CR 1.15.1: announce COUNTERS as targets — "the targets of this
+    /// operation are the advancement counters to be moved and the destination
+    /// card" (Trick of Light). 1.12.1 makes counters objects, so they are
+    /// announced like any other target; the answer is `Counters(..)`.
+    ChooseCounters {
+        candidates: Vec<crate::object::CounterRef>,
+        count: u32,
+        up_to: bool,
+    },
     /// CR 10.1.6a: a MANDATORY infinite loop has been created — the same
     /// abilities are resolving each other and no player can choose to stop.
     /// "The player who is resolving the loop chooses a number. The loop
@@ -199,6 +208,8 @@ pub enum DecisionAnswer {
     Arrangement(Vec<ObjectId>),
     /// CR 10.1.6a: how many more times the infinite loop resolves.
     LoopCount(u32),
+    /// CR 1.15.1: the announced counter targets.
+    Counters(Vec<crate::object::CounterRef>),
     /// CR 1.16.2c: the announced value of X.
     DeclaredX(u32),
     /// CR 1.10.3c: credits taken from each allowed location, in the order the

@@ -93,6 +93,8 @@ pub enum Kind {
     Arrange,
     /// 10.1.6a: choosing how many times a mandatory infinite loop resolves.
     LoopCount,
+    /// 1.15.1: announcing COUNTERS as targets.
+    CounterTargets,
 }
 
 impl Kind {
@@ -125,6 +127,7 @@ impl Kind {
             DecisionSpec::DivideCreditPayment { .. } => Kind::Division,
             DecisionSpec::ArrangeCards { .. } => Kind::Arrange,
             DecisionSpec::LoopCount { .. } => Kind::LoopCount,
+            DecisionSpec::ChooseCounters { .. } => Kind::CounterTargets,
         }
     }
 }
@@ -377,6 +380,10 @@ impl Match {
     pub fn loop_count() -> Match {
         Match::of(Kind::LoopCount)
     }
+    /// 1.15.1: announcing counters as targets.
+    pub fn counter_targets() -> Match {
+        Match::of(Kind::CounterTargets)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()
@@ -574,6 +581,8 @@ pub enum Reply {
     Arrange(Vec<ObjectId>),
     /// 10.1.6a: the loop resolves this many more times, then ends.
     LoopCount(u32),
+    /// 1.15.1: announce these counters as targets.
+    Counters(Vec<crate::object::CounterRef>),
     Keep,
     Mulligan,
     /// Suspend the driver here, leaving the decision UNANSWERED so the test
@@ -747,6 +756,13 @@ impl Entry {
             | DecisionSpec::ChooseCandidate { candidates }
             | DecisionSpec::PaymentCards { candidates, .. } => candidates,
             DecisionSpec::DiscardCards { hand, .. } => hand,
+            _ => &[],
+        }
+    }
+    /// CR 1.15.1: the counters put to the player at a counter announcement.
+    pub fn counters(&self) -> &[crate::object::CounterRef] {
+        match &self.spec {
+            DecisionSpec::ChooseCounters { candidates, .. } => candidates,
             _ => &[],
         }
     }
@@ -1071,6 +1087,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::Division(v) => DecisionAnswer::Division(v.clone()),
         Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
         Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
+        Reply::Counters(v) => DecisionAnswer::Counters(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
@@ -1167,6 +1184,10 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::DeclareX { max } => DecisionAnswer::DeclaredX(*max),
         // 1.16.2e: the neutral policy declines the alternate payment.
         DecisionSpec::AlternatePayment { .. } => DecisionAnswer::ResolveOptional(false),
+        // 1.15.1: the neutral policy announces the first `count` counters.
+        DecisionSpec::ChooseCounters { candidates, count, .. } => {
+            DecisionAnswer::Counters(candidates.iter().take(*count as usize).copied().collect())
+        }
         // 10.1.6a: the neutral policy ends the loop at once.
         DecisionSpec::LoopCount { .. } => DecisionAnswer::LoopCount(0),
         // 8.3.3: the neutral policy leaves an arrangement in the order the

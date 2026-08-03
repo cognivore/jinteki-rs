@@ -210,6 +210,9 @@ pub struct AbilityFrame {
     /// CR 1.15.1 / 9.8.6: announced SUBROUTINE targets for the current
     /// instruction — the other kind of target.
     pub sub_targets: Vec<crate::ability::SubKey>,
+    /// CR 1.15.1 / 1.12.1: announced COUNTER targets for the current
+    /// instruction — the third kind of target (Trick of Light class).
+    pub counter_targets: Vec<crate::object::CounterRef>,
     /// CR 1.15.4: every target this ABILITY has announced, across all its
     /// instructions — "subsequent instructions of the same ability can
     /// continue to act on that target without needing to select it again".

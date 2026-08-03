@@ -5705,3 +5705,26 @@ pub fn wormhole_like(name: &'static str) -> PrintedCard {
     .labeled("[sub] wormhole: resolve a subroutine on another rezzed ice")];
     c
 }
+
+/// Trick-of-Light shape (1.15.1): "Choose 1 installed card you can advance.
+/// Move up to 2 advancement counters from 1 other card to the chosen card."
+/// The targets are the COUNTERS and the destination card; the card the
+/// counters come from is not a target.
+pub fn trick_of_light_like(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::MoveCounters {
+            kind: CounterKind::Advancement,
+            count: Quantity::c(n as i64),
+            up_to: true,
+            to: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
+            },
+            from_criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
+        }],
+    )
+    .labeled("trick-of-light: move advancement counters")];
+    c
+}

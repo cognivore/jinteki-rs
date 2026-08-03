@@ -158,6 +158,22 @@ pub enum CounterKind {
     BadPublicity,
 }
 
+/// CR 1.12.1 / 1.15.1: ONE counter, as an object that can be targeted.
+///
+/// A counter's identity here is derived from where it sits — its host, its
+/// kind, and its ordinal among that host's counters of that kind — rather
+/// than stored, because `Object::counters` is a count per kind. That is exact
+/// for addressing counters at the moment an instruction announces them
+/// (1.15.2), which is what 1.15.1 needs; it is NOT full 1.12.1 identity, since
+/// a counter that moves between cards gets a new `CounterRef`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CounterRef {
+    pub host: ObjectId,
+    pub kind: CounterKind,
+    /// 0-based among the host's counters of this kind.
+    pub index: u32,
+}
+
 /// The printed (immutable) face of a card — the base of the characteristics
 /// pipeline (9.12.1d starts "begin with each object's printed characteristics").
 #[derive(Debug, Clone)]

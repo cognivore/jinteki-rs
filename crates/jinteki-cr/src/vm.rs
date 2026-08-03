@@ -473,6 +473,8 @@ mod imminent {
         pub targets: Vec<ObjectId>,
         /// CR 1.15.1: announced SUBROUTINE targets (9.8.6).
         pub sub_targets: Vec<crate::ability::SubKey>,
+        /// CR 1.15.1 / 1.12.1: announced COUNTER targets.
+        pub counter_targets: Vec<crate::object::CounterRef>,
         /// Ordinals per class at imminence time (9.9.5a), per-run scope.
         pub run_ordinal: BTreeMap<u64, u32>,
         /// Same, per-turn scope ("the first time each turn…").
@@ -868,7 +870,7 @@ impl Vm {
                         let instr = self.step_instruction(k);
                         let atoms = self.expected_atoms(&instr, self.st.turn_side, &[], None);
                         let asked =
-                            self.push_imminent(instr, self.st.turn_side, Vec::new(), Vec::new(), atoms);
+                            self.push_imminent(instr, self.st.turn_side, Vec::new(), Vec::new(), Vec::new(), atoms);
                         self.set_structure_phase(StepPhase::Exec);
                         if asked {
                             // 9.9.11 order Decision pending; the answer path
@@ -3876,6 +3878,7 @@ impl Vm {
         controller: Side,
         targets: Vec<ObjectId>,
         sub_targets: Vec<crate::ability::SubKey>,
+        counter_targets: Vec<crate::object::CounterRef>,
         atoms: Vec<EffectAtom>,
     ) -> bool {
         let seq = self.changes.next_group + 1_000_000; // distinct key-space
@@ -3901,6 +3904,7 @@ impl Vm {
             controller,
             targets,
             sub_targets,
+            counter_targets,
             run_ordinal,
             turn_ordinal,
             seq,
@@ -4511,6 +4515,7 @@ impl Vm {
             phase,
             targets: Vec::new(),
             sub_targets: Vec::new(),
+            counter_targets: Vec::new(),
             announce_slot: 0,
             ability_targets: Vec::new(),
             imminent_index: None,
@@ -4793,6 +4798,7 @@ impl Vm {
                 // from scratch; 1.15.4 keeps the ability-wide list.
                 af.targets.clear();
                 af.sub_targets.clear();
+                af.counter_targets.clear();
                 af.announce_slot = 0;
             }
         }
@@ -4877,6 +4883,11 @@ impl Vm {
             Instruction::SwapCards { a, b } => {
                 [a, b].iter().filter(|s| matches!(s, TargetSpec::Choose { .. })).count()
             }
+            // 1.15.1: "the targets of this operation are the advancement
+            // counters to be moved AND the destination card" — two
+            // announcements, the destination first so the counters can be
+            // required to come from another card.
+            Instruction::MoveCounters { .. } => 2,
             _ => 1,
         }
     }
@@ -4961,6 +4972,40 @@ impl Vm {
                         up_to,
                         candidates,
                     },
+                ))
+            }
+            // 1.15.1: the destination card, then the counters.
+            Instruction::MoveCounters { kind, count, up_to, to, from_criteria } => {
+                if af.announce_slot == 0 {
+                    return self.announcement_for(to).map(|s| (af.controller, s));
+                }
+                cite!("rule_target");
+                cite!("rule_object");
+                let dest = af.targets.first().copied();
+                let mut candidates: Vec<crate::object::CounterRef> = Vec::new();
+                for (id, o) in &self.st.objects {
+                    if Some(*id) == dest {
+                        continue;
+                    }
+                    if !from_criteria.iter().all(|f| self.filter_matches(o, *f, Some(af.source.obj)))
+                    {
+                        continue;
+                    }
+                    for index in 0..o.counter(*kind) {
+                        candidates.push(crate::object::CounterRef {
+                            host: *id,
+                            kind: *kind,
+                            index,
+                        });
+                    }
+                }
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                // 1.15.2b: the announcement cannot ask for more distinct
+                // targets than exist.
+                let n = want.min(candidates.len() as u32);
+                Some((
+                    af.controller,
+                    DecisionSpec::ChooseCounters { candidates, count: n, up_to: *up_to },
                 ))
             }
             Instruction::NestedCostThen { cost, .. }
@@ -5775,9 +5820,14 @@ impl Vm {
             }
             _ => {}
         }
-        let (controller, targets, sub_targets) = {
+        let (controller, targets, sub_targets, counter_targets) = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
-            (af.controller, af.targets.clone(), af.sub_targets.clone())
+            (
+                af.controller,
+                af.targets.clone(),
+                af.sub_targets.clone(),
+                af.counter_targets.clone(),
+            )
         };
         let source_obj = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
@@ -5792,7 +5842,8 @@ impl Vm {
         // CR 9.6.12/9.8.8: independence at first-instruction imminence.
         cite!("rule_conditional_ability_independent");
         cite!("rule_subroutine_independent");
-        let asked = self.push_imminent(instr, controller, targets, sub_targets, atoms);
+        let asked =
+            self.push_imminent(instr, controller, targets, sub_targets, counter_targets, atoms);
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.imminent_index = Some(0);
         }
@@ -6855,6 +6906,7 @@ impl Vm {
                         return;
                     }
                     let inner_imm = ImminentWrap {
+                        counter_targets: Vec::new(),
                         instr: (**inner).clone(),
                         atoms: imm.atoms.clone(),
                         controller,
@@ -8436,6 +8488,55 @@ impl Vm {
                     );
                 }
             }
+            Instruction::MoveCounters { kind, to, .. } => {
+                // 1.18.2: moving an advancement counter is NOT advancing, so
+                // nothing here records `CardAdvanced` and no "whenever you
+                // advance" condition is met.
+                cite!("rule_placing_advancement_counter");
+                cite!("rule_object");
+                let dest = self
+                    .resolve_targets(to, Some(source.obj), &imm.targets)
+                    .first()
+                    .copied();
+                let Some(dest) = dest else { return };
+                let moved = imm.counter_targets.clone();
+                let mut per_host: BTreeMap<ObjectId, u32> = BTreeMap::new();
+                for c in &moved {
+                    *per_host.entry(c.host).or_insert(0) += 1;
+                }
+                let mut total = 0;
+                for (host, n) in per_host {
+                    let have = self.st.objects.get(&host).map(|o| o.counter(*kind)).unwrap_or(0);
+                    let take = n.min(have);
+                    if take == 0 {
+                        continue;
+                    }
+                    if let Some(o) = self.st.objects.get_mut(&host) {
+                        let left = o.counter(*kind) - take;
+                        if left == 0 {
+                            o.counters.remove(kind);
+                        } else {
+                            o.counters.insert(*kind, left);
+                        }
+                    }
+                    self.changes.record(GameChange::CounterRemoved {
+                        obj: Some(host),
+                        kind: *kind,
+                        amount: take,
+                    });
+                    total += take;
+                }
+                if total > 0 {
+                    if let Some(o) = self.st.objects.get_mut(&dest) {
+                        *o.counters.entry(*kind).or_insert(0) += total;
+                    }
+                    self.changes.record(GameChange::CounterPlaced {
+                        obj: dest,
+                        kind: *kind,
+                        amount: total,
+                    });
+                }
+            }
             Instruction::CorpRearrangesRnd => {
                 // 1.12.3 / 7.4.7a example 1: cards returned to R&D are NEW
                 // OBJECTS — the breach's already-chosen bookkeeping forgets
@@ -8589,6 +8690,7 @@ impl Vm {
                     let atoms =
                         self.expected_atoms(then, controller, &imm.targets, Some(source.obj));
                     let inner = ImminentWrap {
+                        counter_targets: Vec::new(),
                         instr: (**then).clone(),
                         atoms,
                         controller,
@@ -10803,6 +10905,45 @@ impl Vm {
                     self.ask(side, next, DecisionCtx::Targets);
                     return;
                 }
+                self.begin_imminence(instr);
+            }
+            (DecisionCtx::Targets, DecisionAnswer::Counters(chosen)) => {
+                // CR 1.15.1/1.15.2b: counters are announced exactly like any
+                // other object — validated against the candidate list, chosen
+                // at most once each, capped at the count. "If 2 tokens are
+                // chosen, they must be hosted on the same card" is the
+                // instruction's own requirement ("from 1 other card"), so the
+                // announcement keeps only the counters sharing the host of the
+                // first one named.
+                cite!("rule_target");
+                let keep: Vec<crate::object::CounterRef> = match &spec {
+                    DecisionSpec::ChooseCounters { candidates, count, .. } => {
+                        let mut out: Vec<crate::object::CounterRef> = Vec::new();
+                        let mut host = None;
+                        for c in chosen {
+                            if !candidates.contains(&c) || out.contains(&c) {
+                                continue;
+                            }
+                            if (out.len() as u32) >= *count {
+                                break;
+                            }
+                            match host {
+                                None => host = Some(c.host),
+                                Some(h) if h == c.host => {}
+                                Some(_) => continue,
+                            }
+                            out.push(c);
+                        }
+                        out
+                    }
+                    _ => chosen,
+                };
+                let instr = {
+                    let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
+                    af.counter_targets.extend(keep);
+                    af.announce_slot += 1;
+                    af.instructions[af.idx].clone()
+                };
                 self.begin_imminence(instr);
             }
             (DecisionCtx::Targets, DecisionAnswer::Subroutines(subs)) => {

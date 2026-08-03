@@ -409,6 +409,24 @@ pub enum Instruction {
     /// changes the attacked server BY moving the Runner and does change the
     /// timing step.)
     ChangeAttackedServer { server: ServerId },
+    /// CR 1.15.1 / 1.18.2: "Move up to N <kind> counters from 1 other card to
+    /// the chosen card" (Trick of Light class). The COUNTERS are targets and
+    /// so is the destination card (1.12.1 makes a counter an object); the card
+    /// the counters come from is NOT a target — it is implied by which
+    /// counters were chosen, and "1 other card" is the requirement that they
+    /// all share a host. 1.18.2: moving an advancement counter is not
+    /// advancing, so no "whenever you advance" condition is met.
+    MoveCounters {
+        kind: crate::object::CounterKind,
+        count: Quantity,
+        up_to: bool,
+        /// The destination, announced FIRST (the counters are then chosen
+        /// from another card — 1.15.4's cross-instruction reference in one
+        /// instruction).
+        to: TargetSpec,
+        /// Which cards the counters may come from.
+        from_criteria: Vec<TargetFilter>,
+    },
     /// CR 1.18.1: "Advance <a card>." — place an advancement counter from the
     /// bank on it, as an ADVANCE, so that "whenever you advance" conditions
     /// are met (1.18.2 distinguishes this from placing the counter directly).

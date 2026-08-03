@@ -45,6 +45,8 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_run_phase_after_1",
     // Wave 14g: 10.1.6a mandatory infinite loops.
     "example_rule_mandatory_infinite_loop_1",
+    // Wave 14h: 1.15.1 counters as targets.
+    "example_rule_target_3",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -12059,4 +12061,76 @@ fn example_rule_mandatory_infinite_loop_1() {
     // of 10.1.6a.
     assert_eq!(counts[1], counts[0] + 2, "counts: {counts:?}");
     assert_eq!(counts[2], counts[0] + 8, "counts: {counts:?}");
+}
+
+// ===========================================================================
+// Wave 14h — 1.15.1: counters are targets
+// ===========================================================================
+
+/// example_rule_target_3 (1.15.1): a Trick-of-Light-class operation reads
+/// "Choose 1 installed card you can advance. Move up to 2 advancement counters
+/// from 1 other card to the chosen card." The targets are the ADVANCEMENT
+/// COUNTERS to be moved and the destination card — not the card they come
+/// from — and "if 2 tokens are chosen, they must be hosted on the same card".
+#[test]
+fn example_rule_target_3() {
+    use jinteki_cr::object::CounterRef;
+    let mut vm = Vm::empty(1413);
+    tk::install_root(&mut vm, tk::trick_of_light_like("TrickOfLight-like", 2), ServerId::Remote(1), true);
+    let dest = tk::install_root(&mut vm, tk::vanilla_agenda("Dest-Agenda", 5, 3), ServerId::Remote(2), false);
+    let from_a = tk::install_root(&mut vm, tk::vanilla_asset("Source-A", 0, 1), ServerId::Remote(3), true);
+    let from_b = tk::install_root(&mut vm, tk::vanilla_asset("Source-B", 0, 1), ServerId::Remote(4), true);
+    tk::place_counters(&mut vm, from_a, CounterKind::Advancement, 2);
+    tk::place_counters(&mut vm, from_b, CounterKind::Advancement, 2);
+    vm.start_turn(Side::Corp);
+
+    // The plan: use the ability, name the agenda as the destination, and then
+    // try to take one counter from EACH source card.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("trick-of-light"))
+            .when(Match::targets().once(), Reply::Targets(vec![dest]))
+            .when(
+                Match::counter_targets().once(),
+                Reply::Counters(vec![
+                    CounterRef { host: from_a, kind: CounterKind::Advancement, index: 0 },
+                    CounterRef { host: from_b, kind: CounterKind::Advancement, index: 0 },
+                ]),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("trick-of-light"), "the ability resolved: {}", t.tail(10));
+
+    // 1.15.1: the instruction announced TWO kinds of target — the destination
+    // card, and the counters themselves.
+    let card_announce = t.first_window(Kind::Targets, Side::Corp);
+    assert!(card_announce.candidates().contains(&dest));
+    let counter_announce = t.first_window(Kind::CounterTargets, Side::Corp);
+    // …and every counter on either other card was a candidate: the counters
+    // are the objects being chosen (1.12.1), not the cards hosting them.
+    assert_eq!(counter_announce.counters().len(), 4);
+    assert!(counter_announce.counters().iter().all(|c| c.host == from_a || c.host == from_b));
+    assert!(
+        !counter_announce.counters().iter().any(|c| c.host == dest),
+        "the destination's own counters are not among them"
+    );
+
+    // "If 2 tokens are chosen, they must be hosted on the same card": the
+    // second choice, on a different card, is not a legal companion — so only
+    // the counter on the first-named card moved.
+    assert_eq!(vm.st.objects[&dest].counter(CounterKind::Advancement), 1);
+    assert_eq!(vm.st.objects[&from_a].counter(CounterKind::Advancement), 1);
+    assert_eq!(
+        vm.st.objects[&from_b].counter(CounterKind::Advancement),
+        2,
+        "1.15.1: the counters chosen must share a host"
+    );
+    // 1.18.2: moving an advancement counter is not advancing.
+    assert!(!vm
+        .changes
+        .log
+        .iter()
+        .any(|c| matches!(c, GameChange::CardAdvanced { obj } if *obj == dest)));
 }
