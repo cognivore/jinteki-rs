@@ -286,6 +286,18 @@ pub struct Object {
     /// CR 9.5.5: temporarily set aside during a self-uninstalling trigger
     /// cost; invisible to other abilities, still "hosted" for that ability.
     pub set_aside_for_ability: bool,
+    /// CR 10.9.1: the counter kinds this card has been LOADED with. A card is
+    /// EMPTY when it no longer hosts any counters of a kind previously loaded
+    /// onto it — so a card that was never loaded can never become empty
+    /// (10.9.2), and counters of another kind placed on it without loading do
+    /// not meet an "empty" condition when they go (10.9.3).
+    pub loaded_kinds: std::collections::BTreeSet<CounterKind>,
+    /// CR 4.8.3: where this card was before it was set aside. A move OUT of
+    /// the set-aside zone is reported as though the card came from here, so
+    /// an ability that does not refer to the set-aside zone (which is every
+    /// ability but the one that did the setting aside) sees the move it would
+    /// have seen without it.
+    pub set_aside_from: Option<Zone>,
     /// CR 8.5.16a / 8.6.7a: placed into the play area as the first step of
     /// installing/playing — "It is not yet installed or active."
     pub staged: bool,

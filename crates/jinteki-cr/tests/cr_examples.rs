@@ -14,6 +14,11 @@ use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply};
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::Vm;
 
+/// A seed whose 10.11.2a random central lands on HQ, which is what the
+/// example stipulates ("if Carpe Diem's instruction results in HQ becoming
+/// the mark").
+const MARK_SEED: u64 = 1209;
+
 const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 
 /// Example ids implemented as tests in this file (the DP-7a ledger).
@@ -262,6 +267,12 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_prohibiting_access_to_1_1",
     "example_rule_prohibition_removed_1",
     "example_rule_consecutive_breaches_1",
+    // Wave 12b: the set-aside passthrough (4.8.3), 9.1.8g's second class,
+    // loading and emptiness (§10.9), the mark (§10.11).
+    "example_rule_set_aside_zone_passthrough_1",
+    "example_rule_active_exception_conditional_move_to_inactive_zone_2",
+    "example_rule_empty_requires_loading_1",
+    "example_rule_mark_designated_condition_check_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -9648,4 +9659,196 @@ fn example_rule_consecutive_breaches_1() {
     // Both cards in HQ were accessed in the first breach (limit 2), so the
     // second breach found the hand empty of candidates and ended at once.
     let _ = filler;
+}
+
+// ===========================================================================
+// Wave 12b — 4.8.3, 9.1.8g, 10.9, 10.11
+// ===========================================================================
+
+/// example_rule_set_aside_zone_passthrough_1 (4.8.3): a Test-Run-class
+/// ability searches the heap for a program and installs it. The program is
+/// set aside before being installed, but an Exile-class "whenever you install
+/// a program from your heap" ability is treated as though it were installed
+/// directly from the heap — so the Runner draws.
+#[test]
+fn example_rule_set_aside_zone_passthrough_1() {
+    let mut vm = Vm::empty(1206);
+    let prog = vm.new_object(tk::program_cost("Heap-Program", 0), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(prog);
+    let exile = vm.new_object(tk::exile_like("Exile-like"), Zone::PlayArea(Side::Runner));
+    vm.st.objects.get_mut(&exile).unwrap().faceup = true;
+    tk::install_rig(&mut vm, tk::test_run_like("TestRun-like", Zone::Discard(Side::Runner)));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    let before = vm.st.hand[&Side::Runner].len();
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("test-run")).stop_at_action(),
+    );
+    assert!(t.took("test-run"));
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Rig, "the program was installed");
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardInstalled { obj, from: Zone::Discard(Side::Runner), .. } if *obj == prog
+        )),
+        "4.8.3: the install is reported as coming from the heap, not the set-aside zone"
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        before + 1,
+        "the Exile-class ability met its condition and drew a card"
+    );
+}
+
+/// example_rule_active_exception_conditional_move_to_inactive_zone_2
+/// (9.1.8g): a Test-Run-class delayed conditional adds Nanuq to the top of
+/// the Runner's stack when their turn ends. That move meets the trigger
+/// condition of Nanuq's own ability, which remains active in the stack until
+/// the instance resolves — and removes Nanuq from the game.
+#[test]
+fn example_rule_active_exception_conditional_move_to_inactive_zone_2() {
+    let mut vm = Vm::empty(1207);
+    let nanuq = tk::install_rig(&mut vm, tk::nanuq_like("Nanuq-like"));
+    tk::install_rig(&mut vm, tk::returns_program_at_turn_end("TestRun-like", nanuq));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    // The plan: arm the return, then drain the turn — the delayed conditional
+    // fires when the Runner's turn ends, and the Corp's first action window
+    // is where the driver stops.
+    plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("test-run: arm"))
+            .otherwise_click_credit(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardMoved { obj, to: Zone::Deck(Side::Runner), .. } if *obj == nanuq
+        )),
+        "the delayed conditional added it to the top of the stack"
+    );
+    assert_eq!(
+        vm.st.objects[&nanuq].zone,
+        Zone::RemovedFromGame,
+        "9.1.8g: the ability whose condition the move met stayed active in the stack \
+         long enough to resolve"
+    );
+}
+
+/// example_rule_empty_requires_loading_1 (10.9.2): the Runner installs a
+/// Crowdfunding-class card and its loading ability becomes pending. Even
+/// though the card hosts no credits until that ability resolves, the "when it
+/// is empty" ability does not meet its trigger condition — the card has not
+/// been loaded yet. Once it has been loaded and then drained, it does.
+#[test]
+fn example_rule_empty_requires_loading_1() {
+    let mut vm = Vm::empty(1208);
+    let cf = vm.new_object(tk::crowdfunding_like("Crowdfunding-like"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(cf);
+    tk::install_rig(&mut vm, tk::runner_install_button("Install-Button", 1));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().offering("install-button").once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::target(cf))
+            .always_uses("crowdfunding: take 1 credit")
+            .stop_at_action(),
+    );
+    // The reaction window where the loading ability is pending: the "empty"
+    // ability of the very same card is NOT there. That is 10.9.2.
+    let load_win = t
+        .entries
+        .iter()
+        .find(|e| e.offered("crowdfunding: load"))
+        .expect("the loading ability became pending when the card was installed");
+    assert_eq!(
+        load_win.count("crowdfunding: add it to your grip"),
+        0,
+        "10.9.2: a card that has never been loaded has not become empty"
+    );
+    let loaded = change_at(&vm, |c| {
+        matches!(c, GameChange::CounterPlaced { obj, kind: CounterKind::Credit, .. } if *obj == cf)
+    });
+    let to_grip = change_at(&vm, |c| {
+        matches!(c, GameChange::CardMoved { obj, to: Zone::Hand(Side::Runner), .. } if *obj == cf)
+    });
+    assert!(
+        loaded < to_grip,
+        "the empty ability met its condition only after the loaded counters were gone"
+    );
+    assert_eq!(vm.st.objects[&cf].zone, Zone::Hand(Side::Runner));
+    assert_eq!(vm.st.runner.credits, 5 + 3, "the 3 loaded credits were all taken");
+}
+
+/// example_rule_mark_designated_condition_check_1 (10.11.5): the Runner makes
+/// a successful run on HQ while they have no mark. They then identify their
+/// mark, which turns out to be HQ, and run HQ again. Even though there was a
+/// successful run on HQ earlier this turn, HQ was not the mark then — so the
+/// second run is the FIRST successful run on the mark this turn, and the
+/// Virtuoso-class ability applies.
+#[test]
+fn example_rule_mark_designated_condition_check_1() {
+    let mut vm = Vm::empty(MARK_SEED);
+    tk::install_rig(&mut vm, tk::run_button("Jailbreak-like", ServerId::Hq));
+    tk::install_rig(&mut vm, tk::identify_mark_button("CarpeDiem-like"));
+    tk::install_rig(&mut vm, tk::virtuoso_like("Virtuoso-like", ServerId::Hq));
+    tk::fill_hand(&mut vm, Side::Corp, 4);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: a Jailbreak-class run on HQ first, while the Runner has no
+    // mark; then identify the mark (the seed makes it HQ); then run HQ again
+    // from the action window. Each paid rule takes its option the first time
+    // it is evaluated against a paid window outside a run, and the run
+    // initiated by the first one resolves completely before the window is
+    // re-offered — so the order is exactly the example's.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(
+                Match::paid().outside(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("run-button"),
+            )
+            .when(
+                Match::paid().outside(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("carpe-diem"),
+            )
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    assert!(t.took("run-button") && t.took("carpe-diem"));
+    assert_eq!(
+        vm.mark().map(|(s, _)| s),
+        Some(ServerId::Hq),
+        "the seed makes the 10.11.2a random central HQ, as the example stipulates:\n{}",
+        t.tail(10)
+    );
+    let designated = change_at(&vm, |c| matches!(c, GameChange::RunDeclaredSuccessful { .. }));
+    let virtuoso_uses = t.times_taken("virtuoso");
+    assert_eq!(
+        virtuoso_uses, 1,
+        "10.11.5: the earlier successful run on HQ was not a run on the mark — the \
+         condition only checks from the designation, so the later run is the first \
+         one this turn:\n{}",
+        t.tail(24)
+    );
+    let accesses = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardAccessed { .. }))
+        .count();
+    assert_eq!(accesses, 3, "1 card on the first breach, 2 on the second");
+    let _ = designated;
 }

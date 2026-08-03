@@ -34,7 +34,12 @@ pub enum GameChange {
     /// A card was trashed. `by` is the player whose effect trashed it.
     CardTrashed { obj: ObjectId, by: Side, was_zone: Zone },
     CardDiscarded { obj: ObjectId, side: Side },
-    CardInstalled { obj: ObjectId, side: Side },
+    /// CR 8.5.16f. `from` is the zone the card is treated as having been
+    /// installed FROM — 4.8.3 substitutes the pre-set-aside location for a
+    /// card installed out of the set-aside zone, which is the only way an
+    /// "install a program from your heap" condition can see a searched
+    /// install at all.
+    CardInstalled { obj: ObjectId, side: Side, from: Zone },
     /// CR 8.5.13c/d: a card was revealed to verify an installation.
     CardRevealed { obj: ObjectId },
     /// CR 1.21.2: a player LOOKED at a card — they may see its front face

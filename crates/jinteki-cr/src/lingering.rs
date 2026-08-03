@@ -89,6 +89,13 @@ pub enum Payload {
     /// run frame pops), which is exactly when Dedicated-Response-Team-class
     /// run-ends damage resolves unshielded.
     DamagePreventionAll,
+    /// CR 10.11.4: the designation of a server as the mark, which the rule
+    /// says IS a lingering effect and one that expires at the end of the
+    /// turn. `since` is the change-log index at which the designation
+    /// happened: 10.11.5 says a condition checking a game property related to
+    /// the mark "only checks from the moment that server was designated", so
+    /// the kernel keeps the moment.
+    MarkDesignation { server: ServerId, since: usize },
     /// "Access N additional cards" (The Maker's Eye / Seidr class; adds to
     /// the 7.3.6 random access limit at step 7.5.3).
     AdditionalAccess { server: ServerId, extra: u32 },

@@ -101,6 +101,26 @@ pub enum TriggerCond {
     /// "When you install this card…" (9.6.14b's class: met at step 8.5.16f of
     /// installing its own source).
     SelfInstalled,
+    /// "When this card is added to your stack…" (Nanuq class). The move that
+    /// meets it is the move that makes the card INACTIVE, which is why
+    /// 9.1.8g has to keep the ability active long enough to resolve.
+    SelfAddedToDeck,
+    /// CR 10.11.5: "the first time each turn you make a successful run on
+    /// your mark…" (Virtuoso class). 10.11.5: a condition checking a game
+    /// property related to the mark only checks from the moment that server
+    /// was designated, so an earlier successful run on the same server —
+    /// before it was the mark — does not spend the "first time each turn".
+    SuccessfulRunOnMark { first_each_turn: bool },
+    /// CR 10.9.2: "when this card is empty…" (Crowdfunding class). The
+    /// condition can only be met after the card has been LOADED with counters
+    /// of this kind by a preceding ability of the same card — a card with no
+    /// counters on it has not become empty, it was never loaded.
+    SelfEmpty { kind: crate::object::CounterKind },
+    /// CR 4.8.3: "whenever you install a program from your heap…" (Exile
+    /// class) — a condition stipulating the zone the installed card came
+    /// from. The set-aside zone is never that zone: 4.8.3 reports the
+    /// location the card was in before it was set aside.
+    CardInstalledFrom { side: Side, from: Zone },
     /// Interrupt trigger: "…would do damage" (ordinal: Some(1) = "the first
     /// time each run you would…", Tori Hanzō class).
     WouldDamage { kind: Option<DamageKind>, first_each_run: bool },
@@ -809,9 +829,30 @@ pub fn trigger_matches(
             cite!("rule_when_installed");
             *obj == source.id
         }
+        // 10.11.5: the server must be the mark, and the "first time each
+        // turn" ordinal is counted from the designation — both are state the
+        // checkpoint scan checks.
+        (TriggerCond::SuccessfulRunOnMark { .. }, GameChange::RunDeclaredSuccessful { .. }) => {
+            cite!("rule_mark_designated_condition_check");
+            true
+        }
+        // 10.9.1: becoming empty is a counter of a LOADED kind leaving the
+        // card. Whether the kind was loaded, and whether any are left, is
+        // state the checkpoint scan checks (this match only sees the change).
+        (
+            TriggerCond::SelfEmpty { kind },
+            GameChange::CounterRemoved { obj: Some(o), kind: k, .. },
+        ) => {
+            cite!("rule_load_and_empty");
+            *o == source.id && k == kind
+        }
+        (TriggerCond::SelfAddedToDeck, GameChange::CardMoved { obj, to: Zone::Deck(_), .. }) => {
+            cite!("rule_active_exception_conditional_move_to_inactive_zone");
+            *obj == source.id
+        }
         (
             TriggerCond::CardInstalledInSourceServer,
-            GameChange::CardInstalled { obj, side: Side::Corp },
+            GameChange::CardInstalled { obj, side: Side::Corp, .. },
         ) => {
             // The installed card's server must be the source's server. The
             // caller passes the source's server; the installed card's server
@@ -855,6 +896,16 @@ pub fn trigger_matches(
         (TriggerCond::PlayerSearchesDeck(side), GameChange::ZoneSearched { by, zone }) => {
             cite!("rule_search_condition");
             by == side && *zone == Zone::Deck(*side)
+        }
+        (
+            TriggerCond::CardInstalledFrom { side, from },
+            GameChange::CardInstalled { side: s, from: f, .. },
+        ) => {
+            // 4.8.3: `from` is the location the card is TREATED as having come
+            // from, so an Exile-class "whenever you install a program from
+            // your heap" is met by an install out of an 8.7.4 set-aside.
+            cite!("rule_set_aside_zone_passthrough");
+            side == s && from == f
         }
         (TriggerCond::CardInstalledBy(side), GameChange::CardInstalled { side: s, .. }) => {
             side == s

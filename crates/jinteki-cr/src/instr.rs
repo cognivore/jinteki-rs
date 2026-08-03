@@ -522,6 +522,16 @@ pub enum Instruction {
     /// other counter kinds only ever exist hosted on cards.
     RemoveCountersFromPlayer { side: Side, kind: crate::object::CounterKind, amount: Quantity },
 
+    /// CR 10.11.2: "identify your mark." If no server is designated, a random
+    /// CENTRAL server becomes the mark for the remainder of the turn
+    /// (10.11.2a); if one already is, the instruction does nothing (10.11.3).
+    IdentifyMark,
+
+    /// CR 10.9.1: "load this card with N credits" — a placement of counters
+    /// that also marks the kind as LOADED, which is what an "empty" ability
+    /// on the same card is linked to (10.9.2).
+    LoadCounters { target: TargetSpec, kind: crate::object::CounterKind, amount: Quantity },
+
     /// CR 10.6.1: "the Corp takes N bad publicity" — a bad publicity counter
     /// is placed on the player. The count is a quantity position (§12 rule 6).
     /// 10.6.3c: taking it during a run does not change that run's bad

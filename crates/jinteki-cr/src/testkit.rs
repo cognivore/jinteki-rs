@@ -4580,3 +4580,161 @@ pub fn raymond_flint_like(name: &'static str, server: ServerId) -> PrintedCard {
     .labeled("raymond: you may breach")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W12b shapes: §4.8.3 set-aside passthrough, §9.1.8g, §10.9, §10.11
+// ---------------------------------------------------------------------------
+
+/// Test Run shape (4.8.3): "Search your stack or heap for a program and
+/// install it." The search sets the program aside before installing it
+/// (8.7.4), which is exactly what 4.8.3 says other abilities cannot see.
+pub fn test_run_like(name: &'static str, zone: Zone) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::Search {
+                zone,
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
+                count: Quantity::c(1),
+                may_fail: true,
+            },
+            Instruction::InstallCard {
+                card: TargetSpec::FoundBySearch,
+                dest: crate::instr::InstallDest::Rig,
+                and_rez: false,
+                ignore_costs: true,
+                reveal_check: None,
+                reduce_total: Quantity::c(0),
+            },
+        ],
+    )
+    .labeled("test-run: search and install a program")];
+    c
+}
+
+/// Exile shape (4.8.3): "Whenever you install a program from your heap, draw
+/// 1 card." A condition that stipulates the zone the installed card came
+/// from — the one kind of ability 4.8.3's passthrough is written for.
+pub fn exile_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::CardInstalledFrom { side: Side::Runner, from: Zone::Discard(Side::Runner) },
+        vec![Instruction::Draw(Side::Runner, 1)],
+        false,
+    )
+    .labeled("exile: draw when you install a program from your heap")];
+    c
+}
+
+/// Test Run's second half (9.1.8g): "When your turn ends, add the installed
+/// card to the top of your stack." An installed card, so the move makes it
+/// inactive.
+pub fn returns_program_at_turn_end(name: &'static str, program: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateDelayedConditional {
+            def: Box::new(
+                AbilityDef::conditional(
+                    TriggerCond::TurnEnds(Side::Runner),
+                    vec![Instruction::MoveToDeck {
+                        card: TargetSpec::Objects(vec![program]),
+                        top: true,
+                    }],
+                    false,
+                )
+                .labeled("test-run: add it to the top of your stack"),
+            ),
+            duration: crate::lingering::WantedDuration::UntilResolved,
+        }],
+    )
+    .labeled("test-run: arm the return")];
+    c
+}
+
+/// Nanuq shape (9.1.8g): "When Nanuq is added to your stack, remove it from
+/// the game." The condition is met by the very move that makes the card
+/// inactive, so the ability must stay active in the stack until it resolves.
+pub fn nanuq_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfAddedToDeck,
+        vec![Instruction::RemoveSelfFromGame],
+        false,
+    )
+    .labeled("nanuq: remove it from the game")];
+    c
+}
+
+/// Crowdfunding shape (10.9.2): "When you install this card, load it with 3
+/// credits. Take 1 hosted credit: gain 1[credit]. When Crowdfunding is empty,
+/// add it to your grip."
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card takes its credit at the
+/// beginning of the Runner's turn; here that is a free paid ability, because
+/// what 10.9.2 is about is the LINK between the loading ability and the empty
+/// ability, not when the counters come off.
+pub fn crowdfunding_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfInstalled,
+            vec![Instruction::LoadCounters {
+                target: TargetSpec::SelfSource,
+                kind: CounterKind::Credit,
+                amount: Quantity::c(3),
+            }],
+            false,
+        )
+        .labeled("crowdfunding: load it with 3 credits"),
+        AbilityDef::paid(
+            Cost::spend_counters(CounterKind::Credit, 1),
+            vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        )
+        .labeled("crowdfunding: take 1 credit"),
+        AbilityDef::conditional(
+            TriggerCond::SelfEmpty { kind: CounterKind::Credit },
+            vec![Instruction::AddCardsToHand { cards: TargetSpec::SelfSource }],
+            false,
+        )
+        .labeled("crowdfunding: add it to your grip"),
+    ];
+    c
+}
+
+/// A Runner card whose paid ability simply makes a run on a server.
+pub fn run_button(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::InitiateRun(server)])
+        .labeled("run-button: make a run")];
+    c
+}
+
+/// Carpe Diem shape (10.11.2): "Identify your mark."
+pub fn identify_mark_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::IdentifyMark])
+        .labeled("carpe-diem: identify your mark")];
+    c
+}
+
+/// Virtuoso shape (10.11.5): "The first time each turn you make a successful
+/// run on your mark, access 1 additional card when you breach that server."
+///
+/// SIMPLIFICATION (§12 rule 3): "that server" is passed in rather than read
+/// back from the mark, because the additional-access lingering effect names
+/// one server and the caller already knows which server the mark is.
+pub fn virtuoso_like(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SuccessfulRunOnMark { first_each_turn: true },
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::AdditionalAccess { server, extra: 1 },
+            duration: crate::lingering::WantedDuration::ThisRun,
+        }],
+        false,
+    )
+    .labeled("virtuoso: access 1 additional card")];
+    c
+}

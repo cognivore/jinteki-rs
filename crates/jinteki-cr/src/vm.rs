@@ -212,6 +212,10 @@ pub struct InstallProgress {
     /// at the beginning of step 8.5.16d. The remainder goes to the rez cost.
     pub reduce_total: u32,
     pub reduce_install: u32,
+    /// CR 4.8.3: the zone the card is treated as having been installed FROM
+    /// — its location at step 8.5.16a, with a set-aside card reported as
+    /// coming from wherever it was before it was set aside.
+    pub from_zone: Zone,
 }
 
 /// CR 8.7.2b: the instruction a search is "followed by", when it refers to
@@ -493,6 +497,8 @@ impl Vm {
                 counters: BTreeMap::new(),
                 active_since: 0,
                 set_aside_for_ability: false,
+                loaded_kinds: Default::default(),
+                set_aside_from: None,
                 staged: false,
                 generation: 0,
                 scored_snapshot: None,
@@ -1811,6 +1817,17 @@ impl Vm {
         }
     }
 
+    /// CR 10.11.1/10.11.1a: the server designated as the mark, if any. There
+    /// is only ever one, shared by every card that refers to it.
+    pub fn mark(&self) -> Option<(ServerId, usize)> {
+        cite!("rule_mark");
+        cite!("rule_only_one_mark");
+        self.lingering.iter().find_map(|l| match l.payload {
+            Payload::MarkDesignation { server, since } => Some((server, since)),
+            _ => None,
+        })
+    }
+
     /// CR 7.3.8: is a breach in progress? A breach that would begin now takes
     /// place when the current one ends instead.
     fn breach_in_progress(&self) -> bool {
@@ -3011,7 +3028,8 @@ impl Vm {
             | Instruction::BreakSubroutines { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
-            Instruction::PlaceCounters { amount, .. } => {
+            Instruction::PlaceCounters { amount, .. }
+            | Instruction::LoadCounters { amount, .. } => {
                 // 9.12.2: the count is a selector; the atom's value is what it
                 // evaluates to when the instruction becomes imminent.
                 let n = self.eval_quantity(amount, source);
@@ -3717,6 +3735,11 @@ impl Vm {
                         self.st.objects[&source.obj].hosted.clone();
                     for h in &hosted {
                         let o = self.st.objects.get_mut(h).unwrap();
+                        // 4.8.3: "they are treated as having been installed
+                        // or trashed from their previous location in the
+                        // play area" (the 9.5.5 example's own words).
+                        cite!("rule_set_aside_zone_passthrough");
+                        o.set_aside_from = Some(o.zone);
                         o.set_aside_for_ability = true;
                         o.zone = Zone::SetAside;
                     }
@@ -4493,7 +4516,13 @@ impl Vm {
                     o.active_since = seq;
                 }
             }
-            self.changes.record(GameChange::CardInstalled { obj: joined, side });
+            self.changes.record(GameChange::CardInstalled {
+                obj: joined,
+                side,
+                // 8.8.4b: the joining card was not installed a moment ago; it
+                // comes from wherever the swap took it from.
+                from: zx,
+            });
         }
         if let (Zone::ScoreArea(sx), Zone::ScoreArea(sy)) = (zx, zy) {
             // 4.5: a card in a score area is controlled by its owner of that
@@ -4915,6 +4944,16 @@ impl Vm {
                 0
             },
             reduce_install: 0,
+            // 4.8.3: where the card is treated as coming from.
+            from_zone: {
+                let o = &self.st.objects[&c];
+                if o.zone == Zone::SetAside {
+                    cite!("rule_set_aside_zone_passthrough");
+                    o.set_aside_from.unwrap_or(Zone::SetAside)
+                } else {
+                    o.zone
+                }
+            },
         });
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.instructions[af.idx] = Instruction::InstallStepPlace;
@@ -5380,6 +5419,11 @@ impl Vm {
     fn complete_search(&mut self, zone: Zone, found: &[ObjectId], searcher: Side) {
         cite!("rule_find");
         for &c in found {
+            // 4.8.3: remember where the card came from, so a later move out
+            // of the set-aside zone is reported as coming from there.
+            cite!("rule_set_aside_zone_passthrough");
+            let was = self.st.objects[&c].zone;
+            self.st.objects.get_mut(&c).unwrap().set_aside_from = Some(was);
             self.st.objects.get_mut(&c).unwrap().zone = Zone::SetAside;
             self.st.objects.get_mut(&c).unwrap().set_aside_for_ability = true;
             match zone {
@@ -6549,6 +6593,51 @@ impl Vm {
                     self.changes.record(GameChange::CounterPlaced { obj: t, kind: *kind, amount: n });
                 }
             }
+            Instruction::IdentifyMark => {
+                // 10.11.3: if a server is already the mark, this does nothing
+                // — the mark is immutable for the remainder of the turn.
+                cite!("rule_mark_identification");
+                cite!("rule_mark_already_identified");
+                if self.mark().is_none() {
+                    // 10.11.2a: an equal chance of each of the 3 centrals.
+                    cite!("rule_mark_identification_method");
+                    let centrals = [ServerId::Hq, ServerId::Rnd, ServerId::Archives];
+                    let server = centrals[self.rng.random_range(0..centrals.len())];
+                    // 10.11.4: the designation IS a lingering effect, and it
+                    // expires at the end of the turn.
+                    cite!("rule_mark_designation_lingering_effect");
+                    cite!("rule_mark");
+                    cite!("rule_only_one_mark");
+                    let id = self.next_lingering;
+                    self.next_lingering += 1;
+                    let since = self.changes.log.len();
+                    self.lingering.push(LingeringEffect::new(
+                        id,
+                        source.obj,
+                        Payload::MarkDesignation { server, since },
+                        Duration::Turn(self.st.turn_seq),
+                    ));
+                }
+            }
+            Instruction::LoadCounters { target, kind, amount } => {
+                // 10.9.1: loading IS placing — the difference is that the
+                // kind is remembered, so an "empty" ability on the same card
+                // has something to be linked to (10.9.2). 10.9.4: loading
+                // imposes no further restrictions on those counters.
+                cite!("rule_load_and_empty");
+                cite!("rule_loading_does_not_restrict_counters");
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                let n = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                for t in targets {
+                    let obj = self.st.objects.get_mut(&t).unwrap();
+                    obj.loaded_kinds.insert(*kind);
+                    if n > 0 {
+                        *obj.counters.entry(*kind).or_insert(0) += n;
+                        self.changes
+                            .record(GameChange::CounterPlaced { obj: t, kind: *kind, amount: n });
+                    }
+                }
+            }
             Instruction::ChangeAttackedServer { server } => {
                 // 6.1.2d: the attacked server changes DIRECTLY, without
                 // reference to the Runner's position — so the run's current
@@ -6768,7 +6857,7 @@ impl Vm {
                 // (f) "when installed" conditions meet their trigger
                 // conditions; the install effect is complete.
                 let side = self.st.objects[&c].printed.side;
-                self.changes.record(GameChange::CardInstalled { obj: c, side });
+                self.changes.record(GameChange::CardInstalled { obj: c, side, from: p.from_zone });
                 if !p.and_rez {
                     let done = self.installs.pop().unwrap();
                     self.install_terminal_reveal(&done);
@@ -8264,6 +8353,18 @@ impl Vm {
     /// Move a card between zones, maintaining zone lists.
     pub fn move_card(&mut self, id: ObjectId, to: Zone) {
         let from = self.st.objects[&id].zone;
+        // CR 4.8.3: a card moving out of the set-aside zone is treated as
+        // having entered its destination directly from where it was before it
+        // was set aside — for every ability except the one that set it aside,
+        // which is the only one that can see the set-aside zone at all. The
+        // kernel's representation of "what other abilities see" is the change
+        // log, so the substitution happens exactly there.
+        let reported_from = if from == Zone::SetAside {
+            cite!("rule_set_aside_zone_passthrough");
+            self.st.objects[&id].set_aside_from.unwrap_or(from)
+        } else {
+            from
+        };
         // Remove from any zone list.
         for v in self.st.deck.values_mut() {
             v.retain(|&c| c != id);
@@ -8330,9 +8431,10 @@ impl Vm {
                 }
             }
         }
-        self.changes.record(GameChange::CardMoved { obj: id, from, to });
-        if from.is_installed() && !to.is_installed() {
-            self.changes.record(GameChange::CardUninstalled { obj: id, was_zone: from });
+        self.changes.record(GameChange::CardMoved { obj: id, from: reported_from, to });
+        if reported_from.is_installed() && !to.is_installed() {
+            self.changes
+                .record(GameChange::CardUninstalled { obj: id, was_zone: reported_from });
         }
         // Mid-breach root entries (10.3.1j).
         if let Zone::Root(server) = to {

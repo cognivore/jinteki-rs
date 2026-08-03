@@ -264,6 +264,51 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             continue;
                         }
                     }
+                    // 10.11.5: the run must be on the MARK, and the "first
+                    // time each turn" ordinal is counted only from the moment
+                    // that server was designated — an earlier successful run
+                    // on the same server, before it was the mark, is not one
+                    // of the times this condition counts.
+                    if let (
+                        crate::ability::TriggerCond::SuccessfulRunOnMark { first_each_turn },
+                        GameChange::RunDeclaredSuccessful { server },
+                    ) = (cond, c)
+                    {
+                        cite!("rule_mark_designated_condition_check");
+                        let Some((mark, since)) = vm.mark() else { continue };
+                        if mark != *server {
+                            continue;
+                        }
+                        // The successful runs on the mark SINCE the
+                        // designation. Zero means the run that met this
+                        // condition happened before the server was the mark,
+                        // and 10.11.5 does not let the condition see it at
+                        // all; more than one means this is not the first.
+                        let so_far = vm.changes.log[since..]
+                            .iter()
+                            .filter(|x| {
+                                matches!(x, GameChange::RunDeclaredSuccessful { server: s }
+                                         if *s == mark)
+                            })
+                            .count();
+                        if so_far == 0 || (*first_each_turn && so_far > 1) {
+                            continue;
+                        }
+                    }
+                    // 10.9.1/10.9.2: a card is EMPTY only when it holds no
+                    // counters of a kind it was previously LOADED with. A
+                    // card that was never loaded cannot become empty, and
+                    // counters of an unloaded kind coming off do nothing
+                    // (10.9.3).
+                    if let crate::ability::TriggerCond::SelfEmpty { kind } = cond {
+                        cite!("rule_empty_requires_loading");
+                        cite!("rule_meeting_empty_condition");
+                        let loaded = source_obj.loaded_kinds.contains(kind);
+                        let left = source_obj.counters.get(kind).copied().unwrap_or(0);
+                        if !loaded || left > 0 {
+                            continue;
+                        }
+                    }
                     // 9.10.3b: Security Testing class — the successful run
                     // must be on the server the source chose THIS turn. No
                     // choice maintained means the condition is never met.
