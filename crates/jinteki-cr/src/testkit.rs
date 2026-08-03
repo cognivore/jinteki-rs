@@ -3058,3 +3058,60 @@ pub fn stimhack_like(name: &'static str, server: ServerId) -> PrintedCard {
         ],
     )
 }
+
+// ---------------------------------------------------------------------------
+// W7f shapes: object identity across moves (§1.12)
+// ---------------------------------------------------------------------------
+
+/// Vaporframe-Fabricator shape (1.12.2 / 1.12.5): a Corp asset with a
+/// once-per-turn free paid ability. Whether that ability is available again
+/// is exactly the question of whether the card is still the same OBJECT.
+pub fn once_per_turn_asset(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
+    )
+    .with_flag(AbilityFlag::OncePerTurn)
+    .labeled("vaporframe: once per turn, gain 1")];
+    c
+}
+
+/// Divert-Power shape (1.12.5): a Corp button that derezzes a card.
+pub fn derez_button(name: &'static str, target: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::Derez { target: TargetSpec::Objects(vec![target]) }],
+    )
+    .labeled("divert: derez a card")];
+    c
+}
+
+/// Priority-Construction shape (1.12.2a): an operation that installs a piece
+/// of ice from HQ and then places advancement counters on THAT card — its
+/// second instruction finds the new object without re-announcing it (1.15.4).
+pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    operation(
+        name,
+        0,
+        vec![
+            Instruction::InstallCard {
+                card: TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![F::CardsInHandOf(Side::Corp), F::CardTypeIs(CardType::Ice)],
+                },
+                dest: crate::instr::InstallDest::Protecting(protecting),
+                and_rez: false,
+                ignore_costs: true,
+                reveal_check: None,
+            },
+            Instruction::PlaceCounters {
+                target: TargetSpec::EarlierTarget { nth: 0 },
+                kind: CounterKind::Advancement,
+                amount: 3,
+            },
+        ],
+    )
+}

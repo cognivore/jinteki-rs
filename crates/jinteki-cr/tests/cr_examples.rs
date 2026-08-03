@@ -183,6 +183,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_action_timing_structure_completion_1",
     "example_rule_end_run_no_run_or_encounter_1",
     "example_rule_candidates_leaving_server_1",
+    // Wave 7f: object identity across moves (§1.12).
+    "example_rule_no_memory_1",
+    "example_rule_object_turn_faceup_facedown_1",
+    "example_rule_identify_object_after_move_1",
+    "example_rule_previous_object_2",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -6293,6 +6298,182 @@ fn example_rule_candidates_leaving_server_1() {
         t.tail(12)
     );
     assert_eq!(vm.st.objects[&upgrade].zone, Zone::Discard(Side::Corp));
+}
+
+// ===========================================================================
+// §1.12 — object identity across moves (W7f)
+// ===========================================================================
+
+/// example_rule_no_memory_1 (1.12.2): the Corp uses a once-per-turn ability
+/// on a card, the card is trashed, and the same physical card is reinstalled
+/// from Archives. It is a NEW object, so its once-per-turn ability is
+/// available again this turn.
+#[test]
+fn example_rule_no_memory_1() {
+    let mut vm = Vm::empty(717);
+    let vf = tk::install_root(
+        &mut vm,
+        tk::once_per_turn_asset("Vaporframe-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Trash-Button", vec![vf]),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button(
+            "Restore-like",
+            vf,
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(3)),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .uses("vaporframe")
+            .uses("corp-trash")
+            .uses("corp-install")
+            .when(Match::paid().offering_pick(Pick::Rez(vf)).once(), Reply::rez(vf))
+            .when(Match::paid().offering("vaporframe").once(), Reply::take("vaporframe"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        t.entries.iter().filter(|e| e.took("vaporframe")).count(),
+        2,
+        "1.12.2: the reinstalled card is a new object, so its once-per-turn \
+         ability is available again: {}",
+        t.tail(12)
+    );
+    assert_eq!(vm.st.objects[&vf].zone, Zone::Root(ServerId::Remote(3)));
+}
+
+/// example_rule_object_turn_faceup_facedown_1 (1.12.5): the same card is
+/// derezzed and rezzed again. Turning a card faceup or facedown does not
+/// change its zone, so it is still the same object and its once-per-turn
+/// ability cannot be used again this turn.
+#[test]
+fn example_rule_object_turn_faceup_facedown_1() {
+    let mut vm = Vm::empty(718);
+    let vf = tk::install_root(
+        &mut vm,
+        tk::once_per_turn_asset("Vaporframe-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(&mut vm, tk::derez_button("Divert-like", vf), ServerId::Remote(2), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .uses("vaporframe")
+            .uses("divert")
+            .when(Match::paid().offering_pick(Pick::Rez(vf)).once(), Reply::rez(vf))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.entries.iter().any(|e| matches!(
+        &e.answer,
+        Some(DecisionAnswer::Take(WindowOption::Rez { card })) if *card == vf
+    )), "the card was rezzed again: {}", t.tail(12));
+    assert_eq!(
+        t.entries.iter().filter(|e| e.took("vaporframe")).count(),
+        1,
+        "1.12.5: still the same object, so the once-per-turn ability is spent"
+    );
+    assert!(
+        !t.entries.iter().skip_while(|e| !e.took("divert")).any(|e| e.offered("vaporframe")),
+        "and it is not even offered after the re-rez: {}",
+        t.tail(12)
+    );
+}
+
+/// example_rule_identify_object_after_move_1 (1.12.2a): a Priority-
+/// Construction-class operation installs a piece of ice from HQ. The ice is a
+/// new object in the play area, but the operation's SECOND instruction can
+/// still find it and place advancement counters on it (1.15.4).
+#[test]
+fn example_rule_identify_object_after_move_1() {
+    let mut vm = Vm::empty(719);
+    let ice = vm.new_object(tk::vanilla_ice("HQ-Ice", 3, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ice);
+    let op = vm.new_object(
+        tk::priority_construction_like("PriorityConstruction-like", ServerId::Hq),
+        Zone::Hand(Side::Corp),
+    );
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+    tk::install_root(&mut vm, tk::play_operation_button("Play-Button", op), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().uses("play-op").stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.objects[&ice].zone, Zone::Ice(ServerId::Hq), "the ice was installed");
+    assert_eq!(
+        vm.st.objects[&ice].counter(CounterKind::Advancement),
+        3,
+        "1.12.2a: the second instruction found the new object: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Targets).len(),
+        1,
+        "and did not need to select it again"
+    );
+}
+
+/// example_rule_previous_object_2 (1.12.6): the Runner trashes the top card
+/// of R&D while accessing it. The object for that card on top of R&D ceases
+/// to exist, but it still counts against the number of cards the Runner can
+/// access from R&D during this breach.
+#[test]
+fn example_rule_previous_object_2() {
+    let mut vm = Vm::empty(720);
+    let rnd = tk::fill_deck(&mut vm, Side::Corp, 4);
+    for c in &rnd {
+        vm.st.objects.get_mut(c).unwrap().printed.trash_cost = Some(0);
+    }
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Rnd).trashes_on_access().stop_at_action(),
+    );
+    let accessed: Vec<jinteki_cr::object::ObjectId> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CardAccessed { obj } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        accessed.len(),
+        1,
+        "1.12.6: the trashed object still counts against the R&D access \
+         limit, so the breach is over: {}",
+        t.tail(12)
+    );
+    assert_eq!(accessed[0], rnd[0]);
+    assert_eq!(vm.st.objects[&rnd[0]].zone, Zone::Discard(Side::Corp));
 }
 
 // ===========================================================================

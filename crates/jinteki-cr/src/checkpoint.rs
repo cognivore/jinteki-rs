@@ -195,7 +195,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 // 9.3.6g: a once-per-turn ability already USED this turn
                 // does not become pending again.
                 if def.has_flag(crate::ability::AbilityFlag::OncePerTurn)
-                    && vm.once_per_turn_used.contains(&aref)
+                    && vm.once_per_turn_used.contains(&(aref, source_obj.generation))
                 {
                     cite!("rule_once_per_turn_flag");
                     continue;

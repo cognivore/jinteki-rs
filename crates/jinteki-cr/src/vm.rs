@@ -239,7 +239,10 @@ pub struct Vm {
     /// structure step completes.
     pub throttled: HashSet<AbilityRef>,
     /// CR 9.3.6g: once-per-turn uses this turn.
-    pub once_per_turn_used: HashSet<AbilityRef>,
+    /// CR 9.3.6g once-per-turn use, keyed by the OBJECT (1.12.2): a card
+    /// that changed zones and came back is a new object, so its
+    /// once-per-turn ability is available again.
+    pub once_per_turn_used: HashSet<(AbilityRef, u32)>,
     /// CR 9.6.6a: game state as of the previous checkpoint's step (a).
     pub snapshot: Option<Box<CoreState>>,
     /// Scan window captured by the last checkpoint's step (a) (for 10.3.1j).
@@ -2091,6 +2094,7 @@ impl Vm {
             | Instruction::BypassEncounteredIce
             | Instruction::ModifyStrength { .. }
             | Instruction::ModifySubtypes { .. }
+            | Instruction::Derez { .. }
             | Instruction::BreakSubroutines { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
@@ -2651,7 +2655,7 @@ impl Vm {
                     continue;
                 }
                 if a.has_flag(AbilityFlag::OncePerTurn)
-                    && self.once_per_turn_used.contains(&AbilityRef { obj: o.id, index: i })
+                    && self.once_per_turn_used.contains(&(AbilityRef { obj: o.id, index: i }, o.generation))
                 {
                     continue;
                 }
@@ -4390,7 +4394,7 @@ impl Vm {
                     cite!("rule_optional_conditional_ability_use");
                     cite!("rule_once_per_turn_flag");
                     self.changes.record(GameChange::AbilityUsed { source: source.obj });
-                    self.once_per_turn_used.insert(source);
+                    self.once_per_turn_used.insert((source, self.generation(source.obj)));
                     let inner_imm = ImminentWrap {
                         instr: (**inner).clone(),
                         atoms: imm.atoms.clone(),
@@ -4847,6 +4851,22 @@ impl Vm {
                         },
                         dur,
                     ));
+                }
+            }
+            Instruction::Derez { target } => {
+                // CR 8.1.2 / 1.12.5: the card is turned facedown. It stays
+                // the same object — it never changed zones — so anything
+                // keyed to the object (a once-per-turn use, a maintained
+                // choice) survives.
+                cite!("rule_object_turn_faceup_facedown");
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                for t in targets {
+                    let Some(o) = self.st.objects.get_mut(&t) else { continue };
+                    if !o.faceup || o.printed.side != Side::Corp {
+                        continue;
+                    }
+                    o.faceup = false;
+                    self.changes.record(GameChange::CardDerezzed { obj: t });
                 }
             }
             Instruction::BreakSubroutines { subs } => {
@@ -5933,7 +5953,7 @@ impl Vm {
                     }
                 }
                 if a.has_flag(AbilityFlag::OncePerTurn)
-                    && self.once_per_turn_used.contains(&AbilityRef { obj: o.id, index: i })
+                    && self.once_per_turn_used.contains(&(AbilityRef { obj: o.id, index: i }, o.generation))
                 {
                     cite!("rule_once_per_turn_flag");
                     continue;
@@ -6394,8 +6414,10 @@ impl Vm {
         }
         self.st.move_seq += 1;
         let o = self.st.objects.get_mut(&id).unwrap();
-        // CR 1.12.3: changing zones makes a NEW object out of the card.
-        if from != to {
+        // CR 1.12.3: changing ZONES makes a NEW object out of the card —
+        // and 1.12.4 says moving within a zone to a known location does not,
+        // which is why the whole play area (root, ice, rig) is one class.
+        if from.zone_class() != to.zone_class() {
             cite!("rule_object_move_location");
             o.generation += 1;
         }
@@ -7137,7 +7159,7 @@ impl Vm {
         cite!("step_paid_ability_announce");
         cite!("rule_paid_ability_independent");
         if def.has_flag(AbilityFlag::OncePerTurn) {
-            self.once_per_turn_used.insert(ability);
+            self.once_per_turn_used.insert((ability, self.generation(ability.obj)));
         }
         let cost = def.cost.clone().unwrap_or_default();
         self.push_ability_frame_cost(

@@ -97,6 +97,10 @@ pub enum Instruction {
     /// POSITION, so "access the card you chose from the top of R&D" (Top Hat
     /// class) and "access this card" are the same instruction.
     AccessCards { cards: TargetSpec },
+    /// "Derez <targets>." (§8.1.2) — a rezzed card is turned facedown.
+    /// CR 1.12.5: turning a card faceup or facedown does not make it a new
+    /// object, since it does not change zones.
+    Derez { target: TargetSpec },
     /// "Move the (set-aside) hosted counters to <target>" (Reconstruction
     /// Contract class, 9.5.5).
     MoveSetAsideCounters { kind: crate::object::CounterKind, target: TargetSpec },

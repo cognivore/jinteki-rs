@@ -80,6 +80,27 @@ impl Zone {
     pub fn is_installed(self) -> bool {
         matches!(self, Zone::Root(_) | Zone::Ice(_) | Zone::Rig)
     }
+
+    /// CR 4.6: the play area is ONE zone. `Root`/`Ice`/`Rig`/`PlayArea` are
+    /// locations within it, so moving between them is a move within a zone
+    /// (1.12.4) and not a move to another zone (1.12.3).
+    pub fn zone_class(self) -> u8 {
+        cite!("rule_play_area");
+        match self {
+            Zone::Root(_) | Zone::Ice(_) | Zone::Rig | Zone::PlayArea(_) => 0,
+            Zone::Deck(Side::Corp) => 1,
+            Zone::Deck(Side::Runner) => 2,
+            Zone::Hand(Side::Corp) => 3,
+            Zone::Hand(Side::Runner) => 4,
+            Zone::Discard(Side::Corp) => 5,
+            Zone::Discard(Side::Runner) => 6,
+            Zone::ScoreArea(Side::Corp) => 7,
+            Zone::ScoreArea(Side::Runner) => 8,
+            Zone::Bank => 9,
+            Zone::SetAside => 10,
+            Zone::RemovedFromGame => 11,
+        }
+    }
 }
 
 /// CR 2.15: card types.

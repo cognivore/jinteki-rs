@@ -38,6 +38,9 @@ pub enum GameChange {
     CardPlayResolved { obj: ObjectId },
     CardUninstalled { obj: ObjectId, was_zone: Zone },
     CardRezzed { obj: ObjectId },
+    /// CR 8.1.2 / 1.12.5: a card turned facedown again. It does NOT become a
+    /// new object — it never left the play area.
+    CardDerezzed { obj: ObjectId },
     CardMoved { obj: ObjectId, from: Zone, to: Zone },
     CounterPlaced { obj: ObjectId, kind: crate::object::CounterKind, amount: u32 },
     /// Counters left a card or a player and returned to the bank (1.9.2) —
