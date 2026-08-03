@@ -2709,3 +2709,14 @@ pub fn duration_extender(name: &'static str) -> PrintedCard {
     .labeled("gebrselassie: host strength effects last the turn")];
     c
 }
+
+/// Esâ-Afontov / Chastushka shape (10.12.1): a Runner ability that
+/// sabotages N.
+pub fn sabotage_button(name: &'static str, n: i64) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![
+        AbilityDef::paid(Cost::free(), vec![Instruction::Sabotage { count: Quantity::c(n) }])
+            .labeled("sabotage"),
+    ];
+    c
+}

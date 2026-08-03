@@ -349,6 +349,13 @@ pub enum Instruction {
     /// attribution: a trigger condition about effects "performed by" a player
     /// is met only when that player carried the effect out.
     PerformedBy { side: Side, instr: Box<Instruction> },
+    /// CR 10.12.1: "Sabotage N." — the Corp trashes N cards collectively from
+    /// HQ and the top of R&D. The Corp chooses how many come out of HQ
+    /// (10.12.2), with the 10.12.3a floor when R&D is short and the 10.12.3b
+    /// everything-goes case when both are; all of them are trashed
+    /// simultaneously and enter Archives facedown (10.12.2a). The count is a
+    /// quantity position (§12 rule 6).
+    Sabotage { count: Quantity },
     /// CR 1.9.5: "Remove N <kind> counters from <player>." (Scapegoat class
     /// for bad publicity.) Counters HOSTED on cards are not on a player, so
     /// this instruction can never reach them (1.13.3). The count is a

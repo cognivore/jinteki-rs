@@ -79,8 +79,11 @@ pub enum DecisionSpec {
     /// Mid-access window (9.2.10): one ability / basic trash / pass.
     MidAccessWindow { options: Vec<WindowOption> },
     /// Choose targets for an instruction (9.3.4b), one of `candidates`,
-    /// `count` times (or fewer if `up_to`).
-    ChooseTargets { candidates: Vec<ObjectId>, count: u32, up_to: bool },
+    /// `count` times (or fewer if `up_to`). CR 1.15.2e / 10.12.3a: `min` is
+    /// the number of targets the instruction REQUIRES where fewer than
+    /// `count` may be chosen — 0 for a plain "up to N", and non-zero where
+    /// the rules force a floor (a sabotage that must take enough from HQ).
+    ChooseTargets { candidates: Vec<ObjectId>, count: u32, up_to: bool, min: u32 },
     /// CR 9.11.4g: choose between optioned effects; each option is its own
     /// instruction chain.
     ChooseOption { options: Vec<&'static str> },

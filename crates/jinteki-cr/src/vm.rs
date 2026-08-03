@@ -166,6 +166,9 @@ pub enum DecisionCtx {
     /// 7.4.3 example 2 (Gagarin class): pay or decline an additional cost
     /// to access the chosen candidate.
     AccessCost(ObjectId),
+    /// 10.12.2: the Corp chooses which cards to trash from HQ for a
+    /// "sabotage N"; the remainder comes off the top of R&D.
+    Sabotage { count: u32 },
     /// CR 8.7.2: which cards the searching player FINDS. Asked while the
     /// search instruction resolves, never at announce time — found cards are
     /// not targets (`rule_searching_does_not_target`). Carries the searched
@@ -2094,6 +2097,17 @@ impl Vm {
                     vec![EffectAtom::new(EffectClass::TrashCards, n, *side)]
                 }
             }
+            Instruction::Sabotage { count } => {
+                // 10.12.1: the trashes are one aggregated set (9.12.2c), and
+                // there is nothing to trash when both zones are empty.
+                let n = self.eval_quantity(count, source);
+                let have = (self.st.hand[&Side::Corp].len() + self.st.deck[&Side::Corp].len()) as i64;
+                if have == 0 {
+                    vec![]
+                } else {
+                    vec![EffectAtom::new(EffectClass::TrashCards, n.min(have), Side::Corp)]
+                }
+            }
             Instruction::Search { .. }
             | Instruction::AddCardsToHand { .. }
             | Instruction::HostCards { .. }
@@ -2935,7 +2949,7 @@ impl Vm {
                     DecisionSpec::ChooseTargets {
                         candidates,
                         count: *count,
-                        up_to: false,
+                        up_to: false, min: 0,
                     },
                 ))
             }
@@ -2950,7 +2964,7 @@ impl Vm {
                 let candidates = self.filter_candidates(criteria, af.controller);
                 Some((
                     af.controller,
-                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false },
+                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false, min: 0 },
                 ))
             }
             Instruction::DeclineableChoice(_) => Some((
@@ -2967,7 +2981,7 @@ impl Vm {
                     DecisionSpec::ChooseTargets {
                         candidates,
                         count: *count,
-                        up_to: true,
+                        up_to: true, min: 0,
                     },
                 ))
             }
@@ -2990,7 +3004,7 @@ impl Vm {
                 } else {
                     Some((
                         af.controller,
-                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true },
+                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true, min: 0 },
                     ))
                 }
             }
@@ -3005,7 +3019,7 @@ impl Vm {
                 } else {
                     Some((
                         af.controller,
-                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true },
+                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true, min: 0 },
                     ))
                 }
             }
@@ -3017,7 +3031,7 @@ impl Vm {
                 let candidates = self.filter_candidates(criteria, af.controller);
                 Some((
                     af.controller,
-                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false },
+                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false, min: 0 },
                 ))
             }
             // 1.13.6a/8.5.16b: with the card known, whoever is installing it
@@ -3047,7 +3061,7 @@ impl Vm {
                         DecisionSpec::ChooseTargets {
                             candidates: hosts,
                             count: 1,
-                            up_to: optional,
+                            up_to: optional, min: 0,
                         },
                     ))
                 }
@@ -5104,8 +5118,38 @@ impl Vm {
                         candidates,
                         count: want,
                         up_to: *may_fail,
+                        min: 0,
                     },
                     DecisionCtx::SearchFind { zone: *zone },
+                );
+            }
+            Instruction::Sabotage { count } => {
+                // 10.12.2: the Corp chooses which cards to trash from HQ and
+                // the rest come off the top of R&D. The choice is made when
+                // the instruction resolves — a sabotage names no targets in
+                // advance, so this is not an announcement (1.15.1b).
+                cite!("rule_sabotage");
+                cite!("rule_sabotage_resolution");
+                let n = self.eval_quantity(count, Some(source.obj)).max(0) as u32;
+                let hq = self.st.hand[&Side::Corp].clone();
+                let rnd = self.st.deck[&Side::Corp].len() as u32;
+                // 10.12.3a: enough must come from HQ that the remainder fits
+                // in R&D; 10.12.3b: if both together are short, everything
+                // goes, so the floor and the ceiling meet at |HQ|.
+                cite!("rule_sabotage_with_not_enough_cards");
+                cite!("rule_sabotage_hq_first");
+                cite!("rule_sabotage_all_remaining_cards");
+                let max_from_hq = n.min(hq.len() as u32);
+                let min_from_hq = n.saturating_sub(rnd).min(hq.len() as u32);
+                self.ask(
+                    Side::Corp,
+                    DecisionSpec::ChooseTargets {
+                        candidates: hq,
+                        count: max_from_hq,
+                        up_to: min_from_hq == 0,
+                        min: min_from_hq,
+                    },
+                    DecisionCtx::Sabotage { count: n },
                 );
             }
             Instruction::AddCardsToHand { cards } => {
@@ -6477,6 +6521,40 @@ impl Vm {
                 }
                 // The breach step's Exec already advanced to Checkpoint;
                 // a paid access pushed its structure frame on top.
+            }
+            (DecisionCtx::Sabotage { count }, DecisionAnswer::Targets(from_hq)) => {
+                // 10.12.2: the chosen HQ cards and the top of R&D are trashed
+                // SIMULTANEOUSLY, and they enter Archives facedown (10.12.2a).
+                cite!("rule_sabotage_resolution");
+                cite!("rule_sabotage_facedown");
+                let hq_now = self.st.hand[&Side::Corp].clone();
+                let rnd_len = self.st.deck[&Side::Corp].len() as u32;
+                let mut chosen: Vec<ObjectId> = Vec::new();
+                for c in from_hq {
+                    if hq_now.contains(&c) && !chosen.contains(&c) && (chosen.len() as u32) < count {
+                        chosen.push(c);
+                    }
+                }
+                // The 10.12.3a floor is a requirement of the instruction, not
+                // a suggestion: a short choice is completed from HQ.
+                let need = count.saturating_sub(rnd_len).min(hq_now.len() as u32);
+                for c in hq_now {
+                    if (chosen.len() as u32) >= need {
+                        break;
+                    }
+                    if !chosen.contains(&c) {
+                        chosen.push(c);
+                    }
+                }
+                let from_rnd: Vec<ObjectId> = self.st.deck[&Side::Corp]
+                    .iter()
+                    .take((count - chosen.len() as u32) as usize)
+                    .copied()
+                    .collect();
+                for c in chosen.into_iter().chain(from_rnd) {
+                    self.st.objects.get_mut(&c).unwrap().faceup = false;
+                    self.trash_card(c, Side::Corp);
+                }
             }
             (DecisionCtx::SearchFind { zone }, DecisionAnswer::Targets(found)) => {
                 // 8.7.2: the player has finished looking. Take what they

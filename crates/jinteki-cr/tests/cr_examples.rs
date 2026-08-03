@@ -154,6 +154,11 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_modify_duration_of_lingering_effect_1",
     "example_rule_static_no_lingering_effects_1",
     "example_rule_replacement_on_static_ability_must_remain_active_1",
+    // Wave 6c: sabotage (§10.12) and static value modification (9.4.5).
+    "example_rule_sabotage_all_remaining_cards_1",
+    "example_rule_sabotage_all_remaining_cards_2",
+    "example_rule_sabotage_all_remaining_cards_3",
+    "example_rule_static_modification_keep_restrictions_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5391,6 +5396,136 @@ fn example_rule_replacement_on_static_ability_must_remain_active_1() {
         Some(2),
         "with the replacement gone, the increase expired at the end of the \
          encounter as originally stated"
+    );
+}
+
+// ===========================================================================
+// §10.12 — sabotage
+// ===========================================================================
+
+/// example_rule_sabotage_all_remaining_cards_1 (10.12.3b, the plentiful
+/// case): sabotage 2 against 2 cards in HQ and 30 in R&D. Nothing is forced:
+/// the Corp may take both off R&D, one from each, or both from HQ — the
+/// choice put to them spans 0..2 from HQ.
+#[test]
+fn example_rule_sabotage_all_remaining_cards_1() {
+    let mut vm = Vm::empty(630);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 30);
+    tk::install_rig(&mut vm, tk::sabotage_button("Esa-like", 2));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::targets().once(), Reply::Targets(vec![])),
+        Plan::runner().when(Match::paid().once(), Reply::take("sabotage")).stop_at_action(),
+    );
+    let ask = t.first_window(Kind::Targets, Side::Corp);
+    match ask.spec {
+        DecisionSpec::ChooseTargets { count, min, .. } => {
+            assert_eq!((count, min), (2, 0), "up to 2 from HQ, none of them forced");
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 2, "the Corp chose none from HQ");
+    assert_eq!(vm.st.deck[&Side::Corp].len(), 28, "so both came off the top of R&D");
+    assert_eq!(vm.st.discard[&Side::Corp].len(), 2);
+    assert!(
+        vm.st.discard[&Side::Corp].iter().all(|c| !vm.st.objects[c].faceup),
+        "10.12.2a: cards trashed by a sabotage enter Archives facedown"
+    );
+}
+
+/// example_rule_sabotage_all_remaining_cards_2 (10.12.3a): sabotage 4 with 5
+/// cards in HQ and 2 in R&D. R&D cannot supply more than 2, so the Corp must
+/// choose AT LEAST 2 cards in HQ.
+#[test]
+fn example_rule_sabotage_all_remaining_cards_2() {
+    let mut vm = Vm::empty(631);
+    tk::fill_hand(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 2);
+    tk::install_rig(&mut vm, tk::sabotage_button("Chastushka-like", 4));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        // The Corp tries to give up nothing from HQ; the floor still applies.
+        Plan::corp().when(Match::targets().once(), Reply::Targets(vec![])),
+        Plan::runner().when(Match::paid().once(), Reply::take("sabotage")).stop_at_action(),
+    );
+    let ask = t.first_window(Kind::Targets, Side::Corp);
+    match ask.spec {
+        DecisionSpec::ChooseTargets { count, min, .. } => {
+            assert_eq!((count, min), (4, 2), "at least 2 of the 4 must come from HQ");
+        }
+        _ => unreachable!(),
+    }
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 3, "2 of the 5 went");
+    assert_eq!(vm.st.deck[&Side::Corp].len(), 0, "and all of R&D");
+    assert_eq!(vm.st.discard[&Side::Corp].len(), 4, "4 cards trashed in total");
+}
+
+/// example_rule_sabotage_all_remaining_cards_3 (10.12.3b): sabotage 4 with 2
+/// cards in HQ and 1 in R&D — fewer than 4 between them, so the Corp trashes
+/// all of both zones and there is no choice left to make.
+#[test]
+fn example_rule_sabotage_all_remaining_cards_3() {
+    let mut vm = Vm::empty(632);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 1);
+    tk::install_rig(&mut vm, tk::sabotage_button("Chastushka-like", 4));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::targets().once(), Reply::Targets(vec![])),
+        Plan::runner().when(Match::paid().once(), Reply::take("sabotage")).stop_at_action(),
+    );
+    let ask = t.first_window(Kind::Targets, Side::Corp);
+    match ask.spec {
+        DecisionSpec::ChooseTargets { count, min, .. } => {
+            assert_eq!((count, min), (2, 2), "both cards in HQ, forced");
+        }
+        _ => unreachable!(),
+    }
+    assert!(vm.st.hand[&Side::Corp].is_empty(), "all of HQ");
+    assert!(vm.st.deck[&Side::Corp].is_empty(), "and all of R&D");
+    assert_eq!(vm.st.discard[&Side::Corp].len(), 3);
+}
+
+/// example_rule_static_modification_keep_restrictions_1 (9.4.5): a
+/// Flare-class effect does 2 meat damage that cannot be prevented. The
+/// Cleaners' static ability adds 1 to the amount — and the added point
+/// carries the SAME restriction, so a Plascrete-class preventer stops none
+/// of the 3.
+#[test]
+fn example_rule_static_modification_keep_restrictions_1() {
+    let mut vm = Vm::empty(633);
+    tk::put_in_score_area(&mut vm, tk::cleaners_static_like("Cleaners-like"), Side::Corp);
+    tk::install_root(&mut vm, tk::flare_like("Flare-like"), ServerId::Remote(1), true);
+    tk::install_rig(&mut vm, tk::biometric_like("Plascrete-like", DamageKind::Meat));
+    tk::fill_hand(&mut vm, Side::Runner, 6);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("flare")).stop_at_action(),
+        Plan::runner().always_uses("biometric"),
+    );
+    assert!(t.took("flare"));
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::DamageSuffered { amount: 3, kind: DamageKind::Meat, .. }
+        )),
+        "2 printed + 1 from the static ability: {}",
+        t.tail(6)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        3,
+        "all 3 points are unpreventable — the modification kept the \
+         restriction the original value carried"
     );
 }
 
