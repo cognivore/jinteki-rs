@@ -92,6 +92,11 @@ pub enum Instruction {
         effect: Box<Instruction>,
         payer: Option<crate::object::Side>,
     },
+    /// "…and access it" (§7.2): the announced cards are accessed, one at a
+    /// time, each in its own access timing structure. The cards are a target
+    /// POSITION, so "access the card you chose from the top of R&D" (Top Hat
+    /// class) and "access this card" are the same instruction.
+    AccessCards { cards: TargetSpec },
     /// "Move the (set-aside) hosted counters to <target>" (Reconstruction
     /// Contract class, 9.5.5).
     MoveSetAsideCounters { kind: crate::object::CounterKind, target: TargetSpec },
@@ -557,6 +562,10 @@ pub enum TargetFilter {
     Rezzed,
     /// CR 4.5: "an agenda in the Runner's score area".
     InScoreAreaOf(Side),
+    /// CR 4.2.2: "1 of the top N cards of R&D" (Top Hat class) — a criterion
+    /// that explicitly specifies the zone, which is what lets 1.15.2c's
+    /// play-area restriction lift for it.
+    TopOfDeckOf { side: Side, n: u32 },
 }
 
 impl TargetFilter {
@@ -579,6 +588,7 @@ impl TargetFilter {
                 | TargetFilter::IceProtectingAttackedServer
                 | TargetFilter::CardsInHandOf(_)
                 | TargetFilter::InScoreAreaOf(_)
+                | TargetFilter::TopOfDeckOf { .. }
         )
     }
 }

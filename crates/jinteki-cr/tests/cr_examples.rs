@@ -167,6 +167,9 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_target_2",
     "example_rule_target_4",
     "example_rule_break_all_but_x_subroutines_targets_1",
+    // Wave 7c: 1.15.4 targets beyond a move.
+    "example_rule_target_beyond_move_1",
+    "example_rule_target_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5841,6 +5844,80 @@ fn example_rule_break_all_but_x_subroutines_targets_1() {
         "no subroutine resolved"
     );
     assert_eq!(vm.st.runner.core_damage, 0, "the core-damage subroutine was broken");
+}
+
+/// example_rule_target_beyond_move_1 (1.15.4): a Howler-class ability targets
+/// a card in HQ. Its first instruction installs that card; its second creates
+/// a delayed conditional ability that refers to it in the play area. The
+/// later ability finds and acts on the card without a second announcement.
+#[test]
+fn example_rule_target_beyond_move_1() {
+    let mut vm = Vm::empty(706);
+    tk::install_ice(&mut vm, tk::howler_like("Howler-like", ServerId::Hq), ServerId::Hq, true);
+    let hq_ice = vm.new_object(tk::vanilla_ice("HQ-Ice", 4, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hq_ice);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Hq).stop_at_action(),
+    );
+    // ONE announcement — the card in HQ. The second instruction refers to it.
+    let announce = t.of_kind(Kind::Targets);
+    assert_eq!(announce.len(), 1, "1.15.4: no second announcement: {}", t.tail(10));
+    assert_eq!(announce[0].candidates(), &[hq_ice]);
+    // The delayed ability found and acted on the card it never re-selected:
+    // installed during the encounter, trashed when the encounter ended.
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == hq_ice)),
+        "the announced card was installed"
+    );
+    assert_eq!(
+        vm.st.objects[&hq_ice].zone,
+        Zone::Discard(Side::Corp),
+        "the delayed conditional acted on the target beyond its move"
+    );
+}
+
+/// example_rule_target_1 (1.15.1): a Top-Hat-class instruction reads "you may
+/// choose 1 of the top 5 cards of R&D and access it." The target is the card
+/// in R&D the Runner chooses — the instruction names the zone, so 1.15.2c
+/// does not confine the choice to the play area, and only the top 5 are
+/// offered.
+#[test]
+fn example_rule_target_1() {
+    let mut vm = Vm::empty(707);
+    tk::install_rig(&mut vm, tk::top_hat_like("TopHat-like", 5));
+    let rnd = tk::fill_deck(&mut vm, Side::Corp, 6);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .uses("top-hat")
+            .when(Match::targets().once(), Reply::target(rnd[2]))
+            .stop_at_action(),
+    );
+    let announce = t.of_kind(Kind::Targets);
+    assert_eq!(announce.len(), 1, "one announcement: {}", t.tail(8));
+    assert_eq!(
+        announce[0].candidates(),
+        &rnd[..5],
+        "only the top 5 of R&D are valid targets"
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == rnd[2])),
+        "the announced card was accessed: {:?}",
+        vm.changes.log
+    );
 }
 
 // ===========================================================================

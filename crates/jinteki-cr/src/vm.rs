@@ -2069,6 +2069,9 @@ impl Vm {
                 // replaces it (9.9.11a).
                 vec![EffectAtom::new(EffectClass::Breach, 1, controller)]
             }
+            Instruction::AccessCards { .. } => {
+                vec![EffectAtom::new(EffectClass::AccessCard, 1, controller)]
+            }
             Instruction::AccessChosenCandidate => {
                 // 7.5.5 as an expected effect: the Immolation-Script class
                 // replaces it (7.4.3 example 1).
@@ -2900,6 +2903,19 @@ impl Vm {
         }
     }
 
+    /// CR 1.15.4: every target the innermost resolving ability has
+    /// announced, in announcement order.
+    fn ability_targets(&self) -> Vec<ObjectId> {
+        self.frames
+            .iter()
+            .rev()
+            .find_map(|f| match f {
+                Frame::Ability(af) => Some(af.ability_targets.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
     /// The source of the innermost resolving ability, if any — the object a
     /// quantity selector reads "this card" from (9.12.2).
     fn current_source(&self) -> Option<ObjectId> {
@@ -2975,7 +2991,7 @@ impl Vm {
                 cite!("rule_controller_choices");
                 self.targets_needed(instr).map(|(_, spec)| (*side, spec))
             }
-            Instruction::TrashCards(spec) => {
+            Instruction::TrashCards(spec) | Instruction::AccessCards { cards: spec } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
             // CR 1.15.1 / 9.8.6: a break ability announces the subroutines
@@ -3429,6 +3445,12 @@ impl Vm {
             TargetFilter::InScoreAreaOf(side) => {
                 cite!("rule_score_area");
                 o.zone == Zone::ScoreArea(side)
+            }
+            // CR 4.2.2: the deck is ordered; "the top N cards" are its first
+            // N, and a card must still be there to be a valid target.
+            TargetFilter::TopOfDeckOf { side, n } => {
+                cite!("rule_deck_ordered");
+                self.st.deck[&side].iter().take(n as usize).any(|c| *c == o.id)
             }
         }
     }
@@ -4424,6 +4446,16 @@ impl Vm {
                     }
                 });
             }
+            Instruction::AccessCards { cards } => {
+                // CR 7.2: each announced card is accessed in its own access
+                // timing structure. Pushed innermost-last so the first
+                // announced card is accessed first (9.2.4d LIFO).
+                cite!("rule_accessing");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                for c in targets.into_iter().rev() {
+                    self.push_access(c);
+                }
+            }
             Instruction::InitiateRun(server) => {
                 cite!("rule_run_timing_structure");
                 self.initiate_run(*server);
@@ -4560,6 +4592,20 @@ impl Vm {
             }
             Instruction::CreateDelayedConditional { def, duration } => {
                 cite!("rule_delayed_conditional_ability");
+                // CR 1.15.4: an ability created by this instruction can
+                // refer to a target the SAME ability already announced —
+                // Howler's delayed conditional acts on the card its install
+                // instruction chose. The reference is bound HERE, when the
+                // delayed ability is created, so the later ability "can find
+                // and act on the card" without re-announcing it.
+                let def = {
+                    let announced = self.ability_targets();
+                    let mut d = (**def).clone();
+                    d.instructions =
+                        d.instructions.into_iter().map(|i| bind_targets(i, &announced)).collect();
+                    Box::new(d)
+                };
+                let def = &def;
                 // 9.6.13d: "when this run ends" with no run in progress —
                 // the lingering effect is not created.
                 if matches!(
@@ -6440,19 +6486,13 @@ impl Vm {
         if !newly.is_empty() {
             // Bind the window to a structure that just began, if the step
             // that triggered this was a structure-beginning (9.2.8f).
-            let orig = originating_structure.or_else(|| {
-                let last_changes: Vec<&GameChange> = self
-                    .changes
-                    .log
-                    .iter()
-                    .rev()
-                    .take(12)
-                    .collect();
-                last_changes.iter().find_map(|c| match c {
-                    GameChange::EncounterBegan { encounter_id, .. } => Some(*encounter_id),
-                    _ => None,
-                })
-            });
+            // 9.2.8f: a reaction window is bound to the timing structure it
+            // is opened DURING — the encounter in progress right now. A
+            // window opened by the checkpoint that FOLLOWS an encounter's
+            // end belongs to no encounter, so an ability triggered by that
+            // end (Howler class, 1.15.4) is not dropped with it.
+            let orig = originating_structure
+                .or_else(|| self.st.encounter.as_ref().map(|e| e.id));
             self.open_reaction_window(newly, orig);
         }
     }
@@ -7134,4 +7174,42 @@ fn clamp_announcement(spec: &DecisionSpec, answered: Vec<ObjectId>) -> Vec<Objec
         }
     }
     out
+}
+
+/// CR 1.15.4: rewrite `TargetSpec::EarlierTarget` references into the
+/// objects the ability actually announced. Used where an instruction creates
+/// ANOTHER ability that refers to one of this ability's targets — the
+/// reference has to be resolved at creation time, because the created
+/// ability announces nothing of its own.
+fn bind_targets(instr: Instruction, announced: &[ObjectId]) -> Instruction {
+    fn bind_spec(s: TargetSpec, announced: &[ObjectId]) -> TargetSpec {
+        match s {
+            TargetSpec::EarlierTarget { nth } => match announced.get(nth) {
+                Some(id) => TargetSpec::Objects(vec![*id]),
+                // 1.15.3: an unannounced target is simply not acted on.
+                None => TargetSpec::Objects(Vec::new()),
+            },
+            TargetSpec::Each(v) => {
+                TargetSpec::Each(v.into_iter().map(|s| bind_spec(s, announced)).collect())
+            }
+            other => other,
+        }
+    }
+    match instr {
+        Instruction::TrashCards(s) => Instruction::TrashCards(bind_spec(s, announced)),
+        Instruction::PlaceCounters { target, kind, amount } => {
+            Instruction::PlaceCounters { target: bind_spec(target, announced), kind, amount }
+        }
+        Instruction::ModifyStrength { target, amount, duration } => {
+            Instruction::ModifyStrength { target: bind_spec(target, announced), amount, duration }
+        }
+        Instruction::Combined(v) => {
+            Instruction::Combined(v.into_iter().map(|i| bind_targets(i, announced)).collect())
+        }
+        Instruction::PerformedBy { side, instr } => Instruction::PerformedBy {
+            side,
+            instr: Box::new(bind_targets(*instr, announced)),
+        },
+        other => other,
+    }
 }

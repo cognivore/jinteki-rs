@@ -2870,3 +2870,68 @@ pub fn heimdall_like(name: &'static str) -> PrintedCard {
     ];
     c
 }
+
+/// Howler shape (1.15.4): a piece of ice whose subroutine installs a piece
+/// of ice from HQ and then creates a delayed conditional ability that acts
+/// on THAT card — "subsequent instructions of the same ability can continue
+/// to act on that target without needing to select it again".
+///
+/// Simplification (§12 rule 3): the real card's delayed ability also returns
+/// Howler to HQ and its install may come from Archives; neither is what the
+/// example is about.
+pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_ice(name, 0, 3);
+    c.abilities = vec![AbilityDef::subroutine(vec![
+        Instruction::InstallCard {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::CardsInHandOf(Side::Corp), F::CardTypeIs(CardType::Ice)],
+            },
+            dest: crate::instr::InstallDest::Protecting(protecting),
+            and_rez: true,
+            ignore_costs: true,
+            reveal_check: None,
+        },
+        Instruction::CreateDelayedConditional {
+            def: Box::new(
+                AbilityDef::conditional(
+                    TriggerCond::EncounterEnds,
+                    vec![Instruction::TrashCards(TargetSpec::EarlierTarget { nth: 0 })],
+                    false,
+                )
+                .labeled("howler-delayed: trash the installed ice"),
+            ),
+            duration: crate::lingering::WantedDuration::UntilResolved,
+        },
+    ])
+    .labeled("[sub] install an ice from HQ, trash it when the encounter ends")];
+    c
+}
+
+/// Top-Hat shape (1.15.1): "You may choose 1 of the top 5 cards of R&D and
+/// access it." The target is the card in R&D the Runner chooses — a target
+/// in a zone the instruction names, so 1.15.2c's play-area restriction does
+/// not apply to it.
+///
+/// Simplification (§12 rule 3): the real card is a breach REPLACEMENT
+/// ("instead of accessing cards…"). The replacement wrapper is exercised by
+/// the §9.9.11 tests and is orthogonal to what this example claims, so the
+/// choose-and-access half is a paid ability here.
+pub fn top_hat_like(name: &'static str, top: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::AccessCards {
+            cards: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::TopOfDeckOf {
+                    side: Side::Corp,
+                    n: top,
+                }],
+            },
+        }],
+    )
+    .labeled("top-hat: access 1 of the top 5 cards of R&D")];
+    c
+}
