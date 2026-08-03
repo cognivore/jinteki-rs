@@ -64,6 +64,11 @@ pub enum TriggerCond {
     SelfEncountered,
     /// "Whenever the Runner encounters a piece of ice." (Runner-side class)
     EncounterBegins,
+    /// CR 6.9.4g: "Whenever the Runner approaches a server." (Formicary class
+    /// — the last step of the Movement Phase, so the reaction window that
+    /// follows it is not one a phase BEGINNING opened, which is what 6.8.2c
+    /// is about.)
+    ServerApproached,
     /// "Whenever the Runner takes a tag." (Mr. Stone class)
     RunnerTakesTag,
     /// "Whenever the Runner suffers damage." (per damage occurrence)
@@ -823,11 +828,28 @@ pub fn ability_active(
     {
         return true;
     }
-    // 9.1.8c/e/f: play/install/rez permissions, advancement-requirement
-    // modifiers, can-advance grants. The kernel-wave StaticDecl set has no
-    // such declarations yet; when the card layer adds them they gain
-    // activity here.
+    // 9.1.8c: "abilities that modify when or if their source card can be
+    // played, installed, or rezzed are active even while that card is
+    // inactive". A Formicary-class ability whose effect IS rezzing its own
+    // source is exactly that — it modifies WHEN the card can be rezzed — and
+    // the ability would be unusable on any other reading, since the source is
+    // unrezzed by construction until it resolves. The instruction list is the
+    // kernel's only representation of what an ability does, so the scan reads
+    // it (a shallow scan: wrappers are not looked inside).
     cite!("rule_active_exception_modify_play_install_rez");
+    if def.instructions.iter().any(|i| {
+        matches!(
+            i,
+            Instruction::RezCard { target: crate::instr::TargetSpec::SelfSource, .. }
+                | Instruction::InstallCard { card: crate::instr::TargetSpec::SelfSource, .. }
+                | Instruction::PlayCard { card: crate::instr::TargetSpec::SelfSource, .. }
+        )
+    }) {
+        return true;
+    }
+    // 9.1.8e/f: advancement-requirement modifiers and can-advance grants. The
+    // kernel-wave StaticDecl set has no such declarations yet; when the card
+    // layer adds them they gain activity here.
     cite!("rule_active_exception_advancement_requirement");
     cite!("rule_active_exception_can_be_advanced");
     // 9.1.8b: zone-scoped abilities (none in the W1 vocabulary).
@@ -904,6 +926,10 @@ pub fn trigger_matches(
             *ice == source.id
         }
         (TriggerCond::EncounterBegins, GameChange::EncounterBegan { .. }) => true,
+        (TriggerCond::ServerApproached, GameChange::ServerApproached { .. }) => {
+            cite!("step_approach_server");
+            true
+        }
         (TriggerCond::PlayerPaysCredits(side), GameChange::CostPaid { side: s, credits, .. }) => {
             cite!("rule_cost_quantities");
             side == s && *credits > 0

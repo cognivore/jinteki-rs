@@ -81,6 +81,12 @@ pub struct WindowFrame {
     /// Whether the current priority-holder has received a checkpoint before
     /// acting (9.2.4e) — consumed each time priority is handed over.
     pub checkpoint_done_for_priority: bool,
+    /// CR 6.8.2c: this window was open when the run was ended and is being
+    /// "completed normally, except that new timing structures (including a
+    /// breach that was delayed according to rule 7.3.8) cannot be initiated".
+    /// The flag is what makes the exception real: everything else about the
+    /// window is unchanged.
+    pub no_new_timing_structures: bool,
 }
 
 impl WindowFrame {
@@ -105,6 +111,7 @@ impl WindowFrame {
             originating_structure: None,
             used: false,
             checkpoint_done_for_priority: false,
+            no_new_timing_structures: false,
         }
     }
 

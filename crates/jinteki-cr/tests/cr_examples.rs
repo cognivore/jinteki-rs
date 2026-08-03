@@ -35,6 +35,8 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 14c: §8.3 arranging, 10.2.2b bluffing.
     "example_rule_arrange_and_other_effect_1",
     "example_rule_bluffing_1",
+    // Wave 14d: 6.8.2c.
+    "example_rule_run_ends_other_priority_windows_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11649,4 +11651,80 @@ fn example_rule_bluffing_1() {
         .log
         .iter()
         .any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == braintrust)));
+}
+
+// ===========================================================================
+// Wave 14d — 6.8.2c: the windows a run's end does NOT close
+// ===========================================================================
+
+/// example_rule_run_ends_other_priority_windows_1 (6.8.2c): the run is ended
+/// during the reaction window following step 6.9.4g, while a Formicary-class
+/// ability is still pending. That window was not opened by a phase beginning,
+/// so it "is completed normally, except that new timing structures … cannot be
+/// initiated": the Corp can rez the ice and move it to the approached server,
+/// but the Runner's position cannot be moved and an encounter cannot begin.
+#[test]
+fn example_rule_run_ends_other_priority_windows_1() {
+    let mut vm = Vm::empty(1407);
+    // Formicary is installed protecting another server and moves to the one
+    // approached; Archives is the server the Runner runs.
+    let form = tk::install_ice(
+        &mut vm,
+        tk::formicary_like("Formicary-like", ServerId::Archives),
+        ServerId::Hq,
+        false,
+    );
+    tk::install_rig(&mut vm, tk::end_run_on_server_approach("ApproachETR"));
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: the Runner runs Archives, which has no ice, so the run
+    // reaches step 6.9.4g and both conditionals become pending in the same
+    // reaction window (9.2.8a). The Runner — the active player — resolves the
+    // "end the run" first; the Corp then takes the Formicary-class instance.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::reaction().offering("formicary"), Reply::take("formicary")),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::reaction().offering("approach-etr").once(), Reply::take("approach-etr"))
+            .stop_at_action(),
+    );
+    assert!(t.took("approach-etr"), "the run was ended in that window: {}", t.tail(14));
+
+    // 6.8.2c: the window was completed normally — the Corp still got the
+    // pending ability, AFTER the run had been ended.
+    let etr = t.entries.iter().position(|e| e.took("approach-etr")).expect("etr");
+    let formicary = t
+        .entries
+        .iter()
+        .position(|e| e.took("formicary"))
+        .expect("6.8.2c: the Corp was still offered the pending ability");
+    assert!(formicary > etr, "…and it was offered after the run ended: {}", t.tail(14));
+
+    // Its first two instructions took effect: the ice is rezzed and has moved
+    // to the approached server.
+    assert!(vm.st.objects[&form].faceup, "the Corp could rez Formicary");
+    assert_eq!(
+        vm.st.objects[&form].zone,
+        Zone::Ice(ServerId::Archives),
+        "…and move it to the approached server"
+    );
+    // …but the third did not: no position was entered and no encounter began.
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == form)),
+        "6.8.2c: a new timing structure cannot be initiated"
+    );
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::IceApproached { ice } if *ice == form)),
+        "6.2.8c: the Runner's position cannot be moved once the run is ending"
+    );
+    assert!(vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })));
+    assert!(vm.current_run.is_none());
 }

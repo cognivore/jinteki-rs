@@ -2427,6 +2427,14 @@ impl Vm {
     /// is what putting the frame above that ability's frame means).
     fn open_encounter_phase(&mut self, ice: ObjectId, forced: bool) {
         cite!("rule_encounter_ice_phase");
+        // 6.8.2c: a window completing after the run was ended cannot initiate
+        // a new timing structure, and 9.2.2b makes the Encounter Ice Phase
+        // one — the Corp may still rez and move the ice, but the encounter
+        // does not begin.
+        if self.timing_structures_blocked() {
+            cite!("rule_run_ends_other_priority_windows");
+            return;
+        }
         if forced {
             cite!("rule_forced_encounter");
             cite!("rule_forced_encounter_end");
@@ -2782,6 +2790,12 @@ impl Vm {
     /// Initiate a run (basic action 5.2.7f or card effect).
     pub fn initiate_run(&mut self, server: ServerId) {
         cite!("rule_run_timing_structure");
+        // 6.8.2c: no new timing structure while a window left open by the end
+        // of a run is being completed.
+        if self.timing_structures_blocked() {
+            cite!("rule_run_ends_other_priority_windows");
+            return;
+        }
         let run_id = self.next_run;
         self.next_run += 1;
         let id = self.next_structure;
@@ -2812,6 +2826,12 @@ impl Vm {
     }
 
     fn push_breach(&mut self, server: ServerId) {
+        // 6.8.2c names the delayed breach of 7.3.8 explicitly.
+        if self.timing_structures_blocked() {
+            cite!("rule_run_ends_other_priority_windows");
+            cite!("rule_consecutive_breaches");
+            return;
+        }
         let id = self.next_structure;
         self.next_structure += 1;
         self.frames.push(Frame::Structure(StructureFrame {
@@ -3178,14 +3198,31 @@ impl Vm {
             self.end_run_ends_encounter_phase();
             return;
         };
+        // 6.8.2: each priority window that was open when the run was ended is
+        // PROCESSED, not simply discarded. (a) a paid ability window closes;
+        // (b) a reaction window opened because a timing structure began closes
+        // as per 9.2.8f — in this kernel that binding IS
+        // `WindowFrame::originating_structure`; (c) any OTHER open priority
+        // window "is completed normally, except that new timing structures …
+        // cannot be initiated", and several of them keep their usual order
+        // (9.1.2), which is the order they sit in on the frame stack.
+        let mut kept: Vec<Frame> = Vec::new();
         while self.frames.len() > run_pos + 1 {
             let f = self.frames.pop().unwrap();
             match f {
-                Frame::Window(w) => {
-                    // 6.8.2/9.2.8f: open windows close; pendings die untriggered.
-                    cite!("rule_run_ends_close_paws");
-                    cite!("rule_run_ends_close_reaction_window");
-                    self.drop_window_pendings(&w);
+                Frame::Window(mut w) => {
+                    let completes_normally =
+                        w.kind == WindowKind::Reaction && w.originating_structure.is_none();
+                    if completes_normally {
+                        cite!("rule_run_ends_other_priority_windows");
+                        w.no_new_timing_structures = true;
+                        kept.push(Frame::Window(w));
+                    } else {
+                        // 6.8.2a/6.8.2b: closed; pendings die untriggered.
+                        cite!("rule_run_ends_close_paws");
+                        cite!("rule_run_ends_close_reaction_window");
+                        self.drop_window_pendings(&w);
+                    }
                 }
                 // 6.5.9b: during a forced encounter, "end the run" applies to
                 // the Encounter Ice Phase being resolved AND to the phase it
@@ -3195,6 +3232,13 @@ impl Vm {
                     cite!("rule_forced_encounter_during_run");
                     self.end_encounter();
                     self.st.encounter = e.outer;
+                    // Anything collected so far was inside the structure that
+                    // just ended, so 9.2.8f closes it after all.
+                    for k in kept.drain(..) {
+                        if let Frame::Window(w) = k {
+                            self.drop_window_pendings(&w);
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -3211,8 +3255,21 @@ impl Vm {
                 r.jump_to_run_ends = true;
             }
         }
+        // 6.8.2c: the windows that complete normally go back on the stack, in
+        // the order they had (they were popped innermost-first).
+        kept.reverse();
+        self.frames.extend(kept);
         // The ETR instruction finished resolving: checkpoint (10.3.5).
         self.checkpoint_and_react(None);
+    }
+
+    /// CR 6.8.2c: is a priority window that survived "end the run" open above
+    /// us? While one is, "new timing structures (including a breach that was
+    /// delayed according to rule 7.3.8) cannot be initiated".
+    pub fn timing_structures_blocked(&self) -> bool {
+        self.frames.iter().any(|f| {
+            matches!(f, Frame::Window(w) if w.no_new_timing_structures)
+        })
     }
 
     /// CR 6.1.4b: "end the run" resolving with no run in progress but an

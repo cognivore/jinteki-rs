@@ -5475,3 +5475,47 @@ pub fn install_from_hq_button(name: &'static str) -> PrintedCard {
     .labeled("install-hq: install a card from HQ in a new remote")];
     c
 }
+
+/// Formicary shape (6.8.2c): "Whenever the Runner approaches a server, you may
+/// rez this ice, if it is unrezzed, and move it to the outermost position
+/// protecting that server. The Runner is now approaching this ice."
+///
+/// The destination server is a parameter here because `InstallDest` names a
+/// server and the examples run one; the printed card names the server just
+/// approached.
+pub fn formicary_like(name: &'static str, to: ServerId) -> PrintedCard {
+    let mut c = etr_ice(name, 0, 1);
+    c.abilities.push(
+        AbilityDef::conditional(
+            TriggerCond::ServerApproached,
+            vec![
+                Instruction::RezCard { target: TargetSpec::SelfSource, ignore_costs: false },
+                Instruction::MoveIce {
+                    ice: TargetSpec::SelfSource,
+                    dest: crate::instr::InstallDest::Protecting(to),
+                },
+                Instruction::MoveRunnerToIce {
+                    ice: TargetSpec::SelfSource,
+                    encounter: true,
+                },
+            ],
+            true,
+        )
+        .labeled("formicary: rez and move to the approached server"),
+    );
+    c
+}
+
+/// A Runner card with "Whenever the Runner approaches a server, end the run."
+/// — the effect CR 6.8.2c's example needs to end a run from inside the
+/// reaction window that follows step 6.9.4g.
+pub fn end_run_on_server_approach(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::ServerApproached,
+        vec![Instruction::EndTheRun],
+        false,
+    )
+    .labeled("approach-etr: end the run when a server is approached")];
+    c
+}
