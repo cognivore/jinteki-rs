@@ -356,10 +356,6 @@ pub fn cupellation() -> Card {
 /// "When you install this resource, load 8[credit] onto it. When it is empty,
 ///  trash it.
 ///  When your turn begins, take 2[credit] from this resource."
-///
-/// UNIMPLEMENTED: the last sentence. No instruction moves hosted credits into
-/// a credit pool — `MoveSetAsideCounters` is 9.5.5's set-aside move and does
-/// something else entirely.
 pub fn daily_casts() -> Card {
     card("Daily Casts")
         .runner()
@@ -369,7 +365,7 @@ pub fn daily_casts() -> Card {
         .text("When your turn begins, take 2[credit] from this resource.")
         .when(installed(), [load(CounterKind::Credit, 8)])
         .when(empty_of(CounterKind::Credit), [trash_self()])
-        .unimplemented("When your turn begins, take 2[credit] from this resource.")
+        .when(turn_begins(Runner), [take_hosted_credits(this_card(), 2, Runner)])
         .build()
 }
 
@@ -377,10 +373,6 @@ pub fn daily_casts() -> Card {
 /// "When you install this resource, load 3 power counters onto it. When it is
 ///  empty, trash it.
 ///  When your turn begins, remove 1 hosted power counter and draw 2 cards."
-///
-/// UNIMPLEMENTED: the last sentence. Removing counters from a card outside a
-/// COST has no instruction (`Cost::spend_counters` is the paid-ability half,
-/// and this is a mandatory conditional).
 pub fn earthrise_hotel() -> Card {
     card("Earthrise Hotel")
         .runner()
@@ -392,7 +384,14 @@ pub fn earthrise_hotel() -> Card {
         .text("When your turn begins, remove 1 hosted power counter and draw 2 cards.")
         .when(installed(), [load(CounterKind::Power, 3)])
         .when(empty_of(CounterKind::Power), [trash_self()])
-        .unimplemented("When your turn begins, remove 1 hosted power counter and draw 2 cards.")
+        // 9.11.4a: two effects of DIFFERENT classes in one printed sentence
+        // are two instructions resolved in order — `combined(…)` is for the
+        // 9.12.2c aggregated case, and the kernel's aggregation only carries
+        // atom classes that have a value (see the gap list).
+        .when(
+            turn_begins(Runner),
+            [remove_counters(CounterKind::Power, 1), draw(Runner, 2)],
+        )
         .build()
 }
 

@@ -853,7 +853,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W16d it is **50 cards, 17 complete, 33 partial, 52
+prints the count. At W16e it is **50 cards, 19 complete, 31 partial, 50
 printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -885,7 +885,25 @@ strength and subtype modification. Shibboleth is complete.
   `Instruction::GainClicks(Side, Quantity)` and its `LoseClicks` twin
   (1.11.3a/b).
 - ~~1.21.3 REVEAL~~ — **done, W16e**: `Instruction::RevealCards { cards }`,
-  with 1.21.3a (revealing is not turning faceup) exact.
+  with 1.21.3a (revealing is not turning faceup) exact. **On the deck rung it
+  unblocks nothing yet.** Mutual Favor's first sentence ("Search your stack
+  for 1 icebreaker and reveal it") is now fully sayable — but expressing it
+  ALONE would strand the found card in the set-aside zone forever, because its
+  SECOND sentence ("if you made a successful run this turn, you may install
+  that program; if you do not, add it to your grip") is what disposes of it,
+  and that needs a "made a successful run this turn" predicate. A card that
+  searches and then loses the card is worse than one that does nothing, so
+  both sentences stay marked until the predicate lands.
+
+*A shape that does not fit, found by using it:* `Instruction::Combined`
+resolves by walking its effect ATOMS and matching on `EffectClass`, so an
+effect whose atom is `Structural` — `RemoveCounters`, for one — is dropped
+SILENTLY when it is put inside a `Combined`. Earthrise Hotel's "remove 1
+hosted power counter and draw 2 cards" was written that way first and removed
+no counter. It is correct as two instructions (9.11.4a: only same-class
+effects aggregate), which is how the card now reads, so this is a sharp edge
+rather than a blocker — but a `Combined` that silently drops what it cannot
+classify will cut someone again.
 - "remove <a card that is not the source> from the game" (Bloo Moose; also
   Jackson Howard's trigger cost).
 - "add <a card> to your score area" (Film Critic).

@@ -626,6 +626,26 @@ pub fn place(kind: CounterKind, n: i64) -> Instruction {
 pub fn place_on(target: TargetSpec, kind: CounterKind, n: i64) -> Instruction {
     Instruction::PlaceCounters { target, kind, amount: Quantity::c(n) }
 }
+/// "Take N[credit] from this card." (1.10.3a — hosted credits move into a
+/// credit pool, which is a GAIN. A card with fewer gives what it has.)
+pub fn take_hosted_credits(from: TargetSpec, n: i64, to: Side) -> Instruction {
+    Instruction::TakeHostedCredits { from, amount: Quantity::c(n), to }
+}
+/// "Remove N hosted <kind> counters." (1.9.2 — they return to the bank. This
+/// is the mandatory-effect counterpart of `hosted_counters(…)` as a COST.)
+pub fn remove_counters(kind: CounterKind, n: i64) -> Instruction {
+    Instruction::RemoveCounters {
+        target: TargetSpec::SelfSource,
+        kind,
+        amount: Quantity::c(n),
+        up_to: false,
+    }
+}
+/// "Reveal <cards>." (1.21.3 — shown to all players, then returned to their
+/// previous state. 1.21.3a: NOT turning a card faceup.)
+pub fn reveal(cards: TargetSpec) -> Instruction {
+    Instruction::RevealCards { cards }
+}
 /// "Advance <a card>." (1.18.1 — an advance, so "whenever you advance"
 /// conditions are met.)
 pub fn advance(target: TargetSpec) -> Instruction {
@@ -708,6 +728,13 @@ pub fn resolve_when_scored_ability_of(source: TargetSpec) -> Instruction {
 
 /// Several effects in ONE printed sentence: "Gain 4[credit] **and** draw 3
 /// cards." (9.11.4a.)
+///
+/// Use this only where the effects would AGGREGATE (9.12.2c) — same class,
+/// one occurrence. Effects of different classes in one sentence are two
+/// instructions resolved in order: pass them as two list items instead. The
+/// kernel resolves a `Combined` by walking its effect ATOMS, and an effect
+/// with no value-carrying atom (removing counters, say) is dropped silently
+/// if it is put here.
 pub fn combined(instrs: impl IntoIterator<Item = Instruction>) -> Instruction {
     Instruction::Combined(instrs.into_iter().collect())
 }

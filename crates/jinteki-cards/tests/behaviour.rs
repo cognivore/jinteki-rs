@@ -1174,3 +1174,80 @@ fn closed_accounts_is_only_playable_while_the_runner_is_tagged() {
         assert_eq!(offered, tagged, "9.1.8c gates the basic play action");
     }
 }
+
+/// Daily Casts: "When you install this resource, load 8[credit] onto it. When
+/// it is empty, trash it." / "When your turn begins, take 2[credit] from this
+/// resource."
+///
+/// The three sentences are one mechanism (10.9): LOADING is what links the
+/// "empty" ability to the card, so both ends are asserted — a payout, and the
+/// self-trash when the payouts run out.
+#[test]
+fn daily_casts_pays_out_and_trashes_itself_when_empty() {
+    for (start_credits, left, trashed) in [(8u32, 6u32, false), (2u32, 0u32, true)] {
+        let mut vm = Vm::empty(43);
+        let dc = tk::install_rig(&mut vm, card("Daily Casts"));
+        let o = vm.st.objects.get_mut(&dc).unwrap();
+        o.counters.insert(CounterKind::Credit, start_credits);
+        o.loaded_kinds.insert(CounterKind::Credit);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        vm.st.runner.credits = 0;
+
+        vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action(), Reply::Halt),
+            Plan::runner().stop_at_action(),
+        );
+        assert_eq!(vm.st.runner.credits, 2, "1.10.3a: the credits reached the pool: {}", t.tail(10));
+        if trashed {
+            assert_eq!(
+                vm.st.objects[&dc].zone,
+                Zone::Discard(Side::Runner),
+                "10.9.2: emptied, so it trashed itself: {}",
+                t.tail(10)
+            );
+        } else {
+            assert_eq!(vm.st.objects[&dc].counter(CounterKind::Credit), left);
+            assert_ne!(vm.st.objects[&dc].zone, Zone::Discard(Side::Runner), "not empty yet");
+        }
+    }
+}
+
+/// Earthrise Hotel: "When you install this resource, load 3 power counters
+/// onto it. When it is empty, trash it." / "When your turn begins, remove 1
+/// hosted power counter and draw 2 cards."
+#[test]
+fn earthrise_hotel_spends_a_counter_a_turn_and_draws() {
+    for (start_counters, trashed) in [(3u32, false), (1u32, true)] {
+        let mut vm = Vm::empty(44);
+        let eh = tk::install_rig(&mut vm, card("Earthrise Hotel"));
+        let o = vm.st.objects.get_mut(&eh).unwrap();
+        o.counters.insert(CounterKind::Power, start_counters);
+        o.loaded_kinds.insert(CounterKind::Power);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+
+        vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action(), Reply::Halt),
+            Plan::runner().stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&eh].counter(CounterKind::Power),
+            start_counters - 1,
+            "1.9.2: one counter removed: {}",
+            t.tail(10)
+        );
+        assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "and 2 cards drawn: {}", t.tail(10));
+        assert_eq!(
+            vm.st.objects[&eh].zone == Zone::Discard(Side::Runner),
+            trashed,
+            "10.9.2: trashed exactly when the last counter came off"
+        );
+    }
+}
