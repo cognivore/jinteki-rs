@@ -129,6 +129,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/decks/{id}/publish", post(api_deck_publish))
         .route("/api/decks/{id}/unpublish", post(api_deck_unpublish))
         .route("/api/cards", get(api_cards))
+        .route("/api/cr-readiness", get(api_cr_readiness))
         .route("/api/library", get(api_library))
         .route("/api/library/{id}", get(api_library_get))
         .route("/api/library/{id}/fork", post(api_library_fork))
@@ -543,6 +544,14 @@ async fn api_cards(Query(q): Query<HashMap<String, String>>) -> Response {
         })
         .collect();
     Json(json!(list)).into_response()
+}
+
+/// SYS-D-12, made public: the CR mode's completeness gate as JSON, so the
+/// home screen shows the true fraction and the honest "not yet" list without
+/// having to open a socket. Evaluated from `jinteki-cards` per request — the
+/// mode goes live the moment the card layer closes, with no deploy.
+async fn api_cr_readiness() -> Response {
+    Json(json!(crate::cr::readiness())).into_response()
 }
 
 // ── library endpoints ──────────────────────────────────────────────────────

@@ -6,12 +6,19 @@
 //! Wire protocol (JSON text frames):
 //!   client → server:
 //!     {"type":"start","side":"runner"|"corp","seed":123?,"runner_id"?}
+//!     {"type":"start","engine":"cr","side":…,"seed":…}   ← the CR engine
 //!     {"type":"resume","token":"..."}
 //!     {"type":"action","command":"<jnet command>","args":{...}}
 //!   server → client:
-//!     {"type":"session","token":"...","side":"runner"|"corp"}
+//!     {"type":"session","token":"...","side":"runner"|"corp","engine"?:"cr"}
 //!     {"type":"state","state":{...jnet-shaped...},"actions":[...legal...]}
-//!     {"type":"error","error":"..."}
+//!     {"type":"error","error":"...","cr_readiness"?:{…}}
+//!
+//! TWO engines ride this one socket. `engine:"cr"` on the start message hosts
+//! a `jinteki-cr` VM (the Comprehensive Rules machine, eternal decks, the
+//! plan driver's neutral policy as the bot — see `crate::cr`); anything else
+//! is the original local engine below, unchanged and still the default. Both
+//! keep their own registry, and `resume` finds a token in either.
 
 use crate::db::Db;
 use crate::decks;
@@ -131,9 +138,16 @@ async fn record_outcome_if_over(db: &Db, token: &str, g: &mut LocalGame) {
     );
 }
 
+/// Which engine a connection is attached to. The two are peers on the wire
+/// and strangers everywhere else.
+enum Attached {
+    Local(String, Arc<Mutex<LocalGame>>),
+    Cr(String, Arc<Mutex<crate::cr::CrGame>>),
+}
+
 pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
     // The session this connection is attached to, if any.
-    let mut attached: Option<(String, Arc<Mutex<LocalGame>>)> = None;
+    let mut attached: Option<Attached> = None;
 
     while let Some(Ok(msg)) = ws.recv().await {
         let Message::Text(text) = msg else { continue };
@@ -142,6 +156,14 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
             continue;
         };
         match v["type"].as_str() {
+            // The CR engine: eternal decks behind the completeness gate.
+            Some("start") if v["engine"].as_str() == Some("cr") => {
+                if let Some((token, game)) =
+                    crate::cr::start(&mut ws, &db, user.as_deref(), &v).await
+                {
+                    attached = Some(Attached::Cr(token, game));
+                }
+            }
             Some("start") => {
                 let side = match v["side"].as_str() {
                     Some("corp") => Side::Corp,
@@ -256,10 +278,17 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                     push_state(&g, &mut ws).await;
                     record_outcome_if_over(&db, &token, &mut g).await;
                 }
-                attached = Some((token, game));
+                attached = Some(Attached::Local(token, game));
             }
             Some("resume") => {
                 let token = v["token"].as_str().unwrap_or("").to_string();
+                // A token belongs to exactly one engine; ask the CR registry
+                // first so a CR session resumes as a CR session.
+                if let Some(game) = crate::cr::lookup(&token).await {
+                    let game = crate::cr::resume(&mut ws, &db, &token, game).await;
+                    attached = Some(Attached::Cr(token, game));
+                    continue;
+                }
                 let found = registry().lock().await.get(&token).cloned();
                 match found {
                     Some(game) => {
@@ -279,15 +308,22 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                             push_state(&g, &mut ws).await;
                             record_outcome_if_over(&db, &token, &mut g).await;
                         }
-                        attached = Some((token, game));
+                        attached = Some(Attached::Local(token, game));
                     }
                     None => send_err(&mut ws, "session expired").await,
                 }
             }
             Some("action") => {
-                let Some((token, game)) = attached.as_ref() else {
-                    send_err(&mut ws, "no game attached").await;
-                    continue;
+                let (token, game) = match attached.as_ref() {
+                    Some(Attached::Local(t, g)) => (t, g),
+                    Some(Attached::Cr(t, g)) => {
+                        crate::cr::action(&mut ws, &db, t, g, &v).await;
+                        continue;
+                    }
+                    None => {
+                        send_err(&mut ws, "no game attached").await;
+                        continue;
+                    }
                 };
                 match parse_command(&v) {
                     Ok(cmd) => {

@@ -7,6 +7,8 @@ description = "jinteki-rs game server: local play vs bot + bridge to the referen
 
 [dependencies]
 jinteki-core = { path = "../jinteki-core" }
+jinteki-cr = { path = "../jinteki-cr" }
+jinteki-cards = { path = "../jinteki-cards" }
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["fs"] }

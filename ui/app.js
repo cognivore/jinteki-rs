@@ -1,14 +1,18 @@
 /* jinteki-rs mobile client.
-   One renderer, two backends: local engine (with legality glow from the
-   enumerator) and the reference-server bridge (generic controls; the server
-   is the authority). Full redraw per state; CSS does the juice. */
+   One renderer, three backends: the local engine and the CR engine (both with
+   legality glow from the server's own action list) and the reference-server
+   bridge (generic controls; the server is the authority). Both native engines
+   speak the same jnet-shaped state and the same command vocabulary, so
+   everything below "mode" is shared. Full redraw per state; CSS does the juice. */
 
 "use strict";
 
 const $ = (id) => document.getElementById(id);
 
 let ws = null;
-let mode = null;            // "local" | "bridge"
+let mode = null;            // "local" | "cr" | "bridge"
+/* Native engine (not the bridge): the server sends legal actions and we glow. */
+function native() { return mode === "local" || mode === "cr"; }
 let mySide = "runner";
 let S = null;               // last state
 let ACTIONS = [];           // legal actions (local mode)
@@ -27,9 +31,14 @@ let toastTimer = null;
 /* ── text glyphs ─────────────────────────────────────────────────────── */
 function sym(t) {
   return String(t)
-    .replaceAll("[Credits]", "⬡").replaceAll("[Credit]", "⬡").replaceAll("[c]", "⬡")
+    .replaceAll("[Credits]", "⬡").replaceAll("[Credit]", "⬡")
+    .replaceAll("[credits]", "⬡").replaceAll("[credit]", "⬡").replaceAll("[c]", "⬡")
     .replaceAll("[Click]", "●").replaceAll("[click]", "●")
-    .replaceAll("[Subroutine]", "↳").replaceAll("[sub]", "↳")
+    .replaceAll("[Subroutine]", "↳").replaceAll("[subroutine]", "↳").replaceAll("[sub]", "↳")
+    // NSG's printed text (the card layer quotes it verbatim) uses these too.
+    .replaceAll("[trash]", "⌦").replaceAll("[interrupt]", "⚡")
+    .replaceAll("[recurring credit]", "⟳⬡").replaceAll("[link]", "🔗")
+    .replaceAll("[mu]", "MU")
     .replaceAll("[their]", "their");
 }
 
@@ -69,7 +78,9 @@ function act(command, args) { send({ type: "action", command, args: args || {} }
 function handle(m) {
   switch (m.type) {
     case "session":
-      localStorage.setItem("jinteki_local", JSON.stringify({ token: m.token, side: m.side }));
+      localStorage.setItem("jinteki_local",
+        JSON.stringify({ token: m.token, side: m.side, engine: m.engine || "local" }));
+      if (m.engine === "cr") mode = "cr";
       if (m.side) mySide = m.side;
       break;
     case "state":
@@ -96,7 +107,13 @@ function handle(m) {
       break;
     case "toast": toast(sym(m.toast && (m.toast.message || m.toast["message"]) || "…")); break;
     case "error":
-      if (m.error === "session expired") {
+      if (m.cr_readiness) {
+        // SYS-D-12 on the socket: the gate is evaluated at every start, so a
+        // refusal here is the freshest truth there is. Show the whole gap.
+        CR_READY = m.cr_readiness;
+        renderCrReady();
+        showCrGap();
+      } else if (m.error === "session expired") {
         localStorage.removeItem("jinteki_local");
         show("screen-home");
         toast("Previous game expired — start a new one");
@@ -118,9 +135,105 @@ $("pick-runner").onclick = () => pickSide("runner");
 $("pick-corp").onclick = () => pickSide("corp");
 function pickSide(s) {
   mySide = s;
-  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("on", b.dataset.side === s));
+  document.querySelectorAll("#card-vsbot .seg")
+    .forEach((b) => b.classList.toggle("on", b.dataset.side === s));
 }
 pickSide("runner");
+
+/* ── eternal mode (CR engine) ────────────────────────────────────────────
+   The default mode: the two eternal decks on the Comprehensive Rules VM.
+   The completeness gate (SYS-D-12) is the server's, evaluated at every start;
+   this screen only reports it, so the mode goes live the moment the card
+   layer closes — no deploy, no flag. */
+let crSide = "runner";
+let CR_READY = null;
+
+$("cr-pick-runner").onclick = () => pickCrSide("runner");
+$("cr-pick-corp").onclick = () => pickCrSide("corp");
+function pickCrSide(s) {
+  crSide = s;
+  document.querySelectorAll("#card-eternal .seg")
+    .forEach((b) => b.classList.toggle("on", b.dataset.side === s));
+}
+pickCrSide("runner");
+
+async function loadCrReady() {
+  try { CR_READY = await api("/api/cr-readiness"); }
+  catch (e) { CR_READY = null; }
+  renderCrReady();
+}
+
+function renderCrReady() {
+  const box = $("cr-ready");
+  const btn = $("btn-cr");
+  box.textContent = "";
+  if (!CR_READY) { box.textContent = "card readiness unavailable"; return; }
+  const frac = `${CR_READY.complete}/${CR_READY.total}`;
+  const pct = CR_READY.total ? Math.round((CR_READY.complete / CR_READY.total) * 100) : 0;
+  const line = el("div", "cr-frac");
+  line.appendChild(el("b", CR_READY.ready ? "ok" : "warn", frac));
+  line.appendChild(el("span", "", ` cards implemented${CR_READY.ready ? " — ready" : ""}`));
+  box.appendChild(line);
+  const bar = el("div", "cr-bar");
+  const fill = el("div", "cr-bar-fill");
+  fill.style.width = pct + "%";
+  if (CR_READY.ready) fill.classList.add("ok");
+  bar.appendChild(fill);
+  box.appendChild(bar);
+  (CR_READY.decks || []).forEach((d) => {
+    box.appendChild(el("small", "hint",
+      `${d.title} — ${d.complete}/${d.distinct} (${d.copies} cards)`));
+  });
+  btn.textContent = CR_READY.ready ? "Jack in" : `Not yet — ${frac}, see what's missing`;
+  btn.classList.add("go");
+  btn.classList.toggle("alt", !CR_READY.ready);
+  $("cr-seed").style.display = CR_READY.ready ? "" : "none";
+}
+
+$("btn-cr").onclick = () => {
+  if (!CR_READY || !CR_READY.ready) { showCrGap(); return; }
+  mode = "cr";
+  mySide = crSide;
+  connect("/ws/local", () => {
+    const seed = parseInt($("cr-seed").value, 10);
+    send({
+      type: "start",
+      engine: "cr",
+      side: crSide,
+      seed: Number.isFinite(seed) ? seed : undefined,
+    });
+  });
+};
+
+/* The honest "not yet": every card that is not playable, with the exact
+   printed sentences the card vocabulary cannot say yet. */
+function showCrGap() {
+  show("screen-cr-gap");
+  const head = $("crgap-head");
+  head.textContent = "";
+  if (!CR_READY) { head.appendChild(el("div", "zline", "readiness unavailable")); return; }
+  head.appendChild(el("h3", "", `${CR_READY.complete}/${CR_READY.total} cards implemented`));
+  head.appendChild(el("div", "hint",
+    "No card is playable until its behaviour is implemented — a game that looks legal and is not " +
+    "would be worse than no game. These are the cards still to write, and what about them cannot " +
+    "yet be said."));
+  (CR_READY.problems || []).forEach((p) => head.appendChild(el("div", "import-bad", p)));
+  const list = $("crgap-list");
+  list.textContent = "";
+  (CR_READY.missing || []).forEach((m) => {
+    const row = el("div", "deck-row");
+    const t = el("div", "t");
+    const l1 = el("div", "", `${m.copies}× ${m.title}`);
+    l1.appendChild(el("span", "badge-impl warn", m.deck === "andromeda" ? "Andromeda" : "Gauntlet"));
+    t.appendChild(l1);
+    (m.unimplemented || []).forEach((s) => t.appendChild(el("div", "ztext", "“" + sym(s) + "”")));
+    row.appendChild(t);
+    list.appendChild(row);
+  });
+  if (!(CR_READY.missing || []).length) {
+    list.appendChild(el("div", "deck-row", "Nothing missing — start a game."));
+  }
+}
 
 $("btn-local").onclick = () => {
   mode = "local";
@@ -160,10 +273,11 @@ $("btn-bridge").onclick = () => {
   }
   const saved = JSON.parse(localStorage.getItem("jinteki_local") || "null");
   if (saved && saved.token) {
-    mode = "local";
+    mode = saved.engine === "cr" ? "cr" : "local";
     if (saved.side) mySide = saved.side;
     connect("/ws/local", () => send({ type: "resume", token: saved.token }));
   }
+  loadCrReady();
 })();
 
 $("lobby-back").onclick = () => { if (ws) ws.close(); show("screen-home"); };
@@ -604,7 +718,7 @@ function onCardTap(c, opts, el) {
   if (S.winner) return;
 
   if (isSelectMode()) {
-    if (mode === "local") act("select", { card: { cid: c.cid } });
+    if (native()) act("select", { card: { cid: c.cid } });
     else act("select", { card: c });
     return;
   }
@@ -621,12 +735,16 @@ function onCardTap(c, opts, el) {
 
 function openHandSheet(c) {
   const items = [];
-  if (mode === "local") {
+  if (native()) {
     actionsFor(c.cid).forEach((a) => {
-      if (a.command === "play") items.push(["Play", () => act("play", { card: { cid: c.cid } })]);
-      if (a.command === "runner-install") items.push(["Install", () => act("runner-install", { card: { cid: c.cid } })]);
+      // The server may label an affordance itself (the CR engine does: an
+      // install declares its destination inside the procedure, 8.5.16b, so
+      // the affordance cannot name a server).
+      if (a.command === "play") items.push([sym(a.label || "Play"), () => act("play", { card: { cid: c.cid } })]);
+      if (a.command === "runner-install") items.push([sym(a.label || "Install"), () => act("runner-install", { card: { cid: c.cid } })]);
       if (a.command === "corp-install") items.push([
-        a.server === "New remote" ? "Install → new remote" : `Install → ${SERVER_NAME(a.server)}`,
+        a.label ? sym(a.label)
+          : a.server === "New remote" ? "Install → new remote" : `Install → ${SERVER_NAME(a.server)}`,
         () => act("corp-install", { card: { cid: c.cid }, server: a.server }),
       ]);
     });
@@ -640,9 +758,9 @@ function openHandSheet(c) {
 
 function openBoardSheet(c, el) {
   const items = [];
-  if (mode === "local") {
+  if (native()) {
     actionsFor(c.cid).forEach((a) => {
-      const label =
+      const label = a.label ? sym(a.label) :
         a.command === "advance" ? "Advance (● + 1⬡)" :
         a.command === "score" ? "Score" :
         a.command === "rez" ? `Rez (${c.cost ?? "?"}⬡)` :
@@ -806,10 +924,12 @@ function renderChips() {
     b.textContent = label; b.onclick = fn;
     bar.appendChild(b);
   };
-  if (mode === "local") {
+  if (native()) {
     if (has("credit")) mk("Gain 1 ⬡", () => act("credit"));
     if (has("draw")) mk("Draw a card", () => act("draw"));
     if (has("remove-tag")) mk("Remove tag (2⬡)", () => act("remove-tag"));
+    if (has("purge")) mk("Purge viruses (●●●)", () => act("purge"));
+    if (has("trash-resource")) mk("Trash a resource (2⬡)", () => act("trash-resource"));
     const runs = ACTIONS.filter((a) => a.command === "run");
     if (runs.length) mk("Run ▾", () => {
       openSheet(runs.map((a) => [SERVER_NAME(a.server), () => act("run", { server: a.server })]),
@@ -833,7 +953,7 @@ function renderChips() {
 function renderTurnBtn() {
   const btn = $("turn-btn");
   let label = null, cmd = null, ready = false;
-  if (mode === "local") {
+  if (native()) {
     if (has("start-turn")) { label = "START TURN"; cmd = "start-turn"; ready = true; }
     else if (has("end-turn")) {
       label = "END TURN"; cmd = "end-turn";
@@ -1112,6 +1232,7 @@ $("nav-library").onclick = () => { show("screen-library"); loadLibrary(); };
 $("account-chip").onclick = () => { show("screen-account"); renderAccountScreen(); };
 $("decks-back").onclick = () => show("screen-home");
 $("library-back").onclick = () => show("screen-home");
+$("crgap-back").onclick = () => { show("screen-home"); loadCrReady(); };
 $("account-back").onclick = () => show("screen-home");
 $("edit-back").onclick = () => { show("screen-decks"); loadMyDecks(); };
 $("import-back").onclick = () => show("screen-decks");

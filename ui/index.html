@@ -22,9 +22,23 @@
     <p class="tagline">netrunner, faster</p>
 
     <div class="home-cards">
-      <div class="home-card">
+      <div class="home-card primary" id="card-eternal">
+        <h2>Eternal: Andromeda vs Gauntlet</h2>
+        <p><b>eternal decks, CR engine</b> — the Comprehensive Rules virtual machine,
+           playing the two decks card for card. No card plays unless its behaviour
+           is implemented.</p>
+        <div class="row">
+          <button class="seg" data-side="runner" id="cr-pick-runner">Andromeda</button>
+          <button class="seg" data-side="corp" id="cr-pick-corp">Gauntlet</button>
+        </div>
+        <div class="cr-ready" id="cr-ready">checking the card layer…</div>
+        <input id="cr-seed" type="text" inputmode="numeric" placeholder="seed (optional)">
+        <button class="big go" id="btn-cr">Jack in</button>
+      </div>
+
+      <div class="home-card" id="card-vsbot">
         <h2>Play vs Bot</h2>
-        <p>Local engine, random-walk opponent.</p>
+        <p>Local engine, random-walk opponent. Starter decks.</p>
         <div class="row">
           <button class="seg" data-side="runner" id="pick-runner">Runner</button>
           <button class="seg" data-side="corp" id="pick-corp">Corp</button>
@@ -55,6 +69,18 @@
 <div id="deck-sheet" class="bottom-sheet" style="display:none">
   <div class="sheet-head">Pick a deck <button class="chip" id="deck-sheet-close">×</button></div>
   <div id="deck-sheet-list"></div>
+</div>
+
+<!-- ── Eternal mode: the honest "not yet" screen (SYS-D-12) ─────────────── -->
+<div id="screen-cr-gap" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="crgap-back">← Home</button>
+    <span>Eternal mode — not yet</span><span></span>
+  </div>
+  <div class="edit-body">
+    <div id="crgap-head"></div>
+    <div id="crgap-list" class="deck-rows"></div>
+  </div>
 </div>
 
 <!-- ── My decks ────────────────────────────────────────────────────────── -->

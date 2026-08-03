@@ -54,6 +54,20 @@ button.go { background: var(--legal); color: #05221d; }
 button.go.alt { background: var(--gold); color: #2a2005; }
 .hint { color: var(--dim); font-size: 12px; }
 
+/* The default mode: eternal decks on the CR engine. Primary by weight, not by
+   noise — a wider card, a lit border, and the card-layer readiness in the open
+   so the honesty of the gate is the first thing you read. */
+.home-card.primary { border-color: var(--legal); width: 340px;
+  box-shadow: 0 0 0 1px rgba(53, 208, 186, .25), 0 8px 30px rgba(53, 208, 186, .10); }
+.home-card.primary h2 { color: var(--legal); }
+.cr-ready { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dim); }
+.cr-frac b.ok { color: var(--legal); }
+.cr-frac b.warn { color: var(--gold); }
+.cr-bar { height: 6px; border-radius: 3px; background: var(--bg2); overflow: hidden; }
+.cr-bar-fill { height: 100%; background: var(--gold); transition: width .4s ease; }
+.cr-bar-fill.ok { background: var(--legal); }
+#screen-cr-gap .ztext { color: var(--dim); font-style: italic; }
+
 /* ── Lobby ────────────────────────────────────────────────────────────── */
 #screen-lobby { display: none; flex-direction: column; padding: 10px; gap: 10px; }
 #screen-lobby.active { display: flex; }
@@ -465,6 +479,9 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 #screen-library .deck-rows { top: 104px; }
 .deck-row { display: flex; align-items: center; gap: 10px; background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 48px; }
+/* A row is as tall as its content: inside a scrolling flex column, flex items
+   shrink by default and multi-line rows would overlap the next one. */
+.deck-rows > .deck-row { flex: 0 0 auto; }
 .deck-row .t { flex: 1; min-width: 0; }
 .deck-row .t small { color: var(--dim); display: block; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
