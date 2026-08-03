@@ -6,10 +6,10 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W8a)
+## Odometers (after W8b)
 
-- **DP-7a: 152/243** CR examples as example-named passing tests (62.6%).
-- **DP-7b: 489/1420** distinct rules cited (34.4%); traceability test fails
+- **DP-7a: 155/243** CR examples as example-named passing tests (63.8%).
+- **DP-7b: 495/1420** distinct rules cited (34.9%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -97,7 +97,8 @@ prefer a slightly larger honest primitive and note it here.
 | `30992fe` | W7d | subtypes as modifiable characteristics and §9.11 instruction identification: `Instruction::ModifySubtypes { target, add, remove, duration }` + `Payload::SubtypeMod` + `StaticDecl::SubtypeModSelf` feeding the 9.12.1b counting pipeline (2.16.5 — a subtype is present while its adds outnumber its removals); 9.11.4c the choose-and-modify sentence pair as ONE instruction; 9.11.4b split-up instructions, 9.11.4g choice instructions and 9.11.2a's "no checkpoint inside a checkpoint" asserted against existing machinery | 135 |
 | `bc1a920` | W7e | small rules riding existing machinery: §1.4 deck construction as pure functions (`src/deck.rs` — 1.4.5a influence counted by copy, 1.4.6d agenda-point requirement), `Cost::lose_clicks` so 5.2.1a's "Lose [click]" ability is used in a paid window and never offered as an action, 5.2.2b action completion, 6.1.4c "end the run" with no run and no encounter, 7.4.1a root cards are candidates for EVERY server (a real gap: Archives ignored its root), and `Object::generation` — CR 1.12.3's "a card that changes zone becomes a new object" as a stamp, which is what lets a trashed upgrade become an Archives candidate again (7.4.5) | 141 |
 | `8126ef9` | W7f | §1.12 object identity: `Zone::zone_class` makes the play area ONE zone so 1.12.4 moves within it keep the object while 1.12.3 moves between zones make a new one; once-per-turn use (9.3.6g) is keyed by `(AbilityRef, generation)`, so a reinstalled card's ability is fresh (1.12.2) and a derezzed-then-rezzed one's is not (1.12.5); `Instruction::Derez { target }` | 145 |
-| `pending` | W8a | **§6.2 positions are OBJECTS, not indices** (6.2.6): `object::IcePosition { id, ice }`, `CoreState.ice: BTreeMap<ServerId, Vec<IcePosition>>` and `RunCtx.position: Option<u64>` — a position id. 6.2.2 creation (a outermost / b innermost / c directly inward / f swaps create none), 6.2.4 destruction as a REAL 10.3.1i with both its exceptions (the Runner's position, and an install in progress protecting that server), 6.2.3 "same position" as `TargetFilter::IceInSamePositionAs(PositionRef::{Source,Runner})`, 6.2.7a/c/d/e as `Vm::apply_ice_change_to_run`; `Instruction::{MoveIce, MoveRunnerToIce}` (6.2.2 / 6.2.8a-d); `swap_cards` re-occupies the existing positions (6.2.2f) and no longer no-ops on two ice protecting the SAME server; the HOST position of `HostCards` is now announceable and `announcement_for` passes the source so source-relative criteria work in announcements | 152 |
+| `613433e` | W8a | **§6.2 positions are OBJECTS, not indices** (6.2.6): `object::IcePosition { id, ice }`, `CoreState.ice: BTreeMap<ServerId, Vec<IcePosition>>` and `RunCtx.position: Option<u64>` — a position id. 6.2.2 creation (a outermost / b innermost / c directly inward / f swaps create none), 6.2.4 destruction as a REAL 10.3.1i with both its exceptions (the Runner's position, and an install in progress protecting that server), 6.2.3 "same position" as `TargetFilter::IceInSamePositionAs(PositionRef::{Source,Runner})`, 6.2.7a/c/d/e as `Vm::apply_ice_change_to_run`; `Instruction::{MoveIce, MoveRunnerToIce}` (6.2.2 / 6.2.8a-d); `swap_cards` re-occupies the existing positions (6.2.2f) and no longer no-ops on two ice protecting the SAME server; the HOST position of `HostCards` is now announceable and `announcement_for` passes the source so source-relative criteria work in announcements | 152 |
+| `pending` | W8b | **§8.8 swapping cards**: 8.8.2 destination legality (`Vm::swap_legal` / `may_occupy` — card type per location, and 4.6.6e/3.6.1 root limits with the vacating card discounted) applied BOTH as a gate on the swap and as a filter on the two 1.15.2 announcements a `SwapCards { Choose, Choose }` requires; 8.8.4b's mixed installed/uninstalled case (the leaver uninstalls and everything hosted on it is trashed, the joiner becomes installed in the exact position with no install procedure, entering unrezzed per 8.8.4a, and `Card{Un,}Installed` are recorded so the trigger conditions meet at the next checkpoint); `TriggerCond::SelfPassed`. Deviation 15 retired | 155 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -202,14 +203,11 @@ prefer a slightly larger honest primitive and note it here.
     score area at 8.5.16a, so the counter goes after (a). The observable
     claim — gone during the installation, before the card becomes installed
     at 8.5.16f, unpreventable — holds and is what the test asserts.
-15. **§8.8 swaps are a slice** (W5b, NARROWED by W8a) — `Instruction::
-    SwapCards` exchanges two cards' zones simultaneously and leaves everything
-    hosted on them hosted (8.8.3a/8.8.4c). W8a added 8.8.3's exact position
-    preservation (6.2.2f: the two ice re-occupy the existing positions, no
-    new ones are created, and two ice protecting the SAME server are now
-    recognised as being in different locations). Still missing: 8.8.2
-    destination legality and the 8.8.4b mixed installed/uninstalled case
-    (where hosted objects ARE trashed and install/uninstall conditions meet).
+15. **RETIRED (W8b)** — "§8.8 swaps are a slice" (W5b). W8a added 6.2.2f
+    position preservation, W8b added 8.8.2 destination legality (as a gate
+    AND as an announcement filter) and the 8.8.4b mixed installed/uninstalled
+    case. What §8.8 still does not have is 8.8.4d's set-aside swap, which
+    belongs with `drawn_card_swapped_1` and the §8.4 drawing procedure.
 16. **Two narrow scans** (W5b): 1.13.6b's "has an ability that hosts onto
     itself" is a shallow scan of printed instruction lists for
     `HostCards { host: SelfSource }` (it does not look inside `Combined` /
@@ -283,6 +281,21 @@ prefer a slightly larger honest primitive and note it here.
     inward case). Any other destination moves nothing. 6.2.2d's "in any
     position" (a Corp choice among the gaps) and 6.2.2e's Mutate case are not
     expressible yet.
+29. **8.8.4a is applied only where a card becomes (un)installed** (W8b) —
+    "each of the swapped cards enters its destination zone in the same state
+    that a card would normally enter that zone" is implemented for the 8.8.4b
+    case (a Corp card entering the play area enters unrezzed). A swap between
+    two hidden zones does not re-derive faceup status, and the "facedown into
+    Archives unless it was visible" clause needs the per-side visibility model
+    §10.2 does not have yet (see deviation 20).
+30. **Two swap announcements, and only two** (W8b, `announcements_required`) —
+    a `SwapCards { Choose, Choose }` asks once per target position, and the
+    FIRST announcement is filtered to cards that have at least one legal
+    partner (8.8.2's "if a swap effect would resolve while there are no legal
+    exchanges possible, then that effect does nothing", read forward). Neither
+    announcement can express "another piece of ice" — nothing in the filter
+    vocabulary excludes the source — so a Thimblerig-class shape offers itself
+    as its own partner, where the swap is a no-op.
 
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real

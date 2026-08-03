@@ -109,6 +109,9 @@ pub enum TriggerCond {
     PlayerSearchesDeck(Side),
     /// "Whenever you install a card…" (Near-Earth Hub class).
     CardInstalledBy(Side),
+    /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
+    /// at run step 6.9.4a (`rule_pass_ice`).
+    SelfPassed,
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -556,6 +559,10 @@ pub fn trigger_matches(
             *ice == source.id
         }
         (TriggerCond::EncounterBegins, GameChange::EncounterBegan { .. }) => true,
+        (TriggerCond::SelfPassed, GameChange::IcePassed { ice }) => {
+            cite!("rule_pass_ice");
+            *ice == source.id
+        }
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
             server_of_source == Some(*server)
         }

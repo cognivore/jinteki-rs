@@ -196,6 +196,10 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_count_positions_1",
     "example_rule_count_positions_2",
     "example_rule_ice_change_encounter_move_swap_1",
+    // Wave 8b: swapping cards (§8.8).
+    "example_rule_swap_installed_cards_preserves_hosting_1",
+    "example_rule_swap_only_to_valid_location_1",
+    "example_rule_swap_become_installed_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5009,9 +5013,18 @@ fn example_rule_recurring_credits_do_not_accumulate_1() {
     let mut script = plan::Script::new(
         Plan::corp(),
         Plan::runner()
-            .when(Match::paid().once(), Reply::take("install-button"))
+            .when(
+                Match::paid().at_step("step_runner_turn_action_phase_paw").once(),
+                Reply::take("install-button"),
+            )
             .when(Match::targets().once(), Reply::target(modem))
-            .when(Match::paid().once(), Reply::take("mimic"))
+            // AFTER the 5.7.1c refill step: the modem already holds its 2, so
+            // the refill places nothing (1.10.5d) and the spend is the only
+            // change to its counters this turn.
+            .when(
+                Match::paid().at_step("step_runner_turn_loop_paw").once(),
+                Reply::take("mimic"),
+            )
             .when(Match::action().nth(1), Reply::Halt)
             .when(Match::action().times(4), Reply::credit())
             .when(Match::action(), Reply::Halt),
@@ -6681,7 +6694,6 @@ fn example_rule_count_positions_1() {
     let c_only = tk::install_ice(&mut vm, tk::vanilla_ice("C-only", 0, 1), ServerId::Remote(3), false);
     let rook = tk::install_rig(&mut vm, tk::rook_like("Rook-like"));
     tk::host_on(&mut vm, rook, a_outer);
-    vm.st.objects.get_mut(&rook).unwrap().zone = Zone::Ice(ServerId::Remote(1));
     vm.start_turn(Side::Runner);
 
     let t = plan::play(
@@ -6802,6 +6814,156 @@ fn example_rule_ice_change_encounter_move_swap_1() {
         ),
         "the Runner is now running on Archives"
     );
+}
+
+// ===========================================================================
+// §8.8 — swapping cards (W8b)
+// ===========================================================================
+
+/// example_rule_swap_installed_cards_preserves_hosting_1 (8.8.3a): a
+/// Thimblerig-class ice swaps itself with another piece of ice that is
+/// hosting a Runner program. The program remains hosted on its host
+/// throughout, and follows it to its new position (1.13.12).
+#[test]
+fn example_rule_swap_installed_cards_preserves_hosting_1() {
+    let mut vm = Vm::empty(737);
+    let palisade = tk::install_ice(&mut vm, tk::vanilla_ice("Palisade", 0, 1), ServerId::Remote(1), true);
+    let thimble = tk::install_ice(&mut vm, tk::thimblerig_like("Thimblerig-like"), ServerId::Remote(2), true);
+    let botulus = tk::install_rig(&mut vm, tk::virus_program("Botulus-like", 0));
+    tk::host_on(&mut vm, botulus, palisade);
+    tk::place_counters(&mut vm, botulus, CounterKind::Virus, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("thimblerig"))
+            .when(Match::targets().once(), Reply::Targets(vec![palisade]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("thimblerig"), "{}", t.tail(6));
+    assert_eq!(vm.st.objects[&palisade].zone, Zone::Ice(ServerId::Remote(2)));
+    assert_eq!(vm.st.objects[&thimble].zone, Zone::Ice(ServerId::Remote(1)));
+    assert_eq!(
+        vm.st.objects[&botulus].host,
+        Some(palisade),
+        "8.8.3a: the hosting relationship is maintained"
+    );
+    assert_eq!(
+        vm.st.objects[&botulus].zone,
+        Zone::Ice(ServerId::Remote(2)),
+        "1.13.12: the hosted object is in its host's zone"
+    );
+    assert_eq!(vm.st.objects[&botulus].counter(CounterKind::Virus), 3);
+    assert!(
+        !vm.changes.log.iter().any(
+            |c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == botulus)
+        ),
+        "nothing hosted was trashed: both cards stayed installed (8.8.3)"
+    );
+}
+
+/// example_rule_swap_only_to_valid_location_1 (8.8.2): a Metamorph-class
+/// subroutine swaps 2 installed cards. Having announced an agenda, the Corp
+/// cannot choose an upgrade that would put that agenda in the same remote
+/// server as an asset — that upgrade is not a legal exchange, and is not
+/// offered.
+#[test]
+fn example_rule_swap_only_to_valid_location_1() {
+    let mut vm = Vm::empty(738);
+    let agenda = tk::install_root(&mut vm, tk::vanilla_agenda("Agenda", 3, 2), ServerId::Remote(1), false);
+    let upg_with_asset =
+        tk::install_root(&mut vm, tk::vanilla_upgrade("Upg-A", 0), ServerId::Remote(2), false);
+    let asset = tk::install_root(&mut vm, tk::vanilla_asset("Asset", 0, 3), ServerId::Remote(2), false);
+    let upg_alone =
+        tk::install_root(&mut vm, tk::vanilla_upgrade("Upg-B", 0), ServerId::Remote(3), false);
+    tk::install_ice(&mut vm, tk::metamorph_like("Metamorph-like"), ServerId::Hq, true);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(vec![agenda]))
+            .when(Match::targets().once(), Reply::Targets(vec![upg_alone])),
+        Plan::runner().runs(ServerId::Hq).stop_at_action(),
+    );
+    let second = t.nth_window(Kind::Targets, Side::Corp, 2).candidates().to_vec();
+    assert!(
+        !second.contains(&upg_with_asset),
+        "8.8.2: the agenda would end up in the same remote as an asset"
+    );
+    assert!(second.contains(&upg_alone), "a legal exchange is still offered: {second:?}");
+    assert_eq!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(3)));
+    assert_eq!(vm.st.objects[&upg_alone].zone, Zone::Root(ServerId::Remote(1)));
+    assert_eq!(vm.st.objects[&asset].zone, Zone::Root(ServerId::Remote(2)), "untouched");
+}
+
+/// example_rule_swap_become_installed_1 (8.8.4b): the Runner passes a
+/// Tatu-Bola-class ice, whose ability swaps it with a piece of ice from HQ.
+/// The HQ card becomes installed in the exact position the first occupied,
+/// without the install procedure; the trigger conditions of installing it are
+/// met at the next checkpoint, so an A-Teia-class "whenever you install"
+/// ability fires — and the swapping ability then goes on resolving its next
+/// instruction.
+#[test]
+fn example_rule_swap_become_installed_1() {
+    let mut vm = Vm::empty(739);
+    let hq_ice = vm.new_object(tk::vanilla_ice("HQ-Ice", 0, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(hq_ice);
+    let teia_card = vm.new_object(tk::vanilla_upgrade("Teia-Installee", 0), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(teia_card);
+    tk::install_identity(
+        &mut vm,
+        tk::a_teia_like("A-Teia-like", teia_card, ServerId::Remote(2)),
+        Side::Corp,
+    );
+    let tatu = tk::install_ice(
+        &mut vm,
+        tk::tatu_bola_like("Tatu-Bola-like", hq_ice),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 3), ServerId::Remote(1), false);
+    tk::install_root(&mut vm, tk::vanilla_upgrade("Anchor", 0), ServerId::Remote(2), false);
+    let pos = vm.positions_at(ServerId::Remote(1))[0].id;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().uses("a-teia"),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&hq_ice].zone, Zone::Ice(ServerId::Remote(1)), "{}", t.tail(10));
+    assert_eq!(
+        vm.positions_at(ServerId::Remote(1)).iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![pos],
+        "installed in the exact position the first card occupied"
+    );
+    assert!(!vm.st.objects[&hq_ice].faceup, "8.8.4a: a Corp card enters the play area unrezzed");
+    assert_eq!(vm.st.objects[&tatu].zone, Zone::Hand(Side::Corp), "and became uninstalled");
+    assert_eq!(
+        vm.st.objects[&teia_card].zone,
+        Zone::Root(ServerId::Remote(2)),
+        "the install trigger condition was met at the next checkpoint: {}",
+        t.tail(10)
+    );
+    assert_eq!(vm.st.corp.credits, 4, "then the next instruction of the ability resolved");
+    let teia_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardEnteredRoot { obj, .. } if *obj == teia_card))
+        .expect("A Teia installed");
+    let gain_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 4 }))
+        .expect("gained 4");
+    assert!(teia_at < gain_at, "the reaction resolved before the next instruction (9.1.2a)");
 }
 
 // ===========================================================================

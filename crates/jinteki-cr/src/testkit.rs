@@ -104,9 +104,14 @@ pub fn install_rig(vm: &mut Vm, card: PrintedCard) -> ObjectId {
     id
 }
 
-/// Host `guest` on `host` (both must exist).
+/// Host `guest` on `host` (both must exist). CR 1.13.12: the hosted object is
+/// in the same zone as its host, so setting the relationship as SETUP puts it
+/// there — a program hosted on a piece of ice is protecting that server's
+/// position with it.
 pub fn host_on(vm: &mut Vm, guest: ObjectId, host: ObjectId) {
+    let zone = vm.st.objects[&host].zone;
     vm.st.objects.get_mut(&guest).unwrap().host = Some(host);
+    vm.st.objects.get_mut(&guest).unwrap().zone = zone;
     vm.st.objects.get_mut(&host).unwrap().hosted.push(guest);
 }
 
@@ -3218,5 +3223,93 @@ pub fn bullfrog_like(name: &'static str, to: ServerId) -> PrintedCard {
         dest: crate::instr::InstallDest::Protecting(to),
     }])
     .labeled("[sub] move this ice to another server")];
+    c
+}
+
+/// Thimblerig shape (8.8.3a): a piece of ice with a paid ability "Swap this
+/// ice with another piece of ice." SIMPLIFICATION: as with the Rook shape,
+/// "another" is not expressible as a criterion, so the source is among its
+/// own offered targets — swapping a card with itself is a no-op (8.8.1: the
+/// two locations are the same).
+pub fn thimblerig_like(name: &'static str) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::SwapCards {
+            a: TargetSpec::SelfSource,
+            b: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![F::InstalledCorpCard, F::CardTypeIs(CardType::Ice)],
+            },
+        }],
+    )
+    .labeled("thimblerig: swap this ice with another")];
+    c
+}
+
+/// Metamorph shape (8.8.2): "[sub] Swap 2 installed Corp cards." The two
+/// announcements are filtered by 8.8.2 — each card must be allowed to occupy
+/// the other's location — which is the whole content of the example.
+pub fn metamorph_like(name: &'static str) -> PrintedCard {
+    use crate::instr::TargetFilter as F;
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::SwapCards {
+        a: TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![F::InstalledCorpCard],
+        },
+        b: TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![F::InstalledCorpCard],
+        },
+    }])
+    .labeled("[sub] swap 2 installed cards")];
+    c
+}
+
+/// Tatu-Bola shape (8.8.4b): "When the Runner passes this ice, you may swap
+/// it with a piece of ice from HQ. Gain 4[credit]." SIMPLIFICATION: the ice in
+/// HQ is fixed at card-build time, and the swap is not optional — the example
+/// is about what a swap between an installed card and an uninstalled one
+/// does, and about the next instruction still resolving afterwards.
+pub fn tatu_bola_like(name: &'static str, from_hq: ObjectId) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfPassed,
+        vec![
+            Instruction::SwapCards {
+                a: TargetSpec::SelfSource,
+                b: TargetSpec::Objects(vec![from_hq]),
+            },
+            Instruction::GainCredits(Side::Corp, Quantity::c(4)),
+        ],
+        false,
+    )
+    .labeled("tatu: swap with HQ ice, then gain 4")];
+    c
+}
+
+/// A Teia shape (8.8.4b): "Whenever you install a card, you may install 1 card
+/// from HQ in the root of another remote server, ignoring all costs."
+/// SIMPLIFICATION: the trigger is every Corp install rather than only those in
+/// or protecting a remote server, and the destination server is fixed —
+/// the example turns on the swapped-in card meeting an INSTALL trigger
+/// condition at the next checkpoint (8.8.4b), not on the identity's own
+/// wording.
+pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::CardInstalledBy(Side::Corp),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Objects(vec![installee]),
+            dest: crate::instr::InstallDest::Root(into),
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+        true,
+    )
+    .labeled("a-teia: install a card in another remote")];
     c
 }

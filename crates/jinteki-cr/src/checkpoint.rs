@@ -718,6 +718,18 @@ fn step_fg_hosted_orphans(vm: &mut Vm) {
                 if matches!((from, to), (Zone::ScoreArea(_), Zone::ScoreArea(_))) {
                     cite!("rule_swap_score_areas");
                     None
+                } else if from.zone_class() == to.zone_class() {
+                    // 1.13.13 fires on a host CHANGING ZONES, and 1.12.4 says
+                    // the whole play area is one zone: a card moved from one
+                    // position or server to another has not changed zones, so
+                    // nothing hosted on it is trashed. That is what makes
+                    // 8.8.3's "the two cards remain installed throughout the
+                    // process of swapping, and do not otherwise affect any
+                    // other part of the game state" true, and 8.8.3a's
+                    // hosted Botulus survive.
+                    cite!("rule_play_area");
+                    cite!("rule_swap_installed_cards");
+                    None
                 } else {
                     Some(*obj)
                 }

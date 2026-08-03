@@ -3269,6 +3269,12 @@ impl Vm {
         match instr {
             Instruction::PerformedBy { instr, .. } => self.announcements_required(instr),
             Instruction::TrashCards(TargetSpec::Each(specs)) => specs.len(),
+            // 1.15.2: "for each time the instruction requires a player to
+            // choose 1 or more objects" — a swap has TWO target positions and
+            // asks once for each that is actually a choice.
+            Instruction::SwapCards { a, b } => {
+                [a, b].iter().filter(|s| matches!(s, TargetSpec::Choose { .. })).count()
+            }
             _ => 1,
         }
     }
@@ -3366,6 +3372,38 @@ impl Vm {
                         min: 0,
                     },
                 ))
+            }
+            // 8.8.1/8.8.2: a swap announces both cards it exchanges, one
+            // announcement per position (1.15.2), and the SECOND is filtered
+            // by 8.8.2 — only cards each of which may occupy the other's
+            // location. The first is filtered the same way against the whole
+            // field, since a card with no legal partner is not a choice the
+            // swap could ever complete ("if a swap effect would resolve while
+            // there are no legal exchanges possible, then that effect does
+            // nothing").
+            Instruction::SwapCards { a, b } => {
+                let slot = af.announce_slot;
+                let specs: Vec<&TargetSpec> = [a, b]
+                    .into_iter()
+                    .filter(|s| matches!(s, TargetSpec::Choose { .. }))
+                    .collect();
+                let TargetSpec::Choose { count, criteria } = specs.get(slot)? else {
+                    return None;
+                };
+                let all = self.filter_candidates_from(criteria, Some(af.source.obj));
+                let chosen = af.targets.first().copied();
+                let mut candidates: Vec<ObjectId> = all
+                    .iter()
+                    .copied()
+                    .filter(|&c| Some(c) != chosen)
+                    .filter(|&c| match chosen {
+                        Some(first) => self.swap_legal(first, c),
+                        None => all.iter().any(|&o| o != c && self.swap_legal(c, o)),
+                    })
+                    .collect();
+                candidates.retain(|c| !af.targets.contains(c));
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
             }
             // 1.13.1: the other target position of a hosting instruction —
             // WHICH CARD becomes the host (a Rook-class ability moving itself
@@ -3595,6 +3633,70 @@ impl Vm {
     /// same kind of zone). The 8.8.4b mixed installed/uninstalled case — the
     /// only one where hosted objects are trashed and install/uninstall
     /// conditions are met — belongs to the §8.8 wave and is not implemented.
+    /// CR 4.6.6e / 8.5.6a: are these two cards "like cards" that cannot share
+    /// a server's root — an asset-or-agenda pair, or two regions?
+    fn like_cards(&self, a: ObjectId, b: ObjectId) -> bool {
+        cite!("rule_server_root");
+        cite!("rule_region_one_root");
+        let (Some(x), Some(y)) = (self.st.objects.get(&a), self.st.objects.get(&b)) else {
+            return false;
+        };
+        let both_assetish = matches!(x.printed.card_type, CardType::Asset | CardType::Agenda)
+            && matches!(y.printed.card_type, CardType::Asset | CardType::Agenda);
+        let both_regions = x.printed.subtypes.contains(&"region")
+            && y.printed.subtypes.contains(&"region");
+        both_assetish || both_regions
+    }
+
+    /// CR 8.8.2: a card can only ever be swapped into a location it is
+    /// normally allowed to occupy, and the player "must observe any applicable
+    /// game rules or card abilities that would affect that card in its final
+    /// destination". Both halves of the exchange are tested, each against the
+    /// other's location as it will be once the other card has left it.
+    pub fn swap_legal(&self, x: ObjectId, y: ObjectId) -> bool {
+        cite!("rule_swap_only_to_valid_location");
+        let (Some(a), Some(b)) = (self.st.objects.get(&x), self.st.objects.get(&y)) else {
+            return false;
+        };
+        self.may_occupy(x, b.zone, y) && self.may_occupy(y, a.zone, x)
+    }
+
+    /// May this card occupy that location, given that `vacating` is leaving it
+    /// in the same instant (8.8.3: the exchange is simultaneous)?
+    fn may_occupy(&self, card: ObjectId, dest: Zone, vacating: ObjectId) -> bool {
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        let t = o.printed.card_type;
+        match dest {
+            // 6.2.1: only a piece of ice protects a server.
+            Zone::Ice(_) => t == CardType::Ice,
+            Zone::Root(s) => {
+                // 3.6.1 / 4.6.6e: a central server's root takes upgrades only;
+                // a remote's takes 1 asset-or-agenda and any number of
+                // upgrades.
+                cite!("rule_upgrade_install");
+                let type_ok = if s.is_central() {
+                    t == CardType::Upgrade
+                } else {
+                    matches!(t, CardType::Asset | CardType::Agenda | CardType::Upgrade)
+                };
+                type_ok
+                    && !self
+                        .st
+                        .root
+                        .get(&s)
+                        .map(|v| {
+                            v.iter().any(|&other| other != vacating && self.like_cards(card, other))
+                        })
+                        .unwrap_or(false)
+            }
+            // 8.5.4: the rig holds the Runner's installed cards.
+            Zone::Rig => !is_corp_card(t),
+            // 4.5: score areas hold agendas.
+            Zone::ScoreArea(_) => t == CardType::Agenda,
+            _ => true,
+        }
+    }
+
     pub fn swap_cards(&mut self, x: ObjectId, y: ObjectId) {
         cite!("rule_swap_installed_cards");
         cite!("rule_swap_installed_cards_preserves_hosting");
@@ -3608,15 +3710,65 @@ impl Vm {
         if zx == zy && px == py {
             return;
         }
+        // 8.8.2: with no legal exchange available, the effect does nothing.
+        if !self.swap_legal(x, y) {
+            return;
+        }
         cite!("rule_create_position_swap");
         // Simultaneous exchange: neither card's own move can be observed
         // trashing what is hosted on it (8.8.3a), so the host relationships
         // are simply carried along with the cards.
+        let (xi, yi) = (zx.is_installed(), zy.is_installed());
         self.pending_ice_position = py;
         self.move_card(x, zy);
         self.pending_ice_position = px;
         self.move_card(y, zx);
         self.pending_ice_position = None;
+        // 8.8.4b: exactly one of the two was installed. It becomes
+        // uninstalled — and everything hosted on it is trashed, since nothing
+        // followed it out of the play area — while the other becomes
+        // installed in the exact position the first occupied, WITHOUT the
+        // 8.5.16 install procedure: no cost is paid and no like cards are
+        // trashed. The uninstall/install trigger conditions are met at the
+        // next checkpoint, which is what the `Card{Un,}Installed` records do.
+        if xi != yi {
+            cite!("rule_swap_become_installed");
+            let (left, joined) = if xi { (x, y) } else { (y, x) };
+            let guests: Vec<ObjectId> = self.st.objects[&left].hosted.clone();
+            for g in guests {
+                cite!("rule_swap_become_installed");
+                let owner = self.st.objects[&g].owner;
+                self.trash_card(g, owner);
+            }
+            let counters: Vec<(CounterKind, u32)> = self.st.objects[&left]
+                .counters
+                .iter()
+                .map(|(k, n)| (*k, *n))
+                .collect();
+            self.st.objects.get_mut(&left).unwrap().counters.clear();
+            for (kind, amount) in counters {
+                self.changes.record(GameChange::CounterRemoved {
+                    obj: Some(left),
+                    kind,
+                    amount,
+                });
+            }
+            // 8.8.4a: each card enters its destination in the state a card
+            // would normally enter it — a Corp card entering the play area
+            // enters unrezzed.
+            cite!("rule_state_of_swap_into_zone");
+            let side = self.st.objects[&joined].printed.side;
+            {
+                self.st.active_seq += 1;
+                let seq = self.st.active_seq;
+                let o = self.st.objects.get_mut(&joined).unwrap();
+                o.faceup = side == Side::Runner;
+                if o.faceup {
+                    o.active_since = seq;
+                }
+            }
+            self.changes.record(GameChange::CardInstalled { obj: joined, side });
+        }
         if let (Zone::ScoreArea(sx), Zone::ScoreArea(sy)) = (zx, zy) {
             // 4.5: a card in a score area is controlled by its owner of that
             // area — the swap changes who has scored it.
@@ -5188,9 +5340,22 @@ impl Vm {
             Instruction::SwapCards { a, b } => {
                 cite!("rule_swap");
                 cite!("rule_swap_simultaneous");
-                let x = self.resolve_targets(a, Some(source.obj), &imm.targets);
-                let y = self.resolve_targets(b, Some(source.obj), &imm.targets);
-                if let (Some(&x), Some(&y)) = (x.first(), y.first()) {
+                // 1.15.2: each target POSITION got its own announcement, in
+                // order, so the announced list is read positionally here
+                // rather than as one union.
+                let a_chosen = matches!(a, TargetSpec::Choose { .. });
+                let b_chosen = matches!(b, TargetSpec::Choose { .. });
+                let x = if a_chosen {
+                    imm.targets.first().copied()
+                } else {
+                    self.resolve_targets(a, Some(source.obj), &imm.targets).first().copied()
+                };
+                let y = if b_chosen {
+                    imm.targets.get(usize::from(a_chosen)).copied()
+                } else {
+                    self.resolve_targets(b, Some(source.obj), &imm.targets).first().copied()
+                };
+                if let (Some(x), Some(y)) = (x, y) {
                     self.swap_cards(x, y);
                 }
             }
@@ -5374,9 +5539,6 @@ impl Vm {
                 }
                 // (c) trash like cards — the MUST component of 8.5.6a.
                 if let Zone::Root(s) = zone {
-                    let new_type = self.st.objects[&c].printed.card_type;
-                    let new_is_region =
-                        self.st.objects[&c].printed.subtypes.contains(&"region");
                     let must_trash: Vec<ObjectId> = self
                         .st
                         .root
@@ -5384,14 +5546,7 @@ impl Vm {
                         .cloned()
                         .unwrap_or_default()
                         .into_iter()
-                        .filter(|&other| {
-                            let ot = self.st.objects[&other].printed.card_type;
-                            let other_region =
-                                self.st.objects[&other].printed.subtypes.contains(&"region");
-                            (matches!(new_type, CardType::Asset | CardType::Agenda)
-                                && matches!(ot, CardType::Asset | CardType::Agenda))
-                                || (new_is_region && other_region)
-                        })
+                        .filter(|&other| self.like_cards(c, other))
                         .collect();
                     for t in must_trash {
                         cite!("rule_must_trash_cases_in_root_of_server");
@@ -6782,6 +6937,40 @@ impl Vm {
         // Mid-breach root entries (10.3.1j).
         if let Zone::Root(server) = to {
             self.changes.record(GameChange::CardEnteredRoot { obj: id, server });
+        }
+        // CR 1.13.12: a hosted object is in the same zone as its host, so
+        // when a HOST moves the objects hosted on it move with it and the
+        // hosting relationship is unaffected (8.8.3a's swap, 6.2.7d's move).
+        // Only while the host is still installed: a host leaving the play
+        // area is 1.13.13's business (its hosted objects are trashed at the
+        // checkpoint, into their OWNERS' discard piles), and 8.8.4b's.
+        if from != to && to.is_installed() {
+            let guests: Vec<ObjectId> = self.st.objects[&id].hosted.clone();
+            for g in guests {
+                if self.st.objects[&g].zone != to
+                    && self.st.objects[&g].zone != Zone::SetAside
+                {
+                    cite!("rule_hosted_object_same_zone_as_host");
+                    self.move_hosted_with_host(g, to);
+                }
+            }
+        }
+    }
+
+    /// A hosted object following its host to another zone (1.13.12) — the
+    /// same move as [`Vm::move_card`] except that the hosting relationship
+    /// survives it, because the guest did not move of its own accord.
+    fn move_hosted_with_host(&mut self, guest: ObjectId, to: Zone) {
+        let host = self.st.objects[&guest].host;
+        self.move_card(guest, to);
+        if let Some(h) = host {
+            let g = self.st.objects.get_mut(&guest).unwrap();
+            g.host = Some(h);
+            if let Some(hh) = self.st.objects.get_mut(&h) {
+                if !hh.hosted.contains(&guest) {
+                    hh.hosted.push(guest);
+                }
+            }
         }
     }
 
