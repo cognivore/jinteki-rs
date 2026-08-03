@@ -311,7 +311,13 @@ pub fn predictive_planogram() -> Card {
 /// "Place 2 advancement counters on 1 installed card that you did not install
 ///  this turn."
 ///
-/// UNIMPLEMENTED: no filter describes a card by when it was installed.
+/// UNIMPLEMENTED: "that you did not install this turn" IS sayable now
+/// (`TargetFilter::InstalledThisTurn`, W17a) — but `Instruction::PlaceCounters`
+/// is not in the kernel's target-announcement dispatch, so a `Choose` target
+/// on it is never put to the player and the instruction silently places
+/// nothing. Measured, not guessed: the operation resolves and no
+/// `ChooseTargets` decision appears. AstroScript's paid ability and Slot
+/// Machine's third subroutine want the same thing.
 pub fn seamless_launch() -> Card {
     card("Seamless Launch")
         .corp()

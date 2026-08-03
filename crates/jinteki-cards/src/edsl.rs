@@ -490,6 +490,14 @@ pub fn draw(side: Side, n: u32) -> Instruction {
 pub fn add_to_hand(cards: TargetSpec) -> Instruction {
     Instruction::AddCardsToHand { cards }
 }
+/// "Add <cards> to <side>'s score area." (1.17.3e/f / 10.1.3.) A card added
+/// this way is NOT scored or stolen, so nothing a "when you score"/"when the
+/// Runner steals" condition could meet is recorded. `as_agenda` is 10.1.3's
+/// conversion — `Some(n)` turns a non-agenda into an agenda worth n points,
+/// `None` adds a card that is already an agenda and keeps its own value.
+pub fn add_to_score_area(cards: TargetSpec, to: Side, as_agenda: Option<i32>) -> Instruction {
+    Instruction::AddToScoreArea { cards, to, as_agenda }
+}
 /// "Add <cards> to the top / bottom of <a deck>."
 pub fn add_to_deck(card: TargetSpec, top: bool) -> Instruction {
     Instruction::MoveToDeck { card, top }
@@ -861,6 +869,16 @@ pub fn in_score_area_of(side: Side) -> TargetFilter {
 pub fn other_than_this_card() -> TargetFilter {
     TargetFilter::OtherThanSource
 }
+/// "cards hosted on this card" (1.13.2) — installed or not.
+pub fn hosted_on_this_card() -> TargetFilter {
+    TargetFilter::HostedOnSource
+}
+/// "a card you did NOT install this turn" (1.12.6) — a question about the
+/// game history, which is open information to both players. Pass `true` for
+/// the other polarity, "installed during this turn".
+pub fn installed_this_turn(yes: bool) -> TargetFilter {
+    TargetFilter::InstalledThisTurn(yes)
+}
 
 // ---- what an ability costs (1.16) -----------------------------------------
 
@@ -953,6 +971,14 @@ pub fn after_this_resolves() -> TriggerCond {
 /// "Whenever you make a successful run" — any server (6.8.4).
 pub fn makes_successful_run() -> TriggerCond {
     TriggerCond::MakesSuccessfulRun
+}
+/// "Whenever the Corp scores an agenda…" (1.17.6.)
+pub fn corp_scores_agenda() -> TriggerCond {
+    TriggerCond::CorpScoresAgenda
+}
+/// "Whenever the Runner steals an agenda…" (1.17.7.)
+pub fn runner_steals_agenda() -> TriggerCond {
+    TriggerCond::RunnerStealsAgenda
 }
 /// "When a discard phase ends, …" (5.5.4). CR 5.1.4b puts it at the same step
 /// as the turn formally ending, so it is that occurrence read as a different

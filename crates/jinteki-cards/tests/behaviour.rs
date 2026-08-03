@@ -1251,3 +1251,99 @@ fn earthrise_hotel_spends_a_counter_a_turn_and_draws() {
         );
     }
 }
+
+/// The Source: "Trash The Source when an agenda is scored or stolen." — one
+/// printed sentence with two conditions, so two conditional abilities. Each
+/// branch is driven separately, because an "or" that only ever fires on one
+/// side would pass a single-branch test.
+#[test]
+fn the_source_trashes_itself_when_an_agenda_is_scored_or_stolen() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(45);
+        let src = tk::install_rig(&mut vm, card_partial("The Source"));
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Contested", 2, 1),
+            ServerId::Remote(1),
+            false,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+
+        let t = if stolen {
+            // The Source taxes the steal 3[credit] — pay it, so the steal
+            // actually happens.
+            vm.st.runner.credits = 3;
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .when(Match::nested_cost(), Reply::PayCost(true))
+                    .stop_at_action(),
+            )
+        } else {
+            vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 2);
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+                Plan::runner(),
+            )
+        };
+        assert_eq!(
+            vm.st.objects[&agenda].zone,
+            if stolen { Zone::ScoreArea(Side::Runner) } else { Zone::ScoreArea(Side::Corp) },
+            "the agenda changed hands (stolen={stolen}): {}",
+            t.tail(12)
+        );
+        assert_eq!(
+            vm.st.objects[&src].zone,
+            Zone::Discard(Side::Runner),
+            "…and The Source trashed itself (stolen={stolen}): {}",
+            t.tail(12)
+        );
+    }
+}
+
+/// Film Critic: "[click],[click]: Add an agenda hosted on Film Critic to your
+/// score area." (1.17.3e/f — the agenda is ADDED, not stolen, so nothing a
+/// "when the Runner steals" condition could meet is recorded.)
+#[test]
+fn film_critic_adds_a_hosted_agenda_to_the_score_area() {
+    let mut vm = Vm::empty(46);
+    let fc = tk::install_rig(&mut vm, card_partial("Film Critic"));
+    // The ability that would host it is on the gap list, so the board is
+    // seeded with the agenda already hosted.
+    let agenda = vm.new_object(tk::vanilla_agenda("Hostage", 3, 2), Zone::Rig);
+    tk::host_on(&mut vm, agenda, fc);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().offering("film critic"), Reply::take("film critic"))
+            .when(Match::targets(), Reply::target(agenda))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the hosted agenda reached the score area: {}",
+        t.tail(12)
+    );
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::AgendaStolen { .. })),
+        "1.17.3e: adding a card to a score area is not stealing it: {}",
+        t.tail(12)
+    );
+}

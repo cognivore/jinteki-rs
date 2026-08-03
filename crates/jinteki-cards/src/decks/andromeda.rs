@@ -442,12 +442,14 @@ pub fn citadel_sanctuary() -> Card {
 ///  (the agenda is no longer being accessed and is uninstalled).
 ///  [click],[click]: Add an agenda hosted on Film Critic to your score area."
 ///
-/// UNIMPLEMENTED: all three. `RunnerAccessesCard` carries no card-type
-/// stipulation, and no instruction moves a card into a score area. The
-/// hosting declaration is left unstated for the same reason as Cupellation's:
-/// without the ability that hosts onto this card, 1.13.6b's exclusion does not
-/// fire and the declaration would make Film Critic a legal destination for
-/// INSTALLING an agenda.
+/// UNIMPLEMENTED: the first two. `RunnerAccessesCard` carries no card-type
+/// stipulation, so "whenever you access an agenda" cannot be said — and with
+/// that ability missing, the hosting DECLARATION has to stay unstated too:
+/// `Vm::hosts_onto_itself` derives 1.13.6b by scanning for a self-hosting
+/// instruction, so a bare `CanHost` here would make Film Critic a legal
+/// destination for INSTALLING an agenda. The paid ability IS sayable now
+/// (W17a's `AddToScoreArea`), and is inert until the other two land, which is
+/// exactly what it should be.
 pub fn film_critic() -> Card {
     card("Film Critic")
         .runner()
@@ -457,9 +459,16 @@ pub fn film_critic() -> Card {
         .text("Film Critic can host a single agenda.")
         .text("Whenever you access an agenda, you may host that agenda on Film Critic (the agenda is no longer being accessed and is uninstalled).")
         .text("[click],[click]: Add an agenda hosted on Film Critic to your score area.")
+        .paid(
+            clicks(2),
+            [add_to_score_area(
+                choose(1, &[hosted_on_this_card(), of_type(CardType::Agenda)]),
+                Runner,
+                None,
+            )],
+        )
         .unimplemented("Film Critic can host a single agenda.")
         .unimplemented("Whenever you access an agenda, you may host that agenda on Film Critic.")
-        .unimplemented("[click],[click]: Add an agenda hosted on Film Critic to your score area.")
         .build()
 }
 
@@ -515,9 +524,13 @@ pub fn the_class_act() -> Card {
 ///  As an additional cost to steal an agenda, you must pay 3[credit].
 ///  Trash The Source when an agenda is scored or stolen."
 ///
-/// UNIMPLEMENTED: the first and third. `ScoreRequirementModInSourceServer` is
-/// scoped to the source's server, and there is no condition met by an agenda
-/// being scored OR stolen by either player.
+/// The third sentence is one printed sentence with two conditions, so it is
+/// two conditional abilities with the same effect (9.6.1: a card may have
+/// several); whichever occurs first trashes the card, and the other has no
+/// source left to act on.
+///
+/// UNIMPLEMENTED: the first sentence — `ScoreRequirementModInSourceServer` is
+/// scoped to the source's server, not to every agenda in the game.
 pub fn the_source() -> Card {
     card("The Source")
         .runner()
@@ -529,8 +542,9 @@ pub fn the_source() -> Card {
         .text("As an additional cost to steal an agenda, you must pay 3[credit].")
         .text("Trash The Source when an agenda is scored or stolen.")
         .declares([additional_cost_to_steal_any_agenda(credits(3))])
+        .when(corp_scores_agenda(), [trash_self()])
+        .when(runner_steals_agenda(), [trash_self()])
         .unimplemented("The advancement requirement of all agendas is increased by 1.")
-        .unimplemented("Trash The Source when an agenda is scored or stolen.")
         .build()
 }
 

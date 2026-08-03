@@ -65,7 +65,7 @@ fn the_gap_list_is_measurable_and_honest() {
         complete.len()
     );
     assert!(
-        sentences <= 50,
+        sentences <= 48,
         "the gap list should not grow without a reason recorded in docs/vm/WAVES.md; got {sentences}"
     );
 }

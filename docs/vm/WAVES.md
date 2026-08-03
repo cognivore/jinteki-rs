@@ -853,7 +853,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W16e it is **50 cards, 19 complete, 31 partial, 50
+prints the count. At W17a it is **50 cards, 19 complete, 31 partial, 48
 printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -906,7 +906,21 @@ rather than a blocker — but a `Combined` that silently drops what it cannot
 classify will cut someone again.
 - "remove <a card that is not the source> from the game" (Bloo Moose; also
   Jackson Howard's trigger cost).
-- "add <a card> to your score area" (Film Critic).
+- ~~"add <a card> to your score area"~~ — **done, W17a**
+  (`Instruction::AddToScoreArea`). Film Critic's paid ability is expressed;
+  the card is still partial on its other two sentences.
+
+*A capability that landed one step short.* `TargetFilter::InstalledThisTurn`
+(W17a) says exactly what Seamless Launch needs — but
+`Instruction::PlaceCounters` is NOT in the kernel's target-announcement
+dispatch (`Vm::needs_decision`), so a `TargetSpec::Choose` on it is never put
+to the player and the instruction silently places nothing. Measured, not
+guessed: the operation resolves, no `ChooseTargets` decision appears, and no
+counter lands. `TrashCards`, `HostCards`, `AddToScoreArea` and
+`AddCardsToHand` all have their arm; `PlaceCounters` needs the same one.
+Three cards wait on it — Seamless Launch, AstroScript Pilot Program's paid
+ability, and Slot Machine's third subroutine — so it is the cheapest deck
+capability outstanding.
 - "shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
   shuffles from the heap into the stack). `MoveToDeck` puts cards on top or
   bottom and does not shuffle.
