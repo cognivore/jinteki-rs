@@ -190,6 +190,9 @@ pub enum DecisionCtx {
     /// CR 8.3.3: the arranging player declares, secretly, the order the
     /// set-aside cards go back on top of this deck.
     Arrange { to_top_of: Side },
+    /// CR 10.1.6a: the player resolving a mandatory infinite loop chooses how
+    /// many times it resolves.
+    LoopCount,
     /// CR 10.4.3a: which cards the selecting player trashes for this damage.
     DamageSelection { kind: crate::effects::DamageKind, amount: u32 },
     /// 10.14.6 sealed psi bids.
@@ -370,6 +373,9 @@ pub struct Vm {
     /// CR 9.9.9c: counters a Project-Vacheron-class replacement said the
     /// stolen agenda arrives in the score area WITH.
     pub pending_steal_counters: Vec<(CounterKind, u32)>,
+    /// CR 10.1.6a: how many more times a mandatory infinite loop resolves
+    /// before it ends. `None` while no loop is in progress.
+    pub loop_budget: Option<u32>,
     /// CR 1.16: the payment in progress, if any (`Vm::begin_payment`).
     pub payment: Option<Payment>,
     /// Trace of resolutions for tests: labels of resolved ability frames.
@@ -584,6 +590,7 @@ impl Vm {
             pending_sub_order: None,
             pending_optional_replacement: None,
             pending_steal_counters: Vec::new(),
+            loop_budget: None,
             payment: None,
             snapshot: None,
             last_scan_window: Vec::new(),
@@ -4419,6 +4426,38 @@ impl Vm {
         self.push_ability_frame_cost(kind, source, controller, instructions, instance, subroutine_index, None)
     }
 
+    /// CR 10.1.6a: has the resolution stack begun to REPEAT? An ability
+    /// frame's signature is the ability it resolves, and a loop is a suffix of
+    /// that sequence made of one block appearing twice — the same abilities
+    /// resolving each other, with nothing on the way out. Returns the length
+    /// of one turn of the loop.
+    ///
+    /// Only MANDATORY loops are detected here: an optional one (10.1.6b) has a
+    /// priority window in it, and a priority window is a frame of another kind,
+    /// so the ability-frame suffix never repeats.
+    fn loop_period(&self, next: AbilityRef) -> Option<usize> {
+        cite!("sec_infinite_loops");
+        let mut seq: Vec<AbilityRef> = self
+            .frames
+            .iter()
+            .filter_map(|f| match f {
+                Frame::Ability(af) => Some(af.source),
+                _ => None,
+            })
+            .collect();
+        seq.push(next);
+        for k in 1..=4usize {
+            if seq.len() < 2 * k {
+                break;
+            }
+            let n = seq.len();
+            if seq[n - k..] == seq[n - 2 * k..n - k] {
+                return Some(k);
+            }
+        }
+        None
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn push_ability_frame_cost(
         &mut self,
@@ -4430,6 +4469,32 @@ impl Vm {
         subroutine_index: Option<usize>,
         cost: Option<Cost>,
     ) {
+        // CR 10.1.6a: "if a mandatory infinite loop is created (a player
+        // cannot choose to stop resolving the loop) then the player who is
+        // resolving the loop chooses a number. The loop instantaneously
+        // resolves that many times, and then ends."
+        if let Some(period) = self.loop_period(source) {
+            cite!("rule_mandatory_infinite_loop");
+            match self.loop_budget {
+                None => {
+                    if self.pending_decision.is_none() {
+                        self.ask(
+                            controller,
+                            DecisionSpec::LoopCount { period },
+                            DecisionCtx::LoopCount,
+                        );
+                    }
+                }
+                Some(0) => {
+                    // The chosen number of iterations is spent: the loop ends,
+                    // so this turn of it is not resolved at all and the stack
+                    // unwinds normally.
+                    self.loop_budget = None;
+                    return;
+                }
+                Some(n) => self.loop_budget = Some(n - 1),
+            }
+        }
         let phase = match (kind, &cost) {
             // 9.5.7b: pay the trigger cost first (paid abilities).
             (_, Some(_)) => AbilityPhase::PayCost,
@@ -7503,6 +7568,10 @@ impl Vm {
                             let Some((key, def)) = subs.get(*n).cloned() else { continue };
                             let index =
                                 if key.category == 3 { key.ord as usize } else { usize::MAX };
+                            // 9.8.10: the subroutine resolves, wherever it was
+                            // named — so it is recorded like any other.
+                            self.changes
+                                .record(GameChange::SubroutineResolved { ice: t, index: *n });
                             self.push_ability_frame(
                                 ResolutionKind::Subroutine,
                                 AbilityRef { obj: t, index },
@@ -10953,6 +11022,11 @@ impl Vm {
                 }
                 // The breach step's Exec already advanced to Checkpoint;
                 // a paid access pushed its structure frame on top.
+            }
+            (DecisionCtx::LoopCount, DecisionAnswer::LoopCount(n)) => {
+                // 10.1.6a: the loop resolves that many more times, and ends.
+                cite!("rule_mandatory_infinite_loop");
+                self.loop_budget = Some(n);
             }
             (DecisionCtx::Arrange { to_top_of }, DecisionAnswer::Arrangement(order)) => {
                 // 8.3.3: the declared order is applied to the cards this

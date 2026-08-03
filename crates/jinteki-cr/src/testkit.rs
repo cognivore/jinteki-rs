@@ -5684,3 +5684,24 @@ pub fn miraju_like(name: &'static str) -> PrintedCard {
     );
     c
 }
+
+/// Wormhole shape (10.1.6a): a piece of ice with "[subroutine] Resolve a
+/// subroutine on another rezzed piece of ice." Two of them create a MANDATORY
+/// infinite loop — each one's subroutine resolves the other's, and no player
+/// has a choice anywhere in it.
+pub fn wormhole_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 1);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::ResolveAbilityOf {
+        source: TargetSpec::Choose {
+            count: Quantity::c(1),
+            criteria: vec![
+                crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+                crate::instr::TargetFilter::Rezzed,
+                crate::instr::TargetFilter::OtherThanSource,
+            ],
+        },
+        which: crate::ability::AbilityClass::Subroutine(0),
+    }])
+    .labeled("[sub] wormhole: resolve a subroutine on another rezzed ice")];
+    c
+}

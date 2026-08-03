@@ -91,6 +91,8 @@ pub enum Kind {
     Division,
     /// 8.3.1/8.3.3: declaring the order of an arrangement.
     Arrange,
+    /// 10.1.6a: choosing how many times a mandatory infinite loop resolves.
+    LoopCount,
 }
 
 impl Kind {
@@ -122,6 +124,7 @@ impl Kind {
             DecisionSpec::AlternatePayment { .. } => Kind::AlternatePayment,
             DecisionSpec::DivideCreditPayment { .. } => Kind::Division,
             DecisionSpec::ArrangeCards { .. } => Kind::Arrange,
+            DecisionSpec::LoopCount { .. } => Kind::LoopCount,
         }
     }
 }
@@ -370,6 +373,10 @@ impl Match {
     pub fn arrange() -> Match {
         Match::of(Kind::Arrange)
     }
+    /// 10.1.6a: how many times a mandatory infinite loop resolves.
+    pub fn loop_count() -> Match {
+        Match::of(Kind::LoopCount)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()
@@ -565,6 +572,8 @@ pub enum Reply {
     Division(Vec<u32>),
     /// 8.3.1: put the arranged cards back in this order, topmost first.
     Arrange(Vec<ObjectId>),
+    /// 10.1.6a: the loop resolves this many more times, then ends.
+    LoopCount(u32),
     Keep,
     Mulligan,
     /// Suspend the driver here, leaving the decision UNANSWERED so the test
@@ -1061,6 +1070,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::DeclareX(n) => DecisionAnswer::DeclaredX(*n),
         Reply::Division(v) => DecisionAnswer::Division(v.clone()),
         Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
+        Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
@@ -1157,6 +1167,8 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::DeclareX { max } => DecisionAnswer::DeclaredX(*max),
         // 1.16.2e: the neutral policy declines the alternate payment.
         DecisionSpec::AlternatePayment { .. } => DecisionAnswer::ResolveOptional(false),
+        // 10.1.6a: the neutral policy ends the loop at once.
+        DecisionSpec::LoopCount { .. } => DecisionAnswer::LoopCount(0),
         // 8.3.3: the neutral policy leaves an arrangement in the order the
         // cards already had — 8.3.1's "reposition them among their current
         // locations" with nothing repositioned.

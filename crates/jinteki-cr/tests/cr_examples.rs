@@ -43,6 +43,8 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 14f: 9.8.9 replaced subroutines, 6.1.3e/f "after".
     "example_rule_replace_subroutine_resolution_1",
     "example_rule_run_phase_after_1",
+    // Wave 14g: 10.1.6a mandatory infinite loops.
+    "example_rule_mandatory_infinite_loop_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -11997,4 +11999,64 @@ fn example_rule_run_phase_after_1() {
         t.tail(20)
     );
     assert!(!t.ever_offered("inversificator"));
+}
+
+// ===========================================================================
+// Wave 14g — 10.1.6a: mandatory infinite loops
+// ===========================================================================
+
+/// example_rule_mandatory_infinite_loop_1 (10.1.6a): the Runner runs into a
+/// rezzed Wormhole-class ice, and the only other rezzed ice is another one, so
+/// each of their subroutines resolves the other's and no player can choose to
+/// stop. "The Corp chooses how many times this loop occurs … and then the
+/// Runner continues the run."
+#[test]
+fn example_rule_mandatory_infinite_loop_1() {
+    let mut counts = Vec::new();
+    for chosen in [0u32, 1, 4] {
+        let mut vm = Vm::empty(1412);
+        let inner = tk::install_ice(&mut vm, tk::wormhole_like("Wormhole-A"), ServerId::Archives, true);
+        let outer = tk::install_ice(&mut vm, tk::wormhole_like("Wormhole-B"), ServerId::Archives, true);
+        vm.start_turn(Side::Runner);
+
+        // The plan: run Archives and break nothing. The Corp declares how many
+        // times the loop resolves.
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::loop_count(), Reply::LoopCount(chosen)),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .stop_at_action(),
+        );
+
+        // 10.1.6a: the choice is the Corp's — they are the one resolving the
+        // subroutines that make the loop.
+        let asked = t.of_kind(Kind::LoopCount);
+        assert!(!asked.is_empty(), "the loop was detected: {}", t.tail(10));
+        assert!(asked.iter().all(|e| e.side == Side::Corp));
+        assert!(matches!(
+            asked[0].spec,
+            DecisionSpec::LoopCount { period: 2 }
+        ), "one turn of the loop is the two abilities: {:?}", asked[0].spec);
+
+        // …and the run went on afterwards.
+        assert!(vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })));
+        assert!(vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })));
+        assert!(vm.current_run.is_none());
+
+        let resolved = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::SubroutineResolved { ice, .. }
+                if *ice == inner || *ice == outer))
+            .count();
+        counts.push(resolved);
+    }
+    // The number the Corp chooses is what decides how long the loop runs: one
+    // more TURN of the loop — its two abilities — per unit chosen, and
+    // nothing else differs. That the test terminates at all is the other half
+    // of 10.1.6a.
+    assert_eq!(counts[1], counts[0] + 2, "counts: {counts:?}");
+    assert_eq!(counts[2], counts[0] + 8, "counts: {counts:?}");
 }

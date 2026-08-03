@@ -116,6 +116,13 @@ pub enum DecisionSpec {
     /// what 8.3.3's "they do not declare which cards moved to which
     /// locations" means. The answer is the cards, first (topmost) first.
     ArrangeCards { cards: Vec<ObjectId> },
+    /// CR 10.1.6a: a MANDATORY infinite loop has been created — the same
+    /// abilities are resolving each other and no player can choose to stop.
+    /// "The player who is resolving the loop chooses a number. The loop
+    /// instantaneously resolves that many times, and then ends." `period` is
+    /// how many abilities make up one turn of the loop. Answer with
+    /// `LoopCount(n)`.
+    LoopCount { period: usize },
     /// CR 9.11.4f / 1.16.10-11: pay a (nested or additional) cost or decline.
     NestedCost { cost: crate::ability::Cost },
     /// Decline or resolve an optional part (9.6.9c).
@@ -190,6 +197,8 @@ pub enum DecisionAnswer {
     SubroutineOrder(Vec<usize>),
     /// CR 8.3.1: the declared order of an arrangement, first (topmost) first.
     Arrangement(Vec<ObjectId>),
+    /// CR 10.1.6a: how many more times the infinite loop resolves.
+    LoopCount(u32),
     /// CR 1.16.2c: the announced value of X.
     DeclaredX(u32),
     /// CR 1.10.3c: credits taken from each allowed location, in the order the
