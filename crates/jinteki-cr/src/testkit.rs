@@ -5171,3 +5171,31 @@ pub fn etr_unless_click_ice(name: &'static str) -> PrintedCard {
     .labeled("[sub] ETR unless the runner spends a click")];
     c
 }
+
+/// Project Vacheron shape (9.9.9c): an agenda whose interrupt ability creates
+/// a replacement effect overriding "add this agenda to your score area" with
+/// "add it to your score area with N hosted agenda counters". The Runner still
+/// steals it — the replacement's result still includes the effect it replaced
+/// — and the replacement cannot apply again to its own result.
+pub fn vacheron_like(name: &'static str, points: i32, counters: u32) -> PrintedCard {
+    let mut c = vanilla_agenda(name, 3, points);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::WouldStealSelfAgenda,
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Replacement {
+                applies_to: crate::effects::EffectClass::StealAgenda,
+                with: crate::lingering::ReplacementTransform::StealWithHostedCounters {
+                    kind: CounterKind::Agenda,
+                    amount: counters,
+                },
+                optional: false,
+            },
+            duration: crate::lingering::WantedDuration::ThisRun,
+        }],
+        false,
+    )
+    .with_flag(AbilityFlag::Interrupt)
+    .with_flag(AbilityFlag::Access)
+    .labeled("vacheron: stolen with hosted agenda counters")];
+    c
+}

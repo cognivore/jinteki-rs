@@ -350,6 +350,9 @@ pub struct Vm {
     /// CR 6.7.4c: the optional replacement effect whose apply-or-decline
     /// Decision is outstanding.
     pub pending_optional_replacement: Option<u64>,
+    /// CR 9.9.9c: counters a Project-Vacheron-class replacement said the
+    /// stolen agenda arrives in the score area WITH.
+    pub pending_steal_counters: Vec<(CounterKind, u32)>,
     /// CR 1.16: the payment in progress, if any (`Vm::begin_payment`).
     pub payment: Option<Payment>,
     /// Trace of resolutions for tests: labels of resolved ability frames.
@@ -559,6 +562,7 @@ impl Vm {
             once_per_turn_used: HashSet::new(),
             pending_sub_order: None,
             pending_optional_replacement: None,
+            pending_steal_counters: Vec::new(),
             payment: None,
             snapshot: None,
             last_scan_window: Vec::new(),
@@ -2859,6 +2863,14 @@ impl Vm {
         self.capture_scored_snapshot(card);
         self.move_card(card, Zone::ScoreArea(Side::Runner));
         self.st.objects.get_mut(&card).unwrap().faceup = true;
+        // 9.9.9c: a replacement may have said the agenda arrives in the score
+        // area WITH hosted counters (Project Vacheron class).
+        for (kind, amount) in std::mem::take(&mut self.pending_steal_counters) {
+            cite!("rule_replacement_effect_only_applies_once_per_effect");
+            let have = self.st.objects[&card].counter(kind);
+            self.st.objects.get_mut(&card).unwrap().counters.insert(kind, have + amount);
+            self.changes.record(GameChange::CounterPlaced { obj: card, kind, amount });
+        }
         self.changes.record(GameChange::AgendaStolen { obj: card, points });
     }
 
@@ -3370,6 +3382,20 @@ impl Vm {
             Instruction::StealSelfAgenda | Instruction::ScoreSelfAgenda => {
                 vec![EffectAtom::new(EffectClass::StealAgenda, 1, controller)]
             }
+            Instruction::StealIfAgenda => {
+                // 7.2.3 as an expected effect: adding the accessed agenda to
+                // the Runner's score area is what a Project-Vacheron-class
+                // replacement modifies (9.9.9c).
+                let is_agenda = self
+                    .access_card()
+                    .and_then(|c| self.st.objects.get(&c))
+                    .is_some_and(|o| o.printed.card_type == CardType::Agenda);
+                if is_agenda {
+                    vec![EffectAtom::new(EffectClass::StealAgenda, 1, Side::Runner)]
+                } else {
+                    vec![]
+                }
+            }
             Instruction::MandatoryDraw => {
                 if self.draw_prohibited(Side::Corp) {
                     vec![]
@@ -3625,6 +3651,12 @@ impl Vm {
                 atom.removed = true;
                 self.trash_card(t, Side::Runner);
             }
+            crate::lingering::ReplacementTransform::StealWithHostedCounters { kind, amount } => {
+                // 9.9.9c: the agenda still goes to the score area — what the
+                // replacement changes is that it arrives with counters on it.
+                cite!("rule_replacement_effect_only_applies_once_per_effect");
+                self.pending_steal_counters.push((kind, amount));
+            }
             crate::lingering::ReplacementTransform::SuppressAccessAndRemoveChosen => {
                 // 7.3.6: the access never happens, so it is never counted.
                 cite!("rule_number_of_accesses");
@@ -3866,6 +3898,13 @@ impl Vm {
                             && a.targets.contains(&source)
                     });
                 }
+                TriggerCond::WouldStealSelfAgenda => {
+                    cite!("rule_would_relevant");
+                    return self.st.accessed == Some(source)
+                        && atoms
+                            .iter()
+                            .any(|a| a.expected() && a.class == EffectClass::StealAgenda);
+                }
                 TriggerCond::WouldTakeTags { during_run } => {
                     let hit = atoms
                         .iter()
@@ -3950,6 +3989,19 @@ impl Vm {
                     if atoms.iter().any(|a| {
                         a.expected() && matches!(a.class, EffectClass::Damage(k) if k != *to)
                     }) {
+                        return true;
+                    }
+                }
+                // 9.9.8c: an interrupt that CREATES a replacement effect is
+                // relevant exactly when the effect it would replace is among
+                // the imminent instruction's expected effects (9.9.10 then
+                // applies it immediately).
+                Instruction::CreateLingeringEffect {
+                    payload: crate::instr::LingeringSpec::Replacement { applies_to, .. },
+                    ..
+                } => {
+                    cite!("rule_replacement_effect_relevant");
+                    if atoms.iter().any(|a| a.expected() && a.class == *applies_to) {
                         return true;
                     }
                 }
@@ -8199,7 +8251,28 @@ impl Vm {
         };
         if closed {
             let Some(Frame::Window(w)) = self.frames.pop() else { unreachable!() };
+            let was_interrupt = w.kind == WindowKind::Interrupt;
             self.drop_window_pendings(&w);
+            if was_interrupt {
+                // CR 9.11.2: a step is one instruction, preceded by an
+                // interrupt window — the instruction still has to RESOLVE
+                // when the window closes. Only a window opened AFTER the
+                // step (a checkpoint's reaction window) leaves nothing to do.
+                cite!("rule_step_in_timing_structure_is_instruction");
+                // CR 9.9.10: a replacement effect an interrupt CREATED is
+                // applied to the instruction that was imminent, which is the
+                // step's imminence now that the window has closed.
+                cite!("rule_replace_imminent_effects");
+                if self.resolve_replacements_or_ask() {
+                    return;
+                }
+                if matches!(
+                    self.frames.last(),
+                    Some(Frame::Structure(StructureFrame { phase: StepPhase::Exec, .. }))
+                ) {
+                    return;
+                }
+            }
             self.after_window_closed();
         }
     }

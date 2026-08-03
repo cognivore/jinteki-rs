@@ -914,18 +914,47 @@ fn step_fg_hosted_orphans(vm: &mut Vm) {
 
 /// CR 1.13.13 + 1.9.2: the counters hosted on a card that changed zones are
 /// no longer hosted on anything; they return to the bank.
+///
+/// The rule is about what the card was hosting WHEN it moved. Counters placed
+/// on it AFTER the move — a Project-Vacheron-class replacement adds an agenda
+/// to the score area WITH hosted counters (9.9.9c) — were never hosted on it
+/// in the zone it left, so they stay. The change log is the kernel's only
+/// record of that ordering, so it is what the sweep reads.
 fn bank_hosted_counters(vm: &mut Vm, card: ObjectId) {
+    let placed_after: Vec<(CounterKind, u32)> = {
+        let moved_at = vm.last_scan_window.iter().position(|(c, _)| {
+            matches!(c, GameChange::CardMoved { obj, .. } if *obj == card)
+        });
+        match moved_at {
+            Some(i) => vm.last_scan_window[i + 1..]
+                .iter()
+                .filter_map(|(c, _)| match c {
+                    GameChange::CounterPlaced { obj, kind, amount } if *obj == card => {
+                        Some((*kind, *amount))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            None => Vec::new(),
+        }
+    };
     let counters: Vec<(CounterKind, u32)> = vm.st.objects[&card]
         .counters
         .iter()
-        .map(|(k, n)| (*k, *n))
+        .map(|(k, n)| {
+            let after: u32 = placed_after.iter().filter(|(x, _)| x == k).map(|(_, a)| *a).sum();
+            (*k, n.saturating_sub(after))
+        })
         .filter(|(_, n)| *n > 0)
         .collect();
     if counters.is_empty() {
         return;
     }
     cite!("rule_bank");
-    vm.st.objects.get_mut(&card).unwrap().counters.clear();
+    for (kind, amount) in &counters {
+        let have = vm.st.objects[&card].counter(*kind);
+        vm.st.objects.get_mut(&card).unwrap().counters.insert(*kind, have.saturating_sub(*amount));
+    }
     for (kind, amount) in counters {
         vm.changes.record(crate::change::GameChange::CounterRemoved {
             obj: Some(card),

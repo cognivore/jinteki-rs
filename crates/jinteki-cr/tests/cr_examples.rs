@@ -25,6 +25,7 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 /// Example ids implemented as tests in this file (the DP-7a ledger).
 const IMPLEMENTED: &[&str] = &[
     "example_rule_alternate_payment_1",
+    "example_rule_replacement_effect_only_applies_once_per_effect_1",
     "example_rule_abilities_during_a_run_1",
     "example_rule_must_cannot_force_additional_cost_1",
     "example_rule_if_successful_tied_to_server_1",
@@ -10938,5 +10939,48 @@ fn example_rule_must_cannot_force_additional_cost_1() {
         second.actions().iter().any(|a| matches!(a, ActionOption::BasicCredit)),
         "9.12.3e: the 'must' is satisfied, so every action is available again: {:?}",
         second.actions()
+    );
+}
+
+/// example_rule_replacement_effect_only_applies_once_per_effect_1 (9.9.9c):
+/// the Runner accesses a Project-Vacheron-class agenda and its interrupt
+/// ability resolves, creating a replacement effect that overrides adding the
+/// agenda to the Runner's score area. The Runner still steals it — by adding
+/// it to their score area WITH hosted agenda counters — and even though the
+/// modified effect still includes adding the agenda to the score area, there
+/// is no way for the replacement to apply again to its own result.
+#[test]
+fn example_rule_replacement_effect_only_applies_once_per_effect_1() {
+    let mut vm = Vm::empty(1399);
+    let vach = vm.new_object(tk::vacheron_like("Vacheron-like", 3, 4), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(vach);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::interrupt(), Reply::take("vacheron")),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    assert!(t.took("vacheron"), "the interrupt ability resolved: {}", t.tail(12));
+    assert_eq!(
+        vm.st.objects[&vach].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the Runner still steals it — the replacement's result still includes \
+         adding the agenda to the score area"
+    );
+    assert_eq!(
+        vm.st.objects[&vach].counter(CounterKind::Agenda),
+        4,
+        "9.9.9c: …with hosted agenda counters, placed exactly ONCE — the \
+         replacement cannot apply again to its own result"
+    );
+    assert!(
+        !vm.lingering.iter().any(|l| matches!(
+            l.payload,
+            jinteki_cr::lingering::Payload::ReplacementEffect { .. }
+        )),
+        "the replacement was consumed by applying"
     );
 }

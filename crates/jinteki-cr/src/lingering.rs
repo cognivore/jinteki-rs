@@ -140,6 +140,13 @@ pub enum ReplacementTransform {
     /// keeps the atom in place; bottom-up candidate order arrives with the
     /// card layer.
     BreachFromBottom,
+    /// CR 9.9.9c: "instead, add it to your score area with N hosted counters"
+    /// (Project Vacheron class). The agenda IS still added to the score area
+    /// — the replacement's result still includes the effect it replaced — but
+    /// the replacement cannot apply to its own result, which is the whole of
+    /// the rule. The atom stays expected, so a DIFFERENT replacement could
+    /// still act on it (9.9.11a).
+    StealWithHostedCounters { kind: crate::object::CounterKind, amount: u32 },
     /// "Instead of accessing the chosen card, trash <target>" (Immolation
     /// Script class, 7.4.3): the access is suppressed and another card is
     /// trashed. The chosen candidate stays chosen (7.4.3: it ceases to be a

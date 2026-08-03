@@ -143,6 +143,10 @@ pub enum TriggerCond {
     /// Interrupt trigger: "…would do damage" (ordinal: Some(1) = "the first
     /// time each run you would…", Tori Hanzō class).
     WouldDamage { kind: Option<DamageKind>, first_each_run: bool },
+    /// CR 9.9.9c: interrupt trigger — "when the Runner would steal this
+    /// agenda" (Project Vacheron class). Met by the expected effect of the
+    /// access step that adds the agenda to the Runner's score area.
+    WouldStealSelfAgenda,
     /// Interrupt trigger: "…would take tags during a run" (Jesminder class:
     /// `during_run` requires a run to be in progress).
     WouldTakeTags { during_run: bool },
