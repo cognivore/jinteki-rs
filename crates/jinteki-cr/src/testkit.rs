@@ -1017,24 +1017,29 @@ pub fn brainstorm_like(name: &'static str) -> PrintedCard {
     c
 }
 
-/// Inject a breach-replacement lingering effect (Security Testing / Account
-/// Siphon / Showing Off class), turn-bound.
-pub fn inject_breach_replacement(
-    vm: &mut Vm,
-    source: ObjectId,
+/// Security-Testing / Account-Siphon / Showing-Off shape (9.9.8c): a card
+/// whose paid ability creates a turn-bound replacement effect on the Breach
+/// effect class — "the next time you would breach a server this turn,
+/// instead …". The transform is the parameter, so the whole class is one
+/// shape.
+pub fn breach_replacement_card(
+    name: &'static str,
+    label: &'static str,
     transform: crate::lingering::ReplacementTransform,
-) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::ReplacementEffect {
-            applies_to: crate::effects::EffectClass::Breach,
-            replace_with: transform,
-        },
-        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
-        applied_to: Vec::new(),
-    });
+) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Replacement {
+                applies_to: crate::effects::EffectClass::Breach,
+                with: transform,
+            },
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled(label)];
+    c
 }
 
 /// Grant an external subroutine to a piece of ice ahead of time (Marker
@@ -1694,76 +1699,88 @@ pub fn drt_like(name: &'static str) -> PrintedCard {
     c
 }
 
-/// Inject a Chum-class delayed conditional: "when this encounter ends, do 3
-/// net damage." (one-shot).
-pub fn inject_chum_delayed(vm: &mut Vm, source: ObjectId) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::DelayedConditional {
-            def: AbilityDef::conditional(
-                TriggerCond::EncounterEnds,
-                vec![Instruction::Damage {
-                    kind: DamageKind::Net,
-                    amount: Quantity::c(3),
-                    responsible: Side::Corp,
-                }],
-                false,
-            )
-            .labeled("chum-delayed: 3 net when encounter ends"),
-        },
-        duration: crate::lingering::Duration::UntilResolved,
-        applied_to: Vec::new(),
-    });
+/// Chum shape (9.6.13): a card whose paid ability arms the delayed
+/// conditional "when this encounter ends, do 3 net damage" — a lingering
+/// effect maintaining a conditional ability, one-shot (9.6.13c).
+pub fn chum_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateDelayedConditional {
+            def: Box::new(
+                AbilityDef::conditional(
+                    TriggerCond::EncounterEnds,
+                    vec![Instruction::Damage {
+                        kind: DamageKind::Net,
+                        amount: Quantity::c(3),
+                        responsible: Side::Corp,
+                    }],
+                    false,
+                )
+                .labeled("chum-delayed: 3 net when encounter ends"),
+            ),
+            duration: crate::lingering::WantedDuration::UntilResolved,
+        }],
+    )
+    .labeled("chum: arm the encounter-end damage")];
+    c
 }
 
-/// Inject a Noble-Path-class prevent-all-damage shield bound to the current
-/// run (6.8.5: expires at step 6.9.6d).
-pub fn inject_run_damage_shield(vm: &mut Vm, source: ObjectId) {
-    let run_id = vm.current_run.map(|(r, _, _)| r).expect("a run in progress");
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::DamagePreventionAll,
-        duration: crate::lingering::Duration::Run(run_id),
-        applied_to: Vec::new(),
-    });
+/// The-Noble-Path shape (6.8.5): a card whose paid ability creates the
+/// lingering effect "prevent all damage for the remainder of this run".
+/// Run-bound, so it expires at step 6.9.6d — which is exactly when
+/// run-ends damage resolves (9.10.4 binds the duration to the run instance
+/// in progress; used outside a run it expires at the next checkpoint).
+pub fn noble_path_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::PreventAllDamage,
+            duration: crate::lingering::WantedDuration::ThisRun,
+        }],
+    )
+    .labeled("noble-path: prevent all damage this run")];
+    c
 }
 
 // ---------------------------------------------------------------------------
 // W3e shapes: candidates (7.4.3, 7.4.7a)
 // ---------------------------------------------------------------------------
 
-/// Inject an Immolation-Script-class access replacement: "instead of
-/// accessing the chosen card, trash <victim>" (turn-bound).
-pub fn inject_access_replacement(vm: &mut Vm, source: ObjectId, victim: ObjectId) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source,
-        payload: crate::lingering::Payload::ReplacementEffect {
-            applies_to: crate::effects::EffectClass::AccessCard,
-            replace_with: crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(
-                victim,
-            ),
-        },
-        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
-        applied_to: Vec::new(),
-    });
+/// Immolation-Script shape (7.4.3): a card whose paid ability creates the
+/// turn-bound replacement "instead of accessing the chosen card, trash
+/// <victim>". The chosen candidate stays chosen whether or not it was
+/// actually accessed.
+pub fn access_replacement_card(name: &'static str, victim: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Replacement {
+                applies_to: crate::effects::EffectClass::AccessCard,
+                with: crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(victim),
+            },
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled("immolation: trash instead of accessing")];
+    c
 }
 
-/// Inject a Maker's-Eye-class additional-access effect (turn-bound).
-pub fn inject_additional_access(vm: &mut Vm, server: ServerId, extra: u32) {
-    let id = vm.next_lingering_id();
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source: ObjectId(0),
-        payload: crate::lingering::Payload::AdditionalAccess { server, extra },
-        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
-        applied_to: Vec::new(),
-    });
+/// The-Maker's-Eye shape (7.3.6): a card whose paid ability creates the
+/// turn-bound "access N additional cards from <server>" lingering effect.
+pub fn additional_access_card(name: &'static str, server: ServerId, extra: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::AdditionalAccess { server, extra },
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled("makers-eye: access more cards")];
+    c
 }
 
 /// Gagarin shape: an additional 1[c] cost to access cards in remote roots.
@@ -1958,3 +1975,97 @@ pub fn take_labeled(vm: &mut Vm, side: Side, needle: &str, budget: usize) {
     }
     panic!("option labeled {needle:?} never offered to {side:?}");
 }
+
+// ---------------------------------------------------------------------------
+// RETIRING (§12 rule 5): state-manufacture injections, kept only until their
+// last call site is migrated to a real card in this same sub-wave.
+// ---------------------------------------------------------------------------
+
+/// Inject a breach-replacement lingering effect (Security Testing / Account
+/// Siphon / Showing Off class), turn-bound.
+pub fn inject_breach_replacement(
+    vm: &mut Vm,
+    source: ObjectId,
+    transform: crate::lingering::ReplacementTransform,
+) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::ReplacementEffect {
+            applies_to: crate::effects::EffectClass::Breach,
+            replace_with: transform,
+        },
+        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
+        applied_to: Vec::new(),
+    });
+}
+
+/// Inject a Chum-class delayed conditional: "when this encounter ends, do 3
+/// net damage." (one-shot).
+pub fn inject_chum_delayed(vm: &mut Vm, source: ObjectId) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::DelayedConditional {
+            def: AbilityDef::conditional(
+                TriggerCond::EncounterEnds,
+                vec![Instruction::Damage {
+                    kind: DamageKind::Net,
+                    amount: Quantity::c(3),
+                    responsible: Side::Corp,
+                }],
+                false,
+            )
+            .labeled("chum-delayed: 3 net when encounter ends"),
+        },
+        duration: crate::lingering::Duration::UntilResolved,
+        applied_to: Vec::new(),
+    });
+}
+
+/// Inject a Noble-Path-class prevent-all-damage shield bound to the current
+/// run (6.8.5: expires at step 6.9.6d).
+pub fn inject_run_damage_shield(vm: &mut Vm, source: ObjectId) {
+    let run_id = vm.current_run.map(|(r, _, _)| r).expect("a run in progress");
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::DamagePreventionAll,
+        duration: crate::lingering::Duration::Run(run_id),
+        applied_to: Vec::new(),
+    });
+}
+
+/// Inject an Immolation-Script-class access replacement: "instead of
+/// accessing the chosen card, trash <victim>" (turn-bound).
+pub fn inject_access_replacement(vm: &mut Vm, source: ObjectId, victim: ObjectId) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source,
+        payload: crate::lingering::Payload::ReplacementEffect {
+            applies_to: crate::effects::EffectClass::AccessCard,
+            replace_with: crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(
+                victim,
+            ),
+        },
+        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
+        applied_to: Vec::new(),
+    });
+}
+
+/// Inject a Maker's-Eye-class additional-access effect (turn-bound).
+pub fn inject_additional_access(vm: &mut Vm, server: ServerId, extra: u32) {
+    let id = vm.next_lingering_id();
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source: ObjectId(0),
+        payload: crate::lingering::Payload::AdditionalAccess { server, extra },
+        duration: crate::lingering::Duration::Turn(vm.st.turn_seq),
+        applied_to: Vec::new(),
+    });
+}
+

@@ -2042,6 +2042,7 @@ impl Vm {
             | Instruction::CorpDiscards { .. }
             | Instruction::RestrictAccessToSelf
             | Instruction::CreateDelayedConditional { .. }
+            | Instruction::CreateLingeringEffect { .. }
             | Instruction::ReduceRunnerMemoryThisTurn(_)
             | Instruction::ChooseOne { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
@@ -3795,6 +3796,45 @@ impl Vm {
                         applied_to: Vec::new(),
                     });
                 }
+            }
+            Instruction::CreateLingeringEffect { payload, duration } => {
+                // 9.10.1: the effect is created with its source and duration
+                // and then exists independently of that source; 9.10.4 binds
+                // the requested duration to the structure instance in
+                // progress (none in progress → expires at the next
+                // checkpoint).
+                cite!("rule_instruction_lingering_effect");
+                cite!("rule_lingering_effect");
+                let dur = crate::lingering::bind_duration(
+                    *duration,
+                    self.st.encounter.as_ref().map(|e| e.id),
+                    self.current_run.map(|(r, _, _)| r),
+                    self.st.turn_seq,
+                );
+                let payload = match payload {
+                    crate::instr::LingeringSpec::PreventAllDamage => Payload::DamagePreventionAll,
+                    crate::instr::LingeringSpec::Replacement { applies_to, with } => {
+                        // 9.9.8c: a replacement effect can be created ahead
+                        // of the effect it replaces.
+                        cite!("rule_replacement_effect_from_lingering_effect");
+                        Payload::ReplacementEffect {
+                            applies_to: *applies_to,
+                            replace_with: with.clone(),
+                        }
+                    }
+                    crate::instr::LingeringSpec::AdditionalAccess { server, extra } => {
+                        Payload::AdditionalAccess { server: *server, extra: *extra }
+                    }
+                };
+                let id = self.next_lingering;
+                self.next_lingering += 1;
+                self.lingering.push(LingeringEffect {
+                    id,
+                    source: source.obj,
+                    payload,
+                    duration: dur,
+                    applied_to: Vec::new(),
+                });
             }
             Instruction::ReduceRunnerMemoryThisTurn(n) => {
                 cite!("rule_memory_limit");

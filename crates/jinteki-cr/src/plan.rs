@@ -208,6 +208,13 @@ impl Pick {
 // ---------------------------------------------------------------------------
 
 /// How often a rule applies once its shape matches.
+///
+/// The count is PER RULE and only advances on decisions the driver actually
+/// evaluates this rule against: rules are tried in order and the first
+/// applicable one answers, so a decision claimed by an earlier rule never
+/// reaches — and never counts towards — a later one. "The second action
+/// window" therefore means `nth(2)` only when no earlier rule consumed an
+/// action window; where one did, the later rule wants `once()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Ordinal {
     /// Every matching decision.
@@ -416,6 +423,14 @@ pub fn window_options(spec: &DecisionSpec) -> &[WindowOption] {
     }
 }
 
+/// The labelled options of a 9.11.4g optioned-effect decision.
+pub fn choices(spec: &DecisionSpec) -> &[&'static str] {
+    match spec {
+        DecisionSpec::ChooseOption { options } => options,
+        _ => &[],
+    }
+}
+
 /// The options of an action-window decision (empty for the rest).
 pub fn action_options(spec: &DecisionSpec) -> &[ActionOption] {
     match spec {
@@ -444,6 +459,9 @@ pub enum Reply {
     Targets(Vec<ObjectId>),
     /// 9.11.4g: choose the nth option.
     Choose(usize),
+    /// 9.11.4g / 9.9.11: choose the option whose label contains this needle
+    /// (option lists are labelled, e.g. the replacement-ordering Decision).
+    ChooseNamed(&'static str),
     /// 1.16.10-11: pay (true) or decline (false).
     PayCost(bool),
     /// 9.6.9c: resolve (true) or decline (false) an optional part; also
@@ -589,6 +607,10 @@ impl Entry {
     }
     pub fn actions(&self) -> &[ActionOption] {
         action_options(&self.spec)
+    }
+    /// The labelled options of a 9.11.4g optioned-effect decision.
+    pub fn choices(&self) -> &[&'static str] {
+        choices(&self.spec)
     }
     /// The objects put to the player at a target/candidate choice.
     pub fn candidates(&self) -> &[ObjectId] {
@@ -874,6 +896,14 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::Default => default_answer(spec),
         Reply::Targets(t) => DecisionAnswer::Targets(t.clone()),
         Reply::Choose(i) => DecisionAnswer::Option(*i),
+        Reply::ChooseNamed(n) => {
+            let opts = choices(spec);
+            DecisionAnswer::Option(
+                opts.iter()
+                    .position(|l| l.contains(n))
+                    .unwrap_or_else(|| panic!("plan wanted option {n:?}; offered: {opts:?}")),
+            )
+        }
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
         Reply::Candidate(o) => DecisionAnswer::Candidate(*o),

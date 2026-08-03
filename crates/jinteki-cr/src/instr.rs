@@ -164,6 +164,17 @@ pub enum Instruction {
         def: Box<crate::ability::AbilityDef>,
         duration: crate::lingering::WantedDuration,
     },
+    /// Create a lingering effect (§9.10) with a stated duration: "prevent
+    /// all damage for the remainder of this run", "the next time you would
+    /// breach, instead …", "access N additional cards". The INSTRUCTION is
+    /// the position; [`LingeringSpec`] is the content, so the whole class is
+    /// expressible without a bespoke instruction per card (§12 rule 2). The
+    /// requested duration is bound to the structure instance in progress at
+    /// resolution (9.10.4).
+    CreateLingeringEffect {
+        payload: LingeringSpec,
+        duration: crate::lingering::WantedDuration,
+    },
     /// "The Runner loses N memory units until end of turn." (Bad Times.)
     ReduceRunnerMemoryThisTurn(u32),
     /// CR 9.11.4g / 9.12.3c-d: choose one of several optioned effects; the
@@ -334,6 +345,28 @@ pub enum Instruction {
     StealIfAgenda,
     /// `step_access_complete` (7.2.4).
     AccessComplete,
+}
+
+/// What a card's text asks a lingering effect to DO (§9.10 payload classes),
+/// as data. Paired with a [`crate::lingering::WantedDuration`] by
+/// [`Instruction::CreateLingeringEffect`]; the effect's source is the
+/// resolving ability's source object (9.10.1: the effect then exists
+/// independently of it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LingeringSpec {
+    /// "Prevent all damage." for the duration (The Noble Path class; 6.8.5 —
+    /// a run-bound shield expires at step 6.9.6d).
+    PreventAllDamage,
+    /// CR 9.9.8c: a replacement effect created ahead of time — "instead of
+    /// <the effect class>, <transform>" (Security Testing / Account Siphon /
+    /// Showing Off / Immolation Script classes).
+    Replacement {
+        applies_to: crate::effects::EffectClass,
+        with: crate::lingering::ReplacementTransform,
+    },
+    /// "Access N additional cards from <server>." (The Maker's Eye class;
+    /// added to the 7.3.6 access limit at breach step 7.5.3.)
+    AdditionalAccess { server: ServerId, extra: u32 },
 }
 
 /// Targets, either fixed at card-compile time or chosen at announce time

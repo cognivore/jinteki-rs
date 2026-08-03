@@ -6,18 +6,27 @@
 //! vanilla "End the run" subroutine ends the run, and an ice-free run
 //! reaching Success → breach (11.5) → access (11.6, mid-access window,
 //! agenda steal) → Run Ends with the bad-publicity fund emptying.
+//!
+//! The script is DATA (ARCHITECTURE §12 rule 5): one plan per player per
+//! narrative phase, folded by the shared driver. Each phase's plans end in
+//! `forbidding_the_rest()`, which is this test's central claim — the machine
+//! asks for these decisions and *no others*.
 
 use jinteki_cr::change::GameChange;
-use jinteki_cr::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption, Yield};
+use jinteki_cr::decision::{ActionOption, DecisionSpec, WindowOption, Yield};
 use jinteki_cr::object::{CounterKind, ServerId, Side, Zone};
+use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply, Script};
 use jinteki_cr::testkit as tk;
 use jinteki_cr::vm::{GameSetup, Vm};
 
-fn decision(vm: &mut Vm) -> (Side, DecisionSpec) {
-    match vm.step() {
-        Yield::Decision(s, d) => (s, d),
-        other => panic!("expected decision, got {other:?}"),
-    }
+/// Close a phase plan: after its own rules, pass every remaining priority
+/// window and jack in — and fail on any decision the phase did not
+/// anticipate. That last clause is this test's central claim.
+fn quiet(p: Plan) -> Plan {
+    p.when(Match::paid(), Reply::Pass)
+        .when(Match::mid_access(), Reply::Pass)
+        .when(Match::jack_out(), Reply::JackOut(false))
+        .forbidding_the_rest()
 }
 
 #[test]
@@ -61,23 +70,33 @@ fn full_game_slice() {
     vm.st.corp.bad_publicity = 2;
 
     // ---- Setup: mulligan offers (1.6.6a), Corp first ----
-    let (side, spec) = decision(&mut vm);
-    assert_eq!((side, &spec), (Side::Corp, &DecisionSpec::Mulligan));
+    // The Corp keeps, the Runner mulligans; the driver stops at the Corp's
+    // first paid window, which is still before the mandatory draw.
+    let mut g = Script::new(
+        quiet(
+            Plan::corp()
+                .when(Match::mulligan(), Reply::Keep)
+                .when(Match::paid().once(), Reply::Halt),
+        ),
+        quiet(Plan::runner().when(Match::mulligan(), Reply::Mulligan)),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        g.transcript().of_kind(Kind::Mulligan).iter().map(|e| e.side).collect::<Vec<_>>(),
+        vec![Side::Corp, Side::Runner],
+        "1.6.6a: both players are offered a mulligan, the Corp first"
+    );
     assert_eq!(vm.st.hand[&Side::Corp].len(), 5, "1.6.6: starting hand of 5");
-    vm.answer(DecisionAnswer::KeepHand);
-    let (side, spec) = decision(&mut vm);
-    assert_eq!((side, &spec), (Side::Runner, &DecisionSpec::Mulligan));
+    // The Runner mulliganed: the new hand is still 5 cards.
     assert_eq!(vm.st.hand[&Side::Runner].len(), 5);
-    // Runner mulligans: new hand is still 5 cards.
-    vm.answer(DecisionAnswer::TakeMulligan);
 
     // ---- Corp turn ----
-    // First decision of the turn: the draw-phase PAW with (P)(R)(S) classes
-    // (the Corp has a rez option, so the window yields a decision).
-    let (side, spec) = decision(&mut vm);
-    assert_eq!(side, Side::Corp);
-    let DecisionSpec::PaidWindow { classes, options } = &spec else {
-        panic!("expected the 5.6.1b PAW, got {spec:?}");
+    // The first decision of the turn is the draw-phase PAW with (P)(R)(S)
+    // classes (the Corp has a rez option, so the window yields a decision).
+    let paw = g.transcript().last().expect("halted at the 5.6.1b PAW");
+    assert_eq!(paw.side, Side::Corp);
+    let DecisionSpec::PaidWindow { classes, options } = &paw.spec else {
+        panic!("expected the 5.6.1b PAW, got {:?}", paw.spec);
     };
     assert!(classes.paid && classes.rez && classes.score, "(P)(R)(S) classes");
     assert!(
@@ -85,84 +104,58 @@ fn full_game_slice() {
         "unrezzed asset offers an (R) option"
     );
     assert_eq!(vm.st.corp.clicks, 3, "1.11.2a: Corp allotted 3 clicks");
-    vm.answer(DecisionAnswer::Pass);
 
-    // Mandatory draw happened before the action-phase PAW gives a decision.
-    let hand_before_actions = loop {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { .. } => {
-                assert_eq!(s, Side::Corp);
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::TakeAction { options } => {
-                assert!(options.contains(&ActionOption::BasicCredit));
-                assert!(options.contains(&ActionOption::BasicDraw));
-                break vm.st.hand[&Side::Corp].len();
-            }
-            other => panic!("unexpected {other:?}"),
-        }
-    };
-    assert_eq!(hand_before_actions, 6, "5.6.1e: mandatory draw");
+    // The mandatory draw happens before the action-phase PAW yields.
+    let mut g = Script::new(
+        quiet(Plan::corp().when(Match::action().once(), Reply::Halt)),
+        quiet(Plan::runner()),
+    );
+    g.run(&mut vm);
+    let first_action = g.transcript().last().expect("halted at the Corp action window");
+    assert!(first_action.actions().contains(&ActionOption::BasicCredit));
+    assert!(first_action.actions().contains(&ActionOption::BasicDraw));
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 6, "5.6.1e: mandatory draw");
 
-    // Three actions: credit, credit, credit (5 → 8 credits).
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicCredit));
-    for _ in 0..2 {
-        loop {
-            let (s, spec) = decision(&mut vm);
-            match &spec {
-                DecisionSpec::PaidWindow { .. } => {
-                    let _ = s;
-                    vm.answer(DecisionAnswer::Pass);
-                }
-                DecisionSpec::TakeAction { .. } => {
-                    vm.answer(DecisionAnswer::Action(ActionOption::BasicCredit));
-                    break;
-                }
-                other => panic!("unexpected {other:?}"),
-            }
-        }
-    }
-
-    // Discard phase: hand is 6 > 5, so exactly one discard is demanded.
-    let discarded = loop {
-        let (s, spec) = decision(&mut vm);
-        match spec {
-            DecisionSpec::PaidWindow { .. } => {
-                let _ = s;
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::DiscardCards { count, hand } => {
-                assert_eq!(s, Side::Corp);
-                assert_eq!(count, 1, "5.5.4c: discard down to max hand size");
-                let pick = hand[0];
-                vm.answer(DecisionAnswer::Discard(vec![pick]));
-                break pick;
-            }
-            other => panic!("unexpected {other:?}"),
-        }
-    };
+    // Three actions: credit, credit, credit (5 → 8 credits), then the
+    // discard phase demands exactly one discard (hand is 6 > 5).
+    let mut g = Script::new(
+        quiet(
+            Plan::corp()
+                .when(Match::action().times(3), Reply::credit())
+                .when(Match::discard().once(), Reply::Halt)
+                .when(Match::discard(), Reply::Default),
+        ),
+        quiet(Plan::runner()),
+    );
+    g.run(&mut vm);
+    let disc = g.transcript().last().expect("halted at the discard decision");
+    assert_eq!(disc.side, Side::Corp);
+    assert_eq!(
+        match &disc.spec {
+            DecisionSpec::DiscardCards { count, .. } => *count,
+            other => panic!("expected the discard decision, got {other:?}"),
+        },
+        1,
+        "5.5.4c: discard down to max hand size"
+    );
+    let discarded = disc.candidates()[0];
     assert_eq!(vm.st.corp.credits, 8);
 
     // ---- Runner turn ----
-    // Drive to the Runner's first action window.
-    loop {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { .. } => {
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::TakeAction { options } => {
-                assert_eq!(s, Side::Runner);
-                assert_eq!(vm.st.runner.clicks, 4, "1.11.2b: Runner allotted 4");
-                assert!(options
-                    .iter()
-                    .any(|o| matches!(o, ActionOption::BasicRun { server: ServerId::Hq })));
-                break;
-            }
-            other => panic!("unexpected {other:?}"),
-        }
-    }
+    // The neutral discard answer takes the first card of the hand, which is
+    // the one the assertion above named.
+    let mut g = Script::new(
+        quiet(Plan::corp().when(Match::discard(), Reply::Default)),
+        quiet(Plan::runner().when(Match::action().once(), Reply::Halt)),
+    );
+    g.run(&mut vm);
+    let runner_action = g.transcript().last().expect("halted at the Runner action window");
+    assert_eq!(runner_action.side, Side::Runner);
+    assert_eq!(vm.st.runner.clicks, 4, "1.11.2b: Runner allotted 4");
+    assert!(runner_action
+        .actions()
+        .iter()
+        .any(|o| matches!(o, ActionOption::BasicRun { server: ServerId::Hq })));
     assert_eq!(
         vm.st.objects[&discarded].zone,
         Zone::Discard(Side::Corp),
@@ -170,39 +163,29 @@ fn full_game_slice() {
     );
 
     // === Run 1: HQ, ice stays unrezzed → pass path, breach HQ ===
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
-    let mut saw_approach_rez_offer = false;
-    let mut saw_jack_out = false;
-    loop {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { classes, options } => {
-                if classes.rez_approached_ice {
-                    assert_eq!(s, Side::Corp);
-                    assert!(
-                        options
-                            .iter()
-                            .any(|o| matches!(o, WindowOption::RezApproachedIce { card } if *card == ice)),
-                        "9.2.7e: the approached ice can be rezzed here"
-                    );
-                    saw_approach_rez_offer = true;
-                    assert_eq!(vm.st.bp_fund, 2, "6.9.1b: bad publicity fund filled");
-                }
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::JackOut => {
-                saw_jack_out = true;
-                vm.answer(DecisionAnswer::JackOut(false));
-            }
-            DecisionSpec::MidAccessWindow { .. } => {
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::TakeAction { .. } => break, // run over, next action
-            other => panic!("unexpected {other:?}"),
-        }
-    }
-    assert!(saw_approach_rez_offer);
-    assert!(saw_jack_out, "6.9.4c: jack out offered in the Movement Phase");
+    // Halt inside the approach-ice paid window to read the fund and the
+    // 9.2.7e option, then let the run play out to the next action window.
+    let mut g = Script::new(
+        quiet(Plan::corp().when(Match::paid().approaching_ice().once(), Reply::Halt)),
+        quiet(Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action()),
+    );
+    g.run(&mut vm);
+    let approach = g.transcript().last().expect("halted in the approach-ice PAW");
+    assert_eq!(approach.side, Side::Corp);
+    assert!(
+        approach
+            .options()
+            .iter()
+            .any(|o| matches!(o, WindowOption::RezApproachedIce { card } if *card == ice)),
+        "9.2.7e: the approached ice can be rezzed here"
+    );
+    assert_eq!(vm.st.bp_fund, 2, "6.9.1b: bad publicity fund filled");
+    g.run(&mut vm);
+    let t = g.transcript();
+    assert!(
+        !t.of_kind(Kind::JackOut).is_empty(),
+        "6.9.4c: jack out offered in the Movement Phase"
+    );
     let hq_accesses = vm
         .changes
         .log
@@ -224,35 +207,14 @@ fn full_game_slice() {
         .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: ServerId::Hq })));
 
     // === Run 2: HQ again, Corp rezzes → encounter, subroutine ends the run ===
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
     let corp_credits_before = vm.st.corp.credits;
-    loop {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { classes, options } => {
-                if classes.rez_approached_ice && s == Side::Corp {
-                    let rez = options
-                        .iter()
-                        .find(|o| matches!(o, WindowOption::RezApproachedIce { .. }))
-                        .cloned();
-                    if let Some(r) = rez {
-                        vm.answer(DecisionAnswer::Take(r));
-                        continue;
-                    }
-                }
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::JackOut => vm.answer(DecisionAnswer::JackOut(false)),
-            DecisionSpec::TakeAction { .. } => break,
-            other => panic!("unexpected {other:?}"),
-        }
-    }
-    assert!(vm.st.objects[&ice].faceup, "ice rezzed");
-    assert_eq!(
-        vm.st.corp.credits,
-        corp_credits_before - 2,
-        "8.1.2e: rez cost paid"
+    let mut g = Script::new(
+        quiet(Plan::corp().when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce))),
+        quiet(Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action()),
     );
+    g.run(&mut vm);
+    assert!(vm.st.objects[&ice].faceup, "ice rezzed");
+    assert_eq!(vm.st.corp.credits, corp_credits_before - 2, "8.1.2e: rez cost paid");
     assert!(
         vm.changes.log.iter().any(
             |c| matches!(c, GameChange::SubroutineResolved { ice: i, index: 0 } if *i == ice)
@@ -277,22 +239,17 @@ fn full_game_slice() {
     );
 
     // === Run 3: the remote with the agenda → Success → breach → steal ===
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
-        server: ServerId::Remote(1),
-    }));
-    loop {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { .. } => {
-                let _ = s;
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::JackOut => vm.answer(DecisionAnswer::JackOut(false)),
-            DecisionSpec::MidAccessWindow { .. } => vm.answer(DecisionAnswer::Pass),
-            DecisionSpec::TakeAction { .. } => break,
-            other => panic!("unexpected {other:?}"),
-        }
-    }
+    // Then the last click takes a credit and the Runner turn completes
+    // cleanly into the next Corp turn (≤5 cards, so no discard is demanded).
+    let mut g = Script::new(
+        quiet(Plan::corp().when(Match::action().once(), Reply::Halt)),
+        quiet(
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                .when(Match::action(), Reply::credit()),
+        ),
+    );
+    g.run(&mut vm);
     assert_eq!(
         vm.st.objects[&agenda].zone,
         Zone::ScoreArea(Side::Runner),
@@ -303,23 +260,10 @@ fn full_game_slice() {
         .log
         .iter()
         .any(|c| matches!(c, GameChange::AgendaStolen { obj, points: 2 } if *obj == agenda)));
-
-    // Last click: take a credit; then the Runner turn completes cleanly into
-    // the next Corp turn (the discard step demands nothing at ≤5 cards).
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicCredit));
-    loop {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { .. } => vm.answer(DecisionAnswer::Pass),
-            DecisionSpec::TakeAction { .. } => {
-                // Next Corp turn reached: the Runner turn completed.
-                assert_eq!(s, Side::Corp);
-                assert_eq!(vm.st.turn_side, Side::Corp);
-                break;
-            }
-            other => panic!("unexpected {other:?}"),
-        }
-    }
+    // Next Corp turn reached: the Runner turn completed.
+    let next = g.transcript().last().expect("halted at the next Corp action window");
+    assert_eq!(next.side, Side::Corp);
+    assert_eq!(vm.st.turn_side, Side::Corp);
 
     // Structural sanity: turn changes recorded in order.
     let turn_begins: Vec<Side> = vm
@@ -360,27 +304,27 @@ fn seven_point_win_at_checkpoint() {
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
 
-    // Corp turn: in the first (P)(R)(S) window, score the agenda.
-    let r = loop {
-        match vm.step() {
-            Yield::Decision(side, DecisionSpec::PaidWindow { classes, options }) => {
-                assert_eq!(side, Side::Corp);
-                assert!(classes.score);
-                let score_opt = options
-                    .iter()
-                    .find(|o| matches!(o, WindowOption::Score { card } if *card == ready))
-                    .cloned()
-                    .expect("scorable agenda offered (1.17/9.2.7d)");
-                vm.answer(DecisionAnswer::Take(score_opt));
-            }
-            Yield::Decision(_, other) => panic!("unexpected {other:?}"),
-            Yield::Progressed => continue,
-            Yield::GameOver(r) => break r,
-        }
-    };
+    // Corp turn: score the agenda in the first paid window that offers it.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid(), Reply::score(ready)).forbidding_the_rest(),
+        Plan::runner().forbidding_the_rest(),
+    );
+    let scoring = t.first_window(Kind::Paid, Side::Corp);
+    assert!(
+        matches!(&scoring.spec, DecisionSpec::PaidWindow { classes, .. } if classes.score),
+        "the (S) class is open in the Corp's paid window"
+    );
+    assert!(
+        scoring
+            .options()
+            .iter()
+            .any(|o| matches!(o, WindowOption::Score { card } if *card == ready)),
+        "scorable agenda offered (1.17/9.2.7d)"
+    );
     assert_eq!(
-        r,
-        jinteki_cr::decision::GameResult::AgendaPoints(Side::Corp),
+        t.result,
+        Some(jinteki_cr::decision::GameResult::AgendaPoints(Side::Corp)),
         "10.3.1c: 7 points wins at the checkpoint"
     );
 }
