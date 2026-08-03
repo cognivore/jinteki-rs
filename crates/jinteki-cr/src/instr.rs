@@ -129,6 +129,29 @@ pub enum Instruction {
     /// POSITION, so "access the card you chose from the top of R&D" (Top Hat
     /// class) and "access this card" are the same instruction.
     AccessCards { cards: TargetSpec },
+    /// CR 9.6.14d: "Resolve the <class> ability of <a card>." — an effect
+    /// that attempts to resolve an ability of a card by naming its class
+    /// rather than by the stipulation occurring. For the three conditional
+    /// classes of 9.6.14 the ability is marked PENDING as though the
+    /// stipulation had occurred, so it resolves through the ordinary
+    /// reaction window; any additional requirements of its trigger condition
+    /// must still be met by the game state, and an unmet requirement means
+    /// the ability cannot even become pending. For
+    /// [`crate::ability::AbilityClass::Subroutine`] the named subroutine
+    /// resolves directly (9.8.10), since a subroutine is not a conditional
+    /// ability and never pends.
+    ///
+    /// The card is a target POSITION and the class is the content (§12 rule
+    /// 2), so a 24/7-News-Cycle-class "resolve the 'when scored' ability of
+    /// an agenda in your score area" and a Nanisivik-Grid-class "resolve its
+    /// first subroutine" are one instruction.
+    ResolveAbilityOf { source: TargetSpec, which: crate::ability::AbilityClass },
+    /// CR 8.1.2: "Rez <a card>." — an unrezzed card is turned faceup, which
+    /// makes it active (9.1.7). 8.1.2b: card abilities can direct or allow
+    /// the Corp to rez cards outside the paid ability windows of 8.1.2a;
+    /// 8.1.2d: the rez cost is paid first unless the ability states that it
+    /// is ignored (1.16.5c), which is what `ignore_costs` says.
+    RezCard { target: TargetSpec, ignore_costs: bool },
     /// "Derez <targets>." (§8.1.2) — a rezzed card is turned facedown.
     /// CR 1.12.5: turning a card faceup or facedown does not make it a new
     /// object, since it does not change zones.

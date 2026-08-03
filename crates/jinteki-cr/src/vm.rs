@@ -277,6 +277,12 @@ pub struct Vm {
     /// 10.3.1j: mid-breach root entries awaiting the Runner's candidacy
     /// declaration.
     pub pending_candidacy: Vec<ObjectId>,
+    /// CR 9.6.14d: instances marked pending by an EFFECT rather than by a
+    /// stipulation occurring. They are ordinary pendings — they just are not
+    /// discovered by the checkpoint's step (a) scan, so the next checkpoint
+    /// drains them into its newly-pending set and 10.3.2 opens the reaction
+    /// window that offers them.
+    pub pending_from_effect: Vec<u64>,
     /// Sealed first bid of an in-progress Psi Game (10.14.6).
     psi_first_bid: Option<u32>,
     pub pending_decision: Option<(Side, DecisionSpec, DecisionCtx)>,
@@ -437,6 +443,7 @@ impl Vm {
             installs: Vec::new(),
             plays: Vec::new(),
             pending_candidacy: Vec::new(),
+            pending_from_effect: Vec::new(),
             psi_first_bid: None,
             pending_decision: None,
             answer: None,
@@ -1608,6 +1615,86 @@ impl Vm {
         }
     }
 
+    /// CR 9.6.5c: do the additional requirements listed inside a trigger
+    /// condition hold right now? They are part of the CONDITION, so they gate
+    /// the pending instance being created at all — both when the stipulation
+    /// really occurs and when 9.6.14d resolves the ability by class.
+    pub fn trigger_requirements_met(&self, cond: &crate::ability::TriggerCond) -> bool {
+        cite!("rule_condition_requirements_part_of_condition");
+        crate::ability::trigger_requirements(cond).iter().all(|r| match r {
+            crate::ability::TriggerRequirement::RunnerTagged => {
+                cite!("rule_tagged");
+                self.st.runner.tags > 0
+            }
+        })
+    }
+
+    /// CR 9.6.14d: mark the abilities of `obj` in the named class pending, as
+    /// though the class's stipulation had occurred. Returns the instances
+    /// created — empty when the card has no ability in that class, or when an
+    /// additional requirement of its trigger condition is not met by the game
+    /// state (in which case the ability cannot become pending at all).
+    fn pend_abilities_by_class(
+        &mut self,
+        obj: ObjectId,
+        class: crate::ability::AbilityClass,
+    ) -> Vec<u64> {
+        cite!("rule_instructed_to_resolve_conditional_ability");
+        let Some(o) = self.st.objects.get(&obj) else { return Vec::new() };
+        let controller = o.controller;
+        let threat = self.threat_level();
+        let encountered = self.st.encounter.as_ref().map(|e| e.ice);
+        let accessed = self.st.accessed;
+        let matching: Vec<(usize, AbilityDef)> = o
+            .printed
+            .abilities
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| crate::ability::ability_in_class(a, class))
+            .map(|(i, a)| (i, a.clone()))
+            .collect();
+        let mut out = Vec::new();
+        for (index, def) in matching {
+            // 9.1.7/9.1.9: an ability that is not active, or that the card no
+            // longer has, does nothing — an effect naming its class cannot
+            // resurrect it.
+            if !self.ability_present(obj, index)
+                || !ability_active(&self.st.objects[&obj], &def, encountered, accessed, threat)
+            {
+                continue;
+            }
+            // 9.6.14d: "Any additional requirements of the trigger condition
+            // in question must still be met by the game state."
+            if let Some(crate::ability::Condition::Trigger(cond)) = &def.condition {
+                if !self.trigger_requirements_met(cond) {
+                    continue;
+                }
+            }
+            let mandatory = !def.optional;
+            let id = self.next_instance_id();
+            cite!("rule_pending_instances");
+            self.instances.insert(
+                id,
+                AbilityInstance {
+                    id,
+                    ability: AbilityRef { obj, index },
+                    def,
+                    controller,
+                    mandatory,
+                    window: None,
+                    hangover: false,
+                    independent: false,
+                    source_move_stamp: self.st.move_seq,
+                    occurrence_group: 0,
+                    from_lingering: None,
+                    run_id: self.current_run.map(|(r, _, _)| r),
+                },
+            );
+            out.push(id);
+        }
+        out
+    }
+
     /// CR 4.6.8f: may the Corp create a new remote server right now? An
     /// active limit forbids it once the limit is reached. The declaration is
     /// a restriction (9.3.4), so it applies to the *destination declaration*
@@ -2775,6 +2862,8 @@ impl Vm {
             | Instruction::ModifyStrength { .. }
             | Instruction::ModifySubtypes { .. }
             | Instruction::Derez { .. }
+            | Instruction::RezCard { .. }
+            | Instruction::ResolveAbilityOf { .. }
             | Instruction::BreakSubroutines { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
@@ -3756,6 +3845,8 @@ impl Vm {
             | Instruction::ModifySubtypes { target: spec, .. }
             | Instruction::MoveIce { ice: spec, .. }
             | Instruction::ForceEncounter { ice: spec }
+            | Instruction::RezCard { target: spec, .. }
+            | Instruction::ResolveAbilityOf { source: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -4991,12 +5082,14 @@ impl Vm {
         if !playable {
             return false;
         }
-        ignore_costs
-            || self.cost_payable(
-                o.printed.side,
-                card,
-                &Cost::credits(o.printed.cost.unwrap_or(0)),
-            )
+        // 1.16.10a/b: an additional cost to play the card is part of the one
+        // payment, so it is part of "could this card be played".
+        let mut cost = Cost::credits(o.printed.cost.unwrap_or(0));
+        if let Some(extra) = &o.printed.additional_play_cost {
+            cite!("rule_additional_cost");
+            cost = cost.plus(extra);
+        }
+        ignore_costs || self.cost_payable(o.printed.side, card, &cost)
     }
 
     /// Dhegdheer-class hosted-install discount.
@@ -5893,6 +5986,67 @@ impl Vm {
                     ));
                 }
             }
+            Instruction::RezCard { target, ignore_costs } => {
+                // CR 8.1.2b: an ability directs the Corp to rez a card. The
+                // rez cost is paid first (8.1.2d) unless the ability states
+                // that it is ignored (1.16.5c).
+                cite!("rule_rez_by_ability");
+                cite!("rule_inherent_rez_cost");
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                for t in targets {
+                    let Some(o) = self.st.objects.get(&t) else { continue };
+                    // 8.1.1: only an installed, facedown, non-agenda Corp card
+                    // is unrezzed (8.1.2c: agendas cannot be rezzed).
+                    cite!("rule_rezzed_unrezzed");
+                    cite!("rule_cannot_rez_agendas");
+                    if o.faceup
+                        || o.printed.side != Side::Corp
+                        || o.printed.card_type == CardType::Agenda
+                        || !self.is_installed(o)
+                    {
+                        continue;
+                    }
+                    if *ignore_costs {
+                        cite!("rule_ignoring_costs");
+                        self.rez_card_free(t);
+                    } else {
+                        self.rez_card(t);
+                    }
+                }
+            }
+            Instruction::ResolveAbilityOf { source: spec, which } => {
+                // CR 9.6.14d: mark the named class of ability pending as
+                // though its stipulation had occurred; the ordinary reaction
+                // window then offers it. A subroutine is not a conditional
+                // ability, so the subroutine class resolves where it is named
+                // instead (9.8.10), as a nested ability frame — which is what
+                // makes "this server" in it read from the ICE (4.6.6i).
+                cite!("rule_instructed_to_resolve_conditional_ability");
+                let targets = self.resolve_targets(spec, Some(source.obj), &imm.targets);
+                for t in targets {
+                    match which {
+                        crate::ability::AbilityClass::Subroutine(n) => {
+                            cite!("rule_subroutines_ordered");
+                            let subs = self.current_subs(t);
+                            let Some((key, def)) = subs.get(*n).cloned() else { continue };
+                            let index =
+                                if key.category == 3 { key.ord as usize } else { usize::MAX };
+                            self.push_ability_frame(
+                                ResolutionKind::Subroutine,
+                                AbilityRef { obj: t, index },
+                                Side::Corp,
+                                def.instructions,
+                                None,
+                                Some(*n),
+                            );
+                        }
+                        class => {
+                            let ids = self.pend_abilities_by_class(t, *class);
+                            self.pending_from_effect.extend(ids);
+                        }
+                    }
+                }
+            }
             Instruction::Derez { target } => {
                 // CR 8.1.2 / 1.12.5: the card is turned facedown. It stays
                 // the same object — it never changed zones — so anything
@@ -6427,7 +6581,14 @@ impl Vm {
                 let side = self.st.objects[&c].printed.side;
                 let amount =
                     if p.ignore_costs { 0 } else { self.st.objects[&c].printed.cost.unwrap_or(0) };
-                self.pay_cost(side, c, &Cost::credits(amount));
+                // 1.16.10b: an additional cost to play the card combines with
+                // the play cost into ONE payment.
+                let mut cost = Cost::credits(amount);
+                if let Some(extra) = self.st.objects[&c].printed.additional_play_cost.clone() {
+                    cite!("rule_additional_cost");
+                    cost = cost.plus(&extra);
+                }
+                self.pay_cost(side, c, &cost);
             }
             Instruction::PlayStepActivate => {
                 cite!("rule_steps_playing_active");
@@ -7387,6 +7548,14 @@ impl Vm {
                 return false;
             }
         }
+        // 8.2.5: a forfeit component needs that many agendas in the payer's
+        // score area — 1.16.1b makes the whole cost unpayable otherwise.
+        if cost.forfeit_agenda > 0
+            && (self.st.score_area[&side].len() as u32) < cost.forfeit_agenda
+        {
+            cite!("rule_forfeit_rfg");
+            return false;
+        }
         // CR 1.16.1b: if a static ability or a MANDATORY conditional
         // interrupt would prevent the steps of payment, the cost cannot be
         // paid (Jesminder vs Funhouse's take-a-tag nested cost).
@@ -7619,6 +7788,18 @@ impl Vm {
             let Some(&c) = self.st.hand[&side].first() else { break };
             self.trash_card(c, side);
             trashed.push(c);
+        }
+        // 8.2.5 / 4.9.3: "forfeit an agenda" moves it from the score area to
+        // the removed-from-game zone; its agenda points stop counting because
+        // `Vm::score` sums the score area. Which agenda is the payer's choice
+        // in the CR; the kernel takes the front (documented on
+        // `Cost::forfeit_agenda`).
+        for _ in 0..cost.forfeit_agenda {
+            let Some(&a) = self.st.score_area[&side].first() else { break };
+            cite!("movement_forfeit");
+            cite!("rule_forfeit_rfg");
+            self.move_card(a, Zone::RemovedFromGame);
+            self.changes.record(GameChange::AgendaForfeited { obj: a, by: side });
         }
         // CR 1.16.1a: paying a cost cannot be modified or interrupted — tag
         // and damage components apply directly, with their changes recorded
@@ -7860,9 +8041,22 @@ impl Vm {
 
     /// Rez: pay cost (checkpoint per 8.1.2e), turn faceup, active stamp.
     pub fn rez_card(&mut self, id: ObjectId) {
+        self.rez_card_inner(id, false)
+    }
+
+    /// CR 1.16.5c / 8.1.2d: rez a card whose rez cost the rezzing ability
+    /// states is ignored — the payment (and its 10.3.4 checkpoint) is simply
+    /// not part of the procedure.
+    pub fn rez_card_free(&mut self, id: ObjectId) {
+        self.rez_card_inner(id, true)
+    }
+
+    fn rez_card_inner(&mut self, id: ObjectId, ignore_costs: bool) {
         cite!("rule_rez_procedure");
-        let cost = Cost::credits(self.st.objects[&id].printed.cost.unwrap_or(0));
-        self.pay_cost(Side::Corp, id, &cost);
+        if !ignore_costs {
+            let cost = Cost::credits(self.st.objects[&id].printed.cost.unwrap_or(0));
+            self.pay_cost(Side::Corp, id, &cost);
+        }
         let seq = {
             self.st.active_seq += 1;
             self.st.active_seq

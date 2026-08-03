@@ -27,7 +27,16 @@ pub fn run_checkpoint(vm: &mut Vm) -> Vec<u64> {
     // so that a position the Runner has just left is vacant for step (i).
     vm.apply_ice_change_to_run();
 
-    let newly = step_a_conditional_abilities(vm);
+    let mut newly = step_a_conditional_abilities(vm);
+    // CR 9.6.14d: instances an effect marked pending are pending exactly like
+    // the ones step (a) just created — they were simply not created BY the
+    // scan. Draining them here is what makes 10.3.2 open a reaction window
+    // for them.
+    if !vm.pending_from_effect.is_empty() {
+        cite!("rule_instructed_to_resolve_conditional_ability");
+        let forced = std::mem::take(&mut vm.pending_from_effect);
+        newly.extend(forced.into_iter().filter(|id| vm.instances.contains_key(id)));
+    }
     step_b_durations(vm);
     step_c_agenda_points(vm);
     if vm.game_over.is_some() {
@@ -278,11 +287,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // 9.6.5c: requirements listed in the trigger condition
                     // must hold when the condition would occur (QPM class:
                     // the Runner must already be tagged).
-                    if matches!(
-                        cond,
-                        crate::ability::TriggerCond::SelfAccessedIfRunnerTagged
-                    ) && vm.st.runner.tags == 0
-                    {
+                    if !vm.trigger_requirements_met(cond) {
                         cite!("rule_condition_requirements_part_of_condition");
                         continue;
                     }

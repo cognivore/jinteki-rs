@@ -7,8 +7,8 @@
 //! those cards is `plan`'s job, not this module's.
 
 use crate::ability::{
-    AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TimingRestriction,
-    TriggerCond,
+    AbilityClass, AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl,
+    TimingRestriction, TriggerCond, TriggerRequirement,
 };
 use crate::effects::DamageKind;
 use crate::instr::{Instruction, Quantity, TargetSpec};
@@ -222,7 +222,7 @@ pub fn snare_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
     c.trash_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::Combined(vec![
             Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(3), responsible: Side::Corp },
             Instruction::GainTags(1),
@@ -333,7 +333,7 @@ pub fn breached_dome_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
     c.trash_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::Combined(vec![
             Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(1), responsible: Side::Corp },
             Instruction::TrashCards(TargetSpec::TopOfDeck(Side::Runner, 1)),
@@ -1231,7 +1231,7 @@ pub fn urtica_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
     c.trash_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::Damage {
             kind: DamageKind::Net,
             amount: Quantity::base_plus_per_counter(2, 1, CounterKind::Advancement),
@@ -1498,7 +1498,7 @@ pub fn adt_button(name: &'static str, installee: ObjectId) -> PrintedCard {
 pub fn ganked_like(name: &'static str, installee: ObjectId) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::InstallCard {
             card: TargetSpec::Objects(vec![installee]),
             dest: crate::instr::InstallDest::BreachedServerRoot,
@@ -1628,13 +1628,13 @@ pub fn qpm_with_casting_call(name: &'static str) -> PrintedCard {
     c.trash_cost = Some(0);
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::SelfAccessedIfRunnerTagged,
+            TriggerCond::SelfAccessed { requires: vec![TriggerRequirement::RunnerTagged] },
             vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
             false,
         )
         .labeled("qpm: if tagged when accessed"),
         AbilityDef::conditional(
-            TriggerCond::SelfAccessed,
+            TriggerCond::SelfAccessed { requires: Vec::new() },
             vec![Instruction::GainTags(2)],
             false,
         )
@@ -2079,7 +2079,7 @@ pub fn must_trash_accessed_like(name: &'static str, trash_cost: u32) -> PrintedC
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
     c.trash_cost = Some(trash_cost);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::MustTrashAccessedCard {
             means: crate::instr::TrashMeans::AnyAbility,
         }],
@@ -3108,7 +3108,7 @@ pub fn aggressive_secretary_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
     c.trash_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::NestedCostThen {
             cost: Cost::credits(2),
             effect: Box::new(Instruction::TrashCards(TargetSpec::Choose {
@@ -3756,7 +3756,7 @@ pub fn accessed_encounter_ice(name: &'static str, strength: i32, net: i64) -> Pr
     let mut c = vanilla_ice(name, 0, strength);
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::SelfAccessed,
+            TriggerCond::SelfAccessed { requires: Vec::new() },
             vec![Instruction::ForceEncounter { ice: TargetSpec::SelfSource }],
             false,
         )
@@ -3781,7 +3781,7 @@ pub fn ganked_encounter_like(name: &'static str) -> PrintedCard {
     use crate::instr::TargetFilter as F;
     let mut c = vanilla_asset(name, 0, 0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfAccessed,
+        TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::ForceEncounter {
             ice: TargetSpec::Choose {
                 count: Quantity::c(1),
@@ -4009,5 +4009,96 @@ pub fn off_the_grid_like(name: &'static str) -> PrintedCard {
         StaticDecl::CannotInitiateRunOnSourceServer,
     ])
     .labeled("off-the-grid: cannot initiate a run here")];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W11a shapes: resolving an ability by class (§9.6.14d, §9.8), rezzing by
+// ability (8.1.2b), forfeit as a cost (8.2.5)
+// ---------------------------------------------------------------------------
+
+/// AstroScript / Market Research shape (9.6.14c): an agenda whose "when
+/// scored" ability places 1 agenda counter on it, optionally with 9.6.5c's
+/// additional requirement that the Runner be tagged.
+pub fn when_scored_agenda(
+    name: &'static str,
+    req: u32,
+    points: i32,
+    requires_tagged: bool,
+) -> PrintedCard {
+    let mut c = vanilla_agenda(name, req, points);
+    let requires = if requires_tagged {
+        vec![TriggerRequirement::RunnerTagged]
+    } else {
+        Vec::new()
+    };
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfScored { requires },
+        vec![Instruction::PlaceCounters {
+            target: TargetSpec::SelfSource,
+            kind: CounterKind::Agenda,
+            amount: Quantity::c(1),
+        }],
+        false,
+    )
+    .labeled("when scored: place an agenda counter")];
+    c
+}
+
+/// 24/7 News Cycle shape (9.6.14d): an operation whose additional play cost
+/// is forfeiting an agenda and whose play ability resolves the "when scored"
+/// ability of an agenda in the Corp's score area — chosen as a 1.15.2 target
+/// announcement, since the criteria name the zone (1.15.2c).
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card's "Play only if you scored
+/// an agenda this turn" restriction (9.11.4a) is omitted — it gates when the
+/// operation may be played and is orthogonal to what 9.6.14d decides.
+pub fn news_cycle_like(name: &'static str) -> PrintedCard {
+    let mut c = operation(
+        name,
+        0,
+        vec![Instruction::ResolveAbilityOf {
+            source: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![
+                    crate::instr::TargetFilter::InScoreAreaOf(Side::Corp),
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Agenda),
+                ],
+            },
+            which: AbilityClass::WhenScored,
+        }],
+    );
+    c.additional_play_cost = Some(Cost::forfeit_agenda(1));
+    c
+}
+
+/// Nanisivik Grid shape (4.6.6i example 3): "[trash]: Turn 1 facedown piece
+/// of ice faceup and resolve its first subroutine." Rezzing it ignoring costs
+/// IS turning it faceup (8.1.2), which is what makes the ice active so its
+/// subroutine can resolve at all (9.1.7).
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card scopes the choice to ice
+/// protecting its own server; the shape lets the Corp announce any piece of
+/// ice, which is what makes "this server" in the resolved subroutine
+/// DISCRIMINATING — the grid can sit in a different server from the ice.
+pub fn nanisivik_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![
+            Instruction::RezCard {
+                target: TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)],
+                },
+                ignore_costs: true,
+            },
+            Instruction::ResolveAbilityOf {
+                source: TargetSpec::EarlierTarget { nth: 0 },
+                which: AbilityClass::Subroutine(0),
+            },
+        ],
+    )
+    .labeled("nanisivik: turn ice faceup and resolve its first subroutine")];
     c
 }

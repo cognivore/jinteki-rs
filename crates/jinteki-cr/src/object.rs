@@ -189,6 +189,10 @@ pub struct PrintedCard {
     /// CR 1.16.4c: an additional cost to rez (Archer class); declinable
     /// during "install and rez" effects (8.5.13d).
     pub additional_rez_cost: Option<crate::ability::Cost>,
+    /// CR 1.16.10: "As an additional cost to play this operation/event, …"
+    /// (24/7 News Cycle class). 1.16.10b combines it with the printed play
+    /// cost into ONE payment at step 8.6.7b.
+    pub additional_play_cost: Option<crate::ability::Cost>,
     /// CR 1.10.3c: hosted credits on this card are spendable by its
     /// controller (Fencer Fueno class — drives bid legality, 10.14.3).
     pub hosted_credits_spendable: bool,
@@ -213,6 +217,7 @@ impl PrintedCard {
             recurring_credits: None,
             additional_steal_cost: None,
             additional_rez_cost: None,
+            additional_play_cost: None,
             hosted_credits_spendable: false,
             abilities: Vec::new(),
         }
@@ -233,7 +238,7 @@ impl PrintedCard {
         use crate::instr::{Instruction, Quantity, TargetSpec};
         self.abilities.push(
             crate::ability::AbilityDef::conditional(
-                crate::ability::TriggerCond::SelfScored,
+                crate::ability::TriggerCond::SelfScored { requires: Vec::new() },
                 vec![Instruction::PlaceCounters {
                     target: TargetSpec::SelfSource,
                     kind: CounterKind::Agenda,

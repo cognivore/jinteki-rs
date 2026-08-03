@@ -54,7 +54,9 @@ pub enum TriggerCond {
     /// which for a card trashed FROM that server means the server it left.
     RunnerTrashesAtLeastOneCorpCard { in_this_server: bool },
     /// "When you access this card." (active while inactive, 9.1.8a)
-    SelfAccessed,
+    /// `requires` carries 9.6.5c's additional requirements ("…if the Runner
+    /// is tagged" — Quantum Predictive Model class).
+    SelfAccessed { requires: Vec<TriggerRequirement> },
     /// "Whenever you access a card…" (Neutralize All Threats class) — a
     /// Runner-side condition met by accessing ANY card, not this one.
     RunnerAccessesCard,
@@ -82,7 +84,13 @@ pub enum TriggerCond {
     /// places or moves an advancement counter directly.
     AdvancesCard { had_no_advancement: bool },
     /// "When you score this agenda…" (1.17.6; the dividends keyword, 10.13.1).
-    SelfScored,
+    /// `requires` carries 9.6.5c's additional requirements ("…if the Runner
+    /// is tagged" — Market Research class), which 9.6.14d keeps in force even
+    /// when an effect resolves the ability by class without a real scoring.
+    SelfScored { requires: Vec<TriggerRequirement> },
+    /// "When you install this card…" (9.6.14b's class: met at step 8.5.16f of
+    /// installing its own source).
+    SelfInstalled,
     /// Interrupt trigger: "…would do damage" (ordinal: Some(1) = "the first
     /// time each run you would…", Tori Hanzō class).
     WouldDamage { kind: Option<DamageKind>, first_each_run: bool },
@@ -98,11 +106,6 @@ pub enum TriggerCond {
     /// (Forked class). 9.12.2d vacuous truth: ice with ZERO subroutines
     /// satisfies this as soon as step 6.9.3b of the encounter begins.
     AllSubsBrokenOnEncounteredIce,
-    /// "If the Runner is tagged when this card is accessed…" (Quantum
-    /// Predictive Model class): the tag requirement is PART OF the trigger
-    /// condition and must hold at the moment the condition would occur
-    /// (9.6.5c).
-    SelfAccessedIfRunnerTagged,
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples).
     RunnerStealsAgenda,
@@ -130,6 +133,19 @@ pub enum TriggerCond {
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
     /// condition once however many "for each" terms the calculation had.
     PlayerPaysCredits(Side),
+}
+
+/// CR 9.6.5c: an ADDITIONAL requirement listed inside a trigger condition
+/// ("…if the Runner is tagged"). It is part of the condition, not of the
+/// effect, so it must hold at the moment the condition would occur — and
+/// 9.6.14d keeps it in force when an effect resolves the ability by class
+/// instead of the stipulation actually occurring. Carried as data next to
+/// the condition it qualifies, so the requirement is one vocabulary rather
+/// than a `CondIfRunnerTagged` variant per condition (§12 rule 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerRequirement {
+    /// "…if the Runner is tagged" (5.4: the Runner is tagged with ≥ 1 tag).
+    RunnerTagged,
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -186,6 +202,17 @@ pub struct Cost {
     /// The counters come off the ability's SOURCE, which is what makes an
     /// empty card's ability unusable rather than free.
     pub spend_counters: Option<(crate::object::CounterKind, u32)>,
+    /// CR 8.2.5 / 4.9.3: "forfeit an agenda" as a cost (24/7 News Cycle
+    /// class) — N agendas move from the payer's score area to the
+    /// removed-from-game zone, their agenda points stop counting, and
+    /// anything hosted on them is trashed.
+    ///
+    /// KERNEL APPROXIMATION (deviation 11's class): WHICH agenda is forfeited
+    /// is not put to the payer — the front of the score area is taken —
+    /// because `Vm::pay_cost` is synchronous everywhere. No example turns on
+    /// the choice; the 9.6.14d example makes its real choice afterwards, in
+    /// the 1.15.2 announcement of whose ability to resolve.
+    pub forfeit_agenda: u32,
 }
 
 impl Cost {
@@ -215,6 +242,10 @@ impl Cost {
     /// CR 1.9.2: "spend N hosted counters of a kind" as a cost.
     pub fn spend_counters(kind: crate::object::CounterKind, n: u32) -> Self {
         Cost { spend_counters: Some((kind, n)), ..Default::default() }
+    }
+    /// CR 8.2.5: "forfeit N agendas" as a cost.
+    pub fn forfeit_agenda(n: u32) -> Self {
+        Cost { forfeit_agenda: n, ..Default::default() }
     }
     pub fn free() -> Self {
         Cost::default()
@@ -250,6 +281,7 @@ impl Cost {
             lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
             spend_counters: self.spend_counters.or(other.spend_counters),
+            forfeit_agenda: self.forfeit_agenda + other.forfeit_agenda,
         }
     }
 }
@@ -594,12 +626,7 @@ pub fn ability_active(
     }
     // 9.1.8a: access-condition abilities are active while the card is
     // inactive (so "when accessed" fires on cards in R&D/HQ/Archives).
-    if matches!(
-        def.condition,
-        Some(Condition::Trigger(
-            TriggerCond::SelfAccessed | TriggerCond::SelfAccessedIfRunnerTagged
-        ))
-    ) {
+    if matches!(def.condition, Some(Condition::Trigger(TriggerCond::SelfAccessed { .. }))) {
         cite!("rule_active_exception_access");
         return true;
     }
@@ -656,7 +683,10 @@ pub fn trigger_matches(
             // which has the state access to resolve "this server".
             *by == Side::Runner && trashed_is_corp(*obj)
         }
-        (TriggerCond::SelfAccessed, GameChange::CardAccessed { obj }) => *obj == source.id,
+        // 9.6.5c: any additional requirement carried by the condition is
+        // checked by the checkpoint scan (it has the state access); this arm
+        // only matches the change class.
+        (TriggerCond::SelfAccessed { .. }, GameChange::CardAccessed { obj }) => *obj == source.id,
         (TriggerCond::RunnerAccessesCard, GameChange::CardAccessed { .. }) => {
             cite!("rule_accessing");
             true
@@ -693,8 +723,14 @@ pub fn trigger_matches(
         }
         // 1.17.6: "when you score this agenda" — met after the Corp moves the
         // agenda to their score area.
-        (TriggerCond::SelfScored, GameChange::AgendaScored { obj, .. }) => {
+        (TriggerCond::SelfScored { .. }, GameChange::AgendaScored { obj, .. }) => {
             cite!("rule_agenda_scored");
+            *obj == source.id
+        }
+        // 9.6.14b: the stipulation point is step 8.5.16f of installing the
+        // source itself.
+        (TriggerCond::SelfInstalled, GameChange::CardInstalled { obj, .. }) => {
+            cite!("rule_when_installed");
             *obj == source.id
         }
         (
@@ -710,11 +746,6 @@ pub fn trigger_matches(
             // Server comparison happens in the checkpoint scan (it has state
             // access); this arm only matches the change class.
             true
-        }
-        (TriggerCond::SelfAccessedIfRunnerTagged, GameChange::CardAccessed { obj }) => {
-            // 9.6.5c: the tag requirement is checked by the checkpoint scan
-            // (it is part of the condition, not the effect).
-            *obj == source.id
         }
         (TriggerCond::EncounterEnds, GameChange::EncounterEnded { .. }) => true,
         (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
@@ -740,6 +771,60 @@ pub fn trigger_matches(
             true
         }
         _ => false,
+    }
+}
+
+/// CR 9.6.14: a class of ability referred to by its trigger condition, plus
+/// the one non-conditional ability an effect can name positionally. This is
+/// the CONTENT of [`crate::instr::Instruction::ResolveAbilityOf`] (§12 rule
+/// 2), so "resolve the 'when scored' ability of an agenda in your score
+/// area" and "resolve its first subroutine" are the same instruction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AbilityClass {
+    /// 9.6.14a: any ability that could meet its trigger condition at step
+    /// 6.9.3a of an encounter with its source.
+    WhenEncountered,
+    /// 9.6.14b: … at step 8.5.16f of installing its source.
+    WhenInstalled,
+    /// 9.6.14c: any ability on an agenda that could meet its trigger
+    /// condition as a result of the Corp choosing to score that agenda.
+    WhenScored,
+    /// §9.8: the Nth subroutine of the card in the 9.8.2 order (0-based).
+    /// Not a 9.6.14 class — a subroutine is not a conditional ability, so it
+    /// never becomes pending (9.8.10: it resolves where it is named).
+    Subroutine(usize),
+}
+
+/// CR 9.6.14a–c: is `def` a member of the named class — an ability that
+/// COULD meet its trigger condition at that class's stipulation point?
+pub fn ability_in_class(def: &AbilityDef, class: AbilityClass) -> bool {
+    cite!("rule_references_to_trigger_conditions");
+    let Some(Condition::Trigger(cond)) = &def.condition else { return false };
+    match class {
+        AbilityClass::WhenEncountered => {
+            cite!("rule_when_encountered");
+            matches!(cond, TriggerCond::SelfEncountered)
+        }
+        AbilityClass::WhenInstalled => {
+            cite!("rule_when_installed");
+            matches!(cond, TriggerCond::SelfInstalled)
+        }
+        AbilityClass::WhenScored => {
+            cite!("rule_when_scored");
+            matches!(cond, TriggerCond::SelfScored { .. })
+        }
+        AbilityClass::Subroutine(_) => false,
+    }
+}
+
+/// CR 9.6.5c: the additional requirements a trigger condition carries, which
+/// must be met by the game state for the condition to occur — and, per
+/// 9.6.14d, for an effect to resolve the ability by class.
+pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
+    cite!("rule_condition_requirements_part_of_condition");
+    match cond {
+        TriggerCond::SelfAccessed { requires } | TriggerCond::SelfScored { requires } => requires,
+        _ => &[],
     }
 }
 

@@ -54,6 +54,9 @@ pub enum GameChange {
     /// CR 1.13.1: a host relationship was created between two objects.
     CardHosted { obj: ObjectId, host: ObjectId },
     AgendaScored { obj: ObjectId, points: i32 },
+    /// CR 8.2.5: an agenda was forfeited — moved from a score area to the
+    /// removed-from-game zone, so its agenda points no longer contribute.
+    AgendaForfeited { obj: ObjectId, by: Side },
     AgendaStolen { obj: ObjectId, points: i32 },
     CardAccessed { obj: ObjectId },
     AccessEnded { obj: ObjectId },

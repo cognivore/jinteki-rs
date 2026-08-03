@@ -237,6 +237,10 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_cannot_run_abilities_1",
     "example_rule_use_restrictions_1",
     "example_rule_variable_restriction_1",
+    // Wave 11a: resolving an ability by class (9.6.14d), rez by ability
+    // (8.1.2b), forfeit as a cost (8.2.5).
+    "example_rule_this_server_3",
+    "example_rule_instructed_to_resolve_conditional_ability_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -8510,4 +8514,178 @@ fn dp7a_backlog_placeholder() {
         missing.len(),
         missing.join("\n")
     );
+}
+
+// ===========================================================================
+// W11a — resolving an ability by class (§9.6.14d, §9.8) and "this server"
+// ===========================================================================
+
+/// example_rule_this_server_3 (4.6.6i): a Nanisivik-Grid-class ability turns a
+/// facedown Border Control in Archives faceup and resolves its first
+/// subroutine. Border Control was not moved between servers, so "this server"
+/// in that subroutine refers to Archives — the server the ICE is in, not the
+/// server the resolving card is in. The grid sits in a remote protected by
+/// three pieces of ice; Archives is protected by two, so the count the
+/// subroutine produces says which server was read.
+#[test]
+fn example_rule_this_server_3() {
+    let mut vm = Vm::empty(930);
+    let bc = tk::install_ice(
+        &mut vm,
+        tk::border_control_like("BorderControl-like"),
+        ServerId::Archives,
+        false,
+    );
+    tk::install_ice(&mut vm, tk::vanilla_ice("Archives-Ice", 0, 1), ServerId::Archives, true);
+    tk::install_root(&mut vm, tk::nanisivik_like("Nanisivik-like"), ServerId::Remote(1), true);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Remote-Ice-1", 0, 1), ServerId::Remote(1), true);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Remote-Ice-2", 0, 1), ServerId::Remote(1), true);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Remote-Ice-3", 0, 1), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    // The plan: the Corp trashes the grid, announcing the facedown ice.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("nanisivik"))
+            .when(Match::targets().once(), Reply::target(bc))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("nanisivik"), "the grid's ability was offered and used: {}", t.tail(8));
+    assert!(vm.st.objects[&bc].faceup, "8.1.2: rezzing it ignoring costs turned it faceup");
+    assert_eq!(
+        vm.st.corp.credits, 2,
+        "4.6.6i: 'this server' in the resolved subroutine is ARCHIVES (2 ice), \
+         not the remote the grid was in (3 ice)"
+    );
+}
+
+/// example_rule_instructed_to_resolve_conditional_ability_1 (9.6.14d): a
+/// 24/7-News-Cycle-class operation forfeits an agenda and resolves the "when
+/// scored" ability of an agenda already in the score area. Nothing was scored,
+/// so the ability is marked PENDING as though the stipulation had occurred —
+/// and it resolves from the ordinary reaction window, placing its counter.
+#[test]
+fn example_rule_instructed_to_resolve_conditional_ability_1() {
+    let mut vm = Vm::empty(931);
+    let fodder = tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Fodder", 3, 1), Side::Corp);
+    let astro =
+        tk::put_in_score_area(&mut vm, tk::when_scored_agenda("Astro-like", 3, 3, false), Side::Corp);
+    let market = tk::put_in_score_area(
+        &mut vm,
+        tk::when_scored_agenda("MarketResearch-like", 4, 2, true),
+        Side::Corp,
+    );
+    let cycle = vm.new_object(tk::news_cycle_like("NewsCycle-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(cycle);
+    tk::install_root(
+        &mut vm,
+        tk::play_operation_button("Play-Button", cycle),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("play-op"))
+            .when(Match::targets().once(), Reply::target(astro))
+            .when(Match::reaction(), Reply::take("when scored"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"), "the operation was played: {}", t.tail(10));
+    assert_eq!(
+        vm.st.objects[&fodder].zone,
+        Zone::RemovedFromGame,
+        "8.2.5: the additional cost forfeited an agenda"
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::AgendaScored { .. })),
+        "9.6.14d: nothing was actually scored"
+    );
+    let reaction = t
+        .windows(Kind::Reaction, Side::Corp)
+        .into_iter()
+        .find(|e| e.offered("when scored"))
+        .expect("9.6.14d: the ability is marked PENDING, so it is offered in a reaction window");
+    assert!(reaction.took("when scored"), "…and the Corp resolved it from that window");
+    assert_eq!(
+        vm.st.objects[&astro].counter(CounterKind::Agenda),
+        1,
+        "the 'when scored' ability resolved and placed its counter"
+    );
+    assert_eq!(
+        vm.st.objects[&market].counter(CounterKind::Agenda),
+        0,
+        "…on the chosen agenda only"
+    );
+}
+
+/// example_rule_instructed_to_resolve_conditional_ability_1, second half
+/// (9.6.14d): "Any additional requirements of the trigger condition in
+/// question must still be met by the game state." With the Runner UNTAGGED,
+/// naming the agenda whose "when scored" condition requires a tag creates no
+/// pending instance at all — nothing is offered and nothing resolves. Tag the
+/// Runner and the same choice places the counter.
+#[test]
+fn example_rule_instructed_to_resolve_conditional_ability_1_requirement() {
+    for tagged in [false, true] {
+        let mut vm = Vm::empty(932);
+        tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Fodder", 3, 1), Side::Corp);
+        let market = tk::put_in_score_area(
+            &mut vm,
+            tk::when_scored_agenda("MarketResearch-like", 4, 2, true),
+            Side::Corp,
+        );
+        let cycle = vm.new_object(tk::news_cycle_like("NewsCycle-like"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(cycle);
+        tk::install_root(
+            &mut vm,
+            tk::play_operation_button("Play-Button", cycle),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        if tagged {
+            vm.st.runner.tags = 1;
+        }
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("play-op"))
+                .when(Match::targets().once(), Reply::target(market))
+                .when(Match::reaction(), Reply::take("when scored"))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert!(t.took("play-op"), "the operation was played: {}", t.tail(10));
+        if tagged {
+            assert!(t.ever_offered("when scored"), "9.6.5c: the requirement is met");
+            assert_eq!(
+                vm.st.objects[&market].counter(CounterKind::Agenda),
+                1,
+                "…so the ability became pending and resolved"
+            );
+        } else {
+            assert!(
+                !t.ever_offered("when scored"),
+                "9.6.14d: the additional requirement is unmet, so the ability \
+                 cannot even become pending: {}",
+                t.tail(10)
+            );
+            assert_eq!(
+                vm.st.objects[&market].counter(CounterKind::Agenda),
+                0,
+                "…and nothing resolved"
+            );
+        }
+    }
 }
