@@ -8059,6 +8059,81 @@ impl Vm {
                     self.changes.record(GameChange::CardExposed { obj: t });
                 }
             }
+            // 1.21.3: reveal — show the front faces, then return the cards to
+            // their previous state. 1.21.3a keeps a facedown card facedown;
+            // the whole effect is on what each player has SEEN (10.2.2b).
+            Instruction::RevealCards { cards } => {
+                cite!("rule_reveal");
+                cite!("rule_reveal_not_turn_faceup");
+                cite!("rule_look_reveal_expose_access_distinct");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                for t in targets {
+                    if !self.st.objects.contains_key(&t) {
+                        continue;
+                    }
+                    self.st.seen.show_all(t);
+                    self.changes.record(GameChange::CardRevealed { obj: t });
+                }
+            }
+            // 1.10.3a: hosted credits entering a credit pool are GAINED.
+            Instruction::TakeHostedCredits { from, amount, to } => {
+                cite!("rule_gain_credits");
+                cite!("rule_hosted_counters_not_on_player");
+                let want = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                let targets = self.resolve_targets(from, Some(source.obj), &imm.targets);
+                for t in targets {
+                    let have = self
+                        .st
+                        .objects
+                        .get(&t)
+                        .and_then(|o| o.counters.get(&CounterKind::Credit).copied())
+                        .unwrap_or(0);
+                    let n = want.min(have);
+                    if n == 0 {
+                        continue;
+                    }
+                    if let Some(o) = self.st.objects.get_mut(&t) {
+                        let c = o.counters.entry(CounterKind::Credit).or_insert(0);
+                        *c -= n;
+                    }
+                    self.changes.record(GameChange::CounterRemoved {
+                        obj: Some(t),
+                        kind: CounterKind::Credit,
+                        amount: n,
+                    });
+                    self.st.player_mut(*to).credits += n;
+                    self.changes.record(GameChange::CreditsGained { side: *to, amount: n });
+                }
+            }
+            // 1.9.2: counters removed from a card return to the bank. Not a
+            // cost — costs are SPENT (1.16.1) — so nothing is announced as
+            // being paid and no payment window opens.
+            Instruction::RemoveCounters { target, kind, amount, up_to } => {
+                cite!("rule_bank");
+                let want = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
+                for t in targets {
+                    let have = self
+                        .st
+                        .objects
+                        .get(&t)
+                        .and_then(|o| o.counters.get(kind).copied())
+                        .unwrap_or(0);
+                    let n = if *up_to { want.min(have) } else { want.min(have) };
+                    if n == 0 {
+                        continue;
+                    }
+                    if let Some(o) = self.st.objects.get_mut(&t) {
+                        let c = o.counters.entry(*kind).or_insert(0);
+                        *c -= n;
+                    }
+                    self.changes.record(GameChange::CounterRemoved {
+                        obj: Some(t),
+                        kind: *kind,
+                        amount: n,
+                    });
+                }
+            }
             Instruction::Derez { target } => {
                 // 8.1.3/8.1.3a-c: derezzing turns a rezzed card facedown; it
                 // happens only through a card effect, has no inherent cost,

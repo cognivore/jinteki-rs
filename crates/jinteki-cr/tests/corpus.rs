@@ -1715,6 +1715,62 @@ fn neural_emp() {
     assert_eq!(g.zone_of("Neural EMP"), Zone::Discard(Side::Corp), "8.6.7g");
 }
 
+/// daily-casts: installed with 8 hosted credits, it pays 2 into the pool at
+/// the start of each of the Runner's turns, and when it is empty it trashes
+/// itself. The reference ticks through the turns with `take-credits`; the
+/// port lets both players click credits and counts what the card did.
+#[test]
+fn daily_casts() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::daily_casts()])
+        .credits(Side::Runner, 5)
+        .start(Side::Runner);
+    let dc = g.id("Daily Casts");
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(dc)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default)
+            .when(Match::discard(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    let hosted = |g: &Game| {
+        g.vm.st.objects[&dc].counters.get(&CounterKind::Credit).copied().unwrap_or(0)
+    };
+    assert_eq!(hosted(&g), 8, "loaded with 8 credits on install");
+    assert_eq!(g.vm.st.runner.credits, 2, "5 − 3 to install: {}", script.transcript().tail(8));
+
+    // Let the game run on. Four more Runner turns take the card to empty.
+    script.run(&mut g.vm);
+    let takes = g
+        .vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(
+            c,
+            GameChange::CounterRemoved { obj: Some(o), kind: CounterKind::Credit, amount: 2 }
+                if *o == dc
+        ))
+        .count();
+    assert_eq!(takes, 4, "2 credits taken at the start of each Runner turn, four times");
+    assert_eq!(hosted(&g), 0, "the card is empty");
+    assert_eq!(
+        g.vm.st.objects[&dc].zone,
+        Zone::Discard(Side::Runner),
+        "when it is empty, trash it: {}",
+        script.transcript().tail(8)
+    );
+}
+
 /// Take the basic play action with this card and let the play resolve.
 fn play_it(g: &mut Game, side: Side, card: ObjectId) {
     let acting = Plan::for_side(side)
@@ -1806,6 +1862,7 @@ const PORTED: &[&str] = &[
     "easy-mark",
     "diesel",
     "dirty-laundry",
+    "daily-casts",
     "infiltration-gain-2",
     "infiltration-expose",
     "account-siphon-use-ability",
@@ -1852,8 +1909,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 59,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 59",
+        PORTED.len() >= 60,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 60",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is

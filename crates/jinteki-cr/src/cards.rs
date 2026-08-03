@@ -520,6 +520,52 @@ pub fn infiltration() -> PrintedCard {
     c
 }
 
+/// Daily Casts — Resource. Install 3. COMPLETE.
+/// "When you install this resource, load 8[credit] onto it. When it is empty,
+///  trash it.
+///  When your turn begins, take 2[credit] from this resource."
+///
+/// 1.10.3a: credits taken from a card ENTER the pool, so this is a gain;
+/// 1.13.3 keeps the hosted ones out of every "credits you have" count until
+/// then. "When it is empty" is a condition on the source's counters, not a
+/// step of the take.
+pub fn daily_casts() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Daily Casts", Side::Runner, CardType::Resource);
+    c.cost = Some(3);
+    c.abilities = vec![
+        AbilityDef::conditional(
+            TriggerCond::SelfInstalled,
+            // 10.9.1: "LOAD 8[credit] onto it" — loading is placing that
+            // remembers the kind, which is what "when it is empty" (10.9.2)
+            // is linked to.
+            vec![Instruction::LoadCounters {
+                target: TargetSpec::SelfSource,
+                kind: CounterKind::Credit,
+                amount: Quantity::c(8),
+            }],
+            false,
+        )
+        .labeled("daily casts: load 8 credits"),
+        AbilityDef::conditional(
+            TriggerCond::SelfEmpty { kind: CounterKind::Credit },
+            vec![Instruction::TrashSelf],
+            false,
+        )
+        .labeled("daily casts: trash it when empty"),
+        AbilityDef::conditional(
+            TriggerCond::TurnBegins(Side::Runner),
+            vec![Instruction::TakeHostedCredits {
+                from: TargetSpec::SelfSource,
+                amount: Quantity::c(2),
+                to: Side::Runner,
+            }],
+            false,
+        )
+        .labeled("daily casts: take 2 credits"),
+    ];
+    c
+}
+
 /// Fan Site — Resource: Virtual. Install 0.
 /// "Whenever the Corp scores an agenda, add Fan Site to your score area as an
 ///  agenda worth 0 agenda points."

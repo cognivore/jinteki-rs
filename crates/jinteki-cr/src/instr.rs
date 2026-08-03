@@ -266,6 +266,29 @@ pub enum Instruction {
     /// does not list it among the aggregated effect classes, so exposing two
     /// cards in one instruction is two occurrences (9.6.4b).
     ExposeCards { cards: TargetSpec },
+    /// CR 1.21.3: "Reveal <cards>." — show the cards' front faces to all
+    /// players, then return them to their previous state. 1.21.3a: this is NOT
+    /// turning them faceup, so a facedown card stays facedown; what changes is
+    /// what each player has SEEN (10.2.2b). Unlike exposing (1.21.4) it is not
+    /// restricted to installed unrezzed cards — a card in hand, in a deck or
+    /// set aside can be revealed.
+    RevealCards { cards: TargetSpec },
+    /// CR 1.10.3a: "Take N[credit] from this card." — hosted credits move from
+    /// a card to a credit pool, which is a GAIN (they enter the pool from
+    /// another location). With fewer hosted than asked for, the card gives
+    /// what it has.
+    TakeHostedCredits { from: TargetSpec, amount: Quantity, to: Side },
+    /// CR 1.9.2: "Remove N hosted <kind> counters." — counters leave the card
+    /// and return to the bank. This is the mandatory-effect counterpart of
+    /// `Cost::spend_counters`, which is the paid-ability half: costs are
+    /// SPENT (1.16.1), these are simply removed.
+    RemoveCounters {
+        target: TargetSpec,
+        kind: crate::object::CounterKind,
+        amount: Quantity,
+        /// "remove up to N" — take what is there when there are fewer.
+        up_to: bool,
+    },
     /// "Derez <targets>." (§8.1.2) — a rezzed card is turned facedown.
     /// CR 1.12.5: turning a card faceup or facedown does not make it a new
     /// object, since it does not change zones.
