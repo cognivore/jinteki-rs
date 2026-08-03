@@ -300,7 +300,12 @@ pub enum Instruction {
     /// "Run any server." / "make another run" (Doppelgänger class) — pushes
     /// a nested run timing structure.
     InitiateRun {
-        server: ServerId,
+        /// CR 6.9.1a: the attacked server the Runner ANNOUNCES. `None` is an
+        /// effect that named no server ("Run any server", "Run a remote
+        /// server"): the Runner announces one from `allowed` when the run is
+        /// initiated, and the announcement rewrites this position exactly as
+        /// an install's declared destination rewrites 8.5.16b's.
+        server: Option<ServerId>,
         /// CR 6.7.4a: the servers this initiating effect ALLOWED. An "If
         /// successful" ability is tied to them, so a run moved (6.1.2d) to a
         /// server the effect could not have chosen no longer meets the
@@ -786,9 +791,19 @@ impl Instruction {
     /// "If successful" clause (6.7.4).
     pub fn run(server: ServerId) -> Instruction {
         Instruction::InitiateRun {
-            server,
+            server: Some(server),
             allowed: RunServerSet::Any,
             if_successful: Vec::new(),
+        }
+    }
+
+    /// "Run any server." — CR 6.7.4a's unrestricted set, with the attacked
+    /// server announced by the Runner at step 6.9.1a.
+    pub fn run_any_server(if_successful: Vec<Instruction>) -> Instruction {
+        Instruction::InitiateRun {
+            server: None,
+            allowed: RunServerSet::Any,
+            if_successful,
         }
     }
 }
@@ -1161,6 +1176,32 @@ pub fn could_break_subroutines(instrs: &[Instruction]) -> bool {
         Instruction::Combined(list) => could_break_subroutines(list),
         Instruction::ChooseOne { options } => {
             options.iter().any(|(_, is)| could_break_subroutines(is))
+        }
+        _ => false,
+    })
+}
+
+/// CR 7.1.5b: "The Runner cannot trash or pay the trash cost of a card in the
+/// Corp's discard pile, either with the basic trash ability or with other
+/// mid-access abilities."
+///
+/// The "other mid-access abilities" half needs to know which abilities would
+/// trash the card being accessed, which — like [`could_break_subroutines`] —
+/// is a property of the instructions rather than of the card.
+pub fn could_trash_accessed_card(instrs: &[Instruction]) -> bool {
+    cite!("rule_trash_in_archives");
+    instrs.iter().any(|i| match i {
+        Instruction::TrashCards(TargetSpec::AccessedCard) => true,
+        Instruction::MustTrashAccessedCard { .. } => true,
+        Instruction::PerformedBy { instr, .. } | Instruction::DeclineableChoice(instr) => {
+            could_trash_accessed_card(std::slice::from_ref(instr))
+        }
+        Instruction::NestedCostThen { effect, .. } | Instruction::NestedCostUnless { effect, .. } => {
+            could_trash_accessed_card(std::slice::from_ref(effect))
+        }
+        Instruction::Combined(list) => could_trash_accessed_card(list),
+        Instruction::ChooseOne { options } => {
+            options.iter().any(|(_, is)| could_trash_accessed_card(is))
         }
         _ => false,
     })

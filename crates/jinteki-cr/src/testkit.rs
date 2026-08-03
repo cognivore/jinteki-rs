@@ -5114,7 +5114,7 @@ pub fn because_i_can_like(name: &'static str, server: ServerId, gain: i64) -> Pr
         name,
         0,
         vec![Instruction::InitiateRun {
-            server,
+            server: Some(server),
             allowed: crate::instr::RunServerSet::AnyRemote,
             if_successful: vec![Instruction::GainCredits(Side::Runner, Quantity::c(gain))],
         }],
@@ -5131,7 +5131,7 @@ pub fn account_siphon_like(name: &'static str, gain: u32) -> PrintedCard {
         name,
         0,
         vec![Instruction::InitiateRun {
-            server: ServerId::Hq,
+            server: Some(ServerId::Hq),
             allowed: crate::instr::RunServerSet::These(vec![ServerId::Hq]),
             if_successful: vec![Instruction::CreateLingeringEffect {
                 payload: crate::instr::LingeringSpec::Replacement {

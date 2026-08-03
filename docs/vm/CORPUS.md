@@ -131,8 +131,8 @@ rule, not to the card, and the CR example suite already covers it.
 
 | bucket | tests | note |
 |---|---|---|
-| **ported and passing** | 48 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
-| **blocked on the card layer** | 3491 | card tests; unblocked card by card, in frequency order |
+| **ported and passing** | 52 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
+| **blocked on the card layer** | 3487 | card tests; unblocked card by card, in frequency order |
 | **blocked on kernel gaps** | 176 | the rest of the engine slice; §5 lists the machinery |
 | **out of scope** | ~40 | `quotes_test`, `web/deck_test` and the reference-plumbing tests listed in `UPSTREAM-DEFECTS.md` §2 |
 
@@ -142,17 +142,19 @@ Ported so far: all 19 of `cards/basic_test.clj`; from the `core/` slice
 and from the card files `corroder`, `mimic`, `magnum-opus`, `rezeki`,
 `botulus`, `imp-can-t-be-used-when-empty-5190`,
 `misdirection-basic-behavior`, `hedge-fund`, `beanstalk-royalties`, `ipo`,
-`sure-gamble`, `easy-mark`, `diesel`, `account-siphon-{use-ability,access}`,
-`hostile-takeover`, `government-takeover`, `pad-campaign`, `lt-todachine`,
-`desperado`, `ice-wall`, `enigma`, `tithe`. **29 real cards** live in
+`sure-gamble`, `easy-mark`, `diesel`, `dirty-laundry`,
+`account-siphon-{use-ability,access}`, `hostile-takeover`,
+`government-takeover`, `pad-campaign`, `lt-todachine`,
+`hostile-infrastructure-basic-behavior`, `desperado`, `ice-wall`, `enigma`,
+`tithe`, `paper-wall`, `imp-vs-cards-in-archives`. **33 real cards** live in
 `crates/jinteki-cr/src/cards.rs`; the parallel `crates/jinteki-cards` DSL
 (another agent's work, same session) is where the card layer scales, and the
 two must be reconciled — see §7.
 
 **A measured selection rule, for the successor.** Re-running the survey with
 the implemented card set as a filter answers "what can be ported *today*"
-exactly: a test is portable when every card it names is in `cards.rs`. At 29
-cards that set is 66 tests, of which 48 are ported and most of the rest are
+exactly: a test is portable when every card it names is in `cards.rs`. At 33
+cards that set is ~72 tests, of which 48 are ported and most of the rest are
 `UPSTREAM-DEFECTS.md` §2 plumbing (`auto-no-action-*`, `buffered-continue-*`,
 `hide-continue-msg-*`, `stats`, `say`). Adding one card unlocks 4–8 more
 tests at the top of the tail and 1–2 in the middle, so waves should mix:
@@ -209,24 +211,22 @@ top cards are counted by how many tests name them):
 **The card-layer machinery the next slice needs**, in the order the corpus
 asks for it: ~~the icebreaker class~~ (done, W15c); ~~"the Runner loses
 [click]" as an instruction~~ (done, W16a — `Instruction::{GainClicks,
-LoseClicks}`, 1.11.3a/b); an agenda-point modification (2.5 — Project Beale's
-second sentence, also Merger and Global Food Initiative); **"Run any server"
-— a chosen `InitiateRun.server` (6.7.4a)**, which is the best remaining buy
-(Dirty Laundry 44 tests, Inside Job, Knifed, Möbius, Stimhack, and the deck
-rung's Clean Getaway/Pinhole Threading); a rez-cost modification scoped to a
+LoseClicks}`, 1.11.3a/b); ~~"Run any server"~~ (done, W16b —
+`InitiateRun.server: Option<ServerId>` with 6.9.1a's announcement as a real
+decision); an agenda-point modification (2.5 — Project Beale's second
+sentence, also Merger and Global Food Initiative); a "the first time you
+encounter a piece of ice during that run" scope (Inside Job, Paperclip); a
+"whenever you jack out" trigger condition (Au Revoir); a rez-cost modification scoped to a
 server (Breaker Bay Grid); a movement into a score area for a non-agenda (Fan
 Site, Film Critic); and a prohibition on SCORING scoped by when the agenda
 was installed (Clot — wants `TargetFilter::InstalledThisTurn`, which Seamless
 Launch wants too).
 
-One test is **deferred pending a CR reading**, not blocked:
-`programs_test.clj::imp-vs-cards-in-archives` asserts that Imp's "trash the
-card you are accessing" is not even offered while accessing a card in
-Archives. Nothing in §9.5.6 or §7.1.5 forbids using an ability whose effect
-can do nothing, and our kernel offers it; the reference's card implementation
-restricts it. Settle it against 8.2's movement rules before porting, and
-record the outcome in `UPSTREAM-DEFECTS.md` §1 if the reference is the one
-diverging.
+(The `imp-vs-cards-in-archives` question W16a deferred was settled in W16b and
+it was OURS: **CR 7.1.5b** says in as many words that the Runner cannot trash
+or pay the trash cost of a card in the Corp's discard pile, "either with the
+basic trash ability or with other mid-access abilities". The kernel offered
+both. Fixed and ported.)
 
 | rank | card | tests | what it needs |
 |---|---|---|---|

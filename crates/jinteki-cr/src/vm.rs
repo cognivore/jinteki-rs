@@ -5314,6 +5314,25 @@ impl Vm {
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((af.controller, self.announcement(candidates, want)))
             }
+            // 6.9.1a: the effect initiated a run without naming a server, so
+            // the Runner announces the attacked server. 6.7.4a fixes the set
+            // it may be chosen from, and 6.3.2a removes the servers a run
+            // cannot be initiated on.
+            Instruction::InitiateRun { server: None, allowed, .. } => {
+                cite!("step_initiation_announce");
+                cite!("rule_if_successful_tied_to_server");
+                let options: Vec<ServerId> = self
+                    .all_servers()
+                    .into_iter()
+                    .filter(|s| allowed.allows(*s))
+                    .filter(|s| !self.run_initiation_prohibited(*s))
+                    .collect();
+                if options.is_empty() {
+                    None
+                } else {
+                    Some((Side::Runner, DecisionSpec::DeclareAttackedServer { options }))
+                }
+            }
             // 8.5.16b: the effect named no destination, so the installing
             // player chooses and declares one — every location the card may
             // legally occupy, "including any host relationships".
@@ -7335,7 +7354,12 @@ impl Vm {
             }
             Instruction::InitiateRun { server, allowed, if_successful } => {
                 cite!("rule_run_timing_structure");
-                self.initiate_run(*server);
+                // 6.9.1a: the attacked server has been announced by now — an
+                // effect that named one carried it, an effect that did not
+                // asked. With no legal announcement available there is no run
+                // to initiate and the instruction does nothing.
+                let Some(server) = *server else { return };
+                self.initiate_run(server);
                 // CR 6.7.4/6.7.4a: the "If successful" ability belongs to the
                 // effect that initiated the run, and is tied to the servers
                 // that effect allowed. Both travel with the run.
@@ -9799,10 +9823,15 @@ impl Vm {
         let mut out = Vec::new();
         let Some(card) = self.st.accessed else { return out };
         let o = &self.st.objects[&card];
+        // 7.1.5b: a card in the Corp's discard pile cannot be trashed, and its
+        // trash cost cannot be paid — by the basic trash ability OR by any
+        // other mid-access ability. A card accessed in Archives is already
+        // there; so is one this access has just trashed.
+        let in_archives = o.zone == Zone::Discard(Side::Corp);
         // 7.1.5: the basic trash ability — pay the trash cost, trash it.
         // 1.10.3c: what the Runner can pay it WITH includes hosted credits
         // their own cards let them spend (Scrubber class), not just the pool.
-        if let Some(tc) = o.printed.trash_cost {
+        if let (false, Some(tc)) = (in_archives, o.printed.trash_cost) {
             cite!("rule_basic_trash_ability");
             cite!("rule_spend_credits");
             let avail = self.st.runner.credits
@@ -9823,6 +9852,8 @@ impl Vm {
                     && a.has_flag(AbilityFlag::Access)
                     && ability_active(src, a, None, self.st.accessed, threat)
                     && self.break_ability_timing_ok(a)
+                    && !(in_archives
+                        && crate::instr::could_trash_accessed_card(&a.instructions))
                     && self.cost_payable(
                         Side::Runner,
                         src.id,
@@ -11343,6 +11374,34 @@ impl Vm {
                 };
                 // 1.15.2: an instruction requiring several announcements
                 // asks again before becoming imminent.
+                if let Some((side, next)) = self.targets_needed(&instr) {
+                    self.ask(side, next, DecisionCtx::Targets);
+                    return;
+                }
+                self.begin_imminence(instr);
+            }
+            (DecisionCtx::Targets, DecisionAnswer::AttackedServer(chosen)) => {
+                // CR 6.9.1a: the announcement fills the instruction's server
+                // position, exactly as 8.5.16b's declaration fills an
+                // install's destination; the instruction then becomes
+                // imminent carrying the announced server.
+                cite!("step_initiation_announce");
+                let declared = match &spec {
+                    DecisionSpec::DeclareAttackedServer { options } => {
+                        if options.contains(&chosen) { Some(chosen) } else { options.first().copied() }
+                    }
+                    _ => None,
+                };
+                let instr = {
+                    let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
+                    let idx = af.idx;
+                    if let (Some(s), Instruction::InitiateRun { server, .. }) =
+                        (declared, &mut af.instructions[idx])
+                    {
+                        *server = Some(s);
+                    }
+                    af.instructions[idx].clone()
+                };
                 if let Some((side, next)) = self.targets_needed(&instr) {
                     self.ask(side, next, DecisionCtx::Targets);
                     return;

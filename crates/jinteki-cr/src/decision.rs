@@ -111,6 +111,11 @@ pub enum DecisionSpec {
     /// the basic install action (5.2.6d/5.2.7d). Every option is a location
     /// the card may legally occupy (8.5.2/8.5.4/8.5.14, 1.13.6a hosts).
     DeclareInstallDestination { options: Vec<crate::instr::InstallDest> },
+    /// CR 6.9.1a: "The Runner announces the attacked server." Asked where the
+    /// effect that initiates the run names no server of its own ("Run any
+    /// server"); the options are 6.7.4a's allowed set, intersected with the
+    /// servers that exist and that 6.3.2a does not forbid initiating a run on.
+    DeclareAttackedServer { options: Vec<ServerId> },
     /// CR 1.15.1 / 9.8.6: announce SUBROUTINES as targets — the other kind
     /// of thing that can be a target. Each candidate carries its label so a
     /// driver can show it. 9.8.6 restricts the candidates for an ability
@@ -238,4 +243,6 @@ pub enum DecisionAnswer {
     Division(Vec<u32>),
     /// CR 8.5.16b: the declared install destination.
     InstallDestination(crate::instr::InstallDest),
+    /// CR 6.9.1a: the announced attacked server.
+    AttackedServer(ServerId),
 }

@@ -876,6 +876,44 @@ fn rezeki() {
     assert_eq!(g.vm.st.runner.credits, before + 1, "Rezeki: gain 1 when your turn begins");
 }
 
+/// imp-vs-cards-in-archives: 7.1.5b — "the Runner cannot trash or pay the
+/// trash cost of a card in the Corp's discard pile, either with the basic
+/// trash ability or with other mid-access abilities". Accessing an agenda in
+/// Archives, Imp's "trash the card you are accessing" is not on offer, and
+/// stealing is all that is left.
+#[test]
+fn imp_vs_cards_in_archives() {
+    let mut g = Game::new(11).credits(Side::Runner, 10).start(Side::Runner);
+    let imp = tk::install_rig(&mut g.vm, cards::imp());
+    tk::place_counters(&mut g.vm, imp, CounterKind::Virus, 2);
+    // The reference puts the agenda in Archives with `core/move`; a card in
+    // the Corp's discard pile is a starting position, not an action.
+    let ht = g.vm.new_object(cards::hostile_takeover(), Zone::Discard(Side::Corp));
+    g.vm.st.discard.get_mut(&Side::Corp).unwrap().push(ht);
+    let mut script = plan::Script::new(
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Archives)))
+            .when(Match::mid_access().once(), Reply::Halt)
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    script.run(&mut g.vm);
+    let t = script.transcript();
+    assert!(
+        !t.ever_offered("imp:"),
+        "7.1.5b: no mid-access ability may trash a card already in Archives: {}",
+        t.tail(12)
+    );
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.objects[&ht].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the agenda in Archives was stolen"
+    );
+}
+
 /// imp-can-t-be-used-when-empty-5190: with no hosted virus counters Imp's
 /// mid-access ability is not an option at all (1.16.1b), and Cache's counters
 /// are no help — a cost spends counters hosted on the ability's own source.
@@ -1335,6 +1373,122 @@ fn misdirection_basic_behavior() {
     assert_eq!(g.vm.st.runner.credits, credits_before - 2, "1.16.2c: X = 2, so 2 credits");
 }
 
+/// dirty-laundry: "Run any server" puts the attacked server to the Runner at
+/// step 6.9.1a, and the 5 credits arrive only if the run ENDED successful —
+/// a jacked-out run pays nothing.
+#[test]
+fn dirty_laundry() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::dirty_laundry(), cards::dirty_laundry()])
+        .credits(Side::Runner, 5)
+        .start(Side::Runner);
+    let first = g.named[0].1;
+    let second = g.named[1].1;
+    let mut script = plan::Script::new(
+        Plan::corp().when(Match::paid(), Reply::Pass),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(first))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            .when(Match::jack_out().once(), Reply::JackOut(false))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::action().once(), Reply::play_card(second))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            .when(Match::jack_out().once(), Reply::JackOut(true))
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass),
+    );
+    script.run(&mut g.vm);
+    // 5 − 2 (the play) + 5.
+    assert_eq!(
+        g.vm.st.runner.credits,
+        8,
+        "the successful run paid out: {}",
+        script.transcript().tail(12)
+    );
+    script.run(&mut g.vm);
+    // 8 − 2 (the second play), and nothing else: the Runner jacked out.
+    assert_eq!(
+        g.vm.st.runner.credits,
+        6,
+        "run unsuccessful; gained no credits: {}",
+        script.transcript().tail(14)
+    );
+}
+
+/// paper-wall: fully breaking it (6.5.7a) trashes it.
+#[test]
+fn paper_wall() {
+    let mut g = Game::new(11)
+        .hand(Side::Runner, vec![cards::corroder()])
+        .credits(Side::Runner, 10)
+        .credits(Side::Corp, 10)
+        .start(Side::Runner);
+    let cor = g.id("Corroder");
+    let wall = tk::install_ice(&mut g.vm, cards::paper_wall(), ServerId::Hq, false);
+    let t = plan::play(
+        &mut g.vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(cor)))
+            .when(Match::destination(), Reply::Destination(InstallDest::Rig))
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::paid().once(), Reply::take("break 1 barrier"))
+            .when(Match::sub_targets(), Reply::Default)
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::mid_access(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+    );
+    assert_eq!(
+        g.vm.st.objects[&wall].zone,
+        Zone::Discard(Side::Corp),
+        "6.5.7a: Paper Wall was fully broken, so it trashed itself: {}",
+        t.tail(14)
+    );
+}
+
+/// hostile-infrastructure-basic-behavior: 1 net damage per Corp card the
+/// Runner trashes, including a trash of Hostile Infrastructure itself.
+#[test]
+fn hostile_infrastructure_basic_behavior() {
+    let mut g = Game::new(11)
+        .hand(Side::Corp, vec![cards::hostile_infrastructure()])
+        .credits(Side::Runner, 50)
+        .start(Side::Runner);
+    tk::fill_hand(&mut g.vm, Side::Runner, 5);
+    tk::install_root(&mut g.vm, cards::hostile_infrastructure(), ServerId::Remote(1), true);
+    let mut script = plan::Script::new(
+        Plan::corp().when(Match::paid(), Reply::Pass).when(Match::reaction(), Reply::Default),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .trashes_on_access()
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Remote(1))))
+            .trashes_on_access()
+            .stop_at_action()
+            .when(Match::paid(), Reply::Pass)
+            .when(Match::reaction(), Reply::Default),
+    );
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.discard[&Side::Runner].len(),
+        1,
+        "trashing the accessed Corp card did 1 net damage: {}",
+        script.transcript().tail(14)
+    );
+    script.run(&mut g.vm);
+    assert_eq!(
+        g.vm.st.discard[&Side::Runner].len(),
+        2,
+        "…including when the card trashed is Hostile Infrastructure itself: {}",
+        script.transcript().tail(14)
+    );
+}
+
 /// Take the basic play action with this card and let the play resolve.
 fn play_it(g: &mut Game, side: Side, card: ObjectId) {
     let acting = Plan::for_side(side)
@@ -1411,6 +1565,7 @@ const PORTED: &[&str] = &[
     "magnum-opus",
     "rezeki",
     "botulus",
+    "imp-vs-cards-in-archives",
     "imp-can-t-be-used-when-empty-5190",
     "misdirection-basic-behavior",
     // test/clj/game/cards/{operations,events,agendas,assets,hardware,ice}_test.clj
@@ -1420,6 +1575,7 @@ const PORTED: &[&str] = &[
     "sure-gamble",
     "easy-mark",
     "diesel",
+    "dirty-laundry",
     "account-siphon-use-ability",
     "account-siphon-access",
     "hostile-takeover",
@@ -1430,6 +1586,8 @@ const PORTED: &[&str] = &[
     "ice-wall",
     "enigma",
     "tithe",
+    "paper-wall",
+    "hostile-infrastructure-basic-behavior",
 ];
 
 /// Every ported name exists as a `#[test] fn` in this file, spelled the
@@ -1461,8 +1619,8 @@ fn corpus_manifest_is_honest() {
 fn dp7c_odometer() {
     const CORPUS_TOTAL: usize = 3717;
     assert!(
-        PORTED.len() >= 48,
-        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 48",
+        PORTED.len() >= 52,
+        "DP-7c ported {} of {CORPUS_TOTAL}; the ratchet floor is 52",
         PORTED.len()
     );
     // Cards carrying an UNIMPLEMENTED clause are the gap list; the count is

@@ -196,6 +196,13 @@ pub enum TriggerCond {
     /// (Forked class). 9.12.2d vacuous truth: ice with ZERO subroutines
     /// satisfies this as soon as step 6.9.3b of the encounter begins.
     AllSubsBrokenOnEncounteredIce,
+    /// CR 6.5.7a: "When the Runner fully breaks THIS ice…" (Paper Wall
+    /// class) — the same occurrence as
+    /// [`TriggerCond::AllSubsBrokenOnEncounteredIce`], scoped to the source
+    /// the way every other "this card" condition is. 6.5.7c's vacuous case
+    /// (ice with no subroutines) meets it too, and 6.5.7d means it is never
+    /// retracted.
+    SelfFullyBroken,
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples).
     RunnerStealsAgenda,
@@ -1332,6 +1339,13 @@ pub fn trigger_matches(
         (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
             cite!("rule_vacuous_truth");
             true
+        }
+        // 6.5.7a: "the Runner fully breaks the encountered ice the first time
+        // all subroutines on that ice are broken" — scoped to this card.
+        (TriggerCond::SelfFullyBroken, GameChange::AllSubsBroken { ice }) => {
+            cite!("rule_fully_break");
+            cite!("rule_fully_break_no_subroutines");
+            *ice == source.id
         }
         (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
         (TriggerCond::RunnerAvoidsTag, GameChange::TagsAvoided { .. }) => true,

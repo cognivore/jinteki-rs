@@ -66,6 +66,9 @@ pub enum Kind {
     Candidate,
     /// 10.3.1j breach-candidacy declaration.
     DeclareCandidate,
+    /// 6.9.1a: the Runner announces the attacked server, for a run an effect
+    /// initiated without naming one.
+    AttackedServer,
     /// 6.9.4c jack out.
     JackOut,
     /// 5.5.4c discard to hand size.
@@ -116,6 +119,7 @@ impl Kind {
             DecisionSpec::OptionalEffect { .. } => Kind::Optional,
             DecisionSpec::ChooseCandidate { .. } => Kind::Candidate,
             DecisionSpec::DeclareBreachCandidate { .. } => Kind::DeclareCandidate,
+            DecisionSpec::DeclareAttackedServer { .. } => Kind::AttackedServer,
             DecisionSpec::JackOut => Kind::JackOut,
             DecisionSpec::DiscardCards { .. } => Kind::Discard,
             DecisionSpec::MinimalSet { .. } => Kind::MinimalSet,
@@ -418,6 +422,10 @@ impl Match {
         Match::of(Kind::CounterTargets)
     }
     /// 8.5.16b: declaring where a card being installed goes.
+    /// 6.9.1a: the attacked-server announcement.
+    pub fn attacked_server() -> Match {
+        Match::of(Kind::AttackedServer)
+    }
     pub fn destination() -> Match {
         Match::of(Kind::Destination)
     }
@@ -616,6 +624,8 @@ pub enum Reply {
     Division(Vec<u32>),
     /// 8.5.16b: declare this install destination.
     Destination(crate::instr::InstallDest),
+    /// 6.9.1a: announce this attacked server.
+    Server(ServerId),
     /// 8.3.1: put the arranged cards back in this order, topmost first.
     Arrange(Vec<ObjectId>),
     /// 10.1.6a: the loop resolves this many more times, then ends.
@@ -1126,6 +1136,7 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::Division(v) => DecisionAnswer::Division(v.clone()),
         Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
         Reply::Destination(d) => DecisionAnswer::InstallDestination(*d),
+        Reply::Server(s) => DecisionAnswer::AttackedServer(*s),
         Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
         Reply::Counters(v) => DecisionAnswer::Counters(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
@@ -1157,6 +1168,10 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         // the first destination offered.
         DecisionSpec::DeclareInstallDestination { options } => DecisionAnswer::InstallDestination(
             options.first().copied().expect("a destination was offered"),
+        ),
+        // 6.9.1a: an announcement cannot be passed either.
+        DecisionSpec::DeclareAttackedServer { options } => DecisionAnswer::AttackedServer(
+            options.first().copied().expect("a server was offered"),
         ),
         DecisionSpec::ReactionWindow { options, can_pass } => {
             cite!("rule_reaction_window_priority");

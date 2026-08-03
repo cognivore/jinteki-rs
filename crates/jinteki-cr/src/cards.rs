@@ -170,6 +170,22 @@ pub fn pup() -> PrintedCard {
     c
 }
 
+/// Paper Wall — ICE: Barrier. Rez 0, strength 1. COMPLETE.
+/// "When the Runner fully breaks this ice, trash it.
+///  [subroutine] End the run."
+pub fn paper_wall() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Paper Wall", Side::Corp, CardType::Ice);
+    c.subtypes = vec!["Barrier"];
+    c.cost = Some(0);
+    c.strength = Some(1);
+    c.abilities = vec![
+        AbilityDef::conditional(TriggerCond::SelfFullyBroken, vec![Instruction::TrashSelf], false)
+            .labeled("paper wall: trash it"),
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
+    ];
+    c
+}
+
 /// Vanilla — ICE: Barrier. Rez 0, strength 0.
 /// "[subroutine] End the run."
 pub fn vanilla_ice() -> PrintedCard {
@@ -199,6 +215,26 @@ pub fn pad_campaign() -> PrintedCard {
         false,
     )
     .labeled("pad campaign: gain 1 credit")];
+    c
+}
+
+/// Hostile Infrastructure — Asset. Rez 5, trash 5. COMPLETE.
+/// "Whenever the Runner trashes a Corp card (including Hostile
+///  Infrastructure), do 1 net damage."
+pub fn hostile_infrastructure() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Hostile Infrastructure", Side::Corp, CardType::Asset);
+    c.cost = Some(5);
+    c.trash_cost = Some(5);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunnerTrashesCorpCard,
+        vec![Instruction::Damage {
+            kind: DamageKind::Net,
+            amount: Quantity::c(1),
+            responsible: Side::Corp,
+        }],
+        false,
+    )
+    .labeled("hostile infrastructure: do 1 net damage")];
     c
 }
 
@@ -338,6 +374,39 @@ pub fn diesel() -> PrintedCard {
     c.cost = Some(0);
     c.abilities = vec![AbilityDef::play(vec![Instruction::Draw(Side::Runner, 3)])
         .labeled("diesel: draw 3 cards")];
+    c
+}
+
+/// Dirty Laundry — Event: Run. Cost 2. COMPLETE.
+/// "Run any server. When that run ends, if it was successful, gain
+///  5[credit]."
+///
+/// "Run any server" is 6.7.4a's unrestricted set, with the attacked server
+/// announced by the Runner at step 6.9.1a. The second sentence is a delayed
+/// conditional (9.6.13) whose window is that run — so it is armed from inside
+/// 6.7.4's "if successful" clause, which is both where the "if it was
+/// successful" test is settled and the only place a `ThisRun` duration can
+/// bind (the run does not exist yet while the play's own instructions are
+/// being read, and everything after `InitiateRun` resolves only once the run
+/// is over — 9.2.4d's LIFO nesting).
+pub fn dirty_laundry() -> PrintedCard {
+    let mut c = PrintedCard::vanilla("Dirty Laundry", Side::Runner, CardType::Event);
+    c.subtypes = vec!["Run"];
+    c.cost = Some(2);
+    c.abilities = vec![AbilityDef::play(vec![Instruction::run_any_server(vec![
+        Instruction::CreateDelayedConditional {
+            def: Box::new(
+                AbilityDef::conditional(
+                    TriggerCond::RunEnds { successful_only: true },
+                    vec![Instruction::GainCredits(Side::Runner, Quantity::c(5))],
+                    false,
+                )
+                .labeled("dirty laundry: gain 5 credits"),
+            ),
+            duration: crate::lingering::WantedDuration::ThisRun,
+        },
+    ])])
+    .labeled("dirty laundry: run any server")];
     c
 }
 
@@ -664,7 +733,7 @@ pub fn account_siphon() -> PrintedCard {
     c.subtypes = vec!["Run", "Sabotage"];
     c.cost = Some(0);
     c.abilities = vec![AbilityDef::play(vec![Instruction::InitiateRun {
-        server: ServerId::Hq,
+        server: Some(ServerId::Hq),
         allowed: crate::instr::RunServerSet::These(vec![ServerId::Hq]),
         if_successful: vec![Instruction::CreateLingeringEffect {
             payload: crate::instr::LingeringSpec::Replacement {

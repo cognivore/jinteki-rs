@@ -557,7 +557,9 @@ pub fn run_then_if_successful(
     if_successful: impl IntoIterator<Item = Instruction>,
 ) -> Instruction {
     Instruction::InitiateRun {
-        server,
+        // 6.9.1a: `server` is the announcement position, `None` where the
+        // effect leaves the choice to the Runner (jinteki-cr, W16b).
+        server: Some(server),
         allowed: RunServerSet::These(vec![server]),
         if_successful: if_successful.into_iter().collect(),
     }
