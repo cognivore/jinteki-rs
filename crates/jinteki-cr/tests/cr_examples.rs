@@ -47,6 +47,8 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_mandatory_infinite_loop_1",
     // Wave 14h: 1.15.1 counters as targets.
     "example_rule_target_3",
+    // Wave 14i: 9.11.2a.
+    "example_rule_step_sequences_1",
     "example_rule_defferent_actions_1",
     "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
@@ -12133,4 +12135,79 @@ fn example_rule_target_3() {
         .log
         .iter()
         .any(|c| matches!(c, GameChange::CardAdvanced { obj } if *obj == dest)));
+}
+
+// ===========================================================================
+// Wave 14i — 9.11.2a: the steps of installing are not instructions
+// ===========================================================================
+
+/// example_rule_step_sequences_1 (9.11.2a): "The steps of installing a card
+/// are not separate instructions. Installing a card usually happens in its
+/// entirety as part of a single instruction. The only checkpoint that occurs
+/// during the procedure of installing a card is at step 8.5.16d, immediately
+/// after the install cost is paid."
+///
+/// The observable: a card installed out of a score area is placed into the
+/// play area at 8.5.16a, which strands the agenda counter hosted on it — but
+/// 1.13.13 is a CHECKPOINT rule, so the counter does not go until the one
+/// checkpoint the procedure has. It therefore goes AFTER the install cost is
+/// paid, not before.
+#[test]
+fn example_rule_step_sequences_1() {
+    let mut vm = Vm::empty(1414);
+    let agenda =
+        tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Scored-Agenda", 3, 1), Side::Runner);
+    tk::place_counters(&mut vm, agenda, CounterKind::Agenda, 1);
+    let ip = vm.new_object(tk::ip_enforcement_like("IPEnforcement-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ip);
+    tk::install_root(
+        &mut vm,
+        tk::play_operation_button("Play-Button", ip),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("play-op"))
+            .when(Match::targets().once(), Reply::target(agenda))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"), "the operation was played: {}", t.tail(10));
+    assert!(matches!(vm.st.objects[&agenda].zone, Zone::Root(_)), "the agenda was installed");
+
+    // The install's own cost payment (8.5.16d) — the record whose checkpoint
+    // is the only one in the procedure.
+    let paid = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CostPaid { side: Side::Corp, .. }))
+        .expect("the install cost was paid");
+    let removed = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CounterRemoved { obj: Some(o), kind: CounterKind::Agenda, .. } if *o == agenda))
+        .expect("1.13.13 trashed the hosted counter");
+    let installed = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == agenda))
+        .expect("the card became installed at 8.5.16f");
+    assert!(
+        removed > paid,
+        "9.11.2a: no checkpoint follows step 8.5.16a, so the counter survives \
+         the placement and goes at the ONE checkpoint the procedure has"
+    );
+    assert!(
+        removed < installed,
+        "…which is still during the installation, before 8.5.16f"
+    );
 }

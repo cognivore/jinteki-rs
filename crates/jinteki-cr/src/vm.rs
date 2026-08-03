@@ -4790,7 +4790,25 @@ impl Vm {
                 cite!("step_conditional_ability_checkpoint");
                 cite!("step_play_ability_checkpoint");
                 cite!("step_subroutine_checkpoint");
-                self.checkpoint_and_react(None);
+                // CR 9.11.2a: "the steps of installing a card are not separate
+                // instructions… the only checkpoint that occurs during the
+                // procedure of installing a card is at step 8.5.16d,
+                // immediately after the install cost is paid." The kernel
+                // expands the procedure into steps so its decisions and
+                // interrupt points land where the CR puts them, but a step is
+                // not an instruction: 8.5.16a is followed by no checkpoint,
+                // and the one after 8.5.16f IS the instruction's own
+                // post-instruction checkpoint (9.11.2).
+                let procedural = matches!(
+                    self.frames.last(),
+                    Some(Frame::Ability(af))
+                        if matches!(af.instructions.get(af.idx), Some(Instruction::InstallStepPlace))
+                );
+                if procedural {
+                    cite!("rule_step_sequences");
+                } else {
+                    self.checkpoint_and_react(None);
+                }
                 let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
                 af.idx += 1;
                 af.phase = AbilityPhase::Targets;
