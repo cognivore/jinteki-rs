@@ -6,7 +6,7 @@
 //! Games ride one WebSocket per session (JSON text frames with a `type`
 //! field); auth and decks ride plain HTTP JSON under /api/*.
 
-use jinteki_server::{api, auth, bridge, db, decks, guard, local, mail};
+use jinteki_server::{api, auth, bridge, db, decks, guard, lobby, local, mail};
 
 use axum::{
     extract::ws::WebSocketUpgrade,
@@ -85,11 +85,19 @@ async fn main() {
             tick.tick().await; // first tick fires immediately; skip it
             loop {
                 tick.tick().await;
-                let conn = db.lock().await;
-                match auth::gc_sweep(&conn) {
-                    Ok(n) if n > 0 => tracing::info!("anon GC pruned {n} users"),
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!("gc sweep failed: {e}"),
+                {
+                    let conn = db.lock().await;
+                    match auth::gc_sweep(&conn) {
+                        Ok(n) if n > 0 => tracing::info!("anon GC pruned {n} users"),
+                        Ok(_) => {}
+                        Err(e) => tracing::warn!("gc sweep failed: {e}"),
+                    }
+                }
+                // An open lobby seat nobody took in a day is not an
+                // invitation any more.
+                match lobby::gc().await {
+                    0 => {}
+                    n => tracing::info!("lobby GC dropped {n} stale open games"),
                 }
             }
         });

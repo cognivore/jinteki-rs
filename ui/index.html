@@ -33,7 +33,8 @@
         </div>
         <div class="cr-ready" id="cr-ready">checking the card layer…</div>
         <input id="cr-seed" type="text" inputmode="numeric" placeholder="seed (optional)">
-        <button class="big go" id="btn-cr">Jack in</button>
+        <button class="big go" id="btn-cr">vs Bot</button>
+        <button class="big go alt" id="btn-cr-lobby" style="display:none">vs Human (lobby)</button>
       </div>
 
       <div class="home-card" id="card-vsbot">
@@ -192,6 +193,23 @@
     </div>
     <button class="chip danger" id="account-logout">Log out</button>
   </div>
+</div>
+
+<!-- ── Eternal lobby: human vs human on this server ─────────────────────── -->
+<div id="screen-cr-lobby" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="crlobby-back">← Home</button>
+    <span id="crlobby-status">open games</span>
+    <button class="chip" id="crlobby-refresh">Refresh</button>
+  </div>
+  <div class="lobby-create">
+    <input id="crlobby-title" type="text" placeholder="game title (optional)">
+    <button class="chip" id="crlobby-create-runner">Create as Andromeda</button>
+    <button class="chip" id="crlobby-create-corp">Create as Gauntlet</button>
+    <button class="chip danger" id="crlobby-cancel" style="display:none">Cancel my game</button>
+  </div>
+  <div id="crlobby-mine"></div>
+  <div id="crlobby-list" class="lobby-list"></div>
 </div>
 
 <!-- ── Bridge lobby screen ─────────────────────────────────────────────── -->

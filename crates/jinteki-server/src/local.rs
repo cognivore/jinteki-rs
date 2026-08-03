@@ -1,5 +1,6 @@
-//! Local mode: human vs the random-walk bot, with sessions that survive
-//! refreshes and closed tabs.
+//! Local mode: human vs the random-walk bot, human vs the CR bot, and human
+//! vs human through the CR lobby — with sessions that survive refreshes and
+//! closed tabs.
 //!
 //! Games live in a server-side registry keyed by an opaque token; the client
 //! stores its token in localStorage and resumes over any fresh WebSocket.
@@ -9,19 +10,34 @@
 //!     {"type":"start","engine":"cr","side":…,"seed":…}   ← the CR engine
 //!     {"type":"resume","token":"..."}
 //!     {"type":"action","command":"<jnet command>","args":{...}}
+//!     {"type":"say","msg":"..."}                          ← chat (CR games)
+//!     {"type":"lobby-list"}                               ← the CR lobby
+//!     {"type":"lobby-create","side":…,"title":…,"seed":…}
+//!     {"type":"lobby-join","gameid":"..."}
+//!     {"type":"lobby-cancel"}
 //!   server → client:
 //!     {"type":"session","token":"...","side":"runner"|"corp","engine"?:"cr"}
 //!     {"type":"state","state":{...jnet-shaped...},"actions":[...legal...]}
 //!     {"type":"error","error":"...","cr_readiness"?:{…}}
+//!     {"type":"lobby-list","list":[{gameid,title,creator,side,…}]}
+//!     {"type":"lobby-waiting","lobby":{…},"token":"..."}
 //!
 //! TWO engines ride this one socket. `engine:"cr"` on the start message hosts
 //! a `jinteki-cr` VM (the Comprehensive Rules machine, eternal decks, the
 //! plan driver's neutral policy as the bot — see `crate::cr`); anything else
 //! is the original local engine below, unchanged and still the default. Both
-//! keep their own registry, and `resume` finds a token in either.
+//! keep their own registry, and `resume` finds a token in either — or in the
+//! lobby, where a token can also be a seat still waiting for an opponent.
+//!
+//! A two-human game needs the server to speak first: when your opponent moves,
+//! nothing arrives on YOUR socket unless something tells it to look. That is
+//! `crate::lobby`'s nudge bus, and this loop selects over it and the socket.
+//! A nudge names a game; the answer is always this connection serializing its
+//! OWN seat's view (SYS-S-1) — no state ever travels over the bus.
 
 use crate::db::Db;
 use crate::decks;
+use crate::lobby::{self, Nudge};
 use axum::extract::ws::{Message, WebSocket};
 use jinteki_core::state::{GameState, TurnState};
 use jinteki_core::view::{render_state, Viewer};
@@ -32,6 +48,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::Mutex;
 
 struct LocalGame {
@@ -138,30 +155,224 @@ async fn record_outcome_if_over(db: &Db, token: &str, g: &mut LocalGame) {
     );
 }
 
-/// Which engine a connection is attached to. The two are peers on the wire
+/// Which engine a connection is attached to. The three are peers on the wire
 /// and strangers everywhere else.
 enum Attached {
     Local(String, Arc<Mutex<LocalGame>>),
-    Cr(String, Arc<Mutex<crate::cr::CrGame>>),
+    Cr(crate::cr::Seat),
+    /// A seat taken in the CR lobby, waiting for an opponent (its token).
+    Waiting(String),
+}
+
+/// The seat label the other player sees. The accounts subsystem owns the
+/// name; a cookieless visitor plays as "guest".
+async fn display_name(db: &Db, user: Option<&str>) -> String {
+    match user {
+        Some(uid) => {
+            let conn = db.lock().await;
+            crate::auth::display_name(&conn, uid).unwrap_or_else(|| "guest".into())
+        }
+        None => "guest".into(),
+    }
+}
+
+/// Answer a nudge: re-list the lobby if this socket is watching it, push this
+/// seat's own view if the nudge was about its game, and notice the moment a
+/// waiting seat becomes a game. Nothing here reads another seat's state.
+async fn on_nudge(
+    ws: &mut WebSocket,
+    db: &Db,
+    n: Option<&Nudge>,
+    attached: &mut Option<Attached>,
+    watching_lobby: bool,
+) {
+    let all = n.is_none(); // a lagged receiver: refresh everything
+    let lobby_moved = all || matches!(n, Some(Nudge::Lobby));
+    if lobby_moved && watching_lobby {
+        let list = lobby::list_json().await;
+        let _ = ws.send(Message::Text(list.to_string().into())).await;
+    }
+    // A waiting seat finds out it is a game the same way anyone would: by
+    // asking the registry whether its token resolves yet.
+    if lobby_moved {
+        if let Some(Attached::Waiting(token)) = attached.as_ref() {
+            let token = token.clone();
+            if let Some(seat) = crate::cr::lookup(&token).await {
+                crate::cr::attach(ws, db, &token, &seat).await;
+                lobby::nudge(Nudge::Game(seat.key.clone()));
+                *attached = Some(Attached::Cr(seat));
+                return;
+            }
+        }
+    }
+    if let Some(Attached::Cr(seat)) = attached.as_ref() {
+        if all || matches!(n, Some(Nudge::Game(k)) if *k == seat.key) {
+            crate::cr::push_seat(seat, ws).await;
+        }
+    }
 }
 
 pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
     // The session this connection is attached to, if any.
     let mut attached: Option<Attached> = None;
+    let mut nudges = lobby::subscribe();
+    let me = display_name(&db, user.as_deref()).await;
+    let mut watching_lobby = false;
 
-    while let Some(Ok(msg)) = ws.recv().await {
-        let Message::Text(text) = msg else { continue };
+    loop {
+        enum Ev {
+            Client(Message),
+            Nudge(Nudge),
+            Resync,
+            Gone,
+        }
+        // The socket and the bus, together: a two-human game only moves on
+        // your screen because the other player's move said so.
+        let ev = tokio::select! {
+            m = ws.recv() => match m {
+                Some(Ok(m)) => Ev::Client(m),
+                _ => Ev::Gone,
+            },
+            n = nudges.recv() => match n {
+                Ok(n) => Ev::Nudge(n),
+                Err(RecvError::Lagged(_)) => Ev::Resync,
+                Err(RecvError::Closed) => Ev::Gone,
+            },
+        };
+        let text = match ev {
+            Ev::Gone => break,
+            Ev::Nudge(n) => {
+                on_nudge(&mut ws, &db, Some(&n), &mut attached, watching_lobby).await;
+                continue;
+            }
+            Ev::Resync => {
+                on_nudge(&mut ws, &db, None, &mut attached, watching_lobby).await;
+                continue;
+            }
+            Ev::Client(Message::Text(t)) => t,
+            Ev::Client(_) => continue,
+        };
         let Ok(v) = serde_json::from_str::<Value>(&text) else {
             send_err(&mut ws, "bad json").await;
             continue;
         };
         match v["type"].as_str() {
+            // ── the CR lobby: human vs human, same VM, same gate ──────────
+            Some("lobby-list") => {
+                watching_lobby = true;
+                let list = lobby::list_json().await;
+                let _ = ws.send(Message::Text(list.to_string().into())).await;
+            }
+            Some("lobby-create") => {
+                // SYS-D-12, at the lobby door exactly as at the bot door.
+                let r = crate::cr::readiness();
+                if !r.ready {
+                    crate::cr::refuse_gate(&mut ws, &r).await;
+                    continue;
+                }
+                // One open seat per person: creating again replaces the old.
+                if let Some(Attached::Waiting(t)) = attached.as_ref() {
+                    lobby::cancel(t).await;
+                }
+                let side = lobby::side_from_key(v["side"].as_str().unwrap_or("runner"));
+                let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+                let o = lobby::create(
+                    v["title"].as_str().unwrap_or(""),
+                    &me,
+                    user.clone(),
+                    side,
+                    seed,
+                )
+                .await;
+                watching_lobby = true;
+                let _ = ws
+                    .send(Message::Text(
+                        json!({
+                            "type": "lobby-waiting",
+                            "lobby": o.to_json(),
+                            "token": o.token,
+                            "side": v["side"].as_str().unwrap_or("runner"),
+                            "deck": lobby::deck_title(side),
+                        })
+                        .to_string()
+                        .into(),
+                    ))
+                    .await;
+                attached = Some(Attached::Waiting(o.token.clone()));
+            }
+            Some("lobby-cancel") => {
+                if let Some(Attached::Waiting(t)) = attached.as_ref() {
+                    lobby::cancel(t).await;
+                    attached = None;
+                }
+                let list = lobby::list_json().await;
+                let _ = ws.send(Message::Text(list.to_string().into())).await;
+            }
+            Some("lobby-join") => {
+                let id = v["gameid"].as_str().unwrap_or("");
+                let Some(open) = lobby::claim(id).await else {
+                    send_err(&mut ws, "that game is no longer open").await;
+                    let list = lobby::list_json().await;
+                    let _ = ws.send(Message::Text(list.to_string().into())).await;
+                    continue;
+                };
+                // You are not your own opponent.
+                if attached.as_ref().is_some_and(
+                    |a| matches!(a, Attached::Waiting(t) if *t == open.token),
+                ) {
+                    lobby::restore(open).await;
+                    send_err(&mut ws, "that is your own game").await;
+                    continue;
+                }
+                // SYS-D-12 once more, because the gate is evaluated PER START.
+                let setup = match crate::cr::eternal_setup(open.seed) {
+                    Ok(s) => s,
+                    Err(r) => {
+                        lobby::restore(open).await;
+                        crate::cr::refuse_gate(&mut ws, &r).await;
+                        continue;
+                    }
+                };
+                let started = lobby::start(open, &me, user.clone(), setup).await;
+                // One `games` row per seat: each player's own token.
+                if let Some(uid) = user.as_deref() {
+                    crate::cr::record_start(&db, &started.token, uid, started.side, started.seed)
+                        .await;
+                }
+                if let Some(uid) = started.creator_user.as_deref() {
+                    crate::cr::record_start(
+                        &db,
+                        &started.creator_token,
+                        uid,
+                        started.creator_side,
+                        started.seed,
+                    )
+                    .await;
+                }
+                watching_lobby = false;
+                crate::cr::attach(&mut ws, &db, &started.token, &started.seat).await;
+                // Wake the creator: their seat is a game now.
+                lobby::nudge(Nudge::Game(started.key.clone()));
+                attached = Some(Attached::Cr(started.seat));
+            }
+            // Chat: both players' logs, verbatim, attributed (CR games only —
+            // the game log itself stays per-side).
+            Some("say") => {
+                let msg = v["msg"].as_str().unwrap_or("").to_string();
+                if let Some(Attached::Cr(seat)) = attached.as_ref() {
+                    if crate::cr::chat(seat, &msg).await {
+                        crate::cr::push_seat(seat, &mut ws).await;
+                        lobby::nudge(Nudge::Game(seat.key.clone()));
+                    }
+                }
+            }
             // The CR engine: eternal decks behind the completeness gate.
             Some("start") if v["engine"].as_str() == Some("cr") => {
-                if let Some((token, game)) =
+                if let Some((_token, seat)) =
                     crate::cr::start(&mut ws, &db, user.as_deref(), &v).await
                 {
-                    attached = Some(Attached::Cr(token, game));
+                    watching_lobby = false;
+                    attached = Some(Attached::Cr(seat));
                 }
             }
             Some("start") => {
@@ -284,9 +495,30 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                 let token = v["token"].as_str().unwrap_or("").to_string();
                 // A token belongs to exactly one engine; ask the CR registry
                 // first so a CR session resumes as a CR session.
-                if let Some(game) = crate::cr::lookup(&token).await {
-                    let game = crate::cr::resume(&mut ws, &db, &token, game).await;
-                    attached = Some(Attached::Cr(token, game));
+                if let Some(seat) = crate::cr::lookup(&token).await {
+                    let seat = crate::cr::resume(&mut ws, &db, &token, seat).await;
+                    watching_lobby = false;
+                    lobby::nudge(Nudge::Game(seat.key.clone()));
+                    attached = Some(Attached::Cr(seat));
+                    continue;
+                }
+                // A token can also be a seat still waiting for an opponent —
+                // create, close the tab, come back, still waiting.
+                if let Some(o) = lobby::by_token(&token).await {
+                    watching_lobby = true;
+                    let _ = ws
+                        .send(Message::Text(
+                            json!({
+                                "type": "lobby-waiting",
+                                "lobby": o.to_json(),
+                                "token": o.token,
+                                "deck": lobby::deck_title(o.side),
+                            })
+                            .to_string()
+                            .into(),
+                        ))
+                        .await;
+                    attached = Some(Attached::Waiting(o.token.clone()));
                     continue;
                 }
                 let found = registry().lock().await.get(&token).cloned();
@@ -316,8 +548,15 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
             Some("action") => {
                 let (token, game) = match attached.as_ref() {
                     Some(Attached::Local(t, g)) => (t, g),
-                    Some(Attached::Cr(t, g)) => {
-                        crate::cr::action(&mut ws, &db, t, g, &v).await;
+                    Some(Attached::Cr(seat)) => {
+                        // The other seat learns of it the only way it can.
+                        if crate::cr::action(&mut ws, &db, seat, &v).await {
+                            lobby::nudge(Nudge::Game(seat.key.clone()));
+                        }
+                        continue;
+                    }
+                    Some(Attached::Waiting(..)) => {
+                        send_err(&mut ws, "waiting for an opponent").await;
                         continue;
                     }
                     None => {
@@ -342,6 +581,14 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
             }
             _ => {}
         }
+    }
+
+    // The socket is gone. A seat with nobody in it is shown as exactly that
+    // to the player still at the table — a held game is honest, a silently
+    // stalled one is not.
+    if let Some(Attached::Cr(seat)) = attached.as_ref() {
+        crate::cr::set_connected(seat, false).await;
+        lobby::nudge(Nudge::Game(seat.key.clone()));
     }
 }
 

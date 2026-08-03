@@ -69,10 +69,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 #screen-cr-gap .ztext { color: var(--dim); font-style: italic; }
 
 /* ── Lobby ────────────────────────────────────────────────────────────── */
-#screen-lobby { display: none; flex-direction: column; padding: 10px; gap: 10px; }
-#screen-lobby.active { display: flex; }
+#screen-lobby, #screen-cr-lobby { display: none; flex-direction: column; padding: 10px; gap: 10px; }
+#screen-lobby.active, #screen-cr-lobby.active { display: flex; }
 .lobby-bar { display: flex; align-items: center; gap: 10px; }
-#lobby-status { color: var(--dim); flex: 1; text-align: center; }
+#lobby-status, #crlobby-status { color: var(--dim); flex: 1; text-align: center; }
+/* Your own waiting seat, above the list of everyone else's. */
+#crlobby-mine .lobby-row { border-color: var(--gold); }
 .lobby-create { display: flex; gap: 8px; flex-wrap: wrap; }
 .lobby-create input { flex: 1; min-width: 140px; background: var(--bg2); border: 1px solid var(--line);
   color: var(--text); border-radius: 10px; padding: 10px; }
@@ -102,6 +104,8 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .stat.bump { animation: bump .4s; }
 @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.25); background: #2a3a5e; } 100% { transform: scale(1); } }
 .thinking { color: var(--dim); animation: pulse 1.2s infinite; }
+/* A seat with nobody in it: held, not thinking. */
+.thinking.offline { color: var(--danger); animation: none; }
 @keyframes pulse { 50% { opacity: .3; } }
 
 #board { position: absolute; inset: 30px 0 150px 0; display: flex; flex-direction: column; }

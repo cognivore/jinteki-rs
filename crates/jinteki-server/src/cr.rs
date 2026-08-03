@@ -322,8 +322,11 @@ fn oracle_text(title: &str) -> Option<&'static str> {
 // The session
 // ───────────────────────────────────────────────────────────────────────────
 
-/// A decision put to the human, pre-rendered into the UI's vocabulary.
+/// A decision put to a human seat, pre-rendered into the UI's vocabulary.
 struct Pending {
+    /// Whose decision it is. Only that seat may answer it; the other seat's
+    /// view carries the waiting prompt instead.
+    side: Side,
     spec: DecisionSpec,
     msg: String,
     /// (uuid, label, the answer taking it produces).
@@ -357,13 +360,67 @@ struct Focus {
     trash_cost: Option<u32>,
 }
 
+/// One of the two seats at the table. A seat is a bot or a person; a person
+/// has a name (the account's display name — `auth.rs`), maybe an account, a
+/// resume token, and a socket that is either attached or not.
+#[derive(Clone, Debug)]
+pub struct SeatState {
+    /// The plan driver's neutral policy answers this seat's decisions.
+    pub bot: bool,
+    /// What the other player sees this seat called.
+    pub name: String,
+    /// The account this seat plays for, if any (attribution in `games`).
+    pub user: Option<String>,
+    /// The registry key that finds this seat — one per player, so either can
+    /// resume independently after a refresh or a closed tab.
+    pub token: Option<String>,
+    /// Whether a socket is attached right now. `false` is shown to the other
+    /// player: a held game is honest, a silently stalled one is not.
+    pub connected: bool,
+}
+
+impl SeatState {
+    pub fn bot() -> Self {
+        SeatState { bot: true, name: "bot".into(), user: None, token: None, connected: true }
+    }
+    pub fn human(name: impl Into<String>, user: Option<String>) -> Self {
+        SeatState {
+            bot: false,
+            name: name.into(),
+            user,
+            token: None,
+            connected: false,
+        }
+    }
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
+    }
+}
+
+/// Seats are addressed by side, so index by it.
+fn six(s: Side) -> usize {
+    match s {
+        Side::Corp => 0,
+        Side::Runner => 1,
+    }
+}
+
 pub struct CrGame {
     vm: Vm,
-    human: Side,
+    /// Indexed by [`six`].
+    seats: [SeatState; 2],
+    /// The game's own id — what a state-changed nudge names, so the other
+    /// seat's socket knows the push is for it.
+    key: String,
     seed: u64,
     pending: Option<Pending>,
     picked: Vec<ObjectId>,
-    log: Vec<Value>,
+    /// ONE LOG PER SIDE (SYS-S-1). A game event is rendered once per viewer,
+    /// each from that viewer's own `view_of`, so a line can never name a card
+    /// its reader is not entitled to see. Chat is the one thing written to
+    /// both logs verbatim.
+    log: [Vec<Value>; 2],
     result: Option<GameResult>,
     conceded: Option<Side>,
     last_seen: Instant,
@@ -372,24 +429,68 @@ pub struct CrGame {
 }
 
 impl CrGame {
-    pub fn human(&self) -> Side {
-        self.human
+    pub fn key(&self) -> &str {
+        &self.key
     }
     pub fn seed(&self) -> u64 {
         self.seed
     }
+    pub fn seat(&self, side: Side) -> &SeatState {
+        &self.seats[six(side)]
+    }
+    /// A game with a bot in it (the "vs Bot" mode).
+    pub fn has_bot(&self) -> bool {
+        self.seats.iter().any(|s| s.bot)
+    }
+    pub fn set_connected(&mut self, side: Side, on: bool) {
+        self.seats[six(side)].connected = on;
+    }
     fn over(&self) -> bool {
         self.result.is_some() || self.conceded.is_some()
     }
+    /// A line both players may read (system notices, chat, the result).
     fn say(&mut self, text: impl Into<String>) {
-        self.log.push(json!({"user": "__system__", "text": text.into()}));
-        if self.log.len() > 400 {
-            self.log.drain(..100);
+        let t = text.into();
+        self.say_to(Side::Corp, t.clone());
+        self.say_to(Side::Runner, t);
+    }
+    fn say_to(&mut self, side: Side, text: impl Into<String>) {
+        self.push_line(side, json!({"user": "__system__", "text": text.into()}));
+    }
+    /// The same event, rendered once per viewer.
+    fn say_each(&mut self, lines: [Option<String>; 2]) {
+        for (i, l) in lines.into_iter().enumerate() {
+            let Some(l) = l else { continue };
+            let side = if i == 0 { Side::Corp } else { Side::Runner };
+            self.say_to(side, l);
+        }
+    }
+    /// A player's chat line: identical text in both logs, attributed.
+    fn chat_line(&mut self, who: &str, text: &str) {
+        let v = json!({"user": who, "text": text});
+        self.push_line(Side::Corp, v.clone());
+        self.push_line(Side::Runner, v);
+    }
+    fn push_line(&mut self, side: Side, v: Value) {
+        let log = &mut self.log[six(side)];
+        log.push(v);
+        if log.len() > 400 {
+            log.drain(..100);
         }
     }
 }
 
-type Registry = Arc<Mutex<HashMap<String, Arc<Mutex<CrGame>>>>>;
+/// A seat as the registry hands it back: which side the token sits in, the
+/// game both tokens share, and that game's key — carried here so a socket can
+/// tell whether a nudge is about its own game without taking the lock.
+#[derive(Clone)]
+pub struct Seat {
+    pub side: Side,
+    pub key: String,
+    pub game: Arc<Mutex<CrGame>>,
+}
+
+type Registry = Arc<Mutex<HashMap<String, Seat>>>;
 
 fn registry() -> Registry {
     static REG: OnceLock<Registry> = OnceLock::new();
@@ -400,12 +501,12 @@ fn registry() -> Registry {
 /// gives (phones sleep; give them days).
 const SESSION_TTL: Duration = Duration::from_secs(72 * 3600);
 
-async fn prune_and_insert(token: String, game: Arc<Mutex<CrGame>>) {
+async fn prune_and_insert(token: String, seat: Seat) {
     let reg = registry();
     let mut map = reg.lock().await;
     let mut dead = Vec::new();
-    for (t, g) in map.iter() {
-        if let Ok(g) = g.try_lock() {
+    for (t, s) in map.iter() {
+        if let Ok(g) = s.game.try_lock() {
             if g.last_seen.elapsed() > SESSION_TTL {
                 dead.push(t.clone());
             }
@@ -414,47 +515,129 @@ async fn prune_and_insert(token: String, game: Arc<Mutex<CrGame>>) {
     for t in dead {
         map.remove(&t);
     }
-    map.insert(token, game);
+    map.insert(token, seat);
 }
 
-pub async fn lookup(token: &str) -> Option<Arc<Mutex<CrGame>>> {
+pub async fn lookup(token: &str) -> Option<Seat> {
     registry().lock().await.get(token).cloned()
 }
 
-fn new_token() -> String {
+pub fn new_token() -> String {
     format!("{:016x}{:016x}", rand::random::<u64>(), rand::random::<u64>())
 }
 
-/// Create a session from an arbitrary setup. The eternal-deck path goes
-/// through [`eternal_setup`]; tests use this directly with small all-complete
-/// decks, which is the same code path minus the gate.
-pub async fn create_session(setup: GameSetup, human: Side, bot_delay_ms: u64) -> String {
+fn greeting(g: &CrGame, side: Side) -> String {
+    let opp = g.seat(side.other());
+    if opp.bot {
+        format!("CR engine — you are the {}. Seed {}.", side_name(side), g.seed)
+    } else {
+        format!(
+            "CR engine — you are the {} against {}. Seed {}.",
+            side_name(side),
+            opp.name,
+            g.seed
+        )
+    }
+}
+
+fn new_game(setup: GameSetup, seats: [SeatState; 2], bot_delay_ms: u64) -> CrGame {
     let seed = setup.seed;
     let mut g = CrGame {
         vm: Vm::new_game(setup),
-        human,
+        seats,
+        key: new_token(),
         seed,
         pending: None,
         picked: Vec::new(),
-        log: Vec::new(),
+        log: [Vec::new(), Vec::new()],
         result: None,
         conceded: None,
         last_seen: Instant::now(),
         bot_delay: Duration::from_millis(bot_delay_ms),
         outcome_recorded: false,
     };
-    g.say(format!(
-        "CR engine — you are the {}. Seed {seed}.",
-        side_name(human)
-    ));
+    for side in [Side::Corp, Side::Runner] {
+        let line = greeting(&g, side);
+        g.say_to(side, line);
+    }
+    g
+}
+
+/// Register every human seat's token against one game.
+async fn register(game: &Arc<Mutex<CrGame>>, seats: &[SeatState; 2]) {
+    let key = game.lock().await.key.clone();
+    for side in [Side::Corp, Side::Runner] {
+        let s = &seats[six(side)];
+        if let Some(t) = s.token.clone() {
+            let seat = Seat { side, key: key.clone(), game: game.clone() };
+            prune_and_insert(t, seat).await;
+        }
+    }
+}
+
+/// Create a session from an arbitrary setup. The eternal-deck path goes
+/// through [`eternal_setup`]; tests use this directly with small all-complete
+/// decks, which is the same code path minus the gate.
+pub async fn create_session(setup: GameSetup, human: Side, bot_delay_ms: u64) -> String {
     let token = new_token();
-    prune_and_insert(token.clone(), Arc::new(Mutex::new(g))).await;
+    let mut seats = [SeatState::bot(), SeatState::bot()];
+    seats[six(human)] = SeatState::human("you", None).with_token(token.clone());
+    let g = new_game(setup, seats.clone(), bot_delay_ms);
+    let game = Arc::new(Mutex::new(g));
+    register(&game, &seats).await;
     token
+}
+
+/// Create a two-human session: one VM, two seats, two resume tokens. A seat
+/// that already carries a token (the lobby mints the creator's when they sit
+/// down to wait) keeps it, so a waiting player's token survives the start.
+pub async fn create_two_human_session(
+    setup: GameSetup,
+    corp: SeatState,
+    runner: SeatState,
+) -> (Arc<Mutex<CrGame>>, [String; 2]) {
+    let mut seats = [corp, runner];
+    for s in seats.iter_mut() {
+        if s.token.is_none() {
+            s.token = Some(new_token());
+        }
+    }
+    let tokens = [
+        seats[0].token.clone().unwrap_or_default(),
+        seats[1].token.clone().unwrap_or_default(),
+    ];
+    let game = Arc::new(Mutex::new(new_game(setup, seats.clone(), 0)));
+    register(&game, &seats).await;
+    (game, tokens)
+}
+
+/// The seat token for one side, if that seat is a person.
+pub fn seat_token(g: &CrGame, side: Side) -> Option<String> {
+    g.seats[six(side)].token.clone()
 }
 
 // ───────────────────────────────────────────────────────────────────────────
 // The ws surface (called by `local::handle`, which owns the socket)
 // ───────────────────────────────────────────────────────────────────────────
+
+/// The SYS-D-12 refusal, byte for byte the same whichever door it is asked
+/// through — `start` (vs Bot) and `lobby-create` (vs Human) share it.
+pub async fn refuse_gate(ws: &mut WebSocket, r: &Readiness) {
+    let _ = ws
+        .send(Message::Text(
+            json!({
+                "type": "error",
+                "error": format!(
+                    "the eternal decks are not playable yet: {} cards implemented",
+                    r.fraction()
+                ),
+                "cr_readiness": r,
+            })
+            .to_string()
+            .into(),
+        ))
+        .await;
+}
 
 /// `{"type":"start","engine":"cr",…}` — the gate, then the game.
 pub async fn start(
@@ -462,7 +645,7 @@ pub async fn start(
     db: &Db,
     user: Option<&str>,
     v: &Value,
-) -> Option<(String, Arc<Mutex<CrGame>>)> {
+) -> Option<(String, Seat)> {
     let human = match v["side"].as_str() {
         Some("corp") => Side::Corp,
         _ => Side::Runner,
@@ -472,32 +655,14 @@ pub async fn start(
         Ok(s) => s,
         Err(r) => {
             // SYS-D-12: refuse, and say exactly what is missing.
-            let _ = ws
-                .send(Message::Text(
-                    json!({
-                        "type": "error",
-                        "error": format!(
-                            "the eternal decks are not playable yet: {} cards implemented",
-                            r.fraction()
-                        ),
-                        "cr_readiness": r,
-                    })
-                    .to_string()
-                    .into(),
-                ))
-                .await;
+            refuse_gate(ws, &r).await;
             return None;
         }
     };
     let token = create_session(setup, human, 300).await;
-    let game = lookup(&token).await?;
+    let seat = lookup(&token).await?;
     if let Some(uid) = user {
-        let conn = db.lock().await;
-        let _ = conn.execute(
-            "INSERT INTO games (id, owner_id, side, deck_id, seed, started_at)
-             VALUES (?1, ?2, ?3, NULL, ?4, datetime('now'))",
-            rusqlite::params![token, uid, side_key(human), seed as i64],
-        );
+        record_start(db, &token, uid, human, seed).await;
     }
     let _ = ws
         .send(Message::Text(
@@ -507,85 +672,137 @@ pub async fn start(
         ))
         .await;
     {
-        let mut g = game.lock().await;
-        drive(&mut g, ws).await;
-        push_state(&g, ws).await;
-        record_outcome_if_over(db, &token, &mut g).await;
+        let mut g = seat.game.lock().await;
+        g.set_connected(human, true);
+        drive(&mut g, ws, human).await;
+        push_state(&g, ws, human).await;
+        record_outcome_if_over(db, &mut g).await;
     }
-    Some((token, game))
+    Some((token, seat))
 }
 
-/// `{"type":"resume","token":…}` for a CR session.
-pub async fn resume(
-    ws: &mut WebSocket,
-    db: &Db,
-    token: &str,
-    game: Arc<Mutex<CrGame>>,
-) -> Arc<Mutex<CrGame>> {
-    {
-        let mut g = game.lock().await;
-        g.last_seen = Instant::now();
-        let side = side_key(g.human);
-        let _ = ws
-            .send(Message::Text(
-                json!({"type":"session","token": token, "side": side, "engine":"cr"})
-                    .to_string()
-                    .into(),
-            ))
-            .await;
-        // The bot may have been mid-move when the old tab died.
-        drive(&mut g, ws).await;
-        push_state(&g, ws).await;
-        record_outcome_if_over(db, token, &mut g).await;
-    }
-    game
+/// One `games` row per SEAT: each player's own token is that player's own
+/// game id, so "my games" is honest on both sides of a lobby game.
+pub async fn record_start(db: &Db, token: &str, user: &str, side: Side, seed: u64) {
+    let conn = db.lock().await;
+    let _ = conn.execute(
+        "INSERT INTO games (id, owner_id, side, deck_id, seed, started_at)
+         VALUES (?1, ?2, ?3, NULL, ?4, datetime('now'))",
+        rusqlite::params![token, user, side_key(side), seed as i64],
+    );
 }
 
-/// `{"type":"action",…}` for a CR session.
-pub async fn action(
-    ws: &mut WebSocket,
-    db: &Db,
-    token: &str,
-    game: &Arc<Mutex<CrGame>>,
-    v: &Value,
-) {
-    let mut g = game.lock().await;
+/// Put a socket in a seat: announce the session, run the machine to the next
+/// decision anyone owes, and push THIS seat's view. Used by `resume` (a
+/// refreshed tab) and by the lobby (a game that has just started).
+pub async fn attach(ws: &mut WebSocket, db: &Db, token: &str, seat: &Seat) {
+    let mut g = seat.game.lock().await;
     g.last_seen = Instant::now();
-    match apply_command(&mut g, v) {
+    g.set_connected(seat.side, true);
+    let side = side_key(seat.side);
+    let _ = ws
+        .send(Message::Text(
+            json!({"type":"session","token": token, "side": side, "engine":"cr"})
+                .to_string()
+                .into(),
+        ))
+        .await;
+    // The bot may have been mid-move when the old tab died.
+    drive(&mut g, ws, seat.side).await;
+    push_state(&g, ws, seat.side).await;
+    record_outcome_if_over(db, &mut g).await;
+}
+
+/// `{"type":"resume","token":…}` for a CR session — either seat's.
+pub async fn resume(ws: &mut WebSocket, db: &Db, token: &str, seat: Seat) -> Seat {
+    attach(ws, db, token, &seat).await;
+    seat
+}
+
+/// `{"type":"action",…}` for a CR session. `Ok(true)` means the other seat
+/// (if there is a person in it) must be told to redraw.
+pub async fn action(ws: &mut WebSocket, db: &Db, seat: &Seat, v: &Value) -> bool {
+    let mut g = seat.game.lock().await;
+    g.last_seen = Instant::now();
+    match apply_command(&mut g, seat.side, v) {
         Ok(true) => {
-            push_state(&g, ws).await;
-            drive(&mut g, ws).await;
-            push_state(&g, ws).await;
-            record_outcome_if_over(db, token, &mut g).await;
+            push_state(&g, ws, seat.side).await;
+            drive(&mut g, ws, seat.side).await;
+            push_state(&g, ws, seat.side).await;
+            record_outcome_if_over(db, &mut g).await;
+            true
         }
         // A partial selection: nothing to resume yet, just re-render.
-        Ok(false) => push_state(&g, ws).await,
+        Ok(false) => {
+            push_state(&g, ws, seat.side).await;
+            false
+        }
         Err(e) => {
             let _ = ws
                 .send(Message::Text(json!({"type":"error","error": e}).to_string().into()))
                 .await;
+            false
         }
     }
 }
 
-async fn record_outcome_if_over(db: &Db, token: &str, g: &mut CrGame) {
+/// `{"type":"say","msg":…}` — a chat line, in both players' logs verbatim.
+/// Chat is the ONLY thing that crosses the per-side log boundary, and it
+/// carries no game information the sender did not choose to give away.
+pub async fn chat(seat: &Seat, msg: &str) -> bool {
+    let msg = msg.trim();
+    if msg.is_empty() {
+        return false;
+    }
+    let msg: String = msg.chars().take(280).collect();
+    let mut g = seat.game.lock().await;
+    g.last_seen = Instant::now();
+    let who = g.seat(seat.side).name.clone();
+    g.chat_line(&who, &msg);
+    true
+}
+
+/// Push this seat's own view down its own socket (the state-changed nudge).
+pub async fn push_seat(seat: &Seat, ws: &mut WebSocket) {
+    let g = seat.game.lock().await;
+    push_state(&g, ws, seat.side).await;
+}
+
+/// Attach/detach a socket to a seat. The other player is shown the truth
+/// either way — a held game is honest, a silently stalled one is not.
+pub async fn set_connected(seat: &Seat, on: bool) {
+    let mut g = seat.game.lock().await;
+    g.set_connected(seat.side, on);
+    if on {
+        g.last_seen = Instant::now();
+    }
+}
+
+async fn record_outcome_if_over(db: &Db, g: &mut CrGame) {
     if g.outcome_recorded || !g.over() {
         return;
     }
     g.outcome_recorded = true;
     let (winner, reason) = outcome(g);
+    let tokens: Vec<String> = g.seats.iter().filter_map(|s| s.token.clone()).collect();
     let conn = db.lock().await;
-    let _ = conn.execute(
-        "UPDATE games SET finished_at = datetime('now'), winner = ?1, reason = ?2
-         WHERE id = ?3 AND finished_at IS NULL",
-        rusqlite::params![winner, reason, token],
-    );
+    for t in tokens {
+        let _ = conn.execute(
+            "UPDATE games SET finished_at = datetime('now'), winner = ?1, reason = ?2
+             WHERE id = ?3 AND finished_at IS NULL",
+            rusqlite::params![winner, reason, t],
+        );
+    }
 }
 
-/// Run the machine until the human owes a decision, pushing a state (and
-/// pausing) whenever the bot does something worth watching.
-async fn drive(g: &mut CrGame, ws: &mut WebSocket) {
-    if g.over() {
+/// Run the machine until a PERSON owes a decision, pushing a state (and
+/// pausing) whenever the bot does something worth watching. With two people
+/// at the table nothing is auto-answered: the loop simply stops at whichever
+/// seat is asked, and that seat's socket is the one that finds a prompt.
+async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
+    // A decision already on the table is not ours to re-ask: the other seat's
+    // socket may be mid-selection, and re-presenting would discard its picks.
+    if g.over() || g.pending.is_some() {
         return;
     }
     for _ in 0..20_000 {
@@ -598,18 +815,19 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket) {
                 return;
             }
             Yield::Decision(side, spec) => {
-                if side == g.human {
-                    let p = present(&g.vm, g.human, &spec);
+                if !g.seats[six(side)].bot {
+                    let p = present(&g.vm, side, &spec);
                     g.picked.clear();
                     g.pending = Some(p);
                     return;
                 }
                 let answer = default_answer(&spec);
-                let noteworthy = describe_bot(g, &spec, &answer);
+                let noteworthy = describe_move(g, &spec, &answer, side);
+                let worth_a_frame = noteworthy.iter().any(|l| l.is_some());
                 g.vm.answer(answer);
-                if let Some(line) = noteworthy {
-                    g.say(line);
-                    push_state(g, ws).await;
+                if worth_a_frame {
+                    g.say_each(noteworthy);
+                    push_state(g, ws, viewer).await;
                     if !g.bot_delay.is_zero() {
                         tokio::time::sleep(g.bot_delay).await;
                     }
@@ -617,29 +835,39 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket) {
             }
         }
     }
-    g.say("The engine ran 20000 steps without asking you anything — stopping.");
+    g.say("The engine ran 20000 steps without asking anyone anything — stopping.");
 }
 
-/// What the bot just did, in the human's own view (a card the human is not
-/// entitled to see is never named). `None` = not worth a frame: passing a
-/// window is the bot declining to act, and the CR opens a great many windows.
-fn describe_bot(g: &CrGame, spec: &DecisionSpec, answer: &DecisionAnswer) -> Option<String> {
-    let view = g.vm.view_of(g.human);
-    let who = side_name(g.human.other());
-    match (spec, answer) {
-        (_, DecisionAnswer::Pass) => None,
-        (DecisionSpec::TakeAction { .. }, DecisionAnswer::Action(a)) => {
-            Some(format!("{who}: {}", action_label(&g.vm, &view, a)))
-        }
-        (_, DecisionAnswer::Take(o)) => {
-            Some(format!("{who}: {}", window_label(&g.vm, &view, o)))
-        }
-        (DecisionSpec::Mulligan, DecisionAnswer::TakeMulligan) => {
-            Some(format!("{who}: takes a mulligan."))
-        }
-        (DecisionSpec::Mulligan, _) => Some(format!("{who}: keeps their opening hand.")),
-        _ => None,
+/// What a player just did, rendered ONCE PER VIEWER from that viewer's own
+/// `view_of` (a card a reader is not entitled to see is never named in their
+/// log). `None` = not worth a frame: passing a window is declining to act,
+/// and the CR opens a great many windows.
+fn describe_move(
+    g: &CrGame,
+    spec: &DecisionSpec,
+    answer: &DecisionAnswer,
+    actor: Side,
+) -> [Option<String>; 2] {
+    let who = side_name(actor);
+    let mut out = [None, None];
+    for viewer in [Side::Corp, Side::Runner] {
+        let view = g.vm.view_of(viewer);
+        out[six(viewer)] = match (spec, answer) {
+            (_, DecisionAnswer::Pass) => None,
+            (DecisionSpec::TakeAction { .. }, DecisionAnswer::Action(a)) => {
+                Some(format!("{who}: {}", action_label(&g.vm, &view, a)))
+            }
+            (_, DecisionAnswer::Take(o)) => {
+                Some(format!("{who}: {}", window_label(&g.vm, &view, o)))
+            }
+            (DecisionSpec::Mulligan, DecisionAnswer::TakeMulligan) => {
+                Some(format!("{who}: takes a mulligan."))
+            }
+            (DecisionSpec::Mulligan, _) => Some(format!("{who}: keeps their opening hand.")),
+            _ => None,
+        };
     }
+    out
 }
 
 fn outcome(g: &CrGame) -> (String, String) {
@@ -663,21 +891,29 @@ fn outcome(g: &CrGame) -> (String, String) {
 // Client command → DecisionAnswer
 // ───────────────────────────────────────────────────────────────────────────
 
-/// Apply one client command. `Ok(true)` = the VM was resumed and should be
-/// driven; `Ok(false)` = the command changed only the pending selection.
-fn apply_command(g: &mut CrGame, v: &Value) -> Result<bool, String> {
+/// Apply one client command from `actor`'s seat. `Ok(true)` = the VM was
+/// resumed and should be driven; `Ok(false)` = the command changed only the
+/// pending selection.
+fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String> {
     let cmd = v["command"].as_str().ok_or("missing command")?;
     let args = &v["args"];
     if cmd == "concede" {
-        g.conceded = Some(g.human);
+        g.conceded = Some(actor);
         g.pending = None;
-        let who = side_name(g.human);
+        let who = side_name(actor);
         g.say(format!("{who}: concedes."));
         return Ok(true);
+    }
+    if g.over() {
+        return Err("the game is over".into());
     }
     let Some(p) = g.pending.as_ref() else {
         return Err("nothing to decide right now".into());
     };
+    // Two people at one table: a seat answers its OWN decisions and no others.
+    if p.side != actor {
+        return Err("it is not your decision right now".into());
+    }
     let cid = || -> Option<ObjectId> {
         args["card"]["cid"]
             .as_u64()
@@ -761,9 +997,14 @@ fn apply_command(g: &mut CrGame, v: &Value) -> Result<bool, String> {
         .find(|o| want(o))
         .cloned()
         .ok_or("that action is not legal right now")?;
-    let view = g.vm.view_of(g.human);
-    let line = format!("{}: {}", side_name(g.human), action_label(&g.vm, &view, &opt));
-    g.say(line);
+    // One line per reader, each from that reader's own view (SYS-S-1).
+    let mut lines = [None, None];
+    for viewer in [Side::Corp, Side::Runner] {
+        let view = g.vm.view_of(viewer);
+        lines[six(viewer)] =
+            Some(format!("{}: {}", side_name(actor), action_label(&g.vm, &view, &opt)));
+    }
+    g.say_each(lines);
     Ok(answer_now(g, DecisionAnswer::Action(opt)))
 }
 
@@ -778,9 +1019,10 @@ fn answer_now(g: &mut CrGame, a: DecisionAnswer) -> bool {
 // DecisionSpec → the UI's prompt shapes
 // ───────────────────────────────────────────────────────────────────────────
 
-fn present(vm: &Vm, human: Side, spec: &DecisionSpec) -> Pending {
-    let view = vm.view_of(human);
+fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
+    let view = vm.view_of(asked);
     let mut p = Pending {
+        side: asked,
         spec: spec.clone(),
         msg: String::new(),
         choices: Vec::new(),
@@ -1334,30 +1576,44 @@ fn action_json(vm: &Vm, view: &View, a: &ActionOption) -> Value {
 // The shim: View → the jnet-shaped state the board renderer eats
 // ───────────────────────────────────────────────────────────────────────────
 
-async fn push_state(g: &CrGame, ws: &mut WebSocket) {
+async fn push_state(g: &CrGame, ws: &mut WebSocket, viewer: Side) {
+    // A seat's affordances are its own: the action window belongs to whoever
+    // was asked, and the other seat is given nothing to click.
+    let actions = g
+        .pending
+        .as_ref()
+        .filter(|p| p.side == viewer)
+        .map(|p| p.actions.clone())
+        .unwrap_or_default();
     let msg = json!({
         "type": "state",
         "engine": "cr",
-        "state": state_json(g),
-        "actions": g.pending.as_ref().map(|p| p.actions.clone()).unwrap_or_default(),
+        "state": state_json(g, viewer),
+        "actions": actions,
     });
     let _ = ws.send(Message::Text(msg.to_string().into())).await;
 }
 
-/// The whole client-bound payload, derived from `view_of(human)` and nothing
-/// else (SYS-S-1).
-pub fn state_json(g: &CrGame) -> Value {
+/// The whole client-bound payload, derived from `view_of(viewer)` and nothing
+/// else (SYS-S-1). Called once per seat, with that seat's own viewpoint —
+/// there is no "the state" here, only two states.
+pub fn state_json(g: &CrGame, viewer: Side) -> Value {
     let vm = &g.vm;
-    let view = vm.view_of(g.human);
+    let view = vm.view_of(viewer);
+    let opp = g.seat(viewer.other());
     let mut root = Map::new();
     root.insert("gameid".into(), json!("cr"));
     root.insert("turn".into(), json!(vm.st.turn_seq));
     root.insert("active-player".into(), json!(side_key(vm.st.turn_side)));
     root.insert("turn-state".into(), json!("acting"));
     root.insert("run".into(), run_json(vm));
-    root.insert("corp".into(), corp_json(g, &view));
-    root.insert("runner".into(), runner_json(g, &view));
-    root.insert("log".into(), Value::Array(g.log.clone()));
+    root.insert("corp".into(), corp_json(g, &view, viewer));
+    root.insert("runner".into(), runner_json(g, &view, viewer));
+    root.insert("log".into(), Value::Array(g.log[six(viewer)].clone()));
+    // Who is across the table, and whether they are still there.
+    root.insert("opponent".into(), json!(opp.name));
+    root.insert("opponent-bot".into(), json!(opp.bot));
+    root.insert("opponent-connected".into(), json!(opp.bot || opp.connected));
     let (winner, reason) = outcome(g);
     if g.over() {
         root.insert("winner".into(), json!(winner));
@@ -1416,17 +1672,25 @@ fn run_phase(vm: &Vm) -> &'static str {
     }
 }
 
-fn prompt_json(g: &CrGame, view: &View) -> Value {
+fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     if g.over() {
         return Value::Null;
     }
-    let Some(p) = g.pending.as_ref() else {
-        return json!({
-            "msg": format!("Waiting for the {}", side_name(g.human.other())),
-            "prompt-type": "waiting",
-            "choices": [],
-            "select": false,
-        });
+    // The waiting variant covers both "they are thinking" and "they are gone":
+    // a held game says so rather than looking stuck.
+    let waiting = |msg: String| {
+        json!({"msg": msg, "prompt-type": "waiting", "choices": [], "select": false})
+    };
+    let opp = g.seat(viewer.other());
+    let p = match g.pending.as_ref() {
+        Some(p) if p.side == viewer => p,
+        _ => {
+            return waiting(if !opp.bot && !opp.connected {
+                format!("{} disconnected — the game is held.", opp.name)
+            } else {
+                format!("Waiting for the {}", side_name(viewer.other()))
+            })
+        }
     };
     // The action window is the board itself, not a sheet.
     if matches!(p.spec, DecisionSpec::TakeAction { .. }) {
@@ -1463,12 +1727,15 @@ fn prompt_json(g: &CrGame, view: &View) -> Value {
     obj
 }
 
-fn corp_json(g: &CrGame, view: &View) -> Value {
+fn corp_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     let vm = &g.vm;
     let side = Side::Corp;
-    let own = g.human == side;
+    let own = viewer == side;
     let mut m = Map::new();
-    m.insert("user".into(), json!({"username": if own { "you" } else { "bot" }}));
+    m.insert(
+        "user".into(),
+        json!({"username": if own { "you".to_string() } else { g.seat(side).name.clone() }}),
+    );
     m.insert("identity".into(), identity_json(vm, view, side));
     m.insert("credit".into(), json!(vm.st.corp.credits));
     m.insert("click".into(), json!(vm.st.corp.clicks));
@@ -1496,17 +1763,20 @@ fn corp_json(g: &CrGame, view: &View) -> Value {
     m.insert("servers".into(), Value::Object(servers));
     m.insert(
         "prompt-state".into(),
-        if own { prompt_json(g, view) } else { Value::Null },
+        if own { prompt_json(g, view, viewer) } else { Value::Null },
     );
     Value::Object(m)
 }
 
-fn runner_json(g: &CrGame, view: &View) -> Value {
+fn runner_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     let vm = &g.vm;
     let side = Side::Runner;
-    let own = g.human == side;
+    let own = viewer == side;
     let mut m = Map::new();
-    m.insert("user".into(), json!({"username": if own { "you" } else { "bot" }}));
+    m.insert(
+        "user".into(),
+        json!({"username": if own { "you".to_string() } else { g.seat(side).name.clone() }}),
+    );
     m.insert("identity".into(), identity_json(vm, view, side));
     m.insert("credit".into(), json!(vm.st.runner.credits));
     m.insert("click".into(), json!(vm.st.runner.clicks));
@@ -1557,7 +1827,7 @@ fn runner_json(g: &CrGame, view: &View) -> Value {
     );
     m.insert(
         "prompt-state".into(),
-        if own { prompt_json(g, view) } else { Value::Null },
+        if own { prompt_json(g, view, viewer) } else { Value::Null },
     );
     Value::Object(m)
 }

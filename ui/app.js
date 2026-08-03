@@ -42,6 +42,14 @@ function sym(t) {
     .replaceAll("[their]", "their");
 }
 
+/* A player-supplied string on its way into innerHTML — display names are the
+   only such strings the board renders (§12.6: everything else uses nodes). */
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 /* ── screens ─────────────────────────────────────────────────────────── */
 function show(id) {
   document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
@@ -82,6 +90,11 @@ function handle(m) {
         JSON.stringify({ token: m.token, side: m.side, engine: m.engine || "local" }));
       if (m.engine === "cr") mode = "cr";
       if (m.side) mySide = m.side;
+      // A waiting lobby seat that just became a game is a game now.
+      crWaitToken = null;
+      crWaitId = null;
+      $("crlobby-cancel").style.display = "none";
+      $("crlobby-mine").textContent = "";
       break;
     case "state":
       S = m.state;
@@ -97,6 +110,10 @@ function handle(m) {
       break;
     case "lobbies": renderLobbies(m.list || []); break;
     case "lobby": renderLobbyState(m.lobby); break;
+    /* The CR lobby (our own server, human vs human). Distinct message types
+       from the bridge's, identical row shape, so the renderers stay thin. */
+    case "lobby-list": renderCrLobbies(m.list || []); break;
+    case "lobby-waiting": crWaiting(m); break;
     case "decks": renderDecks(m.list || []); break;
     case "reply":
       if (m.purpose === "join" || m.purpose === "watch") {
@@ -184,10 +201,12 @@ function renderCrReady() {
     box.appendChild(el("small", "hint",
       `${d.title} — ${d.complete}/${d.distinct} (${d.copies} cards)`));
   });
-  btn.textContent = CR_READY.ready ? "Jack in" : `Not yet — ${frac}, see what's missing`;
+  btn.textContent = CR_READY.ready ? "vs Bot" : `Not yet — ${frac}, see what's missing`;
   btn.classList.add("go");
   btn.classList.toggle("alt", !CR_READY.ready);
   $("cr-seed").style.display = CR_READY.ready ? "" : "none";
+  // Both doors open together, and neither before the card layer closes.
+  $("btn-cr-lobby").style.display = CR_READY.ready ? "" : "none";
 }
 
 $("btn-cr").onclick = () => {
@@ -232,6 +251,103 @@ function showCrGap() {
   });
   if (!(CR_READY.missing || []).length) {
     list.appendChild(el("div", "deck-row", "Nothing missing — start a game."));
+  }
+}
+
+/* ── the eternal lobby: the same VM with a person in the other seat ──────
+   Creating picks a side and, with it, that side's eternal deck; joining
+   takes the seat and the deck still going begging. The completeness gate is
+   the SAME gate — the server refuses a create exactly as it refuses a bot
+   start, with the same payload, so the honest screen below is one screen. */
+let crWaitToken = null;
+let crWaitId = null;
+
+$("btn-cr-lobby").onclick = () => {
+  if (!CR_READY || !CR_READY.ready) { showCrGap(); return; }
+  mode = "cr";
+  show("screen-cr-lobby");
+  $("crlobby-status").textContent = "connecting…";
+  connect("/ws/local", () => send({ type: "lobby-list" }));
+};
+
+$("crlobby-back").onclick = () => { if (ws) ws.close(); show("screen-home"); };
+$("crlobby-refresh").onclick = () => send({ type: "lobby-list" });
+$("crlobby-create-runner").onclick = () => crCreate("runner");
+$("crlobby-create-corp").onclick = () => crCreate("corp");
+$("crlobby-cancel").onclick = () => {
+  crWaitToken = null;
+  crWaitId = null;
+  localStorage.removeItem("jinteki_local");
+  send({ type: "lobby-cancel" });
+  $("crlobby-mine").textContent = "";
+  $("crlobby-cancel").style.display = "none";
+  $("crlobby-status").textContent = "open games";
+};
+
+function crCreate(side) {
+  const seed = parseInt($("cr-seed").value, 10);
+  send({
+    type: "lobby-create",
+    side,
+    title: $("crlobby-title").value,
+    seed: Number.isFinite(seed) ? seed : undefined,
+  });
+}
+
+/* Your own seat, taken, waiting for someone to take the other. The token is
+   stored exactly like a game's, so closing the tab loses nothing. */
+function crWaiting(m) {
+  mode = "cr";
+  crWaitToken = m.token || crWaitToken;
+  crWaitId = (m.lobby || {}).gameid || crWaitId;
+  if (crWaitToken) {
+    localStorage.setItem("jinteki_local",
+      JSON.stringify({ token: crWaitToken, side: m.side || (m.lobby || {}).side, engine: "cr" }));
+  }
+  show("screen-cr-lobby");
+  const g = m.lobby || {};
+  $("crlobby-status").textContent = "waiting for an opponent…";
+  $("crlobby-cancel").style.display = "";
+  const box = $("crlobby-mine");
+  box.textContent = "";
+  const row = el("div", "lobby-row");
+  const t = el("div", "t");
+  t.appendChild(el("b", "", g.title || "your game"));
+  t.appendChild(el("small", "",
+    `you are the ${g.side || "?"} — ${m.deck || ""} · waiting for the ${g["open-side"] || "?"}`));
+  row.appendChild(t);
+  row.appendChild(el("span", "chip", "waiting"));
+  box.appendChild(row);
+  send({ type: "lobby-list" });
+}
+
+function renderCrLobbies(list) {
+  const box = $("crlobby-list");
+  box.textContent = "";
+  // Your own seat is shown above, not offered back to you as a join.
+  list = list.filter((g) => g.gameid !== crWaitId);
+  if (!crWaitToken) $("crlobby-status").textContent =
+    list.length ? `${list.length} open game${list.length === 1 ? "" : "s"}` : "open games";
+  list.forEach((g) => {
+    const row = el("div", "lobby-row");
+    const t = el("div", "t");
+    t.appendChild(el("b", "", g.title || "eternal game"));
+    const age = Math.max(0, g["age-seconds"] | 0);
+    const ago = age < 60 ? `${age}s ago` : age < 3600 ? `${Math.round(age / 60)}m ago`
+      : `${Math.round(age / 3600)}h ago`;
+    t.appendChild(el("small", "",
+      `${g.creator || "?"} as ${g.side || "?"} · free seat: ${g["open-side"] || "?"} (${g["open-deck"] || ""}) · ${ago}`));
+    row.appendChild(t);
+    const join = el("button", "chip go", "Join");
+    join.onclick = () => {
+      $("crlobby-status").textContent = "joining…";
+      send({ type: "lobby-join", gameid: g.gameid });
+    };
+    row.appendChild(join);
+    box.appendChild(row);
+  });
+  if (!list.length) {
+    box.appendChild(el("div", "lobby-row", "No open games — create one."));
   }
 }
 
@@ -387,7 +503,13 @@ function renderBars() {
   const top = $("opp-bar"), bot = $("my-bar");
   const o = opp(), m = me();
   const oSide = mySide === "corp" ? "runner" : "corp";
-  const thinking = !S.winner && S["active-player"] === oSide && !myPrompt() ? `<span class="thinking">thinking…</span>` : "";
+  // Two people at one table: a seat with nobody in it says so, rather than
+  // looking like an opponent who is thinking very hard.
+  const gone = S["opponent-connected"] === false;
+  const who = (o.user && o.user.username) || "opponent";
+  const thinking = gone
+    ? `<span class="thinking offline">${esc(who)} disconnected — game held</span>`
+    : (!S.winner && S["active-player"] === oSide && !myPrompt() ? `<span class="thinking">thinking…</span>` : "");
   top.innerHTML = barHtml(o, oSide, true) + thinking;
   bot.innerHTML = barHtml(m, mySide, false);
   const credEl = bot.querySelector(".cred");
@@ -398,7 +520,10 @@ function renderBars() {
 
 function barHtml(st, side, isOpp) {
   const idt = st.identity || {};
-  const name = (idt.title || side).split(":")[0];
+  let name = (idt.title || side).split(":")[0];
+  // Across the table sits a person, when it is a person: say who.
+  const uname = st.user && st.user.username;
+  if (isOpp && uname && uname !== "bot" && uname !== "you") name += ` · ${esc(uname)}`;
   const s = sideStats(st, side);
   const clicks = "●".repeat(Math.max(0, st.click || 0)) || "–";
   const art = idt.code ? ` style="background-image:url(${cardImgUrl(idt.code)})"` : "";
@@ -1026,7 +1151,9 @@ function renderLog() {
     box.appendChild(d);
   });
   box.scrollTop = box.scrollHeight;
-  $("say-row").style.display = mode === "bridge" ? "" : "none";
+  // Chat exists where there is somebody to say it to.
+  const human = mode === "bridge" || (mode === "cr" && S["opponent-bot"] === false);
+  $("say-row").style.display = human ? "" : "none";
   if (log.length > prev.logn && $("log-drawer").classList.contains("open")) box.scrollTop = box.scrollHeight;
   prev.logn = log.length;
 }

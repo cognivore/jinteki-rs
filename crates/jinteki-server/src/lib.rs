@@ -12,6 +12,7 @@ pub mod db;
 pub mod deckcheck;
 pub mod decks;
 pub mod guard;
+pub mod lobby;
 pub mod local;
 pub mod mail;
 pub mod nrdb;

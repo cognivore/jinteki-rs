@@ -317,6 +317,17 @@ pub fn verify_claim(conn: &Connection, raw_token: &str) -> rusqlite::Result<Veri
     Ok(VerifyOutcome::Ok { session_id, user_id: final_user })
 }
 
+/// The name a user is known by — what a lobby row and a seat label show.
+/// Missing user (deleted, or a cookieless visitor) has no name to show.
+pub fn display_name(conn: &Connection, user_id: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT display_name FROM users WHERE id = ?1",
+        params![user_id],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+}
+
 /// Display-name rules (§3.3, DESIGN.md §B.10): non-empty after trim, at
 /// most 20 code points, no "://", no "</".
 pub fn valid_display_name(name: &str) -> Option<String> {
