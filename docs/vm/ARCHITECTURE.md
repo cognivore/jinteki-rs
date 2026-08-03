@@ -227,20 +227,21 @@ declarations, instructions, and the §11 step tables are DATA
 `timing-structures.json`) — never callbacks — because everything that
 verifies this campaign consumes them as data: `cite!` coverage, the
 odometers, the future §9.11 transcriber, redaction, replay diffing. You can
-audit data; you cannot audit a closure. The VM is *one interpreter* of that
-data, concrete-first: while there is exactly one semantics interpreter,
-trait-abstracting it is ceremony (the GADT-artifact study's own lesson —
-don't pay for polymorphism before the second interpreter exists).
+audit data; you cannot audit a closure.
 
-**The final-tagless obligations attach at the seams, on the cutover
-schedule (§10).** The Decision stream is already the defunctionalized
-Prompt algebra with multiple honest drivers (example scripts, the slice
-driver; server and bot join at cutover). `Vm.rng` is a seeded field today
-and becomes the Rng algebra when the replay/speculative interpreters
-arrive; Reveal/Persist/Log wrap at cutover behind the same narrow algebras
-jinteki-core exposes, which is what the wire/view layer consumes. FT with
-one interpreter is ceremony; FT at seams with real second interpreters is
-the design.
+**The semantics are final-encoded: see [FINAL-TAGLESS.md](FINAL-TAGLESS.md),
+which is normative.** W1–W4 built the evaluator concrete-first, on the
+argument that trait-abstraction before the second interpreter is ceremony.
+That argument was wrong in one specific way, and the measurements show it:
+with a single implementation, nothing forces the algebra narrow, so the
+cheapest way to express any card is a new `Instruction` variant plus a new
+match arm — 125 variants and 254 arms later, three card-shaped defects had
+to be caught by a human reading diffs. Narrow algebras are not paid for by
+polymorphism-for-its-own-sake; they are paid for by a second honest
+interpreter that *could not implement* a card-shaped operation. That is
+DESIGN.md SYS-C-3's actual argument, and it applies at 82 examples, not at
+cutover. FINAL-TAGLESS.md carries the algebra catalog, the denotation rule
+(SYS-D-6), the interpreter roster, and the staged migration FT-0…FT-5.
 
 **The anti-overfit contract** (binding on wave agents, extends §11):
 
