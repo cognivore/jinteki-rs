@@ -140,6 +140,9 @@ pub enum Pick {
     Rez(ObjectId),
     /// 9.2.7e: rez the approached ice (whichever it is).
     RezApproachedIce,
+    /// 5.2.6e / 5.2.7d: take the basic "play 1 operation/event" action with
+    /// this card.
+    PlayCard(ObjectId),
     /// (S) score this card (9.2.7d).
     Score(ObjectId),
     /// 7.1.5 basic trash of the accessed card.
@@ -200,7 +203,7 @@ impl Pick {
                 .find(|o| matches!(o, WindowOption::TriggerInstance { mandatory: true, .. }))
                 .cloned(),
             Pick::Index(i) => options.get(*i).cloned(),
-            Pick::Credit | Pick::Draw | Pick::Run(_) | Pick::RemoveTag => None,
+            Pick::Credit | Pick::Draw | Pick::Run(_) | Pick::RemoveTag | Pick::PlayCard(_) => None,
         }
     }
 
@@ -219,6 +222,11 @@ impl Pick {
             Pick::Labeled(n) => options
                 .iter()
                 .find(|o| matches!(o, ActionOption::CardAction { label, .. } if label.contains(n)))
+                .cloned(),
+            // 5.2.6e: "[click]: Play 1 operation from HQ" names its card.
+            Pick::PlayCard(c) => options
+                .iter()
+                .find(|o| matches!(o, ActionOption::BasicPlayOperation { card } if card == c))
                 .cloned(),
             Pick::Index(i) => options.get(*i).cloned(),
             _ => None,
@@ -572,6 +580,10 @@ impl Reply {
     }
     pub fn rez(card: ObjectId) -> Reply {
         Reply::Take(Pick::Rez(card))
+    }
+    /// 5.2.6e: take the basic "play 1 operation/event" action with this card.
+    pub fn play_card(card: ObjectId) -> Reply {
+        Reply::Take(Pick::PlayCard(card))
     }
     pub fn score(card: ObjectId) -> Reply {
         Reply::Take(Pick::Score(card))

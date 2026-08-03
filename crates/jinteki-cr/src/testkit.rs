@@ -5199,3 +5199,44 @@ pub fn vacheron_like(name: &'static str, points: i32, counters: u32) -> PrintedC
     .labeled("vacheron: stolen with hosted agenda counters")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W13e shapes: action identity (§5.2.5) and clicks spent to take an action
+// ---------------------------------------------------------------------------
+
+/// MirrorMorph shape (5.2.5b): "the first time each turn you take N DIFFERENT
+/// actions, gain 1[credit]." Two plays of two different operations are still
+/// the SAME action — the basic "Play 1 operation from HQ" — so they do not
+/// make the identity's condition true.
+pub fn mirrormorph_like(name: &'static str, count: usize) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::DifferentActionsThisTurn { side: Side::Corp, count },
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
+        false,
+    )
+    .labeled("mirrormorph: different actions")];
+    c
+}
+
+/// Jeeves Model Bioroids shape (1.16.4d): "the first time each turn you spend
+/// N [click] on the same action, gain 1[credit]." The clicks counted include
+/// the ones an additional cost takes, several steps into the action.
+pub fn jeeves_like(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::ClicksSpentOnAction { side: Side::Corp, count },
+        vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
+        false,
+    )
+    .labeled("jeeves: clicks on one action")];
+    c
+}
+
+/// Blue Level Clearance shape (1.16.4d): an operation with an ADDITIONAL play
+/// cost of 1 [click].
+pub fn additional_click_operation(name: &'static str, cost: u32) -> PrintedCard {
+    let mut c = operation(name, cost, vec![Instruction::GainCredits(Side::Corp, Quantity::c(2))]);
+    c.additional_play_cost = Some(Cost { clicks: 1, ..Cost::free() });
+    c
+}

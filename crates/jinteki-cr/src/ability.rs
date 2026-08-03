@@ -110,6 +110,17 @@ pub enum TriggerCond {
     /// interrupt can modify it; the relevance test is whether the imminent
     /// instruction carries such a value.
     WouldPayCost,
+    /// CR 5.2.5b: "the first time each turn you take N DIFFERENT actions…"
+    /// (MirrorMorph class). Met when the player takes an action and every
+    /// action they have taken this turn — `count` of them — is different from
+    /// every other, by 5.2.5a/b's identity: the same basic action, or the
+    /// same ability of the same card.
+    DifferentActionsThisTurn { side: Side, count: usize },
+    /// CR 1.16.4d: "the first time each turn you spend N [click] on the same
+    /// action…" (Jeeves class). The clicks counted are all of the clicks
+    /// spent to TAKE the action, including those of an additional cost paid
+    /// several steps into the action's resolution.
+    ClicksSpentOnAction { side: Side, count: u32 },
     /// CR 6.3.4: "whenever the Runner spends [click] during a run…"
     /// (Heinlein Grid class). The additional [click] an ability charges to
     /// MAKE a run is spent before the run formally begins, so it is not spent
@@ -835,6 +846,16 @@ pub fn trigger_matches(
     match (cond, change) {
         (TriggerCond::TurnBegins(side), GameChange::TurnBegan { side: s }) => side == s,
         (TriggerCond::RunEnds { .. }, GameChange::RunEnded { .. }) => true,
+        (TriggerCond::DifferentActionsThisTurn { side, .. }, GameChange::ActionTaken { side: s, .. }) => {
+            // 5.2.5b: the "all different" test is a game-state question the
+            // checkpoint scan answers against the turn's action history.
+            cite!("rule_defferent_actions");
+            side == s
+        }
+        (TriggerCond::ClicksSpentOnAction { side, .. }, GameChange::ClickSpent { side: s }) => {
+            cite!("rule_inherent_cost_aggregates");
+            side == s
+        }
         (TriggerCond::PlayerSpendsClick { side, .. }, GameChange::ClickSpent { side: s }) => {
             // 6.3.4: the "during a run" half is a game-state test, applied by
             // the checkpoint scan, which can see whether a run is in progress.

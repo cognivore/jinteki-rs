@@ -264,6 +264,38 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             continue;
                         }
                     }
+                    // 5.2.5b: the actions taken this turn are all different.
+                    if let crate::ability::TriggerCond::DifferentActionsThisTurn {
+                        count, ..
+                    } = cond
+                    {
+                        cite!("rule_same_actions");
+                        cite!("rule_defferent_actions");
+                        let taken: Vec<crate::change::ActionIdentity> = vm.changes.log
+                            [vm.st.turn_log_start..]
+                            .iter()
+                            .filter_map(|x| match x {
+                                GameChange::ActionTaken { action, .. } => Some(*action),
+                                _ => None,
+                            })
+                            .collect();
+                        let all_different = taken
+                            .iter()
+                            .enumerate()
+                            .all(|(i, a)| !taken[..i].contains(a));
+                        if taken.len() != *count || !all_different {
+                            continue;
+                        }
+                    }
+                    // 1.16.4d: every [click] spent to TAKE the action counts,
+                    // including one paid several steps into its resolution.
+                    if let crate::ability::TriggerCond::ClicksSpentOnAction { count, .. } = cond {
+                        cite!("rule_inherent_cost_aggregates");
+                        match vm.st.current_action {
+                            Some((_, spent)) if spent >= *count => {}
+                            _ => continue,
+                        }
+                    }
                     // 6.3.4: "during a run" is a game-state test the scan can
                     // make, and the run is in progress only once it has
                     // formally begun — the clicks and credits paid to MAKE

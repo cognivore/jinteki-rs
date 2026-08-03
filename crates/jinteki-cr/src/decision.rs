@@ -58,6 +58,9 @@ pub enum ActionOption {
     BasicRun { server: ServerId },
     /// 5.2.7g: "[click], 2[credit]: Remove 1 tag."
     BasicRemoveTag,
+    /// 5.2.6e: "[click]: Play 1 operation from HQ." (5.2.7d is the Runner's
+    /// "[click]: Play 1 event from the grip", the same action option.)
+    BasicPlayOperation { card: ObjectId },
     /// A [click]-cost card paid ability (an action, 5.2.1).
     CardAction { ability: AbilityRef, label: &'static str },
 }

@@ -7,6 +7,28 @@
 use crate::effects::DamageKind;
 use crate::object::{ObjectId, ServerId, Side, Zone};
 
+/// CR 5.2.6/5.2.7: the basic actions, as identities (5.2.5a: "actions are
+/// the same if they are all the same basic action").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BasicAction {
+    Credit,
+    Draw,
+    Run,
+    RemoveTag,
+    /// 5.2.6e: "[click]: Play 1 operation from HQ."
+    PlayOperation,
+}
+
+/// CR 5.2.5a/b: what makes two actions the same or different — the basic
+/// action they are, or the CARD ABILITY that initiated them ("instances of
+/// equivalent abilities on different cards are still different actions", so
+/// the identity is the ability reference, not its text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionIdentity {
+    Basic(BasicAction),
+    CardAbility(crate::ability::AbilityRef),
+}
+
 /// The record vocabulary. One record per occurrence; simultaneous set-effects
 /// produce one record per member *plus* shared `group` so per-event triggers
 /// (Warroid Tracker class, 9.12.2a) can collapse them while per-occurrence
@@ -17,6 +39,9 @@ pub enum GameChange {
     CreditsLost { side: Side, amount: u32 },
     ClicksGained { side: Side, amount: u32 },
     ClickSpent { side: Side },
+    /// CR 5.2.5: a player took an action. The identity is what 5.2.5a/b say
+    /// makes two actions "the same" or "different".
+    ActionTaken { side: Side, action: ActionIdentity },
     ClicksLost { side: Side, amount: u32 },
     CardDrawn { side: Side, obj: ObjectId },
     /// One record per point batch: `cards` are the simultaneous random trashes.

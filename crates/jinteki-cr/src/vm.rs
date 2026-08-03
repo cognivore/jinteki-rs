@@ -28,7 +28,7 @@ use crate::frames::{
 pub use crate::ability::SubKey;
 use crate::instr::{Instruction, TargetFilter, TargetSpec};
 use crate::lingering::{Duration, LingeringEffect, Payload};
-use crate::change::{ChangeBuffer, GameChange};
+use crate::change::{ActionIdentity, BasicAction, ChangeBuffer, GameChange};
 use crate::object::{
     card_active, CardType, CounterKind, IcePosition, Object, ObjectId, PrintedCard, ServerId, Side,
     Zone,
@@ -121,6 +121,12 @@ pub struct CoreState {
     /// replaced by another effect never reaches `CardBecomesAccessed` and so
     /// never counts, which is the whole of the rule.
     pub run_accesses: Option<(u64, u32)>,
+    /// CR 5.2.5 / 1.16.4d: the action in progress and how many [click] have
+    /// been spent to take it.
+    pub current_action: Option<(crate::change::ActionIdentity, u32)>,
+    /// CR 5.2.5: where in the change log this turn began — the window a
+    /// "different actions this turn" query reviews.
+    pub turn_log_start: usize,
     /// CR 9.12.3e: the "must make a run with your first [click]" requirement
     /// has been discharged this turn — by making the run, or by being offered
     /// its additional cost and declining it.
@@ -547,6 +553,8 @@ impl Vm {
                 run_accesses: None,
                 run_log_start: 0,
             run_requirement_discharged: false,
+            current_action: None,
+            turn_log_start: 0,
                 move_seq: 0,
                 active_seq: 0,
             },
@@ -782,6 +790,8 @@ impl Vm {
         self.once_per_turn_used.clear();
         // 9.12.3a: a "first [click] each turn" requirement is fresh each turn.
         self.st.run_requirement_discharged = false;
+        self.st.current_action = None;
+        self.st.turn_log_start = self.changes.log.len();
         self.would.reset_scope(WouldScope::Turn);
         let id = self.next_structure;
         self.next_structure += 1;
@@ -8327,6 +8337,31 @@ impl Vm {
                 out.push(ActionOption::BasicRemoveTag);
             }
         }
+        // 5.2.6e / 5.2.7d: "[click]: Play 1 operation from HQ." (the Runner's
+        // is the same action for events from the grip). 1.16.4b: the play
+        // cost must be payable, and 1.16.10a's additional cost is combined
+        // with it at step 8.6.7b.
+        cite!("rule_corp_basic_action_operation");
+        let want_type = if side == Side::Corp { CardType::Operation } else { CardType::Event };
+        for c in self.st.hand[&side].clone() {
+            let o = &self.st.objects[&c];
+            if o.printed.card_type != want_type {
+                continue;
+            }
+            let mut cost = match o.printed.cost_x.clone() {
+                Some(r) => Cost::x(r),
+                None => Cost::credits(o.printed.cost.unwrap_or(0)),
+            };
+            if let Some(extra) = o.printed.additional_play_cost.clone() {
+                cost = cost.plus(&extra);
+            }
+            // The action's own [click] is spent before the play cost, so it
+            // is not part of what has to be affordable here.
+            cost.clicks = cost.clicks.saturating_sub(0);
+            if self.cost_payable(side, c, &cost) && self.st.player(side).clicks > cost.clicks {
+                out.push(ActionOption::BasicPlayOperation { card: c });
+            }
+        }
         // CR 9.12.3a: a "must make a run with your first [click]" requirement
         // leaves the player no other action while it holds — the requirement
         // is stated over the DECISION, so it removes the options that would
@@ -9330,6 +9365,18 @@ impl Vm {
         self.begin_payment(side, source, cost, PaymentCont::None, None);
     }
 
+    /// CR 1.16.4d: count a [click] against the action in progress. "When a
+    /// player takes an action that plays or installs one or more cards and has
+    /// no other effects, the play cost or install cost of each of those cards
+    /// is considered to have been spent to take that action" — so the clicks
+    /// of an additional play cost are clicks spent to take the action, even
+    /// though the payment happens several steps later.
+    fn note_click_on_action(&mut self, n: u32) {
+        if let Some((_, spent)) = self.st.current_action.as_mut() {
+            *spent += n;
+        }
+    }
+
     /// CR 1.16.1: spend everything the payment decided on, all at once.
     fn commit_payment(&mut self) {
         let Some(p) = self.payment.clone() else { return };
@@ -9450,6 +9497,8 @@ impl Vm {
             self.do_damage(DamageKind::Net, cost.net_damage, side);
         }
         for _ in 0..cost.clicks {
+            cite!("rule_inherent_cost_aggregates");
+            self.note_click_on_action(1);
             self.changes.record(GameChange::ClickSpent { side });
         }
         self.changes.record(GameChange::CostPaid {
@@ -10518,6 +10567,27 @@ impl Vm {
         self.after_window_closed();
         // CR 5.2.2: initiate by paying [click] (checkpoint follows, 10.3.4).
         cite!("rule_initiate_action");
+        // CR 5.2.5a/b: the action's IDENTITY — what makes two actions the
+        // same or different — is recorded as the action is initiated, and it
+        // is also the key 1.16.4d attributes clicks to.
+        cite!("rule_same_actions");
+        cite!("rule_defferent_actions");
+        let identity = match &opt {
+            ActionOption::BasicCredit => ActionIdentity::Basic(BasicAction::Credit),
+            ActionOption::BasicDraw => ActionIdentity::Basic(BasicAction::Draw),
+            ActionOption::BasicRun { .. } => ActionIdentity::Basic(BasicAction::Run),
+            ActionOption::BasicRemoveTag => ActionIdentity::Basic(BasicAction::RemoveTag),
+            ActionOption::BasicPlayOperation { .. } => {
+                ActionIdentity::Basic(BasicAction::PlayOperation)
+            }
+            ActionOption::CardAction { ability, .. } => ActionIdentity::CardAbility(*ability),
+        };
+        // 1.16.4d: the clicks spent to TAKE this action, counted from here —
+        // "even though other steps take place between initiating the action
+        // and paying that cost".
+        cite!("rule_inherent_cost_aggregates");
+        self.st.current_action = Some((identity, 0));
+        self.changes.record(GameChange::ActionTaken { side, action: identity });
         match opt {
             ActionOption::BasicCredit => {
                 cite!("rule_corp_basic_action_credit");
@@ -10561,6 +10631,27 @@ impl Vm {
                 self.st.runner.tags -= 1;
                 self.changes.record(GameChange::TagRemoved);
             }
+            ActionOption::BasicPlayOperation { card } => {
+                // CR 5.2.6e: "[click]: Play 1 operation from HQ." The play
+                // cost — and any additional cost to play (1.16.10b) — is paid
+                // inside the 8.6.7 procedure, and 1.16.4d attributes all of
+                // it to this action.
+                cite!("rule_corp_basic_action_operation");
+                self.spend_click(side);
+                // The action's effect is the 8.6.7 play procedure; it runs in
+                // a rules ability frame, exactly as the 7.2.3 steal does.
+                self.push_ability_frame(
+                    ResolutionKind::Play,
+                    AbilityRef { obj: card, index: usize::MAX },
+                    side,
+                    vec![Instruction::PlayCard {
+                        card: TargetSpec::Objects(vec![card]),
+                        ignore_costs: false,
+                    }],
+                    None,
+                    None,
+                );
+            }
             ActionOption::CardAction { ability, .. } => {
                 let def = self.st.objects[&ability.obj].printed.abilities[ability.index].clone();
                 self.trigger_paid_ability(side, ability, def);
@@ -10570,6 +10661,7 @@ impl Vm {
 
     fn spend_click(&mut self, side: Side) {
         self.st.player_mut(side).clicks -= 1;
+        self.note_click_on_action(1);
         self.changes.record(GameChange::ClickSpent { side });
         self.changes.record(GameChange::CostPaid {
             side,

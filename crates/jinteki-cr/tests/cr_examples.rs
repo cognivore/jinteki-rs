@@ -25,6 +25,8 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 /// Example ids implemented as tests in this file (the DP-7a ledger).
 const IMPLEMENTED: &[&str] = &[
     "example_rule_alternate_payment_1",
+    "example_rule_defferent_actions_1",
+    "example_rule_inherent_cost_aggregates_1",
     "example_rule_replacement_effect_only_applies_once_per_effect_1",
     "example_rule_abilities_during_a_run_1",
     "example_rule_must_cannot_force_additional_cost_1",
@@ -10983,4 +10985,103 @@ fn example_rule_replacement_effect_only_applies_once_per_effect_1() {
         )),
         "the replacement was consumed by applying"
     );
+}
+
+// ---------------------------------------------------------------------------
+// W13e: the basic play action, action identity (§5.2.5), clicks per action
+// ---------------------------------------------------------------------------
+
+/// example_rule_defferent_actions_1 (5.2.5b): the Corp, playing a
+/// MirrorMorph-class identity, plays one operation as their first action and
+/// a DIFFERENT operation as their second. Even though two different cards were
+/// played, both times they used the basic action "Play 1 operation from HQ" —
+/// the actions are the same, so the ability is not triggered.
+#[test]
+fn example_rule_defferent_actions_1() {
+    for same in [true, false] {
+        let mut vm = Vm::empty(1352);
+        tk::install_root(&mut vm, tk::mirrormorph_like("MirrorMorph-like", 2), ServerId::Remote(1), true);
+        let hedge = vm.new_object(
+            tk::operation("HedgeFund-like", 0, vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))]),
+            Zone::Hand(Side::Corp),
+        );
+        let lateral = vm.new_object(
+            tk::operation("LateralGrowth-like", 0, vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))]),
+            Zone::Hand(Side::Corp),
+        );
+        vm.st.hand.get_mut(&Side::Corp).unwrap().extend([hedge, lateral]);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        // Same: two plays of the basic "Play 1 operation" action.
+        // Different: one play, then the basic credit action.
+        let second = if same { Reply::play_card(lateral) } else { Reply::credit() };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(hedge))
+                .when(Match::action().once(), second)
+                .when(Match::reaction().offering("mirrormorph"), Reply::take("mirrormorph"))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.objects[&hedge].zone,
+            Zone::Discard(Side::Corp),
+            "5.2.6e: the operation was played through the basic action: {}",
+            t.tail(12)
+        );
+        assert_eq!(
+            t.ever_offered("mirrormorph"),
+            !same,
+            "5.2.5a/b: two plays of the SAME basic action are the same action; \
+             a play and a credit are different: {}",
+            t.tail(12)
+        );
+    }
+}
+
+/// example_rule_inherent_cost_aggregates_1 (1.16.4d): the Corp has a
+/// Jeeves-class asset rezzed and uses the basic action "[click]: Play 1
+/// operation." to play a Blue-Level-Clearance-class operation, whose
+/// ADDITIONAL play cost is 1[click]. Both the click spent for the cost of the
+/// basic action and the click spent for the operation's additional cost count
+/// as clicks spent to take that action.
+#[test]
+fn example_rule_inherent_cost_aggregates_1() {
+    for (want, triggers) in [(2u32, true), (3, false)] {
+        let mut vm = Vm::empty(1353);
+        tk::install_root(&mut vm, tk::jeeves_like("Jeeves-like", want), ServerId::Remote(1), true);
+        let blc = vm.new_object(
+            tk::additional_click_operation("BlueLevelClearance-like", 1),
+            Zone::Hand(Side::Corp),
+        );
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(blc);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(blc))
+                .when(Match::reaction().offering("jeeves"), Reply::take("jeeves"))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.objects[&blc].zone,
+            Zone::Discard(Side::Corp),
+            "the operation was played: {}",
+            t.tail(12)
+        );
+        assert_eq!(
+            t.ever_offered("jeeves"),
+            triggers,
+            "1.16.4d: exactly TWO clicks were spent to take the action — the \
+             action's own and the operation's additional cost: {}",
+            t.tail(12)
+        );
+    }
 }
