@@ -188,7 +188,7 @@ pub fn aesops_like(name: &'static str) -> PrintedCard {
         TriggerCond::TurnBegins(Side::Runner),
         vec![
             Instruction::TrashCards(TargetSpec::Choose {
-                count: 1,
+                count: Quantity::c(1),
                 criteria: vec![crate::instr::TargetFilter::InstalledResource],
             }),
             Instruction::GainCredits(Side::Runner, Quantity::c(3)),
@@ -681,7 +681,7 @@ pub fn reconstruction_like(name: &'static str) -> PrintedCard {
         vec![Instruction::MoveSetAsideCounters {
             kind: CounterKind::Advancement,
             target: TargetSpec::Choose {
-                count: 1,
+                count: Quantity::c(1),
                 criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
             },
         }],
@@ -1250,7 +1250,7 @@ pub fn fairchild_like(name: &'static str) -> PrintedCard {
             (
                 "trash installed",
                 vec![Instruction::TrashCards(TargetSpec::Choose {
-                    count: 1,
+                    count: Quantity::c(1),
                     criteria: vec![crate::instr::TargetFilter::InstalledRunnerCard],
                 })],
             ),
@@ -2197,7 +2197,7 @@ pub fn glenn_station_like(name: &'static str) -> PrintedCard {
             Cost { clicks: 1, ..Cost::default() },
             vec![Instruction::HostCards {
                 cards: TargetSpec::Choose {
-                    count: 1,
+                    count: Quantity::c(1),
                     criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
                 },
                 host: TargetSpec::SelfSource,
@@ -2245,7 +2245,7 @@ pub fn madani_like(name: &'static str, count: u32) -> PrintedCard {
         Cost { clicks: 1, ..Cost::default() },
         vec![Instruction::HostCards {
             cards: TargetSpec::Choose {
-                count,
+                count: Quantity::c(count as i64),
                 criteria: vec![
                     crate::instr::TargetFilter::CardsInHandOf(Side::Runner),
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
@@ -2268,7 +2268,7 @@ pub fn detente_like(name: &'static str) -> PrintedCard {
         Cost { clicks: 1, ..Cost::default() },
         vec![Instruction::HostCards {
             cards: TargetSpec::Choose {
-                count: 1,
+                count: Quantity::c(1),
                 criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
             },
             host: TargetSpec::SelfSource,
@@ -2286,7 +2286,7 @@ pub fn rejig_like(name: &'static str) -> PrintedCard {
         0,
         vec![Instruction::AddCardsToHand {
             cards: TargetSpec::Choose {
-                count: 1,
+                count: Quantity::c(1),
                 criteria: vec![
                     crate::instr::TargetFilter::InstalledRunnerCard,
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
@@ -2303,7 +2303,7 @@ pub fn ip_enforcement_like(name: &'static str) -> PrintedCard {
         0,
         vec![Instruction::InstallCard {
             card: TargetSpec::Choose {
-                count: 1,
+                count: Quantity::c(1),
                 criteria: vec![
                     crate::instr::TargetFilter::CardTypeIs(CardType::Agenda),
                     crate::instr::TargetFilter::InScoreAreaOf(Side::Runner),
@@ -2562,17 +2562,18 @@ pub fn toll_ice(name: &'static str, n: u32) -> PrintedCard {
 }
 
 /// Rototurret/Bulwark shape (1.14.5): a piece of ice whose subroutine reads
-/// "Trash 1 installed program." — or, when `by` is set, "The <player> trashes
-/// 1 installed program.", which is the only difference between the two cards
-/// as far as the choice is concerned.
+/// "Trash 1 program." — or, when `by` is set, "The <player> trashes 1
+/// program.", which is the only difference between the two cards as far as
+/// the choice is concerned.
+///
+/// The criteria say nothing about a zone on purpose: 1.15.2c is what
+/// restricts the announcement to installed programs, which is exactly the
+/// `targets_must_be_in_play_area` example's claim.
 pub fn trash_program_sub_ice(name: &'static str, by: Option<Side>) -> PrintedCard {
     let mut c = vanilla_ice(name, 4, 4);
     let trash = Instruction::TrashCards(TargetSpec::Choose {
-        count: 1,
-        criteria: vec![
-            crate::instr::TargetFilter::InstalledRunnerCard,
-            crate::instr::TargetFilter::CardTypeIs(CardType::Program),
-        ],
+        count: Quantity::c(1),
+        criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
     });
     let instr = match by {
         None => trash,
@@ -2592,7 +2593,7 @@ pub fn alice_like(name: &'static str) -> PrintedCard {
         vec![Instruction::PerformedBy {
             side: Side::Corp,
             instr: Box::new(Instruction::TrashCards(TargetSpec::Choose {
-                count: 1,
+                count: Quantity::c(1),
                 criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
             })),
         }],
@@ -2751,5 +2752,35 @@ pub fn subtyped_etr_ice(
 ) -> PrintedCard {
     let mut c = etr_ice(name, cost, strength);
     c.subtypes = vec![subtype];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W7a shapes: target announcements (§1.15.2)
+// ---------------------------------------------------------------------------
+
+/// Aggressive-Secretary shape (1.15.2e): "When you access this card, you may
+/// pay 2[c]. If you do, trash X programs, where X is the number of
+/// advancement counters on this card."
+///
+/// The count is a quantity selector, not a number, and the criteria name no
+/// zone — 1.15.2c restricts the announcement to installed programs and
+/// 1.15.2e caps it at however many there are.
+pub fn aggressive_secretary_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Asset);
+    c.trash_cost = Some(0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfAccessed,
+        vec![Instruction::NestedCostThen {
+            cost: Cost::credits(2),
+            effect: Box::new(Instruction::TrashCards(TargetSpec::Choose {
+                count: Quantity::CountersOnSource(CounterKind::Advancement),
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
+            })),
+            payer: Some(Side::Corp),
+        }],
+        true,
+    )
+    .labeled("secretary: pay 2 to trash X programs")];
     c
 }

@@ -160,6 +160,9 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_sabotage_all_remaining_cards_3",
     "example_rule_static_modification_keep_restrictions_1",
     "example_rule_paid_ability_refers_to_encountered_ice_2",
+    // Wave 7a: target announcements (§1.15.2c/e).
+    "example_rule_targets_must_be_in_play_area_1",
+    "example_rule_distinct_targets_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -5602,6 +5605,97 @@ fn example_rule_paid_ability_refers_to_encountered_ice_2() {
         Plan::runner().runs(ServerId::Hq).when(Match::jack_out().once(), Reply::Halt),
     );
     assert!(!t3.ever_offered("abagnale"), "9.5.6c: the ice must meet every stipulation");
+}
+
+// ===========================================================================
+// §1.15 — targets: what can be announced, and how many (W7a)
+// ===========================================================================
+
+/// example_rule_targets_must_be_in_play_area_1 (1.15.2c): a subroutine reads
+/// "The Runner trashes 1 program." — it names no zone, so only the Runner's
+/// INSTALLED programs are valid targets; the ones in the grip and the stack
+/// are not offered.
+#[test]
+fn example_rule_targets_must_be_in_play_area_1() {
+    let mut vm = Vm::empty(701);
+    tk::install_ice(
+        &mut vm,
+        tk::trash_program_sub_ice("TrashProgram-Ice", Some(Side::Runner)),
+        ServerId::Hq,
+        true,
+    );
+    let rigged = tk::install_rig(&mut vm, tk::program_mu("Rig-Program", 1));
+    let in_grip = vm.new_object(tk::program_mu("Grip-Program", 1), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(in_grip);
+    let in_stack = vm.new_object(tk::program_mu("Stack-Program", 1), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(in_stack);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Hq).stop_at_action(),
+    );
+    let announce = t.of_kind(Kind::Targets);
+    assert_eq!(announce.len(), 1, "one announcement: {}", t.tail(8));
+    assert_eq!(
+        announce[0].candidates(),
+        &[rigged],
+        "1.15.2c: the grip and the stack are not the play area"
+    );
+    assert_eq!(vm.st.objects[&rigged].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.objects[&in_grip].zone, Zone::Hand(Side::Runner));
+    assert_eq!(vm.st.objects[&in_stack].zone, Zone::Deck(Side::Runner));
+}
+
+/// example_rule_distinct_targets_1 (1.15.2e): the Runner accesses an
+/// Aggressive Secretary with three advancement counters, but has only two
+/// installed programs. The Corp announces as many distinct targets as
+/// possible — both programs, in ONE announcement — and they are trashed
+/// simultaneously when the instruction resolves.
+#[test]
+fn example_rule_distinct_targets_1() {
+    let mut vm = Vm::empty(702);
+    let sec = tk::install_root(
+        &mut vm,
+        tk::aggressive_secretary_like("AggressiveSecretary-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::place_counters(&mut vm, sec, CounterKind::Advancement, 3);
+    let pa = tk::install_rig(&mut vm, tk::program_mu("Program-a", 1));
+    let pb = tk::install_rig(&mut vm, tk::program_mu("Program-b", 1));
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .always_uses("secretary")
+            .when(Match::nested_cost(), Reply::PayCost(true)),
+        Plan::runner().runs(ServerId::Remote(1)).stop_at_action(),
+    );
+    let announce = t.of_kind(Kind::Targets);
+    assert_eq!(
+        announce.len(),
+        1,
+        "1.15.2d: one announcement chooses the whole set: {}",
+        t.tail(10)
+    );
+    assert_eq!(announce[0].side, Side::Corp, "the ability's controller chooses");
+    assert!(
+        matches!(
+            announce[0].spec,
+            DecisionSpec::ChooseTargets { count: 2, min: 2, up_to: false, .. }
+        ),
+        "1.15.2e: X is 3 but only 2 distinct targets exist, and both must be \
+         chosen: {:?}",
+        announce[0].spec
+    );
+    assert_eq!(announce[0].candidates(), &[pa, pb]);
+    assert_eq!(vm.st.objects[&pa].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.objects[&pb].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.corp.credits, 3, "the 2 credits were paid");
 }
 
 // ===========================================================================

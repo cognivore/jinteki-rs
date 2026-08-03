@@ -477,8 +477,15 @@ pub enum TargetSpec {
     /// Chosen by the controller at announce time from the shared filter
     /// vocabulary. Several atoms combine as a conjunction, exactly as a
     /// search's 8.7.2a criteria do — "an installed program" is
-    /// `[InstalledRunnerCard, CardTypeIs(Program)]`.
-    Choose { count: u32, criteria: Vec<TargetFilter> },
+    /// `[InstalledRunnerCard, CardTypeIs(Program)]`, and a plain
+    /// "1 program" is `[CardTypeIs(Program)]` with 1.15.2c supplying the
+    /// play-area restriction.
+    ///
+    /// `count` is a quantity POSITION (§12 rule 6): "trash 1 program" is a
+    /// constant, "trash X programs, where X is the number of advancement
+    /// counters on this card" (Aggressive Secretary class) is a selector.
+    /// CR 1.15.2e caps it at the number of distinct valid targets available.
+    Choose { count: Quantity, criteria: Vec<TargetFilter> },
     /// The top N cards of a deck (Breached Dome-style).
     TopOfDeck(Side, u32),
     /// CR 8.7.4: the cards found by this ability's search, still set aside
@@ -519,6 +526,30 @@ pub enum TargetFilter {
     Rezzed,
     /// CR 4.5: "an agenda in the Runner's score area".
     InScoreAreaOf(Side),
+}
+
+impl TargetFilter {
+    /// CR 1.15.2c: does this criterion "explicitly specify the zone from
+    /// which an object must be selected"? When NO criterion of an
+    /// announcement does, only installed cards (and counters in the play
+    /// area) are valid targets — "the Runner trashes 1 program" cannot
+    /// reach the grip or the stack.
+    ///
+    /// The installed-ness atoms are listed too: they already restrict to
+    /// the play area, so the implicit restriction is a no-op for them.
+    pub fn names_zone(self) -> bool {
+        matches!(
+            self,
+            TargetFilter::InstalledCorpCard
+                | TargetFilter::InstalledRunnerCard
+                | TargetFilter::InstalledResource
+                | TargetFilter::Rezzed
+                | TargetFilter::IceProtectingSourceServer
+                | TargetFilter::IceProtectingAttackedServer
+                | TargetFilter::CardsInHandOf(_)
+                | TargetFilter::InScoreAreaOf(_)
+        )
+    }
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

@@ -2896,13 +2896,23 @@ impl Vm {
         }
     }
 
+    /// The source of the innermost resolving ability, if any — the object a
+    /// quantity selector reads "this card" from (9.12.2).
+    fn current_source(&self) -> Option<ObjectId> {
+        self.frames.iter().rev().find_map(|f| match f {
+            Frame::Ability(af) => Some(af.source.obj),
+            _ => None,
+        })
+    }
+
     /// 9.12.3c: can an option's effects be fully resolved right now?
     fn option_resolvable(&self, instrs: &[Instruction]) -> bool {
         instrs.iter().all(|i| match i {
             Instruction::PerformedBy { instr, .. } => self.option_resolvable(std::slice::from_ref(instr)),
             Instruction::LoseCredits(side, n) => self.st.player(*side).credits >= *n,
             Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
-                self.filter_candidates(criteria, Side::Runner).len() >= *count as usize
+                let want = self.eval_quantity(count, self.current_source()).max(0) as usize;
+                self.filter_candidates(criteria, Side::Runner).len() >= want
             }
             // Tag costs blocked by mandatory avoiders are unpayable
             // (1.16.1b), mirrored for choice options.
@@ -2944,14 +2954,8 @@ impl Vm {
             }
             Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
                 let candidates = self.filter_candidates(criteria, af.controller);
-                Some((
-                    af.controller,
-                    DecisionSpec::ChooseTargets {
-                        candidates,
-                        count: *count,
-                        up_to: false, min: 0,
-                    },
-                ))
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
             }
             Instruction::NestedCostThen { cost, .. }
             | Instruction::NestedCostUnless { cost, .. } => {
@@ -2962,10 +2966,8 @@ impl Vm {
                 target: TargetSpec::Choose { count, criteria }, ..
             } => {
                 let candidates = self.filter_candidates(criteria, af.controller);
-                Some((
-                    af.controller,
-                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false, min: 0 },
-                ))
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
             }
             Instruction::DeclineableChoice(_) => Some((
                 af.controller,
@@ -2976,12 +2978,14 @@ impl Vm {
             Instruction::HostCards { cards: TargetSpec::Choose { count, criteria }, .. }
             | Instruction::AddCardsToHand { cards: TargetSpec::Choose { count, criteria } } => {
                 let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((
                     af.controller,
                     DecisionSpec::ChooseTargets {
                         candidates,
-                        count: *count,
-                        up_to: true, min: 0,
+                        count: want,
+                        up_to: true,
+                        min: 0,
                     },
                 ))
             }
@@ -3029,10 +3033,8 @@ impl Vm {
                 ..
             } => {
                 let candidates = self.filter_candidates(criteria, af.controller);
-                Some((
-                    af.controller,
-                    DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false, min: 0 },
-                ))
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
             }
             // 1.13.6a/8.5.16b: with the card known, whoever is installing it
             // declares the destination — and any eligible host is one of the
@@ -3381,7 +3383,8 @@ impl Vm {
     }
 
     /// Candidates for an announced choice: every object matching ALL the
-    /// criteria (the conjunction the CR writes as "a rezzed piece of ice").
+    /// criteria (the conjunction the CR writes as "a rezzed piece of ice"),
+    /// restricted to the play area unless a criterion names a zone (1.15.2c).
     fn filter_candidates(&self, criteria: &[TargetFilter], _controller: Side) -> Vec<ObjectId> {
         self.filter_candidates_from(criteria, None)
     }
@@ -3391,12 +3394,30 @@ impl Vm {
         criteria: &[TargetFilter],
         source: Option<ObjectId>,
     ) -> Vec<ObjectId> {
+        // CR 1.15.2c: "unless an instruction explicitly specifies the zone
+        // from which an object must be selected as a target, only counters
+        // in the play area and installed cards are valid targets". The
+        // criteria ARE the instruction's specification, so the restriction
+        // lifts exactly when one of them names a zone.
+        cite!("rule_targets_must_be_in_play_area");
+        let zoned = criteria.iter().any(|f| f.names_zone());
         self.st
             .objects
             .values()
+            .filter(|o| zoned || self.is_installed(o))
             .filter(|o| criteria.iter().all(|f| self.filter_matches(o, *f, source)))
             .map(|o| o.id)
             .collect()
+    }
+
+    /// CR 1.15.2e: the announcement asks for as many DISTINCT valid targets
+    /// as the instruction wants, or as many as exist — "the remaining
+    /// targets are not announced". Both the ceiling and the floor are that
+    /// number, so a plan cannot under-announce.
+    fn announcement(&self, candidates: Vec<ObjectId>, want: u32) -> DecisionSpec {
+        cite!("rule_distinct_targets");
+        let n = want.min(candidates.len() as u32);
+        DecisionSpec::ChooseTargets { candidates, count: n, up_to: false, min: n }
     }
 
     /// Make the current instruction imminent: compute expected effects, open
@@ -6316,7 +6337,8 @@ impl Vm {
     // ------------------------------------------------------------------
 
     fn apply_answer(&mut self) {
-        let (side, _spec, ctx) = self.pending_decision.take().unwrap();
+        let (side, spec, ctx) = self.pending_decision.take().unwrap();
+        let _spec = &spec;
         let answer = self.answer.take().unwrap();
         match (ctx, answer) {
             (DecisionCtx::Mulligan(s), a) => {
@@ -6407,6 +6429,16 @@ impl Vm {
                 }
             }
             (DecisionCtx::Targets, DecisionAnswer::Targets(t)) => {
+                // CR 1.15.2b/e: only valid targets, each chosen once, and as
+                // many distinct ones as possible. The announcement carries
+                // both the candidate list and the floor, so the answer is
+                // filtered to the candidates, deduplicated, capped at the
+                // count and completed from the candidates if short — the
+                // same clamping every other Decision does (there is no
+                // "your answer was illegal, choose again" path).
+                cite!("rule_targets_must_be_valid");
+                cite!("rule_distinct_targets");
+                let t = clamp_announcement(&spec, t);
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                     af.targets = t;
                     let instr = af.instructions[af.idx].clone();
@@ -6913,4 +6945,31 @@ fn wrap_all(instrs: Vec<Instruction>, by: Option<Side>) -> Vec<Instruction> {
             .map(|i| Instruction::PerformedBy { side, instr: Box::new(i) })
             .collect(),
     }
+}
+
+/// CR 1.15.2b/e: turn an answered target announcement into the announced
+/// set. Targets outside the candidate list are not valid for the instruction
+/// and are dropped; a target repeated in the answer is chosen once; the set
+/// is capped at what the instruction asks for and completed from the
+/// candidates when the answer is short of the floor ("chooses as many
+/// distinct targets as possible").
+fn clamp_announcement(spec: &DecisionSpec, answered: Vec<ObjectId>) -> Vec<ObjectId> {
+    let DecisionSpec::ChooseTargets { candidates, count, min, .. } = spec else {
+        return answered;
+    };
+    let mut out: Vec<ObjectId> = Vec::new();
+    for c in answered {
+        if candidates.contains(&c) && !out.contains(&c) && (out.len() as u32) < *count {
+            out.push(c);
+        }
+    }
+    for c in candidates {
+        if (out.len() as u32) >= *min {
+            break;
+        }
+        if !out.contains(c) {
+            out.push(*c);
+        }
+    }
+    out
 }
