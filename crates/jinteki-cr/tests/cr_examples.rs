@@ -284,6 +284,10 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 12e: the damage-selection pair (10.4.3a and 9.12.1c).
     "example_rule_multiple_damage_selected_sequentially_1",
     "example_rule_modify_ability_with_choice_1",
+    // Wave 12f: §1.12 — unknown locations make new objects, and history
+    // queries can still count objects that have ceased to exist.
+    "example_rule_object_move_location_2",
+    "example_rule_previous_object_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -10277,4 +10281,93 @@ fn example_rule_modify_ability_with_choice_1() {
             .any(|c| matches!(c, GameChange::CardLookedAt { by: Side::Corp, .. })),
         "9.12.1c: the rest of the effect that granted the choice resolves as normal"
     );
+}
+
+// ===========================================================================
+// Wave 12f — §1.12 object identity: unknown locations and game history
+// ===========================================================================
+
+/// example_rule_previous_object_1 (1.12.6): the Runner makes a Bravado-class
+/// run. During the run a piece of ice the Runner has already passed is
+/// trashed. When the run ends, the ability counts each DISTINCT ice object
+/// the Runner passed by reviewing the game history — and counts the trashed
+/// one, even though that object no longer exists.
+#[test]
+fn example_rule_previous_object_1() {
+    let mut vm = Vm::empty(1217);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Inner-Ice", 0, 1), ServerId::Hq, true);
+    // `install_ice` appends OUTERMOST, so this is the ice the Runner meets
+    // first — and therefore the one they have already passed when they trash
+    // it from inside the run.
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer-Ice", 0, 1), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::bravado_like("Bravado-like"));
+    tk::install_rig(&mut vm, tk::trash_set_button("Trash-Button", vec![outer]));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run HQ, and trash the ice the Runner has already passed from
+    // the paid window at the approach to the server.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(
+                // A paid window of the run after the Runner has PASSED the
+                // outermost ice — trashing it during the approach would mean
+                // they never passed it at all (6.2.7).
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).nth(4),
+                Reply::take("trash"),
+            )
+            .when(Match::jack_out(), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    assert!(t.took("trash"), "{}", t.tail(20));
+    assert_eq!(
+        vm.st.objects[&outer].zone,
+        Zone::Discard(Side::Corp),
+        "the ice the Runner had already passed was trashed during the run"
+    );
+    assert_eq!(
+        vm.st.runner.credits, 2,
+        "1.12.6: the history query counts both distinct ice objects the Runner \
+         passed, including the one that has ceased to exist"
+    );
+}
+
+/// example_rule_object_move_location_2 (1.12.3): the top card of R&D is an
+/// object, and so is the 2nd, and so on. Rearranging them moves them to an
+/// unknown location, so they become NEW objects — nobody can say which card
+/// corresponds to which of the objects that were there before.
+#[test]
+fn example_rule_object_move_location_2() {
+    let mut vm = Vm::empty(1218);
+    let deck = tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::install_root(
+        &mut vm,
+        tk::precognition_like("Precognition-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    let before: Vec<u32> = deck.iter().map(|c| vm.generation(*c)).collect();
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("precognition").once(), Reply::take("precognition"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("precognition"));
+    let after: Vec<u32> = deck.iter().map(|c| vm.generation(*c)).collect();
+    for (i, c) in deck.iter().enumerate() {
+        assert!(
+            after[i] > before[i],
+            "1.12.3: {:?} was moved to an unknown location and is a new object",
+            c
+        );
+    }
 }

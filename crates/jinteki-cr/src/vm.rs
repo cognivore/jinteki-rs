@@ -121,6 +121,10 @@ pub struct CoreState {
     /// replaced by another effect never reaches `CardBecomesAccessed` and so
     /// never counts, which is the whole of the rule.
     pub run_accesses: Option<(u64, u32)>,
+    /// CR 1.12.6: where in the change log the run in progress (or the one
+    /// that just ended) began — the window a history query about "this run"
+    /// reviews.
+    pub run_log_start: usize,
     /// Move stamps: bumped on every zone change (9.1.4 stranding checks).
     pub move_seq: u64,
     /// Active-since stamps (10.3.1d).
@@ -442,6 +446,7 @@ impl Vm {
                 encounter: None,
                 accessed: None,
                 run_accesses: None,
+                run_log_start: 0,
                 move_seq: 0,
                 active_seq: 0,
             },
@@ -2390,6 +2395,8 @@ impl Vm {
         self.would.reset_scope(WouldScope::Run);
         // 7.3.6: start counting the accesses performed during THIS run.
         self.st.run_accesses = Some((run_id, 0));
+        // 1.12.6: history queries about "this run" review from here.
+        self.st.run_log_start = self.changes.log.len();
         self.frames.push(Frame::Structure(StructureFrame {
             kind: crate::timing::StructKind::Run,
             instance_id: id,
@@ -2894,6 +2901,21 @@ impl Vm {
             Q::Const(n) => *n,
             Q::Count(f) => self.count_filter(*f, source),
             Q::AccessesThisRun => self.accesses_this_run() as i64,
+            Q::DistinctIcePassedThisRun => {
+                // 1.12.6: the game history, not the present game state — an
+                // ice trashed after being passed is still one of the distinct
+                // objects the Runner passed.
+                cite!("rule_previous_object");
+                let mut seen: Vec<ObjectId> = Vec::new();
+                for c in &self.changes.log[self.st.run_log_start..] {
+                    if let GameChange::IcePassed { ice } = c {
+                        if !seen.contains(ice) {
+                            seen.push(*ice);
+                        }
+                    }
+                }
+                seen.len() as i64
+            }
             Q::CountersOnSource(kind) => {
                 // CR 1.17.8: an ability that met its condition from its source
                 // agenda being scored or stolen reads that agenda's LAST KNOWN
@@ -5631,7 +5653,26 @@ impl Vm {
     fn shuffle_deck(&mut self, side: Side) {
         let deck = self.st.deck.get_mut(&side).unwrap();
         deck.shuffle(&mut self.rng);
+        let ids: Vec<ObjectId> = deck.clone();
+        // 1.12.3: a card moved to an UNKNOWN LOCATION becomes a new object,
+        // even though it did not change zones — nobody can say which card
+        // corresponds to which of the objects that were there before.
+        self.new_objects_for_unknown_location(&ids);
         self.changes.record(GameChange::DeckShuffled { side });
+    }
+
+    /// CR 1.12.3: these cards were moved to an unknown location — each of
+    /// them is now a NEW object, so every reference to the objects that were
+    /// there is stranded (9.1.4) and every "this object already" bookkeeping
+    /// (7.4.3/7.4.7a) forgets them.
+    fn new_objects_for_unknown_location(&mut self, ids: &[ObjectId]) {
+        cite!("rule_object_move_location");
+        for id in ids {
+            if let Some(o) = self.st.objects.get_mut(id) {
+                o.generation += 1;
+            }
+        }
+        self.st.move_seq += 1;
     }
 
     /// 8.5.13: reveal the installing card once, if not already revealed.
@@ -7374,6 +7415,7 @@ impl Vm {
                 cite!("rule_object_move_location");
                 cite!("rule_rnd_topmost_eligibile_candidate");
                 let deck: Vec<ObjectId> = self.st.deck[&Side::Corp].clone();
+                self.new_objects_for_unknown_location(&deck);
                 if let Some(b) = self.breach_ctx_mut() {
                     b.chosen_ever.retain(|(c, _)| !deck.contains(c));
                     b.accessed.retain(|c| !deck.contains(c));

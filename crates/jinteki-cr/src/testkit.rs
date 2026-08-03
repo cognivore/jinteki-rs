@@ -4947,3 +4947,33 @@ pub fn titanium_ribs_like(name: &'static str) -> PrintedCard {
     c
 }
 
+
+/// Bravado shape (1.12.6): "Make a run. When that run ends, gain 1[credit]
+/// for each piece of ice you passed during it." The count is a game-HISTORY
+/// query, so an ice that no longer exists still counts.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card makes the run itself and
+/// arms the counting as a delayed conditional; here the run comes from the
+/// basic run action and the counting is a plain conditional on the same
+/// card, because 9.6.13d would refuse to create a delayed conditional armed
+/// by the very ability that initiates the run (no run is in progress yet).
+pub fn bravado_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::DistinctIcePassedThisRun)],
+        false,
+    )
+    .labeled("bravado: 1 credit per ice passed")];
+    c
+}
+
+/// Precognition shape (1.12.3): "Rearrange the top cards of R&D." Cards moved
+/// to an unknown location within their zone become NEW objects.
+pub fn precognition_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities =
+        vec![AbilityDef::paid(Cost::free(), vec![Instruction::CorpRearrangesRnd])
+            .labeled("precognition: rearrange the top of R&D")];
+    c
+}

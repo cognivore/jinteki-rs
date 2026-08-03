@@ -42,6 +42,11 @@ pub enum Quantity {
     /// access that was replaced by another effect never happened and is not
     /// counted.
     AccessesThisRun,
+    /// CR 1.12.6: "for each piece of ice you passed during this run" — the
+    /// number of DISTINCT ice objects the Runner passed, counted by reviewing
+    /// the game history. An object that no longer exists in the present game
+    /// state still counts, which is the whole of the rule.
+    DistinctIcePassedThisRun,
     /// CR 9.12.2e: a value defined by X, where the ability defining X lives
     /// on the source (the Surveyor class shares one X between a strength
     /// definition and a trace). While the defining ability is inactive or
