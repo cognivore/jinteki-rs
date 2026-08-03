@@ -192,8 +192,10 @@ pub fn archived_memories() -> Card {
 ///  As an additional cost to play this operation, spend [click].
 ///  Do 7 meat damage."
 ///
-/// UNIMPLEMENTED: the play restriction — nothing states a condition a card
-/// must meet to be played at all.
+/// UNIMPLEMENTED: the play restriction. `StaticDecl::PlayOnlyIf` now exists,
+/// but the requirement vocabulary counts tags only as "tagged" (≥ 1), and
+/// this card asks for AT LEAST 2. Using `RunnerTagged` would let it be played
+/// at 1 tag — a wrong card, so the marker stays.
 pub fn boom() -> Card {
     card("BOOM!")
         .corp()
@@ -214,8 +216,9 @@ pub fn boom() -> Card {
 /// "Play only if the Runner is tagged.
 ///  The Runner loses all credits in their credit pool."
 ///
-/// UNIMPLEMENTED: both. No play restriction, and `LoseCredits` takes a `u32`
-/// rather than a quantity position, so "all credits" has no expression.
+/// UNIMPLEMENTED: the second sentence — `LoseCredits` takes a `u32` rather
+/// than a quantity position, so "all credits in their credit pool" has no
+/// expression.
 pub fn closed_accounts() -> Card {
     card("Closed Accounts")
         .corp()
@@ -224,7 +227,7 @@ pub fn closed_accounts() -> Card {
         .cost(1)
         .text("Play only if the Runner is tagged.")
         .text("The Runner loses all credits in their credit pool.")
-        .unimplemented("Play only if the Runner is tagged.")
+        .declares([play_only_if(&[runner_is_tagged()])])
         .unimplemented("The Runner loses all credits in their credit pool.")
         .build()
 }
@@ -234,7 +237,9 @@ pub fn closed_accounts() -> Card {
 ///  Play only if the Runner made a run during their last turn.
 ///  Trace[4]. If successful, give the Runner 4 tags."
 ///
-/// UNIMPLEMENTED: the play restriction.
+/// The play restriction is 9.1.8c: a declaration about WHEN the card may be
+/// played, active while the card sits inactive in HQ — the only state in
+/// which it could ever matter.
 pub fn hard_hitting_news() -> Card {
     card("Hard-Hitting News")
         .corp()
@@ -244,9 +249,9 @@ pub fn hard_hitting_news() -> Card {
         .text("After you resolve this operation, your action phase ends.")
         .text("Play only if the Runner made a run during their last turn.")
         .text("Trace[4]. If successful, give the Runner 4 tags.")
+        .declares([play_only_if(&[runner_made_a_run_last_turn()])])
         .play([trace(4, [give_tags(4)])])
         .when(after_this_resolves(), [end_action_phase(Corp)])
-        .unimplemented("Play only if the Runner made a run during their last turn.")
         .build()
 }
 
@@ -320,8 +325,6 @@ pub fn seamless_launch() -> Card {
 /// Self-Growth Program — Operation: Gray Ops. Cost 0.
 /// "Play only if the Runner is tagged.
 ///  Add 2 installed Runner cards to the grip."
-///
-/// UNIMPLEMENTED: the play restriction.
 pub fn self_growth_program() -> Card {
     card("Self-Growth Program")
         .corp()
@@ -330,8 +333,8 @@ pub fn self_growth_program() -> Card {
         .cost(0)
         .text("Play only if the Runner is tagged.")
         .text("Add 2 installed Runner cards to the grip.")
+        .declares([play_only_if(&[runner_is_tagged()])])
         .play([add_to_hand(choose(2, &[installed_runner_card()]))])
-        .unimplemented("Play only if the Runner is tagged.")
         .build()
 }
 

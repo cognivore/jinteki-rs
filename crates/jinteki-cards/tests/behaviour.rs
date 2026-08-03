@@ -692,31 +692,9 @@ fn targeted_marketing_stays_in_the_play_area() {
     );
 }
 
-/// Self-Growth Program: "Add 2 installed Runner cards to the grip."
-#[test]
-fn self_growth_program_bounces_two_installed_cards() {
-    let mut vm = Vm::empty(31);
-    let op = vm.new_object(card_partial("Self-Growth Program"), Zone::Hand(Side::Corp));
-    vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
-    let a = tk::install_rig(&mut vm, tk::program_cost("Prog A", 0));
-    let b = tk::install_rig(&mut vm, tk::program_cost("Prog B", 0));
-    let cc = tk::install_rig(&mut vm, tk::program_cost("Prog C", 0));
-    tk::fill_deck(&mut vm, Side::Corp, 5);
-    tk::fill_deck(&mut vm, Side::Runner, 5);
-    vm.start_turn(Side::Corp);
-
-    let t = plan::play(
-        &mut vm,
-        Plan::corp()
-            .when(Match::action().once(), Reply::play_card(op))
-            .when(Match::targets(), Reply::Targets(vec![a, b]))
-            .stop_at_action(),
-        Plan::runner(),
-    );
-    assert_eq!(vm.st.objects[&a].zone, Zone::Hand(Side::Runner), "{}", t.tail(10));
-    assert_eq!(vm.st.objects[&b].zone, Zone::Hand(Side::Runner));
-    assert_eq!(vm.st.objects[&cc].zone, Zone::Rig, "only the two announced cards moved");
-}
+// (Self-Growth Program's bounce is asserted by
+// `self_growth_program_needs_a_tag_and_then_bounces_two_cards` below, which
+// covers both branches of its play restriction.)
 
 /// BOOM!: "As an additional cost to play this operation, spend [click]."
 /// "Do 7 meat damage." (1.16.10b: the additional cost joins the play cost.)
@@ -751,15 +729,26 @@ fn boom_costs_a_click_on_top_of_its_play_cost() {
 
 /// Hard-Hitting News: "Trace[4]. If successful, give the Runner 4 tags."
 /// "After you resolve this operation, your action phase ends." (5.6.2b.)
+///
+/// The Runner spends a click on a run first, because the card's own play
+/// restriction requires it — which is what the neighbouring test is about.
 #[test]
 fn hard_hitting_news_traces_then_ends_the_action_phase() {
     let mut vm = Vm::empty(33);
-    let hhn = vm.new_object(card_partial("Hard-Hitting News"), Zone::Hand(Side::Corp));
+    let hhn = vm.new_object(card("Hard-Hitting News"), Zone::Hand(Side::Corp));
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(hhn);
-    tk::fill_deck(&mut vm, Side::Corp, 5);
-    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
     vm.st.corp.credits = 5;
-    vm.start_turn(Side::Corp);
+
+    vm.start_turn(Side::Runner);
+    plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Archives))
+            .otherwise_click_credit(),
+    );
 
     let t = plan::play(
         &mut vm,
@@ -1018,4 +1007,159 @@ fn desperado_pays_on_a_successful_run() {
             .stop_at_action(),
     );
     assert_eq!(vm.st.runner.credits, 1, "1[credit] for the successful run: {}", t.tail(12));
+}
+
+/// Clean Getaway: "Run any server. If successful, gain 6[credit]."
+///
+/// "Any server" is a decision, not a constant: the effect names none, so the
+/// Runner announces the attacked server as the run is initiated (6.9.1a), and
+/// the "if successful" clause is tied to the set the effect allowed (6.7.4a)
+/// — which for this card is every server.
+#[test]
+fn clean_getaway_lets_the_runner_choose_the_server() {
+    for server in [ServerId::Archives, ServerId::Rnd] {
+        let mut vm = Vm::empty(39);
+        let cg = vm.new_object(card("Clean Getaway"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(cg);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 3;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(cg))
+                .when(Match::attacked_server().once(), Reply::Server(server))
+                .stop_at_action(),
+        );
+        // The announcement really was put to the Runner, over every server.
+        let announced = t.of_kind(Kind::AttackedServer);
+        assert_eq!(announced.len(), 1, "one 6.9.1a announcement: {}", t.tail(14));
+        assert!(
+            matches!(
+                &announced[0].spec,
+                jinteki_cr::decision::DecisionSpec::DeclareAttackedServer { options }
+                    if options.len() >= 3 && options.contains(&server)
+            ),
+            "6.7.4a: this card allows every server: {:?}",
+            announced[0].spec
+        );
+        assert!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: s } if *s == server)),
+            "the run went to the announced server: {}",
+            t.tail(14)
+        );
+        // 3 − 3 play cost + 6.
+        assert_eq!(vm.st.runner.credits, 6, "if successful, gain 6: {}", t.tail(14));
+    }
+}
+
+/// Hard-Hitting News: "Play only if the Runner made a run during their last
+/// turn." — a 9.1.8c declaration, so the proof is that the basic play action
+/// does not OFFER the card when the requirement fails.
+#[test]
+fn hard_hitting_news_is_only_playable_after_a_runner_run() {
+    for runner_ran in [false, true] {
+        let mut vm = Vm::empty(40);
+        let hhn = vm.new_object(card("Hard-Hitting News"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(hhn);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        vm.st.corp.credits = 5;
+
+        // A whole Runner turn first, spent either on a run or on credits.
+        vm.start_turn(Side::Runner);
+        let runner_plan = if runner_ran {
+            Plan::runner().when(Match::action().first(), Reply::run(ServerId::Archives))
+        } else {
+            Plan::runner()
+        };
+        plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action(), Reply::Halt),
+            runner_plan.otherwise_click_credit(),
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's turn came round");
+
+        let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+        let offered = t
+            .first_window(Kind::Action, Side::Corp)
+            .actions()
+            .iter()
+            .any(|o| matches!(o, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == hhn));
+        assert_eq!(
+            offered, runner_ran,
+            "5.2.6e offers the operation exactly when the requirement holds \
+             (runner_ran={runner_ran}): {}",
+            t.tail(10)
+        );
+    }
+}
+
+/// Self-Growth Program: "Play only if the Runner is tagged." /
+/// "Add 2 installed Runner cards to the grip."
+#[test]
+fn self_growth_program_needs_a_tag_and_then_bounces_two_cards() {
+    for tagged in [false, true] {
+        let mut vm = Vm::empty(41);
+        let op = vm.new_object(card("Self-Growth Program"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+        let a = tk::install_rig(&mut vm, tk::program_cost("Prog A", 0));
+        let b = tk::install_rig(&mut vm, tk::program_cost("Prog B", 0));
+        let c = tk::install_rig(&mut vm, tk::program_cost("Prog C", 0));
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.tags = if tagged { 1 } else { 0 };
+        vm.start_turn(Side::Corp);
+
+        let mut runner_plan = Plan::corp().stop_at_action();
+        if tagged {
+            runner_plan = Plan::corp()
+                .when(Match::action().once(), Reply::play_card(op))
+                .when(Match::targets(), Reply::Targets(vec![a, b]))
+                .stop_at_action();
+        }
+        let t = plan::play(&mut vm, runner_plan, Plan::runner());
+        let offered = t
+            .first_window(Kind::Action, Side::Corp)
+            .actions()
+            .iter()
+            .any(|o| matches!(o, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == op));
+        assert_eq!(offered, tagged, "playable exactly while the Runner is tagged");
+        if tagged {
+            assert_eq!(vm.st.objects[&a].zone, Zone::Hand(Side::Runner), "{}", t.tail(10));
+            assert_eq!(vm.st.objects[&b].zone, Zone::Hand(Side::Runner));
+            assert_eq!(vm.st.objects[&c].zone, Zone::Rig, "only the announced two moved");
+        }
+    }
+}
+
+/// Closed Accounts: "Play only if the Runner is tagged." — the half of the
+/// card that IS expressed. (Its second sentence is on the gap list.)
+#[test]
+fn closed_accounts_is_only_playable_while_the_runner_is_tagged() {
+    for tagged in [false, true] {
+        let mut vm = Vm::empty(42);
+        let op = vm.new_object(card_partial("Closed Accounts"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.st.runner.tags = if tagged { 2 } else { 0 };
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+        let offered = t
+            .first_window(Kind::Action, Side::Corp)
+            .actions()
+            .iter()
+            .any(|o| matches!(o, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == op));
+        assert_eq!(offered, tagged, "9.1.8c gates the basic play action");
+    }
 }

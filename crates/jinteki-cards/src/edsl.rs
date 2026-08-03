@@ -89,7 +89,7 @@ use jinteki_cr::object::PrintedCard;
 // Re-exported so a deck file needs exactly one `use` line. These are the
 // kernel's own types: a designer who outgrows the helpers below can reach
 // for them directly and is still inside the public vocabulary.
-pub use jinteki_cr::ability::{Cost, StaticDecl, TriggerCond};
+pub use jinteki_cr::ability::{Cost, StaticDecl, TriggerCond, TriggerRequirement};
 pub use jinteki_cr::instr::{
     InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, SubroutineSpec,
     TargetFilter, TargetSpec, TrashDestination,
@@ -564,6 +564,12 @@ pub fn run_then_if_successful(
         if_successful: if_successful.into_iter().collect(),
     }
 }
+/// "Run any server. If successful, …" — the effect names no server, so the
+/// Runner announces the attacked one at step 6.9.1a from everything 6.7.4a
+/// allows (minus any server 6.3.2a forbids initiating a run on).
+pub fn run_any_server(if_successful: impl IntoIterator<Item = Instruction>) -> Instruction {
+    Instruction::run_any_server(if_successful.into_iter().collect())
+}
 /// "Bypass the ice you are encountering." (6.5.8.)
 pub fn bypass_encountered_ice() -> Instruction {
     Instruction::BypassEncounteredIce
@@ -921,6 +927,27 @@ pub fn after_this_resolves() -> TriggerCond {
 pub fn makes_successful_run() -> TriggerCond {
     TriggerCond::MakesSuccessfulRun
 }
+/// "When a discard phase ends, …" (5.5.4). CR 5.1.4b puts it at the same step
+/// as the turn formally ending, so it is that occurrence read as a different
+/// sentence.
+pub fn discard_phase_ends(side: Side) -> TriggerCond {
+    TriggerCond::DiscardPhaseEnds(side)
+}
+
+// ---- states a card can require (9.6.5c / 9.1.8c) --------------------------
+
+/// "…the Runner is tagged" (5.4).
+pub fn runner_is_tagged() -> TriggerRequirement {
+    TriggerRequirement::RunnerTagged
+}
+/// "…the Runner made a run during their last turn."
+pub fn runner_made_a_run_last_turn() -> TriggerRequirement {
+    TriggerRequirement::RunnerMadeRunLastTurn { successful_only: false }
+}
+/// "…the Runner made a successful run during their last turn."
+pub fn runner_made_a_successful_run_last_turn() -> TriggerRequirement {
+    TriggerRequirement::RunnerMadeRunLastTurn { successful_only: true }
+}
 
 // ---- what is permanently true (9.4) ---------------------------------------
 
@@ -968,6 +995,12 @@ pub fn not_trashed_until_an_agenda_is_stolen() -> StaticDecl {
 /// every agenda, for as long as this card is active (1.16.10).
 pub fn additional_cost_to_steal_any_agenda(c: Cost) -> StaticDecl {
     StaticDecl::AdditionalStealCost(c)
+}
+/// "Play only if <state>." (9.1.8c.) Every requirement must hold or the card
+/// is not a legal play at all: the basic play action does not offer it, and
+/// an effect that would play a card cannot choose it.
+pub fn play_only_if(reqs: &[TriggerRequirement]) -> StaticDecl {
+    StaticDecl::PlayOnlyIf(reqs.to_vec())
 }
 /// "You can advance this card." (1.18.3.)
 pub fn can_be_advanced() -> StaticDecl {

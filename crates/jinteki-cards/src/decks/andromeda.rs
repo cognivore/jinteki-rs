@@ -53,9 +53,8 @@ pub fn diesel() -> Card {
 /// Clean Getaway — Event: Run. Cost 3.
 /// "Run any server. If successful, gain 6[credit]."
 ///
-/// UNIMPLEMENTED: `Instruction::InitiateRun` takes a concrete `ServerId`, so
-/// "any server" — where the Runner chooses from the servers the effect allowed
-/// (6.7.4a) — has no expression. "Run HQ" would be sayable.
+/// "Any server" is the 6.9.1a announcement: the effect names no server, so the
+/// Runner declares the attacked one as the run is initiated.
 pub fn clean_getaway() -> Card {
     card("Clean Getaway")
         .runner()
@@ -63,7 +62,7 @@ pub fn clean_getaway() -> Card {
         .subtypes(&["Run"])
         .cost(3)
         .text("Run any server. If successful, gain 6[credit].")
-        .unimplemented("Run any server. If successful, gain 6[credit].")
+        .play([run_any_server([gain(Runner, 6)])])
         .build()
 }
 
