@@ -52,6 +52,11 @@ pub enum Payload {
     ReplacementEffect {
         applies_to: EffectClass,
         replace_with: ReplacementTransform,
+        /// CR 6.7.4c: the replacement is one its controller may OPTIONALLY
+        /// carry out, so applying it is a Decision, made where the effect it
+        /// replaces would happen — for a breach, step 6.9.5b, after
+        /// everything the 6.9.5a reaction window held has resolved.
+        optional: bool,
     },
     /// CR 9.10.3: a remembered choice (server, object) other abilities of the
     /// same source read.

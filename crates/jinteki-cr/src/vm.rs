@@ -181,6 +181,8 @@ pub enum DecisionCtx {
     CostDivision,
     /// 9.9.11: choose the order in which replacement effects apply.
     ReplacementOrder,
+    /// CR 6.7.4c: apply an optional replacement effect, or decline it.
+    OptionalReplacement,
     /// 7.4.3 example 2 (Gagarin class): pay or decline an additional cost
     /// to access the chosen candidate.
     AccessCost(ObjectId),
@@ -339,6 +341,9 @@ pub struct Vm {
     /// CR 9.8.2c: the ice and grant stamp a `DeclareSubroutineOrder` Decision
     /// is about, while it is outstanding.
     pub pending_sub_order: Option<(ObjectId, u64)>,
+    /// CR 6.7.4c: the optional replacement effect whose apply-or-decline
+    /// Decision is outstanding.
+    pub pending_optional_replacement: Option<u64>,
     /// CR 1.16: the payment in progress, if any (`Vm::begin_payment`).
     pub payment: Option<Payment>,
     /// Trace of resolutions for tests: labels of resolved ability frames.
@@ -378,6 +383,21 @@ pub struct Payment {
     pub restriction: Option<PaymentRestriction>,
     /// What the payment was for: resumed once it is committed.
     pub cont: PaymentCont,
+}
+
+/// CR 6.7.4: "Many abilities that initiate a run contain a conditional
+/// ability with the trigger condition 'If successful'. This means, 'After the
+/// run created this way becomes successful'." The clause belongs to the
+/// initiating EFFECT, so it travels with the run rather than being an
+/// ordinary delayed conditional (9.6.13d would refuse one: no run is in
+/// progress when the initiating instruction resolves).
+#[derive(Debug, Clone)]
+pub struct IfSuccessful {
+    pub source: AbilityRef,
+    pub controller: Side,
+    /// CR 6.7.4a: the servers the initiating effect allowed.
+    pub allowed: crate::instr::RunServerSet,
+    pub effects: Vec<Instruction>,
 }
 
 /// CR 1.16.1c: "if triggering an ability or resolving an effect is subject to
@@ -531,6 +551,7 @@ impl Vm {
             throttled: HashSet::new(),
             once_per_turn_used: HashSet::new(),
             pending_sub_order: None,
+            pending_optional_replacement: None,
             payment: None,
             snapshot: None,
             last_scan_window: Vec::new(),
@@ -1468,6 +1489,12 @@ impl Vm {
                         *s = true;
                     }
                     self.changes.record(GameChange::RunDeclaredSuccessful { server });
+                    // CR 6.7.4: "If successful" means "after the run created
+                    // this way becomes successful", so the clause the
+                    // initiating effect carried becomes pending HERE — an
+                    // ordinary conditional instance, offered by the reaction
+                    // window this step's checkpoint opens.
+                    self.pend_if_successful(server);
                 }
             }
             StepKind::BreachAttackedServer => {
@@ -1821,6 +1848,62 @@ impl Vm {
             out.push(id);
         }
         out
+    }
+
+    /// CR 6.7.4: the "If successful" ability the effect that initiated this
+    /// run carried becomes pending, as a conditional instance, exactly when
+    /// the run is declared successful. CR 6.7.4a: it is tied to the servers
+    /// that effect allowed, so a run moved (6.1.2d) outside that set does not
+    /// meet the condition, while a move WITHIN it does.
+    fn pend_if_successful(&mut self, server: ServerId) {
+        let Some(c) = self.run_ctx().and_then(|r| r.if_successful.clone()) else { return };
+        cite!("rule_if_successful");
+        cite!("rule_if_successful_tied_to_server");
+        if !c.allowed.allows(server) {
+            return;
+        }
+        let label = self
+            .st
+            .objects
+            .get(&c.source.obj)
+            .map(|o| o.printed.name)
+            .unwrap_or("if successful");
+        let def = AbilityDef {
+            kind: AbilityKind::Conditional,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: c.effects.clone(),
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            label,
+        };
+        let id = self.next_instance_id();
+        cite!("rule_pending_instances");
+        let gen = self.generation(c.source.obj);
+        self.instances.insert(
+            id,
+            AbilityInstance {
+                id,
+                ability: c.source,
+                def,
+                controller: c.controller,
+                mandatory: true,
+                window: None,
+                hangover: false,
+                independent: false,
+                source_generation: gen,
+                occurrence_group: 0,
+                from_lingering: None,
+                run_id: self.current_run.map(|(r, _, _)| r),
+            },
+        );
+        self.pending_from_effect.push(id);
+        // 6.7.4: the clause belongs to the run, and it fires once.
+        if let Some(r) = self.run_ctx_mut() {
+            r.if_successful = None;
+        }
     }
 
     /// CR 4.6.8f: may the Corp create a new remote server right now? An
@@ -2505,6 +2588,7 @@ impl Vm {
                 reached_success: false,
                 declared_successful: false,
                 jump_to_run_ends: false,
+                if_successful: None,
             }),
         }));
     }
@@ -3284,7 +3368,7 @@ impl Vm {
                     vec![EffectAtom::new(EffectClass::Draw, 1, Side::Corp)]
                 }
             }
-            Instruction::ReplaceImminentDamageKind { .. } | Instruction::InitiateRun(_) => {
+            Instruction::ReplaceImminentDamageKind { .. } | Instruction::InitiateRun { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::BreachServer(_) => {
@@ -3477,12 +3561,29 @@ impl Vm {
             .collect()
     }
 
+    /// CR 6.7.4c: is this replacement one its controller may decline?
+    fn replacement_is_optional(&self, lid: u64) -> bool {
+        self.lingering.iter().any(|l| {
+            l.id == lid
+                && matches!(l.payload, Payload::ReplacementEffect { optional: true, .. })
+        })
+    }
+
+    fn replacement_label(&self, lid: u64) -> &'static str {
+        self.lingering
+            .iter()
+            .find(|l| l.id == lid)
+            .and_then(|l| self.st.objects.get(&l.source))
+            .map(|o| o.printed.name)
+            .unwrap_or("replacement")
+    }
+
     /// Apply one replacement effect to the top imminence (marks it applied
     /// for this effect — 9.9.9c).
     fn apply_replacement(&mut self, lid: u64) {
         let Some(imm_seq) = self.imminents.last().map(|i| i.seq) else { return };
         let Some(l) = self.lingering.iter_mut().find(|l| l.id == lid) else { return };
-        let Payload::ReplacementEffect { applies_to, replace_with } = &l.payload else { return };
+        let Payload::ReplacementEffect { applies_to, replace_with, .. } = &l.payload else { return };
         let applies_to = *applies_to;
         let replace_with = replace_with.clone();
         l.applied_to.push(imm_seq);
@@ -3539,7 +3640,31 @@ impl Vm {
             let appl = self.applicable_replacements();
             match appl.len() {
                 0 => return false,
-                1 => self.apply_replacement(appl[0]),
+                1 => {
+                    // CR 6.7.4c: an OPTIONAL replacement is not applied until
+                    // its controller says so, and the decision is made where
+                    // the effect it replaces would happen — for a breach,
+                    // step 6.9.5b, by which time everything the 6.9.5a
+                    // reaction window held has already resolved.
+                    if self.replacement_is_optional(appl[0]) {
+                        cite!("rule_if_successful_ability_optional");
+                        let label = self.replacement_label(appl[0]);
+                        let chooser = self
+                            .lingering
+                            .iter()
+                            .find(|l| l.id == appl[0])
+                            .map(|l| self.st.objects[&l.source].controller)
+                            .unwrap_or(Side::Runner);
+                        self.pending_optional_replacement = Some(appl[0]);
+                        self.ask(
+                            chooser,
+                            DecisionSpec::OptionalEffect { label },
+                            DecisionCtx::OptionalReplacement,
+                        );
+                        return true;
+                    }
+                    self.apply_replacement(appl[0])
+                }
                 _ => {
                     cite!("rule_order_of_replacement_effects");
                     let labels: Vec<&'static str> = appl
@@ -6240,9 +6365,25 @@ impl Vm {
                     self.push_breach(*server);
                 }
             }
-            Instruction::InitiateRun(server) => {
+            Instruction::InitiateRun { server, allowed, if_successful } => {
                 cite!("rule_run_timing_structure");
                 self.initiate_run(*server);
+                // CR 6.7.4/6.7.4a: the "If successful" ability belongs to the
+                // effect that initiated the run, and is tied to the servers
+                // that effect allowed. Both travel with the run.
+                if !if_successful.is_empty() {
+                    cite!("rule_if_successful");
+                    cite!("rule_if_successful_tied_to_server");
+                    let clause = IfSuccessful {
+                        source: source,
+                        controller,
+                        allowed: allowed.clone(),
+                        effects: if_successful.clone(),
+                    };
+                    if let Some(r) = self.run_ctx_mut() {
+                        r.if_successful = Some(clause);
+                    }
+                }
                 // The nested run frame is now on top; this ability resumes
                 // after the run completes (9.2.4d LIFO nesting).
             }
@@ -6484,13 +6625,14 @@ impl Vm {
                 let payload = match payload {
                     crate::instr::LingeringSpec::CannotUseAbilitiesOf(_) => unreachable!(),
                     crate::instr::LingeringSpec::PreventAllDamage => Payload::DamagePreventionAll,
-                    crate::instr::LingeringSpec::Replacement { applies_to, with } => {
+                    crate::instr::LingeringSpec::Replacement { applies_to, with, optional } => {
                         // 9.9.8c: a replacement effect can be created ahead
                         // of the effect it replaces.
                         cite!("rule_replacement_effect_from_lingering_effect");
                         Payload::ReplacementEffect {
                             applies_to: *applies_to,
                             replace_with: with.clone(),
+                            optional: *optional,
                         }
                     }
                     crate::instr::LingeringSpec::AccessLimit { limit } => {
@@ -9838,6 +9980,35 @@ impl Vm {
                         None,
                         Some(total),
                     );
+                }
+            }
+            (DecisionCtx::OptionalReplacement, DecisionAnswer::ResolveOptional(yes)) => {
+                // CR 6.7.4c: the decision was made where the breach would
+                // begin. Applying consumes the effect; declining leaves it
+                // unapplied for THIS effect (9.9.9c) and the base effect
+                // happens normally.
+                cite!("rule_if_successful_ability_optional");
+                if let Some(lid) = self.pending_optional_replacement.take() {
+                    if yes {
+                        self.apply_replacement(lid);
+                    } else if let Some(seq) = self.imminents.last().map(|i| i.seq) {
+                        if let Some(l) = self.lingering.iter_mut().find(|l| l.id == lid) {
+                            l.applied_to.push(seq);
+                        }
+                    }
+                }
+                // More replacements may still apply to the same effect
+                // (9.9.11); when none do, the flow continues exactly as it
+                // does after an order Decision.
+                if self.resolve_replacements_or_ask() {
+                    return;
+                }
+                if !self.open_interrupt_window_if_relevant() {
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        if af.phase == AbilityPhase::Imminent {
+                            af.phase = AbilityPhase::Resolve;
+                        }
+                    }
                 }
             }
             (DecisionCtx::ScoreCost(card), DecisionAnswer::PayNestedCost(pay)) => {

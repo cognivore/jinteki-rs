@@ -45,6 +45,9 @@ pub struct RunCtx {
     pub declared_successful: bool,
     /// An "end the run" effect is unwinding toward the Run Ends phase.
     pub jump_to_run_ends: bool,
+    /// CR 6.7.4: the "If successful" ability the effect that initiated this
+    /// run carried, with the 6.7.4a set of servers that effect allowed.
+    pub if_successful: Option<crate::vm::IfSuccessful>,
 }
 
 /// Per-encounter-phase state (§6.5). The phase is a timing structure of its

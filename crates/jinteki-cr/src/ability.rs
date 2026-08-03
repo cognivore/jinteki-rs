@@ -120,6 +120,11 @@ pub enum TriggerCond {
     /// was designated, so an earlier successful run on the same server —
     /// before it was the mark — does not spend the "first time each turn".
     SuccessfulRunOnMark { first_each_turn: bool },
+    /// CR 6.7.2: "whenever a run on this server is successful" (Ash class).
+    /// Met when the run is DECLARED successful (6.9.5a), so the ability
+    /// resolves in the reaction window that step's checkpoint opens — before
+    /// the breach step where 6.7.4c puts the Runner's decision.
+    SuccessfulRunOnServer,
     /// CR 10.9.2: "when this card is empty…" (Crowdfunding class). The
     /// condition can only be met after the card has been LOADED with counters
     /// of this kind by a preceding ability of the same card — a card with no
@@ -808,6 +813,13 @@ pub fn trigger_matches(
     match (cond, change) {
         (TriggerCond::TurnBegins(side), GameChange::TurnBegan { side: s }) => side == s,
         (TriggerCond::RunEnds { .. }, GameChange::RunEnded { .. }) => true,
+        (
+            TriggerCond::SuccessfulRunOnServer,
+            GameChange::RunDeclaredSuccessful { server },
+        ) => {
+            cite!("rule_successful_run");
+            server_of_source == Some(*server)
+        }
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
         }

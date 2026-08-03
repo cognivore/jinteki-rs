@@ -85,6 +85,31 @@ impl Quantity {
     }
 }
 
+/// CR 6.7.4a: the set of servers an effect that initiates a run allowed the
+/// Runner to choose from. A selector, not a literal list, because "a remote
+/// server" names a set the game state computes (§12 rule 6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunServerSet {
+    /// The effect named no restriction ("make a run").
+    Any,
+    /// "Run a remote server."
+    AnyRemote,
+    /// "Run HQ." — exactly these servers.
+    These(Vec<ServerId>),
+}
+
+impl RunServerSet {
+    /// CR 6.7.4a: "…no longer is a server that could have been chosen for
+    /// this run".
+    pub fn allows(&self, s: ServerId) -> bool {
+        match self {
+            RunServerSet::Any => true,
+            RunServerSet::AnyRemote => matches!(s, ServerId::Remote(_)),
+            RunServerSet::These(v) => v.contains(&s),
+        }
+    }
+}
+
 /// A single instruction: the atomic unit of ability resolution (9.3.4c).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
@@ -218,7 +243,20 @@ pub enum Instruction {
     ReplaceImminentDamageKind { to: DamageKind },
     /// "Run any server." / "make another run" (Doppelgänger class) — pushes
     /// a nested run timing structure.
-    InitiateRun(ServerId),
+    InitiateRun {
+        server: ServerId,
+        /// CR 6.7.4a: the servers this initiating effect ALLOWED. An "If
+        /// successful" ability is tied to them, so a run moved (6.1.2d) to a
+        /// server the effect could not have chosen no longer meets the
+        /// condition — while a move WITHIN the set keeps it.
+        allowed: RunServerSet,
+        /// CR 6.7.4: "If successful, …" — a conditional ability whose trigger
+        /// condition is "after the run created this way becomes successful".
+        /// It cannot be an ordinary delayed conditional, because 9.6.13d
+        /// wants the run already in progress; the instruction that creates
+        /// the run is what carries it.
+        if_successful: Vec<Instruction>,
+    },
     /// "Trace [N] — if successful, …; if unsuccessful, …" (10.8). Expanded
     /// by the resolution loop into the 10.8.6 step sequence. The base is a
     /// quantity position: Trace[3] is a constant selector; "Trace[X], X = 2
@@ -652,6 +690,18 @@ pub enum Instruction {
     AccessComplete,
 }
 
+impl Instruction {
+    /// "Make a run on <server>." — no server restriction (6.7.4a) and no
+    /// "If successful" clause (6.7.4).
+    pub fn run(server: ServerId) -> Instruction {
+        Instruction::InitiateRun {
+            server,
+            allowed: RunServerSet::Any,
+            if_successful: Vec::new(),
+        }
+    }
+}
+
 /// What a card's text asks a lingering effect to DO (§9.10 payload classes),
 /// as data. Paired with a [`crate::lingering::WantedDuration`] by
 /// [`Instruction::CreateLingeringEffect`]; the effect's source is the
@@ -668,6 +718,10 @@ pub enum LingeringSpec {
     Replacement {
         applies_to: crate::effects::EffectClass,
         with: crate::lingering::ReplacementTransform,
+        /// CR 6.7.4c: the replacement is one its controller may OPTIONALLY
+        /// carry out, so applying it is a Decision — made where the replaced
+        /// effect would happen (for a breach, step 6.9.5b).
+        optional: bool,
     },
     /// "Access N additional cards from <server>." (The Maker's Eye class;
     /// added to the 7.3.6 access limit at breach step 7.5.3.)

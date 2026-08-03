@@ -12,6 +12,7 @@ use jinteki_cr::instr::{Instruction, Quantity};
 use jinteki_cr::object::{CounterKind, ServerId, Side, Zone};
 use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply};
 use jinteki_cr::testkit as tk;
+use jinteki_cr::timing::StructKind;
 use jinteki_cr::vm::Vm;
 
 /// A seed whose 10.11.2a random central lands on HQ, which is what the
@@ -24,6 +25,8 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 /// Example ids implemented as tests in this file (the DP-7a ledger).
 const IMPLEMENTED: &[&str] = &[
     "example_rule_alternate_payment_1",
+    "example_rule_if_successful_tied_to_server_1",
+    "example_rule_if_successful_ability_optional_1",
     "example_rule_cost_restrictions_2",
     "example_rule_additional_cost_checkpoint_1",
     "example_rule_cost_x_1",
@@ -10686,4 +10689,122 @@ fn example_rule_additional_cost_checkpoint_1() {
         "1.16.10c: the ability resolves following the checkpoint associated with \
          PAYING THE COST, before the agenda is added to the score area"
     );
+}
+
+// ---------------------------------------------------------------------------
+// W13b: "If successful" (§6.7.4)
+// ---------------------------------------------------------------------------
+
+/// example_rule_if_successful_tied_to_server_1 (6.7.4a): the Runner plays a
+/// Because-I-Can-class event, which directs them to make a run on a REMOTE
+/// server. If an effect moves the run to a central server, the "If successful"
+/// effect does not apply. If the run is moved instead to another remote, it
+/// still applies — that second remote is a server the effect would have
+/// allowed to begin with.
+#[test]
+fn example_rule_if_successful_tied_to_server_1() {
+    for (moved_to, applies) in [(ServerId::Hq, false), (ServerId::Remote(2), true)] {
+        let mut vm = Vm::empty(1367);
+        let card = vm.new_object(
+            tk::because_i_can_like("BecauseICan-like", ServerId::Remote(1), 3),
+            Zone::Hand(Side::Runner),
+        );
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card);
+        tk::install_rig(&mut vm, tk::play_event_button("Play-Button", card));
+        // A Sneakdoor-class paid ability moves the run directly (6.1.2d).
+        tk::install_rig(&mut vm, tk::sneakdoor_like("Sneakdoor-like", moved_to));
+        tk::install_root(&mut vm, tk::vanilla_asset("R1-asset", 0, 1), ServerId::Remote(1), true);
+        tk::install_root(&mut vm, tk::vanilla_asset("R2-asset", 0, 1), ServerId::Remote(2), true);
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("play-event"))
+                .when(Match::paid().during(StructKind::Run).once(), Reply::take("sneakdoor"))
+                .when(Match::optional(), Reply::Optional(true))
+                .stop_at_action(),
+        );
+        assert!(t.took("sneakdoor"), "the run was moved: {}", t.tail(12));
+        assert_eq!(
+            vm.st.runner.credits,
+            if applies { 3 } else { 0 },
+            "6.7.4a: with the run moved to {moved_to:?}, the 'If successful' \
+             ability {} meet its trigger condition",
+            if applies { "does" } else { "does not" }
+        );
+    }
+}
+
+/// example_rule_if_successful_ability_optional_1 (6.7.4c): the Runner plays an
+/// Account-Siphon-class event while an Ash-class upgrade is installed in the
+/// root of HQ, and the run is successful. The Runner can wait until AFTER the
+/// trace from Ash completes before deciding to access cards normally or to
+/// force the Corp to lose credits — the decision is made at step 6.9.5b, where
+/// the breach would begin.
+#[test]
+fn example_rule_if_successful_ability_optional_1() {
+    for take_it in [true, false] {
+        let mut vm = Vm::empty(1368);
+        let card = vm.new_object(
+            tk::account_siphon_like("AccountSiphon-like", 5),
+            Zone::Hand(Side::Runner),
+        );
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card);
+        tk::install_rig(&mut vm, tk::play_event_button("Play-Button", card));
+        tk::install_root(
+            &mut vm,
+            tk::successful_run_trace_upgrade("Ash-like", 4),
+            ServerId::Hq,
+            true,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        vm.st.corp.credits = 5;
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::trace_spend(), Reply::Spend(3)),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("play-event"))
+                .when(Match::trace_spend(), Reply::Spend(0))
+                .when(Match::optional().once(), Reply::Optional(take_it))
+                .stop_at_action(),
+        );
+
+        let trace_at = t
+            .entries
+            .iter()
+            .position(|e| e.kind() == Kind::TraceSpend)
+            .expect("the Ash-class trace ran in the 6.9.5a reaction window");
+        let decide_at = t
+            .entries
+            .iter()
+            .position(|e| e.kind() == Kind::Optional)
+            .expect("6.7.4c: the 'instead of breaching' decision is put to the Runner");
+        assert!(
+            trace_at < decide_at,
+            "6.7.4c: the decision is made at step 6.9.5b, so the Runner waits \
+             until after the trace completes: {}",
+            t.tail(14)
+        );
+        if take_it {
+            assert_eq!(vm.st.runner.credits, 5, "the replacement applied instead of breaching");
+            assert!(
+                !vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+                "…so no breach happened"
+            );
+        } else {
+            assert_eq!(vm.st.runner.credits, 0, "declining leaves the effect unapplied");
+            assert!(
+                vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+                "…and the Runner breaches HQ normally: {}",
+                t.tail(14)
+            );
+        }
+    }
 }

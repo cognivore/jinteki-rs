@@ -902,7 +902,7 @@ pub fn doppel_like(name: &'static str, server: ServerId) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Hardware);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunEnds { successful_only: false },
-        vec![Instruction::DeclineableChoice(Box::new(Instruction::InitiateRun(server)))],
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::run(server)))],
         true,
     )
     .labeled("doppel: run again")];
@@ -1054,6 +1054,7 @@ pub fn breach_replacement_card(
         Cost::free(),
         vec![Instruction::CreateLingeringEffect {
             payload: crate::instr::LingeringSpec::Replacement {
+                optional: false,
                 applies_to: crate::effects::EffectClass::Breach,
                 with: transform,
             },
@@ -1726,7 +1727,7 @@ pub fn forked_button(name: &'static str, server: ServerId) -> PrintedCard {
                 ),
                 duration: crate::lingering::WantedDuration::UntilResolved,
             },
-            Instruction::InitiateRun(server),
+            Instruction::run(server),
         ],
     )
     .labeled("forked: run and trash fully-broken ice")];
@@ -1805,6 +1806,7 @@ pub fn access_replacement_card(name: &'static str, victim: ObjectId) -> PrintedC
         Cost::free(),
         vec![Instruction::CreateLingeringEffect {
             payload: crate::instr::LingeringSpec::Replacement {
+                optional: false,
                 applies_to: crate::effects::EffectClass::AccessCard,
                 with: crate::lingering::ReplacementTransform::SuppressAccessAndTrashOther(victim),
             },
@@ -3387,7 +3389,7 @@ pub fn stimhack_like(name: &'static str, server: ServerId) -> PrintedCard {
         name,
         0,
         vec![
-            Instruction::InitiateRun(server),
+            Instruction::run(server),
             Instruction::Damage {
                 kind: DamageKind::Core,
                 amount: Quantity::c(1),
@@ -4155,7 +4157,7 @@ pub fn caldera_like(name: &'static str) -> PrintedCard {
 /// active for as long as the card is — which, for an event, is throughout
 /// step 8.6.7f (9.1.2b), the very window the run-end conditions pend in.
 pub fn direct_access_like(name: &'static str, server: ServerId) -> PrintedCard {
-    let mut c = event(name, 0, vec![Instruction::InitiateRun(server)]);
+    let mut c = event(name, 0, vec![Instruction::run(server)]);
     c.abilities.push(
         AbilityDef::static_ability(vec![StaticDecl::RemoveAbilitiesOfMatching {
             criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Identity)],
@@ -4535,6 +4537,7 @@ pub fn archives_interface_like(name: &'static str) -> PrintedCard {
         Cost::free(),
         vec![Instruction::CreateLingeringEffect {
             payload: crate::instr::LingeringSpec::Replacement {
+                optional: false,
                 applies_to: crate::effects::EffectClass::AccessCard,
                 with: crate::lingering::ReplacementTransform::SuppressAccessAndRemoveChosen,
             },
@@ -4709,7 +4712,7 @@ pub fn crowdfunding_like(name: &'static str) -> PrintedCard {
 /// A Runner card whose paid ability simply makes a run on a server.
 pub fn run_button(name: &'static str, server: ServerId) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::InitiateRun(server)])
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::run(server)])
         .labeled("run-button: make a run")];
     c
 }
@@ -5048,5 +5051,68 @@ pub fn trash_reaction_asset(name: &'static str) -> PrintedCard {
         false,
     )
     .labeled("ob: when you trash an installed card")];
+    c
+}
+
+// ---------------------------------------------------------------------------
+// W13b shapes: "If successful" (§6.7.4)
+// ---------------------------------------------------------------------------
+
+/// Because I Can shape (6.7.4a): "Run a remote server. If successful, <gain
+/// credits>." The instruction carries the SET of servers the effect allowed,
+/// so a run moved to a central drops the clause and a run moved to another
+/// remote keeps it.
+pub fn because_i_can_like(name: &'static str, server: ServerId, gain: i64) -> PrintedCard {
+    event(
+        name,
+        0,
+        vec![Instruction::InitiateRun {
+            server,
+            allowed: crate::instr::RunServerSet::AnyRemote,
+            if_successful: vec![Instruction::GainCredits(Side::Runner, Quantity::c(gain))],
+        }],
+    )
+}
+
+/// Account Siphon shape (6.7.4c): "Run HQ. If successful, you may instead of
+/// breaching HQ, force the Corp to lose credits." The "instead of breaching"
+/// part is an OPTIONAL replacement effect, so the Runner's decision is made
+/// where the breach would begin (step 6.9.5b) — after everything the 6.9.5a
+/// reaction window held has resolved.
+pub fn account_siphon_like(name: &'static str, gain: u32) -> PrintedCard {
+    event(
+        name,
+        0,
+        vec![Instruction::InitiateRun {
+            server: ServerId::Hq,
+            allowed: crate::instr::RunServerSet::These(vec![ServerId::Hq]),
+            if_successful: vec![Instruction::CreateLingeringEffect {
+                payload: crate::instr::LingeringSpec::Replacement {
+                    applies_to: crate::effects::EffectClass::Breach,
+                    with: crate::lingering::ReplacementTransform::SuppressAndGainCredits(gain),
+                    optional: true,
+                },
+                duration: crate::lingering::WantedDuration::ThisRun,
+            }],
+        }],
+    )
+}
+
+/// Ash 2X3ZB9CY shape as the 6.7.4c example uses it: an upgrade whose trace
+/// resolves in the reaction window at step 6.9.5a, i.e. BEFORE the Runner has
+/// to decide whether to breach.
+pub fn successful_run_trace_upgrade(name: &'static str, base: i64) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SuccessfulRunOnServer,
+        vec![Instruction::Trace {
+            base: Quantity::c(base),
+            if_successful: vec![Instruction::RestrictAccessToSelf],
+            if_unsuccessful: vec![],
+            determined_min: None,
+        }],
+        false,
+    )
+    .labeled("ash: trace when the run is successful")];
     c
 }
