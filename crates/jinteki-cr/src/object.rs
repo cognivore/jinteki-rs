@@ -189,6 +189,14 @@ pub struct PrintedCard {
     /// CR 1.16.4c: an additional cost to rez (Archer class); declinable
     /// during "install and rez" effects (8.5.13d).
     pub additional_rez_cost: Option<crate::ability::Cost>,
+    /// CR 1.16.10: "As an additional cost to score this agenda, …" (Azef
+    /// Protocol class). 1.16.10c: an effect that normally has no cost gains
+    /// one, and the checkpoint after paying it resolves BEFORE the effect.
+    pub additional_score_cost: Option<crate::ability::Cost>,
+    /// CR 1.16.2c: this card's printed play/install/rez cost is X, and the
+    /// quantity is the restriction the card states on the value the payer
+    /// may announce ("X must be equal to or less than …").
+    pub cost_x: Option<crate::instr::Quantity>,
     /// CR 1.16.10: "As an additional cost to play this operation/event, …"
     /// (24/7 News Cycle class). 1.16.10b combines it with the printed play
     /// cost into ONE payment at step 8.6.7b.
@@ -217,6 +225,8 @@ impl PrintedCard {
             recurring_credits: None,
             additional_steal_cost: None,
             additional_rez_cost: None,
+            additional_score_cost: None,
+            cost_x: None,
             additional_play_cost: None,
             hosted_credits_spendable: false,
             abilities: Vec::new(),

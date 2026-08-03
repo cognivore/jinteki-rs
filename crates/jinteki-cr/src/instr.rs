@@ -52,6 +52,15 @@ pub enum Quantity {
     /// definition and a trace). While the defining ability is inactive or
     /// lost, X is treated as 0.
     XOfSource(Box<Quantity>),
+    /// CR 1.16.2c: the value the payer ANNOUNCED for X, for the cost being
+    /// paid right now. 1.16.2d: "if an ability needs to know the value of a
+    /// cost in a context where that cost is not being paid, treat any X that
+    /// appears in that cost as 0" — which is exactly what this reads outside
+    /// a payment.
+    AnnouncedX,
+    /// CR 10.7: the number of tags the Runner has. A quantity position
+    /// (§12 rule 6), used both in effects and as a 1.16.2c restriction on X.
+    RunnerTags,
 }
 
 impl Default for Quantity {
@@ -355,6 +364,11 @@ pub enum Instruction {
     TrashSelf,
     /// Steal the accessed agenda (7.1.4 via access step 7.2.3).
     StealSelfAgenda,
+    /// CR 1.17.3 / 1.16.10c: "score this agenda" — the (S) option's effect,
+    /// made an instruction so that an additional cost to score is paid in an
+    /// ability frame's 9.5.7b PayCost phase and the checkpoint that follows
+    /// resolves BEFORE the agenda moves to the score area.
+    ScoreSelfAgenda,
     /// §8.5: install one card. The resolution loop expands this into the
     /// 8.5.16 step sequence (installing is a procedure, NOT a timing
     /// structure — 9.2.2e; its only explicitly-called-for checkpoint is the

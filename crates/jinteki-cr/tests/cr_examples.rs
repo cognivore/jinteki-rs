@@ -8,7 +8,7 @@
 use jinteki_cr::change::GameChange;
 use jinteki_cr::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption};
 use jinteki_cr::effects::DamageKind;
-use jinteki_cr::instr::Quantity;
+use jinteki_cr::instr::{Instruction, Quantity};
 use jinteki_cr::object::{CounterKind, ServerId, Side, Zone};
 use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply};
 use jinteki_cr::testkit as tk;
@@ -23,6 +23,10 @@ const EXAMPLES_JSON: &str = include_str!("../../../docs/rules/examples.json");
 
 /// Example ids implemented as tests in this file (the DP-7a ledger).
 const IMPLEMENTED: &[&str] = &[
+    "example_rule_alternate_payment_1",
+    "example_rule_cost_restrictions_2",
+    "example_rule_additional_cost_checkpoint_1",
+    "example_rule_cost_x_1",
     "example_rule_chain_reaction_1",
     "example_rule_active_exception_conditional_move_to_inactive_zone_1",
     "example_rule_reaction_window_closing_timing_structure_1",
@@ -10370,4 +10374,316 @@ fn example_rule_object_move_location_2() {
             c
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// W13a: cost payment as a procedure (§1.16)
+// ---------------------------------------------------------------------------
+
+/// example_rule_alternate_payment_1 (1.16.2e): the Corp rezzes a Biawak-class
+/// ice with a rez cost of 14[credit] and the ability "You can forfeit 1 agenda
+/// as you rez this ice to pay for 10[credit] of its rez cost." They pay by
+/// spending 2[credit] from the credit pool, 2[credit] from a hosted-credit
+/// upgrade, and forfeiting 1 agenda.
+///
+/// Three separate things are put to the payer, and none of them was a choice
+/// before this wave: whether to use the alternate payment (1.16.2e), WHICH
+/// agenda is forfeited (8.2.5), and how the remaining credits divide among the
+/// allowed locations (1.10.3c).
+#[test]
+fn example_rule_alternate_payment_1() {
+    let mut vm = Vm::empty(1316);
+    let ice = tk::install_ice(
+        &mut vm,
+        tk::alternate_payment_ice("Biawak-like", 14, 10),
+        ServerId::Hq,
+        false,
+    );
+    let grid = tk::install_root(
+        &mut vm,
+        tk::hosted_credit_upgrade("MahkotaLangit-like"),
+        ServerId::Hq,
+        true,
+    );
+    tk::place_counters(&mut vm, grid, CounterKind::Credit, 3);
+    let keep = tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Keep", 3, 1), Side::Corp);
+    let spend = tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Spend", 3, 1), Side::Corp);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().approaching_ice().once(), Reply::Take(Pick::RezApproachedIce))
+            // 1.16.2e: use the alternate payment.
+            .when(Match::alternate_payment().once(), Reply::Optional(true))
+            // 8.2.5: forfeit THIS agenda, not the other one.
+            .when(Match::payment_cards().once(), Reply::target(spend))
+            // 1.10.3c: 2 from the credit pool, 2 from the grid.
+            .when(Match::division().once(), Reply::Division(vec![2, 2])),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+
+    let offer = t
+        .entries
+        .iter()
+        .find(|e| e.kind() == Kind::AlternatePayment)
+        .expect("1.16.2e: the alternate payment is offered while the rez cost is being paid");
+    assert_eq!(
+        offer.cost().map(|c| c.forfeit_agenda),
+        Some(1),
+        "…and what it asks for instead is forfeiting 1 agenda"
+    );
+    let div = t
+        .entries
+        .iter()
+        .find(|e| e.kind() == Kind::Division)
+        .expect("1.10.3c: the division of the credits is put to the payer");
+    let (total, locations) = div.division().unwrap();
+    assert_eq!(total, 4, "1.16.2e: the alternate payment covers 10 of the cost's 14");
+    assert_eq!(
+        locations.iter().map(|(l, n)| (*l, *n)).collect::<Vec<_>>(),
+        vec![(None, 5), (Some(grid), 3)],
+        "1.10.3c: the allowed locations are the credit pool and the hosted credits"
+    );
+
+    assert!(vm.st.objects[&ice].faceup, "8.1.2: the ice was rezzed");
+    assert_eq!(vm.st.corp.credits, 3, "2 of the 4 came from the credit pool");
+    assert_eq!(
+        vm.st.objects[&grid].counter(CounterKind::Credit),
+        1,
+        "…and 2 from the credits hosted on the grid"
+    );
+    assert_eq!(
+        vm.st.objects[&spend].zone,
+        Zone::RemovedFromGame,
+        "8.2.5: the agenda the Corp chose is the one forfeited"
+    );
+    assert_eq!(
+        vm.st.objects[&keep].zone,
+        Zone::ScoreArea(Side::Corp),
+        "…and the other one stays in the score area"
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CostPaid { credits: 14, .. })),
+        "1.16.2e: the alternate payment does not change the VALUE of the cost — \
+         14[credit] was paid, 10 of it another way"
+    );
+}
+
+/// example_rule_cost_x_1 (1.16.2c): a Psychographics-class operation has a
+/// play cost of X and the ability "X must be equal to or less than the number
+/// of tags the Runner has." With 3 tags on the Runner, the Corp can choose 0,
+/// 1, 2, or 3 as the value for X.
+#[test]
+fn example_rule_cost_x_1() {
+    for (tags, want_max, choose, spend) in [(3u32, 3u32, 2u32, 2u32), (1, 1, 1, 1)] {
+        let mut vm = Vm::empty(1317);
+        let psycho = vm.new_object(
+            tk::cost_x_operation(
+                "Psychographics-like",
+                vec![Instruction::GainCredits(Side::Corp, Quantity::c(0))],
+            ),
+            Zone::Hand(Side::Corp),
+        );
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(psycho);
+        tk::install_root(
+            &mut vm,
+            tk::play_operation_button("Play-Button", psycho),
+            ServerId::Remote(1),
+            true,
+        );
+        vm.st.corp.credits = 9;
+        vm.st.runner.tags = tags;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("play-op"))
+                .when(Match::declare_x().once(), Reply::DeclareX(choose))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        let ann = t
+            .entries
+            .iter()
+            .find(|e| e.kind() == Kind::DeclareX)
+            .expect("1.16.2c: X is announced before the cost is paid");
+        assert_eq!(
+            ann.x_max(),
+            Some(want_max),
+            "1.16.2c: the choice is 0..={want_max} — the restriction the card states"
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            9 - spend,
+            "the announced value IS the cost that was paid"
+        );
+        assert_eq!(
+            vm.st.objects[&psycho].zone,
+            Zone::Discard(Side::Corp),
+            "8.6.7g: the operation was played and trashed"
+        );
+    }
+}
+
+/// example_rule_cost_restrictions_2 (1.16.1c): the Corp installs an
+/// Azef-Protocol-class agenda in a server with a rezzed SanSan City Grid and
+/// advances it twice. SanSan reduces its advancement requirement from 3 to 2,
+/// so the restriction to score is met — but the agenda's additional cost to
+/// score is "trash 1 of your other installed cards", and the Corp CANNOT
+/// trash SanSan to pay it, because doing so would return the requirement to 3
+/// and the restriction would no longer be met.
+#[test]
+fn example_rule_cost_restrictions_2() {
+    let mut vm = Vm::empty(1318);
+    let azef = tk::install_root(
+        &mut vm,
+        tk::additional_score_cost_agenda("Azef-like", 3, 2),
+        ServerId::Remote(1),
+        false,
+    );
+    let sansan =
+        tk::install_root(&mut vm, tk::sansan_like("SanSan-like", 1), ServerId::Remote(1), true);
+    let spare = tk::install_ice(&mut vm, tk::vanilla_ice("Spare-ice", 0, 1), ServerId::Hq, true);
+    let spare2 = tk::install_root(&mut vm, tk::vanilla_asset("Spare-asset", 0, 1), ServerId::Remote(2), true);
+    tk::place_counters(&mut vm, azef, CounterKind::Advancement, 2);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering_pick(Pick::Score(azef)).once(), Reply::score(azef))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::payment_cards().once(), Reply::target(spare2))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.advancement_requirement(azef),
+        2,
+        "the SanSan-class upgrade lowers the requirement to 2, which the 2 counters meet"
+    );
+    let pick = t
+        .entries
+        .iter()
+        .find(|e| e.kind() == Kind::PaymentCards)
+        .expect("1.16.10: which card pays the additional cost is put to the Corp");
+    assert!(
+        !pick.candidates().contains(&sansan),
+        "1.16.1c: the cost cannot be paid in a way that would leave the \
+         restriction to score unmet, so SanSan is not offered: {:?}",
+        pick.candidates()
+    );
+    assert!(
+        pick.candidates().contains(&spare) && pick.candidates().contains(&spare2),
+        "…while every other installed card is a legal way to pay"
+    );
+    assert_eq!(
+        vm.st.objects[&azef].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the cost was paid another way and the agenda was scored"
+    );
+    assert_eq!(
+        vm.st.objects[&sansan].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "…with SanSan still installed"
+    );
+}
+
+/// example_rule_cost_restrictions_2, second half (1.16.1c): with SanSan the
+/// ONLY other installed card, there is no way to pay the additional cost that
+/// leaves the restriction met — so the cost cannot be paid at all, and the
+/// (S) option is never offered.
+#[test]
+fn example_rule_cost_restrictions_2_no_legal_payment() {
+    let mut vm = Vm::empty(1320);
+    let azef = tk::install_root(
+        &mut vm,
+        tk::additional_score_cost_agenda("Azef-like", 3, 2),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::install_root(&mut vm, tk::sansan_like("SanSan-like", 1), ServerId::Remote(1), true);
+    tk::place_counters(&mut vm, azef, CounterKind::Advancement, 2);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+    assert!(
+        !t.entries.iter().any(|e| e
+            .options()
+            .iter()
+            .any(|o| matches!(o, WindowOption::Score { card } if *card == azef))),
+        "1.16.1c: the only card that could pay would raise the requirement \
+         back to 3, so the cost cannot be paid and scoring is not offered: {}",
+        t.tail(8)
+    );
+    assert_eq!(vm.st.objects[&azef].zone, Zone::Root(ServerId::Remote(1)));
+}
+
+/// example_rule_additional_cost_checkpoint_1 (1.16.10c): the Corp initiates
+/// scoring an agenda whose additional cost to score is "trash 1 of your other
+/// installed cards". Trashing a rezzed card meets an Ob-class trigger
+/// condition, and that ability resolves following the checkpoint associated
+/// with paying the cost — BEFORE the agenda is added to the score area and
+/// before any trigger condition related to scoring an agenda is met.
+#[test]
+fn example_rule_additional_cost_checkpoint_1() {
+    let mut vm = Vm::empty(1319);
+    let azef = tk::install_root(
+        &mut vm,
+        tk::additional_score_cost_agenda("Azef-like", 2, 2),
+        ServerId::Remote(1),
+        false,
+    );
+    let ob = tk::install_root(&mut vm, tk::trash_reaction_asset("Ob-like"), ServerId::Remote(2), true);
+    let fodder = tk::install_root(&mut vm, tk::vanilla_asset("Fodder", 0, 1), ServerId::Remote(3), true);
+    tk::place_counters(&mut vm, azef, CounterKind::Advancement, 2);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering_pick(Pick::Score(azef)).once(), Reply::score(azef))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::payment_cards().once(), Reply::target(fodder))
+            .when(Match::reaction().offering("ob").once(), Reply::take("ob"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert!(t.took("ob"), "the Ob-class ability was offered and resolved: {}", t.tail(12));
+    assert_eq!(
+        vm.st.objects[&ob].counter(CounterKind::Power),
+        1,
+        "…placing its counter"
+    );
+    assert_eq!(vm.st.objects[&azef].zone, Zone::ScoreArea(Side::Corp), "and the agenda was scored");
+    let ob_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CounterPlaced { obj, kind: CounterKind::Power, .. } if *obj == ob))
+        .expect("the Ob-class ability resolved");
+    let scored_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::AgendaScored { obj, .. } if *obj == azef))
+        .expect("the agenda was scored");
+    assert!(
+        ob_at < scored_at,
+        "1.16.10c: the ability resolves following the checkpoint associated with \
+         PAYING THE COST, before the agenda is added to the score area"
+    );
 }

@@ -80,6 +80,15 @@ pub enum Kind {
     CostDivision,
     /// 9.8.2c: declaring where granted subroutines go.
     SubOrder,
+    /// 1.16.1 / 1.15.1b: choosing which cards pay a cost (not a target
+    /// announcement).
+    PaymentCards,
+    /// 1.16.2c: announcing the value of X for a cost.
+    DeclareX,
+    /// 1.16.2e: using (or not) an alternate way to pay part of a cost.
+    AlternatePayment,
+    /// 1.10.3c: dividing a credit payment among the allowed locations.
+    Division,
 }
 
 impl Kind {
@@ -106,6 +115,10 @@ impl Kind {
             DecisionSpec::PsiBid { .. } => Kind::PsiBid,
             DecisionSpec::DivideCostReduction { .. } => Kind::CostDivision,
             DecisionSpec::DeclareSubroutineOrder { .. } => Kind::SubOrder,
+            DecisionSpec::PaymentCards { .. } => Kind::PaymentCards,
+            DecisionSpec::DeclareX { .. } => Kind::DeclareX,
+            DecisionSpec::AlternatePayment { .. } => Kind::AlternatePayment,
+            DecisionSpec::DivideCreditPayment { .. } => Kind::Division,
         }
     }
 }
@@ -326,6 +339,22 @@ impl Match {
     pub fn cost_division() -> Match {
         Match::of(Kind::CostDivision)
     }
+    /// 1.16.1 / 1.15.1b: choosing which cards pay a cost.
+    pub fn payment_cards() -> Match {
+        Match::of(Kind::PaymentCards)
+    }
+    /// 1.16.2c: announcing the value of X.
+    pub fn declare_x() -> Match {
+        Match::of(Kind::DeclareX)
+    }
+    /// 1.16.2e: an alternate way to pay part of a cost.
+    pub fn alternate_payment() -> Match {
+        Match::of(Kind::AlternatePayment)
+    }
+    /// 1.10.3c: dividing a credit payment among the allowed locations.
+    pub fn division() -> Match {
+        Match::of(Kind::Division)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()
@@ -514,6 +543,11 @@ pub enum Reply {
     /// 9.8.2c: declare where each granted subroutine goes — one insertion
     /// index into the ice's current subroutine list per granted subroutine.
     SubOrder(Vec<usize>),
+    /// 1.16.2c: announce this value for X.
+    DeclareX(u32),
+    /// 1.10.3c: take these credits from the allowed locations, in the order
+    /// the decision listed them (the credit pool first).
+    Division(Vec<u32>),
     Keep,
     Mulligan,
     /// Suspend the driver here, leaving the decision UNANSWERED so the test
@@ -680,7 +714,8 @@ impl Entry {
     pub fn candidates(&self) -> &[ObjectId] {
         match &self.spec {
             DecisionSpec::ChooseTargets { candidates, .. }
-            | DecisionSpec::ChooseCandidate { candidates } => candidates,
+            | DecisionSpec::ChooseCandidate { candidates }
+            | DecisionSpec::PaymentCards { candidates, .. } => candidates,
             DecisionSpec::DiscardCards { hand, .. } => hand,
             _ => &[],
         }
@@ -689,10 +724,27 @@ impl Entry {
     pub fn subroutines(&self) -> &[(SubKey, &'static str)] {
         sub_candidates(&self.spec)
     }
-    /// The cost put to the player at a nested/additional-cost decision.
+    /// The cost put to the player at a nested/additional-cost decision, or
+    /// the alternate payment offered at a 1.16.2e decision.
     pub fn cost(&self) -> Option<&crate::ability::Cost> {
         match &self.spec {
             DecisionSpec::NestedCost { cost } => Some(cost),
+            DecisionSpec::AlternatePayment { instead, .. } => Some(instead),
+            _ => None,
+        }
+    }
+    /// CR 1.16.2c: the greatest value of X this announcement allows.
+    pub fn x_max(&self) -> Option<u32> {
+        match &self.spec {
+            DecisionSpec::DeclareX { max } => Some(*max),
+            _ => None,
+        }
+    }
+    /// CR 1.10.3c: the locations a credit payment may be divided among, and
+    /// the total being divided.
+    pub fn division(&self) -> Option<(u32, &[(Option<ObjectId>, u32)])> {
+        match &self.spec {
+            DecisionSpec::DivideCreditPayment { total, locations } => Some((*total, locations)),
             _ => None,
         }
     }
@@ -985,6 +1037,8 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
             )
         }
         Reply::Divide(n) => DecisionAnswer::DivideReduction(*n),
+        Reply::DeclareX(n) => DecisionAnswer::DeclaredX(*n),
+        Reply::Division(v) => DecisionAnswer::Division(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
         Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
@@ -1071,6 +1125,30 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         // grant anyway; plans that care declare a position.
         DecisionSpec::DeclareSubroutineOrder { existing, granted } => {
             DecisionAnswer::SubroutineOrder(granted.iter().map(|_| existing.len()).collect())
+        }
+        // 1.16.1: the neutral policy pays with the first cards offered.
+        DecisionSpec::PaymentCards { candidates, count, .. } => {
+            DecisionAnswer::Targets(candidates.iter().take(*count as usize).copied().collect())
+        }
+        // 1.16.2c: the neutral policy announces the largest legal X, so a
+        // cost of X is paid in full unless the plan says otherwise.
+        DecisionSpec::DeclareX { max } => DecisionAnswer::DeclaredX(*max),
+        // 1.16.2e: the neutral policy declines the alternate payment.
+        DecisionSpec::AlternatePayment { .. } => DecisionAnswer::ResolveOptional(false),
+        // 1.10.3c: the neutral policy spends from the credit pool first,
+        // which is what the kernel did before the division was a choice.
+        DecisionSpec::DivideCreditPayment { total, locations } => {
+            let mut left = *total;
+            DecisionAnswer::Division(
+                locations
+                    .iter()
+                    .map(|(_, have)| {
+                        let take = (*have).min(left);
+                        left -= take;
+                        take
+                    })
+                    .collect(),
+            )
         }
     }
 }

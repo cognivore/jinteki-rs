@@ -160,6 +160,8 @@ pub enum DecisionCtx {
     MinimalSet,
     /// Additional-cost-to-steal decision for the accessed agenda (1.16.10).
     StealCost(ObjectId),
+    /// CR 1.16.10c: pay or decline the additional cost to SCORE this agenda.
+    ScoreCost(ObjectId),
     /// 10.8.6c/d trace spends.
     TraceSpend(Side),
     /// CR 9.8.2c: the granting player declares where the subroutines just
@@ -185,6 +187,10 @@ pub enum DecisionCtx {
     /// 10.12.2: the Corp chooses which cards to trash from HQ for a
     /// "sabotage N"; the remainder comes off the top of R&D.
     Sabotage { count: u32 },
+    /// CR 1.16: one of the choices the payment in progress needs — the
+    /// 1.16.2c value of X, a 1.16.2e alternate payment, the 1.10.3c division
+    /// of the credits, or which cards/agendas are spent.
+    Payment,
     /// CR 8.7.2: which cards the searching player FINDS. Asked while the
     /// search instruction resolves, never at announce time — found cards are
     /// not targets (`rule_searching_does_not_target`). Carries the searched
@@ -333,8 +339,72 @@ pub struct Vm {
     /// CR 9.8.2c: the ice and grant stamp a `DeclareSubroutineOrder` Decision
     /// is about, while it is outstanding.
     pub pending_sub_order: Option<(ObjectId, u64)>,
+    /// CR 1.16: the payment in progress, if any (`Vm::begin_payment`).
+    pub payment: Option<Payment>,
     /// Trace of resolutions for tests: labels of resolved ability frames.
     pub resolution_log: Vec<String>,
+}
+
+/// CR 1.16.1: paying a cost is a PROCEDURE, not a single act. Everything the
+/// payer gets to choose — the 1.16.2c value of X, which 1.16.2e alternate
+/// payments to use, the 1.10.3c division of the credits among the locations
+/// they may come from, and which cards/agendas are spent — is decided first,
+/// one Decision at a time, and only then is the whole cost paid at once. That
+/// is what makes cost payment a suspendable phase of the ability frame: the
+/// frame stays where it is while the payment gathers its choices.
+#[derive(Debug, Clone)]
+pub struct Payment {
+    pub side: Side,
+    pub source: ObjectId,
+    pub cost: Cost,
+    /// CR 1.16.2c: the value announced for X, once announced.
+    pub announced_x: Option<u32>,
+    /// CR 1.16.2e: alternate payments elected, as (credits covered, what is
+    /// paid instead). Indices into `alternates_offered` already decided.
+    pub alternates_offered: usize,
+    pub alternate_covers: u32,
+    pub alternate_cost: Cost,
+    /// CR 1.10.3c: how many credits come from each allowed location, in the
+    /// order `credit_locations` lists them.
+    pub division: Option<Vec<u32>>,
+    /// Cards chosen for a `trash_from_hand` component.
+    pub from_hand: Option<Vec<ObjectId>>,
+    /// Agendas chosen for a `forfeit_agenda` component (8.2.5).
+    pub forfeited: Option<Vec<ObjectId>>,
+    /// Installed cards chosen for a `trash_matching` component.
+    pub trashed: Option<Vec<ObjectId>>,
+    /// CR 1.16.1c: a restriction on the effect being paid for, which the
+    /// payment must not break.
+    pub restriction: Option<PaymentRestriction>,
+    /// What the payment was for: resumed once it is committed.
+    pub cont: PaymentCont,
+}
+
+/// CR 1.16.1c: "if triggering an ability or resolving an effect is subject to
+/// both costs and other restrictions, the cost … cannot be paid in a way that
+/// would result in any restriction no longer being met." The restriction is
+/// DATA (§12 rule 2), consulted while the payment filters its candidates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaymentRestriction {
+    /// CR 1.17.3a: this agenda must still have advancement counters at least
+    /// equal to its advancement requirement.
+    ScoreRequirement(ObjectId),
+}
+
+/// What a completed payment goes on to do. Every payment has one, because a
+/// payment that can suspend cannot simply return to its caller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaymentCont {
+    /// Nothing: the caller had no work left after the payment (an ability
+    /// frame's 9.5.7b trigger cost, an install/play cost step, a nested cost
+    /// whose branch was already spliced in).
+    None,
+    /// 8.1.2: the rez procedure continues — the card turns faceup.
+    Rez(ObjectId),
+    /// 7.4.3: the additional cost to access the chosen candidate was paid.
+    Access(ObjectId),
+    /// 7.1.5: the basic trash ability's cost was paid.
+    BasicTrash { card: ObjectId, window: u64 },
 }
 
 // A tiny wrapper so effects.rs stays free of frame types.
@@ -461,6 +531,7 @@ impl Vm {
             throttled: HashSet::new(),
             once_per_turn_used: HashSet::new(),
             pending_sub_order: None,
+            payment: None,
             snapshot: None,
             last_scan_window: Vec::new(),
             last_minimal_sets: None,
@@ -1579,6 +1650,28 @@ impl Vm {
             }
         }
         total
+    }
+
+    /// CR 1.16.10: the additional cost to SCORE this agenda — printed plus
+    /// any active declaration — as one all-at-once payment.
+    pub fn score_cost_of(&self, card: ObjectId) -> Cost {
+        cite!("rule_additional_cost");
+        self.st.objects[&card].printed.additional_score_cost.clone().unwrap_or_default()
+    }
+
+    /// CR 1.16.1/1.16.1c: is the (S) option available for this agenda? An
+    /// additional cost to score that cannot be paid — or cannot be paid
+    /// without breaking the restriction that made the agenda scorable in the
+    /// first place — means the Corp cannot score it.
+    fn score_cost_payable(&self, card: ObjectId) -> bool {
+        let cost = self.score_cost_of(card);
+        cost.is_free()
+            || self.cost_payable_under(
+                Side::Corp,
+                card,
+                &cost,
+                Some(&PaymentRestriction::ScoreRequirement(card)),
+            )
     }
 
     fn run_success_prohibited(&self, server: ServerId) -> bool {
@@ -2719,6 +2812,13 @@ impl Vm {
     /// 1.17.8/10.13.2: once the agenda has been scored or stolen, the last
     /// known requirement is what any ability of that scoring still reads.
     pub fn advancement_requirement(&self, card: ObjectId) -> u32 {
+        self.advancement_requirement_without(card, &[])
+    }
+
+    /// CR 1.16.1c: the same requirement, as it WOULD be if the listed cards
+    /// were no longer there — which is how the payment procedure tells
+    /// whether spending a card would break the restriction to score.
+    pub fn advancement_requirement_without(&self, card: ObjectId, gone: &[ObjectId]) -> u32 {
         cite!("rule_advancement_requirement");
         let Some(o) = self.st.objects.get(&card) else { return u32::MAX };
         if let Some((_, req)) = o.scored_snapshot {
@@ -2731,6 +2831,9 @@ impl Vm {
             _ => None,
         };
         for (src, d) in self.active_statics() {
+            if gone.contains(&src) {
+                continue;
+            }
             if let StaticDecl::ScoreRequirementModInSourceServer(delta) = d {
                 cite!("rule_active_exception_advancement_requirement");
                 let src_server = self.st.objects.get(&src).and_then(|s| match s.zone {
@@ -2953,6 +3056,16 @@ impl Vm {
                     .unwrap_or(0);
                 (on_card + set_aside) as i64
             }
+            Q::AnnouncedX => {
+                // 1.16.2c/d: the value announced for the payment in progress;
+                // 0 wherever no such payment is being made.
+                cite!("rule_cost_x");
+                self.payment.as_ref().and_then(|p| p.announced_x).unwrap_or(0) as i64
+            }
+            Q::RunnerTags => {
+                cite!("rule_tag");
+                self.st.runner.tags as i64
+            }
             Q::Plus(a, b) => self.eval_quantity(a, source) + self.eval_quantity(b, source),
             Q::Minus(a, b) => self.eval_quantity(a, source) - self.eval_quantity(b, source),
             Q::RequirementOfSource => {
@@ -3161,7 +3274,7 @@ impl Vm {
                     vec![EffectAtom::new(EffectClass::TrashCards, 1, controller).with_targets(tgt)]
                 }
             }
-            Instruction::StealSelfAgenda => {
+            Instruction::StealSelfAgenda | Instruction::ScoreSelfAgenda => {
                 vec![EffectAtom::new(EffectClass::StealAgenda, 1, controller)]
             }
             Instruction::MandatoryDraw => {
@@ -3837,6 +3950,7 @@ impl Vm {
             subroutine_index,
             declined: false,
             cost,
+            cost_restriction: None,
             set_aside_counters: Vec::new(),
             set_aside_cards: Vec::new(),
             found_cards: Vec::new(),
@@ -3855,10 +3969,15 @@ impl Vm {
                 // window it opens resolves BEFORE our instructions become
                 // imminent (the Geist/Decoy chain, 9.1.2a).
                 cite!("step_paid_ability_condition");
-                let (source, controller, cost) = {
+                let (source, controller, cost, restriction) = {
                     let Some(Frame::Ability(af)) = self.frames.last_mut() else { unreachable!() };
                     af.phase = AbilityPhase::Targets;
-                    (af.source, af.controller, af.cost.clone().unwrap_or_default())
+                    (
+                        af.source,
+                        af.controller,
+                        af.cost.clone().unwrap_or_default(),
+                        af.cost_restriction,
+                    )
                 };
                 // CR 9.5.5: if the trigger cost uninstalls the source, set
                 // aside its hosted counters and cards as the cost is paid.
@@ -3891,7 +4010,13 @@ impl Vm {
                 }
                 cite!("rule_paid_ability_used_condition");
                 self.changes.record(GameChange::AbilityUsed { source: source.obj });
-                self.pay_cost(controller, source.obj, &cost);
+                self.begin_payment(
+                    controller,
+                    source.obj,
+                    &cost,
+                    PaymentCont::None,
+                    restriction,
+                );
             }
             AbilityPhase::SubImminent => {
                 cite!("step_subroutine_becomes_imminent");
@@ -6989,6 +7114,16 @@ impl Vm {
                     self.steal_agenda(source.obj);
                 }
             }
+            Instruction::ScoreSelfAgenda => {
+                // 1.16.10c: the additional cost was paid in this frame's
+                // PayCost phase and its checkpoint has already resolved, so
+                // everything that reacted to the payment resolved BEFORE the
+                // agenda is added to the score area.
+                cite!("rule_additional_cost_checkpoint");
+                if !source_moved {
+                    self.score_agenda(source.obj);
+                }
+            }
             Instruction::InstallCard { .. } | Instruction::InstallCards { .. } => {
                 // Expanded at imminence time (begin_imminence); unreachable
                 // here, but harmless.
@@ -7315,9 +7450,17 @@ impl Vm {
                         .map(|a| a.value.max(0) as u32)
                         .unwrap_or_else(|| self.st.objects[&c].printed.cost.unwrap_or(0))
                 };
+                // 1.16.2c: a play cost of X is announced before it is paid,
+                // and the announced value IS the cost's credit amount.
+                let mut cost = match self.st.objects[&c].printed.cost_x.clone() {
+                    Some(restriction) => {
+                        cite!("rule_cost_x");
+                        Cost::x(restriction)
+                    }
+                    None => Cost::credits(amount),
+                };
                 // 1.16.10b: an additional cost to play the card combines with
                 // the play cost into ONE payment.
-                let mut cost = Cost::credits(amount);
                 if let Some(extra) = self.st.objects[&c].printed.additional_play_cost.clone() {
                     cite!("rule_additional_cost");
                     cost = cost.plus(&extra);
@@ -8100,7 +8243,7 @@ impl Vm {
                     && !o.faceup
                     && matches!(o.zone, Zone::Root(_))
                     && matches!(o.printed.card_type, CardType::Asset | CardType::Upgrade)
-                    && self.st.corp.credits >= o.printed.cost.unwrap_or(0)
+                    && self.rez_affordable(o.id)
                 {
                     out.push(WindowOption::Rez { card: o.id });
                 }
@@ -8110,8 +8253,7 @@ impl Vm {
             cite!("rule_paid_ability_window_corp_rez_ice");
             if let Some(r) = self.run_ctx() {
                 if let Some(ice) = self.approached_ice(r) {
-                    let o = &self.st.objects[&ice];
-                    if !o.faceup && self.st.corp.credits >= o.printed.cost.unwrap_or(0) {
+                    if !self.st.objects[&ice].faceup && self.rez_affordable(ice) {
                         out.push(WindowOption::RezApproachedIce { card: ice });
                     }
                 }
@@ -8123,6 +8265,7 @@ impl Vm {
                 if o.printed.card_type == CardType::Agenda
                     && matches!(o.zone, Zone::Root(_))
                     && o.counter(CounterKind::Advancement) >= self.advancement_requirement(o.id)
+                    && self.score_cost_payable(o.id)
                 {
                     out.push(WindowOption::Score { card: o.id });
                 }
@@ -8292,8 +8435,37 @@ impl Vm {
         self.eval_quantity(&cost.credits, Some(source)).max(0) as u32
     }
 
+    /// CR 8.1.2d: can the Corp pay to rez this card? The rez cost is payable
+    /// from every location 1.10.3c allows — not the credit pool alone — and a
+    /// 1.16.2e alternate payment may cover part of it, which is exactly the
+    /// case where reading the pool would refuse the (R) option outright.
+    pub fn rez_affordable(&self, card: ObjectId) -> bool {
+        cite!("rule_inherent_rez_cost");
+        let printed = self.st.objects[&card].printed.cost.unwrap_or(0);
+        if self.cost_payable(Side::Corp, card, &Cost::credits(printed)) {
+            return true;
+        }
+        self.alternate_payments_for(card).into_iter().any(|(_, covers, instead)| {
+            cite!("rule_alternate_payment");
+            let reduced = Cost::credits(printed.saturating_sub(covers));
+            self.cost_payable(Side::Corp, card, &reduced.plus(&instead))
+        })
+    }
+
     /// CR 1.16.1: a cost must be payable all at once.
     pub fn cost_payable(&self, side: Side, source: ObjectId, cost: &Cost) -> bool {
+        self.cost_payable_under(side, source, cost, None)
+    }
+
+    /// CR 1.16.1c: the same question where the effect being paid for is
+    /// subject to a restriction the payment must not break.
+    pub fn cost_payable_under(
+        &self,
+        side: Side,
+        source: ObjectId,
+        cost: &Cost,
+        restriction: Option<&PaymentRestriction>,
+    ) -> bool {
         cite!("rule_cost");
         let p = self.st.player(side);
         // 1.10.3c: hosted credits their card lets them spend are part of what
@@ -8339,6 +8511,15 @@ impl Vm {
         {
             cite!("rule_forfeit_rfg");
             return false;
+        }
+        // 1.16.1c: a "trash 1 of your installed cards" component needs that
+        // many cards that can be spent WITHOUT breaking a restriction on the
+        // effect being paid for — otherwise the cost cannot be paid at all.
+        if let Some((n, _)) = &cost.trash_matching {
+            cite!("rule_cost_restrictions");
+            if (self.trash_matching_candidates(side, source, cost, restriction).len() as u32) < *n {
+                return false;
+            }
         }
         // CR 1.16.1b: if a static ability or a MANDATORY conditional
         // interrupt would prevent the steps of payment, the cost cannot be
@@ -8445,6 +8626,77 @@ impl Vm {
         (0..=max).collect()
     }
 
+    /// CR 1.10.3c: spend credits exactly as the payer divided them among the
+    /// allowed locations. `v` is one number per location, in the order
+    /// `credit_locations` returned them; anything the answer leaves unpaid is
+    /// completed greedily, the way every other Decision is clamped.
+    fn spend_divided(&mut self, side: Side, total: u32, v: &[u32]) {
+        cite!("rule_spend_credits");
+        let locations = self.credit_locations(side);
+        let mut left = total;
+        for (i, (loc, have)) in locations.iter().enumerate() {
+            if left == 0 {
+                break;
+            }
+            let take = v.get(i).copied().unwrap_or(0).min(*have).min(left);
+            self.spend_at(side, *loc, take);
+            left -= take;
+        }
+        // Complete a short or illegal division from the front.
+        for (loc, have) in locations {
+            if left == 0 {
+                break;
+            }
+            let already = self.spent_here(side, loc, have);
+            let take = already.min(left);
+            self.spend_at(side, loc, take);
+            left -= take;
+        }
+    }
+
+    /// How many credits are still in this location after the division's
+    /// first pass.
+    fn spent_here(&self, side: Side, loc: Option<ObjectId>, _had: u32) -> u32 {
+        match loc {
+            None => self.st.player(side).credits,
+            Some(id) => self.st.objects.get(&id).map(|o| o.counter(CounterKind::Credit)).unwrap_or(0),
+        }
+    }
+
+    /// Take `n` credits out of one allowed location (1.10.3c).
+    fn spend_at(&mut self, side: Side, loc: Option<ObjectId>, n: u32) {
+        if n == 0 {
+            return;
+        }
+        match loc {
+            None => {
+                self.st.player_mut(side).credits -= n.min(self.st.player(side).credits);
+            }
+            Some(id) => {
+                let have = self.st.objects[&id].counter(CounterKind::Credit);
+                let take = have.min(n);
+                // 1.13.11: hosted objects can be spent from their host
+                // without affecting the host.
+                cite!("rule_remove_spend_hosted_objects");
+                self.st
+                    .objects
+                    .get_mut(&id)
+                    .unwrap()
+                    .counters
+                    .insert(CounterKind::Credit, have - take);
+                self.changes.record(GameChange::CounterRemoved {
+                    obj: Some(id),
+                    kind: CounterKind::Credit,
+                    amount: take,
+                });
+                // 9.1.6c: the card whose ability allowed the counters to be
+                // spent has been used.
+                cite!("rule_hosted_counter_used_condition");
+                self.changes.record(GameChange::AbilityUsed { source: id });
+            }
+        }
+    }
+
     /// Spend credits from the pool first, then from spendable hosted pools.
     fn spend_flexible(&mut self, side: Side, mut n: u32) {
         let from_pool = n.min(self.st.player(side).credits);
@@ -8522,17 +8774,341 @@ impl Vm {
         false
     }
 
-    /// Pay a cost; CR 1.16.3/10.3.4: a checkpoint occurs immediately after —
-    /// zero costs included (1.16.1d).
+    /// CR 1.16: begin paying a cost. The payer's choices (1.16.2c's X,
+    /// 1.16.2e's alternate payments, 1.10.3c's division, which cards and
+    /// agendas are spent) are gathered first as Decisions; the whole cost is
+    /// then paid at once (1.16.1) and `cont` is resumed. Callers with nothing
+    /// left to do use [`Vm::pay_cost`].
+    pub fn begin_payment(
+        &mut self,
+        side: Side,
+        source: ObjectId,
+        cost: &Cost,
+        cont: PaymentCont,
+        restriction: Option<PaymentRestriction>,
+    ) {
+        cite!("rule_cost");
+        self.payment = Some(Payment {
+            side,
+            source,
+            cost: cost.clone(),
+            announced_x: None,
+            alternates_offered: 0,
+            alternate_covers: 0,
+            alternate_cost: Cost::free(),
+            division: None,
+            from_hand: None,
+            forfeited: None,
+            trashed: None,
+            restriction,
+            cont,
+        });
+        self.advance_payment();
+    }
+
+    /// CR 1.16.2e: the alternate payments active for the cost being paid FOR
+    /// this source — an ability of the source itself ("as you rez this ice").
+    fn alternate_payments_for(&self, source: ObjectId) -> Vec<(&'static str, u32, Cost)> {
+        cite!("rule_alternate_payment");
+        self.active_statics()
+            .into_iter()
+            .filter_map(|(src, d)| match d {
+                StaticDecl::AlternatePaymentForSelf { label, covers, instead } if src == source => {
+                    Some((label, covers, instead))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// CR 1.10.3c: the locations this player may spend credits from, and how
+    /// many are in each — the credit pool first, then each card whose ability
+    /// allows its hosted credits to be spent.
+    fn credit_locations(&self, side: Side) -> Vec<(Option<ObjectId>, u32)> {
+        cite!("rule_spend_credits");
+        let mut out = vec![(None, self.st.player(side).credits)];
+        for o in self.st.objects.values() {
+            if o.controller == side && card_active(o) && o.printed.hosted_credits_spendable {
+                let n = o.counter(CounterKind::Credit);
+                if n > 0 {
+                    out.push((Some(o.id), n));
+                }
+            }
+        }
+        out
+    }
+
+    /// CR 1.16.1c: the installed cards this payer could spend for a
+    /// `trash_matching` component — filtered so that no offered card, once
+    /// trashed, would leave the restriction on the effect being paid for
+    /// unmet.
+    pub fn trash_matching_candidates(
+        &self,
+        side: Side,
+        source: ObjectId,
+        cost: &Cost,
+        restriction: Option<&PaymentRestriction>,
+    ) -> Vec<ObjectId> {
+        let Some((_, criteria)) = &cost.trash_matching else { return Vec::new() };
+        let mut out: Vec<ObjectId> = self
+            .st
+            .objects
+            .values()
+            .filter(|o| o.controller == side && o.zone.is_installed())
+            .filter(|o| criteria.iter().all(|f| self.filter_matches(o, *f, Some(source))))
+            .map(|o| o.id)
+            .collect();
+        out.sort();
+        if let Some(r) = restriction {
+            cite!("rule_cost_restrictions");
+            out.retain(|c| !self.payment_breaks_restriction(r, &[*c]));
+        }
+        out
+    }
+
+    /// CR 1.16.1c: would spending these cards leave the restriction unmet?
+    fn payment_breaks_restriction(&self, r: &PaymentRestriction, spent: &[ObjectId]) -> bool {
+        match r {
+            PaymentRestriction::ScoreRequirement(agenda) => {
+                cite!("rule_advancement_requirement");
+                let have = self
+                    .st
+                    .objects
+                    .get(agenda)
+                    .map(|o| o.counter(CounterKind::Advancement))
+                    .unwrap_or(0);
+                self.advancement_requirement_without(*agenda, spent) > have
+            }
+        }
+    }
+
+    /// CR 1.16: ask for the next choice this payment needs, or commit it.
+    fn advance_payment(&mut self) {
+        let Some(p) = self.payment.clone() else { return };
+        // 1.16.2c: X is announced BEFORE the cost is paid.
+        if p.announced_x.is_none() {
+            if let Some(restriction) = &p.cost.x_restriction {
+                cite!("rule_cost_x");
+                let max = self.eval_quantity(restriction, Some(p.source)).max(0) as u32;
+                self.ask(p.side, DecisionSpec::DeclareX { max }, DecisionCtx::Payment);
+                return;
+            }
+            if let Some(pm) = self.payment.as_mut() {
+                pm.announced_x = Some(0);
+            }
+        }
+        // 1.16.2e: each alternate payment is an option offered to the payer.
+        let alternates = self.alternate_payments_for(p.source);
+        if p.alternates_offered < alternates.len() {
+            let (label, covers, instead) = alternates[p.alternates_offered].clone();
+            self.ask(
+                p.side,
+                DecisionSpec::AlternatePayment { label, covers, instead },
+                DecisionCtx::Payment,
+            );
+            return;
+        }
+        // "Trash 1 of your other installed cards" — the payer chooses which,
+        // subject to 1.16.1c.
+        if let Some((n, _)) = &p.cost.trash_matching {
+            if p.trashed.is_none() {
+                let cands =
+                    self.trash_matching_candidates(p.side, p.source, &p.cost, p.restriction.as_ref());
+                if cands.len() as u32 > *n {
+                    cite!("rule_target");
+                    self.ask(
+                        p.side,
+                        DecisionSpec::PaymentCards {
+                            candidates: cands,
+                            count: *n,
+                            label: "trash",
+                        },
+                        DecisionCtx::Payment,
+                    );
+                    return;
+                }
+                if let Some(pm) = self.payment.as_mut() {
+                    pm.trashed = Some(cands);
+                }
+            }
+        }
+        // 8.2.5: which agenda is forfeited is the payer's choice.
+        if p.cost.forfeit_agenda > 0 && p.forfeited.is_none() {
+            let area = self.st.score_area[&p.side].clone();
+            if area.len() as u32 > p.cost.forfeit_agenda {
+                cite!("rule_forfeit_rfg");
+                cite!("rule_target");
+                self.ask(
+                    p.side,
+                    DecisionSpec::PaymentCards {
+                        candidates: area,
+                        count: p.cost.forfeit_agenda,
+                        label: "forfeit",
+                    },
+                    DecisionCtx::Payment,
+                );
+                return;
+            }
+            if let Some(pm) = self.payment.as_mut() {
+                pm.forfeited = Some(area);
+            }
+        }
+        // "Trash N cards from your grip" — likewise the payer's choice.
+        if p.cost.trash_from_hand > 0 && p.from_hand.is_none() {
+            let hand = self.st.hand[&p.side].clone();
+            if hand.len() as u32 > p.cost.trash_from_hand {
+                cite!("rule_target");
+                self.ask(
+                    p.side,
+                    DecisionSpec::PaymentCards {
+                        candidates: hand,
+                        count: p.cost.trash_from_hand,
+                        label: "trash from hand",
+                    },
+                    DecisionCtx::Payment,
+                );
+                return;
+            }
+            if let Some(pm) = self.payment.as_mut() {
+                pm.from_hand = Some(hand);
+            }
+        }
+        // 1.10.3c: the division of the credits among the allowed locations.
+        if p.division.is_none() {
+            let total = self.payment_credits_from_locations(&p);
+            let locations = self.credit_locations(p.side);
+            let available: u32 = locations.iter().map(|(_, n)| *n).sum();
+            // The choice is real only when there is more than one location and
+            // the payer is not spending everything they have.
+            if locations.len() > 1 && total > 0 && total < available {
+                self.ask(
+                    p.side,
+                    DecisionSpec::DivideCreditPayment { total, locations },
+                    DecisionCtx::Payment,
+                );
+                return;
+            }
+        }
+        self.commit_payment();
+    }
+
+    /// The credits this payment still takes from the payer's own locations:
+    /// the cost's calculated credit amount (1.16.2b), less what a 1.16.2e
+    /// alternate payment covers, less what the bad-publicity fund pays.
+    fn payment_credits_from_locations(&self, p: &Payment) -> u32 {
+        let want = self.cost_credits(&p.cost, p.source).saturating_sub(p.alternate_covers);
+        if p.side == Side::Runner && self.current_run.is_some() {
+            want.saturating_sub(self.st.bp_fund)
+        } else {
+            want
+        }
+    }
+
+    /// CR 1.16: the answer to one of the payment's choices.
+    pub(crate) fn answer_payment(&mut self, a: DecisionAnswer) {
+        let Some(p) = self.payment.clone() else { return };
+        match a {
+            DecisionAnswer::DeclaredX(n) => {
+                // 1.16.2c: "the chosen value must follow any applicable
+                // restrictions" — the announcement is clamped to them.
+                cite!("rule_cost_x");
+                let max = p
+                    .cost
+                    .x_restriction
+                    .as_ref()
+                    .map(|q| self.eval_quantity(q, Some(p.source)).max(0) as u32)
+                    .unwrap_or(0);
+                if let Some(pm) = self.payment.as_mut() {
+                    pm.announced_x = Some(n.min(max));
+                }
+            }
+            DecisionAnswer::ResolveOptional(use_it) => {
+                let alternates = self.alternate_payments_for(p.source);
+                if let Some((_, covers, instead)) = alternates.get(p.alternates_offered).cloned() {
+                    if let Some(pm) = self.payment.as_mut() {
+                        pm.alternates_offered += 1;
+                        if use_it {
+                            // 1.16.2e: the value of the cost does not change;
+                            // part of it is simply paid another way, and what
+                            // is paid instead joins the same all-at-once
+                            // payment (1.16.1).
+                            cite!("rule_alternate_payment");
+                            pm.alternate_covers += covers;
+                            pm.alternate_cost = pm.alternate_cost.plus(&instead);
+                            pm.cost = pm.cost.plus(&instead);
+                        }
+                    }
+                }
+            }
+            DecisionAnswer::Targets(chosen) => {
+                if let Some(pm) = self.payment.as_mut() {
+                    if pm.cost.trash_matching.is_some() && pm.trashed.is_none() {
+                        pm.trashed = Some(chosen);
+                    } else if pm.cost.forfeit_agenda > 0 && pm.forfeited.is_none() {
+                        pm.forfeited = Some(chosen);
+                    } else {
+                        pm.from_hand = Some(chosen);
+                    }
+                }
+            }
+            DecisionAnswer::Division(v) => {
+                if let Some(pm) = self.payment.as_mut() {
+                    pm.division = Some(v);
+                }
+            }
+            _ => {}
+        }
+        self.advance_payment();
+    }
+
+    /// Pay a cost with nothing to do afterwards; CR 1.16.3/10.3.4: a
+    /// checkpoint occurs immediately after — zero costs included (1.16.1d).
     pub fn pay_cost(&mut self, side: Side, source: ObjectId, cost: &Cost) {
+        self.begin_payment(side, source, cost, PaymentCont::None, None);
+    }
+
+    /// CR 1.16.1: spend everything the payment decided on, all at once.
+    fn commit_payment(&mut self) {
+        let Some(p) = self.payment.clone() else { return };
+        // 1.16.2b/c: the calculation — including any announced X — is
+        // performed while the payment is still in progress.
+        let want_credits = self.cost_credits(&p.cost, p.source);
+        self.payment = None;
+        self.pay_cost_committed(&p, want_credits);
+        self.resume_payment(p.cont);
+    }
+
+    /// Continue whatever the payment was for.
+    fn resume_payment(&mut self, cont: PaymentCont) {
+        match cont {
+            PaymentCont::None => {}
+            PaymentCont::Rez(id) => self.rez_card_finish(id),
+            PaymentCont::Access(card) => self.push_access(card),
+            PaymentCont::BasicTrash { card, window } => {
+                self.trash_card(card, Side::Runner);
+                if let Some(Frame::Window(w)) = self.frames.last_mut() {
+                    if w.id == window {
+                        w.option_resolved();
+                    }
+                }
+                self.changes
+                    .record(GameChange::TrashAbilityUsed { source: card, side: Side::Runner });
+            }
+        }
+    }
+
+    fn pay_cost_committed(&mut self, p: &Payment, want_credits: u32) {
+        let (side, source, cost) = (p.side, p.source, &p.cost);
         cite!("rule_cost_zero");
         cite!("rule_checkpoint_after_paying_cost");
         // 1.16.2b: "the result of that calculation is determined at the time
         // the cost is to be paid. The result is taken as an aggregate, so that
         // paying the cost is a single instance of whatever was paid."
         cite!("rule_cost_quantities");
-        let want_credits = self.cost_credits(cost, source);
-        let mut credits_to_pay = want_credits;
+        // 1.16.2e: an alternate payment covers part of the cost's value
+        // without changing that value — what it covers is simply not spent
+        // from the payer's credit locations.
+        let mut credits_to_pay = want_credits.saturating_sub(p.alternate_covers);
         // Bad publicity fund credits spend first during runs (6.4.3-ish).
         if side == Side::Runner && self.current_run.is_some() && self.st.bp_fund > 0 {
             cite!("rule_bad_publicity_fund");
@@ -8541,11 +9117,14 @@ impl Vm {
             credits_to_pay -= from_fund;
         }
         // 1.10.3c: "spend" and "pay" are the same thing — the credits go
-        // back to the bank, by default from the pool, and from credits hosted
-        // on a card only where an ability allows it. 9.1.6c then makes that
-        // card used alongside the card whose ability is being paid for.
+        // back to the bank, from the locations the payer divided them among.
+        // 9.1.6c then makes each card whose hosted credits were spent used
+        // alongside the card whose ability is being paid for.
         cite!("rule_spend_credits");
-        self.spend_flexible(side, credits_to_pay);
+        match &p.division {
+            Some(v) => self.spend_divided(side, credits_to_pay, v),
+            None => self.spend_flexible(side, credits_to_pay),
+        }
         // 5.2.1a: a "Lose [click]" component spends clicks exactly like a
         // [click] cost — the difference is only that it is not an action.
         cite!("rule_costs_with_click");
@@ -8570,21 +9149,27 @@ impl Vm {
             trashed.push(source);
             self.changes.record(GameChange::TrashAbilityUsed { source, side });
         }
-        // "Trash N cards from your grip" as a cost (Patchwork class). Which
-        // cards is the payer's choice in the CR; the kernel takes the front
-        // of the hand (documented on `Cost::trash_from_hand`).
-        for _ in 0..cost.trash_from_hand {
-            let Some(&c) = self.st.hand[&side].first() else { break };
+        // 1.16.10: "trash 1 of your other installed cards" — the cards the
+        // payer chose while the payment gathered its choices.
+        for c in p.trashed.clone().unwrap_or_default() {
+            self.trash_card(c, side);
+            trashed.push(c);
+        }
+        // "Trash N cards from your grip" as a cost (Patchwork class).
+        for c in p
+            .from_hand
+            .clone()
+            .unwrap_or_else(|| self.st.hand[&side].iter().take(cost.trash_from_hand as usize).copied().collect())
+        {
             self.trash_card(c, side);
             trashed.push(c);
         }
         // 8.2.5 / 4.9.3: "forfeit an agenda" moves it from the score area to
         // the removed-from-game zone; its agenda points stop counting because
-        // `Vm::score` sums the score area. Which agenda is the payer's choice
-        // in the CR; the kernel takes the front (documented on
-        // `Cost::forfeit_agenda`).
-        for _ in 0..cost.forfeit_agenda {
-            let Some(&a) = self.st.score_area[&side].first() else { break };
+        // `Vm::score` sums the score area.
+        for a in p.forfeited.clone().unwrap_or_else(|| {
+            self.st.score_area[&side].iter().take(cost.forfeit_agenda as usize).copied().collect()
+        }) {
             cite!("movement_forfeit");
             cite!("rule_forfeit_rfg");
             self.move_card(a, Zone::RemovedFromGame);
@@ -8910,8 +9495,16 @@ impl Vm {
         cite!("rule_rez_procedure");
         if !ignore_costs {
             let cost = Cost::credits(self.st.objects[&id].printed.cost.unwrap_or(0));
-            self.pay_cost(Side::Corp, id, &cost);
+            // The rez cost may take Decisions to pay (1.16.2e/1.10.3c), so the
+            // rest of the procedure is the payment's continuation.
+            self.begin_payment(Side::Corp, id, &cost, PaymentCont::Rez(id), None);
+            return;
         }
+        self.rez_card_finish(id);
+    }
+
+    /// CR 8.1.2: the rest of the rez procedure, once the cost is paid.
+    fn rez_card_finish(&mut self, id: ObjectId) {
         let seq = {
             self.st.active_seq += 1;
             self.st.active_seq
@@ -9064,6 +9657,11 @@ impl Vm {
                     Side::Corp => SetupPhase::RunnerMulligan,
                     Side::Runner => SetupPhase::Done,
                 };
+            }
+            // CR 1.16: every choice a payment needs routes here; the payment
+            // itself decides what it was asking for and asks the next one.
+            (DecisionCtx::Payment, a) => {
+                self.answer_payment(a);
             }
             (DecisionCtx::Window(wid), DecisionAnswer::Pass) => {
                 let _ = wid;
@@ -9242,6 +9840,34 @@ impl Vm {
                     );
                 }
             }
+            (DecisionCtx::ScoreCost(card), DecisionAnswer::PayNestedCost(pay)) => {
+                // CR 1.16.10a: the Corp may decline the additional cost, and
+                // declining means the agenda is not scored.
+                cite!("rule_decline_additional_cost");
+                if pay {
+                    // 1.16.10c: "the additional cost is paid and a checkpoint
+                    // is resolved BEFORE performing the usual procedure to
+                    // carry out that effect" — which is exactly what an
+                    // ability frame's 9.5.7b PayCost phase does, so scoring
+                    // becomes that frame's one instruction.
+                    cite!("rule_additional_cost_checkpoint");
+                    let total = self.score_cost_of(card);
+                    self.push_ability_frame_cost(
+                        ResolutionKind::Conditional,
+                        AbilityRef { obj: card, index: usize::MAX },
+                        Side::Corp,
+                        vec![Instruction::ScoreSelfAgenda],
+                        None,
+                        None,
+                        Some(total),
+                    );
+                    // 1.16.1c: the restriction that made the agenda scorable
+                    // must still be met by the way the cost is paid.
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        af.cost_restriction = Some(PaymentRestriction::ScoreRequirement(card));
+                    }
+                }
+            }
             (DecisionCtx::Targets, DecisionAnswer::ResolveOptional(yes)) => {
                 let idx = {
                     let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
@@ -9282,8 +9908,13 @@ impl Vm {
                 cite!("rule_candidates_already_accessed");
                 if pay {
                     let cost = self.additional_access_cost(card);
-                    self.pay_cost(Side::Runner, card, &cost);
-                    self.push_access(card);
+                    self.begin_payment(
+                        Side::Runner,
+                        card,
+                        &cost,
+                        PaymentCont::Access(card),
+                        None,
+                    );
                 } else {
                     if let Some(b) = self.breach_ctx_mut() {
                         b.chosen = None;
@@ -9695,27 +10326,35 @@ impl Vm {
                 }
             }
             WindowOption::Score { card } => {
-                self.score_agenda(card);
-                self.checkpoint_and_react(None);
+                let cost = self.score_cost_of(card);
                 if let Some(Frame::Window(w)) = self.frames.last_mut() {
                     if w.id == wid {
                         w.option_resolved();
                     }
+                }
+                if cost.is_free() {
+                    self.score_agenda(card);
+                    self.checkpoint_and_react(None);
+                } else {
+                    // 1.16.10a: an additional cost may be declined, and
+                    // declining means the agenda is not scored.
+                    cite!("rule_decline_additional_cost");
+                    self.ask(
+                        Side::Corp,
+                        DecisionSpec::NestedCost { cost },
+                        DecisionCtx::ScoreCost(card),
+                    );
                 }
             }
             WindowOption::BasicTrash { card, cost } => {
                 cite!("rule_basic_trash_ability");
-                self.pay_cost(Side::Runner, card, &Cost::credits(cost));
-                self.trash_card(card, Side::Runner);
-                if let Some(Frame::Window(w)) = self.frames.last_mut() {
-                    if w.id == wid {
-                        w.option_resolved();
-                    }
-                }
-                self.changes.record(GameChange::TrashAbilityUsed {
-                    source: card,
-                    side: Side::Runner,
-                });
+                self.begin_payment(
+                    Side::Runner,
+                    card,
+                    &Cost::credits(cost),
+                    PaymentCont::BasicTrash { card, window: wid },
+                    None,
+                );
             }
         }
     }

@@ -4977,3 +4977,76 @@ pub fn precognition_like(name: &'static str) -> PrintedCard {
             .labeled("precognition: rearrange the top of R&D")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W13a shapes: cost payment as a procedure (§1.16)
+// ---------------------------------------------------------------------------
+
+/// Biawak shape (1.16.2e): a piece of ice with a large rez cost and an
+/// ALTERNATE way to pay part of it — "You can forfeit 1 agenda as you rez
+/// this ice to pay for N[credit] of its rez cost." The declaration is a
+/// static ability of the ice, and 9.1.8d keeps it active while the ice is
+/// still unrezzed, which is the only moment it matters.
+pub fn alternate_payment_ice(name: &'static str, rez: u32, covers: u32) -> PrintedCard {
+    let mut c = vanilla_ice(name, rez, 4);
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::AlternatePaymentForSelf {
+            label: "forfeit 1 agenda toward the rez cost",
+            covers,
+            instead: Cost::forfeit_agenda(1),
+        },
+    ])
+    .labeled("alternate payment: forfeit an agenda")];
+    c
+}
+
+/// Mahkota Langit Grid shape (1.10.3c): an upgrade holding credits its own
+/// ability lets the Corp spend. Credits hosted on a card are one of the
+/// "allowed locations" a payer divides a payment among.
+pub fn hosted_credit_upgrade(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.hosted_credits_spendable = true;
+    c
+}
+
+/// Psychographics shape (1.16.2c): an operation whose play cost is X, with
+/// the ability "X must be equal to or less than the number of tags the
+/// Runner has". The restriction is a quantity position (§12 rule 6), so the
+/// legal announcements are exactly `0..=that`.
+pub fn cost_x_operation(name: &'static str, instrs: Vec<Instruction>) -> PrintedCard {
+    let mut c = operation(name, 0, instrs);
+    c.cost = None;
+    c.cost_x = Some(Quantity::RunnerTags);
+    c
+}
+
+/// Azef Protocol shape (1.16.1c / 1.16.10c): an agenda with an ADDITIONAL
+/// COST TO SCORE of "trash 1 of your other installed cards". Scoring
+/// normally costs nothing, so 1.16.10c's checkpoint after paying is the only
+/// checkpoint between the decision to score and the agenda moving.
+pub fn additional_score_cost_agenda(name: &'static str, req: u32, points: i32) -> PrintedCard {
+    let mut c = vanilla_agenda(name, req, points);
+    c.additional_score_cost = Some(Cost::trash_matching(
+        1,
+        vec![crate::instr::TargetFilter::OtherThanSource],
+    ));
+    c
+}
+
+/// Ob Superheavy Logistics shape (1.16.10c): a Corp card whose conditional
+/// ability meets its condition when the Corp trashes an installed card of
+/// their own. Placing a counter on itself is the observable resolution.
+pub fn trash_reaction_asset(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::InstalledCardTrashed { side: Side::Corp, of_types: Vec::new() },
+        vec![Instruction::PlaceCounters {
+            target: TargetSpec::SelfSource,
+            kind: CounterKind::Power,
+            amount: Quantity::c(1),
+        }],
+        false,
+    )
+    .labeled("ob: when you trash an installed card")];
+    c
+}

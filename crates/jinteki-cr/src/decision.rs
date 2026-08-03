@@ -131,6 +131,25 @@ pub enum DecisionSpec {
     /// cost. The remainder comes off the rez cost, so one number is the whole
     /// declaration.
     DivideCostReduction { total: u32 },
+    /// CR 1.16.2c: announce the value of X for the cost about to be paid.
+    /// `max` is the greatest value the ability's own restriction allows, so
+    /// the legal answers are exactly `0..=max`.
+    DeclareX { max: u32 },
+    /// CR 1.16.2e: an alternate way to pay part of the cost being paid. The
+    /// payer may use it or not; using it covers `covers` credits of the cost
+    /// in exchange for `instead`.
+    AlternatePayment { label: &'static str, covers: u32, instead: crate::ability::Cost },
+    /// CR 1.16.1: which cards the payer spends for a cost component that
+    /// names a number of cards. CR 1.15.1b: cards chosen to PAY A COST are
+    /// not targets, so this is not a 1.15.2 announcement and does not share
+    /// its decision. `label` names the component ("forfeit", "trash").
+    PaymentCards { candidates: Vec<ObjectId>, count: u32, label: &'static str },
+    /// CR 1.10.3c: "a player spending credits chooses how to divide the
+    /// credits they are spending from among the allowed locations". Each
+    /// location is `(where, how many are there)`, with `None` the credit pool
+    /// and `Some(card)` credits hosted on that card; the answer is one number
+    /// per location, in order, summing to `total`.
+    DivideCreditPayment { total: u32, locations: Vec<(Option<ObjectId>, u32)> },
 }
 
 /// Defunctionalized answers.
@@ -159,4 +178,9 @@ pub enum DecisionAnswer {
     DivideReduction(u32),
     /// CR 9.8.2c: one insertion index per granted subroutine.
     SubroutineOrder(Vec<usize>),
+    /// CR 1.16.2c: the announced value of X.
+    DeclaredX(u32),
+    /// CR 1.10.3c: credits taken from each allowed location, in the order the
+    /// spec listed them.
+    Division(Vec<u32>),
 }

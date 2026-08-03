@@ -277,12 +277,22 @@ pub struct Cost {
     /// removed-from-game zone, their agenda points stop counting, and
     /// anything hosted on them is trashed.
     ///
-    /// KERNEL APPROXIMATION (deviation 11's class): WHICH agenda is forfeited
-    /// is not put to the payer — the front of the score area is taken —
-    /// because `Vm::pay_cost` is synchronous everywhere. No example turns on
-    /// the choice; the 9.6.14d example makes its real choice afterwards, in
-    /// the 1.15.2 announcement of whose ability to resolve.
+    /// Which agenda is forfeited is the payer's choice, made while the
+    /// payment gathers its choices (W13a); it is only elided where the score
+    /// area holds exactly as many agendas as the cost forfeits.
     pub forfeit_agenda: u32,
+    /// CR 1.16.10: "trash 1 of your other installed cards" as a cost — N
+    /// cards matching criteria, CHOSEN by the payer. 1.16.1c filters the
+    /// choice: a card whose being spent would leave a restriction on the
+    /// effect being paid for unmet is not offered.
+    pub trash_matching: Option<(u32, Vec<crate::instr::TargetFilter>)>,
+    /// CR 1.16.2c: this cost contains the variable X, and the payer announces
+    /// a value for it BEFORE paying. The quantity is the restriction the
+    /// ability states on that value ("X must be equal to or less than the
+    /// number of tags the Runner has"); the announced value is read back by
+    /// [`crate::instr::Quantity::AnnouncedX`]. 1.16.2d: outside a payment,
+    /// `AnnouncedX` is 0.
+    pub x_restriction: Option<crate::instr::Quantity>,
 }
 
 impl Cost {
@@ -316,6 +326,19 @@ impl Cost {
     /// CR 8.2.5: "forfeit N agendas" as a cost.
     pub fn forfeit_agenda(n: u32) -> Self {
         Cost { forfeit_agenda: n, ..Default::default() }
+    }
+    /// CR 1.16.10: "trash N of your installed cards matching …" as a cost.
+    pub fn trash_matching(n: u32, criteria: Vec<crate::instr::TargetFilter>) -> Self {
+        Cost { trash_matching: Some((n, criteria)), ..Default::default() }
+    }
+    /// CR 1.16.2c: a cost of X, with the restriction the ability states on
+    /// the value the payer may announce.
+    pub fn x(restriction: crate::instr::Quantity) -> Self {
+        Cost {
+            credits: crate::instr::Quantity::AnnouncedX,
+            x_restriction: Some(restriction),
+            ..Default::default()
+        }
     }
     pub fn free() -> Self {
         Cost::default()
@@ -352,6 +375,8 @@ impl Cost {
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
             spend_counters: self.spend_counters.or(other.spend_counters),
             forfeit_agenda: self.forfeit_agenda + other.forfeit_agenda,
+            trash_matching: self.trash_matching.clone().or_else(|| other.trash_matching.clone()),
+            x_restriction: self.x_restriction.clone().or_else(|| other.x_restriction.clone()),
         }
     }
 }
@@ -431,6 +456,12 @@ pub enum StaticDecl {
     /// Additional cost to steal agendas (Ben Musashi / Predictive Algorithm
     /// class; 1.16.10).
     AdditionalStealCost(Cost),
+    /// CR 1.16.2e: "You can [instead] as you [use this card] to pay for
+    /// N[credit] of its cost." An alternate payment does NOT change the value
+    /// of the cost — it gives the payer one more OPTION when deciding how to
+    /// pay it, covering `covers` credits of whatever cost is being paid FOR
+    /// THIS SOURCE in exchange for `instead`.
+    AlternatePaymentForSelf { label: &'static str, covers: u32, instead: Cost },
     /// CR 10.4.3a: a declaration modifying the damage procedure so that the
     /// named player SELECTS up to `count` of the cards trashed, instead of
     /// their being chosen at random. The cards are still trashed
@@ -737,12 +768,23 @@ pub fn ability_active(
         cite!("rule_active_exception_encounter_not_installed");
         return true;
     }
-    // 9.1.8c/d/e/f: play/install/rez permissions and cost modifiers,
-    // advancement-requirement modifiers, can-advance grants. The kernel-wave
-    // StaticDecl set has no such declarations yet; when the card layer adds
-    // them they gain activity here.
-    cite!("rule_active_exception_modify_play_install_rez");
+    // 9.1.8d: "abilities that modify the cost to install, rez, or play their
+    // source card are active even while that card is inactive" — a 1.16.2e
+    // alternate payment for the source's own cost is exactly that, and it is
+    // the whole point of the class (the ice is unrezzed when it is rezzed).
     cite!("rule_active_exception_modify_cost");
+    if def
+        .statics
+        .iter()
+        .any(|d| matches!(d, StaticDecl::AlternatePaymentForSelf { .. }))
+    {
+        return true;
+    }
+    // 9.1.8c/e/f: play/install/rez permissions, advancement-requirement
+    // modifiers, can-advance grants. The kernel-wave StaticDecl set has no
+    // such declarations yet; when the card layer adds them they gain
+    // activity here.
+    cite!("rule_active_exception_modify_play_install_rez");
     cite!("rule_active_exception_advancement_requirement");
     cite!("rule_active_exception_can_be_advanced");
     // 9.1.8b: zone-scoped abilities (none in the W1 vocabulary).
