@@ -161,6 +161,8 @@ pub enum DecisionCtx {
     /// CR 9.8.2c: the granting player declares where the subroutines just
     /// granted go.
     SubroutineOrder,
+    /// CR 10.4.3a: which cards the selecting player trashes for this damage.
+    DamageSelection { kind: crate::effects::DamageKind, amount: u32 },
     /// 10.14.6 sealed psi bids.
     PsiBid(Side),
     /// 10.3.1j: the Runner declares candidacy of a mid-breach root entry.
@@ -4165,6 +4167,7 @@ impl Vm {
                 ..
             } => self.announcement_for(spec).map(|s| (af.controller, s)),
             Instruction::TrashCards(spec)
+            | Instruction::LookAtCards { cards: spec, .. }
             | Instruction::AccessCards { cards: spec }
             | Instruction::ModifySubtypes { target: spec, .. }
             | Instruction::MoveIce { ice: spec, .. }
@@ -5740,6 +5743,38 @@ impl Vm {
                 }
             }
             Instruction::Damage { responsible, .. } => {
+                // 10.4.3a: a declaration may make the trashed cards a CHOICE
+                // rather than random. The choice is a Decision, so this
+                // instruction may suspend and finish in `answer` — the same
+                // shape `Instruction::Sabotage` uses.
+                let hit = imm
+                    .atoms
+                    .iter()
+                    .filter(|a| a.occurs_at_resolution())
+                    .find_map(|a| match a.class {
+                        EffectClass::Damage(kind) if a.value > 0 => Some((kind, a.value as u32)),
+                        _ => None,
+                    });
+                if let Some((kind, amount)) = hit {
+                    if let Some((by, n)) = self.damage_trash_selector() {
+                        let hand = self.st.hand[&Side::Runner].clone();
+                        let want = n.min(amount).min(hand.len() as u32);
+                        if want > 0 {
+                            cite!("rule_multiple_damage_selected_sequentially");
+                            self.ask(
+                                by,
+                                DecisionSpec::ChooseTargets {
+                                    candidates: hand,
+                                    count: want,
+                                    up_to: false,
+                                    min: want,
+                                },
+                                DecisionCtx::DamageSelection { kind, amount },
+                            );
+                            return;
+                        }
+                    }
+                }
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     if let EffectClass::Damage(kind) = a.class {
                         self.do_damage(kind, a.value as u32, *responsible);
@@ -8571,7 +8606,46 @@ impl Vm {
 
     /// CR 10.4.2: meat/net trash 1 random grip card per point; core also
     /// takes a core damage counter. Flatline if damage > grip (1.7.2b).
-    pub fn do_damage(&mut self, kind: DamageKind, amount: u32, _responsible: Side) {
+    /// CR 10.4.3a / 9.12.1c: who, if anyone, selects the cards trashed by
+    /// damage, and how many of them. With declarations from BOTH players the
+    /// choice can only be made once, so the active player makes it (9.12.1c)
+    /// — and the rest of each ability still resolves, which is why this
+    /// function decides nothing except the choice itself.
+    pub fn damage_trash_selector(&self) -> Option<(Side, u32)> {
+        let mut found: Vec<(Side, u32)> = Vec::new();
+        for (obj, d) in self.active_statics() {
+            if let StaticDecl::SelectsDamageTrashes { by, count } = d {
+                let n = self.eval_quantity(&count, Some(obj)).max(0) as u32;
+                found.push((by, n));
+            }
+        }
+        if found.is_empty() {
+            return None;
+        }
+        cite!("rule_multiple_damage_selected_sequentially");
+        if found.iter().any(|(s, _)| *s == Side::Corp)
+            && found.iter().any(|(s, _)| *s == Side::Runner)
+        {
+            cite!("rule_modify_ability_with_choice");
+            let active = self.st.turn_side;
+            return found.into_iter().find(|(s, _)| *s == active);
+        }
+        found.into_iter().max_by_key(|(_, n)| *n)
+    }
+
+    pub fn do_damage(&mut self, kind: DamageKind, amount: u32, responsible: Side) {
+        self.do_damage_selecting(kind, amount, &[], responsible)
+    }
+
+    /// The damage procedure with `chosen` cards selected up front (10.4.3a);
+    /// the remainder is random, and all of them are trashed simultaneously.
+    pub fn do_damage_selecting(
+        &mut self,
+        kind: DamageKind,
+        amount: u32,
+        chosen: &[ObjectId],
+        _responsible: Side,
+    ) {
         cite!("rule_meat_net_damage");
         // 10.4.3: more than 1 damage of a type trashes the cards randomly and
         // SIMULTANEOUSLY — one occurrence, recorded as one change below, so a
@@ -8589,8 +8663,22 @@ impl Vm {
             self.game_over = Some(GameResult::Flatline);
         }
         let mut trashed = Vec::new();
-        for _ in 0..amount.min(grip_len) {
+        // 10.4.3a: the selected cards first, in the order they were selected,
+        // then the rest at random.
+        for c in chosen.iter().copied() {
+            if trashed.len() as u32 >= amount.min(grip_len) {
+                break;
+            }
+            if self.st.hand[&Side::Runner].contains(&c) {
+                self.move_card(c, Zone::Discard(Side::Runner));
+                trashed.push(c);
+            }
+        }
+        while (trashed.len() as u32) < amount.min(grip_len) {
             let hand = &self.st.hand[&Side::Runner];
+            if hand.is_empty() {
+                break;
+            }
             let i = self.rng.random_range(0..hand.len());
             let card = hand[i];
             self.move_card(card, Zone::Discard(Side::Runner));
@@ -9230,6 +9318,12 @@ impl Vm {
                     // Structure steps already advanced to Exec; they
                     // continue naturally.
                 }
+            }
+            (DecisionCtx::DamageSelection { kind, amount }, DecisionAnswer::Targets(chosen)) => {
+                // 10.4.3a: selected sequentially, trashed simultaneously.
+                cite!("rule_multiple_damage_selected_sequentially");
+                cite!("rule_multiple_damage_taken_simultaneously");
+                self.do_damage_selecting(kind, amount, &chosen, Side::Corp);
             }
             (DecisionCtx::SubroutineOrder, DecisionAnswer::SubroutineOrder(at)) => {
                 // 9.8.2c: apply the declared positions to the grant that was

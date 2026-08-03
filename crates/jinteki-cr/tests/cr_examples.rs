@@ -281,6 +281,9 @@ const IMPLEMENTED: &[&str] = &[
     // Wave 12d: §9.8 subroutine origins and order declarations.
     "example_rule_subroutine_origin_external_before_1",
     "example_rule_gain_subroutines_in_any_order_1",
+    // Wave 12e: the damage-selection pair (10.4.3a and 9.12.1c).
+    "example_rule_multiple_damage_selected_sequentially_1",
+    "example_rule_modify_ability_with_choice_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -10188,5 +10191,90 @@ fn example_rule_gain_subroutines_in_any_order_1() {
         subs,
         vec!["[sub] trash 1 program", "[sub] do 2 net damage", "[sub] end the run"],
         "the declared position is honoured across categories"
+    );
+}
+
+// ===========================================================================
+// Wave 12e — 10.4.3a damage selection, 9.12.1c the choice made once
+// ===========================================================================
+
+/// example_rule_multiple_damage_selected_sequentially_1 (10.4.3a): with a
+/// Chronos-Protocol-class declaration active, the Corp looks at the grip and
+/// selects the card trashed for the first point of a Snare-class 3 net
+/// damage; the other two are selected at random. All 3 are trashed
+/// simultaneously.
+#[test]
+fn example_rule_multiple_damage_selected_sequentially_1() {
+    let mut vm = Vm::empty(1215);
+    let ident = vm.new_object(tk::chronos_protocol_like("Chronos-like"), Zone::PlayArea(Side::Corp));
+    vm.st.objects.get_mut(&ident).unwrap().faceup = true;
+    tk::install_root(&mut vm, tk::net_damage_button("Snare-like", 3), ServerId::Remote(1), true);
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 5);
+    let pick = grip[3];
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("do net damage").once(), Reply::take("do net damage"))
+            .when(Match::targets().once(), Reply::target(pick))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("do net damage"));
+    let sel = t.first_window(Kind::Targets, Side::Corp);
+    assert_eq!(sel.candidates().len(), 5, "the Corp selects from the whole grip");
+    let damage: Vec<&GameChange> = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .collect();
+    assert_eq!(damage.len(), 1, "10.4.3: one occurrence — all 3 trashed simultaneously");
+    let GameChange::DamageSuffered { cards, amount, .. } = damage[0] else { unreachable!() };
+    assert_eq!(*amount, 3);
+    assert_eq!(cards.len(), 3);
+    assert_eq!(cards[0], pick, "10.4.3a: the selected card was the first one taken");
+    assert_eq!(vm.st.objects[&pick].zone, Zone::Discard(Side::Runner));
+}
+
+/// example_rule_modify_ability_with_choice_1 (9.12.1c): a Chronos-Protocol-
+/// class declaration (Corp) and a Titanium-Ribs-class one (Runner) are both
+/// active, so both players are instructed to make a choice that can only be
+/// made once. The ACTIVE player makes it. The rest of the Corp's ability —
+/// looking at the Runner's grip — happens either way.
+#[test]
+fn example_rule_modify_ability_with_choice_1() {
+    let mut vm = Vm::empty(1216);
+    let ident = vm.new_object(tk::chronos_protocol_like("Chronos-like"), Zone::PlayArea(Side::Corp));
+    vm.st.objects.get_mut(&ident).unwrap().faceup = true;
+    tk::install_rig(&mut vm, tk::titanium_ribs_like("TitaniumRibs-like"));
+    tk::install_root(&mut vm, tk::net_damage_button("Snare-like", 2), ServerId::Remote(1), true);
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("do net damage").once(), Reply::take("do net damage"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("do net damage"));
+    let sels = t.of_kind(Kind::Targets);
+    let choosers: Vec<Side> = sels.iter().map(|e| e.side).collect();
+    assert!(
+        choosers.contains(&Side::Corp) && !choosers.contains(&Side::Runner),
+        "9.12.1c: on the Corp's turn the ACTIVE player makes the choice that can \
+         only be made once: {choosers:?}"
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardLookedAt { by: Side::Corp, .. })),
+        "9.12.1c: the rest of the effect that granted the choice resolves as normal"
     );
 }

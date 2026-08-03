@@ -431,6 +431,15 @@ pub enum StaticDecl {
     /// Additional cost to steal agendas (Ben Musashi / Predictive Algorithm
     /// class; 1.16.10).
     AdditionalStealCost(Cost),
+    /// CR 10.4.3a: a declaration modifying the damage procedure so that the
+    /// named player SELECTS up to `count` of the cards trashed, instead of
+    /// their being chosen at random. The cards are still trashed
+    /// simultaneously (10.4.3); only the selection is sequential.
+    ///
+    /// CR 9.12.1c: when both players' effects make this declaration, the
+    /// choice can only be made once, so the ACTIVE player makes it — and the
+    /// rest of each ability still resolves.
+    SelectsDamageTrashes { by: Side, count: crate::instr::Quantity },
     /// CR 7.4.2: "the Runner cannot access any cards other than this one"
     /// (Flagship class). Declared by a STATIC ability rather than created as
     /// a lingering effect, so it applies exactly while the ability is active

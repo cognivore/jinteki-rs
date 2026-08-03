@@ -4902,3 +4902,48 @@ pub fn any_order_granter(
     .labeled("merlin: add a subroutine in any order")];
     c
 }
+
+/// Chronos Protocol shape (10.4.3a / 9.12.1c): an identity that (i) declares
+/// the Corp selects 1 of the cards trashed by damage and (ii) has the Corp
+/// LOOK at the Runner's grip whenever the Runner suffers damage. The two are
+/// separate abilities on purpose: 9.12.1c says the effect that granted the
+/// choice "otherwise resolves as normal" even when the other player's
+/// declaration wins the choice.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed "first time each turn" limit is
+/// elided; no example here damages twice in a turn.
+pub fn chronos_protocol_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::SelectsDamageTrashes {
+            by: Side::Corp,
+            count: Quantity::c(1),
+        }])
+        .labeled("chronos: the Corp chooses the first card trashed"),
+        AbilityDef::conditional(
+            TriggerCond::RunnerSuffersDamage,
+            vec![Instruction::LookAtCards {
+                cards: TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Runner)],
+                },
+                by: Side::Corp,
+            }],
+            false,
+        )
+        .labeled("chronos: look at the grip"),
+    ];
+    c
+}
+
+/// Titanium Ribs shape (9.12.1c): "You choose the cards you trash to damage."
+pub fn titanium_ribs_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::SelectsDamageTrashes {
+        by: Side::Runner,
+        count: Quantity::c(9),
+    }])
+    .labeled("ribs: you choose the cards you trash")];
+    c
+}
+
