@@ -6,15 +6,20 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W14j)
+## Odometers (after W15c)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
-  elisions, no example unimplemented.
-- **DP-7b: 820/1420** distinct rules cited (57.7%); traceability test fails
+  elisions, no example unimplemented. `dp7a_complete` is a ratchet.
+- **DP-7b: 823/1420** distinct rules cited (58.0%; 823 of the 1385 non-header ids); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
+- **DP-7c: 31/3717** reference tests ported and passing
+  (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
+  `dp7c_odometer`). The plan, the measurement and the triage are
+  `docs/vm/CORPUS.md`; the divergence ledger is
+  `docs/vm/UPSTREAM-DEFECTS.md`.
+- Full workspace: 18 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
   --workspace` AND `nix build .#default` (then `rm -f result`). Workspace
   green does NOT imply the artifact builds — `nix/package.nix` filters the
@@ -72,6 +77,9 @@ prefer a slightly larger honest primitive and note it here.
 
 | commit | wave | delivered | DP-7a |
 |---|---|---|---|
+| `1c0fd24` | W15a | **DP-7c sub-wave 1 — the basic actions the corpus needs, and the card layer.** `ActionOption::{BasicInstall, BasicAdvance, BasicTrashResource, BasicPurge}` (5.2.6d/f/g/h, 5.2.7d) resolve the ordinary procedures in rules ability frames; the install's destination is declared where the CR puts it, step 8.5.16b, through `InstallDest::DeclaredByInstaller` + `DecisionSpec::DeclareInstallDestination` — ONE declaration listing every legal location "including any host relationships" — with `InstallDest::NewRemoteProtecting` for 8.5.2a's other half. **1.18.3** is real: `StaticDecl::CanBeAdvancedSelf` + `Vm::advanceable_cards`, active while installed-but-inactive per 9.1.8f (an unrezzed Ice Wall can be advanced). **10.1.2** is `Instruction::PurgeVirusCounters` + `GameChange::VirusCountersPurged` + `TriggerCond::CorpPurgesVirusCounters`. **`src/cards.rs`** is the card layer: real cards re-derived from printed text (oracle: the reference's `data/cards.edn`), unexpressible clauses marked `UNIMPLEMENTED:` and counted by a test. Deviation 17 retired. Fixed: `BasicPlayOperation` cited 5.2.7d, which is the Runner's INSTALL action | 243 |
+| `db77549` | W15b | **DP-7c sub-wave 2 — 5.6.2 ends a phase properly.** Porting `no-scoring-after-terminal` found OUR defect: `Instruction::EndActionPhase` took the player's clicks, so 5.6.2's loop returned to step (a) — a paid window offering (P)(R)(S) — and only then skipped to (d), leaving the Corp a window to score after a TERMINAL operation. Ending the action phase is a jump to step (d); 5.2.2a keeps the action itself intact. Ported: `run-timing-with-{no-ice,an-ice}`, `no-scoring-after-terminal`, `purge-corp`. `docs/vm/UPSTREAM-DEFECTS.md` opens the triage ledger | 243 |
+| `edce92b` | W15c | **DP-7c sub-wave 3 — the icebreaker class.** Corroder needed NO new kernel machinery: 9.3.6c's [interface] strength gate, 9.5.6c's "this barrier" encounter restriction and 3.9.5b's implicit pump duration were all built during the CR wave, so the class gating ~a fifth of the card corpus is expressible today. Ported: `corroder`, `hedge-fund`, `beanstalk-royalties`, `ipo`, `sure-gamble`, `hostile-takeover`, `pad-campaign`, `ice-wall`. (This wave's diff landed inside another agent's commit `edce92b` — shared tree, staged index; the code is intact, only the message is theirs) | 243 |
 | `6eb2b59` | W13a | **cost payment as a PROCEDURE (§1.16)**: `Vm::begin_payment` gathers every choice the payer gets — 1.16.2c's X (`Cost::x_restriction` + `Quantity::AnnouncedX`, 0 outside a payment, which IS 1.16.2d; `PrintedCard::cost_x`), 1.16.2e's alternate payments (`StaticDecl::AlternatePaymentForSelf`, with 9.1.8d now REAL so the declaration is active while the source is unrezzed), 1.10.3c's division of the credits among the allowed locations (`DecisionSpec::DivideCreditPayment`), and which cards/agendas are spent (`DecisionSpec::PaymentCards` — cards paying a cost are NOT targets, so it does not collide with a 1.15.2 announcement) — then pays the whole cost at once and resumes `PaymentCont`. 1.16.1c is `PaymentRestriction` + `advancement_requirement_without`; 1.16.10c is `PrintedCard::additional_score_cost` + `Instruction::ScoreSelfAgenda` through an ability frame's PayCost phase. Deviations 11, 18, 44 retired. **Bug fixed:** the (R) rez offer read the credit pool alone, so hosted credits could never pay a rez cost | 221 |
 | `ef6904a` | W13b | **§6.7 "If successful" is a property of the initiating effect**: `Instruction::InitiateRun` grows `allowed: RunServerSet` (6.7.4a, a selector — "a remote server" names a computed set) and `if_successful: Vec<Instruction>`, carried on `RunCtx` and pended by `Vm::pend_if_successful` at step 6.9.5a as an ordinary conditional instance. 6.7.4c is `optional` on `Payload::ReplacementEffect`: an optional replacement asks before applying, and replacements apply as the replaced instruction's interrupt window opens — which for the breach step IS 6.9.5b, after the 6.9.5a reaction window's Ash-class trace. New `TriggerCond::SuccessfulRunOnServer` | 223 |
 | `d75ac6a` | W13c | **additional costs on the basic run action**: `StaticDecl::AdditionalRunActionCost` (6.3.4/1.16.10) paid with the [click] to INITIATE the run, so 6.3.4 falls out of where `current_run` is already set (step 6.9.1c); `TriggerCond::PlayerSpendsClick { during_run }` reads it. `StaticDecl::MustRunWithFirstClick` is 9.12.3a stated over a DECISION (the action window offers only runs), and 9.12.3e is one line: being OFFERED the additional cost discharges the requirement | 225 |
@@ -277,7 +285,10 @@ prefer a slightly larger honest primitive and note it here.
     `DeclineableChoice` wrappers), and `RemoveCountersFromPlayer` is wired
     for bad publicity only — tags have their own removal path and the other
     counter kinds only ever exist hosted on cards.
-17. **PARTIALLY RETIRED (W13e; still open at 243/243)** — the basic PLAY
+17. **RETIRED (W15a)** — every basic action the CR names is now an
+    `ActionOption`: credit, draw, run, remove-tag, play (W13e), install
+    (5.2.6d/5.2.7d), advance (5.2.6f), trash-resource (5.2.6g) and purge
+    (5.2.6h). Original text: the basic PLAY
     action (5.2.6e/5.2.7d) is
     `ActionOption::BasicPlayOperation`. What is still missing is the basic
     INSTALL action (5.2.6d/5.2.7e) and the basic advance action (5.2.6f).
@@ -409,10 +420,12 @@ prefer a slightly larger honest primitive and note it here.
     encounter, which covers every tested case. A PAID window open at step
     6.9.3b when a paid ability ends the encounter would, strictly, close too;
     the kernel lets it run out. No example.
-36. **1.18.3's "you can advance" is not modeled** (W9b) — `AdvanceCard`
-    advances whatever it names. The basic advance action (5.2.6f) is still
-    missing too (deviation 17), so nothing yet needs the "can be advanced"
-    permission that 9.1.8f keeps active on unrezzed cards.
+36. **RETIRED (W15a)** — 1.18.3 is `StaticDecl::CanBeAdvancedSelf` +
+    `Vm::advanceable_cards`, read by the basic advance action, with 9.1.8f
+    keeping the declaration active while the card is installed and inactive.
+    `Instruction::AdvanceCard` still advances whatever it names, which is
+    right: an ability that says "advance a card" is not the basic action and
+    1.18.3 does not restrict it.
 37. **The scored snapshot is two numbers** (W9b, `Object::scored_snapshot`) —
     1.17.8 says "the agenda's last known number of advancement counters" and
     10.13.2 adds the advancement requirement, so those two are captured just
@@ -657,6 +670,25 @@ chance of passing).**
     loop instantaneously resolves that many times" says nothing about where
     the counting starts; `example_rule_mandatory_infinite_loop_1` asserts the
     slope (one turn per unit chosen), which is the observable content.
+73. **The 8.5.16b declaration is one Decision listing every destination**
+    (W15a, `Vm::install_destinations_for`) — the basic install action offers
+    servers, new remotes and eligible hosts in ONE `DeclareInstallDestination`,
+    which is what 8.5.16b's "including any host relationships" says. An effect
+    that STATES a destination still gets deviation 13's separate host choice;
+    the two paths should converge when a card needs both.
+74. **`cards.rs` partial cards are marked, not approximated** (W15a) — a
+    printed sentence the vocabulary cannot say is quoted in the card's doc
+    comment after `UNIMPLEMENTED:` and counted by `dp7c_odometer`. Six of the
+    19 cards are partial. A partial card is legitimate only while the missing
+    clause is orthogonal to every test using it; the tests that WOULD exercise
+    it (`fan-site`, `clot`, `project-beale`) are triaged as blocked, not
+    ported.
+75. **The corpus port re-expresses reference-internal setup** (W15b) — 1041
+    of 3717 reference tests poke the reference's own API in the test body
+    (`core/gain`, `core/command-counter`, …). A port re-expresses the poke as
+    setup where it is state (a starting click count, a counter placed before
+    the script runs) and records the test as out of scope where it is
+    plumbing. `docs/vm/UPSTREAM-DEFECTS.md` §2 is that ledger.
 72. **The loop detector looks at ABILITY frames only, to depth 4** (W14g,
     `Vm::loop_period`) — a cycle whose period is longer than four abilities,
     or one made of timing structures rather than abilities (a run that
@@ -767,7 +799,9 @@ EOF
 `example_rule_54_1` — `+` is not a Rust identifier. That is the only
 divergence between the ledger and the test names, and it is deliberate.)
 
-**The queue, in the user's stated order:**
+**The queue, in the user's stated order (DP-7c is IN PROGRESS — read
+`docs/vm/CORPUS.md` first; it carries the measurement, the helper mapping,
+the porting method and the triage state):**
 
 1. **DP-7c — the jinteki-reference corpus port, triaged against the CR.**
    ARCHITECTURE §12 rule 4's re-derivation gate is its entry criterion and it
@@ -779,24 +813,32 @@ divergence between the ledger and the test names, and it is deliberate.)
    exemplar and annotating its simplifications; those annotations are the
    worklist.
 2. **The two decks** (estrike Andromeda, Gauntlet NTM) from printed oracle
-   text.
+   text — started in `crates/jinteki-cards` (a designer-facing DSL, both decks
+   written, 46 of 51 cards partial with quoted `unimplemented:` sentences).
+   **Reconcile it with `crates/jinteki-cr/src/cards.rs`** before either grows:
+   CORPUS.md §7 says how, and it is one-directional.
+
+   The DP-7c gap list (CORPUS.md §5) is what both rungs consume. The next
+   card-layer mechanisms the corpus asks for, in order: "the Runner loses
+   [click]" as an instruction (Enigma, #7 by frequency), an agenda-point
+   modification (2.5), a rez-cost modification scoped to a server, a movement
+   into a score area for a non-agenda, and a scoring prohibition scoped by
+   when the agenda was installed (Clot).
 3. **FT-1/FT-2/FT-3** (algebra extraction, vocabulary collapse,
    Legality/Viewpoint/Replay interpreters), which the user deferred until
    after the above. `FINAL-TAGLESS.md` stays normative as the TARGET.
 
 **Cheap kernel work that the deck/corpus phase will want, none of which any
-example needs** (this is the honest gap list, not a backlog):
+example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 
-- the basic INSTALL action (5.2.6d/5.2.7e) and the basic ADVANCE action
-  (5.2.6f) — deviation 17's remaining half. `ActionOption::BasicPlayOperation`
-  (W13e) is the pattern: a rules ability frame resolving the ordinary
-  procedure.
+- ~~the basic INSTALL action (5.2.6d/5.2.7d) and the basic ADVANCE action
+  (5.2.6f)~~ — **done, W15a**, along with the trash-resource and purge actions
+  and 1.18.3's "you can advance" permission (deviation 36 closed).
 - routing the mandatory draw and the basic draw action through
   `Instruction::Draw` so they get the 8.4.5 procedure (deviation 66).
-- 1.18.3's "you can advance" permission (deviation 36), which the basic
-  advance action needs.
 - `Vm::view_of` over the change log as well as the state (deviation 63) — the
-  server's redaction view at cutover wants exactly that.
+  server's redaction view at cutover wants exactly that, and the corpus asserts
+  on the reference's log 148 times.
 - 8.5.6's optional "may first trash any number" (deviation 8).
 - the 4.6.8f remote-server limit's second half (deviation 39).
 

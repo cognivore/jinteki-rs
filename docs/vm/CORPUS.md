@@ -131,14 +131,18 @@ rule, not to the card, and the CR example suite already covers it.
 
 | bucket | tests | note |
 |---|---|---|
-| **ported and passing** | 23 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
-| **blocked on the card layer** | 3516 | card tests; unblocked card by card, in frequency order |
+| **ported and passing** | 31 | `tests/corpus.rs`, manifest-ratcheted (`dp7c_odometer`) |
+| **blocked on the card layer** | 3508 | card tests; unblocked card by card, in frequency order |
 | **blocked on kernel gaps** | 176 | the rest of the engine slice; §5 lists the machinery |
-| **out of scope** | 2 | `quotes_test`, `web/deck_test` — not game rules |
+| **out of scope** | ~40 | `quotes_test`, `web/deck_test` and the reference-plumbing tests listed in `UPSTREAM-DEFECTS.md` §2 |
 
-Ported so far: all 19 of `cards/basic_test.clj`, plus `run-timing-with-no-ice`,
+Ported so far: all 19 of `cards/basic_test.clj`; `run-timing-with-no-ice`,
 `run-timing-with-an-ice`, `no-scoring-after-terminal` and `purge-corp` from
-the `core/` slice.
+the `core/` slice; and `corroder`, `hedge-fund`, `beanstalk-royalties`, `ipo`,
+`sure-gamble`, `hostile-takeover`, `pad-campaign`, `ice-wall` from the card
+files. 19 real cards live in `crates/jinteki-cr/src/cards.rs`; the parallel
+`crates/jinteki-cards` DSL (another agent's work, same session) is where the
+card layer scales, and the two must be reconciled — see §7.
 
 The wave order followed from the measurement. `cards/basic_test.clj` (19) and
 the `core/` slice (180) came first because they name the *basic actions* —
@@ -212,3 +216,22 @@ implementation artifacts of a different engine, and copying them would be the
 overfit §12 exists to prevent. Where the reference test's assertion is about
 the CR's behaviour, we assert it. Where it is about the reference's own
 plumbing, the port drops it and says so in the test's doc comment.
+
+## 7. Two card layers, and how they reconcile
+
+`crates/jinteki-cr/src/cards.rs` (this rung, W15a/W15c) and
+`crates/jinteki-cards` (the deck rung, `docs/cards/DSL.md`) are the same idea
+built from opposite ends: printed text → `PrintedCard` through the public
+vocabulary, with every unexpressible sentence marked rather than
+approximated. `cards.rs` is Rust and hand-written for the tests that need it;
+`jinteki-cards` is a designer-facing DSL with a parser, a denotation pass and
+its own `unimplemented:` ledger.
+
+They must not stay parallel. The reconciliation is one-directional and cheap:
+**`cards.rs` becomes `.cards` files** once the DSL can say what those 19 cards
+say (it already says most of it), and `corpus.rs` loads them through
+`jinteki-cards`. The DSL's `unimplemented:` marker and this file's
+`UNIMPLEMENTED:` doc comment then become one ledger, counted by one test.
+Nothing about the port's assertions changes — the cards are data either way,
+and the VM cannot tell them apart. Do this before the card count grows past
+what a hand port can carry; the corpus wants ~1200 cards to reach 76%.
