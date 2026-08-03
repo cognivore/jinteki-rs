@@ -160,6 +160,10 @@ pub fn humanoid_resources() -> Card {
 
 /// Hedge Fund — Operation: Transaction. Cost 5.
 /// "Gain 9[credit]."
+///
+/// NOT part of the printed Gauntlet list (user-verified against the deck
+/// photo, 2026-08-03: 49 cards, the 18 operations sum without it). The card
+/// definition stays because tests use it; `deck()` does not include it.
 pub fn hedge_fund() -> Card {
     card("Hedge Fund")
         .corp()
@@ -567,7 +571,6 @@ pub fn deck() -> Vec<Card> {
         rashida_jaheem(),
         jackson_howard(),
         humanoid_resources(),
-        hedge_fund(),
         archived_memories(),
         boom(),
         closed_accounts(),

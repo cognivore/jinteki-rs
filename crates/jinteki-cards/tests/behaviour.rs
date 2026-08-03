@@ -19,6 +19,12 @@ use jinteki_cr::vm::Vm;
 /// claims every one of its printed sentences is expressed.
 fn card(name: &str) -> PrintedCard {
     let c = jinteki_cards::find(name)
+        // Cards defined but not in a deck list (Hedge Fund left Gauntlet on
+        // the printed list's authority) are still testable directly.
+        .or_else(|| match name {
+            "Hedge Fund" => Some(jinteki_cards::decks::gauntlet::hedge_fund()),
+            _ => None,
+        })
         .unwrap_or_else(|| panic!("no card named {name} in either deck"));
     assert!(
         c.is_complete(),
@@ -30,6 +36,10 @@ fn card(name: &str) -> PrintedCard {
 /// A card that is still partial, for asserting the parts that ARE expressed.
 fn card_partial(name: &str) -> PrintedCard {
     jinteki_cards::find(name)
+        .or_else(|| match name {
+            "Hedge Fund" => Some(jinteki_cards::decks::gauntlet::hedge_fund()),
+            _ => None,
+        })
         .unwrap_or_else(|| panic!("no card named {name} in either deck"))
         .printed
 }

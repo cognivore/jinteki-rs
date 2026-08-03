@@ -10,9 +10,9 @@ use jinteki_cards::{deck_named, priority_decks, SOURCES};
 #[test]
 fn both_decks_build() {
     let cards = priority_decks();
-    assert_eq!(cards.len(), 51, "both decks, one entry per distinct card");
+    assert_eq!(cards.len(), 50, "both decks, one entry per distinct card (Hedge Fund is not in the printed Gauntlet list)");
     assert_eq!(deck_named("andromeda").unwrap().len(), 24);
-    assert_eq!(deck_named("gauntlet").unwrap().len(), 27);
+    assert_eq!(deck_named("gauntlet").unwrap().len(), 26, "49 printed cards, 26 distinct — Hedge Fund left on the deck photo's authority");
     assert!(deck_named("nonesuch").is_none());
 }
 
@@ -59,8 +59,8 @@ fn the_gap_list_is_measurable_and_honest() {
     );
     println!("complete: {complete:?}");
     assert!(
-        complete.len() >= 14,
-        "14 cards are fully expressed; got {} — if a card became partial, say why in \
+        complete.len() >= 13,
+        "13 cards are fully expressed; got {} — if a card became partial, say why in \
          docs/vm/WAVES.md's gap list",
         complete.len()
     );
@@ -127,7 +127,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 51, "one check per card");
+    assert_eq!(checked, 51, "one check per card DEFINITION (Hedge Fund is defined but not in the deck list)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and
