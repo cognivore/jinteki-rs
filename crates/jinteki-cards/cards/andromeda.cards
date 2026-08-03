@@ -8,6 +8,7 @@ card "Andromeda: Dispossessed Ristie"
   side: runner
   type: identity
   subtypes: Natural
+  link: 1
   faction: Criminal
   set: Humanity's Shadow
   text:
@@ -113,8 +114,9 @@ card "Rebirth"
   text:
     Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it.
     Limit 1 per deck.
+  static:
+    remove this card from the game instead of trashing it
   unimplemented: "Switch your identity with another identity from the same faction."
-  unimplemented: "Remove Rebirth from the game instead of trashing it."
 
 card "Boomerang"
   side: runner
@@ -142,7 +144,8 @@ card "Desperado"
     +1[mu]
     Gain 1[credit] whenever you make a successful run.
     Limit 1 console per player.
-  unimplemented: "+1[mu]"
+  static:
+    +1 memory
   unimplemented: "Gain 1[credit] whenever you make a successful run."
 
 card "Bukhgalter"
@@ -158,8 +161,10 @@ card "Bukhgalter"
     Interface → 1[credit]: Break 1 sentry subroutine.
     1[credit]: +1 strength.
     The first time each turn this program fully breaks a piece of ice, gain 2[credit].
-  unimplemented: "Interface → 1[credit]: Break 1 sentry subroutine."
-  unimplemented: "1[credit]: +1 strength."
+  paid interface 1 credit:
+    break 1 sentry subroutine
+  paid 1 credit:
+    +1 strength
   unimplemented: "The first time each turn this program fully breaks a piece of ice, gain 2[credit]."
 
 card "Paperclip"
@@ -190,9 +195,15 @@ card "Shibboleth"
     Threat 4 → This program gets −2 strength. (This ability is active if any player has 4 or more agenda points.)
     Interface → 1[credit]: Break 1 code gate subroutine.
     2[credit]: +2 strength.
+  # The `static threat 4:` block this sentence wants is written and denotes
+  # correctly, but `Vm::char_effects` does not consult 9.3.6f, so the −2 would
+  # apply at every threat level — a wrong card, not a partial one. See the gap
+  # list in docs/vm/WAVES.md.
   unimplemented: "Threat 4 → This program gets −2 strength."
-  unimplemented: "Interface → 1[credit]: Break 1 code gate subroutine."
-  unimplemented: "2[credit]: +2 strength."
+  paid interface 1 credit:
+    break 1 code gate subroutine
+  paid 2 credits:
+    +2 strength
 
 card "Cupellation"
   side: runner
@@ -206,6 +217,11 @@ card "Cupellation"
     Limit 1 hosted card.
     Access → 1[credit]: Host the non-agenda card you are accessing faceup on this program. (If it was installed, it becomes uninstalled.)
     Whenever you breach HQ, if this program has a hosted Corp card, you may pay 1[credit] and trash this program to access 2 additional cards.
+  # `limit 1 hosted card` is written and denotes into StaticDecl::CanHost, but
+  # 1.13.6b's exclusion is derived by scanning for a self-hosting instruction —
+  # and this card's own hosting ability is not sayable yet, so the capacity
+  # declaration would become an install permission. See docs/vm/WAVES.md.
+  unimplemented: "Limit 1 hosted card."
   unimplemented: "Access → 1[credit]: Host the non-agenda card you are accessing faceup on this program."
   unimplemented: "Whenever you breach HQ, if this program has a hosted Corp card, you may pay 1[credit] and trash this program to access 2 additional cards."
 
@@ -222,8 +238,7 @@ card "Daily Casts"
     load 8 credits on self
   when empty:
     trash self
-  when your turn begins:
-    take 2 credits from self
+  unimplemented: "When your turn begins, take 2[credit] from this resource."
 
 card "Earthrise Hotel"
   side: runner
@@ -279,6 +294,9 @@ card "Film Critic"
     Film Critic can host a single agenda.
     Whenever you access an agenda, you may host that agenda on Film Critic (the agenda is no longer being accessed and is uninstalled).
     [click],[click]: Add an agenda hosted on Film Critic to your score area.
+  # Same as Cupellation: the `can host a single agenda` declaration is right,
+  # but with the hosting ability unsayable it would make Film Critic a legal
+  # destination for INSTALLING an agenda. See docs/vm/WAVES.md.
   unimplemented: "Film Critic can host a single agenda."
   unimplemented: "Whenever you access an agenda, you may host that agenda on Film Critic."
   unimplemented: "[click],[click]: Add an agenda hosted on Film Critic to your score area."
@@ -326,6 +344,7 @@ card "The Source"
     The advancement requirement of all agendas is increased by 1.
     As an additional cost to steal an agenda, you must pay 3[credit].
     Trash The Source when an agenda is scored or stolen.
+  static:
+    as an additional cost to steal an agenda, you must pay 3 credits
   unimplemented: "The advancement requirement of all agendas is increased by 1."
-  unimplemented: "As an additional cost to steal an agenda, you must pay 3[credit]."
   unimplemented: "Trash The Source when an agenda is scored or stolen."

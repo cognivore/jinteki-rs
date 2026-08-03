@@ -25,7 +25,7 @@ card "AstroScript Pilot Program"
     When you score this agenda, place 1 agenda counter on it.
     Hosted agenda counter: Place 1 advancement counter on an installed card you can advance.
   when scored:
-    load 1 agenda counter on self
+    place 1 agenda counter on self
   unimplemented: "Hosted agenda counter: Place 1 advancement counter on an installed card you can advance."
 
 card "Bellona"
@@ -39,9 +39,10 @@ card "Bellona"
   text:
     As an additional cost to steal this agenda, the Runner must pay 5[credit].
     When you score this agenda, gain 5[credit].
+  static:
+    as an additional cost to steal this agenda, the runner must pay 5 credits
   when scored:
     gain 5 credits
-  unimplemented: "As an additional cost to steal this agenda, the Runner must pay 5[credit]."
 
 card "Breaking News"
   side: corp
@@ -84,7 +85,8 @@ card "Rashida Jaheem"
   set: The Devil and the Dragon
   text:
     When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards.
-  unimplemented: "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
+  when your turn begins:
+    you may trash self to gain 3 credits and draw 3 cards
 
 card "Jackson Howard"
   side: corp
@@ -111,7 +113,10 @@ card "Humanoid Resources"
   set: Elevation
   text:
     [click][click][click], [trash]: Gain 4[credit] and draw 3 cards. Install up to 2 cards from HQ (one at a time). You may play 1 operation from HQ.
-  unimplemented: "[click][click][click], [trash]: Gain 4[credit] and draw 3 cards. Install up to 2 cards from HQ (one at a time). You may play 1 operation from HQ."
+  paid click, click, click, trash:
+    gain 4 credits and draw 3 cards
+    install up to 2 cards from hq
+    you may play 1 operation from hq
 
 card "Hedge Fund"
   side: corp
@@ -133,7 +138,8 @@ card "Archived Memories"
   set: System Update 2021
   text:
     Add 1 card from Archives to HQ.
-  unimplemented: "Add 1 card from Archives to HQ."
+  play:
+    add 1 card from archives to hq
 
 card "BOOM!"
   side: corp
@@ -147,10 +153,11 @@ card "BOOM!"
     Play only if the Runner has at least 2 tags.
     As an additional cost to play this operation, spend [click].
     Do 7 meat damage.
+  static:
+    as an additional cost to play this operation, spend click
   play:
     do 7 meat damage
   unimplemented: "Play only if the Runner has at least 2 tags."
-  unimplemented: "As an additional cost to play this operation, spend [click]."
 
 card "Closed Accounts"
   side: corp
@@ -178,7 +185,8 @@ card "Hard-Hitting News"
     Trace[4]. If successful, give the Runner 4 tags.
   play:
     trace 4: give the runner 4 tags
-  unimplemented: "After you resolve this operation, your action phase ends."
+  when this operation resolves:
+    your action phase ends
   unimplemented: "Play only if the Runner made a run during their last turn."
 
 card "Petty Cash"
@@ -235,8 +243,9 @@ card "Self-Growth Program"
   text:
     Play only if the Runner is tagged.
     Add 2 installed Runner cards to the grip.
+  play:
+    add 2 installed runner cards to the grip
   unimplemented: "Play only if the Runner is tagged."
-  unimplemented: "Add 2 installed Runner cards to the grip."
 
 card "Subliminal Messaging"
   side: corp
@@ -264,7 +273,8 @@ card "Targeted Marketing"
   text:
     This card is not trashed until another current is played or an agenda is stolen.
     Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card.
-  unimplemented: "This card is not trashed until another current is played or an agenda is stolen."
+  static:
+    this card is not trashed until another current is played or an agenda is stolen
   unimplemented: "Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card."
 
 card "24/7 News Cycle"
@@ -276,8 +286,10 @@ card "24/7 News Cycle"
   text:
     As an additional cost to play 24/7 News Cycle, forfeit an agenda.
     Resolve the "when scored" ability on an agenda in your score area.
-  unimplemented: "As an additional cost to play 24/7 News Cycle, forfeit an agenda."
-  unimplemented: "Resolve the \"when scored\" ability on an agenda in your score area."
+  static:
+    as an additional cost to play this operation, forfeit an agenda
+  play:
+    resolve the "when scored" ability on an agenda in your score area
 
 card "Archangel"
   side: corp
@@ -292,8 +304,9 @@ card "Archangel"
     When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it.
     [subroutine] Trace[6]. If successful, add 1 installed Runner card to the grip.
   unimplemented: "While the Runner is accessing this ice in R&D, they must reveal it."
+  subroutine:
+    trace 6: add 1 installed runner card to the grip
   unimplemented: "When the Runner accesses this ice anywhere except in Archives, you may pay 3[credit]. If you do, they encounter it."
-  unimplemented: "[subroutine] Trace[6]. If successful, add 1 installed Runner card to the grip."
 
 card "Data Raven"
   side: corp
@@ -311,8 +324,10 @@ card "Data Raven"
     choose one:
       - take 1 tag
       - end the run
-  unimplemented: "Hosted power counter: Give the Runner 1 tag."
-  unimplemented: "[subroutine] Trace[3]. If successful, place 1 power counter on this ice."
+  paid hosted power counter:
+    give the runner 1 tag
+  subroutine:
+    trace 3: place 1 power counter on this ice
 
 card "Gold Farmer"
   side: corp
@@ -326,8 +341,11 @@ card "Gold Farmer"
     Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit].
     [subroutine] End the run unless the Runner pays 3[credit].
     [subroutine] End the run unless the Runner pays 3[credit].
+  subroutine:
+    end the run unless the runner pays 3 credits
+  subroutine:
+    end the run unless the runner pays 3 credits
   unimplemented: "Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit]."
-  unimplemented: "[subroutine] End the run unless the Runner pays 3[credit]. (x2)"
 
 card "IP Block"
   side: corp
@@ -386,10 +404,10 @@ card "Crisium Grid"
   subtypes: Region
   cost: 3
   trash cost: 5
-  unique: yes
   faction: Weyland Consortium
   set: System Update 2021
   text:
     Runs against this server cannot be declared successful. (This effect does not cause runs to become unsuccessful.)
     Limit 1 region per server.
-  unimplemented: "Runs against this server cannot be declared successful."
+  static:
+    runs against this server cannot be declared successful

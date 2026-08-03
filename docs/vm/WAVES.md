@@ -842,6 +842,143 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 - 8.5.6's optional "may first trash any number" (deviation 8).
 - the 4.6.8f remote-server limit's second half (deviation 39).
 
+### The two priority decks: what the kernel cannot yet say
+
+Measured, not guessed: `crates/jinteki-cards` carries both decks as data and
+prints the count. At W15c it is **51 cards, 11 complete, 40 partial, 60
+printed sentences unsayable** (up from 80 unsayable across 5 complete cards,
+and up by 2 from the honest re-reading of two hosting restrictions that had
+previously been left unmarked). Every entry below is a sentence that a real
+card in those decks needs and that the DSL cannot denote *because the kernel
+has no variant for it* — never because a verb is missing (ARCHITECTURE §12:
+adding a card-shaped kernel variant is forbidden, so each of these is a
+GENERAL capability with the cards that want it named). The card files carry
+the matching `unimplemented:` markers, so this list and the test's count move
+together.
+
+**A defect, not a gap — fix this one first.** `Vm::char_effects` gathers
+characteristic declarations behind `card_active(o)` alone and never consults
+`ability_active`, so 9.3.6f's `[threat N]` flag (and every other 9.1.8
+exception) is ignored for strength and subtype modification. Shibboleth's
+"Threat 4 → This program gets −2 strength" applies at threat 0. The card is
+written correctly and marked unimplemented anyway, because a wrong card is
+worse than a partial one (SYS-D-12); un-marking it is a one-line change here
+once `char_effects` filters the same way `active_statics` does.
+
+*Instructions with no variant at all:*
+
+- "take N[credit] from this card" — hosted credits to the pool (Daily Casts,
+  the Crowdfunding class). `MoveSetAsideCounters` is 9.5.5's set-aside move
+  and is emphatically not this; the DSL previously denoted Daily Casts into
+  it, which is why that card is now honestly partial.
+- "remove N hosted <kind> counters" from a card, outside a cost (Earthrise
+  Hotel). `Cost::spend_counters` is the paid-ability half; a mandatory
+  conditional has nowhere to go.
+- "gain [click]" (Petty Cash, Subliminal Messaging). `GainAllottedClicks` is
+  the turn-structure step and `EffectClass::GainClicks` is only the atom
+  class — no instruction gains a click.
+- 1.21.3 REVEAL (Mutual Favor, Archangel, Slot Machine, Subliminal
+  Messaging). `LookAtCards` and `ExposeCards` are the neighbours.
+- "remove <a card that is not the source> from the game" (Bloo Moose; also
+  Jackson Howard's trigger cost).
+- "add <a card> to your score area" (Film Critic).
+- "shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
+  shuffles from the heap into the stack). `MoveToDeck` puts cards on top or
+  bottom and does not shuffle.
+- swapping the identity in play (Rebirth) and flipping a double-sided
+  identity (Nebula Talent Management).
+
+*Positions that exist but are not quantity/target positions (§12 rule 6):*
+
+- `InitiateRun.server` is a concrete `ServerId`, so "Run any server" — where
+  the Runner chooses from `allowed` — cannot be said (Clean Getaway, Pinhole
+  Threading). "Run HQ" would be fine.
+- `Instruction::ModifyStrength.amount` and `StaticDecl::StrengthMod.delta`
+  are `i32`. "+X strength" (Paperclip) and "+1 strength for each tag the
+  Runner has" (Resistor) want a `Quantity`. `SelfStrength(Quantity)` SETS a
+  strength and is a different sentence.
+- `Instruction::LoseCredits(Side, u32)` — "loses all credits in their credit
+  pool" (Closed Accounts).
+- `Cost::trash_from_hand: u32` — "trash all cards from your grip" as a cost
+  (Citadel Sanctuary).
+- `InstallCard::reduce_total` is evaluated only when `and_rez` is set, since
+  1.16.2f's "total" needs two costs to divide between. A plain 1.16.6 install
+  discount — "Install 1 resource from your grip, paying 3[credit] less"
+  (Career Fair) — has nowhere to land.
+- `TargetSpec::TopOfDeck(Side, u32)` (The Class Act's "top X cards").
+- `ReplacementTransform` is a closed list of specific transforms; a card that
+  says "instead of breaching HQ, <arbitrary instructions>" (Account Siphon,
+  Pinhole Threading, Cupellation) needs the general
+  `Suppress`-plus-`Vec<Instruction>` shape.
+
+*Criteria the shared filter vocabulary lacks (§12 rule 5):*
+
+- "a card you can advance" (1.18.3) — AstroScript Pilot Program, Slot
+  Machine. The permission exists as `StaticDecl::CanBeAdvancedSelf`; there is
+  no `TargetFilter` reading it.
+- "a card you did not install this turn" (Seamless Launch).
+- "the Corp's identity" — an identity is not installed, so every side-scoped
+  filter misses it (Employee Strike).
+- criteria on `TargetSpec::AccessedCard` — "the non-agenda card you are
+  accessing" (Cupellation).
+
+*One more defect-shaped gap.* `Vm::hosts_onto_itself` derives 1.13.6b by
+scanning an object's instruction lists for `HostCards { host: SelfSource }`.
+That makes the exclusion depend on whether the OTHER half of the card is
+expressible: Cupellation's "Limit 1 hosted card" and Film Critic's "can host
+a single agenda" are exactly `StaticDecl::CanHost`, but with their hosting
+abilities still unsayable the declaration turns into a 1.13.6a install
+permission — measured, not guessed: `eligible_hosts_for` then offers
+Cupellation as a host for any program and both cards as hosts for an agenda
+being installed. Both sentences are therefore marked unimplemented even
+though the words exist. 1.13.6b wants to be a property of the card, not a
+scan of its instructions.
+
+*Trigger conditions the checkpoint cannot detect:*
+
+- **"When a discard phase ends"** (5.5.4) — three cards want it: Breaking
+  News, The Class Act, Citadel Sanctuary. The best value on this list.
+- "Whenever you make a successful run" with no server stipulation
+  (Desperado). 6.7.2's per-server, per-mark and per-chosen-server forms all
+  exist; the plain one does not.
+- "Whenever the Runner breaks a printed subroutine on this ice" (Gold
+  Farmer), and "the first time each turn this program fully breaks a piece of
+  ice" (Bukhgalter) — `PassedIceAfterFullyBreaking` is the PASS, not the
+  break.
+- "When your action phase ends" (Nebula Talent Management).
+- a subtype stipulation on `EncounterBegins` — "whenever you encounter a
+  barrier" (Paperclip) — and a card-type stipulation on
+  `RunnerAccessesCard` — "whenever you access an agenda" (Film Critic).
+- "whenever the Runner plays or installs a copy of <a named card>" (Targeted
+  Marketing), which also needs naming a card at all.
+- "when an agenda is scored **or** stolen", by either player (The Source);
+  `RunnerStealsAgenda` is half of it.
+- a condition on a card sitting in a discard pile (9.1.8b) — "when your turn
+  begins, if this card is in Archives…" (Subliminal Messaging).
+
+*Restrictions and declarations:*
+
+- **"Play only if <state>"** — six cards: BOOM!, Closed Accounts,
+  Hard-Hitting News, Petty Cash, Self-Growth Program, and Predictive
+  Planogram's "if the Runner is tagged, you may resolve both instead". The
+  second-best value on this list.
+- "The advancement requirement of all agendas is increased by 1" (The
+  Source); `ScoreRequirementModInSourceServer` is scoped to one server.
+- `PlayedNotTrashedUntilAgendaSteal` ends only on a steal, so a Runner
+  current reading "…or an agenda is **scored**" cannot use it (Employee
+  Strike). The ending condition wants to be content, not a variant name.
+- a `TimingRestriction` keyed to a maintained choice — "use this hardware
+  only during encounters with that ice" (Boomerang). The existing variants
+  key on subtype.
+- hosted credits usable for a DESCRIBED class of cost — "use these credits to
+  trash installed cards" (Miss Bones). `hosted_credits_spendable` is
+  all-or-nothing.
+- starting hand size: `Vm::new_game` draws 5 (1.6.6) with no hook, so an
+  identity cannot change it (Andromeda).
+- "while the Runner is accessing this ice in R&D, they must reveal it"
+  (Archangel) and "you cannot steal or trash it during this access" (Pinhole
+  Threading).
+
 **DP-7b is 820/1420 (57.7%).** The remaining ~600 uncited rules are dominated
 by §4.6 layout/orientation prose with no game effect, §1.5 setup, §2.16
 subtypes, §3.x card-type prose, and the several dozen "one card, X, has the

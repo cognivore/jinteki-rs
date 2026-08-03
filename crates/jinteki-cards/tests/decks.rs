@@ -51,9 +51,12 @@ fn a_complete_card_denotes_into_real_vm_data() {
     assert_eq!(gamble.printed.cost, Some(5));
     assert_eq!(gamble.printed.abilities.len(), 1, "one printed sentence, one ability");
 
+    // Daily Casts loads and empties; "take 2[credit] from this resource" has
+    // no kernel instruction yet (see the gap list in docs/vm/WAVES.md), so the
+    // card is honestly partial rather than quietly doing nothing.
     let casts = cards.iter().find(|c| c.printed.name == "Daily Casts").expect("Daily Casts");
-    assert!(casts.is_complete(), "all three of its sentences are sayable");
-    assert_eq!(casts.printed.abilities.len(), 3, "install, empty, turn-begins");
+    assert_eq!(casts.printed.abilities.len(), 2, "install, empty");
+    assert_eq!(casts.unimplemented.len(), 1, "the turn-begins sentence is on the gap list");
 }
 
 #[test]

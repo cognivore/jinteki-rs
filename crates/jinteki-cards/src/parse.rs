@@ -256,6 +256,7 @@ fn is_block_header(h: &str) -> bool {
     h == "play"
         || h == "static"
         || h == "subroutine"
+        || h.starts_with("static ")
         || h.starts_with("paid ")
         || h.starts_with("when ")
         || h.starts_with("interrupt ")
