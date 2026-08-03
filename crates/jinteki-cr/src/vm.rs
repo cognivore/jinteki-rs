@@ -166,6 +166,11 @@ pub enum DecisionCtx {
     /// 7.4.3 example 2 (Gagarin class): pay or decline an additional cost
     /// to access the chosen candidate.
     AccessCost(ObjectId),
+    /// CR 8.7.2: which cards the searching player FINDS. Asked while the
+    /// search instruction resolves, never at announce time — found cards are
+    /// not targets (`rule_searching_does_not_target`). Carries the searched
+    /// zone so the 8.7.3 shuffle happens on the answer.
+    SearchFind { zone: Zone },
 }
 
 /// CR 8.5.16: one installation in progress. Installing is a procedure, not
@@ -191,6 +196,15 @@ pub struct InstallProgress {
     pub resolved_zone: Option<Zone>,
     /// Ice-position insertion index (innermost-first) for inward installs.
     pub ice_insert_at: Option<usize>,
+}
+
+/// CR 8.7.2b: the instruction a search is "followed by", when it refers to
+/// the found cards — the only thing that restricts what may be found beyond
+/// the search's own criteria.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FollowOn {
+    Install { dest: crate::instr::InstallDest, ignore_costs: bool },
+    Play { ignore_costs: bool },
 }
 
 /// CR 8.6.7: one play (event/operation) in progress.
@@ -2034,6 +2048,20 @@ impl Vm {
                 cite!("rule_modifiable_value_base_trace_strength");
                 vec![EffectAtom::new(EffectClass::Structural, *base, controller)]
             }
+            Instruction::TrashRandomFromHand { side, count } => {
+                // 9.12.2c: trashing a number of cards from a specified
+                // location is an aggregated class — one atom, one value.
+                cite!("rule_aggregated_instructions");
+                let n = self.eval_quantity(count, source).min(self.st.hand[side].len() as i64);
+                if n <= 0 {
+                    vec![]
+                } else {
+                    vec![EffectAtom::new(EffectClass::TrashCards, n, *side)]
+                }
+            }
+            Instruction::Search { .. } | Instruction::AddCardsToHand { .. } => {
+                vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
+            }
             Instruction::TraceCorpSpend
             | Instruction::TraceRunnerSpend
             | Instruction::TraceDetermine { .. }
@@ -2576,6 +2604,7 @@ impl Vm {
             cost,
             set_aside_counters: Vec::new(),
             set_aside_cards: Vec::new(),
+            found_cards: Vec::new(),
         }));
     }
 
@@ -2998,24 +3027,48 @@ impl Vm {
             .collect()
     }
 
+    /// ONE predicate for the shared filter vocabulary (§12 rule 5): the same
+    /// atoms decide announce-time candidacy, `Quantity::Count` membership and
+    /// 8.7.2a search criteria. Location atoms read the object's zone;
+    /// card-characteristic atoms read the card itself, so a search supplies
+    /// the zone separately.
+    pub fn filter_matches(&self, o: &Object, f: TargetFilter, source: Option<ObjectId>) -> bool {
+        match f {
+            TargetFilter::InstalledCorpCard => {
+                o.zone.is_installed() && is_corp_card(o.printed.card_type)
+            }
+            TargetFilter::InstalledRunnerCard => {
+                o.zone.is_installed() && !is_corp_card(o.printed.card_type)
+            }
+            TargetFilter::InstalledResource => {
+                o.zone == Zone::Rig && o.printed.card_type == CardType::Resource
+            }
+            TargetFilter::IceProtectingSourceServer => source
+                .and_then(|s| self.st.objects.get(&s))
+                .and_then(|src| match src.zone {
+                    Zone::Ice(sv) => Some(self.ice_at(sv).contains(&o.id)),
+                    _ => None,
+                })
+                .unwrap_or(false),
+            TargetFilter::CardsInHandOf(side) => o.zone == Zone::Hand(side),
+            TargetFilter::CardTypeIs(t) => o.printed.card_type == t,
+            // 9.12.1b: subtypes come from the characteristics pipeline, so a
+            // subtype granted or removed by an active effect counts.
+            TargetFilter::HasSubtype(s) => {
+                cite!("rule_modify_subtypes");
+                crate::object::compute_effective(&self.st.objects, &self.char_effects(), o.id)
+                    .subtypes
+                    .contains(&s)
+            }
+            TargetFilter::PrintedCostAtMost(n) => o.printed.cost.unwrap_or(0) <= n,
+        }
+    }
+
     fn filter_candidates(&self, f: TargetFilter, _controller: Side) -> Vec<ObjectId> {
         self.st
             .objects
             .values()
-            .filter(|o| match f {
-                TargetFilter::InstalledCorpCard => {
-                    o.zone.is_installed() && is_corp_card(o.printed.card_type)
-                }
-                TargetFilter::InstalledRunnerCard => {
-                    o.zone.is_installed() && !is_corp_card(o.printed.card_type)
-                }
-                TargetFilter::InstalledResource => {
-                    o.zone == Zone::Rig && o.printed.card_type == CardType::Resource
-                }
-                // Counting-only filters (Quantity::Count) never enumerate
-                // announce-time candidates.
-                TargetFilter::IceProtectingSourceServer | TargetFilter::CardsInHandOf(_) => false,
-            })
+            .filter(|o| self.filter_matches(o, f, None))
             .map(|o| o.id)
             .collect()
     }
@@ -3097,8 +3150,16 @@ impl Vm {
                 .first()
                 .copied(),
         };
+        // 8.7.4: a found card is consumed by the instruction that refers to
+        // it, so it is no longer "still set aside" when the ability ends.
+        if matches!(card, TargetSpec::FoundBySearch) {
+            self.take_found_cards();
+        }
         let Some(c) = picked else {
             // Nothing to install: the instruction completes with no effect.
+            // 8.7.4: with nothing found, effects referencing found cards fail
+            // to resolve and the rest of the ability carries on.
+            cite!("rule_continue_after_search");
             self.set_ability_phase(AbilityPhase::Checkpoint);
             return;
         };
@@ -3112,7 +3173,9 @@ impl Vm {
         let was_hidden = {
             let o = &self.st.objects[&c];
             matches!(o.zone, Zone::Hand(_) | Zone::Deck(_))
-                || (!o.faceup && matches!(o.zone, Zone::Discard(_)))
+                // 4.8.4: a card found by a search sits facedown in the
+                // set-aside zone — still hidden provenance for 8.5.13.
+                || (!o.faceup && matches!(o.zone, Zone::Discard(_) | Zone::SetAside))
         };
         self.installs.push(InstallProgress {
             card: c,
@@ -3214,7 +3277,11 @@ impl Vm {
                 .first()
                 .copied(),
         };
+        if matches!(card, TargetSpec::FoundBySearch) {
+            self.take_found_cards();
+        }
         let Some(c) = picked else {
+            cite!("rule_continue_after_search");
             self.set_ability_phase(AbilityPhase::Checkpoint);
             return;
         };
@@ -3289,28 +3356,165 @@ impl Vm {
             .sum()
     }
 
-    /// CR 8.5.11: the install cost as evaluated at step 8.5.16d.
-    fn install_cost_of(&self, card: ObjectId, p: &InstallProgress) -> u32 {
+    /// CR 8.5.11 / 1.16.6: the install cost of `card` for a destination,
+    /// before any Patchwork-class cost-reducing ability. `resolved` is the
+    /// zone already declared at step 8.5.16b, when there is one; the 8.7.2b
+    /// legality query has only the destination.
+    fn install_cost_at(
+        &self,
+        card: ObjectId,
+        dest: crate::instr::InstallDest,
+        resolved: Option<Zone>,
+    ) -> u32 {
         cite!("sec_install_cost");
         cite!("rule_install_cost_link");
         let o = &self.st.objects[&card];
         let base = match o.printed.card_type {
             // 1 credit per ice already protecting the destination server.
-            CardType::Ice => match p.resolved_zone {
-                Some(Zone::Ice(s)) => self.ice_at(s).len() as u32,
-                _ => 0,
-            },
+            CardType::Ice => {
+                let server = match (resolved, dest) {
+                    (Some(Zone::Ice(s)), _) => Some(s),
+                    (_, crate::instr::InstallDest::Protecting(s)) => Some(s),
+                    (_, crate::instr::InstallDest::InwardFromSource) => None,
+                    _ => None,
+                };
+                server.map(|s| self.ice_at(s).len() as u32).unwrap_or(0)
+            }
             CardType::Program | CardType::Hardware | CardType::Resource => {
                 o.printed.cost.unwrap_or(0)
             }
             // Assets, agendas, upgrades have no install cost.
             _ => 0,
         };
-        let discount = match p.dest {
+        let discount = match dest {
             crate::instr::InstallDest::HostedOn(h) => self.host_install_discount(h),
             _ => 0,
         };
         base.saturating_sub(discount)
+    }
+
+    /// CR 1.16.6 (Patchwork class): install-cost reductions a player controls
+    /// that must themselves be paid for, as `(source, own cost, amount)`.
+    fn install_discounts(&self, side: Side) -> Vec<(ObjectId, Cost, u32)> {
+        self.active_statics()
+            .into_iter()
+            .filter(|(src, _)| {
+                self.st.objects.get(src).map(|o| o.controller) == Some(side)
+            })
+            .filter_map(|(src, d)| match d {
+                StaticDecl::InstallDiscount { cost, amount } => Some((src, cost, amount)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// CR 8.5.11 + 1.16.6: what installing `card` actually costs — the credit
+    /// amount left after applying as many cost-reducing abilities as are
+    /// needed to bring it within reach, plus the combined cost of the
+    /// reductions used (paid all at once with the install cost, 1.16.10b).
+    ///
+    /// KERNEL APPROXIMATION: reductions are applied only when the player
+    /// could not otherwise pay ("they must use Patchwork" — the 8.7.2b
+    /// example's own words), largest first, and the choice of whether to use
+    /// an affordable-anyway reduction is not offered.
+    fn install_payment(
+        &self,
+        card: ObjectId,
+        dest: crate::instr::InstallDest,
+        resolved: Option<Zone>,
+        payer: Side,
+    ) -> (u32, Cost) {
+        cite!("rule_install_cost");
+        let mut net = self.install_cost_at(card, dest, resolved);
+        let mut extra = Cost::free();
+        let mut pool: Vec<(ObjectId, Cost, u32)> = self.install_discounts(payer);
+        pool.sort_by_key(|(_, _, amount)| std::cmp::Reverse(*amount));
+        for (src, cost, amount) in pool {
+            if self.st.player(payer).credits >= net {
+                break;
+            }
+            let combined = extra.plus(&cost);
+            if !self.cost_payable(payer, src, &combined.plus(&Cost::credits(net.saturating_sub(amount))))
+            {
+                continue;
+            }
+            net = net.saturating_sub(amount);
+            extra = combined;
+        }
+        (net, extra)
+    }
+
+    /// CR 8.7.2b: when a search is followed by an install instruction
+    /// referring to the found cards, a card can only be FOUND if the
+    /// searching player would actually be able to install it.
+    ///
+    /// A pure LEGALITY QUERY: nothing moves, no cost is paid. It answers
+    /// "could that install instruction resolve for this candidate?" by the
+    /// two things the CR names — the card must be of an installable type
+    /// (8.5.1/8.5.3: events and operations never are), and the install cost
+    /// (8.5.11) must be payable INCLUDING the cost-reducing abilities the
+    /// player would have to use (the Patchwork example).
+    ///
+    /// It deliberately does NOT require the card to be rezzable: an
+    /// "install and rez" follow-on still permits the find, and 8.5.13d makes
+    /// the Corp reveal the card it cannot rez (the Tucana example).
+    ///
+    /// APPROXIMATION (recorded in docs/vm/WAVES.md): the destination's own
+    /// legality (8.5.14 invalid destinations, 8.5.2 server limits) is not
+    /// re-derived here; no example turns on it.
+    pub fn could_install_found_card(
+        &self,
+        card: ObjectId,
+        dest: crate::instr::InstallDest,
+        ignore_costs: bool,
+    ) -> bool {
+        cite!("rule_valid_search_target_install_play");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        // 8.5.1/8.5.3: only these card types are ever installed.
+        cite!("rule_installing");
+        let installable = match o.printed.card_type {
+            CardType::Agenda | CardType::Asset | CardType::Ice | CardType::Upgrade => {
+                o.printed.side == Side::Corp
+            }
+            CardType::Program | CardType::Hardware | CardType::Resource => {
+                o.printed.side == Side::Runner
+            }
+            // Events, operations and identities can never be installed.
+            CardType::Event | CardType::Operation | CardType::Identity => false,
+        };
+        if !installable {
+            return false;
+        }
+        if ignore_costs {
+            cite!("rule_ignore_all_costs");
+            return true;
+        }
+        let payer = o.printed.side;
+        let (net, extra) = self.install_payment(card, dest, None, payer);
+        self.cost_payable(payer, card, &extra.plus(&Cost::credits(net)))
+    }
+
+    /// CR 8.7.2b, play branch: "The same is true when the search is followed
+    /// by a play instruction." Only events/operations are ever played
+    /// (8.6.1) and the play cost (8.6.2) must be payable.
+    pub fn could_play_found_card(&self, card: ObjectId, ignore_costs: bool) -> bool {
+        cite!("rule_valid_search_target_install_play");
+        cite!("rule_playing");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        let playable = match o.printed.card_type {
+            CardType::Event => o.printed.side == Side::Runner,
+            CardType::Operation => o.printed.side == Side::Corp,
+            _ => false,
+        };
+        if !playable {
+            return false;
+        }
+        ignore_costs
+            || self.cost_payable(
+                o.printed.side,
+                card,
+                &Cost::credits(o.printed.cost.unwrap_or(0)),
+            )
     }
 
     /// Dhegdheer-class hosted-install discount.
@@ -3330,6 +3534,127 @@ impl Vm {
                 _ => None,
             })
             .sum()
+    }
+
+    // ------------------------------------------------------------------
+    // §8.7 searching, finding, shuffling
+    // ------------------------------------------------------------------
+
+    /// The cards in a searched zone (8.7.1: the player looks at ALL of them).
+    fn cards_in_zone(&self, zone: Zone) -> Vec<ObjectId> {
+        match zone {
+            Zone::Deck(s) => self.st.deck[&s].clone(),
+            Zone::Hand(s) => self.st.hand[&s].clone(),
+            Zone::Discard(s) => self.st.discard[&s].clone(),
+            Zone::ScoreArea(s) => self.st.score_area[&s].clone(),
+            Zone::Root(s) => self.st.root.get(&s).cloned().unwrap_or_default(),
+            Zone::Ice(s) => self.st.ice.get(&s).cloned().unwrap_or_default(),
+            other => self
+                .st
+                .objects
+                .values()
+                .filter(|o| o.zone == other)
+                .map(|o| o.id)
+                .collect(),
+        }
+    }
+
+    /// CR 8.7.2a + 8.7.2b: the cards a search may legally FIND — those in the
+    /// zone matching every criterion, further restricted by what the
+    /// follow-on instruction of this same ability could do with them.
+    fn valid_find_targets(&self, zone: Zone, criteria: &[TargetFilter]) -> Vec<ObjectId> {
+        cite!("rule_search");
+        cite!("rule_search_hidden_secret_zone");
+        cite!("rule_deck_order_while_searching");
+        let source = self.frames.iter().rev().find_map(|f| match f {
+            Frame::Ability(af) => Some(af.source.obj),
+            _ => None,
+        });
+        let follow_on = self.search_follow_on();
+        self.cards_in_zone(zone)
+            .into_iter()
+            .filter(|id| {
+                let Some(o) = self.st.objects.get(id) else { return false };
+                cite!("rule_valid_search_target_criteria");
+                criteria.iter().all(|f| self.filter_matches(o, *f, source))
+            })
+            .filter(|id| match follow_on {
+                Some(FollowOn::Install { dest, ignore_costs }) => {
+                    self.could_install_found_card(*id, dest, ignore_costs)
+                }
+                Some(FollowOn::Play { ignore_costs }) => {
+                    self.could_play_found_card(*id, ignore_costs)
+                }
+                None => true,
+            })
+            .collect()
+    }
+
+    /// CR 8.7.2b: does a later instruction of the resolving ability install
+    /// or play the cards this search finds? Read off the instruction list —
+    /// no card identity is involved.
+    fn search_follow_on(&self) -> Option<FollowOn> {
+        let Some(Frame::Ability(af)) = self.frames.last() else { return None };
+        af.instructions[af.idx + 1..].iter().find_map(|i| match i {
+            Instruction::InstallCard {
+                card: TargetSpec::FoundBySearch,
+                dest,
+                ignore_costs,
+                ..
+            } => Some(FollowOn::Install { dest: *dest, ignore_costs: *ignore_costs }),
+            Instruction::PlayCard { card: TargetSpec::FoundBySearch, ignore_costs } => {
+                Some(FollowOn::Play { ignore_costs: *ignore_costs })
+            }
+            _ => None,
+        })
+    }
+
+    /// CR 8.7.2: take the found cards from the searched zone and set them
+    /// aside facedown (4.8.4), then complete the search — 8.7.3 reshuffles a
+    /// searched deck IMMEDIATELY, before any remaining effect of the ability
+    /// and before any chain reaction, and only then is the search recorded as
+    /// complete (8.7.5).
+    fn complete_search(&mut self, zone: Zone, found: &[ObjectId], searcher: Side) {
+        cite!("rule_find");
+        for &c in found {
+            self.st.objects.get_mut(&c).unwrap().zone = Zone::SetAside;
+            self.st.objects.get_mut(&c).unwrap().set_aside_for_ability = true;
+            match zone {
+                Zone::Deck(s) => self.st.deck.get_mut(&s).unwrap().retain(|&x| x != c),
+                Zone::Hand(s) => self.st.hand.get_mut(&s).unwrap().retain(|&x| x != c),
+                Zone::Discard(s) => self.st.discard.get_mut(&s).unwrap().retain(|&x| x != c),
+                Zone::Root(s) => {
+                    self.st.root.entry(s).or_default().retain(|&x| x != c)
+                }
+                Zone::Ice(s) => self.st.ice.entry(s).or_default().retain(|&x| x != c),
+                _ => {}
+            }
+            cite!("rule_searched_cards_set_aside");
+        }
+        // 8.7.2c: found cards are NOT revealed unless the ability says so,
+        // and not until resolution resumes — nothing is recorded here.
+        cite!("rule_reveal_for_search");
+        if let Zone::Deck(side) = zone {
+            cite!("rule_shuffle_deck_after_search");
+            self.shuffle_deck(side);
+        }
+        // 9.11.4d: ending the search and performing any necessary shuffling
+        // IS the end of an instruction — the post-instruction checkpoint that
+        // follows is the one at which a search-involving condition becomes
+        // pending (8.7.5), while the found cards are still set aside.
+        cite!("rule_search_instruction");
+        self.changes.record(GameChange::ZoneSearched { by: searcher, zone });
+        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+            af.found_cards.extend(found.iter().map(|&c| (c, zone)));
+        }
+    }
+
+    /// CR 8.7.3: shuffle a deck, recording the change so its position in the
+    /// log witnesses that it happened before anything else continued.
+    fn shuffle_deck(&mut self, side: Side) {
+        let deck = self.st.deck.get_mut(&side).unwrap();
+        deck.shuffle(&mut self.rng);
+        self.changes.record(GameChange::DeckShuffled { side });
     }
 
     /// 8.5.13: reveal the installing card once, if not already revealed.
@@ -4069,10 +4394,18 @@ impl Vm {
                 // checkpoint (1.16.3a — the 9.6.5b THG example).
                 cite!("rule_ignore_all_costs");
                 cite!("rule_cost_checkpoint_cost_zero");
-                let amount =
-                    if p.ignore_costs { 0 } else { self.install_cost_of(p.card, &p) };
                 let payer = self.st.objects[&p.card].printed.side;
-                self.pay_cost(payer, p.card, &Cost::credits(amount));
+                // 1.16.6: a Patchwork-class reduction the player needs is
+                // used here, and its own cost is part of the same all-at-once
+                // payment (1.16.10b).
+                let cost = if p.ignore_costs {
+                    Cost::free()
+                } else {
+                    let (net, extra) =
+                        self.install_payment(p.card, p.dest, p.resolved_zone, payer);
+                    extra.plus(&Cost::credits(net))
+                };
+                self.pay_cost(payer, p.card, &cost);
             }
             Instruction::InstallStepComplete => {
                 cite!("rule_steps_installing_become_installed");
@@ -4134,6 +4467,29 @@ impl Vm {
                     // 8.5.13d: e.g. an agenda — it cannot be rezzed, so the
                     // card must be revealed (Trust Operation example).
                     cite!("rule_cannot_rez_agendas");
+                    cite!("rule_reveal_for_install_and_rez");
+                    self.install_reveal(c);
+                    if let Some(p) = self.installs.last_mut() {
+                        p.rez_skipped = true;
+                    }
+                    return;
+                }
+                // 8.1.2d + 1.16.1b: a rez cost the Corp cannot pay makes the
+                // card one they "are unable to rez", so the rez does not
+                // happen and 8.5.13d forces the reveal — this is what lets
+                // 8.7.2b permit finding a card that can be installed but not
+                // rezzed (the Tucana example).
+                let base_rez = if p.ignore_costs {
+                    Cost::free()
+                } else {
+                    Cost::credits(self.st.objects[&c].printed.cost.unwrap_or(0))
+                };
+                let full_rez = match &self.st.objects[&c].printed.additional_rez_cost {
+                    Some(add) => base_rez.plus(add),
+                    None => base_rez,
+                };
+                if !self.cost_payable(Side::Corp, c, &full_rez) {
+                    cite!("rule_cost");
                     cite!("rule_reveal_for_install_and_rez");
                     self.install_reveal(c);
                     if let Some(p) = self.installs.last_mut() {
@@ -4329,6 +4685,66 @@ impl Vm {
                     self.refresh_candidates_after_access();
                 }
             }
+            Instruction::Search { zone, criteria, count, may_fail } => {
+                // 8.7.1: the searching player looks at the whole zone. The
+                // find is NOT a target announcement (2.5.2a), so the choice
+                // is put to them HERE, while the instruction resolves.
+                cite!("rule_searching_does_not_target");
+                let searcher = controller;
+                let candidates = self.valid_find_targets(*zone, criteria);
+                let n = self.eval_quantity(count, Some(source.obj)).max(0) as u32;
+                if candidates.is_empty() || n == 0 {
+                    // 8.7.3: the deck is reshuffled whether or not anything
+                    // was found; 8.7.4 then resumes with no found cards.
+                    self.complete_search(*zone, &[], searcher);
+                    return;
+                }
+                // 8.7.2d: with a set number and no criteria the player must
+                // find that many, or all there are; 8.7.2e lets a criteria
+                // search of a deck fail to find.
+                cite!("rule_search_multiple_cards");
+                cite!("rule_fail_to_find");
+                let want = n.min(candidates.len() as u32);
+                self.ask(
+                    searcher,
+                    DecisionSpec::ChooseTargets {
+                        candidates,
+                        count: want,
+                        up_to: *may_fail,
+                    },
+                    DecisionCtx::SearchFind { zone: *zone },
+                );
+            }
+            Instruction::AddCardsToHand { cards } => {
+                cite!("rule_continue_after_search");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                if matches!(cards, TargetSpec::FoundBySearch) {
+                    self.take_found_cards();
+                }
+                for t in targets {
+                    let owner = self.st.objects[&t].owner;
+                    self.move_card(t, Zone::Hand(owner));
+                }
+            }
+            Instruction::TrashRandomFromHand { side, .. } => {
+                // The value rides the atom so interrupts can modify it
+                // (9.9.6); 9.9.7d drops it entirely if it falls to 0.
+                let n = imm
+                    .atoms
+                    .iter()
+                    .find(|a| a.expected() && a.class == EffectClass::TrashCards)
+                    .map(|a| a.value.max(0) as u32)
+                    .unwrap_or(0);
+                for _ in 0..n {
+                    let hand = &self.st.hand[side];
+                    if hand.is_empty() {
+                        break;
+                    }
+                    let i = self.rng.random_range(0..hand.len());
+                    let card = self.st.hand[side][i];
+                    self.trash_card(card, *side);
+                }
+            }
             Instruction::IfRunnerLinkAtLeast { n, then } => {
                 // 9.6.5d: requirements in the INSTRUCTIONS are checked when
                 // the relevant instructions resolve — not at trigger time.
@@ -4395,7 +4811,36 @@ impl Vm {
                 .take(*n as usize)
                 .copied()
                 .collect(),
+            // CR 8.7.4: the cards this ability's search found, still set
+            // aside facedown.
+            TargetSpec::FoundBySearch => {
+                cite!("rule_continue_after_search");
+                self.found_cards()
+            }
         }
+    }
+
+    /// The cards found by the innermost resolving ability's search (4.8.4).
+    fn found_cards(&self) -> Vec<ObjectId> {
+        self.frames
+            .iter()
+            .rev()
+            .find_map(|f| match f {
+                Frame::Ability(af) => Some(af.found_cards.iter().map(|(c, _)| *c).collect()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// Consume the found-card list of the innermost ability frame: the
+    /// instruction referring to them has now acted on them.
+    fn take_found_cards(&mut self) -> Vec<ObjectId> {
+        for f in self.frames.iter_mut().rev() {
+            if let Frame::Ability(af) = f {
+                return af.found_cards.drain(..).map(|(c, _)| c).collect();
+            }
+        }
+        Vec::new()
     }
 
     fn finish_ability_frame(&mut self) {
@@ -4411,6 +4856,16 @@ impl Vm {
         }
         if !af.set_aside_cards.is_empty() {
             self.set_aside_card_cleanup.extend(af.set_aside_cards.iter().copied());
+        }
+        // CR 8.7.4: nothing in §8.7 disposes of a found card the ability
+        // never acted on, and 4.8.4 sets it aside only "while the search
+        // completes" — so it goes back to the zone it was found in.
+        for (card, from) in af.found_cards.iter().copied() {
+            cite!("rule_searched_cards_set_aside");
+            self.move_card(card, from);
+            if let Zone::Deck(side) = from {
+                self.shuffle_deck(side);
+            }
         }
         if !af.instructions.is_empty() {
             let label = self.st.objects.get(&af.source.obj)
@@ -4918,6 +5373,11 @@ impl Vm {
         if cost.trash_self && !self.st.objects[&source].zone.is_installed() {
             return false;
         }
+        // 1.16.1b: a "trash N cards from your grip" component cannot be paid
+        // with fewer than N cards there (the Patchwork branch of 8.7.2b).
+        if (self.st.hand[&side].len() as u32) < cost.trash_from_hand {
+            return false;
+        }
         // CR 1.16.1b: if a static ability or a MANDATORY conditional
         // interrupt would prevent the steps of payment, the cost cannot be
         // paid (Jesminder vs Funhouse's take-a-tag nested cost).
@@ -5047,6 +5507,14 @@ impl Vm {
             trashed.push(source);
             self.changes.record(GameChange::TrashAbilityUsed { source, side });
         }
+        // "Trash N cards from your grip" as a cost (Patchwork class). Which
+        // cards is the payer's choice in the CR; the kernel takes the front
+        // of the hand (documented on `Cost::trash_from_hand`).
+        for _ in 0..cost.trash_from_hand {
+            let Some(&c) = self.st.hand[&side].first() else { break };
+            self.trash_card(c, side);
+            trashed.push(c);
+        }
         // CR 1.16.1a: paying a cost cannot be modified or interrupted — tag
         // and damage components apply directly, with their changes recorded
         // so conditions can meet AFTER payment (1.16.10b).
@@ -5166,6 +5634,12 @@ impl Vm {
         self.st.move_seq += 1;
         let o = self.st.objects.get_mut(&id).unwrap();
         o.zone = to;
+        // CR 4.8: leaving the set-aside zone ends the set-aside state, so a
+        // 9.5.5 hosted card or an 8.7.2 found card becomes visible to every
+        // ability again the moment it is put somewhere else.
+        if to != Zone::SetAside {
+            o.set_aside_for_ability = false;
+        }
         self.changes.record(GameChange::CardMoved { obj: id, from, to });
         if from.is_installed() && !to.is_installed() {
             self.changes.record(GameChange::CardUninstalled { obj: id, was_zone: from });
@@ -5517,6 +5991,16 @@ impl Vm {
                 }
                 // The breach step's Exec already advanced to Checkpoint;
                 // a paid access pushed its structure frame on top.
+            }
+            (DecisionCtx::SearchFind { zone }, DecisionAnswer::Targets(found)) => {
+                // 8.7.2: the player has finished looking. Take what they
+                // found, set it aside facedown, reshuffle if it was a deck
+                // (8.7.3), and only then let resolution resume (8.7.4). The
+                // ability frame is already at its post-instruction
+                // checkpoint, which is where a search-involving condition
+                // becomes pending (8.7.5 / 9.11.4d).
+                cite!("rule_continue_after_search");
+                self.complete_search(zone, &found, side);
             }
             (DecisionCtx::ReplacementOrder, DecisionAnswer::Option(i)) => {
                 // 9.9.11: apply the chosen replacement, then re-evaluate —

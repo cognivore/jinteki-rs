@@ -6,7 +6,7 @@
 //! Every variant resolves to real state mutation — no silent no-ops.
 
 use crate::effects::DamageKind;
-use crate::object::{ObjectId, ServerId, Side};
+use crate::object::{CardType, ObjectId, ServerId, Side, Zone};
 
 /// The ONE selector language for quantity positions (ARCHITECTURE §12
 /// rule 5): a pure data expression evaluated against world state, returning
@@ -281,6 +281,40 @@ pub enum Instruction {
     CorpRearrangesRnd,
     /// "Add a card from Archives to the top of R&D." (Seidr class.)
     MoveToTopOfRnd { card: TargetSpec },
+    /// CR 8.7.1–8.7.3: "Search <zone> for <criteria>." The searching player
+    /// looks at every card in the zone (8.7.1; hidden/secret zones are
+    /// temporarily visible to them alone, 8.7.1a) and may FIND up to `count`
+    /// cards matching the criteria (8.7.2), taking them from the zone and
+    /// setting them aside facedown (4.8.4). A searched DECK is reshuffled
+    /// immediately when the search completes, before any remaining effect of
+    /// this ability resolves (8.7.3); resolution then resumes (8.7.4) with
+    /// the found cards addressable as [`TargetSpec::FoundBySearch`].
+    ///
+    /// The find is NOT a target announcement (2.x `rule_searching_does_not
+    /// _target`), so it is asked at RESOLUTION time, never from the
+    /// announce-targets phase.
+    Search {
+        /// The zone searched (§4). Only decks are shuffled afterwards.
+        zone: Zone,
+        /// CR 8.7.2a: the criteria a found card must match — a conjunction
+        /// of the shared filter vocabulary. Empty = "a card" (no criteria).
+        criteria: Vec<TargetFilter>,
+        /// How many cards may be found — a quantity position (§12 rule 6).
+        count: Quantity,
+        /// CR 8.7.2e: searching a deck for cards with specified criteria may
+        /// fail to find. Where it is false, 8.7.2d forces the player to find
+        /// as many matching cards as the zone holds, up to `count`.
+        may_fail: bool,
+    },
+    /// "Add <cards> to your grip/HQ." (8.2 movement to a hand.) The cards
+    /// position takes the shared [`TargetSpec`], so "the cards found by this
+    /// ability's search" (8.7.4), a fixed card and an announced choice are
+    /// all one instruction.
+    AddCardsToHand { cards: TargetSpec },
+    /// "<side> trashes N random cards from their grip/HQ." (Personality
+    /// Profiles class; the random selection is the mechanism 10.4.2 damage
+    /// uses.) The count is a quantity position (§12 rule 6).
+    TrashRandomFromHand { side: Side, count: Quantity },
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.
@@ -396,11 +430,17 @@ pub enum TargetSpec {
     Choose { count: u32, filter: TargetFilter },
     /// The top N cards of a deck (Breached Dome-style).
     TopOfDeck(Side, u32),
+    /// CR 8.7.4: the cards found by this ability's search, still set aside
+    /// facedown (4.8.4). This is how an install/play/add-to-hand instruction
+    /// refers to them without a per-card hook.
+    FoundBySearch,
 }
 
-/// The shared object-filter language: announce-time target filters, and the
-/// counting filters `Quantity::Count` evaluates (§12 rule 5 — one filter
-/// vocabulary for choosing and for counting).
+/// The shared object-filter language: announce-time target filters, the
+/// counting filters `Quantity::Count` evaluates, and the 8.7.2a criteria of
+/// a search (§12 rule 5 — one filter vocabulary for choosing, counting and
+/// finding). Each variant is one predicate atom; several atoms combine as a
+/// conjunction wherever the CR speaks of "the criteria" in the plural.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetFilter {
     InstalledCorpCard,
@@ -411,6 +451,14 @@ pub enum TargetFilter {
     IceProtectingSourceServer,
     /// Cards in a player's hand (Ashigaru-class counting).
     CardsInHandOf(Side),
+    // ---- card-characteristic atoms (§2), location-agnostic --------------
+    /// CR 2.15: "a program", "an asset", "a piece of ice" — the card's type.
+    CardTypeIs(CardType),
+    /// CR 2.16: "a virus program", "a region" — an effective subtype
+    /// (9.12.1b counting applies through the characteristics pipeline).
+    HasSubtype(&'static str),
+    /// CR 2.3: "…with printed install/rez/play cost N or lower".
+    PrintedCostAtMost(u32),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

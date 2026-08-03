@@ -1911,6 +1911,233 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
 }
 
 // ---------------------------------------------------------------------------
+// §8.7 — searching, finding, shuffling
+// ---------------------------------------------------------------------------
+
+/// A program with the "virus" subtype (Datasucker / Imp shape) — search
+/// criteria fodder for 8.7.2a.
+pub fn virus_program(name: &'static str, cost: u32) -> PrintedCard {
+    let mut c = program_cost(name, cost);
+    c.subtypes = vec!["virus"];
+    c
+}
+
+/// Artist-Colony shape (8.7.2b example 1): "Search your stack for a card and
+/// install it." Written as the 9.11.4d split — the search ends one
+/// instruction, the install is the next — so the found card is addressed by
+/// [`TargetSpec::FoundBySearch`].
+///
+/// SIMPLIFICATION: the printed trigger cost ([click], forfeit an agenda) is
+/// elided to a free cost; forfeiting is not in the kernel vocabulary and the
+/// cost is orthogonal to what 8.7.2b decides.
+pub fn artist_colony_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::Search {
+                zone: Zone::Deck(Side::Runner),
+                // "for a card": no criteria at all — 8.7.2b alone decides.
+                criteria: Vec::new(),
+                count: Quantity::c(1),
+                may_fail: true,
+            },
+            Instruction::InstallCard {
+                card: TargetSpec::FoundBySearch,
+                dest: crate::instr::InstallDest::Rig,
+                and_rez: false,
+                ignore_costs: false,
+                reveal_check: None,
+            },
+        ],
+    )
+    .labeled("artist-colony: search and install")];
+    c
+}
+
+/// Self-modifying-Code shape (8.7.2b example 2): "[trash], 2[c]: Search your
+/// stack for a program and install it. Shuffle your stack." The shuffle is
+/// the search's own (8.7.3), not a separate instruction.
+pub fn smc_like(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 0);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self().plus(&Cost::credits(2)),
+        vec![
+            Instruction::Search {
+                zone: Zone::Deck(Side::Runner),
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
+                count: Quantity::c(1),
+                may_fail: true,
+            },
+            Instruction::InstallCard {
+                card: TargetSpec::FoundBySearch,
+                dest: crate::instr::InstallDest::Rig,
+                and_rez: false,
+                ignore_costs: false,
+                reveal_check: None,
+            },
+        ],
+    )
+    .labeled("smc: search a program and install it")];
+    c
+}
+
+/// Patchwork shape (1.16.6 / 8.7.2b example 2): "You may trash 1 card from
+/// your grip to lower the install cost of a card you are installing by 2."
+///
+/// SIMPLIFICATION: the printed once-per-turn limit is elided; no example
+/// installs twice through it.
+pub fn patchwork_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::InstallDiscount {
+        cost: Cost::trash_from_hand(1),
+        amount: 2,
+    }])
+    .labeled("patchwork: -2 install cost for a grip card")];
+    c
+}
+
+/// Tucana shape (8.7.2b example 3): "Search R&D for a piece of ice, install
+/// and rez it protecting <server>." A card that can be installed but not
+/// rezzed is still a valid find; 8.5.13d then makes the Corp reveal it.
+pub fn tucana_like(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::Search {
+                zone: Zone::Deck(Side::Corp),
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)],
+                count: Quantity::c(1),
+                may_fail: true,
+            },
+            Instruction::InstallCard {
+                card: TargetSpec::FoundBySearch,
+                dest: crate::instr::InstallDest::Protecting(server),
+                and_rez: true,
+                ignore_costs: false,
+                reveal_check: None,
+            },
+        ],
+    )
+    .labeled("tucana: search ice, install and rez")];
+    c
+}
+
+/// Tech-Startup shape (8.7.3 example): "[trash]: Search R&D for an asset and
+/// install it." R&D is reshuffled the moment the search completes, before
+/// the install resolves.
+pub fn tech_startup_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![
+            Instruction::Search {
+                zone: Zone::Deck(Side::Corp),
+                criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Asset)],
+                count: Quantity::c(1),
+                may_fail: true,
+            },
+            Instruction::InstallCard {
+                card: TargetSpec::FoundBySearch,
+                dest: crate::instr::InstallDest::NewRemoteRoot,
+                and_rez: false,
+                ignore_costs: false,
+                reveal_check: None,
+            },
+        ],
+    )
+    .labeled("tech-startup: search an asset and install it")];
+    c
+}
+
+/// Near-Earth-Hub shape (the identity of the 8.7.3 example): "Whenever you
+/// install a card, draw 1 card."
+///
+/// SIMPLIFICATION: the printed "the first time each turn" limit is elided;
+/// the example installs once.
+pub fn near_earth_hub_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::CardInstalledBy(Side::Corp),
+        vec![Instruction::Draw(Side::Corp, 1)],
+        false,
+    )
+    .labeled("neh: draw 1 when you install")];
+    c
+}
+
+/// Djinn shape (9.11.4d example): "Search your stack for a virus program and
+/// add it to your grip. Shuffle your stack." — one printed sentence, split at
+/// the search into two instructions per 9.11.4d.
+///
+/// SIMPLIFICATION: the printed [click] component of the trigger cost is
+/// elided so the ability is offered in paid windows; the cost is orthogonal.
+pub fn djinn_like(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 0);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(1),
+        vec![
+            Instruction::Search {
+                zone: Zone::Deck(Side::Runner),
+                criteria: vec![
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Program),
+                    crate::instr::TargetFilter::HasSubtype("virus"),
+                ],
+                count: Quantity::c(1),
+                may_fail: true,
+            },
+            Instruction::AddCardsToHand { cards: TargetSpec::FoundBySearch },
+        ],
+    )
+    .labeled("djinn: search a virus program")];
+    c
+}
+
+/// Personality-Profiles shape (8.7.5 / 9.11.4d example): an agenda whose
+/// ability reads "Whenever the Runner searches their stack, they trash 1
+/// random card from their grip." The point is WHEN it pends — after the
+/// search completes and the stack is shuffled, before the found card is
+/// acted on.
+pub fn personality_profiles_like(name: &'static str, points: i32) -> PrintedCard {
+    let mut c = vanilla_agenda(name, 3, points);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerSearchesDeck(Side::Runner),
+        vec![Instruction::TrashRandomFromHand {
+            side: Side::Runner,
+            count: Quantity::c(1),
+        }],
+        false,
+    )
+    .labeled("personality-profiles: random grip trash on search")];
+    c
+}
+
+/// Put an identity into a player's play area, faceup and active (1.6.2).
+pub fn install_identity(vm: &mut Vm, card: PrintedCard, side: Side) -> ObjectId {
+    let id = vm.new_object(card, Zone::PlayArea(side));
+    vm.st.active_seq += 1;
+    let seq = vm.st.active_seq;
+    let o = vm.st.objects.get_mut(&id).unwrap();
+    o.faceup = true;
+    o.active_since = seq;
+    id
+}
+
+/// Put a card into a player's score area (4.5) — how the CR's Personality
+/// Profiles example has it on the board.
+pub fn put_in_score_area(vm: &mut Vm, card: PrintedCard, side: Side) -> ObjectId {
+    let id = vm.new_object(card, Zone::ScoreArea(side));
+    vm.st.score_area.get_mut(&side).unwrap().push(id);
+    vm.st.active_seq += 1;
+    let seq = vm.st.active_seq;
+    let o = vm.st.objects.get_mut(&id).unwrap();
+    o.faceup = true;
+    o.active_since = seq;
+    id
+}
+
+// ---------------------------------------------------------------------------
 // Script drivers: RETIRED.
 //
 // The hand-rolled `until_decision` / `drain_to_game_over` / `take_labeled` /

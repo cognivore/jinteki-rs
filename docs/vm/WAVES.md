@@ -6,13 +6,11 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (during W4)
+## Odometers (during W5)
 
-- **DP-7a: 82/243** CR examples as example-named passing tests (33.7%).
-  Frozen through W4 for the plan-driver migration — **UNFROZEN now that
-  FT-0 has landed**. Same tests, better bodies; the next wave resumes the
-  climb to 243/243.
-- **DP-7b: 384/1420** distinct rules cited (27.0%); traceability test fails
+- **DP-7a: 87/243** CR examples as example-named passing tests (35.8%).
+  Unfrozen since FT-0 landed; the climb to 243/243 has resumed.
+- **DP-7b: 400/1420** distinct rules cited (28.2%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -86,7 +84,8 @@ prefer a slightly larger honest primitive and note it here.
 | `1c0099d` | W4c | 16 examples migrated: §6.8 run-ends pair, duration checkpoints, 10.3.6, the whole §1.16 cost cluster | 82 |
 | `b90030c` | W4d | playable slice migrated (phase plans + `forbidding_the_rest`); `Instruction::CreateLingeringEffect { LingeringSpec, WantedDuration }` + the real cards that replace `tk::inject_*` | 82 |
 | `469c09c` | W4e | 14 examples migrated (§9.9 interrupts, traces, psi, subroutine origins, access prohibition); `GrantSubroutinesToSelf` → `GrantSubroutines { to, count, sub, before, duration }` | 82 |
-| _(this)_ | W4f | 22 + 19 examples migrated — the suite is now 100% declarative; every `tk::inject_*` and `grant_external_sub` DELETED, their effects created by real cards; legacy script drivers deleted from testkit; `tests_are_plans_not_loops` enforcement test. **FT-0 exit gate met.** | 82 |
+| `-` | W4f | 22 + 19 examples migrated — the suite is now 100% declarative; every `tk::inject_*` and `grant_external_sub` DELETED, their effects created by real cards; legacy script drivers deleted from testkit; `tests_are_plans_not_loops` enforcement test. **FT-0 exit gate met.** | 82 |
+| _(this)_ | W5a | §8.7 searching/finding/shuffling: `Instruction::Search { zone, criteria, count, may_fail }` as a §9.11 instruction, found cards set aside facedown (4.8.4) and addressed by `TargetSpec::FoundBySearch`, 8.7.3 shuffle-before-anything, 8.7.5/9.11.4d pend timing; the 8.7.2b legality query (`could_install_found_card` / `could_play_found_card`) incl. Patchwork-class cost reduction; `TargetFilter` extended with card-characteristic atoms; 8.5.13d reveal for an unaffordable rez. Deviation (9) retired. | 87 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -124,10 +123,28 @@ prefer a slightly larger honest primitive and note it here.
    implemented (asset/agenda and region conflicts); the optional "may first
    trash any number" needs a Decision no current example demands. Multi-
    install affordability gates on printed cost (no discount anticipation).
-9. **Ob-class search elision** — 8.5.13c's example is tested with a fixed
-   R&D card; §8.7 search/find/shuffle is not yet implemented.
+9. **8.7.2b legality query scope** (W5a, annotated on
+   `Vm::could_install_found_card`) — the query tests exactly the two things
+   the CR names: installable card type (8.5.1/8.5.3) and payability of the
+   install cost (8.5.11) net of cost-reducing abilities. It does NOT
+   re-derive destination legality (8.5.14 invalid destinations, 8.5.2 server
+   limits, 8.5.6c memory-limit trashing); no example turns on those. The
+   play branch (8.7.2b's second sentence) is implemented but untested — no
+   CR example exercises a search followed by a play.
+10. **Patchwork-class cost reduction is applied, not offered** (W5a,
+   annotated on `Vm::install_payment`) — `StaticDecl::InstallDiscount { cost,
+   amount }` reductions are used only when the player could not otherwise
+   pay, largest first, and the choice of using an affordable-anyway
+   reduction is never put to them. This is the 8.7.2b example's own reading
+   ("they *must* use Patchwork"), but a real Patchwork is optional and
+   once-per-turn.
+11. **`Cost::trash_from_hand` picks no cards** (W5a, annotated on the field)
+   — "trash N cards from your grip" as a cost takes the front of the hand
+   instead of asking the payer, because `pay_cost` is synchronous
+   everywhere. A Decision here means suspending cost payment; revisit when
+   an example distinguishes which card is trashed.
 
-10. **Plan-driver approximations** (W4, all annotated in `src/plan.rs`):
+12. **Plan-driver approximations** (W4, all annotated in `src/plan.rs`):
     `Reply::Pass` in a window where 9.2.8e forbids passing discharges the
     mandatory obligation first (that is what "nothing of my own volition"
     means there, and it is what the hand-rolled loops did). `Ordinal` counts
@@ -140,6 +157,9 @@ prefer a slightly larger honest primitive and note it here.
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real
 Runner declaration Decision with 7.4.6a declined-tracking); **W3's
+"Ob-class search elision" (W5a implemented §8.7 as a real instruction —
+searching, finding, setting aside and shuffling are all in the kernel now,
+and 8.5.13c/d reveals ride on it);** **W3's
 `tk::inject_*` state manufacture and `grant_external_sub` (W4f deleted all
 six; their effects are now created by real cards —
 `noble_path_like`, `chum_like`, `breach_replacement_card`,
@@ -177,10 +197,18 @@ orthogonal to every example using it.
 
 ## Next targets — resume the odometer (from W3 close-out, leverage-ordered)
 
-1. **§8.7 search/find/shuffle** — unblocks the search example cluster
-   (8.7.2b Artist Colony/SMC/Tucana, 8.7.3 Tech Startup shuffle-before-use,
-   8.7.5 search-condition pend timing) and retires deviation (9). The
-   InstallCard machinery is ready to consume found cards.
+1. ~~**§8.7 search/find/shuffle**~~ — **DONE (W5a).** All five §8.7/9.11.4d
+   examples land (`example_rule_search_condition_1` does not exist in
+   `examples.json` — 8.7.5 has no worked example of its own; it is asserted
+   through `example_rule_search_instruction_1`). The vocabulary is
+   `Instruction::Search`, `TargetSpec::FoundBySearch`,
+   `Instruction::AddCardsToHand`, `Instruction::TrashRandomFromHand`,
+   `StaticDecl::InstallDiscount`, `Cost::trash_from_hand`,
+   `TriggerCond::{PlayerSearchesDeck, CardInstalledBy}`, and the
+   card-characteristic `TargetFilter` atoms
+   (`CardTypeIs`/`HasSubtype`/`PrintedCostAtMost`). Searching a hand or a
+   discard pile is expressible (the `zone` position is a `Zone`) but only
+   deck searches are exercised.
 2. **9.12.2b calculated_quantity_3** — realloc()/NASX: a "for each" whose
    effects are NOT all aggregated classes resolves as separate instances
    (needs a derez primitive + per-occurrence change groups; NASX-class

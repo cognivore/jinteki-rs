@@ -166,6 +166,11 @@ pub struct AbilityFrame {
     pub set_aside_counters: Vec<(crate::object::CounterKind, u32)>,
     /// CR 9.5.5: cards set aside the same way.
     pub set_aside_cards: Vec<crate::object::ObjectId>,
+    /// CR 4.8.4 / 8.7.2: cards FOUND by this ability's search, set aside
+    /// facedown with the zone they were taken from. `TargetSpec::FoundBySearch`
+    /// resolves to these; anything still here when the ability finishes goes
+    /// back where it came from (nothing in the CR trashes an unused find).
+    pub found_cards: Vec<(crate::object::ObjectId, crate::object::Zone)>,
 }
 
 /// A frame on the control stack.

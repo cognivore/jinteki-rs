@@ -100,6 +100,15 @@ pub enum TriggerCond {
     /// "Whenever the Runner avoids receiving a tag…" (Thunder Art Gallery
     /// class — the 9.9.4c/d chain-reaction examples).
     RunnerAvoidsTag,
+    /// "Whenever <side> searches their deck…" (Personality Profiles class).
+    /// CR 8.7.5: a condition involving a search becomes met only after the
+    /// search is complete and any shuffling has been performed — which is
+    /// why the search records its change AFTER shuffling and the checkpoint
+    /// that pends this ability is the one ending the search instruction
+    /// (9.11.4d).
+    PlayerSearchesDeck(Side),
+    /// "Whenever you install a card…" (Near-Earth Hub class).
+    CardInstalledBy(Side),
 }
 
 /// Static conditions (9.6.7) for repeat-while-true conditionals.
@@ -128,6 +137,10 @@ pub struct Cost {
     pub tags: u32,
     /// "suffer N net damage" as a cost (Obokata class).
     pub net_damage: u32,
+    /// "trash N cards from your grip/HQ" as a cost (Patchwork class).
+    /// KERNEL APPROXIMATION: which cards are trashed is not put to the payer
+    /// (the front of the hand is taken); no example distinguishes them.
+    pub trash_from_hand: u32,
 }
 
 impl Cost {
@@ -143,6 +156,9 @@ impl Cost {
     pub fn net_damage(n: u32) -> Self {
         Cost { net_damage: n, ..Default::default() }
     }
+    pub fn trash_from_hand(n: u32) -> Self {
+        Cost { trash_from_hand: n, ..Default::default() }
+    }
     pub fn free() -> Self {
         Cost::default()
     }
@@ -157,6 +173,7 @@ impl Cost {
             trash_self: self.trash_self || other.trash_self,
             tags: self.tags + other.tags,
             net_damage: self.net_damage + other.net_damage,
+            trash_from_hand: self.trash_from_hand + other.trash_from_hand,
         }
     }
 }
@@ -219,6 +236,11 @@ pub enum StaticDecl {
     /// "As an additional cost to access a card in the root of a remote
     /// server, pay N." (Gagarin class — 7.4.3 example 2.)
     AdditionalAccessCost(Cost),
+    /// "You may pay <cost> to lower the install cost of a card you are
+    /// installing by N." (Patchwork class; 1.16.6 install costs.) The
+    /// reduction is only available while its own cost is payable, which is
+    /// exactly what makes it part of 8.7.2b's affordability query.
+    InstallDiscount { cost: Cost, amount: u32 },
     /// "This ice's strength is X" where X is a quantity selector (Surveyor
     /// class: X = 2 × ice protecting this server). Evaluated through the
     /// characteristics pipeline; while the defining ability is lost (Hush)
@@ -514,6 +536,13 @@ pub fn trigger_matches(
         }
         (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
         (TriggerCond::RunnerAvoidsTag, GameChange::TagsAvoided { .. }) => true,
+        (TriggerCond::PlayerSearchesDeck(side), GameChange::ZoneSearched { by, zone }) => {
+            cite!("rule_search_condition");
+            by == side && *zone == Zone::Deck(*side)
+        }
+        (TriggerCond::CardInstalledBy(side), GameChange::CardInstalled { side: s, .. }) => {
+            side == s
+        }
         _ => false,
     }
 }

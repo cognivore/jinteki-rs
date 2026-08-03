@@ -72,6 +72,14 @@ pub enum GameChange {
     /// encounter — including vacuously, for ice with zero subroutines, as
     /// soon as step 6.9.3b begins.
     AllSubsBroken { ice: ObjectId },
+    /// CR 8.7.3: a deck was shuffled. Recorded when the shuffle happens, so
+    /// the log order witnesses "immediately, before continuing to resolve
+    /// any remaining effects".
+    DeckShuffled { side: Side },
+    /// CR 8.7.5: a search of `zone` by `by` is COMPLETE and any necessary
+    /// shuffling has been performed — recorded after the shuffle so a
+    /// condition involving a search cannot become met before it.
+    ZoneSearched { by: Side, zone: Zone },
     /// 10.8.6a: a trace initiated.
     TraceInitiated { base: i64 },
     /// 10.8.6e: the trace was determined.

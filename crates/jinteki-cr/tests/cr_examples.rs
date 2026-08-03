@@ -113,6 +113,12 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_trigger_paid_ability_interrupt_1",
     "example_rule_values_defined_by_x_1",
     "example_rule_values_defined_by_x_2",
+    // Wave 5a: searching, finding and shuffling (§8.7), 9.11.4d.
+    "example_rule_valid_search_target_install_play_1",
+    "example_rule_valid_search_target_install_play_2",
+    "example_rule_valid_search_target_install_play_3",
+    "example_rule_shuffle_deck_after_search_1",
+    "example_rule_search_instruction_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -3673,6 +3679,327 @@ fn example_rule_values_defined_by_x_2() {
         Some(0),
         "9.12.2e: the ability defining X is lost, so X = 0"
     );
+}
+
+// ===========================================================================
+// §8.7 — searching, finding and shuffling
+// ===========================================================================
+
+/// Index of the first change matching a predicate, for the ordering claims
+/// §8.7.3 makes ("the shuffle takes precedence over…").
+fn change_at(vm: &Vm, pred: impl Fn(&GameChange) -> bool) -> usize {
+    vm.changes
+        .log
+        .iter()
+        .position(pred)
+        .unwrap_or_else(|| panic!("expected change not in the log:\n{:?}", vm.changes.log))
+}
+
+/// example_rule_valid_search_target_install_play_1 (8.7.2b): the Runner uses
+/// an Artist-Colony-class ability to search their stack for a card and
+/// install it. They cannot find an event — events are never installed — nor a
+/// program/hardware/resource whose install cost they cannot afford.
+#[test]
+fn example_rule_valid_search_target_install_play_1() {
+    let mut vm = Vm::empty(381);
+    // The stack: one event, one program they can afford, one they cannot.
+    let event = vm.new_object(tk::runner_filler("Stack-Event"), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(event);
+    let cheap = vm.new_object(tk::program_cost("Cheap-Program", 1), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(cheap);
+    let dear = vm.new_object(tk::program_cost("Dear-Program", 9), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(dear);
+    let resource = vm.new_object(
+        tk::vanilla_runner_card("Dear-Resource", jinteki_cr::object::CardType::Resource),
+        Zone::Deck(Side::Runner),
+    );
+    vm.st.objects.get_mut(&resource).unwrap().printed.cost = Some(7);
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(resource);
+    tk::install_rig(&mut vm, tk::artist_colony_like("ArtistColony-like"));
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    // The plan: fire the Artist-Colony-class ability and find the affordable
+    // program at the one find choice it produces.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("artist-colony"))
+            .when(Match::targets().once(), Reply::target(cheap))
+            .stop_at_action(),
+    );
+    assert!(t.took("artist-colony"), "the search ability was offered and used");
+    let find = t.first_window(Kind::Targets, Side::Runner);
+    assert!(
+        !find.candidates().contains(&event),
+        "8.7.2b: an event can never be found by a search followed by an install"
+    );
+    assert!(
+        !find.candidates().contains(&dear),
+        "8.7.2b: a program the Runner cannot afford to install cannot be found"
+    );
+    assert!(
+        !find.candidates().contains(&resource),
+        "8.7.2b: nor a resource they cannot afford to install"
+    );
+    assert_eq!(
+        find.candidates(),
+        &[cheap],
+        "only the affordable installable card is a valid find"
+    );
+    assert_eq!(vm.st.objects[&cheap].zone, Zone::Rig, "the found card was installed");
+    assert_eq!(vm.st.runner.credits, 2, "its install cost was paid");
+    assert_eq!(vm.st.objects[&event].zone, Zone::Deck(Side::Runner));
+}
+
+/// example_rule_valid_search_target_install_play_2 (8.7.2b): the Runner uses
+/// Self-modifying Code with no credits left but an installed Patchwork. Imp
+/// can be found and installed — they must use Patchwork, trashing a card from
+/// their grip. With an empty grip Patchwork is unusable, so Imp cannot be
+/// found at all.
+#[test]
+fn example_rule_valid_search_target_install_play_2() {
+    // One scenario builder, run twice: with a card in the grip and without.
+    // (Two machines, no driver loop — the plan answers each in one fold.)
+    fn scenario(grip: usize) -> (Vm, plan::Transcript, jinteki_cr::ObjectId) {
+        let mut vm = Vm::empty(382);
+        let imp = vm.new_object(tk::virus_program("Imp-like", 2), Zone::Deck(Side::Runner));
+        vm.st.deck.get_mut(&Side::Runner).unwrap().push(imp);
+        tk::fill_deck(&mut vm, Side::Runner, 3);
+        tk::install_rig(&mut vm, tk::patchwork_like("Patchwork-like"));
+        tk::install_rig(&mut vm, tk::smc_like("SMC-like"));
+        tk::fill_hand(&mut vm, Side::Runner, grip);
+        // 2 credits: exactly Self-modifying Code's trigger cost, so the
+        // Runner has none left when the search resolves.
+        vm.st.runner.credits = 2;
+        vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("smc"))
+                .when(Match::targets().once(), Reply::target(imp))
+                .stop_at_action(),
+        );
+        (vm, t, imp)
+    }
+
+    // With a card in the grip: Imp is a valid find, and installing it uses
+    // Patchwork — the grip card is trashed and Imp costs nothing.
+    let (vm, t, imp) = scenario(1);
+    assert!(t.took("smc"), "the search ability was offered and used");
+    assert_eq!(vm.st.runner.credits, 0, "no credits left after SMC's trigger cost");
+    let find = t.first_window(Kind::Targets, Side::Runner);
+    assert!(
+        find.candidates().contains(&imp),
+        "8.7.2b: affordability counts the cost-reducing ability the Runner would have to use"
+    );
+    assert_eq!(vm.st.objects[&imp].zone, Zone::Rig, "Imp was installed");
+    assert!(
+        vm.st.hand[&Side::Runner].is_empty(),
+        "Patchwork's own cost — 1 card from the grip — was paid"
+    );
+    assert_eq!(vm.st.discard[&Side::Runner].len(), 2, "the grip card and SMC itself");
+
+    // With an empty grip Patchwork cannot be used, so the 2-credit install is
+    // unaffordable and Imp is not a valid find at all.
+    let (vm2, t2, imp2) = scenario(0);
+    assert!(t2.took("smc"));
+    assert!(
+        t2.windows(Kind::Targets, Side::Runner).is_empty(),
+        "8.7.2b: with nothing to trash for Patchwork, Imp is not a valid find — \
+         the Runner looks through the stack and is offered nothing to find"
+    );
+    assert_eq!(
+        vm2.st.objects[&imp2].zone,
+        Zone::Deck(Side::Runner),
+        "Imp stayed in the stack"
+    );
+    assert!(
+        vm2.changes.log.iter().any(|c| matches!(c, GameChange::DeckShuffled { side } if *side == Side::Runner)),
+        "8.7.3: the stack is reshuffled whether or not anything was found"
+    );
+}
+
+/// example_rule_valid_search_target_install_play_3 (8.7.2b): the Corp uses a
+/// Tucana-class ability to search R&D for a piece of ice while holding 0
+/// credits. Pharos is a valid find — installability is what 8.7.2b tests —
+/// and although it cannot be rezzed, 8.5.13d makes the Corp reveal it.
+#[test]
+fn example_rule_valid_search_target_install_play_3() {
+    let mut vm = Vm::empty(383);
+    let pharos = vm.new_object(tk::vanilla_ice("Pharos-like", 5, 5), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(pharos);
+    tk::fill_deck(&mut vm, Side::Corp, 4);
+    tk::install_root(
+        &mut vm,
+        tk::tucana_like("Tucana-like", ServerId::Remote(1)),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    // The plan: fire the Tucana-class ability and find Pharos.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("tucana"))
+            .when(Match::targets().once(), Reply::target(pharos))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("tucana"), "the search ability was offered and used");
+    let find = t.first_window(Kind::Targets, Side::Corp);
+    assert!(
+        find.candidates().contains(&pharos),
+        "8.7.2b: a card that can be installed but not rezzed is still a valid find"
+    );
+    assert_eq!(
+        vm.st.objects[&pharos].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "Pharos was installed"
+    );
+    assert!(!vm.st.objects[&pharos].faceup, "0 credits: it could not be rezzed");
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == pharos))
+            .count(),
+        1,
+        "8.5.13d: the Corp must reveal the card it is unable to rez"
+    );
+}
+
+/// example_rule_shuffle_deck_after_search_1 (8.7.3): the Corp, playing a
+/// Near-Earth-Hub-class identity, uses a Tech-Startup-class ability to search
+/// R&D for an asset and install it. R&D is reshuffled the instant the search
+/// completes — before the install resolves and before the identity's
+/// conditional ability triggers.
+#[test]
+fn example_rule_shuffle_deck_after_search_1() {
+    let mut vm = Vm::empty(384);
+    tk::install_identity(&mut vm, tk::near_earth_hub_like("NEH-like"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("Deck-Asset", 0, 3), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(asset);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::install_root(
+        &mut vm,
+        tk::tech_startup_like("TechStartup-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    // The plan: fire the Tech-Startup-class ability, find the asset, and let
+    // the identity's conditional resolve wherever it is offered.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("tech-startup"))
+            .when(Match::targets().once(), Reply::target(asset))
+            .when(Match::reaction(), Reply::take("neh"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("tech-startup"), "the search ability was offered and used");
+    assert!(t.took("neh"), "the identity's conditional ability resolved");
+    let shuffled = change_at(&vm, |c| {
+        matches!(c, GameChange::DeckShuffled { side } if *side == Side::Corp)
+    });
+    let installed = change_at(&vm, |c| {
+        matches!(c, GameChange::CardInstalled { obj, .. } if *obj == asset)
+    });
+    let drew = change_at(&vm, |c| matches!(c, GameChange::CardDrawn { side, .. } if *side == Side::Corp));
+    assert!(
+        shuffled < installed,
+        "8.7.3: R&D is shuffled before the found asset is installed"
+    );
+    assert!(
+        installed < drew,
+        "the identity's draw is the chain reaction the install set off"
+    );
+    assert!(
+        shuffled < drew,
+        "8.7.3: the shuffle takes precedence over the chain reaction the search's \
+         install sets off — Near-Earth Hub's draw comes after it"
+    );
+    assert!(
+        matches!(vm.st.objects[&asset].zone, Zone::Root(ServerId::Remote(_))),
+        "the asset was installed after the shuffle"
+    );
+}
+
+/// example_rule_search_instruction_1 (9.11.4d): the Runner uses a Djinn-class
+/// ability — one printed sentence that searches and then acts on the found
+/// card — while the Corp has Personality Profiles in their score area. The
+/// search ENDS an instruction: the found Datasucker is set aside, the stack is
+/// shuffled, and the Corp's "whenever the Runner searches" ability resolves in
+/// a reaction window BEFORE the next instruction adds Datasucker to the grip.
+#[test]
+fn example_rule_search_instruction_1() {
+    let mut vm = Vm::empty(385);
+    tk::put_in_score_area(
+        &mut vm,
+        tk::personality_profiles_like("PersonalityProfiles-like", 1),
+        Side::Corp,
+    );
+    let datasucker = vm.new_object(tk::virus_program("Datasucker-like", 1), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(datasucker);
+    tk::fill_deck(&mut vm, Side::Runner, 4);
+    tk::install_rig(&mut vm, tk::djinn_like("Djinn-like"));
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 1);
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    // The plan: the Runner fires Djinn and finds Datasucker; the Corp resolves
+    // its mandatory ability wherever it is offered.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::reaction(), Reply::take("personality-profiles")),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("djinn"))
+            .when(Match::targets().once(), Reply::target(datasucker))
+            .stop_at_action(),
+    );
+    assert!(t.took("djinn"), "the search ability was offered and used");
+    let reaction = t
+        .windows(Kind::Reaction, Side::Corp)
+        .into_iter()
+        .find(|e| e.offered("personality-profiles"))
+        .expect("8.7.5: the search-condition ability pends in a reaction window");
+    assert!(
+        reaction.took("personality-profiles"),
+        "the Corp resolved it from that window"
+    );
+    let shuffled = change_at(&vm, |c| {
+        matches!(c, GameChange::DeckShuffled { side } if *side == Side::Runner)
+    });
+    let trashed = change_at(&vm, |c| {
+        matches!(c, GameChange::CardTrashed { obj, .. } if *obj == grip[0])
+    });
+    let added = change_at(&vm, |c| {
+        matches!(c, GameChange::CardMoved { obj, to: Zone::Hand(Side::Runner), .. }
+            if *obj == datasucker)
+    });
+    assert!(
+        shuffled < trashed,
+        "8.7.5: the ability pends only after the search completes and the stack is shuffled"
+    );
+    assert!(
+        trashed < added,
+        "9.11.4d: the reaction window resolves before the NEXT instruction — the \
+         grip card is trashed before Datasucker is added to the grip"
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner],
+        vec![datasucker],
+        "the second instruction added the set-aside card to the grip"
+    );
+    assert_eq!(vm.st.objects[&grip[0]].zone, Zone::Discard(Side::Runner));
 }
 
 // ===========================================================================
