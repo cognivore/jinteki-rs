@@ -255,6 +255,13 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_look_reveal_instruction_1",
     "example_rule_play_ability_1",
     "example_rule_reveal_from_hidden_1",
+    // Wave 12a: §7.3 breaching (7.3.6 counting accesses, 7.3.8 consecutive
+    // breaches) and §7.4 candidates (7.4.2a/b prohibitions).
+    "example_rule_number_of_accesses_1",
+    "example_rule_number_of_accesses_2",
+    "example_rule_prohibiting_access_to_1_1",
+    "example_rule_prohibition_removed_1",
+    "example_rule_consecutive_breaches_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -3613,7 +3620,7 @@ fn example_rule_rnd_topmost_eligibile_candidate_2() {
     vm.st.deck.get_mut(&Side::Corp).unwrap().push(c4);
     let arc = vm.new_object(tk::corp_filler("Archives-Card"), Zone::Discard(Side::Corp));
     vm.st.discard.get_mut(&Side::Corp).unwrap().push(arc);
-    tk::install_root(&mut vm, tk::strongbox_like("Strongbox-like"), ServerId::Rnd, true);
+    let sb = tk::install_root(&mut vm, tk::strongbox_like("Strongbox-like"), ServerId::Rnd, true);
     tk::install_root(&mut vm, tk::seidr_like("Seidr-like", arc), ServerId::Remote(1), true);
     tk::install_rig(&mut vm, tk::additional_access_card("MakersEye-like", ServerId::Rnd, 3));
     vm.start_turn(Side::Runner);
@@ -3651,10 +3658,18 @@ fn example_rule_rnd_topmost_eligibile_candidate_2() {
             _ => None,
         })
         .collect();
+    // 7.4.1a: Strongbox sits in the ROOT of R&D, so it is a candidate too —
+    // one the random access limit never counts (7.3.5). The example narrates
+    // only the four deck-sourced accesses; those are what 7.4.7a is about.
+    let from_zone: Vec<_> = accessed.iter().copied().filter(|o| *o != sb).collect();
     assert_eq!(
-        accessed,
+        from_zone,
         vec![c1, agenda2, arc, c3],
         "7.4.7a: candidates descend past already-chosen objects; new top cards slot in"
+    );
+    assert!(
+        accessed.contains(&sb),
+        "7.4.1a: the card in the root of R&D is a candidate for the breach as well"
     );
     let _ = c4;
 }
@@ -9301,4 +9316,336 @@ fn example_rule_reveal_from_hidden_1() {
     );
     assert_eq!(vm.st.objects[&op].zone, Zone::Hand(Side::Corp));
     assert_eq!(vm.st.objects[&asset].zone, Zone::Discard(Side::Corp));
+}
+
+// ===========================================================================
+// Wave 12a — §7.3 breaching, §7.4 candidates
+// ===========================================================================
+
+/// example_rule_number_of_accesses_1 (7.3.6): the Runner breaches Archives
+/// with a Hades-Shard-class ability during a run on HQ. For one of the
+/// accesses, an Archives-Interface-class replacement removes the chosen
+/// candidate from the game INSTEAD of accessing it. When the run ends, a
+/// Zahya-class ability gains 1[credit] for each time the Runner accessed a
+/// card during the run — and the replaced access contributes nothing, because
+/// it never happened.
+#[test]
+fn example_rule_number_of_accesses_1() {
+    let mut vm = Vm::empty(1201);
+    let a = vm.new_object(tk::corp_filler("Archives-A"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(a);
+    let b = vm.new_object(tk::corp_filler("Archives-B"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(b);
+    let c = vm.new_object(tk::corp_filler("Archives-C"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(c);
+    tk::install_rig(&mut vm, tk::breach_button("HadesShard-like", ServerId::Archives));
+    tk::install_rig(&mut vm, tk::archives_interface_like("ArchivesInterface-like"));
+    let zahya = vm.new_object(tk::zahya_counts_accesses("Zahya-like"), Zone::PlayArea(Side::Runner));
+    vm.st.objects.get_mut(&zahya).unwrap().faceup = true;
+    tk::fill_hand(&mut vm, Side::Corp, 1);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run HQ; inside the run, arm the Archives-Interface-class
+    // replacement and breach Archives with the Hades-Shard-class ability.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("archives-interface"),
+            )
+            .when(
+                Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+                Reply::take("breach"),
+            )
+            .stop_at_action(),
+    );
+    assert!(t.took("archives-interface") && t.took("breach"));
+    let removed: Vec<_> = [a, b, c]
+        .into_iter()
+        .filter(|o| vm.st.objects[o].zone == Zone::RemovedFromGame)
+        .collect();
+    assert_eq!(
+        removed.len(),
+        1,
+        "the replacement removed the chosen candidate instead of accessing it"
+    );
+    let accessed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|ch| match ch {
+            GameChange::CardAccessed { obj } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert!(!accessed.contains(&removed[0]), "the replaced access never happened");
+    assert_eq!(accessed.len(), 3, "one HQ card plus the two Archives cards actually accessed");
+    assert_eq!(
+        vm.st.runner.credits, 3,
+        "7.3.6: 1[credit] per access ACTUALLY PERFORMED — the replaced access counts for nothing"
+    );
+}
+
+/// example_rule_number_of_accesses_2 (7.3.6 / 7.4.2b): a Hudson-class
+/// subroutine forbids the Runner more than 1 access this run. Breaching
+/// Archives, they choose an ice as the first candidate and apply an
+/// Immolation-Script-class replacement — no card is actually accessed, so the
+/// limit is not reached and they can choose another candidate. Having then
+/// accessed one for real, the prohibition applies and the breach ends with
+/// candidates still in Archives.
+#[test]
+fn example_rule_number_of_accesses_2() {
+    let mut vm = Vm::empty(1202);
+    let dead_ice = vm.new_object(tk::vanilla_ice("Dead-Ice", 0, 1), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(dead_ice);
+    let spare = vm.new_object(tk::corp_filler("Archives-Spare"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(spare);
+    let victim =
+        tk::install_root(&mut vm, tk::vanilla_asset("Victim", 0, 0), ServerId::Remote(1), true);
+    tk::install_ice(&mut vm, tk::hudson_like("Hudson-like"), ServerId::Archives, true);
+    tk::install_rig(&mut vm, tk::access_replacement_card("ImmolationScript-like", victim));
+    vm.start_turn(Side::Runner);
+
+    // The plan: arm the replacement before the run (it is turn-bound), run
+    // Archives, and let Hudson's subroutine resolve on the way in.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("immolation"))
+            .when(Match::action().first(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert!(t.took("immolation"));
+    let accessed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|ch| match ch {
+            GameChange::CardAccessed { obj } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        accessed.len(),
+        1,
+        "7.4.2b: the replaced choice performed no access, so the Runner could choose again; \
+         the access that DID happen then prohibited every other one"
+    );
+    assert!(
+        !accessed.contains(&dead_ice),
+        "7.4.3: the ice was chosen but never accessed"
+    );
+    assert_eq!(vm.st.objects[&victim].zone, Zone::Discard(Side::Corp), "trashed instead");
+    assert!(
+        vm.changes.log.iter().any(|ch| matches!(ch, GameChange::BreachEnded { .. })),
+        "the breach ended for want of candidates, not for want of cards in Archives"
+    );
+    let left: Vec<_> = vm.st.discard[&Side::Corp]
+        .iter()
+        .copied()
+        .filter(|o| !accessed.contains(o))
+        .collect();
+    assert!(
+        left.len() >= 2,
+        "cards still in Archives were left unaccessed because accessing them was prohibited: \
+         {left:?} / accessed {accessed:?}"
+    );
+    let _ = spare;
+}
+
+/// example_rule_prohibiting_access_to_1_1 (7.4.2b): the Runner has already
+/// accessed a card during the run because of an Otoroshi-class ability, so
+/// Flagship's prohibition is in force when they breach HQ. The random access
+/// limit is still 2 — the prohibition never touches it — but no card in the
+/// Corp's hand is a candidate. Once Flagship's ability becomes inactive (the
+/// Runner trashes it on access), the cards in HQ become candidates and the
+/// Runner accesses 2 of them.
+#[test]
+fn example_rule_prohibiting_access_to_1_1() {
+    let mut vm = Vm::empty(1203);
+    let flagship = tk::install_root(&mut vm, tk::flagship_like("Flagship-like"), ServerId::Hq, true);
+    // The card the Otoroshi-class ability makes the Runner access is a piece
+    // of ice, which has no trash cost — so its access offers the Runner
+    // nothing and the plan's "trash what you access" rule is spent on
+    // Flagship, which is the access the example turns on.
+    let bait = tk::install_ice(&mut vm, tk::vanilla_ice("Bait", 0, 1), ServerId::Remote(1), false);
+    tk::install_root(&mut vm, tk::otoroshi_like("Otoroshi-like", bait), ServerId::Remote(1), true);
+    tk::install_rig(&mut vm, tk::docklands_pass_like("DocklandsPass-like"));
+    let hand = tk::fill_hand(&mut vm, Side::Corp, 3);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: run HQ; inside the run, arm the Docklands-Pass-class extra
+    // access and let the Corp's Otoroshi-class ability make the Runner access
+    // a card before the breach. The Runner trashes what it accesses in the
+    // root of HQ, which is how Flagship's ability becomes inactive.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(
+            Match::paid().during(jinteki_cr::timing::StructKind::Run).once(),
+            Reply::take("otoroshi"),
+        ),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().once(), Reply::take("makers-eye"))
+            .trashes_on_access()
+            .stop_at_action(),
+    );
+    assert!(t.took("otoroshi"), "the Runner accessed a card before the breach began");
+    let accessed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|ch| match ch {
+            GameChange::CardAccessed { obj } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(accessed[0], bait, "the Otoroshi-class access came first");
+    assert_eq!(
+        accessed[1], flagship,
+        "7.4.2b: while the prohibition applied, only Flagship was a candidate"
+    );
+    let from_hand: Vec<_> = accessed.iter().copied().filter(|o| hand.contains(o)).collect();
+    assert_eq!(
+        from_hand.len(),
+        2,
+        "the random access limit was never affected by the prohibition, so once the \
+         prohibition lifted the Runner accessed 2 cards from HQ: {accessed:?}\n{}",
+        t.tail(30)
+    );
+    // The load-bearing ordering claim: nothing from HQ was accessible until
+    // Flagship left the root of HQ.
+    let trashed = change_at(&vm, |ch| {
+        matches!(ch, GameChange::CardTrashed { obj, .. } if *obj == flagship)
+    });
+    let first_hand = change_at(&vm, |ch| {
+        matches!(ch, GameChange::CardAccessed { obj } if from_hand.contains(obj))
+    });
+    assert!(
+        trashed < first_hand,
+        "7.4.2a: the cards in HQ became candidates only once the prohibiting ability \
+         was no longer active"
+    );
+}
+
+/// example_rule_prohibition_removed_1 (7.4.2a): with a random access limit of
+/// 2, the Runner accesses a card in HQ; Flagship's restriction then applies
+/// and the rest of the Corp's hand ceases to be candidates. The Runner
+/// accesses Flagship and hosts it on a Cupellation-class program, uninstalling
+/// it — so the restriction no longer applies, and the cards in HQ become
+/// candidates again, except the one already accessed.
+#[test]
+fn example_rule_prohibition_removed_1() {
+    let mut vm = Vm::empty(1204);
+    let flagship = tk::install_root(&mut vm, tk::flagship_like("Flagship-like"), ServerId::Hq, true);
+    let cup = tk::install_rig(&mut vm, tk::cupellation_like("Cupellation-like"));
+    tk::install_rig(&mut vm, tk::docklands_pass_like("DocklandsPass-like"));
+    let hand = tk::fill_hand(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Runner);
+
+    // The plan: arm the extra access before the run (turn-bound), run HQ, and
+    // use the Cupellation-class ability at the SECOND mid-access window —
+    // the first access is the card from the Corp's hand, the second is
+    // Flagship, which is the one the example hosts.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("makers-eye"))
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::mid_access().nth(2), Reply::take("cupellation: host"))
+            .stop_at_action(),
+    );
+    assert!(t.took("cupellation: host"), "Flagship was hosted on Cupellation: {}", t.tail(40));
+    assert_eq!(vm.st.objects[&flagship].host, Some(cup));
+    assert_eq!(vm.st.objects[&flagship].zone, Zone::Rig, "1.13.12: hosted cards follow their host");
+    let accessed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|ch| match ch {
+            GameChange::CardAccessed { obj } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    let from_hand: Vec<_> = accessed.iter().copied().filter(|o| hand.contains(o)).collect();
+    assert_eq!(
+        accessed.iter().position(|o| *o == flagship),
+        Some(1),
+        "the first access was from HQ, then only Flagship remained a candidate: {accessed:?}"
+    );
+    assert_eq!(
+        from_hand.len(),
+        2,
+        "7.4.2a: with the prohibition gone the Corp's hand supplied a candidate again, \
+         and the random access limit still had one choice left (Flagship, in the root, \
+         never counted against it): {accessed:?}"
+    );
+    assert_ne!(from_hand[0], from_hand[1], "7.4.3: not the card already accessed");
+}
+
+/// example_rule_consecutive_breaches_1 (7.3.8): the Runner steals a
+/// Clone-Retirement-class agenda during a breach of HQ, the Corp takes bad
+/// publicity, and a Raymond-Flint-class ability grants a breach of HQ. That
+/// breach cannot begin while one is in progress: it is treated as a
+/// conditional ability controlled by the Runner and takes place when the
+/// current breach ends.
+#[test]
+fn example_rule_consecutive_breaches_1() {
+    let mut vm = Vm::empty(1205);
+    let agenda = vm.new_object(tk::clone_retirement_like("CloneRetirement-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    let filler = tk::fill_hand(&mut vm, Side::Corp, 1);
+    tk::install_rig(&mut vm, tk::docklands_pass_like("DocklandsPass-like"));
+    tk::install_rig(&mut vm, tk::raymond_flint_like("RaymondFlint-like", ServerId::Hq));
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("makers-eye"))
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::reaction().offering("raymond"), Reply::take("raymond"))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert!(t.took("raymond"), "the bad publicity met the ability's condition");
+    assert!(vm.st.score_area[&Side::Runner].contains(&agenda));
+    assert_eq!(vm.st.corp.bad_publicity, 1, "10.6.1: the Corp took bad publicity");
+    let breaches: Vec<usize> = vm
+        .changes
+        .log
+        .iter()
+        .enumerate()
+        .filter_map(|(i, ch)| match ch {
+            GameChange::BreachBegan { .. } => Some(i),
+            _ => None,
+        })
+        .collect();
+    let ends: Vec<usize> = vm
+        .changes
+        .log
+        .iter()
+        .enumerate()
+        .filter_map(|(i, ch)| match ch {
+            GameChange::BreachEnded { .. } => Some(i),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(breaches.len(), 2, "the granted breach happened: {}", t.tail(12));
+    assert_eq!(ends.len(), 2);
+    assert!(
+        ends[0] < breaches[1],
+        "7.3.8: the current breach was completed BEFORE the granted one began"
+    );
+    // Both cards in HQ were accessed in the first breach (limit 2), so the
+    // second breach found the hand empty of candidates and ended at once.
+    let _ = filler;
 }

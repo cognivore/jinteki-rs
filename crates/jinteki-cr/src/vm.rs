@@ -114,6 +114,13 @@ pub struct CoreState {
     pub encounter: Option<EncounterState>,
     /// The card currently being accessed, if any (7.1).
     pub accessed: Option<ObjectId>,
+    /// CR 7.3.6: the run instance and the number of accesses ACTUALLY
+    /// PERFORMED during it. Set when a run begins and kept after it ends, so
+    /// a "when this run ends" ability — which resolves after the run frame
+    /// has popped (6.9.6d / 10.3.6) — can still count them. An access
+    /// replaced by another effect never reaches `CardBecomesAccessed` and so
+    /// never counts, which is the whole of the rule.
+    pub run_accesses: Option<(u64, u32)>,
     /// Move stamps: bumped on every zone change (9.1.4 stranding checks).
     pub move_seq: u64,
     /// Active-since stamps (10.3.1d).
@@ -422,6 +429,7 @@ impl Vm {
                 bp_fund: 0,
                 encounter: None,
                 accessed: None,
+                run_accesses: None,
                 move_seq: 0,
                 active_seq: 0,
             },
@@ -1450,9 +1458,6 @@ impl Vm {
                     cite!("rule_candidates_already_accessed");
                     if let Some(b) = self.breach_ctx_mut() {
                         b.chosen = None;
-                        if b.remaining_from_zone > 0 {
-                            b.remaining_from_zone -= 1;
-                        }
                     }
                     self.refresh_candidates_after_access();
                     return;
@@ -1477,6 +1482,15 @@ impl Vm {
                 let card = self.access_card().unwrap();
                 self.st.accessed = Some(card);
                 self.changes.record(GameChange::CardAccessed { obj: card });
+                // 7.3.6: an ability counting accesses "only includes accesses
+                // that are actually performed" — this is the only place one
+                // is, so it is the only place the count moves.
+                cite!("rule_number_of_accesses");
+                if let (Some(run), Some((r, n))) = (self.current_run, self.st.run_accesses) {
+                    if run.0 == r {
+                        self.st.run_accesses = Some((r, n + 1));
+                    }
+                }
             }
             StepKind::StealIfAgenda => {
                 cite!("rule_after_mid_access_agenda");
@@ -1788,7 +1802,21 @@ impl Vm {
                     .iter()
                     .any(|f| matches!(f, Frame::Ability(af) if af.source.obj == obj))
             }
+            // 7.4.2b: only during the run in progress, and only once an
+            // access has actually been performed in it.
+            StaticCond::RunnerHasAccessedCardThisRun => {
+                cite!("rule_prohibiting_access_to_1");
+                self.current_run.is_some() && self.accesses_this_run() > 0
+            }
         }
+    }
+
+    /// CR 7.3.8: is a breach in progress? A breach that would begin now takes
+    /// place when the current one ends instead.
+    fn breach_in_progress(&self) -> bool {
+        self.frames
+            .iter()
+            .any(|f| matches!(f, Frame::Structure(StructureFrame { ctx: StructCtx::Breach(_), .. })))
     }
 
     /// Is ability index `i` on `obj` present after gains/losses (9.1.9)?
@@ -2253,6 +2281,8 @@ impl Vm {
         let id = self.next_structure;
         self.next_structure += 1;
         self.would.reset_scope(WouldScope::Run);
+        // 7.3.6: start counting the accesses performed during THIS run.
+        self.st.run_accesses = Some((run_id, 0));
         self.frames.push(Frame::Structure(StructureFrame {
             kind: crate::timing::StructKind::Run,
             instance_id: id,
@@ -2284,6 +2314,7 @@ impl Vm {
             ctx: StructCtx::Breach(BreachCtx {
                 server,
                 candidates: Vec::new(),
+                zone_candidate: None,
                 chosen: None,
                 accessed: Vec::new(),
                 remaining_from_zone: 0,
@@ -2342,8 +2373,30 @@ impl Vm {
     }
 
     /// CR 7.4.2: apply active access prohibitions to a candidate list.
+    ///
+    /// The prohibitions are read AT THE MOMENT the candidates are wanted, so
+    /// 7.4.2a's re-evaluation ("if an ability prohibiting some or all accesses
+    /// becomes inactive during a breach, candidates are reevaluated") needs no
+    /// code of its own: a card that stopped being a candidate only because of
+    /// a prohibition is back in the list as soon as the prohibition is gone.
+    /// A card kept out for any OTHER reason (7.4.3 already chosen, 7.4.6a
+    /// declined) was removed from the maintained list and does not come back,
+    /// which is the rule's "if no other rule or effect is applicable".
     fn restrict_candidates(&self, list: Vec<ObjectId>) -> Vec<ObjectId> {
-        let only: Vec<ObjectId> = self
+        // 7.4.2b: "the Runner cannot access more than N cards during this
+        // run" — the ability has no effect on candidates until the Runner has
+        // actually accessed that many (7.3.6: accesses actually performed),
+        // and then it prohibits every other access for the rest of the run.
+        let performed = self.accesses_this_run();
+        if self.lingering.iter().any(|l| match &l.payload {
+            Payload::AccessLimitThisRun { limit } => performed >= *limit,
+            _ => false,
+        }) {
+            cite!("rule_prohibiting_access_to_1");
+            cite!("rule_prohibiting_access");
+            return Vec::new();
+        }
+        let mut only: Vec<ObjectId> = self
             .lingering
             .iter()
             .filter_map(|l| match &l.payload {
@@ -2351,12 +2404,30 @@ impl Vm {
                 _ => None,
             })
             .collect();
+        // The same prohibition declared by a STATIC ability (Flagship class):
+        // it applies exactly while the ability is active and its stated
+        // condition holds, so uninstalling or derezzing the source lifts it
+        // mid-breach — 7.4.2a's case.
+        for (obj, d) in self.active_statics() {
+            if matches!(d, StaticDecl::RestrictCandidatesToSelf) {
+                only.push(obj);
+            }
+        }
         if only.is_empty() {
             list
         } else {
             cite!("rule_prohibiting_access");
             list.into_iter().filter(|c| only.contains(c)).collect()
         }
+    }
+
+    /// CR 7.3.6: the number of accesses ACTUALLY PERFORMED during the run in
+    /// progress — or, once it has ended, during the run that just ended, so
+    /// that a "when this run ends" ability can still count them (6.9.6d puts
+    /// those abilities after the run frame has popped).
+    pub fn accesses_this_run(&self) -> u32 {
+        cite!("rule_number_of_accesses");
+        self.st.run_accesses.map(|(_, n)| n).unwrap_or(0)
     }
 
     /// The candidates as of RIGHT NOW. Archives candidates derive
@@ -2366,7 +2437,7 @@ impl Vm {
     /// maintained list.
     fn breach_candidates_now(&self) -> Vec<ObjectId> {
         let Some(b) = self.breach_ctx() else { return Vec::new() };
-        match b.server {
+        let mut v = match b.server {
             ServerId::Archives => {
                 // 7.4.1a + 7.4.6d: the root list is maintained (root entries
                 // go through the 10.3.1j declaration), while the discard-pile
@@ -2383,6 +2454,37 @@ impl Vm {
                 v
             }
             _ => b.candidates.clone(),
+        };
+        // 7.4.1b/c: the card presented from the corresponding zone is a
+        // candidate ALONGSIDE the root cards. It leads the list so that a
+        // driver taking the first candidate accesses the central server the
+        // Runner came for.
+        if let Some(z) = b.zone_candidate {
+            if !v.contains(&z) {
+                v.insert(0, z);
+            }
+        }
+        v
+    }
+
+    /// CR 7.4.3 / 7.3.5c: record that the Runner has chosen `card`. It ceases
+    /// to be a candidate for the remainder of the breach — as THAT object
+    /// (1.12.3) — whether or not it is ultimately accessed; and if it was the
+    /// candidate presented from the breached central server's zone, the choice
+    /// counts towards the random access limit, again whether or not the access
+    /// happens.
+    fn take_candidate(&mut self, card: ObjectId) {
+        cite!("rule_candidates_already_accessed");
+        let g = self.generation(card);
+        if let Some(b) = self.breach_ctx_mut() {
+            b.chosen = Some(card);
+            b.chosen_ever.push((card, g));
+            b.candidates.retain(|&c| c != card);
+            if b.zone_candidate == Some(card) {
+                cite!("rule_counting_random_access_limit");
+                b.zone_candidate = None;
+                b.remaining_from_zone = b.remaining_from_zone.saturating_sub(1);
+            }
         }
     }
 
@@ -2391,15 +2493,7 @@ impl Vm {
         let candidates = self.restrict_candidates(self.breach_candidates_now());
         if candidates.len() == 1 {
             let only = candidates[0];
-            // 7.4.3: a chosen candidate ceases to be one for the remainder
-            // of the breach, accessed or not — as THAT object (1.12.3).
-            cite!("rule_candidates_already_accessed");
-            let g = self.generation(only);
-            if let Some(b) = self.breach_ctx_mut() {
-                b.chosen = Some(only);
-                b.chosen_ever.push((only, g));
-                b.candidates.retain(|&c| c != only);
-            }
+            self.take_candidate(only);
             self.set_structure_phase(StepPhase::Checkpoint);
         } else {
             // CR 7.5 step 4a: the Runner chooses a candidate.
@@ -2420,49 +2514,42 @@ impl Vm {
             Some(b) => b.server,
             None => return,
         };
-        match server {
+        let (remaining, chosen_ever) = {
+            let b = self.breach_ctx().unwrap();
+            (b.remaining_from_zone, b.chosen_ever.clone())
+        };
+        if remaining == 0 {
+            return;
+        }
+        let pick = match server {
             ServerId::Rnd => {
                 cite!("rule_rnd_candidates_1_at_a_time");
                 cite!("rule_rnd_topmost_eligibile_candidate");
-                let (remaining, chosen_ever) = {
-                    let b = self.breach_ctx().unwrap();
-                    (b.remaining_from_zone, b.chosen_ever.clone())
-                };
-                if remaining > 0 {
-                    // All deck cards cease to be candidates, then the
-                    // topmost eligible one becomes the candidate.
-                    let top = self.st.deck[&Side::Corp]
-                        .iter()
-                        .copied()
-                        .find(|c| !chosen_ever.iter().any(|(o, _)| o == c));
-                    if let Some(b) = self.breach_ctx_mut() {
-                        b.candidates = top.into_iter().collect();
-                    }
-                }
+                // All deck cards cease to be candidates, then the topmost
+                // eligible one becomes the candidate.
+                self.st.deck[&Side::Corp]
+                    .iter()
+                    .copied()
+                    .find(|c| !chosen_ever.iter().any(|(o, _)| o == c))
             }
             ServerId::Hq => {
-                let (remaining, chosen_ever) = {
-                    let b = self.breach_ctx().unwrap();
-                    (b.remaining_from_zone, b.chosen_ever.clone())
-                };
-                if remaining > 0 {
-                    let pool: Vec<ObjectId> = self.st.hand[&Side::Corp]
-                        .iter()
-                        .copied()
-                        .filter(|c| !chosen_ever.iter().any(|(o, _)| o == c))
-                        .collect();
-                    let pick = if pool.is_empty() {
-                        None
-                    } else {
-                        let i = self.rng.random_range(0..pool.len());
-                        Some(pool[i])
-                    };
-                    if let Some(b) = self.breach_ctx_mut() {
-                        b.candidates = pick.into_iter().collect();
-                    }
+                cite!("rule_candidates_in_hq");
+                let pool: Vec<ObjectId> = self.st.hand[&Side::Corp]
+                    .iter()
+                    .copied()
+                    .filter(|c| !chosen_ever.iter().any(|(o, _)| o == c))
+                    .collect();
+                if pool.is_empty() {
+                    None
+                } else {
+                    let i = self.rng.random_range(0..pool.len());
+                    Some(pool[i])
                 }
             }
-            _ => {}
+            _ => return,
+        };
+        if let Some(b) = self.breach_ctx_mut() {
+            b.zone_candidate = pick;
         }
     }
 
@@ -2678,9 +2765,6 @@ impl Vm {
                 if let Some(b) = self.breach_ctx_mut() {
                     b.accessed.push(card);
                     b.chosen = None;
-                    if b.remaining_from_zone > 0 {
-                        b.remaining_from_zone -= 1;
-                    }
                 }
                 self.refresh_candidates_after_access();
             }
@@ -2702,6 +2786,7 @@ impl Vm {
         match q {
             Q::Const(n) => *n,
             Q::Count(f) => self.count_filter(*f, source),
+            Q::AccessesThisRun => self.accesses_this_run() as i64,
             Q::CountersOnSource(kind) => {
                 // CR 1.17.8: an ability that met its condition from its source
                 // agenda being scored or stolen reads that agenda's LAST KNOWN
@@ -3008,7 +3093,8 @@ impl Vm {
             | Instruction::MoveRunnerToIce { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
-            Instruction::RemoveCountersFromPlayer { side, amount, .. } => {
+            Instruction::RemoveCountersFromPlayer { side, amount, .. }
+            | Instruction::TakeBadPublicity { side, amount } => {
                 let n = self.eval_quantity(amount, source);
                 vec![EffectAtom::new(EffectClass::Structural, n, *side)]
             }
@@ -3178,6 +3264,14 @@ impl Vm {
                 cite!("rule_candidates_already_accessed");
                 atom.removed = true;
                 self.trash_card(t, Side::Runner);
+            }
+            crate::lingering::ReplacementTransform::SuppressAccessAndRemoveChosen => {
+                // 7.3.6: the access never happens, so it is never counted.
+                cite!("rule_number_of_accesses");
+                atom.removed = true;
+                if let Some(c) = self.breach_ctx().and_then(|b| b.chosen) {
+                    self.move_card(c, Zone::RemovedFromGame);
+                }
             }
         }
         // Kernel-wave replacements are one-shot effects (Security Testing,
@@ -5694,6 +5788,35 @@ impl Vm {
                     self.push_access(c);
                 }
             }
+            Instruction::BreachServer(server) => {
+                // 7.3.8: a breach that would begin while one is in progress
+                // takes place when the current breach ends instead. The rule
+                // says how: "the effect creating the delayed breach is treated
+                // as a conditional ability controlled by the Runner", so the
+                // kernel makes exactly that — a one-shot delayed conditional
+                // whose condition is the current breach ending and whose
+                // instruction is the breach that was postponed.
+                if self.breach_in_progress() {
+                    cite!("rule_consecutive_breaches");
+                    let def = AbilityDef::conditional(
+                        TriggerCond::BreachEnds,
+                        vec![Instruction::BreachServer(*server)],
+                        false,
+                    )
+                    .labeled("delayed breach");
+                    let id = self.next_lingering;
+                    self.next_lingering += 1;
+                    self.lingering.push(LingeringEffect::new(
+                        id,
+                        source.obj,
+                        Payload::DelayedConditional { def },
+                        // 9.6.13c: no stated duration — until it resolves.
+                        crate::lingering::Duration::UntilResolved,
+                    ));
+                } else {
+                    self.push_breach(*server);
+                }
+            }
             Instruction::InitiateRun(server) => {
                 cite!("rule_run_timing_structure");
                 self.initiate_run(*server);
@@ -5914,6 +6037,12 @@ impl Vm {
                         Payload::ReplacementEffect {
                             applies_to: *applies_to,
                             replace_with: with.clone(),
+                        }
+                    }
+                    crate::instr::LingeringSpec::AccessLimit { limit } => {
+                        cite!("rule_prohibiting_access_to_1");
+                        Payload::AccessLimitThisRun {
+                            limit: self.eval_quantity(limit, Some(source.obj)).max(0) as u32,
                         }
                     }
                     crate::instr::LingeringSpec::AdditionalAccess { server, extra } => {
@@ -6392,6 +6521,18 @@ impl Vm {
                 cite!("rule_hosted_counters_not_on_player");
                 let n = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
                 self.remove_player_counters(*side, *kind, n);
+            }
+            Instruction::TakeBadPublicity { side, amount } => {
+                // 10.6.1: bad publicity counters are placed on the PLAYER.
+                // 10.6.3c: the bad publicity fund of a run already in progress
+                // was filled at 6.9.1b and does not change here.
+                cite!("rule_bad_publicity");
+                cite!("rule_bad_publicity_during_run");
+                let n = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                if n > 0 {
+                    self.st.player_mut(*side).bad_publicity += n;
+                    self.changes.record(GameChange::BadPublicityTaken { side: *side, amount: n });
+                }
             }
             Instruction::PlaceCounters { target, kind, amount } => {
                 // 1.18.2: placing counters directly is NOT advancing, whatever
@@ -8466,14 +8607,7 @@ impl Vm {
                 self.set_structure_phase(StepPhase::Checkpoint);
             }
             (DecisionCtx::Candidate, DecisionAnswer::Candidate(c)) => {
-                let gen = self.generation(c);
-                if let Some(b) = self.breach_ctx_mut() {
-                    b.chosen = Some(c);
-                    // 7.4.3: chosen → never a candidate again this breach.
-                    cite!("rule_candidates_already_accessed");
-                    b.chosen_ever.push((c, gen));
-                    b.candidates.retain(|&x| x != c);
-                }
+                self.take_candidate(c);
                 self.set_structure_phase(StepPhase::Checkpoint);
             }
             (DecisionCtx::Targets, DecisionAnswer::Option(i)) => {
@@ -8666,9 +8800,6 @@ impl Vm {
                 } else {
                     if let Some(b) = self.breach_ctx_mut() {
                         b.chosen = None;
-                        if b.remaining_from_zone > 0 {
-                            b.remaining_from_zone -= 1;
-                        }
                     }
                     self.refresh_candidates_after_access();
                 }
@@ -8998,6 +9129,20 @@ impl Vm {
                 let def = inst.def.clone();
                 let ability = inst.ability;
                 let controller = inst.controller;
+                // 9.6.13c: a delayed conditional with no stated duration
+                // exists "until the next time it resolves" — and it is
+                // resolving from the moment it is triggered, not from the
+                // moment its last instruction has finished. The difference
+                // matters whenever an instruction opens a nested timing
+                // structure whose end would meet the condition again (a
+                // delayed BREACH, 7.3.8, or a delayed run): reading the rule
+                // at frame completion re-arms the effect from inside its own
+                // resolution, forever.
+                if let Some(lid) = inst.from_lingering {
+                    cite!("rule_delayed_conditional_ability_relevant_once");
+                    self.lingering
+                        .retain(|l| !(l.id == lid && l.duration == Duration::UntilResolved));
+                }
                 self.push_ability_frame(
                     ResolutionKind::Conditional,
                     ability,

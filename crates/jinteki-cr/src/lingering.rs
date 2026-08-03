@@ -67,6 +67,12 @@ pub enum Payload {
     /// CR 7.4.2: "the Runner cannot access any card other than <obj> for
     /// the remainder of the run" (Ash class).
     RestrictCandidatesTo(ObjectId),
+    /// CR 7.4.2b: "the Runner cannot access more than N cards during this
+    /// run" (Hudson 1.0 class). Until N accesses have actually been performed
+    /// during the run (7.3.6) the effect does nothing at all — in particular
+    /// it never touches the random access limit, which 7.3.5 fixes at the
+    /// beginning of the breach. From then on nothing is a candidate.
+    AccessLimitThisRun { limit: u32 },
     /// CR 9.5.3a: "the Runner cannot use <card>'s abilities" for a duration
     /// (Wendigo class). A prohibition on USE, so the abilities are not
     /// offered in any window — and, since paid abilities are always optional
@@ -99,6 +105,10 @@ pub enum ReplacementTransform {
     /// "Instead of breaching, gain N[c]" (Security Testing / Account Siphon
     /// class): removes the atom and pays out to the effect's controller.
     SuppressAndGainCredits(u32),
+    /// "Instead of accessing the chosen candidate, remove it from the game"
+    /// (Archives Interface class). The access does not happen, so it is not
+    /// counted by 7.3.6 — and the chosen candidate is still consumed (7.4.3).
+    SuppressAccessAndRemoveChosen,
     /// "Breach, but access from the bottom of R&D" (Showing Off class,
     /// 7.4.7b): the breach is REPLACED but still expected — a subsequent
     /// replacement can still act on it (the 9.9.11a example 2). The kernel

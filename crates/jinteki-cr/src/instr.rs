@@ -36,6 +36,12 @@ pub enum Quantity {
     RequirementOfSource,
     /// Scale ("N for each …").
     Times(i64, Box<Quantity>),
+    /// CR 7.3.6: "for each time they accessed a card during the run" — the
+    /// number of accesses ACTUALLY PERFORMED during the run in progress (or
+    /// the run that just ended, for a "when this run ends" ability). An
+    /// access that was replaced by another effect never happened and is not
+    /// counted.
+    AccessesThisRun,
     /// CR 9.12.2e: a value defined by X, where the ability defining X lives
     /// on the source (the Surveyor class shares one X between a strength
     /// definition and a trace). While the defining ability is inactive or
@@ -516,6 +522,12 @@ pub enum Instruction {
     /// other counter kinds only ever exist hosted on cards.
     RemoveCountersFromPlayer { side: Side, kind: crate::object::CounterKind, amount: Quantity },
 
+    /// CR 10.6.1: "the Corp takes N bad publicity" — a bad publicity counter
+    /// is placed on the player. The count is a quantity position (§12 rule 6).
+    /// 10.6.3c: taking it during a run does not change that run's bad
+    /// publicity fund, which was filled at step 6.9.1b.
+    TakeBadPublicity { side: Side, amount: Quantity },
+
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.
     GainAllottedClicks(Side),
@@ -613,6 +625,10 @@ pub enum LingeringSpec {
     /// CR 9.5.3a: "the Runner cannot use <targets>' abilities" for the
     /// duration (Wendigo class).
     CannotUseAbilitiesOf(TargetSpec),
+    /// CR 7.4.2b: "the Runner cannot access more than N cards during this
+    /// run" (Hudson 1.0 class). The bound is a quantity position (§12 rule 6)
+    /// evaluated when the effect is created.
+    AccessLimit { limit: Quantity },
 }
 
 /// CR 9.10.3: what a maintained choice is a choice OF.

@@ -70,6 +70,8 @@ pub enum GameChange {
     /// removed-from-game zone, so its agenda points no longer contribute.
     AgendaForfeited { obj: ObjectId, by: Side },
     AgendaStolen { obj: ObjectId, points: i32 },
+    /// CR 10.6.1: a player took bad publicity counters.
+    BadPublicityTaken { side: Side, amount: u32 },
     CardAccessed { obj: ObjectId },
     AccessEnded { obj: ObjectId },
     TurnBegan { side: Side },

@@ -4422,3 +4422,161 @@ pub fn clone_suffrage_like(name: &'static str) -> PrintedCard {
     .labeled("clone-suffrage: add an operation from Archives to HQ")];
     c
 }
+
+// ---------------------------------------------------------------------------
+// W12a shapes: §7.3 breaching and §7.4 candidates
+// ---------------------------------------------------------------------------
+
+/// Flagship shape (7.4.2a/b): an upgrade whose STATIC ability prohibits the
+/// Runner from accessing anything but itself, and only once the Runner has
+/// actually accessed a card during the run (7.4.2b's condition). Declaring it
+/// as a static is the point: the prohibition applies exactly while the ability
+/// is active, so uninstalling or trashing the source lifts it mid-breach and
+/// 7.4.2a's re-evaluation is observable.
+pub fn flagship_like(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Upgrade);
+    c.trash_cost = Some(2);
+    let mut a = AbilityDef::static_ability(vec![StaticDecl::RestrictCandidatesToSelf])
+        .labeled("flagship: no other accesses once you have accessed a card");
+    a.condition = Some(Condition::Static(StaticCond::RunnerHasAccessedCardThisRun));
+    c.abilities = vec![a];
+    c
+}
+
+/// Docklands Pass shape (7.3.5b): "the first time you breach HQ each turn,
+/// access 1 additional card".
+///
+/// SIMPLIFICATION (§12 rule 3): the "first time each turn" flag and the
+/// automatic application at the beginning of the breach are elided — the
+/// additional access is armed from a paid window like every other
+/// Maker's-Eye-class effect in the suite, which is the same lingering effect
+/// read at step 7.5.3.
+pub fn docklands_pass_like(name: &'static str) -> PrintedCard {
+    additional_access_card(name, ServerId::Hq, 1)
+}
+
+/// Cupellation shape (7.4.2a): "[interface] → host the accessed card on
+/// Cupellation." Hosting UNINSTALLS the card (1.13.2a), and a persistent
+/// ability is not what an upgrade's static prohibition is, so the prohibition
+/// goes with it.
+///
+/// SIMPLIFICATION (§12 rule 3): the printed card can only host a card
+/// accessed in the ROOT of a central server; this one hosts whatever is being
+/// accessed. Which card is hosted is the caller's choice of window, and what
+/// 7.4.2a turns on is that hosting uninstalls the prohibiting card.
+pub fn cupellation_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Program);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::CanHost {
+            criteria: Vec::new(),
+            capacity: None,
+        }])
+        .labeled("cupellation: can host cards"),
+        AbilityDef::paid(
+            Cost::free(),
+            vec![Instruction::HostCards {
+                cards: TargetSpec::AccessedCard,
+                host: TargetSpec::SelfSource,
+            }],
+        )
+        .with_flag(AbilityFlag::Access)
+        .labeled("cupellation: host the accessed card"),
+    ];
+    c
+}
+
+/// Otoroshi shape (7.4.2b): a Corp card whose ability makes the Runner access
+/// a named card — an access that happens during the run but outside any
+/// breach, which is exactly the "accessed a card before the breach began"
+/// case the rule calls out.
+pub fn otoroshi_like(name: &'static str, card: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::AccessCards { cards: TargetSpec::Objects(vec![card]) }],
+    )
+    .labeled("otoroshi: the Runner accesses that card")];
+    c
+}
+
+/// Zahya Sadeghi shape (7.3.6): "when the run ends, gain 1[credit] for each
+/// time you accessed a card during that run." The quantity is the selector,
+/// so an access that was replaced never enters it.
+pub fn zahya_counts_accesses(name: &'static str) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Identity);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::AccessesThisRun)],
+        false,
+    )
+    .labeled("zahya: 1 credit per access this run")];
+    c
+}
+
+/// Hades Shard shape (7.3.6 / 7.3.8): a Runner card whose paid ability
+/// breaches a server directly (7.3.1's "card abilities can also directly
+/// instruct the Runner to breach a server").
+pub fn breach_button(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities =
+        vec![AbilityDef::paid(Cost::free(), vec![Instruction::BreachServer(server)])
+            .labeled("breach")];
+    c
+}
+
+/// Archives Interface shape (7.3.6): "instead of accessing the chosen
+/// candidate, remove it from the game."
+pub fn archives_interface_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Hardware);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Replacement {
+                applies_to: crate::effects::EffectClass::AccessCard,
+                with: crate::lingering::ReplacementTransform::SuppressAccessAndRemoveChosen,
+            },
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled("archives-interface: remove instead of accessing")];
+    c
+}
+
+/// Hudson 1.0 shape (7.4.2b): a piece of ice whose subroutine creates the
+/// run-bound "the Runner cannot access more than 1 card during this run"
+/// prohibition.
+pub fn hudson_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 3);
+    c.abilities = vec![AbilityDef::subroutine(vec![Instruction::CreateLingeringEffect {
+        payload: crate::instr::LingeringSpec::AccessLimit { limit: Quantity::c(1) },
+        duration: crate::lingering::WantedDuration::ThisRun,
+    }])
+    .labeled("hudson: no more than 1 access this run")];
+    c
+}
+
+/// Clone Retirement shape (7.3.8): "when the Runner steals this agenda, the
+/// Corp takes 1 bad publicity."
+pub fn clone_retirement_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_agenda(name, 3, 1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfStolen,
+        vec![Instruction::TakeBadPublicity { side: Side::Corp, amount: Quantity::c(1) }],
+        false,
+    )
+    .labeled("clone-retirement: the Corp takes 1 bad publicity")];
+    c
+}
+
+/// Raymond Flint shape (7.3.8): "whenever the Corp takes bad publicity, you
+/// may breach HQ."
+pub fn raymond_flint_like(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::PlayerTakesBadPublicity(Side::Corp),
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::BreachServer(server)))],
+        true,
+    )
+    .labeled("raymond: you may breach")];
+    c
+}

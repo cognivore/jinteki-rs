@@ -77,13 +77,25 @@ pub struct EncounterCtx {
 #[derive(Debug, Clone)]
 pub struct BreachCtx {
     pub server: ServerId,
-    /// CR 7.4: current candidates.
+    /// CR 7.4.1a: the MAINTAINED candidate list — the cards in the root of
+    /// the breached server, plus (for Archives) the continuously-derived
+    /// discard pile. Every server has a root, so this is never empty by
+    /// construction of the server type.
     pub candidates: Vec<ObjectId>,
+    /// CR 7.4.1b/c: the ONE candidate currently presented from the zone
+    /// corresponding to a central server — a random card in the Corp's hand,
+    /// the topmost eligible card of R&D. It is a candidate ALONGSIDE the root
+    /// cards, not instead of them, and it is the only kind of candidate the
+    /// random access limit counts (7.3.5).
+    pub zone_candidate: Option<ObjectId>,
     /// The candidate the Runner chose at step 4a.
     pub chosen: Option<ObjectId>,
     /// Cards already accessed this breach (7.4.3).
     pub accessed: Vec<ObjectId>,
-    /// HQ/R&D: how many accesses from hand/deck remain (7.3.6).
+    /// CR 7.3.5: how many more times the Runner may choose a candidate from
+    /// the zone corresponding to the breached central server — the random
+    /// access limit, decremented as those choices are made (7.3.5c: a chosen
+    /// candidate counts even if it is never accessed).
     pub remaining_from_zone: u32,
     /// CR 7.4.6a: root entries the Runner declared NON-candidates at
     /// 10.3.1j — they cannot become candidates for the rest of the breach.

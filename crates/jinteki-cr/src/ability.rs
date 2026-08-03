@@ -74,6 +74,12 @@ pub enum TriggerCond {
     SelfWouldBeTrashed,
     /// "Whenever the Runner breaches this server…" (Ash class).
     ThisServerBreached,
+    /// CR 7.3.8: "when the current breach ends" — the condition the kernel
+    /// gives the conditional ability a delayed breach is treated as.
+    BreachEnds,
+    /// CR 10.6.1: "whenever the Corp takes bad publicity…" (Raymond Flint
+    /// class).
+    PlayerTakesBadPublicity(Side),
     /// "When this turn ends." (Joshua B. class delayed conditionals.)
     TurnEnds(Side),
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
@@ -88,6 +94,10 @@ pub enum TriggerCond {
     /// is tagged" — Market Research class), which 9.6.14d keeps in force even
     /// when an effect resolves the ability by class without a real scoring.
     SelfScored { requires: Vec<TriggerRequirement> },
+    /// "When the Runner steals this agenda…" (1.17.7; Clone Retirement
+    /// class). Met after the Runner has moved the agenda to their score area,
+    /// which is why the ability resolves from the score area.
+    SelfStolen,
     /// "When you install this card…" (9.6.14b's class: met at step 8.5.16f of
     /// installing its own source).
     SelfInstalled,
@@ -190,6 +200,12 @@ pub enum StaticCond {
     /// which includes every interrupt window opened for its instructions —
     /// so a declaration scoped this way applies inside those windows.
     SourceAbilityResolving,
+    /// CR 7.4.2b: "…as long as the Runner has accessed a card during the
+    /// indicated run". The condition an ability reading "the Runner cannot
+    /// access more than 1 card during this run" states about ITS OWN
+    /// prohibition: it has no effect on breaches or candidates until a card
+    /// has actually been accessed (7.3.6) during the run in progress.
+    RunnerHasAccessedCardThisRun,
 }
 
 /// CR 9.6.1a: the primary condition is a trigger or static condition.
@@ -386,6 +402,14 @@ pub enum StaticDecl {
     /// Additional cost to steal agendas (Ben Musashi / Predictive Algorithm
     /// class; 1.16.10).
     AdditionalStealCost(Cost),
+    /// CR 7.4.2: "the Runner cannot access any cards other than this one"
+    /// (Flagship class). Declared by a STATIC ability rather than created as
+    /// a lingering effect, so it applies exactly while the ability is active
+    /// (9.1.7) and its stated condition holds (9.3.7a) — which is what makes
+    /// 7.4.2a's mid-breach re-evaluation observable: uninstalling or
+    /// derezzing the source lifts the prohibition and the cards it was
+    /// keeping out become candidates again.
+    RestrictCandidatesToSelf,
     /// "<side> cannot draw cards." (Lockdown class; 9.9.2 statics remove
     /// parts of expected effects.)
     CannotDraw(Side),
@@ -741,6 +765,17 @@ pub fn trigger_matches(
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
             server_of_source == Some(*server)
         }
+        (TriggerCond::BreachEnds, GameChange::BreachEnded { .. }) => {
+            cite!("rule_consecutive_breaches");
+            true
+        }
+        (
+            TriggerCond::PlayerTakesBadPublicity(side),
+            GameChange::BadPublicityTaken { side: s, .. },
+        ) => {
+            cite!("rule_bad_publicity");
+            side == s
+        }
         (TriggerCond::TurnEnds(side), GameChange::TurnEnded { side: s }) => side == s,
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
         (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
@@ -760,6 +795,12 @@ pub fn trigger_matches(
         // agenda to their score area.
         (TriggerCond::SelfScored { .. }, GameChange::AgendaScored { obj, .. }) => {
             cite!("rule_agenda_scored");
+            *obj == source.id
+        }
+        // 1.17.7: "when the Runner steals this agenda" — met after the Runner
+        // moves it to their score area.
+        (TriggerCond::SelfStolen, GameChange::AgendaStolen { obj, .. }) => {
+            cite!("rule_agenda_stolen");
             *obj == source.id
         }
         // 9.6.14b: the stipulation point is step 8.5.16f of installing the
