@@ -222,10 +222,25 @@ pub enum StaticDecl {
     /// "Cards cannot be hosted on this card." (Tithonium class; 10.3.1e
     /// hosting-illegality restriction.)
     CannotHost,
-    /// "This card can host N programs. The install cost of hosted programs
-    /// is lowered by M." (Dhegdheer class; 8.5.1a/1.13.4a makes such a card
-    /// an eligible installation destination.)
-    HostsPrograms { capacity: u32, install_discount: u32 },
+    /// "This card can host <criteria>, up to <capacity>." (CR 1.13.5 /
+    /// 1.13.6a — Off-Campus Apartment, Dhegdheer, Glenn Station and
+    /// Leprechaun are all this one declaration.) `criteria` is the shared
+    /// filter vocabulary as a conjunction; `capacity` is a quantity
+    /// position, `None` meaning "any number" (1.13.5). A card carrying this
+    /// declaration and NO ability that hosts cards onto itself is thereby an
+    /// eligible installation destination for matching cards (1.13.6a); one
+    /// that also has such an ability is not (1.13.6b).
+    CanHost { criteria: Vec<crate::instr::TargetFilter>, capacity: Option<crate::instr::Quantity> },
+    /// "The install cost of the hosted card is lowered by N." (Dhegdheer's
+    /// second sentence; 1.16.6.) Applies only to cards hosted directly on
+    /// the source — host relationships are not transitive (1.13.9).
+    HostedInstallDiscount(crate::instr::Quantity),
+    /// "Install only on <description>." (CR 1.13.6c, Egret class.) A
+    /// restriction on where the source may be installed: if no card matching
+    /// the description exists before the installation process begins, the
+    /// source cannot be installed at all. Active while the source is
+    /// inactive (9.1.8c).
+    InstallOnlyHostedOn(Vec<crate::instr::TargetFilter>),
     /// "+N link" (Dyson Mem Chip class; the 9.6.5d link example).
     LinkBonus(i32),
     /// "This operation is not trashed until the Runner steals an agenda."

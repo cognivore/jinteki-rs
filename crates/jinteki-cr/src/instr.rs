@@ -315,6 +315,25 @@ pub enum Instruction {
     /// Profiles class; the random selection is the mechanism 10.4.2 damage
     /// uses.) The count is a quantity position (§12 rule 6).
     TrashRandomFromHand { side: Side, count: Quantity },
+    /// CR 1.13.1: "Host <cards> on <card>." Creating the host relationship
+    /// moves each hosted object to the host's zone (1.13.12) without
+    /// installing it (1.13.2a), and uninstalls an installed Corp card that
+    /// becomes hosted on a Runner card (1.13.2b). Both positions take the
+    /// shared [`TargetSpec`], so "host a card from HQ on this card" (Glenn
+    /// Station class), "host 2 cards from your grip on this card" (Madani
+    /// class) and "host that card on <another card>" are one instruction.
+    HostCards { cards: TargetSpec, host: TargetSpec },
+    /// CR 8.8.1: "Swap <a> with <b>." — the two cards exchange locations
+    /// simultaneously (8.8.3/8.8.4), keeping whatever is hosted on either of
+    /// them hosted on it (8.8.3a/8.8.4c).
+    SwapCards { a: TargetSpec, b: TargetSpec },
+    /// CR 1.9.5: "Remove N <kind> counters from <player>." (Scapegoat class
+    /// for bad publicity.) Counters HOSTED on cards are not on a player, so
+    /// this instruction can never reach them (1.13.3). The count is a
+    /// quantity position (§12 rule 6). Only bad publicity (10.6.1) is wired:
+    /// tags have their own removal path (5.2.7g / `TagRemoved`), and the
+    /// other counter kinds only ever exist hosted on cards.
+    RemoveCountersFromPlayer { side: Side, kind: crate::object::CounterKind, amount: Quantity },
 
     // ---- timing-structure-internal vocabulary ---------------------------
     /// `step_corp_turn_allotted_clicks` / `step_runner_turn_allotted_clicks`.
@@ -426,8 +445,11 @@ pub enum TargetSpec {
     AccessedCard,
     /// The ice currently being encountered (Forked class).
     EncounteredIce,
-    /// Chosen by the controller at announce time from a filter.
-    Choose { count: u32, filter: TargetFilter },
+    /// Chosen by the controller at announce time from the shared filter
+    /// vocabulary. Several atoms combine as a conjunction, exactly as a
+    /// search's 8.7.2a criteria do — "an installed program" is
+    /// `[InstalledRunnerCard, CardTypeIs(Program)]`.
+    Choose { count: u32, criteria: Vec<TargetFilter> },
     /// The top N cards of a deck (Breached Dome-style).
     TopOfDeck(Side, u32),
     /// CR 8.7.4: the cards found by this ability's search, still set aside
@@ -459,6 +481,11 @@ pub enum TargetFilter {
     HasSubtype(&'static str),
     /// CR 2.3: "…with printed install/rez/play cost N or lower".
     PrintedCostAtMost(u32),
+    /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed
+    /// faceup Corp card.
+    Rezzed,
+    /// CR 4.5: "an agenda in the Runner's score area".
+    InScoreAreaOf(Side),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.
@@ -476,14 +503,18 @@ pub enum InstallDest {
     InwardFromSource,
     /// Runner: the rig (8.5.4).
     Rig,
-    /// Hosted on a specific card (8.5.1a).
+    /// Hosted on a specific card (8.5.1a). The card is installed into the
+    /// host's zone (1.13.12).
     HostedOn(ObjectId),
     /// The root of the server currently being breached (Ganked/Drafter
     /// class; resolved when the destination is declared).
     BreachedServerRoot,
-    /// Runner installs: choose an eligible host (8.5.1a — a card whose
-    /// ability describes what it can host is an eligible destination) or
-    /// default to the rig. The choice is announced with the targets.
+    /// Runner installs with no stated destination: the rig (8.5.4). Named
+    /// for the 1.13.6a choice every install offers — a card whose ability
+    /// describes what it can host is an eligible destination, so the
+    /// installer is asked to pick one or take the default. That choice is
+    /// NOT special to this variant: it is offered for every destination
+    /// (see `Vm::eligible_hosts_for`).
     RunnerChoiceHostOrRig,
 }
 

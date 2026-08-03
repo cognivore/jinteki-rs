@@ -110,6 +110,14 @@ pub fn host_on(vm: &mut Vm, guest: ObjectId, host: ObjectId) {
     vm.st.objects.get_mut(&host).unwrap().hosted.push(guest);
 }
 
+/// Place `n` counters of `kind` on a card as SETUP (CR 1.13.1: they are
+/// hosted on it). Board state, like credits or cards in hand — the ability
+/// that would have put them there is not what the examples using this are
+/// about.
+pub fn place_counters(vm: &mut Vm, card: ObjectId, kind: CounterKind, n: u32) {
+    *vm.st.objects.get_mut(&card).unwrap().counters.entry(kind).or_insert(0) += n;
+}
+
 /// Put N filler cards in a hand.
 pub fn fill_hand(vm: &mut Vm, side: Side, n: usize) -> Vec<ObjectId> {
     (0..n)
@@ -181,7 +189,7 @@ pub fn aesops_like(name: &'static str) -> PrintedCard {
         vec![
             Instruction::TrashCards(TargetSpec::Choose {
                 count: 1,
-                filter: crate::instr::TargetFilter::InstalledResource,
+                criteria: vec![crate::instr::TargetFilter::InstalledResource],
             }),
             Instruction::GainCredits(Side::Runner, Quantity::c(3)),
         ],
@@ -670,7 +678,7 @@ pub fn reconstruction_like(name: &'static str) -> PrintedCard {
             kind: CounterKind::Advancement,
             target: TargetSpec::Choose {
                 count: 1,
-                filter: crate::instr::TargetFilter::InstalledCorpCard,
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
             },
         }],
     )
@@ -1239,7 +1247,7 @@ pub fn fairchild_like(name: &'static str) -> PrintedCard {
                 "trash installed",
                 vec![Instruction::TrashCards(TargetSpec::Choose {
                     count: 1,
-                    filter: crate::instr::TargetFilter::InstalledRunnerCard,
+                    criteria: vec![crate::instr::TargetFilter::InstalledRunnerCard],
                 })],
             ),
         ],
@@ -1296,10 +1304,13 @@ pub fn region_upgrade(name: &'static str, rez: u32) -> PrintedCard {
 /// cost by 1 (8.5.1a eligible destination; the 8.5.5 example).
 pub fn dhegdheer_like(name: &'static str, cost: u32) -> PrintedCard {
     let mut c = program_cost(name, cost);
-    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::HostsPrograms {
-        capacity: 1,
-        install_discount: 1,
-    }])
+    c.abilities = vec![AbilityDef::static_ability(vec![
+        StaticDecl::CanHost {
+            criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
+            capacity: Some(Quantity::c(1)),
+        },
+        StaticDecl::HostedInstallDiscount(Quantity::c(1)),
+    ])
     .labeled("dhegdheer: hosts 1 program at -1c")];
     c
 }
@@ -1557,6 +1568,19 @@ pub fn play_event_button(name: &'static str, card: ObjectId) -> PrintedCard {
         vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
     )
     .labeled("play-event: fixed card")];
+    c
+}
+
+/// The 5.2.7a "[click]: Play an event" basic action, as a card ability: the
+/// kernel has no basic install/play actions yet, so tests that need an event
+/// played from an ACTION window (rather than a paid one) use this.
+pub fn play_event_action(name: &'static str, card: ObjectId) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost { clicks: 1, ..Cost::default() },
+        vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
+    )
+    .labeled("play-event-action: fixed card")];
     c
 }
 
@@ -2114,6 +2138,291 @@ pub fn personality_profiles_like(name: &'static str, points: i32) -> PrintedCard
 }
 
 /// Put an identity into a player's play area, faceup and active (1.6.2).
+// ---------------------------------------------------------------------------
+// §1.13 — host, hosted, and hosting
+// ---------------------------------------------------------------------------
+
+/// The 1.13.6a class: a card whose ONLY hosting text is "this card can host
+/// <criteria>, up to <capacity>" — which is exactly what makes it an
+/// eligible installation destination. Off-Campus Apartment (any number of
+/// *connections*) and Glenn Station minus its paid ability are both this.
+pub fn can_host_card(
+    name: &'static str,
+    side: Side,
+    ty: CardType,
+    criteria: Vec<crate::instr::TargetFilter>,
+    capacity: Option<u32>,
+    label: &'static str,
+) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, side, ty);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::CanHost {
+        criteria,
+        capacity: capacity.map(|n| Quantity::c(n as i64)),
+    }])
+    .labeled(label)];
+    c
+}
+
+/// Off-Campus-Apartment shape (1.13.6a): "This card can host any number of
+/// *connections*." No ability that hosts onto itself. (Its real "when you
+/// host a card, draw" ability is orthogonal to every example here and is
+/// elided.)
+pub fn off_campus_like(name: &'static str) -> PrintedCard {
+    can_host_card(
+        name,
+        Side::Runner,
+        CardType::Resource,
+        vec![crate::instr::TargetFilter::HasSubtype("connection")],
+        None,
+        "off-campus: hosts any number of connections",
+    )
+}
+
+/// Glenn-Station shape (1.13.6b): "This card can host a single card." plus a
+/// paid ability that hosts a card from HQ onto itself — so it hosts ONLY
+/// through that ability.
+pub fn glenn_station_like(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::CanHost {
+            criteria: Vec::new(),
+            capacity: Some(Quantity::c(1)),
+        }])
+        .labeled("glenn-station: hosts a single card"),
+        AbilityDef::paid(
+            Cost { clicks: 1, ..Cost::default() },
+            vec![Instruction::HostCards {
+                cards: TargetSpec::Choose {
+                    count: 1,
+                    criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)],
+                },
+                host: TargetSpec::SelfSource,
+            }],
+        )
+        .labeled("glenn-station: host a card from HQ"),
+    ];
+    c
+}
+
+/// Egret shape (1.13.6c): "Install only on a rezzed piece of ice." The
+/// restriction is the whole card here; Egret's own subtype grant is elided.
+pub fn egret_like(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 1);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::InstallOnlyHostedOn(vec![
+        crate::instr::TargetFilter::CardTypeIs(CardType::Ice),
+        crate::instr::TargetFilter::Rezzed,
+    ])])
+    .labeled("egret: install only on a rezzed piece of ice")];
+    c
+}
+
+/// Leprechaun shape (1.13.9): "This card can host up to 2 programs." — no
+/// install discount of its own, which is the point of the transitivity
+/// example.
+pub fn leprechaun_like(name: &'static str, cost: u32) -> PrintedCard {
+    let mut c = can_host_card(
+        name,
+        Side::Runner,
+        CardType::Program,
+        vec![crate::instr::TargetFilter::CardTypeIs(CardType::Program)],
+        Some(2),
+        "leprechaun: hosts 2 programs",
+    );
+    c.cost = Some(cost);
+    c
+}
+
+/// Madani shape (1.13.12): "[click]: Host up to N programs from your grip on
+/// this card." Hosting without installing (1.13.2a), so the hosted cards
+/// move to this card's zone but do not become installed or active.
+pub fn madani_like(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost { clicks: 1, ..Cost::default() },
+        vec![Instruction::HostCards {
+            cards: TargetSpec::Choose {
+                count,
+                criteria: vec![
+                    crate::instr::TargetFilter::CardsInHandOf(Side::Runner),
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Program),
+                ],
+            },
+            host: TargetSpec::SelfSource,
+        }],
+    )
+    .labeled("madani: host programs from the grip")];
+    c
+}
+
+/// Detente shape (1.13.13 example 1): an installed Runner program that hosts
+/// Corp cards. Which Corp cards it can take, and how they get there, is not
+/// what the example turns on — the shape hosts an installed Corp card, which
+/// also exercises 1.13.2b (the Corp card becomes uninstalled).
+pub fn detente_like(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 0);
+    c.abilities = vec![AbilityDef::paid(
+        Cost { clicks: 1, ..Cost::default() },
+        vec![Instruction::HostCards {
+            cards: TargetSpec::Choose {
+                count: 1,
+                criteria: vec![crate::instr::TargetFilter::InstalledCorpCard],
+            },
+            host: TargetSpec::SelfSource,
+        }],
+    )
+    .labeled("detente: host an installed Corp card")];
+    c
+}
+
+/// Rejig shape: "Add 1 installed program to your grip." (Its second
+/// sentence — installing a program at a discount — is elided.)
+pub fn rejig_like(name: &'static str) -> PrintedCard {
+    event(
+        name,
+        0,
+        vec![Instruction::AddCardsToHand {
+            cards: TargetSpec::Choose {
+                count: 1,
+                criteria: vec![
+                    crate::instr::TargetFilter::InstalledRunnerCard,
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Program),
+                ],
+            },
+        }],
+    )
+}
+
+/// IP-Enforcement shape: "Install an agenda from the Runner's score area."
+pub fn ip_enforcement_like(name: &'static str) -> PrintedCard {
+    operation(
+        name,
+        0,
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Choose {
+                count: 1,
+                criteria: vec![
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Agenda),
+                    crate::instr::TargetFilter::InScoreAreaOf(Side::Runner),
+                ],
+            },
+            dest: crate::instr::InstallDest::NewRemoteRoot,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+        }],
+    )
+}
+
+/// Exchange-of-Information shape (8.8.4c): "Swap 1 agenda in the Runner's
+/// score area with 1 agenda in your score area." SIMPLIFICATION: both sides
+/// of the swap are fixed at card-build time — the example turns on what
+/// happens to the counters hosted on the swapped agendas, not on which
+/// agendas are chosen.
+pub fn exchange_of_information_like(
+    name: &'static str,
+    theirs: ObjectId,
+    ours: ObjectId,
+) -> PrintedCard {
+    operation(
+        name,
+        0,
+        vec![Instruction::SwapCards {
+            a: TargetSpec::Objects(vec![theirs]),
+            b: TargetSpec::Objects(vec![ours]),
+        }],
+    )
+}
+
+/// Whitespace shape (1.13.3 example 1): "[sub] The Runner loses 3[credit]."
+pub fn whitespace_like(name: &'static str, amount: u32) -> PrintedCard {
+    let mut c = vanilla_ice(name, 0, 0);
+    c.abilities = vec![
+        AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, amount)])
+            .labeled("[sub] the Runner loses credits"),
+    ];
+    c
+}
+
+/// Scapegoat shape (1.13.3 example 3): "Remove 2 bad publicity."
+pub fn remove_bad_pub_operation(name: &'static str, n: i64) -> PrintedCard {
+    operation(
+        name,
+        0,
+        vec![Instruction::RemoveCountersFromPlayer {
+            side: Side::Corp,
+            kind: CounterKind::BadPublicity,
+            amount: Quantity::c(n),
+        }],
+    )
+}
+
+/// Cyberfeeder/Fencer-Fueno shape (1.10.3c): a card whose ability lets its
+/// controller spend the credits hosted on it. SIMPLIFICATION: the real
+/// Cyberfeeder restricts what those credits may pay for; here they are
+/// spendable for any cost, which is what 9.1.6c's example needs.
+pub fn hosted_credit_source(name: &'static str, ty: CardType) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, ty);
+    c.hosted_credits_spendable = true;
+    c
+}
+
+/// Mimic shape (9.1.6c): a program with a paid ability whose trigger cost is
+/// 1[credit]. Mimic's break ability needs an encounter to be usable; the
+/// example is about who counts as USED when the cost is paid, so the shape
+/// uses the strength pump every icebreaker of its class carries.
+pub fn credit_cost_program(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 0);
+    c.strength = Some(1);
+    c.subtypes = vec!["icebreaker"];
+    c.abilities = vec![AbilityDef::paid(
+        Cost::credits(1),
+        vec![Instruction::PumpStrengthSelf { amount: 1 }],
+    )
+    .labeled("mimic: 1c pump")];
+    c
+}
+
+/// A Runner button that installs one card from the grip, one at a time
+/// (8.5.5), with the destination left to the 8.5.16b declaration — which is
+/// where the 1.13.6a host choice is offered.
+pub fn runner_install_button(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCards {
+            count,
+            from_hand_of: Side::Runner,
+            filter: crate::instr::InstallFilter::Any,
+            dest: crate::instr::InstallDest::RunnerChoiceHostOrRig,
+            and_rez: false,
+            and_rez_if_able: false,
+            ignore_costs: false,
+        }],
+    )
+    .labeled("install-button: install from the grip")];
+    c
+}
+
+/// A Corp button that installs one card from HQ into the root of a server,
+/// one at a time (8.5.5).
+pub fn corp_install_from_hq_button(name: &'static str, server: ServerId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCards {
+            count: 1,
+            from_hand_of: Side::Corp,
+            filter: crate::instr::InstallFilter::Any,
+            dest: crate::instr::InstallDest::Root(server),
+            and_rez: false,
+            and_rez_if_able: false,
+            ignore_costs: false,
+        }],
+    )
+    .labeled("corp-install-button: install from HQ")];
+    c
+}
+
 pub fn install_identity(vm: &mut Vm, card: PrintedCard, side: Side) -> ObjectId {
     let id = vm.new_object(card, Zone::PlayArea(side));
     vm.st.active_seq += 1;

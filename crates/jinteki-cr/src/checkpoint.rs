@@ -648,6 +648,62 @@ fn step_fg_hosted_orphans(vm: &mut Vm) {
             }
         }
     }
+    // CR 1.13.13: if a host card CHANGED ZONES since the last checkpoint —
+    // except by moving from one score area to another (8.8.4c) — everything
+    // hosted on it (transitively) is trashed, and its hosted counters return
+    // to the bank (1.9.2). This cannot be prevented.
+    let moved: Vec<ObjectId> = vm
+        .last_scan_window
+        .iter()
+        .filter_map(|(c, _)| match c {
+            GameChange::CardMoved { obj, from, to } => {
+                cite!("rule_trash_hosted_objects_when_host_trashed");
+                if matches!((from, to), (Zone::ScoreArea(_), Zone::ScoreArea(_))) {
+                    cite!("rule_swap_score_areas");
+                    None
+                } else {
+                    Some(*obj)
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    for host in moved {
+        // "…and all objects hosted on those objects, and so on."
+        let mut stack = vec![host];
+        let mut doomed: Vec<ObjectId> = Vec::new();
+        let mut seen: std::collections::BTreeSet<ObjectId> = [host].into_iter().collect();
+        while let Some(h) = stack.pop() {
+            if !vm.st.objects.contains_key(&h) {
+                continue;
+            }
+            bank_hosted_counters(vm, h);
+            let Some(o) = vm.st.objects.get(&h) else { continue };
+            for g in o.hosted.clone() {
+                // CR 9.5.5: objects set aside by a [trash] trigger cost are
+                // still hosted for that ability and survive its source's
+                // trashing.
+                if vm.st.objects.get(&g).is_some_and(|x| x.set_aside_for_ability) {
+                    cite!("rule_trash_ability_keeps_track_of_hosted_objects");
+                    continue;
+                }
+                if !seen.insert(g) {
+                    continue;
+                }
+                doomed.push(g);
+                stack.push(g);
+            }
+        }
+        for id in doomed {
+            if vm.st.objects.contains_key(&id) {
+                let owner = vm.st.objects[&id].owner;
+                vm.trash_card(id, owner);
+            }
+        }
+    }
+    // The state-side of the same rule, repeated to fixpoint: a hosted object
+    // whose host is no longer anywhere it could host from (1.13.1a) is
+    // trashed too.
     loop {
         let mut orphans: Vec<ObjectId> = Vec::new();
         for o in vm.st.objects.values() {
@@ -672,6 +728,29 @@ fn step_fg_hosted_orphans(vm: &mut Vm) {
             let owner = vm.st.objects[&id].owner;
             vm.trash_card(id, owner);
         }
+    }
+}
+
+/// CR 1.13.13 + 1.9.2: the counters hosted on a card that changed zones are
+/// no longer hosted on anything; they return to the bank.
+fn bank_hosted_counters(vm: &mut Vm, card: ObjectId) {
+    let counters: Vec<(CounterKind, u32)> = vm.st.objects[&card]
+        .counters
+        .iter()
+        .map(|(k, n)| (*k, *n))
+        .filter(|(_, n)| *n > 0)
+        .collect();
+    if counters.is_empty() {
+        return;
+    }
+    cite!("rule_bank");
+    vm.st.objects.get_mut(&card).unwrap().counters.clear();
+    for (kind, amount) in counters {
+        vm.changes.record(crate::change::GameChange::CounterRemoved {
+            obj: Some(card),
+            kind,
+            amount,
+        });
     }
 }
 

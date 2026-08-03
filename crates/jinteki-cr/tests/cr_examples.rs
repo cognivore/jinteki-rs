@@ -119,6 +119,19 @@ const IMPLEMENTED: &[&str] = &[
     "example_rule_valid_search_target_install_play_3",
     "example_rule_shuffle_deck_after_search_1",
     "example_rule_search_instruction_1",
+    // Wave 5b: hosting (§1.13/8.3) and hosted counters (1.13.3, 9.1.6c).
+    "example_rule_host_via_install_1",
+    "example_rule_host_via_ability_1",
+    "example_rule_host_on_ability_1",
+    "example_rule_host_transitivity_1",
+    "example_rule_hosted_object_same_zone_as_host_1",
+    "example_rule_trash_hosted_objects_when_host_trashed_1",
+    "example_rule_trash_hosted_objects_when_host_trashed_2",
+    "example_rule_trash_hosted_objects_when_host_trashed_3",
+    "example_rule_hosted_counters_not_on_player_1",
+    "example_rule_hosted_counters_not_on_player_2",
+    "example_rule_hosted_counters_not_on_player_3",
+    "example_rule_hosted_counter_used_condition_1",
 ];
 
 // The legacy scaffold — `decision`, `drive_to_action_window`, the local
@@ -4000,6 +4013,653 @@ fn example_rule_search_instruction_1() {
         "the second instruction added the set-aside card to the grip"
     );
     assert_eq!(vm.st.objects[&grip[0]].zone, Zone::Discard(Side::Runner));
+}
+
+// ===========================================================================
+// §1.13 — host, hosted, and hosting
+// ===========================================================================
+
+/// The candidates put to a player at the nth (1-based) target choice.
+fn nth_targets<'a>(t: &'a plan::Transcript, side: Side, n: usize) -> &'a plan::Entry {
+    t.nth_window(Kind::Targets, side, n)
+}
+
+/// Was this target choice a "you may decline" one (`up_to`)? 1.13.6a's "or
+/// as normal" is exactly that flag.
+fn declinable(e: &plan::Entry) -> bool {
+    matches!(e.spec, DecisionSpec::ChooseTargets { up_to: true, .. })
+}
+
+/// example_rule_host_via_install_1 (1.13.6a): an Off-Campus-Apartment-class
+/// card declares "can host any number of connections" and has no ability
+/// that hosts cards onto itself. So whenever the Runner installs a
+/// connection, the host is offered as an installation destination alongside
+/// the normal one — and for a card it cannot host, it is not offered at all.
+#[test]
+fn example_rule_host_via_install_1() {
+    fn scenario(connection: bool) -> (Vm, plan::Transcript, jinteki_cr::ObjectId) {
+        let mut vm = Vm::empty(511);
+        let oca = tk::install_rig(&mut vm, tk::off_campus_like("OffCampus-like"));
+        let mut card = tk::vanilla_runner_card("Installee", jinteki_cr::object::CardType::Resource);
+        if connection {
+            card.subtypes = vec!["connection"];
+        }
+        let installee = vm.new_object(card, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(installee);
+        tk::install_rig(&mut vm, tk::runner_install_button("Install-Button", 1));
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("install-button"))
+                .when(Match::targets().once(), Reply::target(installee))
+                .when(Match::targets().once(), Reply::target(oca))
+                .stop_at_action(),
+        );
+        (vm, t, installee)
+    }
+
+    // A connection: the host is one of the destinations on offer, and the
+    // offer is declinable ("or as normal directly into the play area").
+    let (vm, t, installee) = scenario(true);
+    let host_choice = nth_targets(&t, Side::Runner, 2);
+    let oca = vm.st.objects[&installee].host.expect("the connection was hosted");
+    assert_eq!(
+        host_choice.candidates(),
+        &[oca],
+        "1.13.6a: the card describing what it can host is an eligible install destination"
+    );
+    assert!(
+        declinable(host_choice),
+        "1.13.6a: …or as normal directly into the play area — the Runner may decline"
+    );
+    assert_eq!(vm.st.objects[&installee].zone, Zone::Rig, "1.13.12: the host's zone");
+    assert!(
+        vm.st.objects[&oca].hosted.contains(&installee),
+        "the host knows what it is hosting"
+    );
+
+    // A non-connection: Off-Campus Apartment is not a destination for it, so
+    // no destination choice arises at all and it installs as normal.
+    let (vm2, t2, other) = scenario(false);
+    assert_eq!(
+        t2.windows(Kind::Targets, Side::Runner).len(),
+        1,
+        "only the card choice: a card the host cannot host gets no host offer"
+    );
+    assert_eq!(vm2.st.objects[&other].host, None);
+    assert_eq!(vm2.st.objects[&other].zone, Zone::Rig);
+}
+
+/// example_rule_host_via_ability_1 (1.13.6b): Glenn Station declares "can
+/// host a single card" AND has a paid ability that hosts a card onto itself.
+/// It therefore hosts ONLY through that ability: an install effect is not
+/// offered Glenn Station as a destination, though it is offered a card whose
+/// hosting text is the declaration alone.
+#[test]
+fn example_rule_host_via_ability_1() {
+    let mut vm = Vm::empty(512);
+    let glenn = tk::install_root(
+        &mut vm,
+        tk::glenn_station_like("GlennStation-like"),
+        ServerId::Remote(1),
+        true,
+    );
+    // The control: the same declaration, without the hosting ability.
+    let control = tk::install_root(
+        &mut vm,
+        tk::can_host_card(
+            "Host-Only-Upgrade",
+            Side::Corp,
+            jinteki_cr::object::CardType::Upgrade,
+            Vec::new(),
+            Some(1),
+            "host-only: hosts a single card",
+        ),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_from_hq_button("Install-Button", ServerId::Remote(2)),
+        ServerId::Remote(2),
+        true,
+    );
+    let hq: Vec<jinteki_cr::ObjectId> = tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Corp);
+
+    // The plan: install a card from HQ (declining the host offer to see what
+    // it contained), then use Glenn Station's own ability on the other card.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::target(hq[0]))
+            .when(Match::targets().once(), Reply::Targets(vec![]))
+            .when(Match::action().once(), Reply::take("glenn-station: host"))
+            .when(Match::targets().once(), Reply::target(hq[1]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let host_choice = nth_targets(&t, Side::Corp, 2);
+    assert!(
+        !host_choice.candidates().contains(&glenn),
+        "1.13.6b: a card with an ability that hosts onto itself is NOT an \
+         installation destination"
+    );
+    assert_eq!(
+        host_choice.candidates(),
+        &[control],
+        "…while the same declaration without such an ability is one (1.13.6a)"
+    );
+    assert!(t.took("glenn-station: host"), "Glenn Station's own ability was used");
+    assert_eq!(
+        vm.st.objects[&hq[1]].host,
+        Some(glenn),
+        "1.13.6b: hosting happens through the paid ability"
+    );
+    assert_eq!(
+        vm.st.objects[&hq[1]].zone,
+        vm.st.objects[&glenn].zone,
+        "1.13.12: the hosted card moved to the host's zone"
+    );
+    assert!(
+        !jinteki_cr::object::card_active(&vm.st.objects[&hq[1]]),
+        "1.13.2a: hosted without being installed, so not active"
+    );
+}
+
+/// example_rule_host_on_ability_1 (1.13.6c): an Egret-class program states
+/// "install only on a rezzed piece of ice". With no rezzed ice on the board
+/// the Runner cannot install it at all; with one, the destination choice is
+/// forced and Egret ends up hosted on that ice.
+#[test]
+fn example_rule_host_on_ability_1() {
+    fn scenario(rezzed: bool) -> (Vm, plan::Transcript, jinteki_cr::ObjectId, jinteki_cr::ObjectId) {
+        let mut vm = Vm::empty(513);
+        let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Ice-Wall-like", 0, 1), ServerId::Hq, rezzed);
+        let egret = vm.new_object(tk::egret_like("Egret-like"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(egret);
+        let plain = vm.new_object(tk::program_cost("Plain-Program", 0), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(plain);
+        tk::install_rig(&mut vm, tk::runner_install_button("Install-Button", 1));
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("install-button"))
+                .when(Match::targets().once(), Reply::target(egret))
+                .when(Match::targets().once(), Reply::target(ice))
+                .stop_at_action(),
+        );
+        (vm, t, egret, ice)
+    }
+
+    // No rezzed ice: Egret is not a card the Runner may choose to install.
+    let mut vm_unrezzed = Vm::empty(514);
+    {
+        tk::install_ice(&mut vm_unrezzed, tk::vanilla_ice("Ice-Wall-like", 0, 1), ServerId::Hq, false);
+        let egret = vm_unrezzed.new_object(tk::egret_like("Egret-like"), Zone::Hand(Side::Runner));
+        vm_unrezzed.st.hand.get_mut(&Side::Runner).unwrap().push(egret);
+        let plain =
+            vm_unrezzed.new_object(tk::program_cost("Plain-Program", 0), Zone::Hand(Side::Runner));
+        vm_unrezzed.st.hand.get_mut(&Side::Runner).unwrap().push(plain);
+        tk::install_rig(&mut vm_unrezzed, tk::runner_install_button("Install-Button", 1));
+        vm_unrezzed.st.runner.credits = 5;
+        vm_unrezzed.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm_unrezzed,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("install-button"))
+                .when(Match::targets().once(), Reply::target(plain))
+                .stop_at_action(),
+        );
+        let pick = t.first_window(Kind::Targets, Side::Runner);
+        assert!(
+            !pick.candidates().contains(&egret),
+            "1.13.6c: with no rezzed piece of ice available it is illegal to install Egret"
+        );
+        assert!(pick.candidates().contains(&plain), "…while ordinary programs are fine");
+        assert_eq!(vm_unrezzed.st.objects[&egret].zone, Zone::Hand(Side::Runner));
+    }
+
+    // A rezzed piece of ice exists: Egret can be installed, and its
+    // destination must be that ice.
+    let (vm, t, egret, ice) = scenario(true);
+    let pick = nth_targets(&t, Side::Runner, 1);
+    assert!(pick.candidates().contains(&egret), "1.13.6c: a valid destination exists");
+    let dest = nth_targets(&t, Side::Runner, 2);
+    assert_eq!(
+        dest.candidates(),
+        &[ice],
+        "the destination must match the description on the card"
+    );
+    assert!(
+        !declinable(dest),
+        "1.13.6c: the player installing it MUST choose a valid destination"
+    );
+    assert_eq!(vm.st.objects[&egret].host, Some(ice));
+    assert_eq!(
+        vm.st.objects[&egret].zone,
+        Zone::Ice(ServerId::Hq),
+        "1.13.12: the same zone as its host"
+    );
+}
+
+/// example_rule_host_transitivity_1 (1.13.9): the Runner installs a
+/// Leprechaun-class program hosted on a Dhegdheer-class one (whose install
+/// discount applies), then installs a program hosted on the Leprechaun. Host
+/// relationships are not transitive, so Dhegdheer's discount does not reach
+/// it and it costs full price.
+#[test]
+fn example_rule_host_transitivity_1() {
+    let mut vm = Vm::empty(515);
+    let dheg = tk::install_rig(&mut vm, tk::dhegdheer_like("Dhegdheer-like", 2));
+    let lep = vm.new_object(tk::leprechaun_like("Leprechaun-like", 2), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(lep);
+    let prog = vm.new_object(tk::program_cost("Prog", 3), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(prog);
+    tk::install_rig(&mut vm, tk::runner_install_button("Install-Button", 2));
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    // The plan: Leprechaun onto Dhegdheer, then the program onto Leprechaun.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::target(lep))
+            .when(Match::targets().once(), Reply::target(dheg))
+            .when(Match::targets().once(), Reply::target(prog))
+            .when(Match::targets().once(), Reply::target(lep))
+            .stop_at_action(),
+    );
+    assert!(t.took("install-button"));
+    let second_host = nth_targets(&t, Side::Runner, 4);
+    assert_eq!(
+        second_host.candidates(),
+        &[lep],
+        "Dhegdheer is full (1.13.5), so only Leprechaun is left to host"
+    );
+    assert_eq!(vm.st.objects[&lep].host, Some(dheg));
+    assert_eq!(vm.st.objects[&prog].host, Some(lep));
+    assert_eq!(
+        vm.st.runner.credits,
+        10 - 1 - 3,
+        "1.13.9: Leprechaun cost 2-1 hosted on Dhegdheer, but the program hosted \
+         on Leprechaun is NOT hosted on Dhegdheer and pays its full 3"
+    );
+}
+
+/// example_rule_hosted_object_same_zone_as_host_1 (1.13.12): the Runner uses
+/// a Madani-class action to host 2 programs from their grip on it. The
+/// chosen cards change zones — grip to the play area, where their host is —
+/// and, hosted without being installed, they are not active (1.13.2a).
+#[test]
+fn example_rule_hosted_object_same_zone_as_host_1() {
+    let mut vm = Vm::empty(516);
+    let madani = tk::install_rig(&mut vm, tk::madani_like("Madani-like", 2));
+    let p1 = vm.new_object(tk::program_cost("Prog-A", 3), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(p1);
+    let p2 = vm.new_object(tk::program_cost("Prog-B", 3), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(p2);
+    let keep = vm.new_object(tk::runner_filler("Not-A-Program"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(keep);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::take("madani"))
+            .when(Match::targets().once(), Reply::Targets(vec![p1, p2]))
+            .stop_at_action(),
+    );
+    assert!(t.took("madani"), "the action was taken");
+    for p in [p1, p2] {
+        assert_eq!(
+            vm.st.objects[&p].zone,
+            vm.st.objects[&madani].zone,
+            "1.13.12: creating the hosting relationship moved the card to the host's zone"
+        );
+        assert_eq!(vm.st.objects[&p].host, Some(madani));
+        assert!(
+            !vm.st.hand[&Side::Runner].contains(&p),
+            "the chosen cards left the grip"
+        );
+        assert!(
+            !jinteki_cr::object::card_active(&vm.st.objects[&p]),
+            "1.13.2a: hosted without being installed — not installed, thus not active"
+        );
+    }
+    assert_eq!(
+        vm.st.hand[&Side::Runner],
+        vec![keep],
+        "only the chosen cards moved"
+    );
+}
+
+/// example_rule_trash_hosted_objects_when_host_trashed_1 (1.13.13): the
+/// Runner has a Detente-class program with Corp cards hosted on it, then
+/// plays a Rejig-class event adding it to their grip. Its host card having
+/// changed zones, the hosted Corp cards are trashed at the next checkpoint.
+#[test]
+fn example_rule_trash_hosted_objects_when_host_trashed_1() {
+    let mut vm = Vm::empty(517);
+    let detente = tk::install_rig(&mut vm, tk::detente_like("Detente-like"));
+    let corp_a = tk::install_root(&mut vm, tk::vanilla_asset("Corp-A", 0, 3), ServerId::Remote(1), true);
+    let corp_b = tk::install_root(&mut vm, tk::vanilla_asset("Corp-B", 0, 3), ServerId::Remote(2), true);
+    let rejig = vm.new_object(tk::rejig_like("Rejig-like"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(rejig);
+    tk::install_rig(&mut vm, tk::play_event_action("Play-Button", rejig));
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The plan: host both Corp cards on Detente (one action each), then play
+    // Rejig and add Detente to the grip.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().times(2), Reply::take("detente"))
+            .when(Match::action().once(), Reply::take("play-event-action"))
+            .when(Match::targets().once(), Reply::target(corp_a))
+            .when(Match::targets().once(), Reply::target(corp_b))
+            .when(Match::targets().once(), Reply::target(detente))
+            .stop_at_action(),
+    );
+    assert_eq!(t.times_taken("detente"), 2, "both Corp cards were hosted");
+    assert_eq!(
+        vm.st.objects[&detente].zone,
+        Zone::Hand(Side::Runner),
+        "Rejig added the host to the grip"
+    );
+    for c in [corp_a, corp_b] {
+        assert_eq!(
+            vm.st.objects[&c].zone,
+            Zone::Discard(Side::Corp),
+            "1.13.13: the host changed zones, so everything hosted on it is trashed"
+        );
+    }
+    assert!(vm.st.objects[&detente].hosted.is_empty());
+}
+
+/// example_rule_trash_hosted_objects_when_host_trashed_2 (1.13.13): the
+/// Runner has an agenda in their score area with a hosted agenda counter.
+/// The Corp plays an IP-Enforcement-class operation to install that agenda.
+/// The host changed zones, so the hosted counter is trashed during the
+/// installation — before the card becomes installed — and cannot be
+/// prevented.
+#[test]
+fn example_rule_trash_hosted_objects_when_host_trashed_2() {
+    let mut vm = Vm::empty(518);
+    let agenda = tk::put_in_score_area(&mut vm, tk::vanilla_agenda("NextBigThing-like", 3, 1), Side::Runner);
+    tk::place_counters(&mut vm, agenda, CounterKind::Agenda, 1);
+    let ip = vm.new_object(tk::ip_enforcement_like("IPEnforcement-like"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ip);
+    tk::install_root(
+        &mut vm,
+        tk::play_operation_button("Play-Button", ip),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("play-op"))
+            .when(Match::targets().once(), Reply::target(agenda))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"), "the operation was played");
+    assert!(
+        matches!(vm.st.objects[&agenda].zone, Zone::Root(_)),
+        "the agenda was installed"
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].counter(CounterKind::Agenda),
+        0,
+        "1.13.13: the hosted agenda counter was trashed when its host changed zones"
+    );
+    let removed = change_at(&vm, |c| {
+        matches!(c, GameChange::CounterRemoved { obj: Some(o), kind: CounterKind::Agenda, .. }
+            if *o == agenda)
+    });
+    let installed = change_at(&vm, |c| {
+        matches!(c, GameChange::CardInstalled { obj, .. } if *obj == agenda)
+    });
+    assert!(
+        removed < installed,
+        "the counter goes during the installation — the checkpoint that trashes it \
+         precedes step 8.5.16f, where the card becomes installed"
+    );
+}
+
+/// example_rule_trash_hosted_objects_when_host_trashed_3 (1.13.13, 8.8.4c):
+/// the same agenda with the same hosted counter, but the Corp plays an
+/// Exchange-of-Information-class operation to swap it into their own score
+/// area. Moving from one score area to another is the exception to 1.13.13,
+/// so the counter stays hosted.
+#[test]
+fn example_rule_trash_hosted_objects_when_host_trashed_3() {
+    let mut vm = Vm::empty(519);
+    let theirs = tk::put_in_score_area(&mut vm, tk::vanilla_agenda("NextBigThing-like", 3, 1), Side::Runner);
+    tk::place_counters(&mut vm, theirs, CounterKind::Agenda, 1);
+    let ours = tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Corp-Agenda", 3, 1), Side::Corp);
+    let eoi = vm.new_object(
+        tk::exchange_of_information_like("ExchangeOfInformation-like", theirs, ours),
+        Zone::Hand(Side::Corp),
+    );
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(eoi);
+    tk::install_root(
+        &mut vm,
+        tk::play_operation_button("Play-Button", eoi),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("play-op")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"), "the operation was played");
+    assert_eq!(
+        vm.st.objects[&theirs].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was swapped into the Corp's score area"
+    );
+    assert_eq!(vm.st.objects[&ours].zone, Zone::ScoreArea(Side::Runner));
+    assert_eq!(
+        vm.st.objects[&theirs].counter(CounterKind::Agenda),
+        1,
+        "1.13.13/8.8.4c: moving from a score area to another score area is the \
+         exception — the agenda counter remains hosted"
+    );
+}
+
+/// example_rule_hosted_counters_not_on_player_1 (1.13.3): a Whitespace-class
+/// subroutine makes the Runner lose 3[credit] while they hold 1 in their
+/// credit pool and 3 hosted on a card. Hosted credits are not "on" the
+/// Runner: only the pool is emptied.
+#[test]
+fn example_rule_hosted_counters_not_on_player_1() {
+    let mut vm = Vm::empty(520);
+    tk::install_ice(&mut vm, tk::whitespace_like("Whitespace-like", 3), ServerId::Hq, true);
+    let purse = tk::install_rig(
+        &mut vm,
+        tk::hosted_credit_source("Cyberfeeder-like", jinteki_cr::object::CardType::Hardware),
+    );
+    tk::place_counters(&mut vm, purse, CounterKind::Credit, 3);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().runs(ServerId::Hq).stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterBegan { .. })),
+        "the Runner encountered the ice"
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
+        "the subroutine resolved: {}",
+        t.tail(4)
+    );
+    assert_eq!(vm.st.runner.credits, 0, "the credit pool is emptied as far as it goes");
+    assert_eq!(
+        vm.st.objects[&purse].counter(CounterKind::Credit),
+        3,
+        "1.13.3: the Runner cannot lose credits hosted on their cards, even with \
+         fewer than 3 in their credit pool"
+    );
+}
+
+/// example_rule_hosted_counters_not_on_player_2 (1.13.3): the Corp has a
+/// Superdeep-Borehole-class card with hosted bad publicity counters. When
+/// the Runner fills their bad publicity fund at step 6.9.1b, the hosted
+/// counters are not counted.
+#[test]
+fn example_rule_hosted_counters_not_on_player_2() {
+    let mut vm = Vm::empty(521);
+    let borehole =
+        tk::install_root(&mut vm, tk::vanilla_asset("SuperdeepBorehole-like", 0, 3), ServerId::Remote(1), true);
+    tk::place_counters(&mut vm, borehole, CounterKind::BadPublicity, 2);
+    vm.st.corp.bad_publicity = 1;
+    // A 1[credit] paid ability and an empty credit pool: the Runner can only
+    // be offered it out of the bad publicity fund (10.6.2), so the window
+    // itself witnesses what the fund holds.
+    tk::install_rig(&mut vm, tk::pump_breaker("Breaker-like", 1));
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    // Halt at the first paid ability window of the run — step 6.9.1e,
+    // immediately after the fund is filled at 6.9.1b.
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .runs(ServerId::Hq)
+            .when(Match::paid().at_step("step_initiation_paw"), Reply::Halt)
+            .stop_at_action(),
+    );
+    let t = script.run(&mut vm).clone();
+    assert!(t.halted, "stopped inside the run's initiation phase:\n{}", t.tail(10));
+    assert_eq!(
+        vm.st.bp_fund, 1,
+        "1.13.3: 1 credit for the bad publicity the Corp has — the 2 counters \
+         hosted on a card are not on the Corp and add nothing"
+    );
+    assert_eq!(
+        vm.st.objects[&borehole].counter(CounterKind::BadPublicity),
+        2,
+        "the hosted counters are untouched"
+    );
+}
+
+/// example_rule_hosted_counters_not_on_player_3 (1.13.3): the Corp plays a
+/// Scapegoat-class operation to remove 2 bad publicity. It removes what the
+/// Corp has and cannot reach the bad publicity counters hosted on a card.
+#[test]
+fn example_rule_hosted_counters_not_on_player_3() {
+    let mut vm = Vm::empty(522);
+    let borehole =
+        tk::install_root(&mut vm, tk::vanilla_asset("SuperdeepBorehole-like", 0, 3), ServerId::Remote(1), true);
+    tk::place_counters(&mut vm, borehole, CounterKind::BadPublicity, 2);
+    vm.st.corp.bad_publicity = 1;
+    let scapegoat = vm.new_object(tk::remove_bad_pub_operation("Scapegoat-like", 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(scapegoat);
+    tk::install_root(
+        &mut vm,
+        tk::play_operation_button("Play-Button", scapegoat),
+        ServerId::Remote(1),
+        true,
+    );
+    vm.st.corp.credits = 5;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("play-op")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("play-op"), "the operation was played");
+    assert_eq!(vm.st.corp.bad_publicity, 0, "the Corp's own bad publicity is removed");
+    assert_eq!(
+        vm.st.objects[&borehole].counter(CounterKind::BadPublicity),
+        2,
+        "1.13.3: bad publicity counters hosted on a card cannot be removed by an \
+         ability that removes counters from a player"
+    );
+}
+
+/// example_rule_hosted_counter_used_condition_1 (9.1.6c): the Runner spends
+/// the credit hosted on a Cyberfeeder-class card to pay the trigger cost of
+/// a Mimic-class paid ability. Both cards have been used — the one whose
+/// ability was triggered, and the one whose ability allowed the credit to be
+/// spent.
+#[test]
+fn example_rule_hosted_counter_used_condition_1() {
+    let mut vm = Vm::empty(523);
+    let feeder = tk::install_rig(
+        &mut vm,
+        tk::hosted_credit_source("Cyberfeeder-like", jinteki_cr::object::CardType::Hardware),
+    );
+    tk::place_counters(&mut vm, feeder, CounterKind::Credit, 1);
+    let mimic = tk::install_rig(&mut vm, tk::credit_cost_program("Mimic-like"));
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("mimic")).stop_at_action(),
+    );
+    assert!(
+        t.took("mimic"),
+        "1.10.3c: the hosted credit makes the 1[credit] trigger cost payable"
+    );
+    assert_eq!(vm.st.runner.credits, 0, "nothing came out of the credit pool");
+    assert_eq!(
+        vm.st.objects[&feeder].counter(CounterKind::Credit),
+        0,
+        "1.13.11: the hosted credit was spent from its host"
+    );
+    let used: Vec<jinteki_cr::ObjectId> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::AbilityUsed { source } => Some(*source),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        used.contains(&mimic),
+        "9.1.6a: the paid ability is used once its trigger cost is paid"
+    );
+    assert!(
+        used.contains(&feeder),
+        "9.1.6c: the card whose ability allowed the counter to be spent has been \
+         used too, though the cost was paid for another card's ability"
+    );
 }
 
 // ===========================================================================

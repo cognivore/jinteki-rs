@@ -40,6 +40,11 @@ pub enum GameChange {
     CardRezzed { obj: ObjectId },
     CardMoved { obj: ObjectId, from: Zone, to: Zone },
     CounterPlaced { obj: ObjectId, kind: crate::object::CounterKind, amount: u32 },
+    /// Counters left a card or a player and returned to the bank (1.9.2) —
+    /// spent, removed, or trashed with their host (1.13.13).
+    CounterRemoved { obj: Option<ObjectId>, kind: crate::object::CounterKind, amount: u32 },
+    /// CR 1.13.1: a host relationship was created between two objects.
+    CardHosted { obj: ObjectId, host: ObjectId },
     AgendaScored { obj: ObjectId, points: i32 },
     AgendaStolen { obj: ObjectId, points: i32 },
     CardAccessed { obj: ObjectId },

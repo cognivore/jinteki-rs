@@ -8,9 +8,9 @@ truth.
 
 ## Odometers (during W5)
 
-- **DP-7a: 87/243** CR examples as example-named passing tests (35.8%).
+- **DP-7a: 99/243** CR examples as example-named passing tests (40.7%).
   Unfrozen since FT-0 landed; the climb to 243/243 has resumed.
-- **DP-7b: 400/1420** distinct rules cited (28.2%); traceability test fails
+- **DP-7b: 429/1420** distinct rules cited (30.2%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
@@ -85,7 +85,8 @@ prefer a slightly larger honest primitive and note it here.
 | `b90030c` | W4d | playable slice migrated (phase plans + `forbidding_the_rest`); `Instruction::CreateLingeringEffect { LingeringSpec, WantedDuration }` + the real cards that replace `tk::inject_*` | 82 |
 | `469c09c` | W4e | 14 examples migrated (§9.9 interrupts, traces, psi, subroutine origins, access prohibition); `GrantSubroutinesToSelf` → `GrantSubroutines { to, count, sub, before, duration }` | 82 |
 | `-` | W4f | 22 + 19 examples migrated — the suite is now 100% declarative; every `tk::inject_*` and `grant_external_sub` DELETED, their effects created by real cards; legacy script drivers deleted from testkit; `tests_are_plans_not_loops` enforcement test. **FT-0 exit gate met.** | 82 |
-| _(this)_ | W5a | §8.7 searching/finding/shuffling: `Instruction::Search { zone, criteria, count, may_fail }` as a §9.11 instruction, found cards set aside facedown (4.8.4) and addressed by `TargetSpec::FoundBySearch`, 8.7.3 shuffle-before-anything, 8.7.5/9.11.4d pend timing; the 8.7.2b legality query (`could_install_found_card` / `could_play_found_card`) incl. Patchwork-class cost reduction; `TargetFilter` extended with card-characteristic atoms; 8.5.13d reveal for an unaffordable rez. Deviation (9) retired. | 87 |
+| `e044046` | W5a | §8.7 searching/finding/shuffling: `Instruction::Search { zone, criteria, count, may_fail }` as a §9.11 instruction, found cards set aside facedown (4.8.4) and addressed by `TargetSpec::FoundBySearch`, 8.7.3 shuffle-before-anything, 8.7.5/9.11.4d pend timing; the 8.7.2b legality query (`could_install_found_card` / `could_play_found_card`) incl. Patchwork-class cost reduction; `TargetFilter` extended with card-characteristic atoms; 8.5.13d reveal for an unaffordable rez. Deviation (9) retired. | 87 |
+| _(this)_ | W5b | §1.13 hosting: `StaticDecl::{CanHost, HostedInstallDiscount, InstallOnlyHostedOn}`, `Instruction::{HostCards, SwapCards, RemoveCountersFromPlayer}`; the 8.5.16b destination declaration now offers every eligible host (1.13.6a) and refuses the ones that host only through their own abilities (1.13.6b); 1.13.6c install-legality gate; 1.13.12 zone-following + 1.13.2a/b hosted-not-installed; 1.13.13 rebuilt as a change-driven checkpoint rule with the score-area→score-area exception (8.8.4c); 1.13.3 hosted counters (`CounterKind::BadPublicity`); 9.1.6c hosted-credit spending marks both cards used | 99 |
 
 ## Open deviations (documented in code; retire deliberately)
 
@@ -154,6 +155,43 @@ prefer a slightly larger honest primitive and note it here.
     one. `Pick::Labeled` is a substring match on the option label, so needles
     must be distinctive (`"advance target"`, not `"advance"`).
 
+13. **The 1.13.6a host choice is declared at announce time** (W5b) — every
+    `InstallCard` whose destination is not already a fixed host asks the
+    installer to pick an eligible host (or decline) when the instruction
+    announces its targets, not during step 8.5.16b. Nothing intervenes
+    between the two points in any tested example. Consequence: ONE
+    instruction gets ONE announce Decision, so `InstallCard { card:
+    Choose{…} }` spends it on the card and never offers a host;
+    `InstallCards` (8.5.5, one at a time) rewrites itself per card and so
+    gets both, which is how the §1.13 tests install.
+14. **1.13.13 counter-trashing is one checkpoint early** (W5b, an instance of
+    deviation 4) — `example_rule_trash_hosted_objects_when_host_trashed_2`
+    says the hosted agenda counter goes "after step 8.5.16d"; the kernel
+    gives every install step its own checkpoint, and the card leaves the
+    score area at 8.5.16a, so the counter goes after (a). The observable
+    claim — gone during the installation, before the card becomes installed
+    at 8.5.16f, unpreventable — holds and is what the test asserts.
+15. **§8.8 swaps are a slice** (W5b) — `Instruction::SwapCards` exchanges two
+    cards' zones simultaneously and leaves everything hosted on them hosted
+    (8.8.3a/8.8.4c), which is all 1.13.13's third example needs. 8.8.2
+    destination legality, 8.8.3's exact position preservation and the 8.8.4b
+    mixed installed/uninstalled case (where hosted objects ARE trashed and
+    install/uninstall conditions meet) belong to the §8.8 wave.
+16. **Two narrow scans** (W5b): 1.13.6b's "has an ability that hosts onto
+    itself" is a shallow scan of printed instruction lists for
+    `HostCards { host: SelfSource }` (it does not look inside `Combined` /
+    `DeclineableChoice` wrappers), and `RemoveCountersFromPlayer` is wired
+    for bad publicity only — tags have their own removal path and the other
+    counter kinds only ever exist hosted on cards.
+17. **No basic install or play actions** (5.2.6d/5.2.7a/d) — the action
+    window still offers only credit/draw/run/remove-tag plus card actions,
+    so "the Runner installs a connection card" and "the Corp plays
+    Scapegoat" are driven by card abilities that install/play
+    (`tk::runner_install_button`, `tk::play_event_action`, …). The 1.13.6a/b
+    examples' phrase "through an install action" is therefore tested against
+    an install EFFECT; 1.13.6c's legality gate lives in the same place either
+    way (`Vm::install_destination_available`).
+
 Retired: W1's "persistent-ability expiry plumbed but unarmed" (W2b armed
 it); W2's "10.3.1j auto-candidate declaration" (W3a implemented the real
 Runner declaration Decision with 7.4.6a declined-tracking); **W3's
@@ -215,7 +253,23 @@ orthogonal to every example using it.
    credits-gained triggers).
 3. **§8.8 swaps** — Metamorph/Thimblerig/A Teia/Tatu-Bola examples
    (position-preserving moves, hosted-relationship maintenance, 8.8.4b
-   install/uninstall condition timing).
+   install/uninstall condition timing). W5b landed `Instruction::SwapCards`
+   as the zone exchange with hosting preserved (8.8.3a/8.8.4c) — the wave
+   itself is the legality, position and mixed-installed-state work
+   (deviation 15).
+6. ~~**§1.13 hosting + 1.13.3 hosted counters**~~ — **DONE (W5b).** All 12
+   examples land. The vocabulary is `StaticDecl::{CanHost,
+   HostedInstallDiscount, InstallOnlyHostedOn}`,
+   `Instruction::{HostCards, SwapCards, RemoveCountersFromPlayer}`,
+   `Object::hosted_not_installed` (1.13.2a/b),
+   `Vm::{eligible_hosts_for, install_only_hosted_on,
+   install_destination_available, create_host_relationship, swap_cards}`,
+   `CounterKind::BadPublicity`, `TargetFilter::{Rezzed, InScoreAreaOf}`,
+   `TargetSpec::Choose { criteria: Vec<TargetFilter> }` (conjunctions, as
+   8.7.2a criteria already were), and `GameChange::{CardHosted,
+   CounterRemoved}`. Still open from §1.13: 1.13.7c/d facedown hosting
+   groups, 1.13.8 (a player cannot change hosted status), 1.13.14 condition
+   counters as hosts, and 10.1.4 card-to-counter conversion.
 4. **Chain/independence residue** — 9.1.2a example 2 (Zahya/Direct Access
    ability-removed-during-resolution), 9.1.4 Compile/Mayfly stranding
    (source_moved_since is still a stub — see vm.rs).

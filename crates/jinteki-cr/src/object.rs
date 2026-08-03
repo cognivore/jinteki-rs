@@ -99,7 +99,10 @@ pub enum CardType {
     Resource,
 }
 
-/// Counter kinds tracked on objects (CR 1.9).
+/// Counter kinds tracked on objects (CR 1.9.5). A counter of any of these
+/// kinds can sit on a *player* (1.9.5c/d: tags and bad publicity) or be
+/// **hosted** on a card (1.13.1); 1.13.3 is the rule that keeps the two
+/// populations apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CounterKind {
     Advancement,
@@ -107,6 +110,10 @@ pub enum CounterKind {
     Power,
     Virus,
     Agenda,
+    /// CR 1.9.5d / 10.6.1: bad publicity counters. Placed on the Corp, or
+    /// hosted on a card — in which case 1.13.3 makes them invisible to the
+    /// fund (10.6.3a) and to abilities removing bad publicity from the Corp.
+    BadPublicity,
 }
 
 /// The printed (immutable) face of a card — the base of the characteristics
@@ -185,6 +192,11 @@ pub struct Object {
     /// CR 1.13: host relationships.
     pub host: Option<ObjectId>,
     pub hosted: Vec<ObjectId>,
+    /// CR 1.13.2a: hosted by an ability that did not refer to installing it,
+    /// so the card is in the play area (4.6.5h) but NOT installed and
+    /// therefore not active. Also set on an installed Corp card that became
+    /// hosted on a Runner card (1.13.2b).
+    pub hosted_not_installed: bool,
     /// Counters hosted on this object (CR 1.9).
     pub counters: std::collections::BTreeMap<CounterKind, u32>,
     /// Monotonic stamp of the moment this card last became active — used by
@@ -225,6 +237,13 @@ pub fn card_active(obj: &Object) -> bool {
         // CR 8.5.16a / 8.6.7a: not yet installed or active.
         cite!("rule_steps_installing_place");
         cite!("rule_steps_playing_place");
+        return false;
+    }
+    if obj.hosted_not_installed {
+        // CR 1.13.2a / 4.6.5h: hosted without being installed — in the play
+        // area, but "not installed and thus not active".
+        cite!("rule_host_without_install");
+        cite!("rule_play_area_not_installed_hosted");
         return false;
     }
     match obj.zone {

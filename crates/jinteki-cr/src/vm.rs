@@ -451,6 +451,7 @@ impl Vm {
                 controller: owner,
                 host: None,
                 hosted: Vec::new(),
+                hosted_not_installed: false,
                 counters: BTreeMap::new(),
                 active_since: 0,
                 set_aside_for_ability: false,
@@ -1879,7 +1880,7 @@ impl Vm {
                 })
                 .unwrap_or(0),
             TargetFilter::CardsInHandOf(side) => self.st.hand[&side].len() as i64,
-            other => self.filter_candidates(other, Side::Corp).len() as i64,
+            other => self.filter_candidates_from(&[other], source).len() as i64,
         }
     }
 
@@ -2059,8 +2060,15 @@ impl Vm {
                     vec![EffectAtom::new(EffectClass::TrashCards, n, *side)]
                 }
             }
-            Instruction::Search { .. } | Instruction::AddCardsToHand { .. } => {
+            Instruction::Search { .. }
+            | Instruction::AddCardsToHand { .. }
+            | Instruction::HostCards { .. }
+            | Instruction::SwapCards { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
+            }
+            Instruction::RemoveCountersFromPlayer { side, amount, .. } => {
+                let n = self.eval_quantity(amount, source);
+                vec![EffectAtom::new(EffectClass::Structural, n, *side)]
             }
             Instruction::TraceCorpSpend
             | Instruction::TraceRunnerSpend
@@ -2836,8 +2844,8 @@ impl Vm {
     fn option_resolvable(&self, instrs: &[Instruction]) -> bool {
         instrs.iter().all(|i| match i {
             Instruction::LoseCredits(side, n) => self.st.player(*side).credits >= *n,
-            Instruction::TrashCards(TargetSpec::Choose { count, filter }) => {
-                self.filter_candidates(*filter, Side::Runner).len() >= *count as usize
+            Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
+                self.filter_candidates(criteria, Side::Runner).len() >= *count as usize
             }
             // Tag costs blocked by mandatory avoiders are unpayable
             // (1.16.1b), mirrored for choice options.
@@ -2871,8 +2879,8 @@ impl Vm {
     fn targets_needed(&self, instr: &Instruction) -> Option<(Side, DecisionSpec)> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
         match instr {
-            Instruction::TrashCards(TargetSpec::Choose { count, filter }) => {
-                let candidates = self.filter_candidates(*filter, af.controller);
+            Instruction::TrashCards(TargetSpec::Choose { count, criteria }) => {
+                let candidates = self.filter_candidates(criteria, af.controller);
                 Some((
                     af.controller,
                     DecisionSpec::ChooseTargets {
@@ -2887,8 +2895,10 @@ impl Vm {
                 let (payer, _) = self.nested_cost_payer(instr);
                 Some((payer, DecisionSpec::NestedCost { cost: cost.clone() }))
             }
-            Instruction::MoveSetAsideCounters { target: TargetSpec::Choose { count, filter }, .. } => {
-                let candidates = self.filter_candidates(*filter, af.controller);
+            Instruction::MoveSetAsideCounters {
+                target: TargetSpec::Choose { count, criteria }, ..
+            } => {
+                let candidates = self.filter_candidates(criteria, af.controller);
                 Some((
                     af.controller,
                     DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false },
@@ -2898,6 +2908,20 @@ impl Vm {
                 af.controller,
                 DecisionSpec::OptionalEffect { label: "optional effect" },
             )),
+            // 1.13.1: "host <cards> on this card" / "add <a card> to your
+            // grip" announce which cards they act on (9.3.4b).
+            Instruction::HostCards { cards: TargetSpec::Choose { count, criteria }, .. }
+            | Instruction::AddCardsToHand { cards: TargetSpec::Choose { count, criteria } } => {
+                let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
+                Some((
+                    af.controller,
+                    DecisionSpec::ChooseTargets {
+                        candidates,
+                        count: *count,
+                        up_to: true,
+                    },
+                ))
+            }
             // 8.5.5: multi-installs choose ONE card at a time.
             Instruction::InstallCards {
                 count,
@@ -2938,27 +2962,44 @@ impl Vm {
             }
             // 8.5.16b: the Runner declares a host or defaults to the rig.
             Instruction::InstallCard {
-                card: TargetSpec::Choose { count, filter },
+                card: TargetSpec::Choose { count, criteria },
                 ..
             } => {
-                let candidates = self.filter_candidates(*filter, af.controller);
+                let candidates = self.filter_candidates(criteria, af.controller);
                 Some((
                     af.controller,
                     DecisionSpec::ChooseTargets { candidates, count: *count, up_to: false },
                 ))
             }
-            Instruction::InstallCard {
-                dest: crate::instr::InstallDest::RunnerChoiceHostOrRig,
-                ..
-            } => {
+            // 1.13.6a/8.5.16b: with the card known, whoever is installing it
+            // declares the destination — and any eligible host is one of the
+            // destinations on offer, whatever destination the effect named.
+            // `up_to: true` is the "or as normal" half of the choice.
+            Instruction::InstallCard { card, dest, .. }
+                if !matches!(dest, crate::instr::InstallDest::HostedOn(_)) =>
+            {
                 cite!("rule_host_via_install");
-                let hosts = self.eligible_program_hosts();
+                cite!("rule_steps_installing_destination");
+                let c = self
+                    .resolve_targets(card, Some(af.source.obj), &af.targets)
+                    .first()
+                    .copied();
+                let hosts = c.map(|c| self.eligible_hosts_for(c)).unwrap_or_default();
                 if hosts.is_empty() {
                     None
                 } else {
+                    // 1.13.6c: where the installee's own ability names its
+                    // hosts, one of them MUST be chosen; a 1.13.6a host is
+                    // one destination among the ones normally available.
+                    let optional =
+                        c.map(|c| self.install_only_hosted_on(c).is_none()).unwrap_or(true);
                     Some((
                         af.controller,
-                        DecisionSpec::ChooseTargets { candidates: hosts, count: 1, up_to: true },
+                        DecisionSpec::ChooseTargets {
+                            candidates: hosts,
+                            count: 1,
+                            up_to: optional,
+                        },
                     ))
                 }
             }
@@ -2998,33 +3039,225 @@ impl Vm {
                     }
                     _ => true,
                 };
-                class_ok && rez_ok && afford
+                // 1.13.6c: a card that can only be installed hosted onto
+                // another card cannot be chosen while no valid destination
+                // exists — the illegality is checked before the installation
+                // process begins.
+                let destination_ok = self.install_destination_available(*id);
+                class_ok && rez_ok && afford && destination_ok
             })
             .collect()
     }
 
-    /// CR 8.5.1a / 1.13.4a: cards whose abilities describe what they can
-    /// host are eligible installation destinations, up to capacity.
-    fn eligible_program_hosts(&self) -> Vec<ObjectId> {
+    /// CR 1.13.6a: a card with an ability describing the types and numbers of
+    /// cards it can host — and NO ability that hosts cards onto itself
+    /// (1.13.6b) — is an eligible installation destination for the cards it
+    /// describes, up to the number it specifies (1.13.5). Only cards in a
+    /// score area or the play area can host at all (1.13.1a).
+    pub fn eligible_hosts_for(&self, card: ObjectId) -> Vec<ObjectId> {
         cite!("rule_host_via_install");
+        cite!("rule_host_relationship");
+        let Some(installee) = self.st.objects.get(&card) else { return Vec::new() };
+        // 1.13.6c: a card stipulating that it can only be installed hosted
+        // onto another card names its own destinations, and must use them.
+        if let Some(hosts) = self.install_only_hosted_on(card) {
+            return hosts;
+        }
         self.st
             .objects
             .values()
-            .filter(|o| {
-                card_active(o)
-                    && o.printed.abilities.iter().enumerate().any(|(i, a)| {
-                        a.kind == AbilityKind::Static
-                            && self.ability_present(o.id, i)
-                            && a.statics.iter().any(|d| match d {
-                                StaticDecl::HostsPrograms { capacity, .. } => {
-                                    (o.hosted.len() as u32) < *capacity
-                                }
-                                _ => false,
-                            })
-                    })
-            })
+            .filter(|o| o.id != card)
+            .filter(|o| self.can_host_location(o))
+            .filter(|o| !self.hosts_onto_itself(o.id))
+            .filter(|o| self.host_accepts(o, installee))
             .map(|o| o.id)
             .collect()
+    }
+
+    /// CR 1.13.1a: only cards in score areas and the play area can host
+    /// objects — and only while they are actually there (an inactive but
+    /// installed Corp card is in the play area).
+    fn can_host_location(&self, o: &Object) -> bool {
+        cite!("rule_valid_hosts");
+        !o.hosted_not_installed
+            && !o.staged
+            && (o.zone.is_installed() || matches!(o.zone, Zone::ScoreArea(_) | Zone::PlayArea(_)))
+    }
+
+    /// CR 1.13.1: create a host relationship. The hosted object moves to the
+    /// host's zone (1.13.12) and any previous relationship ends (1.13.4:
+    /// an object is hosted on a single card at a time). `installed` says
+    /// whether the ability that created it was installing the card: if not,
+    /// the card does not become installed (1.13.2a) and is therefore not
+    /// active (4.6.5h) — and an installed Corp card hosted on a Runner card
+    /// becomes uninstalled (1.13.2b).
+    pub fn create_host_relationship(&mut self, guest: ObjectId, host: ObjectId, installed: bool) {
+        cite!("rule_placed_loaded");
+        cite!("rule_hosted_limit");
+        if let Some(old) = self.st.objects[&guest].host {
+            if let Some(h) = self.st.objects.get_mut(&old) {
+                h.hosted.retain(|&x| x != guest);
+            }
+        }
+        let host_zone = self.st.objects[&host].zone;
+        let was_installed = self.is_installed(&self.st.objects[&guest]);
+        let was_zone = self.st.objects[&guest].zone;
+        if self.st.objects[&guest].zone != host_zone {
+            cite!("rule_hosted_object_same_zone_as_host");
+            self.move_card(guest, host_zone);
+        }
+        {
+            let g = self.st.objects.get_mut(&guest).unwrap();
+            g.host = Some(host);
+            if !installed {
+                cite!("rule_host_without_install");
+                g.hosted_not_installed = true;
+                // 1.13.7b: hosted without being installed → hosted faceup.
+                cite!("rule_hosted_when_not_installed");
+                g.faceup = true;
+            }
+        }
+        self.st.objects.get_mut(&host).unwrap().hosted.push(guest);
+        self.changes.record(GameChange::CardHosted { obj: guest, host });
+        // 1.13.2b: an installed Corp card that becomes hosted on a Runner
+        // card becomes uninstalled.
+        let corp_on_runner = is_corp_card(self.st.objects[&guest].printed.card_type)
+            && self.st.objects[&host].printed.side == Side::Runner;
+        if was_installed && (!installed || corp_on_runner) {
+            if corp_on_runner {
+                cite!("rule_host_corp_card_uninstall");
+                self.st.objects.get_mut(&guest).unwrap().hosted_not_installed = true;
+            }
+            self.changes
+                .record(GameChange::CardUninstalled { obj: guest, was_zone });
+        }
+    }
+
+    /// CR 8.8.1/8.8.4: swap two cards — they exchange locations
+    /// simultaneously, and whatever is hosted on either of them stays hosted
+    /// on it (8.8.3a / 8.8.4c: swapping agendas between score areas leaves
+    /// hosted cards and counters where they are).
+    ///
+    /// KERNEL SLICE: the exchange is implemented for two cards that are in
+    /// the same KIND of location (both in score areas, both installed in the
+    /// same kind of zone). The 8.8.4b mixed installed/uninstalled case — the
+    /// only one where hosted objects are trashed and install/uninstall
+    /// conditions are met — belongs to the §8.8 wave and is not implemented.
+    pub fn swap_cards(&mut self, x: ObjectId, y: ObjectId) {
+        cite!("rule_swap_installed_cards");
+        cite!("rule_swap_installed_cards_preserves_hosting");
+        cite!("rule_swap_score_areas");
+        let (zx, zy) = (self.st.objects[&x].zone, self.st.objects[&y].zone);
+        if zx == zy {
+            return;
+        }
+        // Simultaneous exchange: neither card's own move can be observed
+        // trashing what is hosted on it (8.8.3a), so the host relationships
+        // are simply carried along with the cards.
+        self.move_card(x, zy);
+        self.move_card(y, zx);
+        if let (Zone::ScoreArea(sx), Zone::ScoreArea(sy)) = (zx, zy) {
+            // 4.5: a card in a score area is controlled by its owner of that
+            // area — the swap changes who has scored it.
+            cite!("rule_score_area");
+            self.st.objects.get_mut(&x).unwrap().controller = sy;
+            self.st.objects.get_mut(&y).unwrap().controller = sx;
+        }
+    }
+
+    /// CR 1.9.5: remove up to `n` counters of `kind` from a PLAYER (their
+    /// tags, their bad publicity). Hosted counters are never reachable here
+    /// (1.13.3).
+    fn remove_player_counters(&mut self, side: Side, kind: CounterKind, n: u32) {
+        let removed = match kind {
+            CounterKind::BadPublicity => {
+                cite!("rule_bad_publicity");
+                let have = self.st.player(side).bad_publicity;
+                let take = have.min(n);
+                self.st.player_mut(side).bad_publicity -= take;
+                take
+            }
+            _ => 0,
+        };
+        if removed > 0 {
+            self.changes
+                .record(GameChange::CounterRemoved { obj: None, kind, amount: removed });
+        }
+    }
+
+    /// CR 1.13.6b: does this card have an ability that creates a host
+    /// relationship onto itself? If so, it hosts only through those
+    /// abilities and is not an installation destination.
+    fn hosts_onto_itself(&self, host: ObjectId) -> bool {
+        cite!("rule_host_via_ability");
+        let Some(o) = self.st.objects.get(&host) else { return false };
+        o.printed.abilities.iter().any(|a| {
+            a.instructions.iter().any(|i| {
+                matches!(i, Instruction::HostCards { host: TargetSpec::SelfSource, .. })
+            })
+        })
+    }
+
+    /// Does `host`'s hosting declaration accept `installee`, with room left
+    /// (1.13.5: any number unless the ability says otherwise)?
+    fn host_accepts(&self, host: &Object, installee: &Object) -> bool {
+        host.printed.abilities.iter().enumerate().any(|(i, a)| {
+            a.kind == AbilityKind::Static
+                && self.ability_present(host.id, i)
+                && a.statics.iter().any(|d| match d {
+                    StaticDecl::CanHost { criteria, capacity } => {
+                        cite!("rule_hosting_limit");
+                        let room = match capacity {
+                            None => true,
+                            Some(q) => (host.hosted.len() as i64) < self.eval_quantity(q, Some(host.id)),
+                        };
+                        room && criteria
+                            .iter()
+                            .all(|f| self.filter_matches(installee, *f, Some(host.id)))
+                    }
+                    _ => false,
+                })
+        })
+    }
+
+    /// CR 1.13.6c: "install only on <description>" — the cards this one may
+    /// be installed onto. `None` means the card carries no such restriction.
+    pub fn install_only_hosted_on(&self, card: ObjectId) -> Option<Vec<ObjectId>> {
+        let o = self.st.objects.get(&card)?;
+        // 9.1.8c: an ability restricting where its source may be installed is
+        // active even while that source is inactive (it is in a hand).
+        cite!("rule_active_exception_modify_play_install_rez");
+        let criteria: Vec<TargetFilter> = o
+            .printed
+            .abilities
+            .iter()
+            .filter(|a| a.kind == AbilityKind::Static)
+            .flat_map(|a| a.statics.iter())
+            .find_map(|d| match d {
+                StaticDecl::InstallOnlyHostedOn(c) => Some(c.clone()),
+                _ => None,
+            })?;
+        cite!("rule_host_on_ability");
+        cite!("rule_host_restriction");
+        Some(
+            self.st
+                .objects
+                .values()
+                .filter(|h| h.id != card && self.can_host_location(h))
+                .filter(|h| criteria.iter().all(|f| self.filter_matches(h, *f, Some(card))))
+                .map(|h| h.id)
+                .collect(),
+        )
+    }
+
+    /// CR 1.13.6c: could this card legally be installed right now? A card
+    /// that may only be installed hosted onto another card cannot be
+    /// installed at all while no valid destination exists.
+    pub fn install_destination_available(&self, card: ObjectId) -> bool {
+        match self.install_only_hosted_on(card) {
+            None => true,
+            Some(hosts) => !hosts.is_empty(),
+        }
     }
 
     /// ONE predicate for the shared filter vocabulary (§12 rule 5): the same
@@ -3034,14 +3267,19 @@ impl Vm {
     /// the zone separately.
     pub fn filter_matches(&self, o: &Object, f: TargetFilter, source: Option<ObjectId>) -> bool {
         match f {
-            TargetFilter::InstalledCorpCard => {
-                o.zone.is_installed() && is_corp_card(o.printed.card_type)
-            }
+            TargetFilter::InstalledCorpCard => self.is_installed(o) && is_corp_card(o.printed.card_type),
             TargetFilter::InstalledRunnerCard => {
-                o.zone.is_installed() && !is_corp_card(o.printed.card_type)
+                self.is_installed(o) && !is_corp_card(o.printed.card_type)
             }
             TargetFilter::InstalledResource => {
-                o.zone == Zone::Rig && o.printed.card_type == CardType::Resource
+                self.is_installed(o)
+                    && o.zone == Zone::Rig
+                    && o.printed.card_type == CardType::Resource
+            }
+            // 8.1.2: a rezzed card is an installed faceup Corp card.
+            TargetFilter::Rezzed => {
+                cite!("rule_rezzed_unrezzed");
+                self.is_installed(o) && is_corp_card(o.printed.card_type) && o.faceup
             }
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.st.objects.get(&s))
@@ -3061,14 +3299,36 @@ impl Vm {
                     .contains(&s)
             }
             TargetFilter::PrintedCostAtMost(n) => o.printed.cost.unwrap_or(0) <= n,
+            TargetFilter::InScoreAreaOf(side) => {
+                cite!("rule_score_area");
+                o.zone == Zone::ScoreArea(side)
+            }
         }
     }
 
-    fn filter_candidates(&self, f: TargetFilter, _controller: Side) -> Vec<ObjectId> {
+    /// CR 1.13.2: installed is distinct from hosted — a card hosted without
+    /// being installed (1.13.2a) sits in the play area but is not installed,
+    /// and neither is a card merely staged there mid-install (8.5.16a).
+    pub fn is_installed(&self, o: &Object) -> bool {
+        cite!("rule_hosted_installed_state");
+        o.zone.is_installed() && !o.hosted_not_installed && !o.staged
+    }
+
+    /// Candidates for an announced choice: every object matching ALL the
+    /// criteria (the conjunction the CR writes as "a rezzed piece of ice").
+    fn filter_candidates(&self, criteria: &[TargetFilter], _controller: Side) -> Vec<ObjectId> {
+        self.filter_candidates_from(criteria, None)
+    }
+
+    fn filter_candidates_from(
+        &self,
+        criteria: &[TargetFilter],
+        source: Option<ObjectId>,
+    ) -> Vec<ObjectId> {
         self.st
             .objects
             .values()
-            .filter(|o| self.filter_matches(o, f, None))
+            .filter(|o| criteria.iter().all(|f| self.filter_matches(o, *f, source)))
             .map(|o| o.id)
             .collect()
     }
@@ -3163,12 +3423,24 @@ impl Vm {
             self.set_ability_phase(AbilityPhase::Checkpoint);
             return;
         };
+        // 1.13.6a / 8.5.16b: if the installer declared an eligible host as
+        // the destination, that is the destination; otherwise the one the
+        // effect named ("or as normal"). `RunnerChoiceHostOrRig` names the
+        // rig (8.5.4).
         let dest = match dest {
-            crate::instr::InstallDest::RunnerChoiceHostOrRig => match announced.first() {
-                Some(&h) if h != c => crate::instr::InstallDest::HostedOn(h),
-                _ => crate::instr::InstallDest::Rig,
+            crate::instr::InstallDest::HostedOn(h) => crate::instr::InstallDest::HostedOn(h),
+            d => match announced.first() {
+                Some(&h) if h != c && self.eligible_hosts_for(c).contains(&h) => {
+                    cite!("rule_steps_installing_destination");
+                    crate::instr::InstallDest::HostedOn(h)
+                }
+                _ => match d {
+                    crate::instr::InstallDest::RunnerChoiceHostOrRig => {
+                        crate::instr::InstallDest::Rig
+                    }
+                    other => other,
+                },
             },
-            d => d,
         };
         let was_hidden = {
             let o = &self.st.objects[&c];
@@ -3485,6 +3757,10 @@ impl Vm {
         if !installable {
             return false;
         }
+        // 1.13.6c: no valid host means the card cannot be installed at all.
+        if !self.install_destination_available(card) {
+            return false;
+        }
         if ignore_costs {
             cite!("rule_ignore_all_costs");
             return true;
@@ -3530,7 +3806,12 @@ impl Vm {
             .filter(|(i, a)| a.kind == AbilityKind::Static && self.ability_present(host, *i))
             .flat_map(|(_, a)| a.statics.iter())
             .filter_map(|d| match d {
-                StaticDecl::HostsPrograms { install_discount, .. } => Some(*install_discount),
+                // 1.13.9: the discount belongs to the card the installee is
+                // hosted ON, and host relationships are not transitive.
+                StaticDecl::HostedInstallDiscount(q) => {
+                    cite!("rule_host_transitivity");
+                    Some(self.eval_quantity(q, Some(host)).max(0) as u32)
+                }
                 _ => None,
             })
             .sum()
@@ -4263,6 +4544,42 @@ impl Vm {
                     self.check_all_subs_broken();
                 }
             }
+            Instruction::HostCards { cards, host } => {
+                cite!("rule_placed_loaded");
+                let h = self
+                    .resolve_targets(host, Some(source.obj), &imm.targets)
+                    .first()
+                    .copied();
+                let Some(h) = h else { return };
+                let guests = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                if matches!(cards, TargetSpec::FoundBySearch) {
+                    self.take_found_cards();
+                }
+                for g in guests {
+                    if g == h {
+                        continue;
+                    }
+                    // 1.13.2a: this instruction hosts without installing.
+                    self.create_host_relationship(g, h, false);
+                }
+            }
+            Instruction::SwapCards { a, b } => {
+                cite!("rule_swap");
+                cite!("rule_swap_simultaneous");
+                let x = self.resolve_targets(a, Some(source.obj), &imm.targets);
+                let y = self.resolve_targets(b, Some(source.obj), &imm.targets);
+                if let (Some(&x), Some(&y)) = (x.first(), y.first()) {
+                    self.swap_cards(x, y);
+                }
+            }
+            Instruction::RemoveCountersFromPlayer { side, kind, amount } => {
+                // 1.13.3: counters hosted on cards are not on a player, so
+                // nothing here can reach them — the pools this touches are
+                // the player's own.
+                cite!("rule_hosted_counters_not_on_player");
+                let n = self.eval_quantity(amount, Some(source.obj)).max(0) as u32;
+                self.remove_player_counters(*side, *kind, n);
+            }
             Instruction::PlaceCounters { target, kind, amount } => {
                 let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
                 for t in targets {
@@ -4326,7 +4643,11 @@ impl Vm {
                     | crate::instr::InstallDest::RunnerChoiceHostOrRig => {
                         Some((Zone::Rig, None))
                     }
-                    crate::instr::InstallDest::HostedOn(_) => Some((Zone::Rig, None)),
+                    // 1.13.12: the hosted object moves to the host's zone.
+                    crate::instr::InstallDest::HostedOn(h) => {
+                        cite!("rule_hosted_object_same_zone_as_host");
+                        self.st.objects.get(&h).map(|host| (host.zone, None))
+                    }
                     crate::instr::InstallDest::BreachedServerRoot => {
                         self.breach_server().map(|s| (Zone::Root(s), None))
                     }
@@ -4430,8 +4751,11 @@ impl Vm {
                 }
                 if let crate::instr::InstallDest::HostedOn(h) = p.dest {
                     cite!("rule_host_via_install");
-                    self.st.objects.get_mut(&c).unwrap().host = Some(h);
-                    self.st.objects.get_mut(&h).unwrap().hosted.push(c);
+                    // 1.13.7a: hosted while being installed, so it keeps the
+                    // faceup status the installation gave it, and 1.13.2 has
+                    // it both installed AND hosted.
+                    cite!("rule_hosted_when_installed");
+                    self.create_host_relationship(c, h, true);
                 }
                 {
                     self.st.active_seq += 1;
@@ -5361,7 +5685,10 @@ impl Vm {
     pub fn cost_payable(&self, side: Side, source: ObjectId, cost: &Cost) -> bool {
         cite!("rule_cost");
         let p = self.st.player(side);
+        // 1.10.3c: hosted credits their card lets them spend are part of what
+        // this player can pay with (Cyberfeeder class, 9.1.6c).
         let credits_avail = p.credits
+            + self.spendable_hosted_credits(side)
             + if side == Side::Runner && self.current_run.is_some() {
                 self.st.bp_fund
             } else {
@@ -5400,14 +5727,20 @@ impl Vm {
             cite!("rule_bid_possible");
             return 0;
         }
-        let hosted: u32 = self
-            .st
+        self.st.player(side).credits + self.spendable_hosted_credits(side)
+    }
+
+    /// CR 1.10.3c: credits hosted on this player's cards that the card's own
+    /// ability allows them to spend. 1.13.3 keeps them out of the credit
+    /// pool: they are never "on" the player.
+    fn spendable_hosted_credits(&self, side: Side) -> u32 {
+        cite!("rule_hosted_counters_not_on_player");
+        self.st
             .objects
             .values()
             .filter(|o| o.controller == side && card_active(o) && o.printed.hosted_credits_spendable)
             .map(|o| o.counter(CounterKind::Credit))
-            .sum();
-        self.st.player(side).credits + hosted
+            .sum()
     }
 
     /// 10.14.6b + 10.14.3: legal Psi bids — 0, 1, or 2, capped by what the
@@ -5441,12 +5774,24 @@ impl Vm {
                 let have = self.st.objects[&id].counter(CounterKind::Credit);
                 let take = have.min(n);
                 if take > 0 {
+                    // 1.13.11: hosted objects can be spent from their host
+                    // without affecting the host.
+                    cite!("rule_remove_spend_hosted_objects");
                     self.st
                         .objects
                         .get_mut(&id)
                         .unwrap()
                         .counters
                         .insert(CounterKind::Credit, have - take);
+                    self.changes.record(GameChange::CounterRemoved {
+                        obj: Some(id),
+                        kind: CounterKind::Credit,
+                        amount: take,
+                    });
+                    // 9.1.6c: the card whose ability allowed the counters to
+                    // be spent has been used, even though the ability being
+                    // paid for lives on another card.
+                    cite!("rule_hosted_counter_used_condition");
                     self.changes.record(GameChange::AbilityUsed { source: id });
                     n -= take;
                 }
@@ -5496,11 +5841,11 @@ impl Vm {
             self.st.bp_fund -= from_fund;
             credits_to_pay -= from_fund;
         }
-        {
-            let p = self.st.player_mut(side);
-            p.credits -= credits_to_pay;
-            p.clicks -= cost.clicks;
-        }
+        // 1.10.3c: credits hosted on a card whose ability lets its
+        // controller spend them are spent from that card; 9.1.6c makes that
+        // card used, alongside the card whose ability is being paid for.
+        self.spend_flexible(side, credits_to_pay);
+        self.st.player_mut(side).clicks -= cost.clicks;
         let mut trashed = Vec::new();
         if cost.trash_self {
             self.trash_card(source, side);
@@ -5639,6 +5984,18 @@ impl Vm {
         // ability again the moment it is put somewhere else.
         if to != Zone::SetAside {
             o.set_aside_for_ability = false;
+        }
+        // CR 1.13.12: if a hosted object is moved to another zone, the
+        // hosting relationship ends. (A 9.5.5 set-aside does not go through
+        // here, so those relationships survive their host's trashing.)
+        if from != to {
+            if let Some(h) = o.host.take() {
+                cite!("rule_hosted_object_same_zone_as_host");
+                o.hosted_not_installed = false;
+                if let Some(host) = self.st.objects.get_mut(&h) {
+                    host.hosted.retain(|&x| x != id);
+                }
+            }
         }
         self.changes.record(GameChange::CardMoved { obj: id, from, to });
         if from.is_installed() && !to.is_installed() {
