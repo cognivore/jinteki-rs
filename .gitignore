@@ -2,3 +2,7 @@
 **/*.rs.bk
 .DS_Store
 /parity-logs
+
+# nix build output symlink
+result
+result-*
