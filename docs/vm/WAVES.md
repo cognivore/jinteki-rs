@@ -6,12 +6,38 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W3)
+## Odometers (during W4)
 
-- **DP-7a: 82/243** CR examples as example-named passing tests (33.7%)
-- **DP-7b: 381/1420** distinct rules cited (26.8%); traceability test fails
+- **DP-7a: 82/243** CR examples as example-named passing tests (33.7%).
+  **FROZEN by the user for the duration of the W4 plan-driver migration**:
+  no new example tests until every existing test is a plan. Same tests,
+  better bodies.
+- **DP-7b: 384/1420** distinct rules cited (27.0%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - Full workspace: 16 suites green; jinteki-core/-server untouched by VM work
+- **Commit gate (both, every time):** `nix develop --command cargo test
+  --workspace` AND `nix build .#default` (then `rm -f result`). Workspace
+  green does NOT imply the artifact builds — `nix/package.nix` filters the
+  source tree, so a new compile-time file dependency (`include_str!`,
+  `include_bytes!`, `build.rs` path) outside `crates/` can break the release
+  build while every test passes. Flag any such new dependency in the commit
+  message and to the coordinator; do NOT edit `nix/package.nix` (outside the
+  staging paths). Also: `nix build` reads the git tree — `git add` a NEW
+  file before building or it is invisible to the sandbox.
+
+## Stage: FT-0 (the algebra cut, `docs/vm/FINAL-TAGLESS.md`)
+
+FINAL-TAGLESS.md (commit `1e51327`) is NORMATIVE for `crates/jinteki-cr` and
+ARCHITECTURE §12's concrete-first stance is retracted in its favour. The
+staged migration is FT-0 → FT-1 → FT-2 → FT-3 → FT-4 → FT-5, strictly in
+order, odometer never regressing.
+
+**W4 IS FT-0**: the plan-driver harness makes the scripted plan the second
+honest interpreter of the `Decide` algebra (the bot is the third; the
+server/human driver joins at cutover). FT-0's exit gate: 82/243 green, no
+`vm.step()` loops anywhere in tests, no `tk::inject_*` state manufacture.
+Do NOT resume adding CR examples until FT-2 is complete — FT-1/FT-2 are
+mechanical and cheap at 82 examples, ruinous at 243.
 
 ## Commit ledger
 
@@ -30,6 +56,10 @@ truth.
 | `ba8c1d3` | W3d | vacuous truth 9.12.2d (all-subs-broken tracking, Forked/Troll), run-ends conditions 6.8.5 (prevent-all shields expiring at 6.9.6d; Chum-in-Run-Ends prevented, DRT after expiry lands) | 74 |
 | `38a7bf6` | W3e | candidates: chosen-ever 7.4.3 (access replacement — Immolation; declinable access costs — Gagarin), Archives continuous derivation 7.4.6d, R&D topmost-ELIGIBLE descent 7.4.7a (Bacterial new-objects, Seidr top-inserts, Strongbox click steals) | 78 |
 | `7bae1f7` | W3f | mid-window installs: conditional interrupts not pending if activated post-open 9.9.4c (No One Home) vs paid interrupts joining freely 9.9.4d (double Decoy), via TagsAvoided chains; X-values 9.12.2e (Surveyor strength-X in the char pipeline, X-traces initiating at 0 when inactive) | 82 |
+| `633fa74` | W4a | the `Quantity` selector language — one data expression for every quantity position (§12 rule 6) | 82 |
+| `3f31b61` | W4b | the plan-driver harness (`src/plan.rs`): plans as data, ONE `Script` driver, `Transcript` for post-hoc offer assertions; 11 examples migrated | 82 |
+| `1c0099d` | W4c | 16 examples migrated: §6.8 run-ends pair, duration checkpoints, 10.3.6, the whole §1.16 cost cluster | 82 |
+| `b90030c` | W4d | playable slice migrated (phase plans + `forbidding_the_rest`); `Instruction::CreateLingeringEffect { LingeringSpec, WantedDuration }` + the real cards that replace `tk::inject_*` | 82 |
 
 ## Open deviations (documented in code; retire deliberately)
 

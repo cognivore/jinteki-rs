@@ -545,6 +545,31 @@ impl Plan {
         self.rules.push(Rule { when, then });
         self
     }
+    // ---- reusable plan fragments ----------------------------------------
+    // Narrative shorthands for the rules example tests write over and over.
+    // Each is exactly one `when` rule, appended in the order written, so
+    // "use the shield, then run HQ" reads in that order and behaves in that
+    // order.
+
+    /// "Run this server": spend the next action window this rule sees on a
+    /// basic run (5.2.7f).
+    pub fn runs(self, server: ServerId) -> Plan {
+        self.when(Match::action().once(), Reply::run(server))
+    }
+    /// "Use this ability the first time it is offered", in whatever window
+    /// offers it.
+    pub fn uses(self, needle: &'static str) -> Plan {
+        self.when(Match::any().once(), Reply::take(needle))
+    }
+    /// "Use this ability every time it is offered."
+    pub fn always_uses(self, needle: &'static str) -> Plan {
+        self.when(Match::any(), Reply::take(needle))
+    }
+    /// "Trash the card you are accessing" — the 7.1.5 basic trash ability,
+    /// the first time the mid-access window offers it.
+    pub fn trashes_on_access(self) -> Plan {
+        self.when(Match::mid_access().once(), Reply::trash_accessed())
+    }
     /// Stop the driver at the first action window this player is given —
     /// the end-of-script marker most example tests want ("play out the
     /// consequences, then let me assert").

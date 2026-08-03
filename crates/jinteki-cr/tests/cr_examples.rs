@@ -1263,8 +1263,16 @@ fn example_rule_expected_effects_1() {
     tk::fill_deck(&mut vm, Side::Runner, 3);
     vm.start_turn(Side::Runner);
 
-    tk::take_labeled(&mut vm, Side::Runner, "process-automation", 100);
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    // The plan: fire Process Automation from the first paid window offering
+    // it, then let the consequences play out.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("process-automation"))
+            .stop_at_action(),
+    );
+    assert!(t.took("process-automation"), "the ability was offered and used");
     assert_eq!(vm.st.runner.credits, 2);
     assert_eq!(vm.st.hand[&Side::Runner].len(), 1, "drew 1");
 }
@@ -1280,8 +1288,16 @@ fn example_rule_expected_effects_2() {
     tk::fill_deck(&mut vm, Side::Runner, 3);
     vm.start_turn(Side::Runner);
 
-    tk::take_labeled(&mut vm, Side::Runner, "process-automation", 100);
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    // The plan: the same one — fire Process Automation from the first paid
+    // window offering it.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("process-automation"))
+            .stop_at_action(),
+    );
+    assert!(t.took("process-automation"), "the ability was offered and used");
     assert_eq!(vm.st.runner.credits, 2, "the credits still happen");
     assert_eq!(vm.st.hand[&Side::Runner].len(), 0, "9.9.2: the draw was never expected");
     assert!(
@@ -1301,37 +1317,20 @@ fn example_rule_would_relevant_1() {
     tk::fill_deck(&mut vm, Side::Runner, 3);
     vm.start_turn(Side::Runner);
 
-    let mut fired = false;
-    let mut class_act_offered = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Runner && !fired => {
-                if let Some(opt) = tk::option_labeled(options, "process-automation") {
-                    fired = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner => {
-                if let Some(opt) = tk::option_labeled(options, "class-act") {
-                    class_act_offered = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
+    // The plan: fire Process Automation, and take the Class Act interrupt in
+    // any interrupt window that offers it.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("process-automation"))
+            .when(Match::interrupt(), Reply::take("class-act"))
+            .stop_at_action(),
+    );
     assert!(
-        class_act_offered,
+        t.of_kind(Kind::Interrupt)
+            .iter()
+            .any(|e| e.side == Side::Runner && e.took("class-act")),
         "9.9.3d: the would-draw trigger makes the ability relevant to the imminent draw"
     );
     assert_eq!(vm.st.runner.credits, 2 + 1, "its effect resolved too");
@@ -1353,49 +1352,29 @@ fn example_rule_trigger_conditional_ability_interrupt_1() {
     );
     vm.start_turn(Side::Runner);
 
-    let mut corp_fired = false;
-    let mut harbinger_offered_before = false;
-    let mut used_sac = false;
-    let mut harbinger_offered_after = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !corp_fired => {
-                if let Some(opt) = tk::option_labeled(options, "corp-trash") {
-                    corp_fired = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } if s == Side::Runner => {
-                if !used_sac {
-                    if tk::option_labeled(options, "harbinger").is_some() {
-                        harbinger_offered_before = true;
-                    }
-                    if let Some(opt) = tk::option_labeled(options, "sac-con") {
-                        used_sac = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                        continue;
-                    }
-                }
-                if used_sac && tk::option_labeled(options, "harbinger").is_some() {
-                    harbinger_offered_after = true;
-                }
-                let a = tk::default_answer(&spec);
-                vm.answer(a);
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(used_sac);
-    assert!(harbinger_offered_before, "relevant while its trash was expected");
+    // The plan: the Corp fires its trash button; the Runner answers with
+    // Sacrificial Construct from the first interrupt window offering it.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("corp-trash")),
+        Plan::runner()
+            .when(Match::interrupt().once(), Reply::take("sac-con"))
+            .stop_at_action(),
+    );
+    let sac = t
+        .entries
+        .iter()
+        .find(|e| e.took("sac-con"))
+        .expect("the prevention was offered and used");
     assert!(
-        !harbinger_offered_after,
+        t.entries.iter().any(|e| e.seq <= sac.seq
+            && e.side == Side::Runner
+            && e.kind() == Kind::Interrupt
+            && e.offered("harbinger")),
+        "relevant while its trash was expected"
+    );
+    assert!(
+        !t.entries.iter().any(|e| e.seq > sac.seq && e.offered("harbinger")),
         "9.9.4c: still pending, but no longer relevant — cannot be triggered"
     );
     assert!(vm.st.objects[&harb].zone.is_installed(), "the trash was prevented");
@@ -1416,34 +1395,16 @@ fn example_rule_modified_values_retain_properties_1() {
     tk::fill_deck(&mut vm, Side::Corp, 5);
     vm.start_turn(Side::Corp);
 
-    let mut fired = false;
-    let mut biometric_offered = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        if let DecisionSpec::InterruptWindow { options, .. } = &spec {
-            if tk::option_labeled(options, "biometric").is_some() {
-                biometric_offered = true;
-            }
-        }
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !fired => {
-                if let Some(opt) = tk::option_labeled(options, "flare") {
-                    fired = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(fired);
+    // The plan: the Corp fires Flare from the first paid window offering it;
+    // nobody else acts — the question is only ever *what was offered*.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("flare")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("flare"));
     assert!(
-        !biometric_offered,
+        !t.ever_offered("biometric"),
         "9.9.7e: the increased damage keeps the cannot-be-prevented property"
     );
     assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "all 3 points landed (2 + 1)");
@@ -1463,47 +1424,26 @@ fn example_rule_replace_imminent_effects_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    let mut corp_fired = false;
-    let mut used_tori = false;
-    let mut net_preventer_offered_after = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && !corp_fired => {
-                if let Some(opt) = tk::option_labeled(options, "do net damage") {
-                    corp_fired = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::InterruptWindow { options, .. } => {
-                if s == Side::Corp && !used_tori {
-                    if let Some(opt) = tk::option_labeled(options, "tori-replace") {
-                        used_tori = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                        continue;
-                    }
-                }
-                if used_tori
-                    && s == Side::Runner
-                    && tk::option_labeled(options, "biometric").is_some()
-                {
-                    net_preventer_offered_after = true;
-                }
-                let a = tk::default_answer(&spec);
-                vm.answer(a);
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(used_tori);
+    // The plan: the Corp does the net damage and replaces it with core damage
+    // via Tori, from the first interrupt window offering it; the Runner never
+    // acts (their preventer is only ever *offered* or not).
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("do net damage"))
+            .when(Match::interrupt().once(), Reply::take("tori-replace")),
+        Plan::runner().stop_at_action(),
+    );
+    let tori = t
+        .entries
+        .iter()
+        .find(|e| e.took("tori-replace"))
+        .expect("the replacement was offered and used");
     assert!(
-        !net_preventer_offered_after,
+        !t.entries.iter().any(|e| e.seq > tori.seq
+            && e.side == Side::Runner
+            && e.kind() == Kind::Interrupt
+            && e.offered("biometric")),
         "9.9.10: relevance follows the replaced (core) expected effects"
     );
     assert_eq!(vm.st.runner.core_damage, 1, "the damage resolved as core");
@@ -1532,49 +1472,30 @@ fn example_rule_persistent_applicability_1() {
     vm.st.runner.credits = 5;
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
-        server: ServerId::Remote(1),
-    }));
-
-    let mut trashed_amaze = false;
-    let mut ran_again = false;
-    for _ in 0..500 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::MidAccessWindow { options } if !trashed_amaze => {
-                if let Some(opt) = options
-                    .iter()
-                    .find(|o| matches!(o, WindowOption::BasicTrash { card, .. } if *card == amaze))
-                    .cloned()
-                {
-                    trashed_amaze = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::ReactionWindow { options, .. } if s == Side::Runner && !ran_again => {
-                if let Some(opt) = tk::option_labeled(options, "doppel") {
-                    ran_again = true;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    let a = tk::default_answer(&spec);
-                    vm.answer(a);
-                }
-            }
-            DecisionSpec::OptionalEffect { .. } => {
-                vm.answer(DecisionAnswer::ResolveOptional(true));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(trashed_amaze, "the persist began with the trash-during-access");
-    assert!(ran_again, "a second run happened during the reaction window");
+    // The plan: run the remote, trash AMAZE on access, then run again with
+    // Doppelgänger from the reaction window the ending run opens; both sides
+    // resolve every optional part they are offered.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(true)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::trash_accessed())
+            .when(Match::reaction().once(), Reply::take("doppel"))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert!(
+        t.entries.iter().any(|e| matches!(
+            &e.answer,
+            Some(DecisionAnswer::Take(WindowOption::BasicTrash { card, .. })) if *card == amaze
+        )),
+        "the persist began with the trash-during-access"
+    );
+    assert!(
+        t.of_kind(Kind::Reaction).iter().any(|e| e.side == Side::Runner && e.took("doppel")),
+        "a second run happened during the reaction window"
+    );
     assert_eq!(
         vm.st.runner.tags, 2,
         "9.12.5d: only the first run's instance resolved; the second run created none"
@@ -1611,34 +1532,32 @@ fn example_rule_trace_conditional_abilities_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    let mut fired = 0;
-    for _ in 0..400 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp && fired < 2 => {
-                if let Some(opt) = tk::option_labeled(options, "gemini") {
-                    fired += 1;
-                    vm.answer(DecisionAnswer::Take(opt));
-                } else {
-                    vm.answer(DecisionAnswer::Pass);
-                }
-            }
-            DecisionSpec::TraceSpend { corp_side: true, max, .. } => {
-                // First attempt: spend 3 (strength 6); second: spend 0.
-                let n = if fired == 1 { (*max).min(3) } else { 0 };
-                vm.answer(DecisionAnswer::SpendCredits(n));
-            }
-            DecisionSpec::TraceSpend { corp_side: false, .. } => {
-                vm.answer(DecisionAnswer::SpendCredits(0));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert_eq!(fired, 2);
+    // The plan: the Corp fires Gemini twice, spending 3 openly on the first
+    // trace (strength 6) and nothing on the second (strength 3); the Runner
+    // never spends, so its link stays 0.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().times(2), Reply::take("gemini"))
+            .when(Match::trace_spend().first(), Reply::Spend(3))
+            .when(Match::trace_spend(), Reply::Spend(0)),
+        Plan::runner().when(Match::trace_spend(), Reply::Spend(0)).stop_at_action(),
+    );
+    assert_eq!(t.times_taken("gemini"), 2);
+    // Both trace spends were the Corp's own half of an open trace (10.8.6c),
+    // and the first could afford everything it spent.
+    let corp_spends = t
+        .of_kind(Kind::TraceSpend)
+        .iter()
+        .filter(|e| e.side == Side::Corp)
+        .map(|e| match &e.spec {
+            DecisionSpec::TraceSpend { max, corp_side, .. } => (*max, *corp_side),
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(corp_spends.len(), 2, "one Corp spend per trace");
+    assert!(corp_spends.iter().all(|(_, corp_side)| *corp_side));
+    assert!(corp_spends[0].0 >= 3, "the Corp could afford the 3 it spent");
     let determinations: Vec<(bool, i64)> = vm
         .changes
         .log
@@ -1673,38 +1592,27 @@ fn example_rule_bid_possible_1() {
     vm.st.corp.credits = 2;
     vm.start_turn(Side::Runner);
 
-    let mut runner_legal = None;
-    let mut fired = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp => {
-                match tk::option_labeled(options, "psi") {
-                    Some(opt) if !fired => {
-                        fired = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                    }
-                    _ => vm.answer(DecisionAnswer::Pass),
-                }
-            }
-            DecisionSpec::PsiBid { legal } if s == Side::Corp => {
-                vm.answer(DecisionAnswer::Bid(0));
-                let _ = legal;
-            }
-            DecisionSpec::PsiBid { legal } if s == Side::Runner => {
-                runner_legal = Some(legal.clone());
-                vm.answer(DecisionAnswer::Bid(1));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
+    // The plan: the Corp plays the psi game and bids 0; the Runner bids 1,
+    // which only the hosted credit can pay for.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("psi"))
+            .when(Match::psi_bid(), Reply::Bid(0)),
+        Plan::runner().when(Match::psi_bid(), Reply::Bid(1)).stop_at_action(),
+    );
+    let runner_legal = t
+        .of_kind(Kind::PsiBid)
+        .iter()
+        .filter(|e| e.side == Side::Runner)
+        .map(|e| match &e.spec {
+            DecisionSpec::PsiBid { legal } => legal.clone(),
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
         runner_legal,
-        Some(vec![0, 1]),
+        vec![vec![0, 1]],
         "10.14.3: cannot bid 2, can bid 1 via the hosted credit; 0 always legal"
     );
     assert_eq!(
@@ -1726,37 +1634,27 @@ fn example_rule_bid_possible_2() {
     vm.st.corp.credits = 2;
     vm.start_turn(Side::Runner);
 
-    let mut runner_legal = None;
-    let mut fired = false;
-    for _ in 0..300 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if s == Side::Corp => {
-                match tk::option_labeled(options, "psi") {
-                    Some(opt) if !fired => {
-                        fired = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                    }
-                    _ => vm.answer(DecisionAnswer::Pass),
-                }
-            }
-            DecisionSpec::PsiBid { .. } if s == Side::Corp => {
-                vm.answer(DecisionAnswer::Bid(0));
-            }
-            DecisionSpec::PsiBid { legal } if s == Side::Runner => {
-                runner_legal = Some(legal.clone());
-                vm.answer(DecisionAnswer::Bid(0));
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
+    // The plan: the Corp plays the psi game; both sides bid 0 — the Runner
+    // because RSVP leaves them nothing else to bid.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("psi"))
+            .when(Match::psi_bid(), Reply::Bid(0)),
+        Plan::runner().when(Match::psi_bid(), Reply::Bid(0)).stop_at_action(),
+    );
+    let runner_legal = t
+        .of_kind(Kind::PsiBid)
+        .iter()
+        .filter(|e| e.side == Side::Runner)
+        .map(|e| match &e.spec {
+            DecisionSpec::PsiBid { legal } => legal.clone(),
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
         runner_legal,
-        Some(vec![0]),
+        vec![vec![0]],
         "10.14.3: unable to spend, the Runner must bid 0"
     );
     assert_eq!(vm.st.runner.credits, 5, "nothing was spent");
@@ -1781,51 +1679,41 @@ fn example_rule_subroutine_origin_static_after_1() {
     tk::fill_deck(&mut vm, Side::Corp, 5);
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    // The plan: run HQ; in the encounter's paid ability window the Runner
+    // breaks the 3 subs and then passes, the Corp draws with the panic
+    // button, and the Runner breaks the 4th, freshly-granted one. The driver
+    // halts in the next such window so the sub count can be read while the
+    // encounter still lasts.
+    let mut g = plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("panic-button")),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().at_step("step_encounter_paw").times(3), Reply::take("break"))
+            // Pass once, handing priority to the Corp for its draw…
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Pass)
+            // …then break the subroutine the draw granted.
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("break"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert!(vm.st.encounter.is_some(), "the count below is taken mid-encounter");
+    assert_eq!(
+        vm.current_subs(ash).len(),
+        4,
+        "9.8.3d: the new sub was added after the previous 3"
+    );
+    g.run(&mut vm);
+    let t = g.transcript();
 
-    let mut breaks = 0;
-    let mut corp_drew = false;
-    let mut subs_after_draw = 0;
-    for _ in 0..500 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. } if vm.st.encounter.is_some() => {
-                if s == Side::Runner {
-                    if breaks < 3 || (corp_drew && breaks < 4) {
-                        if let Some(opt) = tk::option_labeled(options, "break") {
-                            breaks += 1;
-                            vm.answer(DecisionAnswer::Take(opt));
-                            continue;
-                        }
-                    }
-                    vm.answer(DecisionAnswer::Pass);
-                } else {
-                    // Corp: after the 3 breaks, draw with the panic button.
-                    if breaks >= 3 && !corp_drew {
-                        if let Some(opt) = tk::option_labeled(options, "panic-button") {
-                            corp_drew = true;
-                            vm.answer(DecisionAnswer::Take(opt));
-                            subs_after_draw = 0; // measured next priority
-                            continue;
-                        }
-                    }
-                    vm.answer(DecisionAnswer::Pass);
-                }
-                if corp_drew && subs_after_draw == 0 {
-                    subs_after_draw = vm.current_subs(ash).len();
-                }
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(corp_drew);
-    assert_eq!(breaks, 4, "the 4th (new, unbroken) subroutine could be broken too");
-    assert_eq!(subs_after_draw, 4, "9.8.3d: the new sub was added after the previous 3");
+    let draw = t.entries.iter().find(|e| e.took("panic-button")).expect("the Corp drew");
+    assert_eq!(
+        t.entries.iter().filter(|e| e.seq < draw.seq && e.took("break")).count(),
+        3,
+        "the 3 printed subroutines were broken before the draw granted a 4th"
+    );
+    assert_eq!(t.times_taken("break"), 4, "the 4th (new, unbroken) subroutine could be broken too");
     assert_eq!(
         vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
         0,
@@ -1850,45 +1738,29 @@ fn example_rule_subroutine_origin_static_after_2() {
     tk::fill_hand(&mut vm, Side::Corp, 3);
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    // The plan: run HQ; in the encounter's paid ability window the Runner
+    // breaks the first subroutine, then makes the Corp discard 2. The driver
+    // halts in the next such window, while the encounter still lasts, so the
+    // surviving subroutines can be counted.
+    let mut g = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("break"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("utopia"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert!(vm.st.encounter.is_some(), "the count below is taken mid-encounter");
+    // 9.8.3d: lost last-first — only the broken sub remains.
+    assert_eq!(vm.current_subs(ash).len(), 1);
+    g.run(&mut vm);
+    let t = g.transcript();
 
-    let mut broke_first = false;
-    let mut used_utopia = false;
-    for _ in 0..500 {
-        let (s, spec) = decision(&mut vm);
-        match &spec {
-            DecisionSpec::PaidWindow { options, .. }
-                if s == Side::Runner && vm.st.encounter.is_some() =>
-            {
-                if !broke_first {
-                    if let Some(opt) = tk::option_labeled(options, "break") {
-                        broke_first = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                        continue;
-                    }
-                }
-                if broke_first && !used_utopia {
-                    if let Some(opt) = tk::option_labeled(options, "utopia") {
-                        used_utopia = true;
-                        vm.answer(DecisionAnswer::Take(opt));
-                        continue;
-                    }
-                }
-                if used_utopia {
-                    // 9.8.3d: lost last-first — only the broken sub remains.
-                    assert_eq!(vm.current_subs(ash).len(), 1);
-                }
-                vm.answer(DecisionAnswer::Pass);
-            }
-            DecisionSpec::TakeAction { .. } => break,
-            other => {
-                let a = tk::default_answer(other);
-                vm.answer(a);
-            }
-        }
-    }
-    assert!(broke_first && used_utopia);
+    let broke = t.entries.iter().find(|e| e.took("break")).expect("a subroutine was broken");
+    let utopia = t.entries.iter().find(|e| e.took("utopia")).expect("the Corp was made to discard");
+    assert!(broke.seq < utopia.seq, "the first subroutine was broken before the discard");
     assert_eq!(vm.st.hand[&Side::Corp].len(), 1);
     assert_eq!(
         vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
@@ -1913,8 +1785,18 @@ fn example_rule_subroutine_origin_external_after_1() {
     tk::fill_hand(&mut vm, Side::Runner, 5);
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun { server: ServerId::Hq }));
+    // The plan: run HQ. The driver halts at the action window first, so the
+    // Marker-class grant can be made before the run — and therefore before
+    // Brainstorm's encounter-start grant — and the same rule then takes the
+    // run when the script resumes.
+    let mut g = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::Halt)
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
     // The Marker-class lingering exists before the encounter begins.
     tk::grant_external_sub(
         &mut vm,
@@ -1926,7 +1808,7 @@ fn example_rule_subroutine_origin_external_after_1() {
         false,
         false, // turn-bound: the lingering exists before the run begins
     );
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    g.run(&mut vm);
 
     assert_eq!(
         vm.changes.log.iter().filter(|c| matches!(c, GameChange::SubroutineResolved { .. })).count(),
@@ -1958,11 +1840,15 @@ fn example_rule_prohibiting_access_1() {
     vm.st.runner.credits = 1; // cannot pay Ash's 2[c] trash cost
     vm.start_turn(Side::Runner);
 
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
-    vm.answer(DecisionAnswer::Action(ActionOption::BasicRun {
-        server: ServerId::Remote(1),
-    }));
-    let _ = drive_to_action_window(&mut vm, Side::Runner);
+    // The plan: run the remote and let the breach play out; neither side
+    // spends on the trace, so the base 3 beats link 0.
+    plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
 
     assert!(vm
         .changes

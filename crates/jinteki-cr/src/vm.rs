@@ -2038,7 +2038,7 @@ impl Vm {
             | Instruction::TraceRunnerSpend
             | Instruction::TraceDetermine { .. }
             | Instruction::PsiGame { .. }
-            | Instruction::GrantSubroutinesToSelf { .. }
+            | Instruction::GrantSubroutines { .. }
             | Instruction::CorpDiscards { .. }
             | Instruction::RestrictAccessToSelf
             | Instruction::CreateDelayedConditional { .. }
@@ -3709,31 +3709,37 @@ impl Vm {
                     DecisionCtx::PsiBid(Side::Corp),
                 );
             }
-            Instruction::GrantSubroutinesToSelf { count, sub, before } => {
+            Instruction::GrantSubroutines { to, count, sub, before, duration } => {
                 // 9.8.3a/e: externally-granted subroutines, ordered by grant
                 // time within their category; they arrive unbroken (9.8.4b).
                 cite!("rule_subroutine_origins");
                 let dur = crate::lingering::bind_duration(
-                    crate::lingering::WantedDuration::ThisEncounter,
+                    *duration,
                     self.st.encounter.as_ref().map(|e| e.id),
                     self.current_run.map(|(r, _, _)| r),
                     self.st.turn_seq,
                 );
-                for _ in 0..*count {
-                    let id = self.next_lingering;
-                    self.next_lingering += 1;
-                    self.lingering.push(LingeringEffect {
-                        id,
-                        source: source.obj,
-                        payload: Payload::GrantedSubroutine {
-                            to: source.obj,
-                            sub: (**sub).clone(),
-                            before: *before,
-                            seq: id,
-                        },
-                        duration: dur,
-                        applied_to: Vec::new(),
-                    });
+                let ice = match to {
+                    TargetSpec::SelfSource => vec![source.obj],
+                    other => self.resolve_targets(other, Some(source.obj), &imm.targets),
+                };
+                for obj in ice {
+                    for _ in 0..*count {
+                        let id = self.next_lingering;
+                        self.next_lingering += 1;
+                        self.lingering.push(LingeringEffect {
+                            id,
+                            source: source.obj,
+                            payload: Payload::GrantedSubroutine {
+                                to: obj,
+                                sub: (**sub).clone(),
+                                before: *before,
+                                seq: id,
+                            },
+                            duration: dur,
+                            applied_to: Vec::new(),
+                        });
+                    }
                 }
             }
             Instruction::CorpDiscards { count } => {

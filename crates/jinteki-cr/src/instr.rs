@@ -149,9 +149,18 @@ pub enum Instruction {
     /// "Play a Psi Game." — one instruction: sealed bids, reveal, immediate
     /// spend, branch (10.14.6).
     PsiGame { on_match: Vec<Instruction>, on_differ: Vec<Instruction> },
-    /// "This ice gains N copies of <sub> …" (Brainstorm class; category
-    /// 9.8.3e — external, after, ordered oldest-first by grant time).
-    GrantSubroutinesToSelf { count: u32, sub: Box<crate::ability::AbilityDef>, before: bool },
+    /// "<Ice> gains N copies of <sub> …" (Brainstorm class grants to
+    /// itself; a Marker-class ability grants to another piece of ice —
+    /// category 9.8.3e, external, ordered oldest-first by grant time). The
+    /// INSTRUCTION is the position; `to` and `duration` are the content, so
+    /// self-grants and external grants are one variant (§12 rule 2).
+    GrantSubroutines {
+        to: TargetSpec,
+        count: u32,
+        sub: Box<crate::ability::AbilityDef>,
+        before: bool,
+        duration: crate::lingering::WantedDuration,
+    },
     /// "The Corp discards N cards from HQ." (Utopia Shard class driver.)
     CorpDiscards { count: u32 },
     /// "The Runner cannot access cards other than this one for the

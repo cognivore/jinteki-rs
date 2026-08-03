@@ -999,8 +999,10 @@ pub fn brainstorm_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 9, 4);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::SelfEncountered,
-        vec![Instruction::GrantSubroutinesToSelf {
+        vec![Instruction::GrantSubroutines {
+            to: TargetSpec::SelfSource,
             count: 2,
+            duration: crate::lingering::WantedDuration::ThisEncounter,
             sub: Box::new(
                 AbilityDef::subroutine(vec![Instruction::Damage {
                     kind: DamageKind::Core,
@@ -1042,28 +1044,30 @@ pub fn breach_replacement_card(
     c
 }
 
-/// Grant an external subroutine to a piece of ice ahead of time (Marker
-/// class): creates the lingering effect directly.
-pub fn grant_external_sub(
-    vm: &mut Vm,
+/// Marker shape (9.8.3e): a card whose paid ability grants a subroutine to
+/// ANOTHER piece of ice for a stated duration — an external grant, which
+/// sorts after the ice's printed subroutines and orders within its category
+/// by grant time (oldest first).
+pub fn subroutine_granter(
+    name: &'static str,
     ice: ObjectId,
     sub: AbilityDef,
     before: bool,
-    run_bound: bool,
-) {
-    let id = vm.next_lingering_id();
-    let duration = if run_bound {
-        crate::lingering::Duration::Run(vm.current_run.map(|(r, _, _)| r).unwrap_or(0))
-    } else {
-        crate::lingering::Duration::Turn(vm.st.turn_seq)
-    };
-    vm.lingering.push(crate::lingering::LingeringEffect {
-        id,
-        source: ice,
-        payload: crate::lingering::Payload::GrantedSubroutine { to: ice, sub, before, seq: id },
-        duration,
-        applied_to: Vec::new(),
-    });
+    duration: crate::lingering::WantedDuration,
+) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::GrantSubroutines {
+            to: TargetSpec::Objects(vec![ice]),
+            count: 1,
+            sub: Box::new(sub),
+            before,
+            duration,
+        }],
+    )
+    .labeled("marker: grant a subroutine")];
+    c
 }
 
 /// Ash shape (7.4.2): "Whenever the Runner breaches this server, trace 4 —
@@ -2069,3 +2073,27 @@ pub fn inject_additional_access(vm: &mut Vm, server: ServerId, extra: u32) {
     });
 }
 
+
+/// RETIRING (§12 rule 5): direct lingering-effect manufacture, kept only
+/// until its last call site moves to `subroutine_granter`.
+pub fn grant_external_sub(
+    vm: &mut Vm,
+    ice: ObjectId,
+    sub: AbilityDef,
+    before: bool,
+    run_bound: bool,
+) {
+    let id = vm.next_lingering_id();
+    let duration = if run_bound {
+        crate::lingering::Duration::Run(vm.current_run.map(|(r, _, _)| r).unwrap_or(0))
+    } else {
+        crate::lingering::Duration::Turn(vm.st.turn_seq)
+    };
+    vm.lingering.push(crate::lingering::LingeringEffect {
+        id,
+        source: ice,
+        payload: crate::lingering::Payload::GrantedSubroutine { to: ice, sub, before, seq: id },
+        duration,
+        applied_to: Vec::new(),
+    });
+}
