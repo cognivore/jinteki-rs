@@ -167,7 +167,27 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .card.ice.current-ice { border-color: var(--danger); box-shadow: 0 0 14px rgba(255,92,92,.6);
   animation: runpulse 1.2s infinite; }
 .card.legal { border-color: var(--legal); box-shadow: 0 0 10px rgba(53,208,186,.55); cursor: pointer; }
+/* Two different questions, two different colours, never mixed up:
+   GOLD  = "this card is a legal TARGET for the choice you are being asked"
+   GREEN = "this card has an ability you can use RIGHT NOW"
+   The second is the one that replaces a list of text buttons: in a paid
+   ability window the board itself says what is usable, so nothing has to be
+   read and nothing has to move. */
 .card.selectable { border-color: var(--gold); box-shadow: 0 0 12px rgba(232,185,63,.7); cursor: pointer; }
+.card.usable { border-color: #39ff88;
+  box-shadow: 0 0 10px rgba(57,255,136,.85), 0 0 22px rgba(57,255,136,.45);
+  cursor: pointer; }
+/* A card that is both a legal target and usable reads as a target first —
+   the game is waiting on the target, so that is the live question. */
+.card.selectable.usable { border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(232,185,63,.7), 0 0 20px rgba(57,255,136,.35); }
+@media (prefers-reduced-motion: no-preference) {
+  .card.usable { animation: usablepulse 1.8s ease-in-out infinite; }
+  @keyframes usablepulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(57,255,136,.7), 0 0 18px rgba(57,255,136,.35); }
+    50%      { box-shadow: 0 0 14px rgba(57,255,136,.95), 0 0 30px rgba(57,255,136,.55); }
+  }
+}
 .card.identity { border-style: dashed; }
 .card .subs { font-size: 8px; color: var(--dim); }
 .card .subs .broken { text-decoration: line-through; opacity: .5; }
