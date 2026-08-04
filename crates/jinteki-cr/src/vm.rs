@@ -10226,7 +10226,7 @@ impl Vm {
                                     vec![Instruction::RemoveSelfFromGame],
                                     false,
                                 )
-                                .labeled("8.6.6d: after it resolves, remove it from the game"),
+                                .labeled("after it resolves, remove it from the game"),
                             },
                             Duration::UntilResolved,
                         ));

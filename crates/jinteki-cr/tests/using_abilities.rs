@@ -152,7 +152,7 @@ fn the_8_6_6d_removal_resolves_in_the_reaction_window_after_the_play() {
             // the card's own rider first — it can only resolve because the
             // card is still in the play area, and therefore still active.
             .when(Match::reaction(), Reply::take("after-resolve rider"))
-            .when(Match::reaction(), Reply::take("8.6.6d"))
+            .when(Match::reaction(), Reply::take("remove it from the game"))
             .stop_at_action(),
         Plan::runner(),
     );
@@ -169,7 +169,7 @@ fn the_8_6_6d_removal_resolves_in_the_reaction_window_after_the_play() {
                     })
                     .collect();
                 labels.iter().any(|l| l.contains("after-resolve rider"))
-                    && labels.iter().any(|l| l.contains("8.6.6d"))
+                    && labels.iter().any(|l| l.contains("remove it from the game"))
             }
             _ => false,
         });
