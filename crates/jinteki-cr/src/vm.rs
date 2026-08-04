@@ -11066,7 +11066,24 @@ impl Vm {
             if !installable(self.st.objects[&c].printed.card_type) {
                 continue;
             }
-            if self.install_destinations_for(c, side).is_empty() {
+            let dests = self.install_destinations_for(c, side);
+            if dests.is_empty() {
+                continue;
+            }
+            // 1.16.4d: for an action that installs a card and has NOTHING
+            // else, "the install cost of each of those cards is considered to
+            // have been spent to take that action" — so 1.16.1 applies to the
+            // action itself and a player who cannot pay it cannot take it.
+            // The cost depends on the destination (1.16.6b prices ice by the
+            // ice already there), so the action stands if ANY destination is
+            // affordable; 8.5.16b then declares which.
+            cite!("rule_inherent_cost_aggregates");
+            cite!("rule_cost");
+            let affordable = dests.iter().any(|d| {
+                let (net, extra) = self.install_payment(c, *d, None, side);
+                self.cost_payable(side, c, &extra.plus(&Cost::credits(net)))
+            });
+            if !affordable {
                 continue;
             }
             out.push(ActionOption::BasicInstall { card: c });

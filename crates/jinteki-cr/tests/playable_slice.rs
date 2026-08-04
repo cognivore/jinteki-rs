@@ -329,3 +329,37 @@ fn seven_point_win_at_checkpoint() {
         "10.3.1c: 7 points wins at the checkpoint"
     );
 }
+
+/// CR 1.16.4d + 1.16.1: the install cost of a card installed by the basic
+/// action "is considered to have been spent to take that action", so a Runner
+/// who cannot pay it cannot take the action at all.
+///
+/// Reported from a live game: at 0 credits the Runner could still install —
+/// the offer checked only that a destination existed. Playing an event was
+/// gated correctly, which is what made the inconsistency visible.
+#[test]
+fn basic_install_is_not_offered_when_the_install_cost_cannot_be_paid() {
+    let offered = |credits: u32| -> bool {
+        let mut vm = Vm::empty(91);
+        let mut res = tk::runner_filler("Costly Resource");
+        res.card_type = jinteki_cr::object::CardType::Resource;
+        res.cost = Some(3);
+        let c = vm.new_object(res, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(c);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.runner.credits = credits;
+        vm.start_turn(Side::Runner);
+        let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+        t.entries.iter().any(|e| match &e.spec {
+            DecisionSpec::TakeAction { options } => options
+                .iter()
+                .any(|o| matches!(o, ActionOption::BasicInstall { card } if *card == c)),
+            _ => false,
+        })
+    };
+    assert!(!offered(0), "0 credits cannot pay a 3-credit install cost");
+    assert!(!offered(2), "2 credits cannot pay a 3-credit install cost");
+    assert!(offered(3), "3 credits can");
+    assert!(offered(9), "and so can more");
+}
