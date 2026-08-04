@@ -472,8 +472,15 @@ impl CardBuilder {
     pub fn when(self, cond: TriggerCond, instrs: impl IntoIterator<Item = Instruction>) -> Self {
         self.ability(AbilityDef::conditional(cond, instrs.into_iter().collect(), false))
     }
-    /// "The first time each turn <trigger>, …" — the once-per-turn flag
-    /// (9.3.6g) carrying the card's "first time each turn".
+    /// "The first time each turn <trigger>, …" — CR 9.6.5c's stipulation
+    /// about the OCCURRENCE, checked when the condition would be met.
+    ///
+    /// NOT 9.3.6g's once-per-turn flag, which is a different sentence
+    /// ("use this ability only once per turn") with different rules: the flag
+    /// is spent by USING the ability, 9.1.6 says an entirely mandatory
+    /// ability is never used, and 1.12.2 makes the flag per object — so a
+    /// mandatory ability written with the flag would come back fresh when its
+    /// card was reinstalled the same turn.
     pub fn when_first_each_turn(
         self,
         cond: TriggerCond,
@@ -481,7 +488,20 @@ impl CardBuilder {
     ) -> Self {
         self.ability(
             AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
-                .with_flag(AbilityFlag::OncePerTurn),
+                .first_time_each_turn(),
+        )
+    }
+
+    /// "The first time each turn <trigger>, you may …" — the same ordinal on
+    /// a declinable ability (9.6.9).
+    pub fn may_when_first_each_turn(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), true)
+                .first_time_each_turn(),
         )
     }
     /// "When <trigger>, you may …" — the same, declinable (9.6.9). Use this
@@ -1337,7 +1357,6 @@ pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
         other_than_source: false,
         also_installed: false,
         matching_choice: None,
-        first_each_turn: false,
     }
 }
 /// "…you play a **run** event" (Ken Tenma class) — the same trigger with the
@@ -1352,18 +1371,17 @@ pub fn plays_a_subtyped(by: Side, of: CardType, subtype: &'static str) -> Trigge
         other_than_source: false,
         also_installed: false,
         matching_choice: None,
-        first_each_turn: false,
     }
 }
 /// "The first time each turn you play **a copy of** <name>…" (Subliminal
 /// Messaging). Two rules make this one condition: 10.1.5 — a card's own name
 /// used with the word "copy" is not self-reference, so every card with that
-/// name meets it — and 9.6.5c, which is where the ordinal lives. The "first
-/// time each turn" is a stipulation about the OCCURRENCE, counted from the
-/// game history, and deliberately not [`CardBuilder::when_first_each_turn`]'s
-/// 9.3.6g flag: that flag is per object, so a second copy of the card would
-/// carry a fresh one, and 9.1.6 never counts a mandatory ability as "used".
-pub fn first_time_each_turn_plays_a_copy_of(by: Side, name: &'static str) -> TriggerCond {
+/// name meets it. The sentence's "the first time each turn" is the ordinal
+/// [`CardBuilder::when_first_each_turn`] carries — one 9.6.5c stipulation for
+/// every condition, and deliberately not 9.3.6g's flag (that flag is per
+/// object, so a second copy of the card would carry a fresh one, and 9.1.6
+/// never counts a mandatory ability as "used").
+pub fn plays_a_copy_of(by: Side, name: &'static str) -> TriggerCond {
     TriggerCond::CardPlayed {
         by: Some(by),
         of_types: Vec::new(),
@@ -1372,7 +1390,6 @@ pub fn first_time_each_turn_plays_a_copy_of(by: Side, name: &'static str) -> Tri
         other_than_source: false,
         also_installed: false,
         matching_choice: None,
-        first_each_turn: true,
     }
 }
 /// "…if you played an operation this turn" (Nebula class; history 1.12.6).
@@ -1730,7 +1747,6 @@ pub fn another_current_is_played() -> TriggerCond {
         other_than_source: true,
         also_installed: false,
         matching_choice: None,
-        first_each_turn: false,
     }
 }
 /// "The <side>'s identity loses its printed abilities." (Employee Strike
@@ -2098,6 +2114,5 @@ pub fn plays_or_installs_named_by(by: Side, key: &'static str) -> TriggerCond {
         other_than_source: false,
         also_installed: true,
         matching_choice: Some(key),
-        first_each_turn: false,
     }
 }

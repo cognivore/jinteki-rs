@@ -423,18 +423,22 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     }
                     // 9.6.5c again, for the ordinal a sentence states about
                     // the occurrence itself: "**the first time each turn**
-                    // you play a copy of <name>". The stipulation has to hold
-                    // when the condition would occur, so this play meets it
-                    // only if no earlier play or install THIS TURN matched the
-                    // same stipulations — read from the change log, which
-                    // 10.2.1 makes open information. Deliberately not 9.3.6g's
-                    // flag: that is per object (the Vaporframe Fabricator
-                    // examples), so a second COPY of the card would carry a
-                    // fresh one, and 9.1.6 never counts a mandatory ability as
-                    // "used" at all.
-                    if let crate::ability::TriggerCond::CardPlayed { first_each_turn: true, .. } =
-                        cond
-                    {
+                    // <the condition>". The stipulation has to hold when the
+                    // condition would occur, so this occurrence meets it only
+                    // if no earlier change THIS TURN matched the same
+                    // condition — read from the change log, which 10.2.1
+                    // makes open information.
+                    //
+                    // Deliberately not 9.3.6g's flag, and this is the whole
+                    // difference: the flag is spent by USING an ability, 9.1.6
+                    // says players never use an entirely mandatory one, and
+                    // 1.12.2's Vaporframe Fabricator example makes the flag
+                    // per OBJECT — so a mandatory "first time each turn"
+                    // written as the flag comes back fresh the moment its
+                    // card is reinstalled, which the printed sentence does
+                    // not say. One stipulation, on the condition, for every
+                    // condition (§12 rule 2).
+                    if def.first_each_turn {
                         cite!("rule_condition_requirements_part_of_condition");
                         cite!("rule_hidden_or_open_information");
                         let here = window_start + offset;

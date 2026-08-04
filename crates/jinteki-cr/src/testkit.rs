@@ -387,6 +387,7 @@ pub fn tori_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: true,
         timing: None,
+        first_each_turn: false,
         label: "tori: first net damage each run",
     }];
     c
@@ -418,6 +419,7 @@ pub fn jesminder_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: false, // the printed ability is mandatory
         timing: None,
+        first_each_turn: false,
         label: "jesminder: avoid a tag during a run",
     }];
     c
@@ -523,6 +525,7 @@ pub fn parasite_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: false,
         timing: None,
+        first_each_turn: false,
         label: "parasite: trash 0-strength host",
     }];
     c
@@ -803,6 +806,7 @@ pub fn class_act_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: true,
         timing: None,
+        first_each_turn: false,
         label: "class-act: on first would-draw",
     }];
     c
@@ -822,6 +826,7 @@ pub fn harbinger_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: true,
         timing: None,
+        first_each_turn: false,
         label: "harbinger: when this would be trashed",
     }];
     c
@@ -1120,6 +1125,46 @@ pub fn zahya_like(name: &'static str) -> PrintedCard {
     )
     .with_flag(AbilityFlag::OncePerTurn)
     .labeled("zahya: may gain 1 when run ends")];
+    c
+}
+
+/// A NON-UNIQUE program with a MANDATORY conditional carrying 9.3.6g's
+/// once-per-turn flag — "↳ once per turn → When a run ends, gain 1[credit]",
+/// with no "may" anywhere. CR 9.1.6's second sentence is what this shape
+/// exists to exercise: "players do not 'use' abilities that are entirely
+/// mandatory", so nothing ever expends the flag.
+///
+/// No printed card is written this way, and that is the point: the sentence
+/// a designer means here is "the first time each turn", which is
+/// [`first_time_each_turn_gainer`]'s 9.6.5c stipulation.
+pub fn mandatory_once_per_turn_gainer(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 0);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        false,
+    )
+    .with_flag(AbilityFlag::OncePerTurn)
+    .labeled("opt-flag: mandatory gain 1 when a run ends")];
+    c
+}
+
+/// The same card with the sentence a real card prints: "**The first time each
+/// turn** a run ends, gain 1[credit]" — CR 9.6.5c's stipulation about the
+/// OCCURRENCE, which is counted from the game history (10.2.1) rather than
+/// from anyone's use of the ability. Non-unique, so several copies and
+/// several objects can be in play at once.
+pub fn first_time_each_turn_gainer(name: &'static str) -> PrintedCard {
+    let mut c = program_cost(name, 0);
+    c.memory_cost = Some(1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+        false,
+    )
+    .first_time_each_turn()
+    .labeled("first-each-turn: gain 1 when the first run of the turn ends")];
     c
 }
 
@@ -1538,6 +1583,7 @@ pub fn operation(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Pri
             statics: Vec::new(),
             optional: false,
             timing: None,
+            first_each_turn: false,
             label: "play ability",
         }];
     }
@@ -1558,6 +1604,7 @@ pub fn event(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Printed
             statics: Vec::new(),
             optional: false,
             timing: None,
+            first_each_turn: false,
             label: "play ability",
         }];
     }
@@ -1672,7 +1719,6 @@ pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
                 other_than_source: true,
                 also_installed: false,
                 matching_choice: None,
-                first_each_turn: false,
             },
             TriggerCond::RunnerStealsAgenda,
         ],
@@ -1991,6 +2037,7 @@ pub fn noh_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: true,
         timing: None,
+        first_each_turn: false,
         label: "no-one-home: avoid 1 tag",
     }];
     c
@@ -3428,6 +3475,7 @@ pub fn morph_ice(name: &'static str, prints: &'static str, loses: &'static str) 
         statics: vec![StaticDecl::SubtypeModSelf { add: Vec::new(), remove: vec![loses] }],
         optional: false,
         timing: None,
+        first_each_turn: false,
         label: "morph: lose 1 instance of a subtype",
     }];
     c
@@ -4495,6 +4543,7 @@ pub fn oppo_research_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: false,
         timing: None,
+        first_each_turn: false,
         label,
     };
     c.abilities = vec![
@@ -4884,6 +4933,7 @@ pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
         statics: Vec::new(),
         optional: false,
         timing: None,
+        first_each_turn: false,
         label: "realloc: gain and derez for each",
     }];
     c

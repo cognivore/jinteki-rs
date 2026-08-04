@@ -107,14 +107,10 @@ pub enum TriggerCond {
     /// which 10.1.5 reads as every card with that name rather than as a
     /// self-reference.
     ///
-    /// `first_each_turn` is the printed ordinal "**the first time each
-    /// turn** you play …" as a 9.6.5c stipulation IN the condition: it must
-    /// hold at the moment the condition would occur, so a play matches only
-    /// when no earlier play or install this turn matched the same
-    /// stipulations. Counted from the game history (10.2.1), which is what
-    /// makes it copy-agnostic — 9.3.6g's flag is per OBJECT (the Vaporframe
-    /// Fabricator examples), so a second copy of the card would carry a fresh
-    /// one, and a mandatory ability is never "used" at all (9.1.6).
+    /// The printed ordinal "**the first time each turn** you play …" is
+    /// [`AbilityDef::first_each_turn`], not a field here: it is the same
+    /// 9.6.5c stipulation for every condition, so it lives once beside the
+    /// condition instead of once per variant (§12 rule 2).
     CardPlayed {
         by: Option<Side>,
         of_types: Vec<CardType>,
@@ -123,7 +119,6 @@ pub enum TriggerCond {
         other_than_source: bool,
         also_installed: bool,
         matching_choice: Option<&'static str>,
-        first_each_turn: bool,
     },
     /// `of_types` is the sentence's card-type stipulation ("whenever you
     /// access an agenda", Film Critic); empty means no stipulation, exactly
@@ -1157,6 +1152,20 @@ pub struct AbilityDef {
     pub optional: bool,
     /// CR 9.5.6: effect-based timing restriction, if any.
     pub timing: Option<TimingRestriction>,
+    /// CR 9.6.5c: the printed "**the first time each turn** <the
+    /// condition>" — a stipulation about the OCCURRENCE, which is part of
+    /// the condition and is therefore checked when the condition would be
+    /// met, not when the ability is used.
+    ///
+    /// Deliberately NOT [`AbilityFlag::OncePerTurn`]. 9.3.6g's flag is spent
+    /// by USING the ability, 9.1.6 says players never use an entirely
+    /// mandatory ability, and 1.12.2's Vaporframe Fabricator example makes
+    /// the flag per OBJECT — so a mandatory "first time each turn" ability
+    /// written as the flag would either never expend at all or come back
+    /// fresh when its card was reinstalled the same turn. The occurrence is
+    /// counted from the game history instead, which 10.2.1 makes open
+    /// information.
+    pub first_each_turn: bool,
     /// Human-readable tag for tests/logs.
     pub label: &'static str,
 }
@@ -1172,6 +1181,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional,
             timing: None,
+            first_each_turn: false,
             label: "",
         }
     }
@@ -1187,6 +1197,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional: true,
             timing: None,
+            first_each_turn: false,
             label: "",
         }
     }
@@ -1204,6 +1215,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional: false,
             timing: None,
+            first_each_turn: false,
             label: "",
         }
     }
@@ -1218,6 +1230,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional: false,
             timing: None,
+            first_each_turn: false,
             label: "",
         }
     }
@@ -1232,6 +1245,7 @@ impl AbilityDef {
             statics,
             optional: false,
             timing: None,
+            first_each_turn: false,
             label: "",
         }
     }
@@ -1243,6 +1257,15 @@ impl AbilityDef {
 
     pub fn with_flag(mut self, f: AbilityFlag) -> Self {
         self.flags.push(f);
+        self
+    }
+
+    /// CR 9.6.5c: "**the first time each turn** <the condition>" — the
+    /// printed ordinal, stipulated on the condition rather than on the use
+    /// (9.1.6/9.3.6g; see [`AbilityDef::first_each_turn`]).
+    pub fn first_time_each_turn(mut self) -> Self {
+        cite!("rule_condition_requirements_part_of_condition");
+        self.first_each_turn = true;
         self
     }
 
@@ -1591,7 +1614,6 @@ pub fn trigger_matches(
                 matching_choice,
                 // The ordinal is a question about the HISTORY, which this
                 // function does not see; the checkpoint scan applies it.
-                first_each_turn: _,
             },
             GameChange::CardPlayed { obj, side } | GameChange::CardInstalled { obj, side, .. },
         ) => {

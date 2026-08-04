@@ -2413,6 +2413,7 @@ impl Vm {
             statics: Vec::new(),
             optional: false,
             timing: None,
+            first_each_turn: false,
             label,
         };
         let id = self.next_instance_id();
@@ -10598,19 +10599,34 @@ impl Vm {
                 .unwrap_or("?");
             self.resolution_log.push(format!("{label}#{}", af.source.index));
         }
-        // 9.3.6g: completing a conditional ability's resolution is USING it
-        // — which is what spends the once-per-turn flag (the optional path
-        // in DeclineableChoice marks the same way; a declined optional is
-        // NOT a use and pends again).
+        // 9.1.6b: a conditional ability is used "once the relevant OPTIONAL
+        // effects of the ability have been resolved by the controller" — so
+        // resolving an optional conditional is using it, and that is what
+        // spends 9.3.6g's flag. 9.1.6's second sentence is the load-bearing
+        // one: "players do not 'use' abilities that are entirely mandatory",
+        // so an entirely mandatory ability is never used and its flag is
+        // never spent, whatever it resolves. (A mandatory ability with an
+        // optional COMPONENT is used where that component is carried out —
+        // the `DeclineableChoice` path marks it there, and a declined one is
+        // not a use at all: example_rule_once_per_turn_flag_1, the Zahya
+        // Sadeghi example, is exactly that case.)
+        //
+        // A printed "the first time each turn <condition>" on a mandatory
+        // ability is therefore NOT this flag; it is 9.6.5c's stipulation
+        // about the occurrence (`AbilityDef::first_each_turn`).
         if matches!(af.kind, ResolutionKind::Conditional) && !af.declined {
             let used_def = self
                 .st
                 .objects
                 .get(&af.source.obj)
                 .and_then(|o| o.face().abilities.get(af.source.index))
-                .is_some_and(|d| d.has_flag(crate::ability::AbilityFlag::OncePerTurn));
+                .is_some_and(|d| {
+                    d.optional && d.has_flag(crate::ability::AbilityFlag::OncePerTurn)
+                });
             if used_def {
                 cite!("rule_once_per_turn_flag");
+                cite!("rule_using");
+                cite!("rule_conditional_ability_used_condition");
                 self.once_per_turn_used.insert((af.source, af.source_generation));
             }
         }
@@ -12138,6 +12154,28 @@ impl Vm {
         // outlives the payment record that collected it.
         if matches!(p.cont, PaymentCont::TriggerCost) {
             cite!("rule_cost_x");
+            // CR 9.1.6a: "a paid ability is considered used once the trigger
+            // cost has been paid" — here, and not at 9.5.7a's announcement,
+            // which is what 9.3.6g's flag is spent by.
+            cite!("rule_paid_ability_used_condition");
+            let used = self.frames.iter().rev().find_map(|f| match f {
+                Frame::Ability(af) if matches!(af.kind, ResolutionKind::Paid) => {
+                    Some((af.source, af.source_generation))
+                }
+                _ => None,
+            });
+            if let Some((source, generation)) = used {
+                let flagged = self
+                    .st
+                    .objects
+                    .get(&source.obj)
+                    .and_then(|o| o.face().abilities.get(source.index))
+                    .is_some_and(|d| d.has_flag(AbilityFlag::OncePerTurn));
+                if flagged {
+                    cite!("rule_once_per_turn_flag");
+                    self.once_per_turn_used.insert((source, generation));
+                }
+            }
             if let Some(Frame::Ability(af)) =
                 self.frames.iter_mut().rev().find(|f| matches!(f, Frame::Ability(_)))
             {
@@ -13956,9 +13994,9 @@ impl Vm {
     fn trigger_paid_ability(&mut self, side: Side, ability: AbilityRef, def: AbilityDef) {
         cite!("step_paid_ability_announce");
         cite!("rule_paid_ability_independent");
-        if def.has_flag(AbilityFlag::OncePerTurn) {
-            self.once_per_turn_used.insert((ability, self.generation(ability.obj)));
-        }
+        // 9.1.6a puts the USE at the moment the trigger cost is paid, not
+        // here; `finish_payment` marks it (a paid ability is always optional,
+        // 9.5.3, so using one always spends 9.3.6g's flag).
         let cost = def.cost.clone().unwrap_or_default();
         self.push_ability_frame_cost(
             ResolutionKind::Paid,

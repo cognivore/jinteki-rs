@@ -473,8 +473,8 @@ pub fn subliminal_messaging() -> Card {
         .text("The first time each turn you play a copy of Subliminal Messaging, gain [click].")
         .text("When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ.")
         .play([gain(Corp, 1)])
-        .when(
-            first_time_each_turn_plays_a_copy_of(Corp, "Subliminal Messaging"),
+        .when_first_each_turn(
+            plays_a_copy_of(Corp, "Subliminal Messaging"),
             [gain_clicks(Corp, 1)],
         )
         .named("subliminal messaging: the first copy each turn")
