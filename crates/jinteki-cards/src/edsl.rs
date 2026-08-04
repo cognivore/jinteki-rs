@@ -408,7 +408,7 @@ impl CardBuilder {
         self.ability(
             AbilityDef::paid(cost, instrs.into_iter().collect())
                 .with_flag(AbilityFlag::Interface)
-                .with_timing(TimingRestriction::EncounterOnly { required_subtype: ice_subtype }),
+                .with_timing(TimingRestriction::EncounterOnly { required_subtype: ice_subtype, required_choice: None }),
         )
     }
     /// "Access → 1[credit]: …" — usable only in the mid-access window
@@ -434,6 +434,26 @@ impl CardBuilder {
                 .with_timing(TimingRestriction::SourceInZone(zone)),
         )
     }
+    /// "Use this card only during encounters with **that ice**." (Boomerang;
+    /// CR 9.3.3c makes it a restriction, 9.10.3 is what "that ice" means.)
+    /// The ability is offered only while the ice being encountered is the one
+    /// this card remembers under `key` — and never at all while it remembers
+    /// nothing.
+    pub fn paid_during_encounters_with(
+        self,
+        cost: Cost,
+        key: &'static str,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect()).with_timing(
+                TimingRestriction::EncounterOnly {
+                    required_subtype: None,
+                    required_choice: Some(key),
+                },
+            ),
+        )
+    }
     /// A paid ability usable only during an encounter (9.5.6a) — a break
     /// ability that is not an interface ability, or a Runner card that acts
     /// on the ice being encountered.
@@ -444,7 +464,7 @@ impl CardBuilder {
     ) -> Self {
         self.ability(
             AbilityDef::paid(cost, instrs.into_iter().collect())
-                .with_timing(TimingRestriction::EncounterOnly { required_subtype: None }),
+                .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None }),
         )
     }
     /// "When <trigger>, …" — a conditional ability (9.6). Mandatory: its
@@ -1777,6 +1797,43 @@ pub fn cards_you_would_draw() -> Quantity {
 // A key is just a word for "what this card is remembering" — write the
 // card's own words for it ("marketing target", "salem's name").
 
+/// "Choose 1 installed piece of ice." (Boomerang, Femme Fatale — CR 9.10.3:
+/// the choice is an ordinary 1.15.2 announcement, and a lingering effect
+/// remembers it under `key` for as long as this card is active.)
+pub fn choose_and_remember(key: &'static str, count: i64, criteria: &[TargetFilter]) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::Object(choose(count, criteria)),
+        duration: WantedDuration::WhileSourceActive,
+    }
+}
+/// "…**that ice**", "…the chosen card" — the object this card remembers.
+pub fn the_remembered(key: &'static str) -> TargetSpec {
+    TargetSpec::MaintainedChoice(key)
+}
+/// "When this run ends, …" as a DELAYED conditional (9.6.13) — an ability
+/// created now that waits for the run to end, which is what a card trashed to
+/// pay its own trigger cost needs: nothing of the source is left to carry a
+/// conditional ability. 9.6.13d: created outside a run, it is never created
+/// at all.
+pub fn when_this_run_ends(
+    label: &'static str,
+    successful_only: bool,
+    optional: bool,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::CreateDelayedConditional {
+        def: Box::new(
+            AbilityDef::conditional(
+                TriggerCond::RunEnds { successful_only },
+                instrs.into_iter().collect(),
+                optional,
+            )
+            .labeled(label),
+        ),
+        duration: WantedDuration::ThisRun,
+    }
+}
 /// "Name a card." (Ark Lockdown, Salem's Hospitality, Targeted Marketing —
 /// 2.1.1: a card's identifier is its name.) The name is remembered under
 /// `key` for as long as this card is active (9.10.3c).

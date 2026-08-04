@@ -10935,11 +10935,23 @@ impl Vm {
                 match a.timing {
                     Some(crate::ability::TimingRestriction::EncounterOnly {
                         required_subtype,
+                        required_choice,
                     }) => {
                         cite!("rule_paid_ability_refers_to_encountered_ice");
                         let Some(e) = self.st.encounter.as_ref().map(|e| e.ice) else { continue };
                         if let Some(sub) = required_subtype {
                             if !self.has_subtype(e, sub) {
+                                continue;
+                            }
+                        }
+                        // 9.10.3: "…only during encounters with THAT ICE" —
+                        // the ice this card is maintaining a choice of. No
+                        // choice maintained means no encounter qualifies.
+                        if let Some(key) = required_choice {
+                            cite!("rule_lingering_effect_maintain_choice");
+                            if self.maintained_choice(o.id, key)
+                                != Some(crate::lingering::ChoiceValue::Object(e))
+                            {
                                 continue;
                             }
                         }

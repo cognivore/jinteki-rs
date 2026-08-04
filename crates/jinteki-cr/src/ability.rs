@@ -698,7 +698,17 @@ pub enum TimingRestriction {
     /// 9.5.6a/c: usable only during an encounter — and, where the ability
     /// refers to the encountered ice with a stipulation ("this code gate"),
     /// only during an encounter with a piece of ice that meets it.
-    EncounterOnly { required_subtype: Option<&'static str> },
+    ///
+    /// `required_choice` is 9.10.3's back-reference as the same kind of
+    /// stipulation: "use this hardware only during encounters with THAT ICE"
+    /// (Boomerang) names the ice its source is maintaining a choice of, so
+    /// the ability is usable only while the ice being encountered is that
+    /// one. Both stipulations are content on this one atom (§12 rule 2), and
+    /// `None` in each is a sentence that makes no such stipulation.
+    EncounterOnly {
+        required_subtype: Option<&'static str>,
+        required_choice: Option<&'static str>,
+    },
     /// 9.5.6b: usable only during the Approach Ice Phase, with the
     /// approached ice matching all stipulations used in referring to it.
     ApproachOnly { required_subtype: Option<&'static str>, rezzed: bool },

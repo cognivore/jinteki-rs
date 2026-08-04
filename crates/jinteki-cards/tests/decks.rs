@@ -81,13 +81,13 @@ fn the_gap_list_is_measurable_and_honest() {
     );
     println!("complete: {complete:?}");
     assert!(
-        complete.len() >= 49,
-        "49 cards are fully expressed; got {} — if a card became partial, say why in \
+        complete.len() >= 50,
+        "50 cards are fully expressed; got {} — if a card became partial, say why in \
          docs/vm/WAVES.md's gap list",
         complete.len()
     );
     assert!(
-        sentences <= 4,
+        sentences <= 2,
         "the gap list should not grow without a reason recorded in docs/vm/WAVES.md; got {sentences}"
     );
 }

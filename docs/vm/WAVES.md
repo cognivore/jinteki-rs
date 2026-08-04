@@ -873,7 +873,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W21 it is **51 cards, 49 complete, 2 partial, 4 printed
+prints the count. At W21 it is **51 cards, 50 complete, 1 partial, 2 printed
 sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -1000,9 +1000,12 @@ classify will cut someone again.
   that offers a paid ability — including the action window, which 5.2.1 is
   where a [click]-cost ability is offered and which checked no restriction at
   all before.
-- "shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
-  shuffles from the heap into the stack). `MoveToDeck` puts cards on top or
-  bottom and does not shuffle.
+- ~~"shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
+  shuffles from the heap into the stack).~~ — **done**:
+  `Instruction::ShuffleCardsIntoDeck`. Boomerang's own "when this run ends"
+  half is a 9.6.13 DELAYED conditional, which is what a card trashed to pay
+  its own trigger cost needs — there is no source left to carry a conditional
+  ability — and 9.6.13d keeps it from existing outside a run at all.
 - ~~swapping the identity in play (Rebirth) and flipping a double-sided
   identity (Nebula Talent Management)~~ — **done**:
   `Instruction::SwitchIdentity { side, with }` over CR 1.5.4a's pile, which is
@@ -1175,9 +1178,14 @@ scan of its instructions.
   **done, W18a (BREAKING)**: `PlayedNotTrashedUntil { until: Vec<TriggerCond> }`
   carries the ending occurrences as content, including the "another current is
   played" half that neither side's shield used to have.
-- a `TimingRestriction` keyed to a maintained choice — "use this hardware
+- ~~a `TimingRestriction` keyed to a maintained choice — "use this hardware
   only during encounters with that ice" (Boomerang). The existing variants
-  key on subtype.
+  key on subtype.~~ — **done, W21**: `EncounterOnly` carries
+  `required_choice` beside `required_subtype`, both content on one atom (§12
+  rule 2) — 9.3.3c makes "use this card only during encounters with that ice"
+  a restriction and 9.10.3 is what "that ice" means, so the ability is offered
+  only while the ice encountered is the one this copy remembers, and never
+  while it remembers nothing.
 - ~~hosted credits usable for a DESCRIBED class of cost — "use these credits
   to trash installed cards" (Miss Bones). `hosted_credits_spendable` is
   all-or-nothing.~~ — **done, W21**: 1.10.3a says credits taken from a card

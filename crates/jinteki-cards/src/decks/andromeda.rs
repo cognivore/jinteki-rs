@@ -294,11 +294,26 @@ pub fn rebirth() -> Card {
 ///  successful, you may shuffle 1 copy of Boomerang from your heap into your
 ///  stack."
 ///
-/// UNIMPLEMENTED: both. `TimingRestriction` keys on an ice SUBTYPE, so an
-/// ability restricted to the ice a maintained choice remembers cannot be
-/// stated — and without that restriction the break ability would be usable in
-/// every encounter, which is a wrong card rather than a partial one. The
-/// shuffle-from-heap-into-stack movement has no instruction either.
+/// COMPLETE. "Choose 1 installed piece of ice" is CR 9.10.3's maintained
+/// choice — an ordinary 1.15.2 announcement, remembered by a lingering effect
+/// for as long as the hardware is active (9.10.3c) — and the second sentence
+/// is a 9.3.3c restriction stated against that choice, not against a subtype:
+/// the ability is offered only while the ice being encountered is the one
+/// this copy remembers. (The restriction reads "use this HARDWARE", and this
+/// hardware has exactly one ability, so restricting the ability is restricting
+/// the card.)
+///
+/// The third sentence has to be a DELAYED conditional (9.6.13): the [trash]
+/// cost has already put the card in the heap by the time the ability
+/// resolves, so there is no source left to carry a "when this run ends"
+/// ability. 9.6.13d is the other half — created outside a run it is never
+/// created at all — and the duration is the run, which is exactly what the
+/// sentence says.
+///
+/// "1 copy of Boomerang" is 10.1.5: a card's own name used WITH the word
+/// "copy" is not self-reference, so the description reaches any card of that
+/// name in the heap — including a different copy, which is the only kind it
+/// can ever reach, since this one is the copy that was trashed.
 pub fn boomerang() -> Card {
     card("Boomerang")
         .runner()
@@ -308,8 +323,28 @@ pub fn boomerang() -> Card {
         .unique()
         .text("When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice.")
         .text("[trash]: Break up to 2 subroutines. When this run ends, if it was successful, you may shuffle 1 copy of Boomerang from your heap into your stack.")
-        .unimplemented("When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice.")
-        .unimplemented("[trash]: Break up to 2 subroutines. When this run ends, if it was successful, you may shuffle 1 copy of Boomerang from your heap into your stack.")
+        .when(
+            installed(),
+            [choose_and_remember("boomerang ice", 1, &[of_type(CardType::Ice)])],
+        )
+        .named("choose the ice")
+        .paid_during_encounters_with(
+            trash_this_card(),
+            "boomerang ice",
+            [
+                break_up_to(2),
+                when_this_run_ends(
+                    "boomerang: shuffle a copy back into the stack",
+                    true,
+                    true,
+                    [shuffle_into_deck(
+                        choose(1, &[in_heap(), named_card("Boomerang")]),
+                        Runner,
+                    )],
+                ),
+            ],
+        )
+        .named("break up to 2 subroutines")
         .build()
 }
 

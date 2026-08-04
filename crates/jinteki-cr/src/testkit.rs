@@ -694,7 +694,7 @@ pub fn reconstruction_like(name: &'static str) -> PrintedCard {
 pub fn arruaceiras_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(1)])
-        .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+        .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None })
         .labeled("arruaceiras: take 1 tag (encounter only)")];
     c
 }
@@ -1003,7 +1003,7 @@ pub fn break_button(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::BreakSubroutines {
             subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
         }])
-        .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+        .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None })
         .labeled("break: 1 subroutine")];
     c
 }
@@ -3159,13 +3159,13 @@ pub fn abagnale_like(name: &'static str, strength: i32) -> PrintedCard {
     c.subtypes = vec!["icebreaker"];
     c.abilities = vec![
         AbilityDef::paid(Cost::trash_self(), vec![Instruction::BypassEncounteredIce])
-            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate") })
+            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate"), required_choice: None })
             .labeled("abagnale: [trash] bypass this code gate"),
         AbilityDef::paid(Cost::credits(1), vec![Instruction::BreakSubroutines {
             subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
         }])
             .with_flag(AbilityFlag::Interface)
-            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate") })
+            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate"), required_choice: None })
             .labeled("abagnale: interface break 1"),
     ];
     c
@@ -3252,7 +3252,7 @@ pub fn cleaver_like(name: &'static str, strength: i32) -> PrintedCard {
         }],
     )
     .with_flag(AbilityFlag::Interface)
-    .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("barrier") })
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("barrier"), required_choice: None })
     .labeled("cleaver: break up to 2 barrier subroutines")];
     c
 }
@@ -3269,7 +3269,7 @@ pub fn grappling_hook_like(name: &'static str) -> PrintedCard {
             subs: crate::instr::SubroutineSpec::AllBut { count: Quantity::c(1) },
         }],
     )
-    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None })
     .labeled("hook: break all but 1 subroutine")];
     c
 }
@@ -3442,7 +3442,7 @@ pub fn lose_click_break_program(name: &'static str) -> PrintedCard {
             subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
         }],
     )
-    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None })
     .labeled("lose-click: lose [click] to break 1 subroutine")];
     c
 }
@@ -3991,7 +3991,7 @@ pub fn devil_charm_like(name: &'static str, amount: i32) -> PrintedCard {
             duration: Some(crate::lingering::WantedDuration::ThisRun),
         }],
     )
-    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None })
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None })
     .labeled("devil-charm: lower the encountered ice's strength for the run")];
     c
 }

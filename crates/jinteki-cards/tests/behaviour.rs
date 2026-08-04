@@ -3405,3 +3405,81 @@ fn miss_bones_pays_to_trash_installed_cards_and_nothing_else() {
         assert_eq!(vm.st.runner.credits, 0, "nothing came out of the pool");
     }
 }
+
+/// Boomerang: "When you install this hardware, choose 1 installed piece of
+/// ice. Use this hardware only during encounters with that ice." /
+/// "[trash]: Break up to 2 subroutines. When this run ends, if it was
+/// successful, you may shuffle 1 copy of Boomerang from your heap into your
+/// stack."
+///
+/// Two pieces of ice protect the same server, and the run passes both: the
+/// break ability is offered during the encounter with the CHOSEN ice and
+/// during no other (9.3.3c against 9.10.3's remembered object). The second
+/// copy in the heap comes back at the end of a successful run — 10.1.5's "a
+/// copy of", which is the only kind this one could ever reach, since the copy
+/// that broke the subroutines is the one that was trashed.
+#[test]
+fn boomerang_breaks_only_its_chosen_ice_and_comes_back_from_the_heap() {
+    let mut vm = Vm::empty(606);
+    let chosen = tk::install_ice(&mut vm, tk::etr_ice("Chosen Wall", 0, 1), ServerId::Hq, true);
+    let other = tk::install_ice(&mut vm, tk::etr_ice("Other Wall", 0, 1), ServerId::Rnd, true);
+    let boom = vm.new_object(card("Boomerang"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(boom);
+    // 10.1.5: a second copy, which is what "1 copy of Boomerang" reaches.
+    let spare = vm.new_object(card("Boomerang"), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(spare);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // Install, choosing the HQ ice; then run R&D, where the OTHER ice is.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(boom)))
+            .when(Match::targets().once(), Reply::target(chosen))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.ever_offered("break up to 2 subroutines"),
+        "9.3.3c: not during an encounter with any other ice: {}",
+        t.tail(24)
+    );
+    assert_eq!(vm.st.objects[&other].zone, Zone::Ice(ServerId::Rnd));
+
+    // Now run HQ, where the chosen ice is.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::paid().offering("break up to 2").once(), Reply::take("break up to 2"))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("End the run"))
+            .when(Match::reaction().offering("shuffle a copy back"), Reply::take("shuffle a copy back"))
+            // 10.1.5: BOTH copies in the heap are "a copy of Boomerang" — the
+            // one just trashed to pay the cost included — so the Runner picks.
+            .when(Match::targets().once(), Reply::target(spare))
+            .stop_at_action(),
+    );
+    assert!(
+        t.ever_offered("break up to 2 subroutines"),
+        "offered during the encounter with the chosen ice: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&boom].zone,
+        Zone::Discard(Side::Runner),
+        "[trash] paid: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&spare].zone,
+        Zone::Deck(Side::Runner),
+        "9.6.13: the delayed conditional shuffled a copy back at the end of the run: {}",
+        t.tail(24)
+    );
+}
