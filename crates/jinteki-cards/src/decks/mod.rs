@@ -7,6 +7,7 @@ use crate::edsl::Card;
 
 pub mod andromeda;
 pub mod gauntlet;
+pub mod identities;
 pub mod unlisted;
 
 /// Every card of both decks — the deck proper, plus CR 1.5.4a's pile of
@@ -34,6 +35,13 @@ pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
 pub fn all_cards() -> Vec<Card> {
     let mut out = priority_decks();
     out.extend(unlisted::cards());
+    // The identity queue. An identity already enlisted in a deck's 1.5.4a
+    // pile arrived with the deck above, so it is not carried twice.
+    for c in identities::cards() {
+        if !out.iter().any(|x| x.name() == c.name()) {
+            out.push(c);
+        }
+    }
     out
 }
 
@@ -44,4 +52,8 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("andromeda.rs", include_str!("andromeda.rs")),
     ("gauntlet.rs", include_str!("gauntlet.rs")),
     ("unlisted.rs", include_str!("unlisted.rs")),
+    (
+        "identities/runner_criminal.rs",
+        include_str!("identities/runner_criminal.rs"),
+    ),
 ];

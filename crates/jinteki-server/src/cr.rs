@@ -126,8 +126,20 @@ pub const GAUNTLET_LIST: &[(&str, u32)] = &[
 /// Not part of the printed deck list — 1.5.4a makes the pile a choice a
 /// player makes at the table, and the deck photo records no such choice. This
 /// deck plays Rebirth, and 1.5.4b's "another identity from the same faction"
-/// has to have something to name, so it brings a second Criminal.
-pub const ANDROMEDA_PILE: &[&str] = &["Ken \"Express\" Tenma: Disappeared Clone"];
+/// has to have something to name, so it brings every Criminal the card layer
+/// carries WHOLE (`docs/vm/IDENTITY-QUEUE.md`). One identity is not a choice;
+/// this list is what makes Rebirth a decision.
+///
+/// An identity is added here only once it is_complete(): `readiness()` holds
+/// a pile card to exactly the same bar as a deck card, so a partial one would
+/// make both priority decks unplayable.
+pub const ANDROMEDA_PILE: &[&str] = &[
+    "Ken \"Express\" Tenma: Disappeared Clone",
+    "Gabriel Santiago: Consummate Professional",
+    "Los: Data Hijacker",
+    "Liza Talking Thunder: Prominent Legislator",
+    "Laramy Fisk: Savvy Investor",
+];
 
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed
 /// deck name, the list with its copy counts, and CR 1.5.4a's pile.

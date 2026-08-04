@@ -1342,6 +1342,22 @@ pub fn makes_successful_run() -> TriggerCond {
 pub fn makes_successful_run_on(servers: &[ServerId]) -> TriggerCond {
     TriggerCond::MakesSuccessfulRun { on: Some(servers.to_vec()) }
 }
+/// "…you make a successful run on **a central server**" (Liza Talking
+/// Thunder, Laramy Fisk). CR 4.6.5 names the central servers and no others —
+/// HQ, R&D and Archives — so the sentence's stipulation IS that list, fixed
+/// by the rule rather than by the board.
+pub fn makes_successful_run_on_a_central_server() -> TriggerCond {
+    makes_successful_run_on(&[ServerId::Hq, ServerId::Rnd, ServerId::Archives])
+}
+/// "…the Corp rezzes a piece of ice" (Los class; 8.1.2) — the rez of a card
+/// of the type the sentence names. The condition names no player because only
+/// the Corp rezzes cards (8.1.1), which is what lets a Runner card watch for
+/// it in the same words a Corp card does (Lt. Todachine class). Pair it with
+/// [`CardBuilder::when_first_each_turn`] for the printed "the first time each
+/// turn".
+pub fn corp_rezzes_a(of: CardType) -> TriggerCond {
+    TriggerCond::CorpRezzesCard { of_types: vec![of] }
+}
 /// "When your action phase ends, if <requirements>…" (Nebula class; 5.6.2.)
 pub fn action_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
     TriggerCond::ActionPhaseEnds { side, requires: reqs.to_vec() }

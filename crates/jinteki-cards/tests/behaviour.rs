@@ -3687,3 +3687,170 @@ fn career_fair_actually_installs_the_resource_it_chose() {
     // Install 4, paying 3 less, floored at 0 by 1.16.2a — so 1 credit.
     assert_eq!(vm.st.runner.credits, 4, "paid 1 (install 4 minus 3): {}", t.tail(24));
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue (docs/vm/IDENTITY-QUEUE.md) — Runner, Criminal
+// ---------------------------------------------------------------------------
+
+/// Gabriel Santiago: "The first time you make a successful run on HQ each
+/// turn, gain 2[credit]."
+///
+/// Two HQ runs and one on Archives, all successful: the ordinal is what is
+/// under test, so only the first HQ run may pay, and the run on another
+/// central must not pay at all.
+#[test]
+fn gabriel_santiago_pays_for_the_first_hq_run_each_turn() {
+    let mut vm = Vm::empty(6001);
+    tk::install_identity(
+        &mut vm,
+        card("Gabriel Santiago: Consummate Professional"),
+        Side::Runner,
+    );
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. }))
+            .count(),
+        3,
+        "all three runs were successful: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        2,
+        "only the first HQ run of the turn paid: {}",
+        t.tail(24)
+    );
+}
+
+/// Los: "The first time the Corp rezzes a piece of ice each turn, gain
+/// 2[credit]."
+///
+/// Two pieces of ice on the attacked server, both rezzed as the Runner
+/// approaches them: the first rez pays, the second does not.
+#[test]
+fn los_pays_for_the_first_ice_rez_each_turn() {
+    let mut vm = Vm::empty(6002);
+    tk::install_identity(&mut vm, card("Los: Data Hijacker"), Side::Runner);
+    let inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner Wall", 1, 1), ServerId::Archives, false);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer Wall", 1, 1), ServerId::Archives, false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives)).stop_at_action(),
+    );
+    assert!(
+        vm.st.objects[&inner].faceup && vm.st.objects[&outer].faceup,
+        "both pieces of ice were rezzed: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        2,
+        "only the first rez of the turn paid: {}",
+        t.tail(24)
+    );
+}
+
+/// Liza Talking Thunder: "The first time you make a successful run on a
+/// central server each turn, draw 2 cards and take 1 tag."
+///
+/// Both halves of the sentence, and the ordinal: two successful central runs
+/// draw two cards in total and hand over exactly one tag.
+#[test]
+fn liza_draws_two_and_takes_a_tag_on_the_first_central_run() {
+    let mut vm = Vm::empty(6003);
+    tk::install_identity(
+        &mut vm,
+        card("Liza Talking Thunder: Prominent Legislator"),
+        Side::Runner,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    assert!(vm.st.hand[&Side::Runner].is_empty(), "the grip starts empty");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "two cards, once — not four: {}",
+        t.tail(24)
+    );
+    assert_eq!(vm.st.runner.tags, 1, "and exactly one tag: {}", t.tail(24));
+}
+
+/// Laramy Fisk: "The first time you make a successful run on a central server
+/// each turn, you may force the Corp to draw 1 card."
+///
+/// The "you may" is the whole ability, so 9.6.9 puts the choice where the
+/// reaction window puts every declinable pending: the Runner may take the
+/// offer or pass it. The proof has two halves — passing leaves HQ alone, and
+/// taking it makes the Corp draw — and the offer is made once a turn either
+/// way, however many central runs follow.
+#[test]
+fn laramy_fisk_lets_the_runner_force_one_corp_draw_a_turn() {
+    for accept in [false, true] {
+        let mut vm = Vm::empty(6004);
+        tk::install_identity(&mut vm, card("Laramy Fisk: Savvy Investor"), Side::Runner);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+        assert!(vm.st.hand[&Side::Corp].is_empty(), "HQ starts empty");
+
+        let mut runner = Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives));
+        if accept {
+            runner = runner
+                .when(Match::reaction().offering("laramy fisk").once(), Reply::take("laramy fisk"));
+        }
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            runner.when(Match::action().once(), Reply::run(ServerId::Hq)).stop_at_action(),
+        );
+        // 9.6.9: the offer was really made, to the Runner, and only on the
+        // first central run of the turn — the HQ run that follows gets none.
+        let offers: Vec<_> = t
+            .of_kind(Kind::Reaction)
+            .into_iter()
+            .filter(|e| plan::count_labelled(plan::window_options(&e.spec), "laramy fisk") > 0)
+            .collect();
+        assert_eq!(offers.len(), 1, "offered once, on the first central run: {}", t.tail(24));
+        assert_eq!(offers[0].side, Side::Runner, "the ability's controller decides");
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            usize::from(accept),
+            "the Corp drew exactly when the Runner said so (accept={accept}): {}",
+            t.tail(24)
+        );
+    }
+}

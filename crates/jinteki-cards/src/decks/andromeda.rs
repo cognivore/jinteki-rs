@@ -798,8 +798,17 @@ pub fn deck() -> Vec<Card> {
 /// CR 1.5.4a: the additional identities this deck brings along with it, kept
 /// in a pile outside the game. Which identities a player brings is a choice
 /// at the table rather than part of the printed deck list — this deck plays
-/// Rebirth, so it brings the Criminal that gives Rebirth something to switch
+/// Rebirth, so it brings the Criminals that give Rebirth something to switch
 /// to.
+///
+/// 1.5.4a allows "any number", and the point of the identity queue
+/// (`docs/vm/IDENTITY-QUEUE.md`) is that one identity is not a choice: every
+/// Criminal the card layer carries WHOLE comes to the table, so Rebirth's
+/// "another identity from the same faction" names a real decision. An
+/// identity joins this list only when it is complete — `cr::readiness()`
+/// holds a pile card to the same bar as a deck card.
 pub fn additional_identities() -> Vec<Card> {
-    vec![ken_tenma()]
+    let mut out = vec![ken_tenma()];
+    out.extend(super::identities::runner_criminal::identities());
+    out
 }
