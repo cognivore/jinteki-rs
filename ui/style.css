@@ -207,6 +207,33 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   background: var(--bg2); border-color: var(--gold); }
 .prompt-sheet.waiting { border-color: var(--line); opacity: .8; }
 
+/* the picker: a long choice list is a search, not a wall of chips.
+   Naming a card (CR 1.15.1b) offers the whole pool, so you filter to a card,
+   READ it, and only then commit — naming cannot be taken back. */
+.prompt-sheet { max-height: min(70vh, 640px); }
+.picker-input { background: var(--bg2); color: var(--text); border: 1px solid var(--gold);
+  border-radius: 10px; padding: 12px 14px; font: inherit; font-size: 15px; min-height: 48px; }
+.picker-input::placeholder { color: var(--muted, #7c8aa5); }
+.picker-body { display: flex; gap: 10px; min-height: 0; }
+.picker-list { flex: 1 1 46%; min-width: 0; overflow-y: auto; max-height: 34vh;
+  display: flex; flex-direction: column; gap: 4px; -webkit-overflow-scrolling: touch; }
+.picker-row { text-align: left; background: var(--bg2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: inherit;
+  font-size: 14px; min-height: 44px; cursor: pointer; }
+.picker-row.on { border-color: var(--gold); background: var(--panel); font-weight: 700; }
+.picker-preview { flex: 1 1 54%; min-width: 0; overflow-y: auto; max-height: 34vh;
+  border-left: 1px solid var(--line); padding-left: 10px; }
+.picker-preview .zart { width: 100%; border-radius: 8px; }
+.picker-preview h3 { margin: 6px 0 4px; font-size: 15px; }
+.picker-hint { color: var(--muted, #7c8aa5); font-size: 13px; padding: 6px 2px; }
+/* On a phone the two columns do not fit side by side. */
+@media (max-width: 560px) {
+  .picker-body { flex-direction: column; }
+  .picker-list, .picker-preview { max-height: 24vh; flex: none; }
+  .picker-preview { border-left: none; border-top: 1px solid var(--line);
+    padding-left: 0; padding-top: 8px; }
+}
+
 /* action sheet on a tapped card */
 .action-sheet { position: fixed; z-index: 80; background: rgba(16,22,38,.97);
   border: 1px solid var(--legal); border-radius: 14px; padding: 10px; display: flex;

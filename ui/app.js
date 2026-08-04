@@ -945,6 +945,11 @@ function renderPrompt() {
   sheet.style.display = "flex";
   sheet.classList.toggle("waiting", p["prompt-type"] === "waiting");
   const choices = p.choices || [];
+  // A choice list long enough to be a wall of chips is a SEARCH, not a row
+  // of buttons. Naming a card (CR 1.15.1b) offers every card the layer
+  // knows, so this is the affordance that keeps it usable as the pool grows
+  // — and it generalises to any long list, not just naming.
+  if (choices.length > PICKER_THRESHOLD) { renderPickerPrompt(sheet, p, choices); return; }
   const selectHint = isSelectMode() ? `<div class="pmsg" style="color:var(--gold)">Tap a highlighted card</div>` : "";
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>${selectHint}<div class="pbtns"></div>`;
   const btns = sheet.querySelector(".pbtns");
@@ -956,6 +961,122 @@ function renderPrompt() {
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
+}
+
+/* ── the picker: search, preview, THEN commit ────────────────────────────
+   Naming is irrevocable and often unhelpful if you misremember what a card
+   does, so the pick is a two-step: filter to it, read it, then commit. The
+   preview is the same renderer the board uses, so a named card looks like
+   every other card you have read this game. */
+const PICKER_THRESHOLD = 12;
+const PICKER_SHOWN = 40;
+let pickerKey = null;   // which prompt the state belongs to
+let pickerQuery = "";
+let pickerPick = null;  // the chosen choice object, not yet committed
+const cardMetaCache = new Map();
+
+function choiceLabel(ch) {
+  const v = ch.value;
+  return typeof v === "object" && v ? (v.title || "card") : String(v);
+}
+
+async function cardMeta(title) {
+  if (cardMetaCache.has(title)) return cardMetaCache.get(title);
+  let hit = null;
+  try {
+    const list = await api(`/api/cards?q=${encodeURIComponent(title)}`);
+    hit = (list || []).find((c) => c.title === title) || null;
+  } catch (_) { /* preview is a courtesy; a lookup failure must not block the pick */ }
+  cardMetaCache.set(title, hit);
+  return hit;
+}
+
+function renderPickerPrompt(sheet, p, choices) {
+  const key = `${p.msg}|${choices.length}`;
+  if (pickerKey !== key) { pickerKey = key; pickerQuery = ""; pickerPick = null; }
+
+  sheet.innerHTML = `
+    <div class="pmsg">${sym(p.msg || "")}</div>
+    <input class="picker-input" type="text" autocomplete="off" spellcheck="false"
+           placeholder="type to search ${choices.length} cards">
+    <div class="picker-body">
+      <div class="picker-list"></div>
+      <div class="picker-preview"></div>
+    </div>
+    <div class="pbtns picker-commit"></div>`;
+
+  const input = sheet.querySelector(".picker-input");
+  const list = sheet.querySelector(".picker-list");
+  const preview = sheet.querySelector(".picker-preview");
+  const commit = sheet.querySelector(".picker-commit");
+
+  const paintPreview = async () => {
+    if (!pickerPick) {
+      preview.innerHTML = `<div class="picker-hint">Pick a card to see it here.</div>`;
+      return;
+    }
+    const title = choiceLabel(pickerPick);
+    preview.innerHTML = "";
+    preview.appendChild(el("div", "picker-hint", `${title}…`));
+    const c = await cardMeta(title);
+    // The pick may have moved on while the lookup was in flight.
+    if (!pickerPick || choiceLabel(pickerPick) !== title) return;
+    if (c) {
+      preview.innerHTML = cardInfoHtml(c);
+    } else {
+      preview.innerHTML = "";
+      preview.appendChild(el("h3", "", title));
+      preview.appendChild(el("div", "picker-hint", "No card data — naming it still works."));
+    }
+  };
+
+  const paintCommit = () => {
+    commit.innerHTML = "";
+    const b = document.createElement("button");
+    b.className = "chip go";
+    b.disabled = !pickerPick;
+    b.textContent = pickerPick ? `Name ${choiceLabel(pickerPick)}` : "Name…";
+    b.onclick = () => {
+      if (!pickerPick) return;
+      const uuid = pickerPick.uuid;
+      pickerKey = null; pickerQuery = ""; pickerPick = null;
+      act("choice", { choice: { uuid } });
+    };
+    commit.appendChild(b);
+  };
+
+  const paintList = () => {
+    const q = pickerQuery.trim().toLowerCase();
+    const hits = choices.filter((ch) => choiceLabel(ch).toLowerCase().includes(q));
+    list.innerHTML = "";
+    hits.slice(0, PICKER_SHOWN).forEach((ch) => {
+      const row = document.createElement("button");
+      row.className = "picker-row" + (pickerPick && pickerPick.uuid === ch.uuid ? " on" : "");
+      row.textContent = choiceLabel(ch);
+      // Selecting only previews. Committing is the separate button, because
+      // naming cannot be taken back.
+      row.onclick = () => { pickerPick = ch; paintList(); paintPreview(); paintCommit(); };
+      list.appendChild(row);
+    });
+    if (!hits.length) {
+      // §12.6: the query is a user string, so it reaches the DOM as text,
+      // never as markup.
+      list.innerHTML = "";
+      list.appendChild(el("div", "picker-hint", `Nothing matches “${pickerQuery}”.`));
+    } else if (hits.length > PICKER_SHOWN) {
+      const more = document.createElement("div");
+      more.className = "picker-hint";
+      more.textContent = `…and ${hits.length - PICKER_SHOWN} more — keep typing.`;
+      list.appendChild(more);
+    }
+  };
+
+  input.value = pickerQuery;
+  input.oninput = () => { pickerQuery = input.value; paintList(); };
+  paintList(); paintPreview(); paintCommit();
+  // Autofocus only where a keyboard is already present — on a phone it would
+  // throw up the on-screen keyboard over the board.
+  if (hoverCapable) input.focus();
 }
 
 /* ── access reader ───────────────────────────────────────────────────────
