@@ -1037,6 +1037,10 @@ function renderPrompt() {
   // knows, so this is the affordance that keeps it usable as the pool grows
   // — and it generalises to any long list, not just naming.
   if (choices.length > PICKER_THRESHOLD) { renderPickerPrompt(sheet, p, choices); return; }
+  // UX.md THE LAW §1: a decision about cards renders as CARDS. Two copies of
+  // Bloo Moose are two buttons reading "Bloo Moose" and no way to tell them
+  // apart; as cards they are simply two cards.
+  if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
   const selectHint = isSelectMode() ? `<div class="pmsg" style="color:var(--gold)">Tap a highlighted card</div>` : "";
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>${selectHint}<div class="pbtns"></div>`;
   const btns = sheet.querySelector(".pbtns");
@@ -1045,6 +1049,47 @@ function renderPrompt() {
     b.className = "chip";
     const v = ch.value;
     b.textContent = sym(typeof v === "object" && v ? (v.title || "card") : String(v));
+    b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
+    btns.appendChild(b);
+  });
+}
+
+/* A prompt whose choices ARE cards, drawn as cards (UX.md THE LAW).
+   The hand's fan is the reference, flattened: a fan reads as "yours, held",
+   which these are not — they are a set being offered — so they lie flat with
+   only a whisper of rotation. Every card is a real `cardEl`, so long-press
+   preview on touch and hover preview on a pointer come for free, and a card
+   with no art still renders its text scaffold.
+
+   Choices the server could not attach a card to (the viewer is not entitled
+   to see it, or the option names no card at all — "No action", "Done") stay
+   as chips underneath, so nothing is ever lost by rendering cards. */
+function renderCardPrompt(sheet, p, choices) {
+  sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
+    <div class="cardprompt"></div><div class="pbtns"></div>`;
+  const row = sheet.querySelector(".cardprompt");
+  const btns = sheet.querySelector(".pbtns");
+  const withCards = choices.filter((ch) => ch.card);
+  const mid = (withCards.length - 1) / 2;
+  withCards.forEach((ch, i) => {
+    const wrap = document.createElement("div");
+    wrap.className = "cardpick";
+    const el = cardEl(ch.card, { side: mySide });
+    // A far wider arc than the hand's 6°, so the set reads as laid out
+    // rather than held. Beyond a few cards it flattens completely.
+    const rot = withCards.length > 5 ? 0 : (i - mid) * 2.2;
+    if (rot) el.style.transform = `rotate(${rot}deg)`;
+    el.classList.add("usable");
+    wrap.appendChild(el);
+    const cap = el("div", "cardpick-label", sym(String(ch.value)));
+    wrap.appendChild(cap);
+    wrap.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
+    row.appendChild(wrap);
+  });
+  choices.filter((ch) => !ch.card).forEach((ch) => {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = sym(String(ch.value));
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });

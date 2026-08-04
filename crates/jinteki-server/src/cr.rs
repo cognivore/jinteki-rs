@@ -1933,7 +1933,17 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             // client can only render a wall of text buttons: nothing maps
             // "use this ability" back to the card it belongs to, so the board
             // cannot light up and the player has to read instead of look.
+            // The CARD, not just its id — a choice about cards must be able
+            // to render as cards, and the candidates are often somewhere the
+            // client cannot otherwise see (the stack during a search, the
+            // heap, the opponent's HQ mid-access). Sent only where the viewer
+            // is entitled to it (§10.2), so this discloses nothing a board
+            // reading would not.
             match choice_card(&g.vm, a) {
+                Some(c) if view.sees(c) => {
+                    json!({"uuid": u, "value": l, "cid": c.0,
+                           "card": card_json(&g.vm, view, c, true)})
+                }
                 Some(c) => json!({"uuid": u, "value": l, "cid": c.0}),
                 None => json!({"uuid": u, "value": l}),
             }
