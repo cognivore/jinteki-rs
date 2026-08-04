@@ -38,54 +38,61 @@ past_deadline() {
   [[ "$(date +%H:%M)" > "$DEADLINE" ]]
 }
 
-BRIEF='You are continuing the jinteki-rs DECK QUEUE, unattended.
+BRIEF='You are implementing EVERY identity in jinteki-rs, unattended.
 
-Read FIRST: docs/vm/DECK-QUEUE.md (the mandated deck order and the exact
-lists), then docs/vm/WAVES.md, then docs/cards/EDSL.md, then an existing deck
-module such as crates/jinteki-cards/src/decks/gauntlet.rs for house style.
+Read FIRST: docs/vm/IDENTITY-QUEUE.md (the full list, grouped, with printed
+text and a checkbox each), then docs/vm/WAVES.md, then docs/cards/EDSL.md,
+then crates/jinteki-cards/src/decks/gauntlet.rs (Nebula/Gemilang show the
+double-sided pattern) and decks/andromeda.rs.
 
-GOAL: finish the decks in DECK-QUEUE.md order. Deck 1 is done. Work the
-FIRST deck in that file that is not yet complete, and do ONE unit of work
-this run, then stop:
+GOAL: work the queue top to bottom. Runner identities first — they are the
+ones Rebirth and DJ Fenris can reach. Do ONE unit of work this run, then
+stop:
 
-  * If the deck has no module yet: create
-    crates/jinteki-cards/src/decks/<key>.rs with one function per DISTINCT
-    card in printed order, register it in decks/mod.rs, and add its DeckSpec
-    (list, copy counts, CR 1.5.4a pile) to crates/jinteki-server/src/cr.rs.
-    Cards already implemented for an earlier deck are REUSED, never copied.
-    Stub every not-yet-written card with its printed text from
-    crates/jinteki-core/carddata/cards.json plus .unimplemented(...) for each
-    printed sentence, so the odometer counts it honestly. Commit that.
-  * Otherwise: implement the next incomplete card of that deck, whole.
-    Commit that.
+  * If the faction module does not exist yet, create
+    crates/jinteki-cards/src/decks/identities/<name>.rs, register it in
+    decks/mod.rs, and implement the FIRST few identities of that faction in
+    it. Commit that.
+  * Otherwise implement the next 2-4 unchecked identities of the faction
+    currently in progress, whole. Commit that.
+
+Tick the boxes in docs/vm/IDENTITY-QUEUE.md as you go and update the
+"Implemented: N / 150" line, in the same commit.
 
 METHOD:
 1. Read the exact printed text from crates/jinteki-core/carddata/cards.json.
    Never work from memory.
-2. VERIFY any UNIMPLEMENTED: doc comment before believing it — the kernel
-   vocabulary has repeatedly grown past what those comments claim, and stale
-   ones have already yielded several free cards.
-3. Write it in the EMBEDDED DSL: typed Rust builders in crates/jinteki-cards.
+2. Write it in the EMBEDDED DSL: typed Rust builders in crates/jinteki-cards.
    Nothing is parsed; .text(...) is data for the SYS-D-10 agreement test.
-4. Add a behaviour test in crates/jinteki-cards/tests/behaviour.rs driven by
-   a PLAN (plan::play / plan::Script). Never add a *_for_test backdoor to the
-   VM and never write a vm.step() loop.
-5. Run: nix develop --command cargo test --workspace  (must be fully green)
-6. Commit in the established style (see git log).
+3. Add a behaviour test per identity in
+   crates/jinteki-cards/tests/behaviour.rs, driven by a PLAN. Never add a
+   *_for_test backdoor to the VM and never write a vm.step() loop.
+4. Run: nix develop --command cargo test --workspace  (must be fully green)
+5. Commit in the established style (see git log).
+
+ENLISTING INTO A PILE — the rule that must not be broken:
+An identity may be added to a deck spec pile in crates/jinteki-server/src/cr.rs
+ONLY when it is is_complete(). readiness() holds pile cards to the same bar as
+deck cards, so enlisting a partial identity makes BOTH priority decks
+unplayable and the live site refuses to start a game. When you finish a batch
+of Criminal identities, you MAY add the complete ones to ANDROMEDA_PILE — and
+if you do, verify `cargo test -p jinteki-server` still passes
+cr::tests::the_two_eternal_decks_are_playable before committing.
 
 HARD RULES (docs/vm/ARCHITECTURE.md section 12):
 - No card names in kernel vocabulary. Thresholds, polarity, scope, windows
   and namespaces are CONTENT on one atom, never a new atom per card.
 - A clause the vocabulary genuinely cannot express keeps
   .unimplemented("<exact printed sentence>"). NEVER approximate or fake it.
+  An identity with an unimplemented clause simply does not join a pile yet.
 - Odometers never regress: DP-7a stays 247/247.
 - Every cite!("rule_...") id must exist in docs/rules/cr-index.json.
 - Do NOT touch crates/jinteki-core (the legacy engine the live server uses).
 - Do NOT run nix build, do NOT push, and do NOT deploy. Commit locally only.
 
 If the workspace is red when you start, FIX THAT FIRST and commit nothing
-else. If you cannot finish cleanly, revert your changes and stop, leaving
-the tree green.'
+else. If you cannot finish cleanly, revert your changes and stop, leaving the
+tree green.'
 
 log "drive starting; deadline ${DEADLINE}; repo ${REPO}"
 
