@@ -1089,11 +1089,17 @@ function renderPrompt() {
   if (p.arrange && p.arrange.length > 1) { renderArrangePrompt(sheet, p); return; }
   if (p["select-cards"]) { renderSelectPrompt(sheet, p, choices); return; }
   if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
-  // A choice list long enough to be a wall of chips is a SEARCH, not a row
-  // of buttons. Naming a card (CR 1.15.1b) offers every card the layer
-  // knows, so this is the affordance that keeps it usable as the pool grows
-  // — and it generalises to any long list, not just naming.
-  if (choices.length > PICKER_THRESHOLD) { renderPickerPrompt(sheet, p, choices); return; }
+  // A long list of CARD NAMES is a SEARCH, not a row of buttons: naming a
+  // card (CR 1.15.1b) offers every card the layer knows. A long list of
+  // anything else is not — a trace with fifteen credits to spend is sixteen
+  // numbers, and a search box that looks each one up in the card database
+  // would be a worse prompt than the buttons. The server says which it is;
+  // an older server that says nothing keeps the length-only rule.
+  const searchable = p.picker !== false;
+  if (searchable && choices.length > PICKER_THRESHOLD) {
+    renderPickerPrompt(sheet, p, choices);
+    return;
+  }
   const selectHint = isSelectMode() ? `<div class="pmsg" style="color:var(--gold)">Tap a highlighted card</div>` : "";
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>${selectHint}<div class="pbtns"></div>`;
   const btns = sheet.querySelector(".pbtns");

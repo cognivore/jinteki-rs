@@ -2107,6 +2107,15 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             }
         }).collect::<Vec<_>>(),
         "select": p.select.is_some(),
+        // A long list is only a SEARCH when the thing being searched is the
+        // card pool (1.15.1b). A trace with 15 credits to spend also offers
+        // more than a dozen options, and putting "0…15" behind a search box
+        // that looks each number up in the card database is a worse prompt
+        // than the buttons it replaced.
+        "picker": matches!(
+            p.spec,
+            DecisionSpec::NameValue { of: jinteki_cr::instr::NameSpace::CardName, .. }
+        ),
     });
     // Tapping a highlighted card is one of the two ways a target announcement
     // is answered, and the other one is the prompt itself — so the prompt
@@ -2602,6 +2611,30 @@ mod tests {
         let out = prompt_json(&g, &view, Side::Runner);
         assert_eq!(out["select-done"], json!(true), "the floor is met: stopping is legal");
         assert_eq!(out["select-picked"], json!([want[0].0]), "and the sheet says which");
+    }
+
+    /// A long list is a search box only when what it lists is the CARD POOL.
+    /// A trace with fifteen credits to spend is also more than a dozen
+    /// options, and it is not a search for anything.
+    #[test]
+    fn only_a_card_name_prompt_is_a_search() {
+        use jinteki_cr::instr::NameSpace;
+        let mut g = dealt_game();
+        let cases = [
+            (DecisionSpec::NameValue { of: NameSpace::CardName, excluding: None }, true),
+            (DecisionSpec::NameValue { of: NameSpace::Number, excluding: None }, false),
+            (DecisionSpec::TraceSpend { max: 15, strength_so_far: 0, corp_side: false }, false),
+            (DecisionSpec::DeclareX { max: 20 }, false),
+        ];
+        for (spec, want) in cases {
+            g.pending = Some(present(&g.vm, Side::Runner, &spec));
+            let view = g.vm.view_of(Side::Runner);
+            assert_eq!(
+                prompt_json(&g, &view, Side::Runner)["picker"],
+                json!(want),
+                "{spec:?}"
+            );
+        }
     }
 
     /// Every choice that is about a card carries the card. The audit that
