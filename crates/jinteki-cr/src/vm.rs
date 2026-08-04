@@ -10073,10 +10073,43 @@ impl Vm {
                         // ability 'After it resolves, remove it from the
                         // game.', the event or operation is not trashed. The
                         // card remains in the play area until the conditional
-                        // ability removes it from the game." The card is NOT
-                        // trashed here; the removal happens below, once (h)
-                        // has been recorded.
+                        // ability removes it from the game."
+                        //
+                        // A NESTED CONDITIONAL ABILITY, taken literally: its
+                        // condition is 8.6.7h's ("after it resolves"), so it
+                        // is created here as a 9.6.13 delayed conditional on
+                        // the played card and becomes pending at the
+                        // checkpoint that follows this step — which puts the
+                        // removal in the reaction window after (h), where the
+                        // CR puts it, alongside every other ability whose
+                        // condition (h) met. A card able to act on the played
+                        // operation in that window therefore still finds it in
+                        // the play area. 9.6.13c gives it its implicit
+                        // duration: until it first resolves.
+                        //
+                        // The source is the played card itself, which is what
+                        // makes `SelfPlayResolved` name the right card and
+                        // `RemoveSelfFromGame` reach it (9.1.4 could strand an
+                        // ability whose source had moved; this one's source is
+                        // the card that stayed).
                         cite!("rule_play_no_trash_if_play_effect_will_rfg");
+                        cite!("rule_delayed_conditional_ability");
+                        cite!("rule_delayed_conditional_ability_relevant_once");
+                        let id = self.next_lingering;
+                        self.next_lingering += 1;
+                        self.lingering.push(LingeringEffect::new(
+                            id,
+                            c,
+                            Payload::DelayedConditional {
+                                def: AbilityDef::conditional(
+                                    TriggerCond::SelfPlayResolved,
+                                    vec![Instruction::RemoveSelfFromGame],
+                                    false,
+                                )
+                                .labeled("8.6.6d: after it resolves, remove it from the game"),
+                            },
+                            Duration::UntilResolved,
+                        ));
                     } else {
                         // (g) trash the card.
                         let owner = self.st.objects[&c].owner;
@@ -10087,18 +10120,10 @@ impl Vm {
                     // (Ashen Epilogue).
                     cite!("rule_play_no_trash_left_play_area");
                 }
-                // (h) conditions related to finishing resolution are met.
+                // (h) conditions related to finishing resolution are met —
+                // including 8.6.6d's nested conditional, created above, which
+                // this change is what meets.
                 self.changes.record(GameChange::CardPlayResolved { obj: c });
-                // 8.6.6d's nested conditional, resolved as the play's own
-                // last act. DEVIATION (annotated): the CR has it resolve in
-                // the reaction window this step's checkpoint opens, so a card
-                // able to act on the played operation in that window would
-                // see it already gone. Nothing in either priority deck can.
-                if p.nested_rfg && matches!(self.st.objects[&c].zone, Zone::PlayArea(_)) {
-                    cite!("rule_play_no_trash_if_play_effect_will_rfg");
-                    cite!("sec_removed_from_game");
-                    self.move_card(c, Zone::RemovedFromGame);
-                }
             }
             Instruction::RemoveSelfFromGame => {
                 cite!("rule_play_no_trash_left_play_area");

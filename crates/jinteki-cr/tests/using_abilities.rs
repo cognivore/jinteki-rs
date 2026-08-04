@@ -110,3 +110,78 @@ fn a_copy_installed_after_the_first_occurrence_gets_no_fresh_first_time() {
     );
     assert_eq!(vm.st.runner.credits, 1, "one occurrence, one credit");
 }
+
+/// CR 8.6.6d, as a nested CONDITIONAL ability rather than a step of the play.
+///
+/// "If an ability that plays an event or operation also contains the nested
+/// conditional ability 'After it resolves, remove it from the game.', the
+/// event or operation is not trashed. The card remains in the play area until
+/// the conditional ability removes it from the game." A conditional ability's
+/// condition is met at 8.6.7h and it resolves in the reaction window the
+/// following checkpoint opens (10.3.2) — so anything else whose condition (h)
+/// also met is in that same window, and finds the played card still in the
+/// play area. The kernel used to remove it as the play step's own last act,
+/// which is a step too early.
+#[test]
+fn the_8_6_6d_removal_resolves_in_the_reaction_window_after_the_play() {
+    let mut vm = Vm::empty(9019);
+    let op = vm.new_object(
+        tk::operation_with_after_resolve(
+            "Flashback",
+            0,
+            vec![jinteki_cr::instr::Instruction::GainCredits(
+                Side::Corp,
+                jinteki_cr::instr::Quantity::c(1),
+            )],
+            vec![jinteki_cr::instr::Instruction::GainCredits(
+                Side::Corp,
+                jinteki_cr::instr::Quantity::c(2),
+            )],
+        ),
+        Zone::Hand(Side::Corp),
+    );
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+    tk::install_root(&mut vm, tk::play_operation_button_rfg("Player", op), ServerId::Remote(1), true);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("play-op-rfg"))
+            // 9.1.2a: the controller orders the instances in the window. Take
+            // the card's own rider first — it can only resolve because the
+            // card is still in the play area, and therefore still active.
+            .when(Match::reaction(), Reply::take("after-resolve rider"))
+            .when(Match::reaction(), Reply::take("8.6.6d"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let together = t
+        .entries
+        .iter()
+        .any(|e| match &e.spec {
+            jinteki_cr::decision::DecisionSpec::ReactionWindow { options, .. } => {
+                let labels: Vec<&str> = options
+                    .iter()
+                    .map(|o| match o {
+                        jinteki_cr::decision::WindowOption::TriggerInstance { label, .. } => *label,
+                        _ => "",
+                    })
+                    .collect();
+                labels.iter().any(|l| l.contains("after-resolve rider"))
+                    && labels.iter().any(|l| l.contains("8.6.6d"))
+            }
+            _ => false,
+        });
+    assert!(
+        together,
+        "8.6.6d/10.3.2: the removal is a pending conditional in the same \
+         reaction window as everything else (h) met, not a step of the play"
+    );
+    assert_eq!(vm.st.corp.credits, 3, "the play ability gained 1 and the rider gained 2");
+    assert_eq!(
+        vm.st.objects[&op].zone,
+        Zone::RemovedFromGame,
+        "8.6.6d: not trashed — removed from the game by the nested conditional"
+    );
+}

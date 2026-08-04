@@ -1688,6 +1688,41 @@ pub fn play_event_action(name: &'static str, card: ObjectId) -> PrintedCard {
     c
 }
 
+/// An operation carrying an Oppo-Research-class rider: "After you resolve
+/// this operation, gain N[credit]" (8.6.7h / `SelfPlayResolved`). Used to
+/// watch what else can act on a played card at that step.
+pub fn operation_with_after_resolve(
+    name: &'static str,
+    cost: u32,
+    play: Vec<Instruction>,
+    after: Vec<Instruction>,
+) -> PrintedCard {
+    let mut c = operation(name, cost, play);
+    c.abilities.push(
+        AbilityDef::conditional(TriggerCond::SelfPlayResolved, after, false)
+            .labeled("after-resolve rider"),
+    );
+    c
+}
+
+/// CR 8.6.6d: a Corp button playing one fixed operation whose playing ability
+/// "also contains the nested conditional ability 'After it resolves, remove
+/// it from the game'" — so the operation is not trashed at 8.6.7g and the
+/// nested conditional removes it instead.
+pub fn play_operation_button_rfg(name: &'static str, card: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PlayCard {
+            card: TargetSpec::Objects(vec![card]),
+            ignore_costs: false,
+            then_remove_from_game: true,
+        }],
+    )
+    .labeled("play-op-rfg: play it, then remove it from the game")];
+    c
+}
+
 /// A Corp button playing one fixed operation.
 pub fn play_operation_button(name: &'static str, card: ObjectId) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
