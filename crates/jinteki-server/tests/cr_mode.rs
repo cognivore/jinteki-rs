@@ -351,6 +351,63 @@ async fn cr_ws_loop_drives_a_game_human_vs_bot() {
     assert_eq!(st["runner"]["hand"].as_array().unwrap().len(), hand + 1);
     assert_eq!(st["runner"]["deck-count"].as_u64().unwrap(), deck - 1);
 
+    // 5b. The log is not a list of clicks any more: the kernel's change
+    //     stream is narrated into it, ONCE PER VIEWER. The same draw is a
+    //     title in the drawer's copy and "a card" in their opponent's
+    //     (CR 4.3.2 / 10.2.2b) — which is the whole reason there are two
+    //     logs and not one. Both copies are read here from the live game,
+    //     because only one of them ever goes down this socket.
+    {
+        let seat = cr::lookup(&token).await.expect("the session is registered");
+        let g = seat.game.lock().await;
+        let lines = |side: Side| -> Vec<String> {
+            cr::state_json(&g, side)["log"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l["text"].as_str().unwrap_or("").to_string())
+                .collect()
+        };
+        let mine = lines(Side::Runner);
+        let theirs = lines(Side::Corp);
+        let drawn = |ls: &[String], who: &str| -> Vec<String> {
+            ls.iter().filter(|l| l.starts_with(&format!("{who}: draws "))).cloned().collect()
+        };
+
+        // The Runner's own draw, in the Runner's log, by name.
+        let mine_drew = drawn(&mine, "Runner");
+        assert!(!mine_drew.is_empty(), "the log narrates draws now: {mine:#?}");
+        assert!(
+            mine_drew.iter().any(|l| l != "Runner: draws a card."),
+            "and names the card the drawer is entitled to: {mine_drew:#?}"
+        );
+        // The same event in the Corp's log, unnamed.
+        assert!(
+            drawn(&theirs, "Runner").iter().all(|l| l == "Runner: draws a card."),
+            "4.3.2: the Corp may not read the grip: {theirs:#?}"
+        );
+        // And the mirror image: the Corp's mandatory draws.
+        let theirs_drew = drawn(&theirs, "Corp");
+        assert!(
+            theirs_drew.iter().any(|l| l != "Corp: draws a card."),
+            "the Corp reads its own draws: {theirs_drew:#?}"
+        );
+        assert!(
+            drawn(&mine, "Corp").iter().all(|l| l == "Corp: draws a card."),
+            "the Runner may not read HQ: {mine:#?}"
+        );
+        // Turn boundaries, credit swings and the run structure are all there
+        // — the log the player asked for.
+        assert!(
+            mine.iter().any(|l| l.contains("'s turn")),
+            "turns are marked: {mine:#?}"
+        );
+        assert!(
+            mine.iter().any(|l| l == "Runner: gains 1[c]."),
+            "credit swings are narrated: {mine:#?}"
+        );
+    }
+
     // 6. Our own grip is fully readable — title, type, oracle text and the
     //    NRDB code the board fetches art with.
     let card = &st["runner"]["hand"].as_array().unwrap()[0];

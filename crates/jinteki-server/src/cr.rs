@@ -480,6 +480,10 @@ pub struct CrGame {
     /// its reader is not entitled to see. Chat is the one thing written to
     /// both logs verbatim.
     log: [Vec<Value>; 2],
+    /// How far into `vm.changes.log` both logs have been narrated. The
+    /// kernel's change buffer is the authoritative event stream; this is the
+    /// cursor that turns it into two readable ones (`crlog`).
+    narrated: usize,
     result: Option<GameResult>,
     conceded: Option<Side>,
     last_seen: Instant,
@@ -533,11 +537,47 @@ impl CrGame {
     fn push_line(&mut self, side: Side, v: Value) {
         let log = &mut self.log[six(side)];
         log.push(v);
-        if log.len() > 400 {
-            log.drain(..100);
+        // A narrated game is a much longer log than a list of taken actions
+        // was, and the whole of it rides every state push. The bound is what
+        // a player can usefully scroll back through; the operator's copy on
+        // disk is the one that keeps everything.
+        if log.len() > LOG_LINES {
+            log.drain(..LOG_LINES / 4);
+        }
+    }
+
+    /// The kernel's change log, narrated into BOTH logs — one rendering per
+    /// viewer, each decided by that viewer's own entitlement (CR §10.2, via
+    /// `crlog::narrate`) — and appended verbatim to the operator's transcript.
+    ///
+    /// Called after EVERY VM step, and the promptness is load-bearing:
+    /// visibility is evaluated when a line is rendered, and 7.1.2's "while the
+    /// Runner is accessing a card, the Runner is allowed to look at that card"
+    /// is true only while the access is in progress. A line rendered late
+    /// would have to be vague about the very card the player asked to see.
+    fn narrate(&mut self) {
+        let upto = self.vm.changes.log.len();
+        if upto <= self.narrated {
+            return;
+        }
+        let mut lines: Vec<(Side, String)> = Vec::new();
+        for c in &self.vm.changes.log[self.narrated..upto] {
+            for viewer in [Side::Corp, Side::Runner] {
+                if let Some(l) = crate::crlog::narrate(&self.vm, c, viewer) {
+                    lines.push((viewer, l));
+                }
+            }
+        }
+        self.narrated = upto;
+        for (side, l) in lines {
+            self.say_to(side, l);
         }
     }
 }
+
+/// Lines kept per side. Older ones fall off the front; nothing is lost that
+/// the server-side transcript does not still have.
+const LOG_LINES: usize = 600;
 
 /// A seat as the registry hands it back: which side the token sits in, the
 /// game both tokens share, and that game's key — carried here so a socket can
@@ -609,6 +649,7 @@ fn new_game(setup: GameSetup, seats: [SeatState; 2], bot_delay_ms: u64) -> CrGam
         pending: None,
         picked: Vec::new(),
         log: [Vec::new(), Vec::new()],
+        narrated: 0,
         result: None,
         conceded: None,
         last_seen: Instant::now(),
@@ -859,6 +900,9 @@ async fn record_outcome_if_over(db: &Db, g: &mut CrGame) {
 /// at the table nothing is auto-answered: the loop simply stops at whichever
 /// seat is asked, and that seat's socket is the one that finds a prompt.
 async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
+    // Anything the last answer set in motion is said before anything else
+    // happens, and before the early return below can swallow it.
+    g.narrate();
     // A decision already on the table is not ours to re-ask: the other seat's
     // socket may be mid-selection, and re-presenting would discard its picks.
     if g.over() || g.pending.is_some() {
@@ -866,14 +910,21 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
     }
     for _ in 0..20_000 {
         match g.vm.step() {
-            Yield::Progressed => continue,
+            Yield::Progressed => {
+                // Every step, so a line is rendered in the state the record
+                // was made in (see `CrGame::narrate`).
+                g.narrate();
+                continue;
+            }
             Yield::GameOver(r) => {
+                g.narrate();
                 g.result = Some(r);
                 let (w, why) = outcome(g);
                 g.say(format!("Game over — {} wins ({}).", w, why));
                 return;
             }
             Yield::Decision(side, spec) => {
+                g.narrate();
                 if !g.seats[six(side)].bot {
                     let p = present(&g.vm, side, &spec);
                     g.picked.clear();
@@ -886,6 +937,9 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
                 g.vm.answer(answer);
                 if worth_a_frame {
                     g.say_each(noteworthy);
+                }
+                g.narrate();
+                if worth_a_frame {
                     push_state(g, ws, viewer).await;
                     if !g.bot_delay.is_zero() {
                         tokio::time::sleep(g.bot_delay).await;
@@ -1503,7 +1557,7 @@ fn side_key(s: Side) -> &'static str {
         Side::Runner => "runner",
     }
 }
-fn side_name(s: Side) -> &'static str {
+pub(crate) fn side_name(s: Side) -> &'static str {
     match s {
         Side::Corp => "Corp",
         Side::Runner => "Runner",
@@ -1525,7 +1579,7 @@ fn server_from_key(k: &str) -> Option<ServerId> {
         _ => k.strip_prefix("remote").and_then(|n| n.parse().ok()).map(ServerId::Remote),
     }
 }
-fn server_label(s: ServerId) -> String {
+pub(crate) fn server_label(s: ServerId) -> String {
     match s {
         ServerId::Hq => "HQ".into(),
         ServerId::Rnd => "R&D".into(),
