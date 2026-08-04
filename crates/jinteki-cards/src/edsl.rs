@@ -965,6 +965,20 @@ pub fn in_archives() -> TargetFilter {
 pub fn in_heap() -> TargetFilter {
     TargetFilter::InDiscardOf(Runner)
 }
+/// "…another identity" — CR 1.5.4a's pile of additional identities, kept
+/// outside the game. 1.5.4b is what makes this the right description: "when
+/// an ability refers to an identity other than the Runner's current identity,
+/// it refers to the cards provided this way".
+pub fn in_identity_pile_of(side: Side) -> TargetFilter {
+    TargetFilter::InIdentityPileOf(side)
+}
+/// "…from the same faction" (`same = true`, Rebirth) / "…that does not match
+/// the faction of your identity" (`same = false`, DJ Fenris) — CR 2.13,
+/// compared against the faction of that player's current identity. Write
+/// whichever the card writes.
+pub fn faction_matching_identity_of(side: Side, same: bool) -> TargetFilter {
+    TargetFilter::FactionMatchesIdentityOf { side, same }
+}
 pub fn in_hand_of(side: Side) -> TargetFilter {
     TargetFilter::CardsInHandOf(side)
 }
@@ -1268,6 +1282,12 @@ pub fn access_one_root_of_another_server_restricted() -> Instruction {
 /// "…flip this identity." (rule_identity_double_sided.)
 pub fn flip_identity(side: Side) -> Instruction {
     Instruction::FlipIdentity(side)
+}
+/// "Switch your identity with another identity …" (Rebirth class; CR 1.5.4).
+/// The identity that leaves the play area goes back to the pile it came from
+/// (1.5.4b); a double-sided one arrives front side faceup (1.5.4d).
+pub fn switch_identity(side: Side, with: TargetSpec) -> Instruction {
+    Instruction::SwitchIdentity { side, with }
 }
 /// "all credits in their credit pool" (Closed Accounts class; 1.10.)
 pub fn credits_in_pool_of(side: Side) -> Quantity {

@@ -14,7 +14,7 @@ truth.
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
 - **DP-7b: 861/1420** distinct rules cited (60.6%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **Priority decks: 43/51 cards complete**, 15 printed sentences still
+- **Priority decks: 44/51 cards complete**, 14 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
   ratcheted by `the_gap_list_is_measurable_and_honest`). The 51st card is
   CR 1.5.4a's additional-identities pile, which a player brings "along with
@@ -934,8 +934,12 @@ classify will cut someone again.
 - "shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
   shuffles from the heap into the stack). `MoveToDeck` puts cards on top or
   bottom and does not shuffle.
-- swapping the identity in play (Rebirth) and flipping a double-sided
-  identity (Nebula Talent Management).
+- ~~swapping the identity in play (Rebirth) and flipping a double-sided
+  identity (Nebula Talent Management)~~ — **done**:
+  `Instruction::SwitchIdentity { side, with }` over CR 1.5.4a's pile, which is
+  a real zone (`Zone::OutsideGame(Side)`), so the identity switched to is an
+  ordinary announced target and the one it replaces goes back by an ordinary
+  `move_card` (1.5.4b). Rebirth is COMPLETE.
 
 *Positions that exist but are not quantity/target positions (§12 rule 6):*
 

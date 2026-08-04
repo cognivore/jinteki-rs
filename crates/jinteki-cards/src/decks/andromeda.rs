@@ -259,10 +259,18 @@ pub fn pinhole_threading() -> Card {
 ///  Rebirth from the game instead of trashing it.
 ///  Limit 1 per deck."
 ///
-/// UNIMPLEMENTED: the switch — no instruction exchanges the identity in play
-/// for one outside the game. The removal replacement IS sayable, and is what
-/// this card carries. ("Limit 1 per deck" is a deckbuilding restriction, not
-/// a sentence a card does.)
+/// COMPLETE. "Another identity" is CR 1.5.4a's pile — 1.5.4b: "when an
+/// ability refers to an identity other than the Runner's current identity, it
+/// refers to the cards provided this way" — so the description names that
+/// zone and stipulates a faction, and both are ordinary criteria. The
+/// identity Rebirth replaces goes back to the pile, which is the rest of
+/// 1.5.4b, and a double-sided one arrives front side faceup (1.5.4d).
+///
+/// With an empty pile, or none of the right faction, the announcement has no
+/// candidate and the switch does nothing — but the event is still played, so
+/// the second sentence still removes it from the game.
+/// ("Limit 1 per deck" is a deckbuilding restriction, not a sentence a card
+/// does.)
 pub fn rebirth() -> Card {
     card("Rebirth")
         .runner()
@@ -271,8 +279,11 @@ pub fn rebirth() -> Card {
         .cost(0)
         .text("Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it.")
         .text("Limit 1 per deck.")
+        .play([switch_identity(
+            Runner,
+            choose(1, &[in_identity_pile_of(Runner), faction_matching_identity_of(Runner, true)]),
+        )])
         .declares([removed_from_game_instead_of_trashed()])
-        .unimplemented("Switch your identity with another identity from the same faction.")
         .build()
 }
 

@@ -7,6 +7,7 @@ use crate::edsl::Card;
 
 pub mod andromeda;
 pub mod gauntlet;
+pub mod unlisted;
 
 /// Every card of both decks — the deck proper, plus CR 1.5.4a's pile of
 /// additional identities, which a player brings "along with their deck" and
@@ -31,7 +32,9 @@ pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
 /// Every card this crate carries, priority decks and all — what
 /// [`crate::find`] searches.
 pub fn all_cards() -> Vec<Card> {
-    priority_decks()
+    let mut out = priority_decks();
+    out.extend(unlisted::cards());
+    out
 }
 
 /// The source of each card module, for the manifest test — the doc comments
@@ -40,4 +43,5 @@ pub fn all_cards() -> Vec<Card> {
 pub const SOURCES: &[(&str, &str)] = &[
     ("andromeda.rs", include_str!("andromeda.rs")),
     ("gauntlet.rs", include_str!("gauntlet.rs")),
+    ("unlisted.rs", include_str!("unlisted.rs")),
 ];

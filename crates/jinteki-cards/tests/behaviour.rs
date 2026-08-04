@@ -1056,7 +1056,9 @@ fn builder_calls_denote_into_the_right_ability_kinds() {
         kinds("Shibboleth"),
         vec![AbilityKind::Static, AbilityKind::Paid, AbilityKind::Paid]
     );
-    assert_eq!(kinds("Rebirth"), vec![AbilityKind::Static]);
+    // Rebirth prints one sentence that HAPPENS (the switch, a play ability)
+    // and one that is permanently true (the removal replacement, a static).
+    assert_eq!(kinds("Rebirth"), vec![AbilityKind::Play, AbilityKind::Static]);
     assert_eq!(kinds("Tomorrow's Headline"), vec![AbilityKind::Conditional; 2]);
     assert_eq!(kinds("Resistor"), vec![AbilityKind::Static, AbilityKind::Subroutine]);
     // 1.16.10: an additional play cost is a printed property, not a
@@ -2363,4 +2365,122 @@ fn an_identity_in_the_pile_is_inactive() {
     assert_eq!(vm.st.hand[&Side::Runner].len(), 9);
     let id = vm.identity_of(Side::Runner).expect("one identity in the play area");
     assert_eq!(vm.st.objects[&id].printed.name, "Andromeda: Dispossessed Ristie");
+}
+
+/// Rebirth: "Switch your identity with another identity from the same
+/// faction. Remove Rebirth from the game instead of trashing it."
+///
+/// Three things at once: the description reaches OUTSIDE the game (1.5.4a's
+/// pile, named by a criterion, which is what lifts 1.15.2c's play-area
+/// restriction); "from the same faction" refuses the Shaper sitting in the
+/// same pile (2.13); and the identity that leaves the play area goes BACK to
+/// the pile rather than anywhere else (1.5.4b).
+#[test]
+fn rebirth_switches_the_identity_for_one_of_the_same_faction() {
+    let mut vm = Vm::empty(5503);
+    let andromeda =
+        tk::install_identity(&mut vm, card("Andromeda: Dispossessed Ristie"), Side::Runner);
+    // 1.5.4a: the pile the deck brought to the table — two identities, one of
+    // each faction. Placement, not effect-by-fiat.
+    let mut pile = |c: PrintedCard| {
+        let id = vm.new_object(c, Zone::OutsideGame(Side::Runner));
+        vm.st.objects.get_mut(&id).unwrap().faceup = true;
+        id
+    };
+    let ken = pile(card("Ken \"Express\" Tenma: Disappeared Clone"));
+    let chaos = pile(card("Chaos Theory: Wünderkind"));
+
+    let rb = vm.new_object(card("Rebirth"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(rb);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(rb))
+            .when(Match::targets().once(), Reply::target(ken))
+            .stop_at_action(),
+    );
+
+    // 2.13 / 1.5.4b: the Shaper was in the pile and was never a candidate.
+    let announced = t.of_kind(Kind::Targets);
+    assert_eq!(announced.len(), 1, "one 1.15.2 announcement: {}", t.tail(16));
+    assert!(
+        matches!(
+            &announced[0].spec,
+            jinteki_cr::decision::DecisionSpec::ChooseTargets { candidates, .. }
+                if candidates == &vec![ken]
+        ),
+        "only the same-faction identity is a candidate: {:?}",
+        announced[0].spec
+    );
+
+    // 3.1.1: the play area holds the new identity, and it is the one the
+    // rules now read.
+    assert_eq!(vm.st.objects[&ken].zone, Zone::PlayArea(Side::Runner));
+    assert_eq!(vm.identity_of(Side::Runner), Some(ken), "{}", t.tail(16));
+    // 1.5.4b: "if an identity card leaves the play area, it must be returned
+    // to the pile outside the game" — not to the heap, not out of the game.
+    assert_eq!(
+        vm.st.objects[&andromeda].zone,
+        Zone::OutsideGame(Side::Runner),
+        "the old identity went back to the pile: {}",
+        t.tail(16)
+    );
+    assert!(vm.identity_pile(Side::Runner).contains(&andromeda));
+    assert!(vm.identity_pile(Side::Runner).contains(&chaos));
+    // The switch is not cosmetic: Andromeda's printed link is 1 and Ken's is
+    // 0, so the live characteristics are the new identity's.
+    assert_eq!(vm.runner_link(), 0, "Andromeda's link left with her: {}", t.tail(16));
+    assert!(
+        !jinteki_cr::object::card_active(&vm.st.objects[&andromeda]),
+        "1.8.3d: back in the pile, and inactive again"
+    );
+    // The second printed sentence, undisturbed.
+    assert_eq!(vm.st.objects[&rb].zone, Zone::RemovedFromGame);
+}
+
+/// Rebirth with nothing to switch to: 9.11.2's "do as much as you can" — the
+/// event is still played and still removed from the game, and the identity in
+/// the play area does not move.
+#[test]
+fn rebirth_with_no_legal_identity_leaves_the_one_in_play() {
+    let mut vm = Vm::empty(5504);
+    let andromeda =
+        tk::install_identity(&mut vm, card("Andromeda: Dispossessed Ristie"), Side::Runner);
+    // Only a Shaper in the pile — "from the same faction" reaches nothing.
+    let chaos = vm.new_object(card("Chaos Theory: Wünderkind"), Zone::OutsideGame(Side::Runner));
+    vm.st.objects.get_mut(&chaos).unwrap().faceup = true;
+    let rb = vm.new_object(card("Rebirth"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(rb);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(rb))
+            .when(Match::targets().once(), Reply::Targets(Vec::new()))
+            .stop_at_action(),
+    );
+    // 1.15.2b: the announcement is made with as many targets as there are,
+    // and there are none — the Shaper is in the pile and is not a candidate.
+    let announced = t.of_kind(Kind::Targets);
+    assert!(
+        matches!(
+            &announced[0].spec,
+            jinteki_cr::decision::DecisionSpec::ChooseTargets { candidates, .. }
+                if candidates.is_empty()
+        ),
+        "no same-faction identity to name: {:?}",
+        announced[0].spec
+    );
+    assert_eq!(vm.identity_of(Side::Runner), Some(andromeda), "{}", t.tail(12));
+    assert_eq!(vm.st.objects[&chaos].zone, Zone::OutsideGame(Side::Runner));
+    assert_eq!(vm.st.objects[&rb].zone, Zone::RemovedFromGame, "{}", t.tail(12));
 }

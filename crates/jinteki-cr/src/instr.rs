@@ -563,6 +563,18 @@ pub enum Instruction {
     PurgeVirusCounters,
     /// "…flip this identity." (rule_identity_double_sided; Nebula class.)
     FlipIdentity(Side),
+    /// CR 1.5.4 / 1.5.4b: "switch your identity with another identity …"
+    /// (Rebirth class). The identity described by `with` takes the play area
+    /// (3.1.1) and the one it replaces goes back to the pile outside the game,
+    /// because 1.5.4b says an identity leaving the play area "must be returned
+    /// to the pile".
+    ///
+    /// Not a 8.8 swap: 3.1.1b says identities are not installed, so none of
+    /// 8.8.2's destination legality or 8.8.4's uninstalling applies. `with` is
+    /// an ordinary target position, so the stipulations a card makes about the
+    /// new identity — its faction, a subtype, where it is — are the shared
+    /// criteria vocabulary and nothing here has to know about any of them.
+    SwitchIdentity { side: Side, with: TargetSpec },
     /// "Shuffle up to 3 cards from Archives into R&D." (Jackson class;
     /// 8.1.4/1.12.3 — entering the deck makes new objects, and the shuffle
     /// follows.) The targets are announced (1.15.2).

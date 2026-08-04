@@ -4074,6 +4074,7 @@ impl Vm {
             | Instruction::AddToScoreArea { .. }
             | Instruction::HostCards { .. }
             | Instruction::SwapCards { .. }
+            | Instruction::SwitchIdentity { .. }
             | Instruction::MoveIce { .. }
             | Instruction::MoveRunnerToIce { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
@@ -5314,6 +5315,10 @@ impl Vm {
             // and the modifying sentence ONE instruction, and the ice is its
             // target.
             | Instruction::ModifyStrength { target: spec, .. }
+            // 1.15.1 / 1.5.4b: "switch your identity with another identity
+            // from the same faction" chooses the identity it acts on, and a
+            // pile card is an ordinary object, so it announces like any other.
+            | Instruction::SwitchIdentity { with: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. } => {
                 self.announcement_for(spec).map(|s| (af.controller, s))
             }
@@ -8923,6 +8928,50 @@ impl Vm {
                         }
                     }
                 }
+            }
+            Instruction::SwitchIdentity { side, with } => {
+                // CR 1.5.4/1.5.4b: the announced identity takes the play area
+                // and the one it replaces goes back to the pile, because
+                // "if an identity card leaves the play area, it must be
+                // returned to the pile outside the game".
+                //
+                // Nothing here is an install (3.1.1b) and nothing is a swap of
+                // two installed cards (8.8): the two moves are ordinary zone
+                // changes, so 1.12.3 re-makes both objects and the 10.3.1a
+                // checkpoint that follows re-derives every ability from the
+                // identity now in play.
+                cite!("rule_additional_identity");
+                cite!("rule_additional_identities_reference");
+                cite!("rule_identity_play_area");
+                cite!("rule_identity_not_installed");
+                let side = *side;
+                let chosen = self.resolve_targets(with, Some(source.obj), &imm.targets);
+                // 9.11.2: an instruction that cannot be carried out does as
+                // much as it can — with no identity to switch to, nothing
+                // happens and the identity in play stays where it is.
+                let Some(&new_id) = chosen.first() else { return };
+                let old = self.identity_of(side);
+                if old == Some(new_id) {
+                    return;
+                }
+                if let Some(old) = old {
+                    self.move_card(old, Zone::OutsideGame(side));
+                    // 1.5.4a: the pile is open information to its owner, so a
+                    // returned identity is not hidden by going back.
+                    self.st.objects.get_mut(&old).unwrap().faceup = true;
+                }
+                self.move_card(new_id, Zone::PlayArea(side));
+                self.st.active_seq += 1;
+                let seq = self.st.active_seq;
+                let o = self.st.objects.get_mut(&new_id).unwrap();
+                o.faceup = true;
+                // CR 1.5.4d: "if the Runner switches their identity with a
+                // double-sided identity, it enters play with the FRONT side
+                // faceup … regardless of the previous identity's current
+                // side."
+                cite!("rule_additional_identity_double_sided");
+                o.flipped = false;
+                o.active_since = seq;
             }
             Instruction::ShuffleCardsIntoDeck { targets, to } => {
                 // Jackson class: the announced cards enter the deck (1.12.3
