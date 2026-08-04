@@ -3854,3 +3854,46 @@ fn laramy_fisk_lets_the_runner_force_one_corp_draw_a_turn() {
         );
     }
 }
+
+/// CR 9.11.3: "usually, each SENTENCE in the text of an ability forms a
+/// single instruction." 9.11.4's exceptions are plays/installs/accesses,
+/// choose-then-act, nested costs, searches, look/reveal and option choices —
+/// none of them splits a sentence because its effects are of different
+/// classes.
+///
+/// This matters because 9.11.3 also says what an instruction BOUNDARY costs:
+/// "After each instruction, an ability pauses its resolution to allow
+/// priority windows to open… a checkpoint occurs, allowing any appropriate
+/// conditional abilities to be marked as pending in a reaction window, then
+/// targets are announced for the next instruction. Finally, the next
+/// instruction becomes imminent, allowing interrupts relevant to that
+/// instruction to resolve." Splitting an "X and Y" sentence therefore invents
+/// a checkpoint, a reaction window and a second interrupt window that the
+/// card does not have — so a prevention or avoidance effect gets two
+/// separate chances where the card gives one, and anything conditional on
+/// the first half can act before the second half is imminent.
+///
+/// Three cards were written the wrong way and are pinned here by shape.
+#[test]
+fn an_and_sentence_is_one_instruction_not_two() {
+    let one_instruction = |name: &str, which: usize| {
+        let c = card_partial(name);
+        let ins = &c.abilities[which].instructions;
+        assert_eq!(
+            ins.len(),
+            1,
+            "{name}: one printed sentence must denote into ONE instruction (9.11.3), got {ins:?}"
+        );
+        assert!(
+            matches!(ins[0], Instruction::Combined(_)),
+            "{name}: an 'X and Y' sentence is `Combined`, got {:?}",
+            ins[0]
+        );
+    };
+    // "When your turn begins, remove 1 hosted power counter and draw 2 cards."
+    one_instruction("Earthrise Hotel", 2);
+    // "…draw 2 cards and take 1 tag."
+    one_instruction("Liza Talking Thunder: Prominent Legislator", 0);
+    // "…gain 1[credit] and flip this identity."
+    one_instruction("Nebula Talent Management: Making Stars", 0);
+}

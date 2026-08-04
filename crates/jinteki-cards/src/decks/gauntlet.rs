@@ -22,7 +22,9 @@ pub fn nebula_talent_management() -> Card {
         .text("When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.")
         .when(
             action_phase_ends_if(Corp, &[played_operation_this_turn(Corp)]),
-            [gain(Corp, 1), flip_identity(Corp)],
+            // 9.11.3: one printed sentence, so ONE instruction — "gain
+            // 1[credit] and flip this identity" is not two.
+            [combined([gain(Corp, 1), flip_identity(Corp)])],
         )
         .named("nebula: gain 1 and flip")
         .flip_face(gemilang_arena())

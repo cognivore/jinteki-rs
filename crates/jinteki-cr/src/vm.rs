@@ -8268,28 +8268,34 @@ impl Vm {
                 }
             }
             Instruction::Combined(list) => {
-                // CR 9.11.4a: a sentence describing several effects is
-                // normally several INSTRUCTIONS. `Combined` is the exception
-                // the CR's own examples force (Snare!'s "do 3 net damage and
-                // give the Runner 1 tag" is one instruction, so one interrupt
-                // window sees both), and it works by merging the sub-
-                // instructions' expected atoms into one imminent set.
+                // CR 9.11.3: "usually, each SENTENCE in the text of an
+                // ability forms a single instruction" — so a sentence
+                // describing several effects is ONE instruction, and
+                // `Combined` is how the card layer says so (Snare!'s "do 3
+                // net damage and give the Runner 1 tag" is one instruction,
+                // so one interrupt window sees both). It works by merging the
+                // sub-instructions' expected atoms into one imminent set.
+                //
+                // 9.11.4's exceptions (a-g) are plays/installs/accesses,
+                // choose-then-act, nested costs, searches, look/reveal and
+                // option choices. NONE of them splits a sentence because its
+                // effects are of different classes — an earlier reading cited
+                // 9.11.4a for that and it does not say it (9.11.4a is about
+                // sentences that are not instructions at all).
                 //
                 // That merge can only carry a sub-instruction whose effect IS
                 // a value: a STRUCTURAL atom carries none, so the merged set
                 // has nothing to resolve from and the sub-instruction used to
                 // be silently dropped (Earthrise Hotel's "remove 1 hosted
                 // power counter and draw 2 cards" removed nothing). Those
-                // sub-instructions are what 9.11.4a calls separate
-                // instructions (9.11.3: "usually, each sentence in the text
-                // of an ability forms a single instruction"), and they are
-                // spliced in after this one.
+                // sub-instructions cannot ride the merge, so they are
+                // spliced in after this one rather than dropped.
                 //
                 // DEVIATION: a spliced sub-instruction resolves AFTER every
                 // merged one, so printed order is not preserved between the
                 // two kinds. Nothing in the corpus distinguishes them; a card
                 // that did would want its sentence written as two
-                // instructions, which 9.11.4a already permits.
+                // instructions deliberately.
                 //
                 // A sub-instruction that CHOOSES its own targets is spliced
                 // for the same reason: the merge carries the targets this

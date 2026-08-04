@@ -465,3 +465,43 @@ When you finish a card, add its test there.
    on the printed card: everything before it is the cost.
 5. **Write the marker rather than a lie.** A partial card is fine. A card that
    quietly does the wrong thing is not.
+
+## One sentence is one instruction (CR 9.11.3)
+
+> "Usually, each **sentence** in the text of an ability forms a single
+> instruction."
+
+So `"draw 2 cards and take 1 tag"` is **one** instruction, not two:
+
+```rust
+// RIGHT — one sentence, one instruction
+.when(cond, [combined([draw(Runner, 2), give_tags(1)])])
+
+// WRONG — invents an instruction boundary the card does not have
+.when(cond, [draw(Runner, 2), give_tags(1)])
+```
+
+It is not a style choice. 9.11.3 also says what a boundary COSTS: after each
+instruction the ability pauses, a checkpoint occurs, conditional abilities are
+marked pending in a reaction window, targets are announced for the next
+instruction, and only then does it become imminent for interrupts. Split an
+"X and Y" sentence and you invent a checkpoint, a reaction window and a second
+interrupt window — so a prevention or avoidance effect gets two chances where
+the card gives one, and anything conditional on the first half resolves before
+the second half is even imminent.
+
+**9.12.2c is a different question.** It governs whether a *calculated
+quantity* ("gain 1[credit] for each…") aggregates into a single effect. It has
+nothing to say about whether a sentence splits, and citing it for that is a
+mistake this codebase has made twice.
+
+The only splits are 9.11.4's exceptions: several plays/installs/accesses in
+one sentence (b), choose-then-act (c), nested costs (f), searches (d),
+look/reveal (e), and option choices (g). Effects being of *different classes*
+is not one of them — Snare!'s "give the Runner 1 tag and do 3 net damage" is
+tag + damage in one instruction, and that is the case `Combined` exists for.
+
+`combined(…)` handles a structural half correctly: it cannot ride the atom
+merge, so it is spliced in after (annotated deviation — the spliced half
+resolves after the merged one, so printed order is not preserved between the
+two kinds).

@@ -551,13 +551,16 @@ pub fn earthrise_hotel() -> Card {
         .text("When your turn begins, remove 1 hosted power counter and draw 2 cards.")
         .when(installed(), [load(CounterKind::Power, 3)])
         .when(empty_of(CounterKind::Power), [trash_self()])
-        // 9.11.4a: two effects of DIFFERENT classes in one printed sentence
-        // are two instructions resolved in order — `combined(…)` is for the
-        // 9.12.2c aggregated case, and the kernel's aggregation only carries
-        // atom classes that have a value (see the gap list).
+        // 9.11.3: "usually, each SENTENCE in the text of an ability forms a
+        // single instruction", and 9.11.4's exceptions are about plays,
+        // installs, accesses, choices, nested costs, searches and reveals —
+        // none of them splits a sentence because its effects are of different
+        // classes. "Remove 1 hosted power counter and draw 2 cards" is one
+        // sentence, so it is ONE instruction: one checkpoint, one reaction
+        // window and one interrupt window cover both halves.
         .when(
             turn_begins(Runner),
-            [remove_counters(CounterKind::Power, 1), draw(Runner, 2)],
+            [combined([remove_counters(CounterKind::Power, 1), draw(Runner, 2)])],
         )
         .build()
 }

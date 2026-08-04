@@ -75,7 +75,12 @@ pub fn liza_talking_thunder() -> Card {
         .text("The first time you make a successful run on a central server each turn, draw 2 cards and take 1 tag.")
         .when_first_each_turn(
             makes_successful_run_on_a_central_server(),
-            [draw(Runner, 2), give_tags(1)],
+            // 9.11.3: "draw 2 cards and take 1 tag" is one SENTENCE, so one
+            // instruction — a tag-avoidance effect and a draw interrupt see
+            // the same imminence, exactly as Snare!'s tag and damage do.
+            // 9.12.2c is about aggregating a calculated quantity ("for
+            // each"), not about whether a sentence splits.
+            [combined([draw(Runner, 2), give_tags(1)])],
         )
         .named("the first central run of the turn")
         .build()
