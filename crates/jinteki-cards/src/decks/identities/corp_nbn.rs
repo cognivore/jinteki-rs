@@ -90,8 +90,36 @@ pub fn pravdivost_consulting() -> Card {
         .build()
 }
 
+/// Spark Agency: Worldswide Reach — Identity: Division.
+/// "The first time each turn you rez an advertisement, the Runner loses
+///  1[credit]."
+///
+/// COMPLETE. 8.1.2's rez with 2.16's subtype stipulation as content on the
+/// condition, and 9.6.5c's ordinal about the occurrence. The sentence says
+/// nothing about the card's TYPE — an advertisement may be an asset, an
+/// upgrade or a piece of ice — so the condition stipulates none either.
+///
+/// "Loses 1[credit]" is 1.10.4's loss, not a payment: the Runner chooses
+/// nothing and a Runner with an empty pool simply loses what they have.
+pub fn spark_agency() -> Card {
+    card("Spark Agency: Worldswide Reach")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The first time each turn you rez an advertisement, the Runner loses 1[credit].")
+        .when_first_each_turn(corp_rezzes_a_subtyped("Advertisement"), [lose(Runner, 1)])
+        .named("the first advertisement rez of the turn")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
-    vec![nbn_reality_plus(), nbn_the_world_is_yours(), pravdivost_consulting()]
+    vec![
+        nbn_reality_plus(),
+        nbn_the_world_is_yours(),
+        pravdivost_consulting(),
+        spark_agency(),
+    ]
 }

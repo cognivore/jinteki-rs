@@ -41,6 +41,26 @@ pub fn argus_security() -> Card {
         .build()
 }
 
+/// GRNDL: Power Unleashed — Identity: Division, Liability.
+/// "You start the game with 10[credit] and 1 bad publicity."
+///
+/// COMPLETE. One sentence, two facts about the game's SETUP — there is no
+/// condition to meet and nothing to resolve, and both are already true when
+/// the first turn begins. They go where Andromeda's starting hand of nine
+/// goes, among the printed facts, which is also why "and" here is not
+/// 9.11.3's instruction question at all.
+pub fn grndl() -> Card {
+    card("GRNDL: Power Unleashed")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Division", "Liability"])
+        .text("You start the game with 10[credit] and 1 bad publicity.")
+        .starting_credits(10)
+        .starting_bad_publicity(1)
+        .build()
+}
+
 /// The Outfit: Family Owned and Operated — Identity: Subsidiary.
 /// "Whenever you take 1 or more bad publicity, gain 3[credit]."
 ///
@@ -106,6 +126,7 @@ pub fn weyland_built_to_last() -> Card {
 pub fn identities() -> Vec<Card> {
     vec![
         argus_security(),
+        grndl(),
         the_outfit(),
         weyland_building_a_better_world(),
         weyland_built_to_last(),

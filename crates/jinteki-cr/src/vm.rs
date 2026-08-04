@@ -585,8 +585,17 @@ impl Vm {
             }
         }
         cite!("rule_start_credits");
-        vm.st.corp.credits = 5;
-        vm.st.runner.credits = 5;
+        vm.st.corp.credits = vm.starting_credits(Side::Corp);
+        vm.st.runner.credits = vm.starting_credits(Side::Runner);
+        // 10.6: bad publicity a card says the game STARTS with, from either
+        // identity — GRNDL says it about itself, Valencia Estevez about the
+        // Corp, and the fact is the same either way.
+        vm.st.corp.bad_publicity = [Side::Corp, Side::Runner]
+            .into_iter()
+            .filter_map(|s| {
+                vm.identity_of(s).and_then(|id| vm.st.objects[&id].face().starting_bad_publicity)
+            })
+            .sum();
         cite!("rule_start_shuffle");
         if setup.shuffle {
             for side in [Side::Corp, Side::Runner] {
@@ -7450,6 +7459,14 @@ impl Vm {
             .unwrap_or(5)
     }
 
+    /// CR 1.6.4: the credits a player begins the game with — 5, unless their
+    /// identity prints otherwise (GRNDL class).
+    pub fn starting_credits(&self, side: Side) -> u32 {
+        self.identity_of(side)
+            .and_then(|id| self.st.objects[&id].face().starting_credits)
+            .unwrap_or(5)
+    }
+
     /// One state requirement of the shared predicate vocabulary
     /// (`TriggerRequirement`), evaluated against the present state and the
     /// public game history (10.2.1).
@@ -12558,6 +12575,15 @@ impl Vm {
             cite!("rule_inherent_cost_aggregates");
             self.note_click_on_action(1);
             self.changes.record(GameChange::ClickSpent { side });
+        }
+        // 5.2.1a: a "Lose [click]" cost takes clicks from the same pool, but
+        // the WORD is not the same word — 5.2.1 keeps losing and spending
+        // apart, and a card saying "loses or spends [click]" (Seidr class)
+        // has to be able to see this happen. It was recorded nowhere at all,
+        // so the loss was invisible to every condition.
+        if cost.lose_clicks > 0 {
+            cite!("rule_gain_spend_lose_clicks");
+            self.changes.record(GameChange::ClicksLost { side, amount: cost.lose_clicks });
         }
         self.changes.record(GameChange::CostPaid {
             side,

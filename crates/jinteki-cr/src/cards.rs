@@ -401,7 +401,10 @@ pub fn lt_todachine() -> PrintedCard {
     c.cost = Some(3);
     c.trash_cost = Some(2);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::CorpRezzesCard { of_types: vec![CardType::Ice] },
+        TriggerCond::CorpRezzesCard {
+            of_types: vec![CardType::Ice],
+            of_subtypes: Vec::new(),
+        },
         vec![Instruction::GainTags(1)],
         false,
     )

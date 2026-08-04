@@ -172,8 +172,63 @@ pub fn noise() -> Card {
         .build()
 }
 
+/// Quetzal: Free Spirit — Identity: G-mod. Link 0.
+/// "Once per turn → 0[credit]: Break 1 barrier subroutine."
+///
+/// COMPLETE. Everything before the colon is the cost — a printed 0[credit],
+/// which 1.16.2a makes a payable cost of nothing rather than no cost at all —
+/// and "Once per turn →" is 9.3.6g's flag, which a PAID ability has something
+/// to spend it with (9.1.6: a player uses a paid ability).
+///
+/// "Break 1 barrier subroutine" is a break ability but NOT an interface
+/// ability: 9.3.6c gates an interface ability on the source's strength, and
+/// an identity has no strength at all, so the subtype is the whole
+/// restriction. 9.5.6c is what that restriction is — the ability is offered
+/// only during an encounter with a barrier, and every subroutine of a barrier
+/// is a barrier subroutine.
+pub fn quetzal() -> Card {
+    card("Quetzal: Free Spirit")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["G-mod"])
+        .text("Once per turn → 0[credit]: Break 1 barrier subroutine.")
+        .paid_once_per_turn_during_encounters_with(credits(0), "Barrier", [break_subroutines(1)])
+        .named("break 1 barrier subroutine")
+        .build()
+}
+
+/// Valencia Estevez: The Angel of Cayambe — Identity: Natural. Link 0.
+/// "The Corp starts the game with 1 bad publicity."
+///
+/// COMPLETE. A fact about the game's SETUP, not an ability: there is no
+/// condition to meet and nothing to resolve, and by the time the first turn
+/// begins it has already happened. It goes where Andromeda's starting hand of
+/// nine goes — among the printed facts — and it says only how much, because
+/// 10.6 makes bad publicity always the Corp's, which is what lets a RUNNER
+/// identity print it about the other player.
+pub fn valencia_estevez() -> Card {
+    card("Valencia Estevez: The Angel of Cayambe")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("The Corp starts the game with 1 bad publicity.")
+        .starting_bad_publicity(1)
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
-    vec![alice_merchant(), edward_kim(), esa_afontov(), maxx(), nathaniel_gnat_hall(), noise()]
+    vec![
+        alice_merchant(),
+        edward_kim(),
+        esa_afontov(),
+        maxx(),
+        nathaniel_gnat_hall(),
+        noise(),
+        quetzal(),
+        valencia_estevez(),
+    ]
 }

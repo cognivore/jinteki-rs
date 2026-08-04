@@ -182,8 +182,15 @@ pub enum TriggerCond {
     /// class).
     PlayerTakesBadPublicity(Side),
     /// CR 8.1.2: "Whenever you rez a piece of ice…" (Lt. Todachine class) —
-    /// the rez of a card of one of the named types.
-    CorpRezzesCard { of_types: Vec<CardType> },
+    /// the rez of a card matching what the sentence says about it.
+    ///
+    /// `of_types` is 2.15's stipulation ("a piece of ice") and `of_subtypes`
+    /// is 2.16's ("an **advertisement**", Spark Agency), read the way every
+    /// other condition reads the pair: a card has one type and any number of
+    /// subtypes, so the types are "any of these" and the subtypes "all of
+    /// these", and either list empty is a sentence making no such
+    /// stipulation.
+    CorpRezzesCard { of_types: Vec<CardType>, of_subtypes: Vec<&'static str> },
     /// CR 10.1.2: "When the Corp purges virus counters…" (Clot class). The
     /// condition is met by the PURGE, not by any counter coming off, so it is
     /// met even when there was nothing to remove.
@@ -253,7 +260,12 @@ pub enum TriggerCond {
     /// (Heinlein Grid class). The additional [click] an ability charges to
     /// MAKE a run is spent before the run formally begins, so it is not spent
     /// during the run and this condition is not met by it.
-    PlayerSpendsClick { side: Side, during_run: bool },
+    /// `also_lost` is the printed "loses **or** spends [click]" (Seidr
+    /// Laboratories): 5.2.1 distinguishes a click SPENT from one LOST, and a
+    /// sentence naming both is one condition reaching both occurrences —
+    /// exactly the shape [`TriggerCond::CardPlayed`]'s `also_installed` gives
+    /// "plays or installs".
+    PlayerSpendsClick { side: Side, during_run: bool, also_lost: bool },
     /// CR 9.12.2b: "whenever you gain credits…" (NASX class). One instance
     /// per OCCURRENCE (9.6.4b): an unaggregated group of effects gains the
     /// credits several times over, and this condition sees each of them.
@@ -1646,6 +1658,15 @@ pub fn trigger_matches(
             side == s
         }
         (
+            TriggerCond::PlayerSpendsClick { side, also_lost, .. },
+            GameChange::ClicksLost { side: s, .. },
+        ) => {
+            // 5.2.1: losing a click is not spending one, so only a sentence
+            // that names both is met here.
+            cite!("rule_abilities_during_a_run");
+            *also_lost && side == s
+        }
+        (
             TriggerCond::SuccessfulRunOnServer,
             GameChange::RunDeclaredSuccessful { server },
         ) => {
@@ -1786,9 +1807,13 @@ pub fn trigger_matches(
             cite!("rule_bad_publicity");
             side == s
         }
-        (TriggerCond::CorpRezzesCard { of_types }, GameChange::CardRezzed { card_type, .. }) => {
+        (
+            TriggerCond::CorpRezzesCard { of_types, of_subtypes },
+            GameChange::CardRezzed { obj, card_type },
+        ) => {
             cite!("rule_rez_in_paw");
-            of_types.contains(card_type)
+            (of_types.is_empty() || of_types.contains(card_type))
+                && of_subtypes.iter().all(|s| has_subtype(*obj, s))
         }
         (TriggerCond::CorpPurgesVirusCounters, GameChange::VirusCountersPurged) => {
             cite!("rule_purge");

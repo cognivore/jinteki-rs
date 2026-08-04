@@ -294,6 +294,14 @@ pub struct PrintedCard {
     /// CR 1.6.6-adjacent: identities that change the starting hand size
     /// ("You draw a starting hand of 9 cards." — Andromeda class). None = 5.
     pub starting_hand_size: Option<u32>,
+    /// CR 1.6.4-adjacent: identities that change the credits a player starts
+    /// with ("You start the game with 10[credit]." — GRNDL class). None = 5.
+    pub starting_credits: Option<u32>,
+    /// CR 1.6.4-adjacent: bad publicity the CORP starts the game with — which
+    /// GRNDL prints about itself and Valencia Estevez prints about the other
+    /// player, so the fact is about the game's setup and not about whose card
+    /// it is. None = none.
+    pub starting_bad_publicity: Option<u32>,
     /// CR 1.4 double-sided identities: the back face's printed
     /// characteristics ("flip this identity" — Nebula/Gemilang class).
     pub flip_face: Option<Box<PrintedCard>>,
@@ -329,6 +337,8 @@ impl PrintedCard {
             cost_x: None,
             additional_play_cost: None,
             starting_hand_size: None,
+            starting_credits: None,
+            starting_bad_publicity: None,
             flip_face: None,
             hosted_credits_spendable: None,
             abilities: Vec::new(),

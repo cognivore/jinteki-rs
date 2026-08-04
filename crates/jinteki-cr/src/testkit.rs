@@ -5447,7 +5447,7 @@ pub fn run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
 pub fn heinlein_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_upgrade(name, 0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::PlayerSpendsClick { side: Side::Runner, during_run: true },
+        TriggerCond::PlayerSpendsClick { side: Side::Runner, during_run: true, also_lost: false },
         vec![Instruction::LoseCredits(Side::Runner, Quantity::c(99))],
         false,
     )

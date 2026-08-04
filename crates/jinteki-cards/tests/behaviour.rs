@@ -5499,3 +5499,197 @@ fn built_to_last_pays_for_the_first_advance_of_a_card_and_not_the_second() {
         t.tail(30)
     );
 }
+
+/// Quetzal: "Once per turn → 0[credit]: Break 1 barrier subroutine."
+///
+/// The subtype restriction and the ordinal, in one run: the identity breaks a
+/// subroutine on the barrier and is not offered again this turn — and it is
+/// never offered at all during the encounter with the sentry, whose
+/// subroutine ends the run.
+#[test]
+fn quetzal_breaks_one_barrier_subroutine_a_turn_and_never_a_sentry() {
+    let mut vm = Vm::empty(6127);
+    tk::install_identity(&mut vm, card("Quetzal: Free Spirit"), Side::Runner);
+    // 6.2.1: the Runner meets the OUTERMOST piece of ice first, so the
+    // sentry goes on innermost and the barrier over it.
+    let sentry = tk::install_ice(
+        &mut vm,
+        tk::subtyped_etr_ice("Some Sentry", "Sentry", 0, 1),
+        ServerId::Archives,
+        true,
+    );
+    let barrier = tk::install_ice(
+        &mut vm,
+        tk::subtyped_etr_ice("Some Barrier", "Barrier", 0, 1),
+        ServerId::Archives,
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    // No `.once()`: the plan takes the ability every time it is offered, so
+    // a second break would mean 9.3.6g's flag was never spent.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::paid(), Reply::take("break 1 barrier subroutine"))
+            .stop_at_action(),
+    );
+    let offers = t
+        .of_kind(Kind::Paid)
+        .into_iter()
+        .filter(|e| plan::count_labelled(plan::window_options(&e.spec), "break 1 barrier") > 0)
+        .count();
+    assert_eq!(
+        offers, 1,
+        "offered during the barrier's encounter only, and 9.3.6g spends it there: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::SubroutineBroken { ice, .. } if *ice == barrier)),
+        "the barrier's subroutine was broken: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::SubroutineResolved { ice, .. } if *ice == sentry)),
+        "and the sentry's resolved, because 9.5.6c never offered the ability there: {}",
+        t.tail(40)
+    );
+}
+
+/// Valencia Estevez: "The Corp starts the game with 1 bad publicity."
+/// GRNDL: "You start the game with 10[credit] and 1 bad publicity."
+///
+/// Both through the real §1.6 setup, not a fixture. Each is a fact about the
+/// game's start rather than an ability, so the proof is the state before
+/// anyone has done anything — and Valencia's says it about the OTHER player,
+/// which is only sayable because 10.6 makes bad publicity always the Corp's.
+#[test]
+fn the_two_setup_identities_change_the_game_before_it_starts() {
+    use jinteki_cr::vm::GameSetup;
+    let deck = |n: usize| -> Vec<PrintedCard> { (0..n).map(|_| tk::corp_filler("C-filler")).collect() };
+    let rdeck = |n: usize| -> Vec<PrintedCard> {
+        (0..n).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect()
+    };
+
+    let vm = Vm::new_game(GameSetup {
+        seed: 11,
+        additional_identities: Default::default(),
+        corp_identity: None,
+        runner_identity: Some(card("Valencia Estevez: The Angel of Cayambe")),
+        corp_deck: deck(20),
+        runner_deck: rdeck(20),
+        shuffle: true,
+    });
+    assert_eq!(vm.st.corp.bad_publicity, 1, "Valencia hands the Corp its bad publicity at setup");
+    assert_eq!(vm.st.corp.credits, 5, "and leaves 1.6.4's five credits alone");
+    assert_eq!(vm.st.runner.credits, 5, "on both sides");
+
+    let vm = Vm::new_game(GameSetup {
+        seed: 11,
+        additional_identities: Default::default(),
+        corp_identity: Some(card("GRNDL: Power Unleashed")),
+        runner_identity: None,
+        corp_deck: deck(20),
+        runner_deck: rdeck(20),
+        shuffle: true,
+    });
+    assert_eq!(vm.st.corp.credits, 10, "GRNDL starts on ten, not 1.6.4's five");
+    assert_eq!(vm.st.corp.bad_publicity, 1, "and with one bad publicity");
+    assert_eq!(vm.st.runner.credits, 5, "the Runner is untouched");
+}
+
+/// Spark Agency: "The first time each turn you rez an advertisement, the
+/// Runner loses 1[credit]."
+///
+/// Both stipulations: two advertisements rezzed in one turn cost the Runner
+/// one credit, and rezzing a card without the subtype costs them nothing.
+#[test]
+fn spark_agency_taxes_the_first_advertisement_rez_of_the_turn_only() {
+    let mut vm = Vm::empty(6128);
+    tk::install_identity(&mut vm, card("Spark Agency: Worldswide Reach"), Side::Corp);
+    let mut ad = tk::vanilla_asset("Some Advert", 0, 2);
+    ad.subtypes = vec!["Advertisement"];
+    let first = tk::install_root(&mut vm, ad.clone(), ServerId::Remote(1), false);
+    let second = tk::install_root(&mut vm, ad, ServerId::Remote(2), false);
+    let plain = tk::install_root(&mut vm, tk::vanilla_asset("Plain Asset", 0, 2), ServerId::Remote(3), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Rez(first)))
+            .when(Match::paid().once(), Reply::Take(Pick::Rez(second)))
+            .when(Match::paid().once(), Reply::Take(Pick::Rez(plain)))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        vm.st.objects[&first].faceup && vm.st.objects[&second].faceup && vm.st.objects[&plain].faceup,
+        "all three were rezzed: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 4,
+        "one credit, from the FIRST advertisement — not the second, and not the plain asset: {}",
+        t.tail(30)
+    );
+}
+
+/// Seidr Laboratories: "The first time each turn the Runner loses or spends
+/// [click] during a run, you may add 1 card from Archives to the top of R&D."
+///
+/// CR 5.2.1 keeps a click SPENT and a click LOST apart, and the card names
+/// both — so the test drives the LOSS, which the old condition could not see:
+/// a bioroid-class subroutine takes a click during the encounter, and the
+/// card in Archives goes to the top of R&D.
+#[test]
+fn seidr_laboratories_acts_on_a_click_lost_during_a_run_not_only_one_spent() {
+    let mut vm = Vm::empty(6129);
+    tk::install_identity(&mut vm, card("Seidr Laboratories: Destiny Defined"), Side::Corp);
+    // A bioroid-class break ability whose cost is 5.2.1a's LOSE [click] —
+    // the occurrence the old condition could not see.
+    tk::install_ice(&mut vm, tk::etr_ice("Wall", 0, 1), ServerId::Archives, true);
+    tk::install_rig(&mut vm, tk::lose_click_break_program("Eli-like"));
+    let buried = vm.new_object(tk::corp_filler("Buried"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+    let rnd = tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::reaction().offering("seidr"), Reply::take("seidr"))
+            .when(Match::targets().once(), Reply::Targets(vec![buried])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::paid().once(), Reply::take("lose-click"))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::ClicksLost { side, .. } if *side == Side::Runner)),
+        "the subroutine took a click — 5.2.1's LOSS, not a spend: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.deck[&Side::Corp].first().copied(),
+        Some(buried),
+        "the card from Archives is now the top card of R&D, above what was there: {}",
+        t.tail(40)
+    );
+    assert_eq!(vm.st.deck[&Side::Corp].len(), rnd.len() + 1, "and R&D grew by one: {}", t.tail(40));
+}

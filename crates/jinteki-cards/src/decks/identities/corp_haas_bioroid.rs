@@ -155,6 +155,35 @@ pub fn haas_bioroid_precision_design() -> Card {
         .build()
 }
 
+/// Seidr Laboratories: Destiny Defined — Identity: Division.
+/// "The first time each turn the Runner loses or spends [click] during a run,
+///  you may add 1 card from Archives to the top of R&D."
+///
+/// COMPLETE. CR 5.2.1 keeps a click SPENT and a click LOST apart — a bioroid
+/// subroutine broken by clicking takes them one way, an Eli-class "lose
+/// [click]" the other — and this sentence names both, so the pair is content
+/// on one condition rather than two abilities that would each spend their own
+/// ordinal.
+///
+/// "During a run" is 6.3.4's game-state test, checked when the condition
+/// would be met. "1 card from Archives" names a zone, which lifts 1.15.2c's
+/// play-area default, and the card goes to the TOP of R&D rather than into
+/// it anywhere — 4.3.2's ordered deck is what makes that a different place.
+pub fn seidr_laboratories() -> Card {
+    card("Seidr Laboratories: Destiny Defined")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.")
+        .may_when_first_each_turn(
+            spends_or_loses_click_during_run(Runner),
+            [add_to_deck(choose(1, &[in_archives()]), true)],
+        )
+        .named("the first click of the run")
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
@@ -163,6 +192,7 @@ pub fn identities() -> Vec<Card> {
         cybernetics_division(),
         haas_bioroid_engineering_the_future(),
         haas_bioroid_precision_design(),
+        seidr_laboratories(),
         sportsmetal(),
         thule_subsea(),
     ]

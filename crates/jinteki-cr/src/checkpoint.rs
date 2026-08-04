@@ -454,7 +454,36 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         cite!("rule_hidden_or_open_information");
                         let here = window_start + offset;
                         let from = vm.st.turn_log_start.min(here);
-                        let earlier = vm.changes.log[from..here].iter().any(|x| {
+                        // 9.6.5c: a requirement listed inside the trigger
+                        // condition is PART of the condition, so an earlier
+                        // change that did not meet it was never one of "the
+                        // times" and must not spend the ordinal. The
+                        // during-a-run half is such a requirement and it is
+                        // answerable of the PAST: a run was in progress at a
+                        // point in the log if a `RunBegan` precedes it with
+                        // no `RunEnded` in between. Without this, the click
+                        // spent to TAKE the run action — recorded before the
+                        // run formally begins — counted as the first time,
+                        // and the ability could never fire at all.
+                        let during_run_cond = matches!(
+                            cond,
+                            crate::ability::TriggerCond::PlayerSpendsClick { during_run: true, .. }
+                        );
+                        let run_in_progress_at = |idx: usize| {
+                            vm.changes.log[..idx]
+                                .iter()
+                                .rev()
+                                .find_map(|x| match x {
+                                    GameChange::RunBegan { .. } => Some(true),
+                                    GameChange::RunEnded { .. } => Some(false),
+                                    _ => None,
+                                })
+                                .unwrap_or(false)
+                        };
+                        let earlier = vm.changes.log[from..here].iter().enumerate().any(|(k, x)| {
+                            if during_run_cond && !run_in_progress_at(from + k) {
+                                return false;
+                            }
                             trigger_matches(
                                 cond,
                                 x,

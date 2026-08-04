@@ -340,6 +340,19 @@ impl CardBuilder {
         self.printed.starting_hand_size = Some(n);
         self
     }
+    /// "You start the game with N[credit]." (GRNDL class; 1.6.4.)
+    pub fn starting_credits(mut self, n: u32) -> Self {
+        self.printed.starting_credits = Some(n);
+        self
+    }
+    /// "…and N bad publicity." / "The Corp starts the game with N bad
+    /// publicity." (GRNDL and Valencia Estevez; 10.6.) Bad publicity is
+    /// always the Corp's, so the fact says only how much — which is why one
+    /// identity may print it about the other player.
+    pub fn starting_bad_publicity(mut self, n: u32) -> Self {
+        self.printed.starting_bad_publicity = Some(n);
+        self
+    }
     /// The identity's back face (rule_identity_double_sided; Nebula class).
     /// Build the back exactly like a card — its own printed text and
     /// abilities — and "flip this identity" swaps which face applies.
@@ -424,6 +437,26 @@ impl CardBuilder {
         self.ability(
             AbilityDef::paid(cost, instrs.into_iter().collect())
                 .with_flag(AbilityFlag::OncePerTurn),
+        )
+    }
+    /// "Once per turn → <cost>: …" on an ability the card may use only
+    /// during an encounter with ice of a named subtype (9.5.6c). Quetzal's
+    /// "break 1 **barrier** subroutine" is this and NOT an interface ability:
+    /// 9.3.6c gates an interface ability on the source's strength, and an
+    /// identity has none, so the subtype is the whole restriction.
+    pub fn paid_once_per_turn_during_encounters_with(
+        self,
+        cost: Cost,
+        ice_subtype: &'static str,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_flag(AbilityFlag::OncePerTurn)
+                .with_timing(TimingRestriction::EncounterOnly {
+                    required_subtype: Some(ice_subtype),
+                    required_choice: None,
+                }),
         )
     }
     /// "Interface → 1[credit]: …" — a paid ability gated by strength (9.3.6c)
@@ -1405,7 +1438,7 @@ pub fn makes_successful_run_on_your_mark(first_each_turn: bool) -> TriggerCond {
 /// [`CardBuilder::when_first_each_turn`] for the printed "the first time each
 /// turn".
 pub fn corp_rezzes_a(of: CardType) -> TriggerCond {
-    TriggerCond::CorpRezzesCard { of_types: vec![of] }
+    TriggerCond::CorpRezzesCard { of_types: vec![of], of_subtypes: Vec::new() }
 }
 /// "When your action phase ends, if <requirements>…" (Nebula class; 5.6.2.)
 pub fn action_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
@@ -1645,6 +1678,26 @@ pub fn each_players_max_hand_size_mod(n: i32) -> StaticDecl {
 /// rest of the description names.
 pub fn facedown() -> TargetFilter {
     TargetFilter::Facedown
+}
+/// "Whenever you rez an <subtype>…" (Spark Agency class) — 8.1.2's rez with
+/// 2.16's subtype stipulation and no stipulation about the card's type.
+pub fn corp_rezzes_a_subtyped(subtype: &'static str) -> TriggerCond {
+    TriggerCond::CorpRezzesCard { of_types: Vec::new(), of_subtypes: vec![subtype] }
+}
+/// "Whenever <side> loses or spends [click] during a run…" (Seidr class;
+/// 5.2.1 keeps a click SPENT and a click LOST apart, and this sentence names
+/// both).
+pub fn spends_or_loses_click_during_run(side: Side) -> TriggerCond {
+    TriggerCond::PlayerSpendsClick { side, during_run: true, also_lost: true }
+}
+/// "…gets −N strength for the remainder of <duration>." — a modification of
+/// a card the description names, rather than of this one.
+pub fn modify_strength_of(target: TargetSpec, n: i32, duration: WantedDuration) -> Instruction {
+    Instruction::ModifyStrength {
+        target,
+        amount: Quantity::c(n as i64),
+        duration: Some(duration),
+    }
 }
 /// "Host the <accessed> card on this program/resource." (Cupellation and
 /// Film Critic class; the accessed card is no longer being accessed.)

@@ -113,9 +113,46 @@ these is a general kernel capability, stated with the identities that want it.
   many are needed. *(Harmony Medtech: Biomedical Pioneer; Issuaq Adaptics:
   Sustaining Diversity.)*
 
+- **No description reaches "that card" — the card an occurrence named.**
+  An `AbilityInstance` records which ability became pending and not which
+  change met it, so "place 1 agenda counter on **it**", "you may expose
+  **that card**", "install 1 card **of the same type**" have nothing to point
+  at. `TargetSpec` reaches the source, the host, the accessed card and the
+  encountered ice — every fixed relation but this one.
+  *(Titan Transnational: Investing In Your Future; 419: Amoral Scammer,
+  Hayley Kaplan, Poétrï Luxury Brands and Sebastião Souza Pessoa want it too.)*
+- **An ordinal cannot be SHARED between two conditions.**
+  `AbilityDef::first_each_turn` belongs to one ability, and a sentence with
+  two conditions is written as two abilities (Leela Patel class) — which is
+  right until the sentence also says "the first time each turn", because then
+  each ability spends its own ordinal and the pair fires twice.
+  *(Epiphany Analytica: Nations Undivided.)*
+- **A spending restriction cannot name a PURPOSE other than trashing.**
+  `CreditPurpose` has `Unspecified` and `Trashing` and nothing else, and the
+  purpose is derived from `PaymentCont`, which knows about rezzing, accessing
+  and basic-trashing only. "Use these credits during trace attempts", "to
+  advance ice", "to pay for using icebreakers" each need the payment to carry
+  a purpose it does not yet have. *(NBN: Making News; Weyland Consortium:
+  Because We Built It; Ele "Smoke" Scovak: Cynosure of the Net; Whizzard's is
+  the same gap seen from the description side.)*
+- **A declaration cannot modify the strength of cards it DESCRIBES.**
+  `StaticDecl::StrengthMod` reaches the source or its host, and the
+  characteristic pipeline that would read a criteria-scoped one is the same
+  pipeline `has_subtype` goes through — so "all **bioroid** ice has +1
+  strength" needs the loop broken before it can be said.
+  *(Haas-Bioroid: Stronger Together.)*
+- **A maximum hand size can be MOVED but not SET.**
+  `StaticDecl::MaxHandSizeMod` carries a printed amount; "your maximum hand
+  size is equal to the number of credits in your credit pool" is an absolute
+  whose value is a 9.12.2 quantity. *(Cerebral Imaging: Infinite Frontiers.)*
+- **Nothing records a psi game's reveal.** `Instruction::PsiGame` resolves
+  10.14.6's construction whole and writes no change for 10.14.6c's reveal, so
+  "whenever you and the Runner reveal secretly spent credits" has no
+  occurrence to be met by. *(Nisei Division: The Next Generation.)*
+
 ## Progress
 
-- Implemented: **47 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **52 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -176,7 +213,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (6/19)
+## Runner — Anarch (8/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -190,13 +227,13 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
 - [ ] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
 - [ ] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
-- [ ] **Quetzal: Free Spirit** — Once per turn → 0[credit]: Break 1 barrier subroutine.
+- [x] **Quetzal: Free Spirit** — Once per turn → 0[credit]: Break 1 barrier subroutine.
 - [ ] **Reina Roja: Freedom Fighter** — The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.
 - [ ] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.
 - [ ] **Ryō "Phoenix" Ōno: Out of the Ashes** — The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.
 - [ ] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
 - [ ] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
-- [ ] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.
+- [x] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.
 - [ ] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.
 - [ ] **Wyvern: Chemically Enhanced** — Draft format only. You must maintain the order of your heap. Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.
 
@@ -226,7 +263,7 @@ Module: `decks/identities/runner_sunny.rs`
 
 - [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (6/19)
+## Corp — Haas-Bioroid (7/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
@@ -243,7 +280,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [ ] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
 - [ ] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.
 - [ ] **Poétrï Luxury Brands: All the Rage** — Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them. Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.
-- [ ] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.
+- [x] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.
 - [x] **Sportsmetal: Go Big or Go Home** — Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.
 - [ ] **Strategic Innovations: Future Forward** — Draft format only. If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.
 - [ ] **The Foundry: Refining the Process** — The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.
@@ -276,7 +313,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (5/19)
+## Corp — NBN (6/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -297,10 +334,10 @@ Module: `decks/identities/corp_nbn.rs`
 - [ ] **New Angeles Sol: Your News** — Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).
 - [x] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
 - [ ] **SYNC: Everything, Everywhere** — [click]: Flip this identity. The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).
-- [ ] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
+- [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (4/19)
+## Corp — Weyland Consortium (5/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -309,7 +346,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [ ] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
 - [ ] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
 - [ ] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.
-- [ ] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
+- [x] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
 - [ ] **Gagarin Deep Space: Expanding the Horizon** — As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].
 - [ ] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.
 - [ ] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
