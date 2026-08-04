@@ -2978,3 +2978,90 @@ fn wari_names_a_subtype_and_bounces_matching_ice() {
         }
     }
 }
+
+/// Harmony AR Therapy: "Choose up to 5 cards with different names in your
+/// heap. Shuffle those cards into your stack. Remove this event from the
+/// game." CR 2.1.5 is on the SET: five copies of one card offer one pick.
+#[test]
+fn harmony_ar_therapy_takes_one_card_per_name() {
+    let mut vm = Vm::empty(108);
+    let harmony = vm.new_object(card("Harmony AR Therapy"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(harmony);
+    let a = vm.new_object(card("Sure Gamble"), Zone::Discard(Side::Runner));
+    let b = vm.new_object(card("Sure Gamble"), Zone::Discard(Side::Runner));
+    let c = vm.new_object(card("Diesel"), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().extend([a, b, c]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(harmony))
+            // Both Sure Gambles are asked for; 2.1.5 keeps one.
+            .when(Match::targets().once(), Reply::Targets(vec![a, b, c]))
+            .stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&a].zone, Zone::Deck(Side::Runner), "{}", t.tail(16));
+    assert_eq!(
+        vm.st.objects[&b].zone,
+        Zone::Discard(Side::Runner),
+        "2.1.5: the second copy shares a name, so it cannot be chosen too: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.objects[&c].zone, Zone::Deck(Side::Runner));
+    // "Remove this event from the game" — 8.2.2's replaced destination, so
+    // step 8.6.7g does not put it in the heap.
+    assert_eq!(vm.st.objects[&harmony].zone, Zone::RemovedFromGame, "{}", t.tail(16));
+}
+
+/// Asmund Pudlat: "…search your stack for up to 2 virus or weapon cards with
+/// different names. Host those cards faceup on this resource." 2.1.5 applies
+/// to a search in the same words it applies to a choice.
+#[test]
+fn asmund_pudlat_finds_two_differently_named_virus_or_weapon_cards() {
+    let mut vm = Vm::empty(109);
+    let asmund = vm.new_object(card("Asmund Pudlat"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(asmund);
+    let mut virus = PrintedCard::vanilla("Loose Virus", Side::Runner, CardType::Program);
+    virus.subtypes = vec!["Virus"];
+    let v1 = vm.new_object(virus.clone(), Zone::Deck(Side::Runner));
+    let v2 = vm.new_object(virus, Zone::Deck(Side::Runner));
+    let mut weapon = PrintedCard::vanilla("Loose Weapon", Side::Runner, CardType::Program);
+    weapon.subtypes = vec!["Weapon"];
+    let w = vm.new_object(weapon, Zone::Deck(Side::Runner));
+    let plain = vm.new_object(card("Sure Gamble"), Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().extend([v1, v2, w, plain]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asmund)))
+            // Both viruses and the weapon are asked for; 2.1.5 keeps one of
+            // the two same-named viruses, and 2.16's "or" lets the weapon in.
+            .when(Match::targets().once(), Reply::Targets(vec![v1, v2, w]))
+            .stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&v1].host, Some(asmund), "{}", t.tail(20));
+    assert_eq!(vm.st.objects[&w].host, Some(asmund), "2.16's \"or\": {}", t.tail(20));
+    assert_eq!(
+        vm.st.objects[&v2].host, None,
+        "2.1.5: the second Loose Virus shares a name: {}",
+        t.tail(20)
+    );
+    // 1.21.1: hosted FACEUP, so the Corp is entitled to what they are.
+    assert!(vm.view_of(Side::Corp).sees(v1), "{}", t.tail(20));
+    // 1.13.2a: hosted is not installed.
+    assert!(!vm.is_installed(&vm.st.objects[&v1]));
+    // Nothing else was found: 8.7.2a's criteria.
+    assert_eq!(vm.st.objects[&plain].zone, Zone::Deck(Side::Runner));
+}

@@ -388,6 +388,12 @@ pub enum TriggerRequirement {
     /// `at_least` cards match the criteria. The criteria are the shared
     /// filter vocabulary, so the card described is content (§12 rule 2).
     BoardHasMatching { criteria: Vec<crate::instr::TargetFilter>, at_least: u32 },
+    /// "…if there are **no more** hosted cards" (Asmund Pudlat) — the same
+    /// question with the threshold at the other end. A separate atom rather
+    /// than a signed one for the same reason `RunnerTagsAtLeast` is: the
+    /// direction is part of what the sentence says, and "at most 0" is the
+    /// only way to say "none" with a count.
+    BoardHasAtMostMatching { criteria: Vec<crate::instr::TargetFilter>, at_most: u32 },
     /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
     /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
     /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`

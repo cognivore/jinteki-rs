@@ -789,6 +789,7 @@ pub fn bookmark() -> PrintedCard {
                     count: Quantity::c(3),
                     criteria: vec![TargetFilter::CardsInHandOf(Side::Runner)], up_to: false },
                 host: TargetSpec::SelfSource,
+                faceup: false,
             }],
         )
         .labeled("bookmark: host up to 3 cards from your grip"),

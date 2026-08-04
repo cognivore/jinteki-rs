@@ -81,13 +81,13 @@ fn the_gap_list_is_measurable_and_honest() {
     );
     println!("complete: {complete:?}");
     assert!(
-        complete.len() >= 20,
-        "20 cards are fully expressed; got {} — if a card became partial, say why in \
+        complete.len() >= 45,
+        "45 cards are fully expressed; got {} — if a card became partial, say why in \
          docs/vm/WAVES.md's gap list",
         complete.len()
     );
     assert!(
-        sentences <= 47,
+        sentences <= 13,
         "the gap list should not grow without a reason recorded in docs/vm/WAVES.md; got {sentences}"
     );
 }
@@ -149,7 +149,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 66, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists)");
+    assert_eq!(checked, 68, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and

@@ -769,7 +769,11 @@ pub enum Instruction {
     /// shared [`TargetSpec`], so "host a card from HQ on this card" (Glenn
     /// Station class), "host 2 cards from your grip on this card" (Madani
     /// class) and "host that card on <another card>" are one instruction.
-    HostCards { cards: TargetSpec, host: TargetSpec },
+    /// `faceup` is CR 1.21.1: "Host those cards **faceup** on this resource"
+    /// (Asmund Pudlat). A hosted card is not installed (1.13.2a), so nothing
+    /// else decides which face is up, and the difference is what each player
+    /// is entitled to know (§10.2).
+    HostCards { cards: TargetSpec, host: TargetSpec, faceup: bool },
     /// CR 8.8.1: "Swap <a> with <b>." — the two cards exchange locations
     /// simultaneously (8.8.3/8.8.4), keeping whatever is hosted on either of
     /// them hosted on it (8.8.3a/8.8.4c).
@@ -1176,6 +1180,13 @@ pub enum TargetFilter {
     /// CR 2.16: "a virus program", "a region" — an effective subtype
     /// (9.12.1b counting applies through the characteristics pipeline).
     HasSubtype(&'static str),
+    /// CR 2.16: "…**virus or weapon** cards" (Asmund Pudlat) — ANY of these
+    /// subtypes. The criteria of a description are a conjunction, so a
+    /// printed "or" between subtypes cannot be two atoms; the disjunction is
+    /// content on one (§12 rule 2). A `&'static [&'static str]` rather than a
+    /// `Vec` so the filter vocabulary stays `Copy`, which is what lets a
+    /// criterion be read wherever an object is examined.
+    HasAnySubtype(&'static [&'static str]),
     /// CR 2.3: "…with printed install/rez/play cost N or lower".
     PrintedCostAtMost(u32),
     /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed
@@ -1281,6 +1292,17 @@ pub enum TargetFilter {
     /// The polarity is content (§12 rule 2), so one atom says both sentences.
     /// A card with no printed faction matches neither way.
     FactionMatchesIdentityOf { side: Side, same: bool },
+    /// CR 2.1.5: "…cards **with different names**" (Asmund Pudlat, Harmony
+    /// AR Therapy) — "each card chosen or found by the search must have a
+    /// different English name from every other card chosen or found".
+    ///
+    /// This is the one criterion that is NOT a predicate on a single card: it
+    /// constrains the SET, so no object satisfies or fails it on its own.
+    /// [`TargetFilter::is_set_criterion`] is what keeps it out of per-object
+    /// matching, and the two places 2.1.5 names — the announcement of a
+    /// choice and the find of a search — carry it as a property of the
+    /// DECISION and enforce it on the answer.
+    DistinctNames,
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma
@@ -1299,6 +1321,7 @@ impl TargetFilter {
             self,
             TargetFilter::CardTypeIs(_)
                 | TargetFilter::HasSubtype(_)
+                | TargetFilter::HasAnySubtype(_)
                 | TargetFilter::PrintedCostAtMost(_)
                 | TargetFilter::HasName(_)
                 // 9.10.3: the maintained value IS a characteristic — a name,
@@ -1310,6 +1333,16 @@ impl TargetFilter {
                 // other, so a sentence stipulating one has to be demonstrated.
                 | TargetFilter::FactionMatchesIdentityOf { .. }
         )
+    }
+}
+
+impl TargetFilter {
+    /// CR 2.1.5: is this criterion a property of the chosen SET rather than
+    /// of any one card? A set criterion is skipped by per-object matching —
+    /// no card satisfies or fails it alone — and is applied where the set is
+    /// assembled: the 1.15.2 announcement and the 8.7.2 find.
+    pub fn is_set_criterion(self) -> bool {
+        matches!(self, TargetFilter::DistinctNames)
     }
 }
 

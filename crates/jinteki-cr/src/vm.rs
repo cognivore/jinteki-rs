@@ -5525,6 +5525,7 @@ impl Vm {
                         count: want,
                         up_to: true,
                         min: 0,
+                        distinct_names: false,
                     },
                 ))
             }
@@ -5588,7 +5589,13 @@ impl Vm {
                 } else {
                     Some((
                         af.controller,
-                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true, min: 0 },
+                        DecisionSpec::ChooseTargets {
+                            candidates,
+                            count: 1,
+                            up_to: true,
+                            min: 0,
+                            distinct_names: false,
+                        },
                     ))
                 }
             }
@@ -5603,7 +5610,13 @@ impl Vm {
                 } else {
                     Some((
                         af.controller,
-                        DecisionSpec::ChooseTargets { candidates, count: 1, up_to: true, min: 0 },
+                        DecisionSpec::ChooseTargets {
+                            candidates,
+                            count: 1,
+                            up_to: true,
+                            min: 0,
+                            distinct_names: false,
+                        },
                     ))
                 }
             }
@@ -5684,6 +5697,7 @@ impl Vm {
                             candidates: hosts,
                             count: 1,
                             up_to: optional, min: 0,
+                            distinct_names: false,
                         },
                     ))
                 }
@@ -6234,6 +6248,17 @@ impl Vm {
                 matches!(o.zone, Zone::Root(ServerId::Remote(_)) | Zone::Ice(ServerId::Remote(_)))
                     && self.is_installed(o)
             }
+            // 2.16: "virus or weapon" — any of the listed subtypes, read
+            // through the 9.12.1b pipeline like a single one.
+            TargetFilter::HasAnySubtype(list) => {
+                cite!("rule_subtypes");
+                list.iter().any(|s| self.has_subtype(o.id, s))
+            }
+            // 2.1.5: a set criterion, never a per-object one. It reaches here
+            // only if something forgot `TargetFilter::is_set_criterion`, and
+            // excluding every card would be the wrong failure: the constraint
+            // is applied where the set is assembled.
+            TargetFilter::DistinctNames => true,
             TargetFilter::InRootOfServerOtherThanAttacked => {
                 cite!("rule_breaching_servers");
                 match (o.zone, self.current_run) {
@@ -6350,11 +6375,18 @@ impl Vm {
         // lifts exactly when one of them names a zone.
         cite!("rule_targets_must_be_in_play_area");
         let zoned = criteria.iter().any(|f| f.names_zone());
+        // 2.1.5: a set criterion says nothing about any one card, so it plays
+        // no part in deciding candidacy.
         self.st
             .objects
             .values()
             .filter(|o| zoned || self.is_installed(o))
-            .filter(|o| criteria.iter().all(|f| self.filter_matches(o, *f, source)))
+            .filter(|o| {
+                criteria
+                    .iter()
+                    .filter(|f| !f.is_set_criterion())
+                    .all(|f| self.filter_matches(o, *f, source))
+            })
             .map(|o| o.id)
             .collect()
     }
@@ -6363,10 +6395,84 @@ impl Vm {
     /// as the instruction wants, or as many as exist — "the remaining
     /// targets are not announced". Both the ceiling and the floor are that
     /// number, so a plan cannot under-announce.
+    /// CR 1.15.2b/e (+ 2.1.5): reduce an announcement answer to a legal one —
+    /// only candidates, each once, at most `count` of them, completed from
+    /// the candidates if it falls below the floor. There is no "your answer
+    /// was illegal, choose again" path anywhere in this machine.
+    fn clamp_announcement(&self, spec: &DecisionSpec, answered: Vec<ObjectId>) -> Vec<ObjectId> {
+        let DecisionSpec::ChooseTargets { candidates, count, min, distinct_names, .. } = spec else {
+            return answered;
+        };
+        let mut out: Vec<ObjectId> = Vec::new();
+        for c in answered {
+            if candidates.contains(&c)
+                && !out.contains(&c)
+                && (out.len() as u32) < *count
+                && self.name_is_new_among(&out, c, *distinct_names)
+            {
+                out.push(c);
+            }
+        }
+        for c in candidates {
+            if (out.len() as u32) >= *min {
+                break;
+            }
+            if !out.contains(c) && self.name_is_new_among(&out, *c, *distinct_names) {
+                out.push(*c);
+            }
+        }
+        out
+    }
+
+    /// CR 2.1.5: "each card chosen or found by the search must have a
+    /// different English name from every other card chosen or found". Applied
+    /// to a search's find, where the answer is not an announcement and so
+    /// does not pass through [`Vm::clamp_announcement`].
+    fn retain_distinct_names(
+        &self,
+        spec: &DecisionSpec,
+        found: Vec<ObjectId>,
+    ) -> Vec<ObjectId> {
+        let DecisionSpec::ChooseTargets { distinct_names: true, .. } = spec else {
+            return found;
+        };
+        cite!("rule_act_on_different_names");
+        let mut out: Vec<ObjectId> = Vec::new();
+        for c in found {
+            if self.name_is_new_among(&out, c, true) {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    /// 2.1.5's test itself: no two cards of the set share a name.
+    fn name_is_new_among(&self, chosen: &[ObjectId], c: ObjectId, distinct: bool) -> bool {
+        if !distinct {
+            return true;
+        }
+        cite!("rule_act_on_different_names");
+        cite!("rule_card_name_definition");
+        let Some(name) = self.st.objects.get(&c).map(|o| o.printed.name) else { return true };
+        !chosen
+            .iter()
+            .filter_map(|x| self.st.objects.get(x))
+            .any(|o| o.printed.name == name)
+    }
+
     fn announcement(&self, candidates: Vec<ObjectId>, want: u32) -> DecisionSpec {
+        self.announcement_with(candidates, want, false)
+    }
+
+    fn announcement_with(
+        &self,
+        candidates: Vec<ObjectId>,
+        want: u32,
+        distinct_names: bool,
+    ) -> DecisionSpec {
         cite!("rule_distinct_targets");
         let n = want.min(candidates.len() as u32);
-        DecisionSpec::ChooseTargets { candidates, count: n, up_to: false, min: n }
+        DecisionSpec::ChooseTargets { candidates, count: n, up_to: false, min: n, distinct_names }
     }
 
     /// CR 1.15.2: the announcement a target spec still owes, for the
@@ -6392,13 +6498,25 @@ impl Vm {
         let mut candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
         candidates.retain(|c| !af.targets.contains(c));
         let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+        // 2.1.5: "…with different names" is a criterion of the description
+        // and a property of the announcement.
+        let distinct_names = criteria.contains(&TargetFilter::DistinctNames);
+        if distinct_names {
+            cite!("rule_act_on_different_names");
+        }
         if up_to {
             // "up to N": the floor is zero (1.15.2e's completion rule applies
             // only to the ceiling the player chose to reach for).
             let n = want.min(candidates.len() as u32);
-            return Some(DecisionSpec::ChooseTargets { candidates, count: n, up_to: true, min: 0 });
+            return Some(DecisionSpec::ChooseTargets {
+                candidates,
+                count: n,
+                up_to: true,
+                min: 0,
+                distinct_names,
+            });
         }
-        Some(self.announcement(candidates, want))
+        Some(self.announcement_with(candidates, want, distinct_names))
     }
 
     /// Make the current instruction imminent: compute expected effects, open
@@ -6977,6 +7095,10 @@ impl Vm {
             R::BoardHasMatching { criteria, at_least } => {
                 cite!("rule_targets_must_be_in_play_area");
                 self.candidates_matching(criteria, source).len() >= *at_least as usize
+            }
+            R::BoardHasAtMostMatching { criteria, at_most } => {
+                cite!("rule_targets_must_be_in_play_area");
+                self.candidates_matching(criteria, source).len() <= *at_most as usize
             }
             // 1.15.4: "…if THE EXPOSED CARD has the named card type" — a
             // question about a target this ability already announced, asked
@@ -7642,6 +7764,7 @@ impl Vm {
                                     count: want,
                                     up_to: false,
                                     min: want,
+                                    distinct_names: false,
                                 },
                                 DecisionCtx::DamageSelection { kind, amount },
                             );
@@ -8789,7 +8912,7 @@ impl Vm {
                     self.check_all_subs_broken();
                 }
             }
-            Instruction::HostCards { cards, host } => {
+            Instruction::HostCards { cards, host, faceup } => {
                 cite!("rule_placed_loaded");
                 let h = self
                     .resolve_targets(host, Some(source.obj), &imm.targets)
@@ -8806,6 +8929,13 @@ impl Vm {
                     }
                     // 1.13.2a: this instruction hosts without installing.
                     self.create_host_relationship(g, h, false);
+                    if *faceup {
+                        // 1.21.1: the card is put down front side up, so both
+                        // players are entitled to its identity (10.2.2a).
+                        cite!("rule_faceup_facedown");
+                        self.st.objects.get_mut(&g).unwrap().faceup = true;
+                        self.st.seen.show_all(g);
+                    }
                 }
             }
             Instruction::SwapCards { a, b } => {
@@ -9790,6 +9920,10 @@ impl Vm {
                         count: want,
                         up_to: *may_fail,
                         min: 0,
+                        // 2.1.5 names the search in as many words: "each card
+                        // chosen or FOUND BY THE SEARCH must have a different
+                        // English name from every other".
+                        distinct_names: criteria.contains(&TargetFilter::DistinctNames),
                     },
                     DecisionCtx::SearchFind { zone: *zone },
                 );
@@ -9819,6 +9953,7 @@ impl Vm {
                         count: max_from_hq,
                         up_to: min_from_hq == 0,
                         min: min_from_hq,
+                        distinct_names: false,
                     },
                     DecisionCtx::Sabotage { count: n },
                 );
@@ -12350,7 +12485,7 @@ impl Vm {
                 // "your answer was illegal, choose again" path).
                 cite!("rule_targets_must_be_valid");
                 cite!("rule_distinct_targets");
-                let t = clamp_announcement(&spec, t);
+                let t = self.clamp_announcement(&spec, t);
                 let instr = {
                     let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
                     af.targets.extend(t.iter().copied());
@@ -12775,6 +12910,7 @@ impl Vm {
                 // checkpoint, which is where a search-involving condition
                 // becomes pending (8.7.5 / 9.11.4d).
                 cite!("rule_continue_after_search");
+                let found = self.retain_distinct_names(&spec, found);
                 self.complete_search(zone, &found, side);
             }
             (DecisionCtx::ReplacementOrder, DecisionAnswer::Option(i)) => {
@@ -13537,26 +13673,7 @@ fn wrap_all(instrs: Vec<Instruction>, by: Option<Side>) -> Vec<Instruction> {
 /// is capped at what the instruction asks for and completed from the
 /// candidates when the answer is short of the floor ("chooses as many
 /// distinct targets as possible").
-fn clamp_announcement(spec: &DecisionSpec, answered: Vec<ObjectId>) -> Vec<ObjectId> {
-    let DecisionSpec::ChooseTargets { candidates, count, min, .. } = spec else {
-        return answered;
-    };
-    let mut out: Vec<ObjectId> = Vec::new();
-    for c in answered {
-        if candidates.contains(&c) && !out.contains(&c) && (out.len() as u32) < *count {
-            out.push(c);
-        }
-    }
-    for c in candidates {
-        if (out.len() as u32) >= *min {
-            break;
-        }
-        if !out.contains(c) {
-            out.push(*c);
-        }
-    }
-    out
-}
+
 
 /// CR 1.15.4: rewrite `TargetSpec::EarlierTarget` references into the
 /// objects the ability actually announced. Used where an instruction creates

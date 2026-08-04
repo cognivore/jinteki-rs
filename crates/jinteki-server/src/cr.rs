@@ -1152,12 +1152,15 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, "No action".into(), DecisionAnswer::Pass);
             }
         }
-        DecisionSpec::ChooseTargets { candidates, count, up_to, min } => {
+        DecisionSpec::ChooseTargets { candidates, count, up_to, min, distinct_names } => {
             p.msg = format!(
-                "Choose {}{} card{} (CR 1.15.2).",
+                "Choose {}{} card{}{} (CR 1.15.2).",
                 if *up_to { "up to " } else { "" },
                 count,
-                if *count == 1 { "" } else { "s" }
+                if *count == 1 { "" } else { "s" },
+                // CR 2.1.5: the constraint is on the set, so it belongs in
+                // the prompt rather than in the candidate list.
+                if *distinct_names { " with different names" } else { "" }
             );
             p.select = Some(Select {
                 candidates: candidates.clone(),

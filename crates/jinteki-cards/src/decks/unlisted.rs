@@ -105,9 +105,10 @@ pub fn chaos_theory() -> Card {
 // card name, a server, or one of a specified set of effects, that choice is
 // not made until the instruction resolves."
 //
-// One rule, twelve cards, and none of them is in a priority deck — which is
+// One rule, eleven cards, and none of them is in a priority deck — which is
 // exactly why they are here: the mechanism is stated by the CR, and proving
 // it needs real printed cards rather than invented ones (ARCHITECTURE §12).
+// (The twelfth, Targeted Marketing, IS in one, and lives in `gauntlet.rs`.)
 
 /// Ark Lockdown — Operation. Cost 1.
 /// "Name a card. Remove all copies of that card in the heap from the game."
@@ -486,6 +487,90 @@ pub fn embezzle() -> Card {
         .build()
 }
 
+// ===========================================================================
+// CR 2.1.5 — "cards with different names"
+// ===========================================================================
+//
+// "If a player is directed to choose or search for cards 'with different
+// names', each card chosen or found by the search must have a different
+// English name from every other card chosen or found."
+//
+// NOT naming: nothing is remembered and nothing is compared against a value a
+// player said. It is a constraint on the SET a choice or a search produces,
+// which is why it lives in the criteria vocabulary as the one atom that says
+// nothing about any single card.
+
+/// Harmony AR Therapy — Event. Cost 2.
+/// "Choose up to 5 cards with different names in your heap. Shuffle those
+///  cards into your stack.
+///  Remove this event from the game."
+///
+/// COMPLETE. 2.1.5 applies to the choice, and "up to 5" makes its floor zero
+/// (1.15.2e), so a heap of five copies of one card yields exactly one legal
+/// pick per name.
+///
+/// "Remove this event from the game" is written as the trash-destination
+/// replacement 8.2.2/9.9.8b describes, not as an instruction: the event is
+/// still in the play area while its ability resolves, and step 8.6.7g is what
+/// disposes of it afterwards. An instruction that removed it first would
+/// leave 8.6.7g trashing a card that is no longer there.
+pub fn harmony_ar_therapy() -> Card {
+    card("Harmony AR Therapy")
+        .runner()
+        .event()
+        .faction("Shaper")
+        .cost(2)
+        .text("Choose up to 5 cards with different names in your heap. Shuffle those cards into your stack.")
+        .text("Remove this event from the game.")
+        .play([shuffle_into_deck(
+            choose_up_to(5, &[in_heap(), with_different_names()]),
+            Runner,
+        )])
+        .declares([removed_from_game_instead_of_trashed()])
+        .build()
+}
+
+/// Asmund Pudlat — Resource: Connection - Seedy. Install 2. ◆
+/// "When you install this resource, search your stack for up to 2
+///  <strong>virus</strong> or <strong>weapon</strong> cards with different
+///  names. Host those cards faceup on this resource. <em>(They are not
+///  installed.)</em>
+///  When your turn begins, you may add 1 hosted card to your grip. If there
+///  are no more hosted cards, trash this resource."
+///
+/// COMPLETE. Three things the printed text says that the vocabulary had to
+/// learn: 2.1.5's distinctness applies to a SEARCH as well as to a choice
+/// (the rule names both), "virus **or** weapon" is a disjunction inside one
+/// criterion where the criteria of a description are otherwise a conjunction,
+/// and hosting FACEUP is what makes the two cards open information (1.21.1 /
+/// 10.2.2a) though 1.13.2a leaves them uninstalled.
+pub fn asmund_pudlat() -> Card {
+    card("Asmund Pudlat")
+        .runner()
+        .resource()
+        .faction("Criminal")
+        .subtypes(&["Connection", "Seedy"])
+        .cost(2)
+        .unique()
+        .text("When you install this resource, search your stack for up to 2 <strong>virus</strong> or <strong>weapon</strong> cards with different names. Host those cards faceup on this resource. <em>(They are not installed.)</em>")
+        .text("When your turn begins, you may add 1 hosted card to your grip. If there are no more hosted cards, trash this resource.")
+        .when(
+            installed(),
+            [
+                search_stack(&[with_any_subtype(&["Virus", "Weapon"]), with_different_names()], 2),
+                host_faceup(found_by_search(), this_card()),
+            ],
+        )
+        .when(
+            turn_begins(Runner),
+            [
+                may(add_to_hand(choose(1, &[hosted_on_this_card()]))),
+                if_met(&[board_has_at_most(&[hosted_on_this_card()], 0)], [trash_self()]),
+            ],
+        )
+        .build()
+}
+
 /// Every card here, in the order the file lists it.
 pub fn cards() -> Vec<Card> {
     vec![
@@ -502,5 +587,7 @@ pub fn cards() -> Vec<Card> {
         rng_key(),
         complete_image(),
         embezzle(),
+        harmony_ar_therapy(),
+        asmund_pudlat(),
     ]
 }

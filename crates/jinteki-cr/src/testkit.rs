@@ -2613,6 +2613,7 @@ pub fn glenn_station_like(name: &'static str) -> PrintedCard {
                     count: Quantity::c(1),
                     criteria: vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)], up_to: false },
                 host: TargetSpec::SelfSource,
+                faceup: false,
             }],
         )
         .labeled("glenn-station: host a card from HQ"),
@@ -2663,6 +2664,7 @@ pub fn madani_like(name: &'static str, count: u32) -> PrintedCard {
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
                 ], up_to: false },
             host: TargetSpec::SelfSource,
+            faceup: false,
         }],
     )
     .labeled("madani: host programs from the grip")];
@@ -2682,6 +2684,7 @@ pub fn detente_like(name: &'static str) -> PrintedCard {
                 count: Quantity::c(1),
                 criteria: vec![crate::instr::TargetFilter::InstalledCorpCard], up_to: false },
             host: TargetSpec::SelfSource,
+            faceup: false,
         }],
     )
     .labeled("detente: host an installed Corp card")];
@@ -3581,6 +3584,7 @@ pub fn rook_like(name: &'static str) -> PrintedCard {
             host: TargetSpec::Choose {
                 count: Quantity::c(1),
                 criteria: vec![F::IceInSamePositionAs(PositionRef::Source)], up_to: false },
+            faceup: false,
         }],
     )
     .labeled("rook: move to ice in the same position")];
@@ -4542,6 +4546,7 @@ pub fn cupellation_like(name: &'static str) -> PrintedCard {
             vec![Instruction::HostCards {
                 cards: TargetSpec::AccessedCard,
                 host: TargetSpec::SelfSource,
+                faceup: false,
             }],
         )
         .with_flag(AbilityFlag::Access)

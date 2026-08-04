@@ -104,7 +104,16 @@ pub enum DecisionSpec {
     /// the number of targets the instruction REQUIRES where fewer than
     /// `count` may be chosen — 0 for a plain "up to N", and non-zero where
     /// the rules force a floor (a sabotage that must take enough from HQ).
-    ChooseTargets { candidates: Vec<ObjectId>, count: u32, up_to: bool, min: u32 },
+    /// CR 2.1.5: `distinct_names` is "…cards with different names" — no two
+    /// of the chosen cards may share a name. Not a property of any candidate,
+    /// so it rides the decision and is enforced on the answer.
+    ChooseTargets {
+        candidates: Vec<ObjectId>,
+        count: u32,
+        up_to: bool,
+        min: u32,
+        distinct_names: bool,
+    },
     /// CR 8.5.16b: "Choose and declare the install destination appropriate to
     /// the card that will be installed, including any host relationships."
     /// Asked where the installing effect states no destination of its own —

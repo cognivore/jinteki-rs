@@ -580,6 +580,8 @@ pub fn look_at(cards: TargetSpec, by: Side) -> Instruction {
     Instruction::LookAtCards { cards, by }
 }
 /// "Search your stack for <criteria>." (8.7; the stack is reshuffled after.)
+/// "Search your stack for up to N <description>." (8.7.) 8.7.2e lets the
+/// search fail to find.
 pub fn search_stack(criteria: &[TargetFilter], count: i64) -> Instruction {
     Instruction::Search {
         zone: jinteki_cr::object::Zone::Deck(Side::Runner),
@@ -688,7 +690,12 @@ pub fn end_action_phase(side: Side) -> Instruction {
 }
 /// "Host <cards> on <host>." (1.13.1.)
 pub fn host(cards: TargetSpec, host: TargetSpec) -> Instruction {
-    Instruction::HostCards { cards, host }
+    Instruction::HostCards { cards, host, faceup: false }
+}
+/// "Host <cards> **faceup** on <host>." (1.13.1 + 1.21.1 — both players are
+/// entitled to a faceup card's identity.)
+pub fn host_faceup(cards: TargetSpec, host: TargetSpec) -> Instruction {
+    Instruction::HostCards { cards, host, faceup: true }
 }
 
 // ---- counters -------------------------------------------------------------
@@ -962,6 +969,18 @@ pub fn of_type(t: CardType) -> TargetFilter {
 pub fn with_subtype(s: &'static str) -> TargetFilter {
     TargetFilter::HasSubtype(s)
 }
+/// "…**virus or weapon** cards" (2.16) — any one of these subtypes. The
+/// criteria of a description are otherwise a conjunction, so a printed "or"
+/// between subtypes is this one call.
+pub fn with_any_subtype(list: &'static [&'static str]) -> TargetFilter {
+    TargetFilter::HasAnySubtype(list)
+}
+/// "…cards **with different names**" (2.1.5) — no two of the cards chosen or
+/// found may share a name. A property of the whole set, so it is written
+/// alongside the other criteria and applies to the choice as a whole.
+pub fn with_different_names() -> TargetFilter {
+    TargetFilter::DistinctNames
+}
 pub fn named_card(n: &'static str) -> TargetFilter {
     TargetFilter::HasName(n)
 }
@@ -1196,6 +1215,21 @@ pub fn trace_if_unsuccessful(base: i64, if_unsuccessful: impl IntoIterator<Item 
         determined_min: None,
     }
 }
+/// "…the cards found by this ability's search" (8.7.4) — still set aside
+/// facedown, and reachable by the instruction that follows the search.
+pub fn found_by_search() -> TargetSpec {
+    TargetSpec::FoundBySearch
+}
+/// "Shuffle <cards> into your stack." (8.7.3-adjacent; the cards move and the
+/// deck is shuffled.)
+pub fn shuffle_into_deck(targets: TargetSpec, to: Side) -> Instruction {
+    Instruction::ShuffleCardsIntoDeck { targets, to }
+}
+/// "Choose up to N <description>." (1.15.2e: "up to" is what makes the floor
+/// zero.)
+pub fn choose_up_to(count: i64, criteria: &[TargetFilter]) -> TargetSpec {
+    TargetSpec::Choose { count: Quantity::c(count), criteria: criteria.to_vec(), up_to: true }
+}
 /// "Shuffle up to N cards from <side>'s discard into their deck" (Jackson
 /// class; the targets are announced, "up to" makes the floor zero).
 pub fn shuffle_from_discard_into_deck(side: Side, up_to: i64) -> Instruction {
@@ -1237,7 +1271,11 @@ pub fn would_damage(kind: DamageKind) -> TriggerCond {
 /// "Host the <accessed> card on this program/resource." (Cupellation and
 /// Film Critic class; the accessed card is no longer being accessed.)
 pub fn host_accessed_on_self() -> Instruction {
-    Instruction::HostCards { cards: TargetSpec::AccessedCard, host: TargetSpec::SelfSource }
+    Instruction::HostCards {
+        cards: TargetSpec::AccessedCard,
+        host: TargetSpec::SelfSource,
+        faceup: false,
+    }
 }
 /// "…access 2 additional cards." (Cupellation class; 7.3.5.)
 pub fn additional_accesses(n: i64) -> Instruction {
@@ -1380,6 +1418,11 @@ pub fn printed_subroutine_broken() -> TriggerCond {
 /// a zone this asks about INSTALLED cards, which is what "there is" means.
 pub fn board_has(criteria: &[TargetFilter], n: u32) -> TriggerRequirement {
     TriggerRequirement::BoardHasMatching { criteria: criteria.to_vec(), at_least: n }
+}
+/// "…if there are no more <description>" — the same question with the
+/// threshold at the other end (Asmund Pudlat; `n = 0` is "none").
+pub fn board_has_at_most(criteria: &[TargetFilter], n: u32) -> TriggerRequirement {
+    TriggerRequirement::BoardHasAtMostMatching { criteria: criteria.to_vec(), at_most: n }
 }
 /// "If <state>, <effect>." (9.6.5d — the requirement is in the instructions.)
 pub fn if_met(
