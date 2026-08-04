@@ -1,0 +1,64 @@
+You are continuing the jinteki-rs DECK QUEUE, unattended.
+
+Read FIRST: docs/vm/DECK-QUEUE.md (the mandated deck order and the exact
+lists), then docs/vm/WAVES.md, then docs/cards/EDSL.md, then an existing deck
+module such as crates/jinteki-cards/src/decks/gauntlet.rs for house style.
+
+GOAL: finish the decks in DECK-QUEUE.md order. Deck 1 (Andromeda vs Gauntlet)
+is done and live. Work the FIRST deck in that file that is not yet complete,
+and do ONE unit of work this run, then stop:
+
+  * If the deck has no module yet: create
+    crates/jinteki-cards/src/decks/<key>.rs with one function per DISTINCT
+    card in printed order, register it in decks/mod.rs, and add its DeckSpec
+    (list, copy counts, CR 1.5.4a pile) to crates/jinteki-server/src/cr.rs.
+    Cards already implemented for an earlier deck are REUSED, never copied —
+    check crates/jinteki-cards/src/decks/ and identities/ first. Commit that.
+  * Otherwise implement the next 8-12 incomplete cards of that deck, whole.
+    Commit that.
+
+METHOD:
+1. Read the exact printed text from crates/jinteki-core/carddata/cards.json.
+   Never work from memory.
+2. VERIFY any UNIMPLEMENTED: doc comment before believing it — the kernel
+   vocabulary has grown repeatedly past what those comments claim, and stale
+   ones have already yielded several free cards.
+3. Write it in the EMBEDDED DSL: typed Rust builders in crates/jinteki-cards.
+   Nothing is parsed; .text(...) is data for the SYS-D-10 agreement test.
+3a. CR 9.11.3: one SENTENCE is one INSTRUCTION. "draw 2 cards and take 1 tag"
+   is combined([draw(...), give_tags(...)]) — NOT two instructions. Splitting
+   it invents a checkpoint, a reaction window and a second interrupt window
+   the card does not have. 9.12.2c is about aggregating a CALCULATED QUANTITY
+   ("for each"), NOT about whether a sentence splits. Only 9.11.4b-g split.
+4. Add a behaviour test per card in crates/jinteki-cards/tests/behaviour.rs,
+   driven by a PLAN. The test name reads as a sentence about the card, a doc
+   comment quotes the printed text, assertions carry a message in the game's
+   own words, and the BOUNDARY is tested, not just the happy path. Never add
+   a *_for_test backdoor and never write a vm.step() loop.
+5. Run: nix develop --command cargo test --workspace  (must be fully green)
+5a. Then verify the RELEASE build of exactly what you are about to commit,
+   from a stashed-clean tree, capturing the exit code EXPLICITLY:
+     git stash -u
+     nix build .#default > /tmp/deckbuild.log 2>&1; echo "EXIT=$?"; rm -f result
+     git stash pop
+   Piping nix build into `tail` returns TAIL's status and has already hidden
+   one failure here. nix/package.nix filters the source tree, so a
+   workspace-green tree can still fail the artifact build. Do NOT commit if
+   this fails.
+6. Commit in the established style (see git log).
+
+A card the vocabulary genuinely cannot express keeps
+.unimplemented("<exact printed sentence>"). NEVER approximate or fake it.
+
+HARD RULES (docs/vm/ARCHITECTURE.md section 12):
+- No card names in kernel vocabulary. Thresholds, polarity, scope, windows
+  and namespaces are CONTENT on one atom, never a new atom per card.
+- Odometers never regress: DP-7a stays 247/247.
+- Every cite!("rule_...") id must exist in docs/rules/cr-index.json.
+- Do NOT touch crates/jinteki-core (the legacy engine the live server uses).
+- Do NOT edit ui/ — another agent owns it.
+- Do NOT run nix build outside step 5a, do NOT push, and do NOT deploy.
+
+If the workspace is red when you start, FIX THAT FIRST and commit nothing
+else. If you cannot finish cleanly, revert your changes and stop, leaving the
+tree green.
