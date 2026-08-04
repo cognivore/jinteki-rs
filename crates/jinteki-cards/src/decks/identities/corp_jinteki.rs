@@ -112,12 +112,42 @@ pub fn tennin_institute() -> Card {
         .build()
 }
 
+/// Jinteki: Restoring Humanity — Identity: Megacorp.
+/// "When your discard phase ends, if there is a facedown card in Archives,
+///  gain 1[credit]."
+///
+/// COMPLETE. 5.5.4's discard phase, named as the Corp's own, with 9.6.5c's
+/// additional requirement inside the condition — so the question is asked at
+/// the end of the discard phase, AFTER the cards discarded there have
+/// arrived, which is what makes a Corp who discarded this turn paid for it.
+///
+/// "A facedown card in Archives" is two ordinary description words. 10.3.1a
+/// is what makes the pair meaningful: a card the CORP trashes enters Archives
+/// facedown and one the RUNNER trashes enters it faceup, so the sentence
+/// asks about the Corp's own discards and not about what a run left behind.
+/// It is not "unrezzed", which 8.1.2 restricts to installed Corp cards.
+pub fn jinteki_restoring_humanity() -> Card {
+    card("Jinteki: Restoring Humanity")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Megacorp"])
+        .text("When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].")
+        .when(
+            your_discard_phase_ends_if(Corp, &[board_has(&[in_archives(), facedown()], 1)]),
+            [gain(Corp, 1)],
+        )
+        .named("restoring humanity")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         jinteki_personal_evolution(),
         jinteki_potential_unleashed(),
+        jinteki_restoring_humanity(),
         palana_foods(),
         tennin_institute(),
     ]

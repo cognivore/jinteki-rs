@@ -1519,6 +1519,13 @@ pub enum TargetFilter {
     /// something only the Corp does, so only a Corp card has a rez state to
     /// be in. This mirrors [`TargetFilter::Rezzed`]'s own Corp restriction.
     Unrezzed,
+    /// CR 1.13.2: a card that is FACEDOWN — its back face is the one showing,
+    /// wherever it is. Not [`TargetFilter::Unrezzed`], which 8.1.2 restricts
+    /// to installed Corp cards: 10.3.1a puts a card the Corp trashes into
+    /// Archives facedown and one the RUNNER trashes there faceup, so "a
+    /// facedown card in Archives" is this criterion beside
+    /// [`TargetFilter::InDiscardOf`], and neither names the play area.
+    Facedown,
     /// CR 9.5.5 / 4.8.3: a card SET ASIDE by the trigger cost of the ability
     /// making this selection — the only kind of ability that can see the
     /// set-aside zone at all (Street Peddler class). A zone-naming criterion,

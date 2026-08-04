@@ -1621,6 +1621,31 @@ pub fn runner_made_no_successful_run_last_turn() -> TriggerRequirement {
 pub fn takes_bad_publicity(side: Side) -> TriggerCond {
     TriggerCond::PlayerTakesBadPublicity(side)
 }
+/// "Whenever the Runner takes a tag…" (Mr. Stone class.)
+pub fn runner_takes_a_tag() -> TriggerCond {
+    TriggerCond::RunnerTakesTag
+}
+/// "Whenever you advance a card…" — 1.18.2's advance and nothing else, so a
+/// counter merely PLACED never meets it. `had_no_advancement` is the printed
+/// "if it had no advancement counters".
+pub fn advances_a_card(had_no_advancement: bool) -> TriggerCond {
+    TriggerCond::AdvancesCard { had_no_advancement }
+}
+/// "Your maximum hand size is increased by N." / "…is reduced by N." (5.7.3 —
+/// the amount carries the polarity.)
+pub fn max_hand_size_mod(n: i32) -> StaticDecl {
+    StaticDecl::MaxHandSizeMod { whose: jinteki_cr::ability::DeclSubject::Controller, amount: n }
+}
+/// "**Each player's** maximum hand size is reduced by N." (Cybernetics
+/// Division class — the same declaration, with the other scope.)
+pub fn each_players_max_hand_size_mod(n: i32) -> StaticDecl {
+    StaticDecl::MaxHandSizeMod { whose: jinteki_cr::ability::DeclSubject::EachPlayer, amount: n }
+}
+/// "…a facedown card" (1.13.2) — the plain question, in whatever zone the
+/// rest of the description names.
+pub fn facedown() -> TargetFilter {
+    TargetFilter::Facedown
+}
 /// "Host the <accessed> card on this program/resource." (Cupellation and
 /// Film Critic class; the accessed card is no longer being accessed.)
 pub fn host_accessed_on_self() -> Instruction {

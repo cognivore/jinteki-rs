@@ -5080,3 +5080,422 @@ fn tennin_institute_advances_unless_the_runner_ran_successfully_last_turn() {
         );
     }
 }
+
+/// Custom Biotics: "You cannot include Jinteki cards in this deck."
+/// Ampère: "Your deck cannot include more than 1 copy of any card." /
+///         "Your deck may include up to 2 different agenda cards from each
+///          Corp faction."
+/// The Shadow: "Draft format only." / "You can use agendas from all factions
+///             in this deck."
+/// The Syndicate: "Starter game only."
+///
+/// The Corp side of the same reading `a_deckbuilding_restriction_is_not_an_
+/// ability_that_ever_fires` makes for the Runner: CR 1.4.2 settles all of it
+/// before the game begins, so each of these denotes into no abilities and a
+/// turn played under one opens no window naming it.
+#[test]
+fn a_corp_deckbuilding_restriction_is_not_an_ability_either() {
+    for name in [
+        "Custom Biotics: Engineered for Success",
+        "Ampère: Cybernetics For Anyone",
+        "The Shadow: Pulling the Strings",
+        "The Syndicate: Profit over Principle",
+    ] {
+        let printed = card(name);
+        assert!(
+            printed.abilities.is_empty(),
+            "{name}: a deck-construction restriction denotes into no ability (EDSL rule of thumb 3)"
+        );
+        let mut vm = Vm::empty(6116);
+        tk::install_identity(&mut vm, printed, Side::Corp);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.start_turn(Side::Corp);
+        let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+        assert!(
+            !t.took(&name.to_lowercase()),
+            "{name}: nothing of this identity was ever offered or used during a turn: {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Cybernetics Division: "Each player's maximum hand size is reduced by 1."
+/// NBN: The World is Yours*: "Your maximum hand size is increased by 1."
+///
+/// One declaration with two contents, so both are asserted through the same
+/// reading: the scope decides WHOSE, and the amount decides which way. Each
+/// identity is read against the base of 5 (5.7.2), for both players.
+#[test]
+fn the_two_hand_size_identities_move_the_limit_in_opposite_directions() {
+    for (name, corp, runner) in [
+        ("Cybernetics Division: Humanity Upgraded", 4, 4),
+        ("NBN: The World is Yours*", 6, 5),
+    ] {
+        let mut vm = Vm::empty(6117);
+        tk::install_identity(&mut vm, card(name), Side::Corp);
+        assert_eq!(
+            vm.max_hand_size(Side::Corp),
+            corp,
+            "{name}: the Corp's maximum hand size, from a base of 5"
+        );
+        assert_eq!(
+            vm.max_hand_size(Side::Runner),
+            runner,
+            "{name}: and the Runner's — 'each player's' reaches them, 'your' does not"
+        );
+    }
+}
+
+/// Cybernetics Division: "Each player's maximum hand size is reduced by 1."
+///
+/// The declaration is read continuously, so the discard phase obeys it: the
+/// Corp ends its turn with five cards in HQ and must discard down to four.
+#[test]
+fn cybernetics_division_shortens_the_corps_own_discard_phase() {
+    let mut vm = Vm::empty(6118);
+    tk::install_identity(&mut vm, card("Cybernetics Division: Humanity Upgraded"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::credit()),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(vm.st.turn_side, Side::Runner, "the Corp's turn finished: {}", t.tail(24));
+    assert_eq!(
+        vm.st.hand[&Side::Corp].len(),
+        4,
+        "5.7.4 discarded down to the reduced maximum, not to 5: {}",
+        t.tail(24)
+    );
+}
+
+/// Haas-Bioroid: Precision Design — "You get +1 maximum hand size." /
+/// "Whenever you score an agenda, you may add 1 card from Archives to HQ."
+///
+/// Both printed lines, and they are different kinds of sentence. The declared
+/// half is read off the limit; the conditional half is offered on a score,
+/// declinable (9.6.9), and reaches a FACEDOWN card in Archives — the sentence
+/// says nothing about which way up a card lies.
+#[test]
+fn precision_design_raises_the_limit_and_fishes_a_card_out_of_archives() {
+    let mut vm = Vm::empty(6119);
+    tk::install_identity(&mut vm, card("Haas-Bioroid: Precision Design"), Side::Corp);
+    assert_eq!(vm.max_hand_size(Side::Corp), 6, "+1 on 5.7.2's base of 5");
+    assert_eq!(vm.max_hand_size(Side::Runner), 5, "'you' is the Corp, and only the Corp");
+
+    let agenda =
+        tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+    vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+    let buried = vm.new_object(tk::corp_filler("Buried"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid(), Reply::score(agenda))
+            .when(Match::reaction().offering("precision design"), Reply::take("precision design"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&buried].zone,
+        Zone::Hand(Side::Corp),
+        "the card came out of Archives and into HQ: {}",
+        t.tail(30)
+    );
+}
+
+/// Jinteki: Restoring Humanity — "When your discard phase ends, if there is a
+/// facedown card in Archives, gain 1[credit]."
+///
+/// The requirement is what is under test, and 10.3.1a is what makes it
+/// meaningful: a card the CORP trashed lies in Archives facedown and a card
+/// the RUNNER trashed lies there faceup. Two games, identical but for which
+/// way the one card in Archives is lying, and only the facedown one pays.
+#[test]
+fn restoring_humanity_pays_only_for_a_facedown_card_in_archives() {
+    for faceup in [false, true] {
+        let mut vm = Vm::empty(6120);
+        tk::install_identity(&mut vm, card("Jinteki: Restoring Humanity"), Side::Corp);
+        let buried = vm.new_object(tk::corp_filler("Buried"), Zone::Discard(Side::Corp));
+        vm.st.objects.get_mut(&buried).unwrap().faceup = faceup;
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action(), Reply::credit()),
+            Plan::runner().when(Match::action(), Reply::Halt),
+        );
+        assert_eq!(vm.st.turn_side, Side::Runner, "the Corp's turn finished: {}", t.tail(24));
+        assert_eq!(
+            // 3 clicks on 5.2.6b's basic credit action, plus the identity's.
+            vm.st.corp.credits,
+            3 + u32::from(!faceup),
+            "paid exactly when the card in Archives was FACEDOWN (faceup={faceup}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Corp, NBN
+// ---------------------------------------------------------------------------
+
+/// NBN: Reality Plus — "The first time each turn the Runner takes a tag, gain
+/// 2[credit] or draw 2 cards."
+///
+/// The ordinal and the option choice together: two tags taken separately in
+/// one turn pay once, and the Corp is the one who chooses which way.
+#[test]
+fn reality_plus_pays_once_a_turn_and_lets_the_corp_pick_how() {
+    let mut vm = Vm::empty(6121);
+    tk::install_identity(&mut vm, card("NBN: Reality Plus"), Side::Corp);
+    tk::install_root(&mut vm, tk::corp_tags_button("Tag Me", 1), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("tag"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("gain 2[credit]"))
+            .when(Match::paid().once(), Reply::take("tag"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.runner.tags, 2, "both tags were handed over: {}", t.tail(30));
+    let asked = t.of_kind(Kind::Options);
+    assert_eq!(asked.len(), 1, "the choice was put once, on the FIRST tag: {}", t.tail(30));
+    assert_eq!(asked[0].side, Side::Corp, "9.1.1a: the Corp's identity, so the Corp chooses");
+    assert_eq!(vm.st.corp.credits, 2, "and paid 2, once: {}", t.tail(30));
+}
+
+/// Pravdivost Consulting: "The first time each turn the Runner makes a
+/// successful run, you may place 1 advancement counter on an installed card
+/// you can advance."
+///
+/// Two successful runs place one counter. "A card you can advance" is the
+/// other half: an ordinary asset is never offered, only the agenda beside it.
+#[test]
+fn pravdivost_advances_once_a_turn_and_only_what_can_be_advanced() {
+    let mut vm = Vm::empty(6122);
+    tk::install_identity(&mut vm, card("Pravdivost Consulting: Political Solutions"), Side::Corp);
+    let agenda =
+        tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 5, 3), ServerId::Remote(1), false);
+    let asset = tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 2), ServerId::Remote(2), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::reaction().offering("pravdivost"), Reply::take("pravdivost")),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "offered once, on the first successful run: {}", t.tail(30));
+    assert_eq!(
+        announcements[0].candidates(),
+        [agenda],
+        "1.18.3: only a card that CAN be advanced is a candidate — the asset is not: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+        1,
+        "one counter, from the first run only: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&asset].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+        0,
+        "and none on the asset: {}",
+        t.tail(30)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Corp, Weyland Consortium
+// ---------------------------------------------------------------------------
+
+/// Argus Security: "Whenever the Runner steals an agenda, they must take 1 tag
+/// or suffer 2 meat damage."
+///
+/// "They must" is 1.14.5 putting the choice to the RUNNER — asserted, because
+/// it is the only thing separating this card from Sportsmetal's — and 9.12.3's
+/// "must" means neither option may be declined. Both options are taken, one
+/// game each.
+#[test]
+fn argus_security_makes_the_runner_choose_a_tag_or_two_meat() {
+    for take_tag in [false, true] {
+        let mut vm = Vm::empty(6123);
+        tk::install_identity(&mut vm, card("Argus Security: Protection Guaranteed"), Side::Corp);
+        let agenda =
+            tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let pick = if take_tag { "take 1 tag" } else { "suffer 2 meat damage" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&agenda].zone,
+            Zone::ScoreArea(Side::Runner),
+            "the agenda was stolen (take_tag={take_tag}): {}",
+            t.tail(30)
+        );
+        let asked = t.of_kind(Kind::Options);
+        assert_eq!(asked.len(), 1, "one choice was put (take_tag={take_tag}): {}", t.tail(30));
+        assert_eq!(
+            asked[0].side,
+            Side::Runner,
+            "1.14.5: the sentence says THEY must, so the Runner chooses — not the Corp"
+        );
+        assert_eq!(
+            vm.st.runner.tags,
+            u32::from(take_tag),
+            "the tag arrived exactly on that branch (take_tag={take_tag}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            if take_tag { 4 } else { 2 },
+            "and the 2 meat damage on the other (take_tag={take_tag}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// The Outfit: "Whenever you take 1 or more bad publicity, gain 3[credit]."
+///
+/// "1 or more" is not a threshold: the condition is met once per TAKING, so a
+/// card handing over two bad publicity at once pays 3 and not 6.
+#[test]
+fn the_outfit_pays_three_per_taking_of_bad_publicity_however_many_it_was() {
+    let mut vm = Vm::empty(6124);
+    tk::install_identity(&mut vm, card("The Outfit: Family Owned and Operated"), Side::Corp);
+    tk::install_root(&mut vm, tk::take_bad_pub_button("Scandal", 2), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("take bad publicity")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.corp.bad_publicity, 2, "two bad publicity arrived at once: {}", t.tail(24));
+    assert_eq!(
+        vm.st.corp.credits, 3,
+        "and paid 3 for the one TAKING, not 3 per point: {}",
+        t.tail(24)
+    );
+}
+
+/// Weyland Consortium: Building a Better World — "Whenever you play a
+/// transaction operation, gain 1[credit]."
+///
+/// Both stipulations: a transaction pays, and an operation without the
+/// subtype does not. Two of them are played in the same turn, so the absence
+/// of an ordinal is asserted too — every transaction pays, not just the first.
+#[test]
+fn building_a_better_world_pays_for_every_transaction_and_no_other_operation() {
+    let mut vm = Vm::empty(6125);
+    tk::install_identity(&mut vm, card("Weyland Consortium: Building a Better World"), Side::Corp);
+    let mut make = |name: &'static str, transaction: bool| {
+        let mut c = tk::operation(name, 0, vec![]);
+        if transaction {
+            c.subtypes = vec!["Transaction"];
+        }
+        let id = vm.new_object(c, Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+        id
+    };
+    let first = make("First Transaction", true);
+    let second = make("Second Transaction", true);
+    let plain = make("Plain Operation", false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(first))
+            .when(Match::action().once(), Reply::play_card(second))
+            .when(Match::action().once(), Reply::play_card(plain))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.corp.credits, 2,
+        "1 for each of the two transactions, and nothing for the plain operation: {}",
+        t.tail(30)
+    );
+}
+
+/// Weyland Consortium: Built to Last — "Whenever you advance a card, gain
+/// 2[credit] if it had no advancement counters."
+///
+/// The requirement is read of the card BEFORE the advance, so the first
+/// advance of a card pays and the second does not. Two advances of the same
+/// card say both halves at once.
+#[test]
+fn built_to_last_pays_for_the_first_advance_of_a_card_and_not_the_second() {
+    let mut vm = Vm::empty(6126);
+    tk::install_identity(&mut vm, card("Weyland Consortium: Built to Last"), Side::Corp);
+    let agenda =
+        tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 5, 3), ServerId::Remote(1), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::Advance(agenda)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(agenda)))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+        2,
+        "the card was advanced twice: {}",
+        t.tail(30)
+    );
+    // 5 credits, 2 spent advancing, 2 gained once: 5.
+    assert_eq!(
+        vm.st.corp.credits, 5,
+        "paid 2 for the FIRST advance only — the second found a counter already there: {}",
+        t.tail(30)
+    );
+}

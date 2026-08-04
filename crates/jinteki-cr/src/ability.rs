@@ -589,6 +589,18 @@ pub enum StaticCond {
     SourceInScoreAreaOf(Side),
 }
 
+/// WHOSE the declaration speaks about, when a card can say either. "Your
+/// maximum hand size" and "each player's maximum hand size" are one sentence
+/// pattern with a scope, exactly as [`ReqScope`] is for an advancement
+/// requirement — content on the declaration, never a declaration per scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclSubject {
+    /// "**Your** maximum hand size…" — the controller of the source (9.1.1a).
+    Controller,
+    /// "**Each player's** maximum hand size…" — both players.
+    EachPlayer,
+}
+
 /// CR 9.6.1a: the primary condition is a trigger or static condition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Condition {
@@ -857,6 +869,14 @@ pub enum StaticDecl {
     RunsNotDeclaredSuccessful,
     /// Memory limit modifier (Runner).
     MemoryLimitMod(i32),
+    /// CR 5.7.3: maximum hand size modifier. "Your maximum hand size is
+    /// increased by 1" (NBN: The World is Yours*) and "each player's maximum
+    /// hand size is reduced by 1" (Cybernetics Division) are the SAME
+    /// declaration: the amount carries the polarity and `whose` carries the
+    /// scope, so neither is a variant of its own (§12 rule 1). "Your" is read
+    /// against the source's controller, so a Runner card saying it means the
+    /// Runner's.
+    MaxHandSizeMod { whose: DeclSubject, amount: i32 },
     /// "+N to the amount of <kind> damage done by <responsible>."
     /// (The Cleaners class — modifies imminent damage values via statics.)
     DamageBonus { kind: DamageKind, responsible: Side, amount: i64 },

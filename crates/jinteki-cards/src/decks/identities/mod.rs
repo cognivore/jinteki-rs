@@ -22,6 +22,9 @@ use crate::edsl::Card;
 
 pub mod corp_haas_bioroid;
 pub mod corp_jinteki;
+pub mod corp_nbn;
+pub mod corp_neutral;
+pub mod corp_weyland;
 pub mod runner_anarch;
 pub mod runner_criminal;
 pub mod runner_neutral;
@@ -37,5 +40,8 @@ pub fn cards() -> Vec<Card> {
     all.extend(runner_sunny::identities());
     all.extend(corp_haas_bioroid::identities());
     all.extend(corp_jinteki::identities());
+    all.extend(corp_nbn::identities());
+    all.extend(corp_weyland::identities());
+    all.extend(corp_neutral::identities());
     all
 }

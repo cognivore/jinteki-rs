@@ -80,4 +80,13 @@ pub const SOURCES: &[(&str, &str)] = &[
         "identities/corp_jinteki.rs",
         include_str!("identities/corp_jinteki.rs"),
     ),
+    ("identities/corp_nbn.rs", include_str!("identities/corp_nbn.rs")),
+    (
+        "identities/corp_weyland.rs",
+        include_str!("identities/corp_weyland.rs"),
+    ),
+    (
+        "identities/corp_neutral.rs",
+        include_str!("identities/corp_neutral.rs"),
+    ),
 ];

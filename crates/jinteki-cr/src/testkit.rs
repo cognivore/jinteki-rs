@@ -2103,6 +2103,17 @@ pub fn corp_tags_button(name: &'static str, n: u32) -> PrintedCard {
     c
 }
 
+/// A Corp button taking N bad publicity at once (test driver).
+pub fn take_bad_pub_button(name: &'static str, n: i64) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::TakeBadPublicity { side: Side::Corp, amount: Quantity::c(n) }],
+    )
+    .labeled("take bad publicity")];
+    c
+}
+
 /// Thunder-Art-Gallery shape: "Whenever you avoid a tag, you may install a
 /// card." (kernel: installs a fixed card, ignoring costs).
 pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {

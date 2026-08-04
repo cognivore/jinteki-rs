@@ -115,7 +115,7 @@ these is a general kernel capability, stated with the identities that want it.
 
 ## Progress
 
-- Implemented: **34 / 150**
+- Implemented: **47 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -226,18 +226,18 @@ Module: `decks/identities/runner_sunny.rs`
 
 - [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (3/19)
+## Corp — Haas-Bioroid (6/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
 - [ ] **Asa Group: Security Through Vigilance** — The first time each turn you install a card, you may install 1 non-agenda card from HQ in the root of or protecting the same server.
 - [ ] **Cerebral Imaging: Infinite Frontiers** — Your maximum hand size is equal to the number of credits in your credit pool.
 - [ ] **Chronos Protocol: Haas-Bioroid** — Whenever the Runner trashes a card for brain damage, they remove all copies of that card from the game (installed, in the heap, stack, grip, or any other location). Then, they shuffle their stack.
-- [ ] **Custom Biotics: Engineered for Success** — You cannot include Jinteki cards in this deck.
-- [ ] **Cybernetics Division: Humanity Upgraded** — Each player's maximum hand size is reduced by 1.
+- [x] **Custom Biotics: Engineered for Success** — You cannot include Jinteki cards in this deck.
+- [x] **Cybernetics Division: Humanity Upgraded** — Each player's maximum hand size is reduced by 1.
 - [ ] **Haas-Bioroid: Architects of Tomorrow** — The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.
 - [x] **Haas-Bioroid: Engineering the Future** — The first time you install a card each turn, gain 1[credit].
-- [ ] **Haas-Bioroid: Precision Design** — You get +1 maximum hand size. Whenever you score an agenda, you may add 1 card from Archives to HQ.
+- [x] **Haas-Bioroid: Precision Design** — You get +1 maximum hand size. Whenever you score an agenda, you may add 1 card from Archives to HQ.
 - [ ] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
 - [ ] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
 - [ ] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
@@ -250,7 +250,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [ ] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (4/21)
+## Corp — Jinteki (5/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
@@ -266,7 +266,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Jinteki: Personal Evolution** — Whenever an agenda is scored or stolen, do 1 net damage.
 - [x] **Jinteki: Potential Unleashed** — Whenever the Runner takes at least 1 net damage, trash the top card of the stack.
 - [ ] **Jinteki: Replicating Perfection** — The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.
-- [ ] **Jinteki: Restoring Humanity** — When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].
+- [x] **Jinteki: Restoring Humanity** — When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].
 - [ ] **Mti Mwekundu: Life Improved** — Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.
 - [ ] **Méliès U: Only the Brightest** — When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest. When the Runner makes a successful run on a central server, flip this identity. When the Runner’s action phase ends, gain 1[credit].
 - [ ] **Nisei Division: The Next Generation** — Whenever you and the Runner reveal secretly spent credits, gain 1[credit].
@@ -276,7 +276,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (2/19)
+## Corp — NBN (5/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -290,21 +290,21 @@ Module: `decks/identities/corp_nbn.rs`
 - [ ] **Information Dynamics: All You Need To Know** — Draft format only. If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.
 - [ ] **NBN: Controlling the Message** — The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).
 - [ ] **NBN: Making News** — 2[recurring-credit] Use these credits during trace attempts.
-- [ ] **NBN: Reality Plus** — The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.
-- [ ] **NBN: The World is Yours*** — Your maximum hand size is increased by 1.
+- [x] **NBN: Reality Plus** — The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.
+- [x] **NBN: The World is Yours*** — Your maximum hand size is increased by 1.
 - [ ] **Near-Earth Hub: Broadcast Center** — The first time each turn you create a remote server, draw 1 card.
 - [x] **Nebula Talent Management: Making Stars** — When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.
 - [ ] **New Angeles Sol: Your News** — Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).
-- [ ] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
+- [x] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
 - [ ] **SYNC: Everything, Everywhere** — [click]: Flip this identity. The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).
 - [ ] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (0/19)
+## Corp — Weyland Consortium (4/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
-- [ ] **Argus Security: Protection Guaranteed** — Whenever the Runner steals an agenda, they must take 1 tag or suffer 2 meat damage.
+- [x] **Argus Security: Protection Guaranteed** — Whenever the Runner steals an agenda, they must take 1 tag or suffer 2 meat damage.
 - [ ] **BANGUN: When Disaster Strikes** — You may install agendas faceup. (This does not make their abilities active.) Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.
 - [ ] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
 - [ ] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
@@ -316,19 +316,19 @@ Module: `decks/identities/corp_weyland.rs`
 - [ ] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
 - [ ] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
 - [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
-- [ ] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
+- [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
 - [ ] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
 - [ ] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.
 - [ ] **Weyland Consortium: Because We Built It** — 1[recurring-credit] Use this credit to advance ice.
 - [ ] **Weyland Consortium: Builder of Nations** — The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.
-- [ ] **Weyland Consortium: Building a Better World** — Whenever you play a transaction operation, gain 1[credit].
-- [ ] **Weyland Consortium: Built to Last** — Whenever you advance a card, gain 2[credit] if it had no advancement counters.
+- [x] **Weyland Consortium: Building a Better World** — Whenever you play a transaction operation, gain 1[credit].
+- [x] **Weyland Consortium: Built to Last** — Whenever you advance a card, gain 2[credit] if it had no advancement counters.
 
-## Corp — Neutral (0/4)
+## Corp — Neutral (3/4)
 
 Module: `decks/identities/corp_neutral.rs`
 
-- [ ] **Ampère: Cybernetics For Anyone** — Your deck cannot include more than 1 copy of any card. Your deck may include up to 2 different agenda cards from each Corp faction.
+- [x] **Ampère: Cybernetics For Anyone** — Your deck cannot include more than 1 copy of any card. Your deck may include up to 2 different agenda cards from each Corp faction.
 - [ ] **Cyber Bureau: Keeping the Peace** — You draw a starting hand of 10 cards. Before taking your first turn, install up to 5 cards, ignoring all install costs. Rez any number of them, lowering the total rez cost among all cards by 20. Flip this identity. Detective's Bureau: Upholding the Law The first time the Runner initiates a run each turn, force the Runner to lose 1[credit] for each agenda point in his or her score area, then you gain 1[credit] for each credit lost. [click]: Gain 3[credit] or draw 3 cards.
-- [ ] **The Shadow: Pulling the Strings** — Draft format only. You can use agendas from all factions in this deck.
-- [ ] **The Syndicate: Profit over Principle** — Starter game only.
+- [x] **The Shadow: Pulling the Strings** — Draft format only. You can use agendas from all factions in this deck.
+- [x] **The Syndicate: Profit over Principle** — Starter game only.

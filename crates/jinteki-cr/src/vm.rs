@@ -6573,6 +6573,8 @@ impl Vm {
                 cite!("rule_rezzed_unrezzed");
                 self.is_installed(o) && is_corp_card(o.printed.card_type) && !o.faceup
             }
+            // 1.13.2: the plain question, asked of any card in any zone.
+            TargetFilter::Facedown => !o.faceup,
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.this_server(s))
                 .map(|sv| self.ice_at(sv).contains(&o.id))
@@ -13010,7 +13012,23 @@ impl Vm {
 
     pub fn max_hand_size(&self, side: Side) -> i32 {
         cite!("rule_max_hand_size");
-        self.st.player(side).max_hand_size_base
+        let mut n = self.st.player(side).max_hand_size_base;
+        for (src, d) in self.active_statics() {
+            if let StaticDecl::MaxHandSizeMod { whose, amount } = d {
+                // 9.1.1a: "your" is the controller of the card that says it;
+                // "each player's" reaches both without asking.
+                let applies = match whose {
+                    crate::ability::DeclSubject::EachPlayer => true,
+                    crate::ability::DeclSubject::Controller => {
+                        self.st.objects.get(&src).is_some_and(|o| o.controller == side)
+                    }
+                };
+                if applies {
+                    n += amount;
+                }
+            }
+        }
+        n
     }
 
     /// CR 1.10.5b: recurring credits are first placed on a card as soon as it

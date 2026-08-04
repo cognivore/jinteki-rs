@@ -90,8 +90,80 @@ pub fn thule_subsea() -> Card {
         .build()
 }
 
+/// Custom Biotics: Engineered for Success — Identity: Division.
+/// "You cannot include Jinteki cards in this deck."
+///
+/// COMPLETE. A deck-construction restriction (CR 1.4), settled before the
+/// game begins and never read again — the same class of sentence as Ampère's
+/// singleton rule, and the writing guide's third rule of thumb puts it in the
+/// facts or nowhere rather than in an ability.
+pub fn custom_biotics() -> Card {
+    card("Custom Biotics: Engineered for Success")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("You cannot include Jinteki cards in this deck.")
+        .build()
+}
+
+/// Cybernetics Division: Humanity Upgraded — Identity: Division.
+/// "Each player's maximum hand size is reduced by 1."
+///
+/// COMPLETE. The same 5.7.3 declaration NBN: The World is Yours* makes, with
+/// the other polarity and the other scope — which is exactly why both are
+/// content on one declaration rather than two. "Each player's" reaches the
+/// Corp who plays it as well as the Runner, so this identity's own discard
+/// phase is shortened too.
+pub fn cybernetics_division() -> Card {
+    card("Cybernetics Division: Humanity Upgraded")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Each player's maximum hand size is reduced by 1.")
+        .declares([each_players_max_hand_size_mod(-1)])
+        .named("humanity upgraded")
+        .build()
+}
+
+/// Haas-Bioroid: Precision Design — Identity: Megacorp.
+/// "You get +1 maximum hand size.
+///  Whenever you score an agenda, you may add 1 card from Archives to HQ."
+///
+/// COMPLETE. Two printed lines, and they are different kinds of sentence: the
+/// first is permanently true and so a static declaration, the second happens
+/// and so is a conditional ability.
+///
+/// "1 card from Archives" names a zone, which is what lifts 1.15.2c's
+/// play-area default — and it says nothing about faceup or facedown, so a
+/// card the Corp trashed (10.3.1a puts it there facedown) is as valid a
+/// candidate as one the Runner did. The printed "you may" is the whole
+/// ability, so it is 9.6.9's declinable conditional.
+pub fn haas_bioroid_precision_design() -> Card {
+    card("Haas-Bioroid: Precision Design")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Megacorp"])
+        .text("You get +1 maximum hand size.")
+        .text("Whenever you score an agenda, you may add 1 card from Archives to HQ.")
+        .declares([max_hand_size_mod(1)])
+        .named("precision design")
+        .may_when(corp_scores_agenda(), [add_to_hand(choose(1, &[in_archives()]))])
+        .named("an agenda was scored")
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
-    vec![haas_bioroid_engineering_the_future(), sportsmetal(), thule_subsea()]
+    vec![
+        custom_biotics(),
+        cybernetics_division(),
+        haas_bioroid_engineering_the_future(),
+        haas_bioroid_precision_design(),
+        sportsmetal(),
+        thule_subsea(),
+    ]
 }
