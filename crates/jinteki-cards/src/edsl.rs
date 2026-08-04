@@ -148,7 +148,7 @@ pub use jinteki_cr::instr::{
     TargetFilter, TargetSpec, TrashDestination,
 };
 pub use jinteki_cr::object::Side::{Corp, Runner};
-pub use jinteki_cr::object::{CardType, CounterKind, ServerId, Side};
+pub use jinteki_cr::object::{CardType, CounterKind, ServerId, Side, Zone};
 
 // ---------------------------------------------------------------------------
 // The card
@@ -400,6 +400,22 @@ impl CardBuilder {
     pub fn paid_access(self, cost: Cost, instrs: impl IntoIterator<Item = Instruction>) -> Self {
         self.ability(
             AbilityDef::paid(cost, instrs.into_iter().collect()).with_flag(AbilityFlag::Access),
+        )
+    }
+    /// "[click]: Play this operation **from Archives**." — a paid ability
+    /// whose printed words state WHERE its source works from, which CR 9.3.3c
+    /// makes a restriction ("limits on when, where, or how often an ability
+    /// can be used"). It is not offered while the card is anywhere else — in
+    /// hand, the card is played with the basic action like any other.
+    pub fn paid_from_discard(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        let zone = jinteki_cr::object::Zone::Discard(self.printed.side);
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_timing(TimingRestriction::SourceInZone(zone)),
         )
     }
     /// A paid ability usable only during an encounter (9.5.6a) — a break
@@ -1145,6 +1161,31 @@ pub fn turn_begins_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
 /// "…if this card is in Archives" (Subliminal Messaging; 9.1.8b).
 pub fn source_in_discard() -> TriggerRequirement {
     TriggerRequirement::SourceInDiscard
+}
+/// "Play only if you have **not finished an action yet this turn**." (Petty
+/// Cash; CR 5.2.2a — an action is finished once the game may advance past the
+/// action step that ran it.)
+pub fn no_action_finished_yet_this_turn(side: Side) -> TriggerRequirement {
+    TriggerRequirement::ActionsFinishedThisTurn { side, at_most: 0 }
+}
+/// "…if you played this operation **from anywhere except HQ**" (Petty Cash) —
+/// a question about the play in progress (8.6.7a), with the zone and the
+/// polarity as content.
+pub fn played_from_anywhere_except(zone: Zone) -> TriggerRequirement {
+    TriggerRequirement::SourcePlayedFrom { from: zone, is: false }
+}
+/// "**Play this operation.** After it resolves, remove it from the game."
+/// (Petty Cash.) CR 8.6.6d names the pair as ONE construction — the played
+/// card is not trashed at step 8.6.7g, and the nested conditional removes it
+/// from the game instead — so it is one call. Written as two it could not
+/// work at all: 9.1.4 stops an ability acting on a source that changed zones,
+/// and playing the card moves it into the play area.
+pub fn play_this_card_then_remove_it_from_the_game() -> Instruction {
+    Instruction::PlayCard {
+        card: TargetSpec::SelfSource,
+        ignore_costs: false,
+        then_remove_from_game: true,
+    }
 }
 /// "…if the Runner did not initiate any runs during their last turn"
 /// (Subliminal Messaging) — the negative of

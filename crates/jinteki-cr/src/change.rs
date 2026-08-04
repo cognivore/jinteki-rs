@@ -50,6 +50,12 @@ pub enum GameChange {
     /// CR 5.2.5: a player took an action. The identity is what 5.2.5a/b say
     /// makes two actions "the same" or "different".
     ActionTaken { side: Side, action: ActionIdentity },
+    /// CR 5.2.2a/d: the action is COMPLETE — the game may advance past the
+    /// action step that ran it, which 5.2.2a makes the definition and 5.2.2d
+    /// makes the moment an "action finishing" condition is met. Distinct
+    /// from `ActionTaken`, which is 5.2.2's INITIATION: everything an action
+    /// does happens between the two.
+    ActionCompleted { side: Side },
     ClicksLost { side: Side, amount: u32 },
     CardDrawn { side: Side, obj: ObjectId },
     /// One record per point batch: `cards` are the simultaneous random trashes.

@@ -455,6 +455,19 @@ pub enum TriggerRequirement {
     SourceInDeck,
     /// "…anywhere except in Archives" (Archangel).
     SourceNotInDiscard,
+    /// CR 5.2.2a/b: "…if you have **not finished an action** yet this turn"
+    /// (Petty Cash). An action is finished when the game may advance past
+    /// the action step that ran it (5.2.2a), which is where the change log
+    /// records it; the threshold is content (§12 rule 2), so this one atom
+    /// says "not yet" with 0 and any other count with a number.
+    ActionsFinishedThisTurn { side: Side, at_most: u32 },
+    /// CR 8.6.7a: "…if you played this operation **from anywhere except
+    /// HQ**" (Petty Cash) — the zone the card was in when it was placed into
+    /// the play area, asked of the play IN PROGRESS. Both the zone and the
+    /// polarity are content (§12 rule 2): `is: false` is the printed
+    /// "anywhere except". A source that is not being played meets neither
+    /// reading.
+    SourcePlayedFrom { from: Zone, is: bool },
     /// "…**if this card is in Archives**" (Subliminal Messaging) — the
     /// positive twin, and the stipulation 9.1.8b's first sentence reads: an
     /// ability stating that it is active in a particular zone is active in
@@ -670,7 +683,10 @@ impl Cost {
     }
 }
 
-/// CR 9.5.6: effect-based timing restrictions on paid abilities.
+/// CR 9.5.6 + 9.3.3c: restrictions on WHEN and WHERE a paid ability can be
+/// used. 9.5.6's are effect-based (an ability that could break subroutines is
+/// an encounter ability whatever else it says); 9.3.3c's are stated ("Play
+/// this operation **from Archives**").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimingRestriction {
     /// 9.5.6a/c: usable only during an encounter — and, where the ability
@@ -680,6 +696,14 @@ pub enum TimingRestriction {
     /// 9.5.6b: usable only during the Approach Ice Phase, with the
     /// approached ice matching all stipulations used in referring to it.
     ApproachOnly { required_subtype: Option<&'static str>, rezzed: bool },
+    /// 9.3.3c: "Limits on when, WHERE, or how often an ability can be used
+    /// are restrictions." An ability stating the zone it works from — "Play
+    /// this operation **from Archives**" (Petty Cash) — can only be used
+    /// while its source is in that zone. Distinct from 9.1.8b's activity
+    /// question: 9.1.8c already keeps a source-playing ability active while
+    /// its source is inactive, and this is what stops the same ability being
+    /// used from a hand.
+    SourceInZone(Zone),
 }
 
 /// CR 1.13: which side of a hosting relationship a declaration reaches.

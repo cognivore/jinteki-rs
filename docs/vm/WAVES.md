@@ -873,7 +873,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W21 it is **51 cards, 46 complete, 5 partial, 11 printed
+prints the count. At W21 it is **51 cards, 47 complete, 4 partial, 8 printed
 sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -968,6 +968,24 @@ classify will cut someone again.
   Seamless Launch is complete. AstroScript's paid ability still waits on a
   criterion for 1.18.3's "a card you can advance"; Slot Machine's third
   subroutine waits on the reveal-counting its first sentence needs.
+- ~~"If you played this operation from anywhere except HQ" (Petty Cash)~~ —
+  **done, W21**: plays record their ORIGIN the way installs do — 8.6.7a places
+  the card into the play area from somewhere — and
+  `TriggerRequirement::SourcePlayedFrom { from, is }` asks about the play IN
+  PROGRESS rather than about the history, with the zone and the polarity as
+  content.
+- ~~"[click]: Play this operation from Archives. After it resolves, remove it
+  from the game." (Petty Cash)~~ — **done, W21**: CR 8.6.6d names the pair as
+  ONE construction — a playing ability that "also contains the nested
+  conditional ability" does not trash the card at 8.6.7g at all — so it is
+  `Instruction::PlayCard { then_remove_from_game }`. Written as two
+  instructions it could not work: 9.1.4 stops an ability acting on a source
+  that changed zones, and playing the card moves it into the play area.
+  "From Archives" is `TimingRestriction::SourceInZone`, 9.3.3c's "limits on
+  when, WHERE, or how often an ability can be used", checked at every site
+  that offers a paid ability — including the action window, which 5.2.1 is
+  where a [click]-cost ability is offered and which checked no restriction at
+  all before.
 - "shuffle up to N cards from Archives into R&D" (Jackson Howard; Boomerang
   shuffles from the heap into the stack). `MoveToDeck` puts cards on top or
   bottom and does not shuffle.
@@ -1123,7 +1141,15 @@ scan of its instructions.
   - ~~"Play only if the Runner has **at least 2 tags**" (BOOM!)~~ — **done,
     W17d**: `TriggerRequirement::RunnerTagsAtLeast(u32)` replaced
     `RunnerTagged` outright; `RunnerTagsAtLeast(1)` IS "tagged".
-  - "Play only if you have not finished an action yet this turn" (Petty Cash).
+  - ~~"Play only if you have not finished an action yet this turn" (Petty
+    Cash).~~ — **done, W21**: `TriggerRequirement::ActionsFinishedThisTurn`,
+    read from a change the log did not carry. 5.2.2a defines FINISHED — "once
+    an action is initiated, it must be completed before the game can advance
+    to the next step or open another action window" — so the action step
+    reaching its own closing checkpoint IS the action having finished, and
+    `GameChange::ActionCompleted` is recorded there. 5.2.2d agrees: that is
+    the reaction window an "action finishing" condition resolves in, so the
+    record also gives that class of card a real occurrence to meet.
   - Predictive Planogram's "if the Runner is tagged, you may resolve both
     instead" is a different sentence — a requirement on an OPTION, not on the
     play — and is still unsayable.

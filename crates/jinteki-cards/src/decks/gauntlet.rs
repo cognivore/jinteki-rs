@@ -316,9 +316,29 @@ pub fn hard_hitting_news() -> Card {
 ///  [click]: Play this operation from Archives. After it resolves, remove it
 ///  from the game."
 ///
-/// UNIMPLEMENTED: three of the four. No play restriction, no instruction
-/// gains a [click] (`GainAllottedClicks` is the turn-structure step), and no
-/// ability plays its own source out of a discard pile.
+/// COMPLETE. Three rules, one per line.
+///
+/// "Not finished an action yet this turn" is 5.2.2a: an action is finished
+/// once the game may advance past the action step that ran it, which is where
+/// the change log records it. As a 9.1.8c restriction it is read from the
+/// card while the card is inactive — in HQ, and in Archives.
+///
+/// "From anywhere except HQ" is a 9.6.5d requirement in the INSTRUCTIONS,
+/// asked of the play in progress: 8.6.7a places the card into the play area
+/// from somewhere, and that somewhere is what the sentence is about. Played
+/// with the basic action out of HQ it gains nothing; played from Archives by
+/// the third sentence it gains the [click].
+///
+/// The third sentence is CR 8.6.6d in person: an ability that plays a card
+/// and "also contains the nested conditional ability 'After it resolves,
+/// remove it from the game'" does not trash the card at step 8.6.7g at all —
+/// it stays in the play area until the removal. That is why the two printed
+/// sentences are one call: written as two instructions the removal could
+/// never reach the card, because 9.1.4 stops an ability acting on a source
+/// that changed zones and playing it moves it into the play area. "From
+/// Archives" is the ability's 9.3.3c restriction ("limits on when, WHERE, or
+/// how often an ability can be used"), so the same [click] cannot play the
+/// card out of HQ.
 pub fn petty_cash() -> Card {
     card("Petty Cash")
         .corp()
@@ -329,10 +349,16 @@ pub fn petty_cash() -> Card {
         .text("Play only if you have not finished an action yet this turn.")
         .text("Gain 5[credit]. If you played this operation from anywhere except HQ, gain [click].")
         .text("[click]: Play this operation from Archives. After it resolves, remove it from the game.")
-        .play([gain(Corp, 5)])
-        .unimplemented("Play only if you have not finished an action yet this turn.")
-        .unimplemented("If you played this operation from anywhere except HQ, gain [click].")
-        .unimplemented("[click]: Play this operation from Archives. After it resolves, remove it from the game.")
+        .declares([play_only_if(&[no_action_finished_yet_this_turn(Corp)])])
+        .play([
+            gain(Corp, 5),
+            if_met(
+                &[played_from_anywhere_except(Zone::Hand(Corp))],
+                [gain_clicks(Corp, 1)],
+            ),
+        ])
+        .paid_from_discard(clicks(1), [play_this_card_then_remove_it_from_the_game()])
+        .named("play it again from archives")
         .build()
 }
 

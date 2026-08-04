@@ -3159,3 +3159,127 @@ fn subliminal_messaging_comes_back_from_archives_only_after_a_quiet_runner_turn(
         );
     }
 }
+
+/// Petty Cash: "Play only if you have not finished an action yet this turn."
+/// / "Gain 5[credit]. If you played this operation from anywhere except HQ,
+/// gain [click]."
+///
+/// CR 5.2.2a is what "finished" means, so the FIRST action of the turn may
+/// be playing it and the second may not. Played out of HQ it gains no
+/// [click]: the requirement is about where the play placed the card from.
+#[test]
+fn petty_cash_is_a_first_action_only_and_gains_no_click_from_hq() {
+    for spend_first in [false, true] {
+        let mut vm = Vm::empty(602);
+        let pc = vm.new_object(card("Petty Cash"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(pc);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        let corp = if spend_first {
+            Plan::corp().when(Match::action().once(), Reply::credit())
+        } else {
+            Plan::corp()
+        };
+        let t = plan::play(&mut vm, corp.stop_at_action(), Plan::runner());
+        let offered = t
+            .first_window(Kind::Action, Side::Corp)
+            .actions()
+            .iter()
+            .any(|o| matches!(o, jinteki_cr::decision::ActionOption::BasicPlayOperation { card } if *card == pc));
+        assert!(offered, "the first action of the turn may be playing it: {}", t.tail(10));
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action().once(), Reply::play_card(pc)).stop_at_action(),
+            Plan::runner(),
+        );
+        if spend_first {
+            // 9.1.8c: an action was finished first, so the play is not an
+            // option at all and the plan's rule found nothing to take.
+            assert_eq!(vm.st.corp.credits, 6, "1 from the credit action only: {}", t.tail(12));
+            assert_eq!(vm.st.objects[&pc].zone, Zone::Hand(Side::Corp), "still in HQ");
+        } else {
+            assert_eq!(vm.st.corp.credits, 7, "5 − 3 play cost + 5: {}", t.tail(12));
+            assert_eq!(
+                vm.st.corp.clicks, 2,
+                "3 allotted − 1 for the action, and NO [click] for a play from HQ: {}",
+                t.tail(12)
+            );
+            assert_eq!(vm.st.objects[&pc].zone, Zone::Discard(Side::Corp));
+        }
+    }
+}
+
+/// Petty Cash: "[click]: Play this operation from Archives. After it
+/// resolves, remove it from the game."
+///
+/// The whole third line, and the second half of the second: played from
+/// Archives it gains 5[credit] AND the [click] the sentence promises, and CR
+/// 8.6.6d keeps step 8.6.7g from trashing it — it is removed from the game
+/// instead. The replay is a turn later because the card says so: playing it
+/// out of HQ FINISHES an action, and its own restriction then forbids the
+/// second play for the rest of that turn.
+///
+/// 5.2.1: an ability with [click] in its cost is an ACTION, so the offer sits
+/// in the action window — and 9.3.3c keeps it out of that window entirely
+/// while the card is still in HQ.
+#[test]
+fn petty_cash_replays_itself_out_of_archives_and_leaves_the_game() {
+    let mut vm = Vm::empty(603);
+    let pc = vm.new_object(card("Petty Cash"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(pc);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 9;
+    vm.start_turn(Side::Corp);
+
+    // Turn one: play it out of HQ as the first action, then spend the turn.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(pc))
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.ever_offered("play it again from archives"),
+        "9.3.3c: never on offer while the card was in HQ: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.objects[&pc].zone, Zone::Discard(Side::Corp), "{}", t.tail(20));
+
+    // The Runner's turn, then the Corp's next — where the flashback is the
+    // first action, so nothing has been finished yet.
+    plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner().otherwise_click_credit(),
+    );
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's turn came round");
+    let before = vm.st.corp.credits;
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::take("play it again from archives"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&pc].zone,
+        Zone::RemovedFromGame,
+        "8.6.6d: not trashed, removed: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.corp.credits, before - 3 + 5, "the play cost and the gain: {}", t.tail(20));
+    let clicks_gained = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::ClicksGained { side: Side::Corp, amount: 1 }))
+        .count();
+    assert_eq!(clicks_gained, 1, "played from anywhere except HQ: {}", t.tail(20));
+    // 3 allotted − 1 for the [click] ability + 1 gained.
+    assert_eq!(vm.st.corp.clicks, 3, "{}", t.tail(20));
+}

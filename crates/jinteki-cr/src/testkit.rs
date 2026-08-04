@@ -1585,7 +1585,11 @@ pub fn play_event_button(name: &'static str, card: ObjectId) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
-        vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
+        vec![Instruction::PlayCard {
+            card: TargetSpec::Objects(vec![card]),
+            ignore_costs: false,
+            then_remove_from_game: false,
+        }],
     )
     .labeled("play-event: fixed card")];
     c
@@ -1598,7 +1602,11 @@ pub fn play_event_action(name: &'static str, card: ObjectId) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::paid(
         Cost { clicks: 1, ..Cost::default() },
-        vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
+        vec![Instruction::PlayCard {
+            card: TargetSpec::Objects(vec![card]),
+            ignore_costs: false,
+            then_remove_from_game: false,
+        }],
     )
     .labeled("play-event-action: fixed card")];
     c
@@ -1609,7 +1617,11 @@ pub fn play_operation_button(name: &'static str, card: ObjectId) -> PrintedCard 
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
-        vec![Instruction::PlayCard { card: TargetSpec::Objects(vec![card]), ignore_costs: false }],
+        vec![Instruction::PlayCard {
+            card: TargetSpec::Objects(vec![card]),
+            ignore_costs: false,
+            then_remove_from_game: false,
+        }],
     )
     .labeled("play-op: fixed card")];
     c

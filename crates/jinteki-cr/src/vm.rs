@@ -284,6 +284,15 @@ enum FollowOn {
 pub struct PlayProgress {
     pub card: ObjectId,
     pub ignore_costs: bool,
+    /// CR 8.6.7a: the zone the card was placed into the play area FROM. A
+    /// card that talks about where it was played from (Petty Cash) is asking
+    /// about the play in progress, not about the history.
+    pub from: Zone,
+    /// CR 8.6.6d: the ability playing this card also contains the nested
+    /// conditional "After it resolves, remove it from the game." — so step
+    /// 8.6.7g does NOT trash it and it stays in the play area until that
+    /// conditional removes it.
+    pub nested_rfg: bool,
 }
 
 /// An in-progress trace attempt (10.8.6): shared state across the expanded
@@ -1004,6 +1013,26 @@ impl Vm {
                 }
             },
             StepPhase::Checkpoint => {
+                // CR 5.2.2a: "once an action is initiated, it must be
+                // completed before the game can advance to the next step or
+                // open another action window" — so an action window step
+                // reaching its own closing checkpoint IS the action having
+                // finished, and 5.2.2d puts "action finished" conditions in
+                // the reaction window this checkpoint opens. A step that
+                // jumped instead (no clicks left, 5.6.2b's branch) ran no
+                // action and finishes none.
+                if matches!(op, StepOp::BodyOrGoto { body: StepBody::ActionWindow, .. }) {
+                    let jumped = matches!(
+                        self.frames.last(),
+                        Some(Frame::Structure(sf)) if sf.pending_jump.is_some()
+                    );
+                    if !jumped {
+                        cite!("rule_action_completion");
+                        cite!("rule_finish_action_trigger_condition");
+                        self.changes
+                            .record(GameChange::ActionCompleted { side: self.st.turn_side });
+                    }
+                }
                 // …and followed by a checkpoint (9.11.2).
                 cite!("rule_checkpoint_after_instruction_resolution");
                 self.checkpoint_and_react(None);
@@ -6909,7 +6938,9 @@ impl Vm {
 
     /// §8.6: expand a PlayCard into the 8.6.7 step sequence.
     fn expand_play_card(&mut self, instr: Instruction) {
-        let Instruction::PlayCard { card, ignore_costs } = instr else { unreachable!() };
+        let Instruction::PlayCard { card, ignore_costs, then_remove_from_game } = instr else {
+            unreachable!()
+        };
         cite!("rule_playing");
         cite!("sec_steps_playing");
         let (announced, source_obj) = {
@@ -6931,7 +6962,22 @@ impl Vm {
             self.set_ability_phase(AbilityPhase::Checkpoint);
             return;
         };
-        self.plays.push(PlayProgress { card: c, ignore_costs });
+        // CR 9.1.8c: a "Play only if <state>" declaration is a restriction on
+        // playing the card AT ALL, not just with the basic action — an effect
+        // that would play it cannot make an illegal play either (8.6.3 reads
+        // the same permission when it picks candidates).
+        if !self.play_permitted(c) {
+            cite!("rule_active_exception_modify_play_install_rez");
+            self.set_ability_phase(AbilityPhase::Checkpoint);
+            return;
+        }
+        let from = self.st.objects[&c].zone;
+        self.plays.push(PlayProgress {
+            card: c,
+            ignore_costs,
+            from,
+            nested_rfg: then_remove_from_game,
+        });
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.instructions[af.idx] = Instruction::PlayStepPlace;
             af.instructions.insert(af.idx + 1, Instruction::PlayStepPayCost);
@@ -6964,6 +7010,7 @@ impl Vm {
             af.instructions[af.idx] = Instruction::PlayCard {
                 card: TargetSpec::Objects(vec![c]),
                 ignore_costs,
+                then_remove_from_game: false,
             };
             af.instructions.insert(
                 af.idx + 1,
@@ -7159,6 +7206,35 @@ impl Vm {
                 source.and_then(|c| self.st.objects.get(&c)).is_some_and(|o| {
                     !matches!(o.zone, Zone::Discard(_))
                 })
+            }
+            // 5.2.2a: the actions FINISHED this turn — initiated actions the
+            // game has already advanced past. Read from the change log, which
+            // 10.2.1 makes open information, exactly as every other "this
+            // turn" question is.
+            R::ActionsFinishedThisTurn { side, at_most } => {
+                cite!("rule_action_completion");
+                cite!("rule_hidden_or_open_information");
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                    .unwrap_or(0);
+                let n = log[start..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::ActionCompleted { side: s } if s == side))
+                    .count();
+                n <= *at_most as usize
+            }
+            // 8.6.7a: the zone the play in progress placed the card from.
+            // Asked of `plays`, not of the log: "this operation" is the one
+            // being played, and its play ability is what is asking.
+            R::SourcePlayedFrom { from, is } => {
+                cite!("rule_steps_playing_place");
+                let Some(src) = source else { return false };
+                match self.plays.iter().rev().find(|p| p.card == src) {
+                    Some(p) => (p.from == *from) == *is,
+                    None => false,
+                }
             }
             // "…if this card is in Archives" — the stipulation that also
             // keeps the ability active there (9.1.8b's first sentence, read
@@ -7539,7 +7615,7 @@ impl Vm {
                 ignore_costs,
                 ..
             } => Some(FollowOn::Install { dest: *dest, ignore_costs: *ignore_costs }),
-            Instruction::PlayCard { card: TargetSpec::FoundBySearch, ignore_costs } => {
+            Instruction::PlayCard { card: TargetSpec::FoundBySearch, ignore_costs, .. } => {
                 Some(FollowOn::Play { ignore_costs: *ignore_costs })
             }
             _ => None,
@@ -9769,6 +9845,16 @@ impl Vm {
                             Payload::PlayedTrashShield { card: c, until },
                             Duration::UntilResolved,
                         ));
+                    } else if p.nested_rfg {
+                        // 8.6.6d: "if an ability that plays an event or
+                        // operation also contains the nested conditional
+                        // ability 'After it resolves, remove it from the
+                        // game.', the event or operation is not trashed. The
+                        // card remains in the play area until the conditional
+                        // ability removes it from the game." The card is NOT
+                        // trashed here; the removal happens below, once (h)
+                        // has been recorded.
+                        cite!("rule_play_no_trash_if_play_effect_will_rfg");
                     } else {
                         // (g) trash the card.
                         let owner = self.st.objects[&c].owner;
@@ -9781,6 +9867,16 @@ impl Vm {
                 }
                 // (h) conditions related to finishing resolution are met.
                 self.changes.record(GameChange::CardPlayResolved { obj: c });
+                // 8.6.6d's nested conditional, resolved as the play's own
+                // last act. DEVIATION (annotated): the CR has it resolve in
+                // the reaction window this step's checkpoint opens, so a card
+                // able to act on the played operation in that window would
+                // see it already gone. Nothing in either priority deck can.
+                if p.nested_rfg && matches!(self.st.objects[&c].zone, Zone::PlayArea(_)) {
+                    cite!("rule_play_no_trash_if_play_effect_will_rfg");
+                    cite!("sec_removed_from_game");
+                    self.move_card(c, Zone::RemovedFromGame);
+                }
             }
             Instruction::RemoveSelfFromGame => {
                 cite!("rule_play_no_trash_left_play_area");
@@ -10641,6 +10737,12 @@ impl Vm {
                 {
                     continue;
                 }
+                // 9.3.3c: a restriction naming WHERE the ability works from
+                // holds wherever the ability is offered — an action window as
+                // much as a paid window.
+                if !self.use_restriction_ok(o, a) {
+                    continue;
+                }
                 if self.cost_payable(side, o.id, a.cost.as_ref().unwrap()) {
                     out.push(ActionOption::CardAction {
                         ability: AbilityRef { obj: o.id, index: i },
@@ -10666,6 +10768,22 @@ impl Vm {
         }
         v.extend(remotes);
         v
+    }
+
+    /// CR 9.3.3c: "limits on when, WHERE, or how often an ability can be used
+    /// are restrictions". The part of a paid ability's restriction that every
+    /// offering site shares — an action window (5.2.1's [click] abilities) as
+    /// much as a paid window. The 9.5.6 encounter/approach restrictions are
+    /// checked where the paid window builds its options, because they read
+    /// that window's own classes.
+    fn use_restriction_ok(&self, o: &Object, a: &AbilityDef) -> bool {
+        match a.timing {
+            Some(crate::ability::TimingRestriction::SourceInZone(z)) => {
+                cite!("rule_use_restriction");
+                o.zone == z
+            }
+            _ => true,
+        }
     }
 
     /// CR 9.5.6a: "A paid ability that contains an instruction that could
@@ -10746,6 +10864,14 @@ impl Vm {
                             if !eff.subtypes.contains(sub) {
                                 continue;
                             }
+                        }
+                    }
+                    // 9.3.3c: an ability stating WHERE it works from is
+                    // usable only from there ("play this operation from
+                    // Archives").
+                    Some(crate::ability::TimingRestriction::SourceInZone(_)) => {
+                        if !self.use_restriction_ok(o, a) {
+                            continue;
                         }
                     }
                     None => {}
@@ -13284,6 +13410,7 @@ impl Vm {
                     vec![Instruction::PlayCard {
                         card: TargetSpec::Objects(vec![card]),
                         ignore_costs: false,
+                        then_remove_from_game: false,
                     }],
                     None,
                     None,

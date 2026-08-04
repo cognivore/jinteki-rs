@@ -656,7 +656,19 @@ pub enum Instruction {
     InstallRezFinish,
     /// §8.6: play one event/operation. Expanded by the resolution loop into
     /// the 8.6.7 step sequence.
-    PlayCard { card: TargetSpec, ignore_costs: bool },
+    ///
+    /// `then_remove_from_game` is CR 8.6.6d — "if an ability that plays an
+    /// event or operation ALSO CONTAINS the nested conditional ability
+    /// 'After it resolves, remove it from the game.', the event or operation
+    /// is not trashed. The card remains in the play area until the
+    /// conditional ability removes it from the game." The rule describes the
+    /// pair as one construction, and its whole content is a change to what
+    /// step 8.6.7g does to the played card, so it rides here as content
+    /// rather than as an instruction of its own: written as a second
+    /// instruction it could not work at all, because 9.1.4 stops an ability
+    /// acting on a source that changed zones and the play moves the card
+    /// into the play area.
+    PlayCard { card: TargetSpec, ignore_costs: bool, then_remove_from_game: bool },
     /// 8.6.3: an effect playing more than one card — chosen and played one
     /// at a time, each as a separate instruction (9.11.4b).
     PlayCards { count: u32, from_hand_of: Side, ignore_costs: bool },
