@@ -6,7 +6,7 @@
 //! Games ride one WebSocket per session (JSON text frames with a `type`
 //! field); auth and decks ride plain HTTP JSON under /api/*.
 
-use jinteki_server::{api, auth, bridge, db, decks, guard, lobby, local, mail};
+use jinteki_server::{api, auth, bridge, db, decks, guard, lobby, local, mail, transcript};
 
 use axum::{
     extract::ws::WebSocketUpgrade,
@@ -59,6 +59,14 @@ async fn main() {
     let db_path = data_dir.join("jinteki.db");
     let db = Arc::new(db::Db::open(&db_path).expect("open jinteki.db"));
     tracing::info!("database at {}", db_path.display());
+    // Per-game debug transcripts, beside the database. OFF unless a process
+    // asks for them, which is why this call lives in the binary and not in
+    // the library: the test suite never writes one. They are never served —
+    // no route reads this directory (see `transcript`).
+    match transcript::configure(&data_dir) {
+        Some(dir) => tracing::info!("game transcripts at {}", dir.display()),
+        None => tracing::warn!("game transcripts disabled"),
+    }
     {
         let conn = db.lock().await;
         auth::ensure_system_user(&conn).expect("system user");

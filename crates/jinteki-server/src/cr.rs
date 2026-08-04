@@ -484,6 +484,9 @@ pub struct CrGame {
     /// kernel's change buffer is the authoritative event stream; this is the
     /// cursor that turns it into two readable ones (`crlog`).
     narrated: usize,
+    /// The operator's unfiltered copy (`transcript`) — off unless the process
+    /// configured a data dir, and never served to anyone.
+    transcript: crate::transcript::Transcript,
     result: Option<GameResult>,
     conceded: Option<Side>,
     last_seen: Instant,
@@ -562,6 +565,7 @@ impl CrGame {
         }
         let mut lines: Vec<(Side, String)> = Vec::new();
         for c in &self.vm.changes.log[self.narrated..upto] {
+            self.transcript.change(c);
             for viewer in [Side::Corp, Side::Runner] {
                 if let Some(l) = crate::crlog::narrate(&self.vm, c, viewer) {
                     lines.push((viewer, l));
@@ -641,15 +645,31 @@ fn greeting(g: &CrGame, side: Side) -> String {
 
 fn new_game(setup: GameSetup, seats: [SeatState; 2], bot_delay_ms: u64) -> CrGame {
     let seed = setup.seed;
+    let key = new_token();
+    // The opening record carries what the game was BUILT from, so the
+    // transcript replays: the seed, the seats, and both deck lists.
+    let mut transcript = crate::transcript::Transcript::open(&key);
+    transcript.started(
+        seed,
+        &seats[six(Side::Corp)].name,
+        &seats[six(Side::Runner)].name,
+        json!({
+            "corp_identity": setup.corp_identity.as_ref().map(|c| c.name),
+            "runner_identity": setup.runner_identity.as_ref().map(|c| c.name),
+            "corp_deck": setup.corp_deck.iter().map(|c| c.name).collect::<Vec<_>>(),
+            "runner_deck": setup.runner_deck.iter().map(|c| c.name).collect::<Vec<_>>(),
+        }),
+    );
     let mut g = CrGame {
         vm: Vm::new_game(setup),
         seats,
-        key: new_token(),
+        key,
         seed,
         pending: None,
         picked: Vec::new(),
         log: [Vec::new(), Vec::new()],
         narrated: 0,
+        transcript,
         result: None,
         conceded: None,
         last_seen: Instant::now(),
@@ -921,19 +941,24 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
                 g.result = Some(r);
                 let (w, why) = outcome(g);
                 g.say(format!("Game over — {} wins ({}).", w, why));
+                g.transcript.note(&format!("game over: {w} wins ({why})"));
+                g.transcript.flush();
                 return;
             }
             Yield::Decision(side, spec) => {
                 g.narrate();
+                g.transcript.decision(side, &spec);
                 if !g.seats[six(side)].bot {
                     let p = present(&g.vm, side, &spec);
                     g.picked.clear();
                     g.pending = Some(p);
+                    g.transcript.flush();
                     return;
                 }
                 let answer = default_answer(&spec);
                 let noteworthy = describe_move(g, &spec, &answer, side);
                 let worth_a_frame = noteworthy.iter().any(|l| l.is_some());
+                g.transcript.answer(side, "bot", &answer);
                 g.vm.answer(answer);
                 if worth_a_frame {
                     g.say_each(noteworthy);
@@ -949,6 +974,8 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
         }
     }
     g.say("The engine ran 20000 steps without asking anyone anything — stopping.");
+    g.transcript.note("the engine ran 20000 steps without asking anyone anything");
+    g.transcript.flush();
 }
 
 /// What a player just did, rendered ONCE PER VIEWER from that viewer's own
@@ -1015,6 +1042,8 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
         g.pending = None;
         let who = side_name(actor);
         g.say(format!("{who}: concedes."));
+        g.transcript.note(&format!("{who} conceded"));
+        g.transcript.flush();
         return Ok(true);
     }
     if g.over() {
@@ -1122,6 +1151,8 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
 }
 
 fn answer_now(g: &mut CrGame, a: DecisionAnswer) -> bool {
+    let side = g.pending.as_ref().map(|p| p.side).unwrap_or(g.vm.st.turn_side);
+    g.transcript.answer(side, "human", &a);
     g.pending = None;
     g.picked.clear();
     g.vm.answer(a);
