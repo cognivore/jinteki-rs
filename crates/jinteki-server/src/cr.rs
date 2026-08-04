@@ -1267,6 +1267,16 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
         }
         g.picked.push(id);
         let (count, kind) = (sel.count, sel.kind);
+        // 5.5.4c is IRREVERSIBLE and it is the one decision a player makes
+        // while they are out of clicks and thinking about next turn. So a
+        // discard STAGES: the cards are marked, nothing has happened yet, and
+        // a separate confirmation is what actually throws them away. Every
+        // other select still fires on its last pick — those are announcements
+        // (1.15.2), and an announcement the player is still assembling has no
+        // effect to take back.
+        if kind == SelectKind::Discard {
+            return Ok(false);
+        }
         if g.picked.len() as u32 >= count {
             let picks = std::mem::take(&mut g.picked);
             let answer = match kind {
@@ -1276,6 +1286,28 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
             };
             return Ok(answer_now(g, answer));
         }
+        return Ok(false);
+    }
+
+    // The second half of a staged discard: the player has looked at what
+    // they marked and said yes. Refused unless the set is exactly the size
+    // 5.5.4c asks for, so the button can never commit a half-answer.
+    if cmd == "select-confirm" {
+        let sel = p.select.as_ref().ok_or("nothing to select right now")?;
+        if sel.kind != SelectKind::Discard {
+            return Err("that choice is not staged".into());
+        }
+        if g.picked.len() as u32 != sel.count {
+            return Err("that is not the number of cards being discarded".into());
+        }
+        let picks = std::mem::take(&mut g.picked);
+        return Ok(answer_now(g, DecisionAnswer::Discard(picks)));
+    }
+
+    // …and the way back out of it: unstage everything and start again.
+    if cmd == "select-clear" {
+        p.select.as_ref().ok_or("nothing to select right now")?;
+        g.picked.clear();
         return Ok(false);
     }
 
@@ -1505,10 +1537,12 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             }
         }
         DecisionSpec::DiscardCards { count, hand } => {
+            // Two phases, and the sentence says which one you are in — the
+            // client appends the confirmation. Nothing is discarded until the
+            // set is complete AND confirmed (5.5.4c is irreversible).
             p.msg = format!(
-                "Discard {count} card{} down to your maximum hand size (5.5.4c).{}",
+                "Choose {count} card{} to discard down to your maximum hand size (5.5.4c).",
                 if *count == 1 { "" } else { "s" },
-                if *count == 1 { "" } else { " Tap the cards." }
             );
             p.select = Some(Select {
                 candidates: hand.clone(),
@@ -2273,6 +2307,20 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             "select-done".into(),
             json!(s.up_to && g.picked.len() as u32 >= s.min),
         );
+        m.insert(
+            "select-kind".into(),
+            json!(match s.kind {
+                SelectKind::Targets => "targets",
+                SelectKind::Discard => "discard",
+                SelectKind::Candidate => "candidate",
+            }),
+        );
+        // Staged, complete, and waiting to be confirmed — the second phase of
+        // an irreversible choice.
+        m.insert(
+            "select-confirm".into(),
+            json!(s.kind == SelectKind::Discard && g.picked.len() as u32 == s.count),
+        );
     }
     // CR 8.3.3: the cards being arranged, in their current order, as CARDS —
     // the player is choosing an order and cannot do that from titles alone.
@@ -2934,6 +2982,98 @@ mod tests {
         }
         let out = state_json(&g, Side::Runner);
         assert_eq!(out["accessed"].as_array().expect("reveals").len(), ACCESS_REVEALS);
+    }
+
+    /// 5.5.4c is irreversible, so it is STAGED and then confirmed — MTG
+    /// Arena's discard, for MTG Arena's reason. The bug this forecloses is
+    /// the expensive one: a single tap on a 16px strip of a card, taken with
+    /// no clicks left, that bins a card the player never meant to touch.
+    ///
+    /// Driven to a REAL discard decision rather than a fabricated one: the
+    /// point of the change is that the commit path still commits, and a
+    /// stubbed `pending` would test the flags and nothing else.
+    #[test]
+    fn a_discard_is_staged_and_only_a_confirmation_throws_the_cards_away() {
+        let setup = eternal_setup(7).expect("a complete pair of decks is a game");
+        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0);
+        let mut hand = Vec::new();
+        for _ in 0..200_000 {
+            match g.vm.step() {
+                Yield::Decision(side, spec) => {
+                    if let (Side::Runner, DecisionSpec::DiscardCards { count, hand: h }) =
+                        (side, &spec)
+                    {
+                        assert!(*count >= 2, "5.5.4c with at least two to lose: {count}");
+                        hand = h.clone();
+                        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+                        break;
+                    }
+                    g.vm.answer(default_answer(&spec));
+                }
+                Yield::GameOver(_) => break,
+                Yield::Progressed => {}
+            }
+        }
+        assert!(!hand.is_empty(), "the Runner reached a discard phase");
+        let count = match &g.pending.as_ref().unwrap().spec {
+            DecisionSpec::DiscardCards { count, .. } => *count,
+            _ => unreachable!(),
+        };
+        let before = g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len();
+        let sel = |g: &mut CrGame, c: ObjectId| {
+            apply_command(g, Side::Runner, &json!({"command":"select","args":{"cid": c.0}}))
+        };
+        for c in hand.iter().take(count as usize) {
+            assert_eq!(sel(&mut g, *c), Ok(false), "marked, not spent");
+        }
+        // The whole set is marked, and STILL nothing has happened.
+        assert!(g.pending.is_some(), "the decision is still on the table");
+        assert_eq!(
+            g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len(),
+            before,
+            "nothing has left the grip"
+        );
+        let view = g.vm.view_of(Side::Runner);
+        let out = prompt_json(&g, &view, Side::Runner);
+        assert_eq!(out["select-kind"], json!("discard"));
+        assert_eq!(out["select-confirm"], json!(true), "the sheet may be confirmed");
+        assert_eq!(
+            out["select-picked"].as_array().map(|a| a.len()),
+            Some(count as usize),
+            "and says which cards are in white"
+        );
+
+        // Tapping a marked card puts it back, and the confirmation withdraws.
+        assert_eq!(sel(&mut g, hand[0]), Ok(false), "unmarked");
+        let view = g.vm.view_of(Side::Runner);
+        assert_eq!(prompt_json(&g, &view, Side::Runner)["select-confirm"], json!(false));
+        assert!(
+            apply_command(&mut g, Side::Runner, &json!({"command":"select-confirm","args":{}}))
+                .is_err(),
+            "a half-answer cannot be confirmed"
+        );
+        // …and "start over" is a real way back out.
+        assert_eq!(
+            apply_command(&mut g, Side::Runner, &json!({"command":"select-clear","args":{}})),
+            Ok(false)
+        );
+        assert!(g.picked.is_empty(), "nothing staged");
+
+        for c in hand.iter().take(count as usize) {
+            assert_eq!(sel(&mut g, *c), Ok(false));
+        }
+        assert_eq!(
+            apply_command(&mut g, Side::Runner, &json!({"command":"select-confirm","args":{}})),
+            Ok(true),
+            "and now it happens"
+        );
+        assert!(g.pending.is_none(), "the decision was answered");
+        g.vm.step();
+        assert_eq!(
+            g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len(),
+            before - count as usize,
+            "the cards are gone, and only now"
+        );
     }
 
     /// Every choice that is about a card carries the card. The audit that

@@ -27,16 +27,19 @@ conflict.
    to use — not a button naming it. A legal target is a GOLD outline
    (`.selectable`). Two different questions, two colours, never merged.
 
-   A third colour answers a third question. WHITE (`.priority`) on an
-   identity means **the game is waiting on that seat** — continuously,
-   including while they are only choosing an action on their own turn.
-   Gold and green say *what you may do*; white says *whose word it is*, so
-   it lives on the identities and nowhere else, and it is a hueless white
-   that neither amber nor acid green can be confused with. Both identities
-   are drawn: the seat rails carry an `.idchip` in every layout, and the
-   identity card column exists only where the screen is tall enough
-   (`.identity-col` is hidden under 640px), so the chip is the copy that
-   must always carry the signal.
+   A third colour answers a third question. Gold and green say *what you
+   may do*; WHITE says *what the game is waiting on you for*, and it is
+   never an affordance. It lands in two places and means one thing:
+
+   * `.priority` on an identity — **that seat owes the next word**,
+     continuously, including while they are only choosing an action on
+     their own turn. Both identities are drawn, but the identity card
+     column exists only where the screen is tall enough (`.identity-col`
+     is hidden under 640px), so the seat rail's `.idchip` is the copy that
+     must always carry it.
+   * `.staged` on a card — **marked by you, not yet done**. See §8.
+
+   A hueless white, so neither amber nor acid green can be confused with it.
 
    The corollary: a prompt may only fall silent about a card **because the
    board is already showing it**. That test is the server's `on_screen`, one
@@ -68,7 +71,27 @@ conflict.
    not appear is indistinguishable from a bug, and players reported exactly
    that about Mutual Favor.
 
-7. **What a rule entitles you to see, you are SHOWN.** CR 7.1.2 lets the
+7. **An irreversible choice is staged, then confirmed.** MTG Arena's
+   discard, and for MTG Arena's reason: 5.5.4c cannot be taken back, and it
+   is the one decision a player makes with no clicks left and their mind
+   already on next turn. So the taps MARK cards (white, `.staged`), the
+   sentence changes to name what is about to happen, and a separate button
+   does it. Every other card choice is an *announcement* (CR 1.15.2) with
+   nothing yet to undo, and those still commit on the last pick — staging
+   everything would be ceremony, staging nothing was a trap.
+
+8. **In a fan, the first tap focuses and the second acts.** A bounded fan
+   shows nine cards in the width five used to, so a resting card is a 16px
+   strip and a strip is far below the 48px a tap target has to be. The first
+   tap brings a card to focus, where it is 78px wide and lifted clear of its
+   neighbours; the second tap is the one that plays, marks or picks it. On a
+   pointer device the focus simply follows the mouse (MTGA), so the two taps
+   are only ever two on touch. Cards outside the window are reached by the
+   rail, by the peeks, by a swipe that scrubs the window — the frame stays
+   put and the cards flow THROUGH it, never sliding the hand off the table —
+   or, on a pointer, by hovering the fan's outer edge.
+
+9. **What a rule entitles you to see, you are SHOWN.** CR 7.1.2 lets the
    Runner look at a card they are accessing; most accesses ask them nothing,
    so for most accesses the card existed only as a line in the log drawer.
    An entitlement discharged into a log is not discharged. The card is
