@@ -5,7 +5,7 @@
 //! (9.11.2: each step in a timing structure forms a single instruction).
 //! Every variant resolves to real state mutation — no silent no-ops.
 
-use crate::effects::DamageKind;
+use crate::effects::{DamageKind, EffectClass};
 use crate::object::{CardType, ObjectId, ServerId, Side, Zone};
 
 /// The ONE selector language for quantity positions (ARCHITECTURE §12
@@ -75,6 +75,19 @@ pub enum Quantity {
     /// named player's credit POOL, which 1.13.3 keeps distinct from any
     /// credits hosted on cards.
     CreditsInPoolOf(Side),
+    /// CR 9.9.6: "the number of cards you would draw" (The Class Act) — the
+    /// modifiable value the IMMINENT instruction currently expects for
+    /// effects of this class, read by an ability resolving in the interrupt
+    /// window that imminence opened. The class is content (§12 rule 2), so
+    /// one selector says every "…you would <verb>" quantity a card prints,
+    /// and it reads the same values [`crate::effects::EffectAtom`] carries
+    /// for prevention and modification.
+    ///
+    /// 9.9.7a/b: the value is read as it now STANDS, so an earlier interrupt
+    /// that already decreased or removed it is seen. Outside an imminence
+    /// there is no such value at all and this is 0 — the same treatment
+    /// 1.16.2d gives an X outside the payment of its cost.
+    ImminentValueOf(EffectClass),
 }
 
 impl Default for Quantity {
@@ -1016,8 +1029,11 @@ pub enum TargetSpec {
     /// counters on this card" (Aggressive Secretary class) is a selector.
     /// CR 1.15.2e caps it at the number of distinct valid targets available.
     Choose { count: Quantity, criteria: Vec<TargetFilter>, up_to: bool },
-    /// The top N cards of a deck (Breached Dome-style).
-    TopOfDeck(Side, u32),
+    /// The top N cards of a deck (Breached Dome-style). `count` is a quantity
+    /// POSITION (§12 rule 6): "the top card of the stack" is a constant, and
+    /// "the top X cards of your stack, where X is the number of cards you
+    /// would draw plus 1" (The Class Act) is a selector.
+    TopOfDeck { side: Side, count: Quantity },
     /// CR 8.7.4: the cards found by this ability's search, still set aside
     /// facedown (4.8.4). This is how an install/play/add-to-hand instruction
     /// refers to them without a per-card hook.

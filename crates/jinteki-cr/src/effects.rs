@@ -152,26 +152,32 @@ pub enum WouldScope {
 
 /// Per-period counters of *imminences* (not resolutions): "the first time you
 /// would X" counts the times X became imminent (9.9.5a — Tori Hanzō).
+///
+/// The count is per PLAYER as well as per class, because the sentences are:
+/// "the first time each turn YOU would draw" (The Class Act) asks about the
+/// player the effect is on, and every atom already names them. For the
+/// classes that only ever affect one player — damage and tags are always the
+/// Runner's — this changes nothing.
 #[derive(Debug, Clone, Default)]
 pub struct WouldCounters {
-    counts: std::collections::HashMap<(WouldScope, EffectClass), u32>,
+    counts: std::collections::HashMap<(WouldScope, EffectClass, Side), u32>,
 }
 
 impl WouldCounters {
-    /// Bump when an atom of this class becomes imminent; returns the ordinal
-    /// (1-based) of this imminence within each scope.
-    pub fn bump(&mut self, class: EffectClass) {
+    /// Bump when an atom of this class becomes imminent for this player;
+    /// returns the ordinal (1-based) of this imminence within each scope.
+    pub fn bump(&mut self, class: EffectClass, side: Side) {
         cite!("rule_ordinal_would");
         for scope in [WouldScope::Turn, WouldScope::Run] {
-            *self.counts.entry((scope, class)).or_insert(0) += 1;
+            *self.counts.entry((scope, class, side)).or_insert(0) += 1;
         }
     }
 
-    pub fn count(&self, scope: WouldScope, class: EffectClass) -> u32 {
-        *self.counts.get(&(scope, class)).unwrap_or(&0)
+    pub fn count(&self, scope: WouldScope, class: EffectClass, side: Side) -> u32 {
+        *self.counts.get(&(scope, class, side)).unwrap_or(&0)
     }
 
     pub fn reset_scope(&mut self, scope: WouldScope) {
-        self.counts.retain(|(s, _), _| *s != scope);
+        self.counts.retain(|(s, _, _), _| *s != scope);
     }
 }

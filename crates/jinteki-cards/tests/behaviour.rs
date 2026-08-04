@@ -2182,3 +2182,114 @@ fn gold_farmer_taxes_each_broken_subroutine() {
         t.tail(20)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Wave 7 — the interrupt that reads the draw
+// ---------------------------------------------------------------------------
+
+/// The Class Act's first sentence: installed this turn, so when the discard
+/// phase of that very turn ends, 4 cards come off the stack. The card is
+/// installed with the basic action, because "you installed this resource this
+/// turn" is a question about the game history and nothing else answers it.
+#[test]
+fn the_class_act_settles_in_and_draws_four() {
+    let mut vm = Vm::empty(4700);
+    let tca = vm.new_object(card("The Class Act"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(tca);
+    tk::fill_deck(&mut vm, Side::Runner, 12);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let stack_before = vm.st.deck[&Side::Runner].len();
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(tca)))
+            // Spend the rest of the turn on nothing, so the discard phase is
+            // reached with a grip small enough to need no discarding.
+            .when(Match::action(), Reply::Take(Pick::Credit)),
+    );
+
+    assert_eq!(vm.st.objects[&tca].zone, Zone::Rig, "installed this turn: {}", t.tail(20));
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        4,
+        "4 cards drawn when the discard phase ended: {}",
+        t.tail(20)
+    );
+    // The interrupt fires on that same draw (it is the turn's first), so the
+    // stack loses X = 5 off the top and takes 1 back at the bottom.
+    assert_eq!(
+        vm.st.deck[&Side::Runner].len(),
+        stack_before - 4,
+        "and the stack is 4 shorter: {}",
+        t.tail(20)
+    );
+}
+
+/// The Class Act's interrupt: X is the number of cards you WOULD draw plus 1,
+/// so a basic draw of 1 looks exactly 2 deep — never 1, never 3 — and the
+/// looked-at card the Runner picks goes under the stack before the draw takes
+/// what is left on top.
+#[test]
+fn the_class_act_reads_one_card_deeper_than_the_draw() {
+    let mut vm = Vm::empty(4701);
+    tk::install_rig(&mut vm, card("The Class Act"));
+    let stack: Vec<_> = ["Stack-1", "Stack-2", "Stack-3", "Stack-4"]
+        .into_iter()
+        .map(|n| {
+            let id = vm.new_object(tk::vanilla_runner_card(n, CardType::Event), Zone::Deck(Side::Runner));
+            vm.st.deck.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        })
+        .collect();
+    let (first, second, third) = (stack[0], stack[1], stack[2]);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Draw))
+            .when(Match::targets().once(), Reply::target(first))
+            // 9.3.6g's "first time each turn": the second draw of the turn
+            // opens no window of ours at all.
+            .when(Match::action().once(), Reply::Take(Pick::Draw))
+            .when(Match::action(), Reply::Take(Pick::Credit)),
+    );
+
+    let looked: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CardLookedAt { obj, .. } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    // Two looks and no more: X = 1 card drawn + 1, so the third card was
+    // never seen; the Runner's SECOND draw of the turn opened no window; and
+    // the Corp's mandatory draw — which the plan runs past, halting at their
+    // action window — is not a draw of "yours" at all.
+    assert_eq!(
+        looked,
+        vec![first, second],
+        "exactly two cards looked at, once, on the Runner's first draw: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        *vm.st.deck[&Side::Runner].last().unwrap(),
+        first,
+        "the chosen one went to the BOTTOM of the stack: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner],
+        vec![second, third],
+        "and both draws took what was left on top: {}",
+        t.tail(24)
+    );
+}

@@ -6,15 +6,15 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W18a)
+## Odometers (after W18b)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 860/1420** distinct rules cited (60.6%); traceability test fails
+- **DP-7b: 861/1420** distinct rules cited (60.6%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **Priority decks: 41/50 cards complete**, 17 printed sentences still
+- **Priority decks: 42/50 cards complete**, 15 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
   ratcheted by `the_gap_list_is_measurable_and_honest`)
 - **DP-7c: 68/3717** reference tests ported and passing
@@ -80,6 +80,7 @@ prefer a slightly larger honest primitive and note it here.
 
 | commit | wave | delivered | DP-7a |
 |---|---|---|---|
+| `-` | W18b | **the interrupt that reads the draw — The Class Act; 41 → 42/50.** **BREAKING: `TargetSpec::TopOfDeck(Side, u32)` → `TopOfDeck { side, count: Quantity }`** (§12 rule 6), **`TriggerCond::DiscardPhaseEnds.side` → `Option<Side>`**, **`TriggerCond::WouldDraw` grows `by: Option<Side>`**. **`Quantity::ImminentValueOf(EffectClass)`** is 9.9.6's modifiable value as a selector — "X is equal to the number of cards you would draw plus 1" reads the value of the very instruction the interrupt window was opened over, as it now STANDS (9.9.7a/b, so an earlier interrupt's modification is seen), and 0 outside an imminence, the treatment 1.16.2d gives an X outside its payment. `Vm::imminent_damage_value` is now one call to the same `imminent_value_of`, so prevention and this selector cannot disagree about what a modifiable value is. **Defect fixed: the basic draw action was not a draw instruction at all** — `ActionOption::BasicDraw` called `draw_cards` straight, so 5.2.6c/5.2.7c's draw never became imminent: no interrupt window, and no 8.4.2 ability could act on the commonest draw in the game. It now runs the §8.4 procedure in a rules ability frame, the shape the basic play/install/advance actions already used. **Defect fixed: 9.9.5a's ordinal counted both players together** — "the first time each turn YOU would draw" was spent by the Corp's mandatory draw, so a Runner card fired on the wrong turn and then not on its own; `WouldCounters` is keyed by the atom's side as well as its class (a no-op for damage and tags, which only ever name the Runner). **Whose discard phase is content** (§12 rule 2): 5.5.4's condition takes `None` for a sentence naming no player ("when A discard phase ends" — The Class Act, Breaking News) and `Some(s)` for one that does ("when YOUR discard phase ends" — Citadel Sanctuary); Breaking News had been reading the Corp's, which its "this turn" requirement made harmless and inexact. `.interrupt(…)` on the card builder is MANDATORY now, as "[interrupt] → …" with no "you may" is, with `.may_interrupt(…)` for the other wording | 243 |
 | `-` | W18a | **the current class, said whole — Employee Strike; 40 → 41/50.** **BREAKING: `StaticDecl::PlayedNotTrashedUntilAgendaSteal` → `PlayedNotTrashedUntil { until: Vec<TriggerCond> }`.** CR 3.5.1b and 3.7.1b print the same sentence with one word different — a current OPERATION is not trashed until another current is played or the Runner STEALS an agenda, a current EVENT until another current is played or the Corp SCORES one — so the ending occurrences are content on one declaration (§12 rule 2), stated in the vocabulary that already names occurrences. **Gap closed, not just widened: "another current is played" was never implemented at all**, so Targeted Marketing's whole first sentence was riding on the steal half; the shield now expires through the same `trigger_matches` a conditional's condition goes through, with the shielded card as the source. **`TriggerCond::CardPlayed` grows the rest of its stipulations** — `by: Option<Side>` (`None` is a sentence naming no player), `of_subtypes` (2.16, read through the 9.12.1b pipeline, so a list is a conjunction where the type list is a disjunction) and `other_than_source`, the word "another", the same reading `TargetFilter::OtherThanSource` gives "other". **`TargetFilter::ControlledBy(Side)`** is 1.14.2's controller: "the Corp's identity" needs a side-scoped criterion that does NOT require the card to be installed, since an identity never is — and that is exactly why it leaves the Runner's identity alone. Employee Strike's second sentence is then 9.1.9a with nothing left over: `Effective::ability_present` is a mask over `printed.abilities`, so removing all of them removes exactly the PRINTED ones the card names | 243 |
 | `93fceec` | W17d | **DP-7c sub-wave 12 — the coordinator's gap requests, and the `Combined` defect.** **Defect: `Instruction::Combined` silently dropped STRUCTURAL sub-instructions.** `Combined` exists because the CR forces it (Snare!'s "3 net damage and 1 tag" is ONE instruction, so one interrupt window sees both) and works by MERGING the sub-instructions' expected atoms — a sub-instruction whose expected effect is structural carries no value to merge and resolved as nothing (Earthrise Hotel removed no counter). Those are 9.11.3's separate instructions and are now spliced in after the merged one (DEVIATION, annotated: a spliced sub-instruction resolves after every merged one, so printed order is not preserved between the two kinds). **`TriggerRequirement::RunnerTagsAtLeast(u32)`** replaces `RunnerTagged` — the threshold is content (§12 rule 2), so BOOM!'s "at least 2 tags" is sayable and `RunnerTagsAtLeast(1)` IS "tagged". **`TriggerCond::DiscardPhaseEnds { side, requires }`** — 5.5.4's condition can now carry a 9.6.5c state requirement (Citadel Sanctuary needs no new predicate, only this field). **`TriggerCond::RunnerAccessesCard { of_types }`** — a card-type stipulation, mirroring `CorpRezzesCard` (Film Critic's "whenever you access an agenda"); `trigger_matches` takes the printed type through a lookup closure. **`TargetFilter::CanBeAdvanced`** — 1.18.3's permission as a criterion, derived from the SAME `Vm::advanceable_cards` the basic advance action reads, so criterion and action cannot disagree | 243 |
 | `5e3004f` | W17c | **DP-7c sub-wave 11 — BREAKING: quantity positions on `ModifyStrength.amount` and `LoseCredits`.** Both signature changes in ONE commit so the card layer takes one break: `LoseCredits(Side, u32)` → `LoseCredits(Side, Quantity)` and `ModifyStrength { amount: i32 }` → `{ amount: Quantity }`. `Quantity::CreditsInPoolOf(Side)` (1.10.2 — the credit POOL, which 1.13.3 keeps distinct from credits hosted on cards) is Closed Accounts' "loses all credits in their credit pool"; `Quantity::AnnouncedX` in a strength modification is Corporate Troubleshooter's and Paperclip's "+X strength". `crates/jinteki-cards/src/edsl.rs`'s two-helper compile fix (the cards agent's) is committed in the same atomic break. **Defect fixed: 1.16.2c keyed the X announcement on the wrong thing** — "some costs CONTAIN the variable X", but the kernel asked only when the ability also stated a RESTRICTION, so a cost of plain X silently announced 0. The announcement is now owed by the cost's SHAPE (`Quantity::mentions_announced_x`) and `Vm::x_bound` is the bound: the stated restriction where there is one, and in every case what 1.16.1c leaves. **Defect fixed: `ModifyStrength` never announced its target** (same class as W14b's `MoveToDeck`, W17b's `PlaceCounters`) — 1.15.1/9.11.4c make the ice the target of "choose 1 rezzed piece of ice … that ice gets +X strength". Cards: Closed Accounts, Corporate Troubleshooter, Quandary. Ported: `closed-accounts`, `corporate-troubleshooter` | 243 |
@@ -642,12 +643,16 @@ chance of passing).**
     sighting of the returned cards (8.3.3 + 4.2.3, they placed them) and
     8.3.3a keeps the opponent out.
 66. **The draw procedure is expanded only for `Instruction::Draw`** (W14b) —
-    the mandatory draw (5.6.1) and the basic draw action (5.2.6c/5.2.7c) still
-    call `draw_cards` synchronously, so a Daily-Business-Show-class ability
-    does not see THEIR drawn cards set aside. Routing them through a rules
-    ability frame resolving `Instruction::Draw` is the fix (W13e's
-    `BasicPlayOperation` is the pattern); no example needs it, and every test
-    that starts a Corp turn would be re-timed by it.
+    HALF CLOSED, W18b. The basic draw action (5.2.6c/5.2.7c) now resolves
+    `Instruction::Draw` in a rules ability frame and gets the whole 8.4.5
+    procedure; it had been calling `draw_cards` synchronously, so its draw
+    never became imminent at all and The Class Act could not see the
+    commonest draw in the game. The MANDATORY draw (5.6.1) is still
+    `Instruction::MandatoryDraw` resolving `draw_cards` directly: it DOES
+    carry a Draw atom, so it becomes imminent and a "would draw" interrupt
+    reaches it, but the cards are never set aside and a
+    Daily-Business-Show-class ability does not see THEM. Same fix, same
+    pattern; every test that starts a Corp turn would be re-timed by it.
 67. **6.8.2b's "opened due to a phase beginning" is read as the 9.2.8f
     binding** (W14d) — `WindowFrame::originating_structure` is set for any
     reaction window opened during an encounter and `None` otherwise, so a
@@ -847,8 +852,8 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 - ~~the basic INSTALL action (5.2.6d/5.2.7d) and the basic ADVANCE action
   (5.2.6f)~~ — **done, W15a**, along with the trash-resource and purge actions
   and 1.18.3's "you can advance" permission (deviation 36 closed).
-- routing the mandatory draw and the basic draw action through
-  `Instruction::Draw` so they get the 8.4.5 procedure (deviation 66).
+- routing the mandatory draw through `Instruction::Draw` so it gets the 8.4.5
+  procedure (deviation 66; the basic draw action was done in W18b).
 - ~~"Run any server" as a chosen `InitiateRun.server` (6.7.4a)~~ — **done,
   W16b**: `server: Option<ServerId>` plus 6.9.1a's announcement as a real
   decision (`DecisionSpec::DeclareAttackedServer`, `plan::Reply::Server`).
@@ -954,7 +959,10 @@ classify will cut someone again.
   1.16.2f's "total" needs two costs to divide between. A plain 1.16.6 install
   discount — "Install 1 resource from your grip, paying 3[credit] less"
   (Career Fair) — has nowhere to land.
-- `TargetSpec::TopOfDeck(Side, u32)` (The Class Act's "top X cards").
+- ~~`TargetSpec::TopOfDeck(Side, u32)` (The Class Act's "top X cards").~~ —
+  **done, W18b**: `TopOfDeck { side, count: Quantity }` is a quantity position
+  (§12 rule 6), and `Quantity::ImminentValueOf(EffectClass)` is the count The
+  Class Act derives from the draw it is interrupting (9.9.6).
 - ~~a general "instead of breaching, <arbitrary instructions>" replacement~~ —
   **done, 82bfd54** (`ReplacementTransform::SuppressAndResolve`), along with
   `Quantity::CreditsLostThisAbility` and `TriggerCond::MakesSuccessfulRun`.
@@ -1000,9 +1008,13 @@ scan of its instructions.
   - ~~"…while you are tagged" (Citadel Sanctuary) has nowhere to put its
     requirement~~ — **done, W17d**: `DiscardPhaseEnds { side, requires }`
     carries a 9.6.5c requirement like every other condition.
-  - "…if you scored this agenda this turn" (Breaking News) and "…if you
+  - ~~"…if you scored this agenda this turn" (Breaking News) and "…if you
     installed this resource this turn" (The Class Act) need a predicate that
-    reads what a player did this turn.
+    reads what a player did this turn.~~ — **done**:
+    `TriggerRequirement::{SelfScoredThisTurn, SelfInstalledThisTurn}`, read
+    from the change log since the turn began. W18b also made WHOSE discard
+    phase content — `side: Option<Side>`, `None` being the sentence that
+    names no player, which is what both of these cards actually print.
 - "Whenever the Runner breaks a printed subroutine on this ice" (Gold
   Farmer), and "the first time each turn this program fully breaks a piece of
   ice" (Bukhgalter) — `PassedIceAfterFullyBreaking` is the PASS, not the

@@ -335,7 +335,7 @@ pub fn breached_dome_like(name: &'static str) -> PrintedCard {
         TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::Combined(vec![
             Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(1), responsible: Side::Corp },
-            Instruction::TrashCards(TargetSpec::TopOfDeck(Side::Runner, 1)),
+            Instruction::TrashCards(TargetSpec::TopOfDeck { side: Side::Runner, count: Quantity::c(1) }),
         ])],
         false,
     )
@@ -797,7 +797,7 @@ pub fn class_act_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef {
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
-        condition: Some(Condition::Trigger(TriggerCond::WouldDraw { first_each_turn: true })),
+        condition: Some(Condition::Trigger(TriggerCond::WouldDraw { by: Some(Side::Runner), first_each_turn: true })),
         cost: None,
         instructions: vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         statics: Vec::new(),
@@ -3885,7 +3885,7 @@ pub fn shiro_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 4);
     c.abilities = vec![
         AbilityDef::subroutine(vec![Instruction::AccessCards {
-            cards: TargetSpec::TopOfDeck(Side::Corp, 1), restricted: false }])
+            cards: TargetSpec::TopOfDeck { side: Side::Corp, count: Quantity::c(1) }, restricted: false }])
         .labeled("[sub] The Runner accesses the top card of R&D"),
         AbilityDef::subroutine(vec![Instruction::GainCredits(Side::Corp, Quantity::c(2))])
             .labeled("[sub] The Corp gains 2"),
@@ -4404,7 +4404,7 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
     let mut c = vanilla_ice(name, 0, 5);
     c.abilities = vec![AbilityDef::subroutine(vec![
         Instruction::LookAtCards {
-            cards: TargetSpec::TopOfDeck(Side::Corp, n),
+            cards: TargetSpec::TopOfDeck { side: Side::Corp, count: Quantity::c(n as i64) },
             by: Side::Corp,
         },
         Instruction::DeclineableChoice(Box::new(Instruction::InstallCard {

@@ -79,6 +79,11 @@
 //! let _ = strength_is(plus(amount(0), times(1, per_runner_tag())));
 //! // "[click][click][click], [trash]:"
 //! let _ = clicks(3).plus_cost(trash_this_card());
+//! // "…look at the top X cards of your stack. Add 1 of those cards to the
+//! //  bottom of your stack. X is equal to the number of cards you would draw
+//! //  plus 1."
+//! let _ = look_at(top_of_stack(plus(cards_you_would_draw(), amount(1))), Runner);
+//! let _ = add_to_deck(choose(1, &[looked_at_by_this_ability()]), false);
 //! ```
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
@@ -376,8 +381,20 @@ impl CardBuilder {
     ) -> Self {
         self.ability(AbilityDef::conditional(cond, instrs.into_iter().collect(), true))
     }
-    /// "[interrupt] → …" (9.3.6d/9.9.1).
+    /// "[interrupt] → …" (9.3.6d/9.9.1) — mandatory, as the printed wording
+    /// is when it carries no "you may".
     pub fn interrupt(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
+                .with_flag(AbilityFlag::Interrupt),
+        )
+    }
+    /// "[interrupt] → you may …" — the same, declinable (9.6.9).
+    pub fn may_interrupt(
         self,
         cond: TriggerCond,
         instrs: impl IntoIterator<Item = Instruction>,
@@ -540,6 +557,12 @@ pub fn add_to_score_area(cards: TargetSpec, to: Side, as_agenda: Option<i32>) ->
 /// "Add <cards> to the top / bottom of <a deck>."
 pub fn add_to_deck(card: TargetSpec, top: bool) -> Instruction {
     Instruction::MoveToDeck { card, top }
+}
+/// "Look at <cards>." (1.21.2 — only `by` sees the front faces, and the cards
+/// stay where they are.) CR 9.11.4e: looking ENDS an instruction, so whatever
+/// the card says to do with the cards is the next sentence, written next.
+pub fn look_at(cards: TargetSpec, by: Side) -> Instruction {
+    Instruction::LookAtCards { cards, by }
 }
 /// "Search your stack for <criteria>." (8.7; the stack is reshuffled after.)
 pub fn search_stack(criteria: &[TargetFilter], count: i64) -> Instruction {
@@ -891,6 +914,22 @@ pub fn encountered_ice() -> TargetSpec {
 pub fn choose(count: i64, criteria: &[TargetFilter]) -> TargetSpec {
     TargetSpec::Choose { count: Quantity::c(count), criteria: criteria.to_vec(), up_to: false }
 }
+/// "the top <amount> cards of your stack" (4.2.1) — the cards themselves, in
+/// deck order, not a description the controller picks from. The amount is a
+/// quantity, so "the top X cards, where X is …" is one call.
+pub fn top_of_stack(count: Quantity) -> TargetSpec {
+    TargetSpec::TopOfDeck { side: Runner, count }
+}
+/// "the top <amount> cards of R&D" (4.2.1).
+pub fn top_of_rnd(count: Quantity) -> TargetSpec {
+    TargetSpec::TopOfDeck { side: Corp, count }
+}
+/// "…1 of those cards" — a card this ability has already looked at (1.21.2).
+/// CR 1.12.3: a card that then moves to an unknown location becomes a new
+/// object, and this description stops reaching it.
+pub fn looked_at_by_this_ability() -> TargetFilter {
+    TargetFilter::LookedAtByThisAbility
+}
 
 // The filter atoms, named the way a card describes cards.
 pub fn installed_corp_card() -> TargetFilter {
@@ -1078,9 +1117,23 @@ pub fn loses_credits(side: Side, amount: Quantity) -> Instruction {
 pub fn runner_tags_at_least(n: u32) -> TriggerRequirement {
     TriggerRequirement::RunnerTagsAtLeast(n)
 }
-/// "When a discard phase ends, if <requirements>…" (5.5.4 / Breaking News class.)
-pub fn discard_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
-    TriggerCond::DiscardPhaseEnds { side, requires: reqs.to_vec() }
+/// "When a discard phase ends, if <requirements>…" (5.5.4 / Breaking News,
+/// The Class Act.) The sentence names no player, so EITHER discard phase
+/// meets it — for "when YOUR discard phase ends", write
+/// [`your_discard_phase_ends_if`].
+pub fn discard_phase_ends_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::DiscardPhaseEnds { side: None, requires: reqs.to_vec() }
+}
+/// "When your discard phase ends, if <requirements>…" (5.5.4 / Citadel
+/// Sanctuary), naming whose.
+pub fn your_discard_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::DiscardPhaseEnds { side: Some(side), requires: reqs.to_vec() }
+}
+/// "…you would draw any number of cards" (9.9.5a) — an [interrupt] trigger on
+/// a draw of `by`'s, `first` being the card's "the first time each turn".
+/// Naming the player is what keeps a Runner card off the Corp's draws.
+pub fn would_draw(by: Side, first: bool) -> TriggerCond {
+    TriggerCond::WouldDraw { by: Some(by), first_each_turn: first }
 }
 /// "…if you scored this agenda this turn" (Breaking News class).
 pub fn self_scored_this_turn() -> TriggerRequirement {
@@ -1210,8 +1263,9 @@ pub fn runner_steals_agenda() -> TriggerCond {
 }
 /// "When a discard phase ends, …" (5.5.4). CR 5.1.4b puts it at the same step
 /// as the turn formally ending, so it is that occurrence read as a different
-/// sentence.
-pub fn discard_phase_ends(side: Side) -> TriggerCond {
+/// sentence. `side` is the sentence's stipulation about whose — `None` where
+/// it names no player.
+pub fn discard_phase_ends(side: Option<Side>) -> TriggerCond {
     TriggerCond::DiscardPhaseEnds { side, requires: Vec::new() }
 }
 
@@ -1414,4 +1468,11 @@ pub fn plus(a: Quantity, b: Quantity) -> Quantity {
 /// makes "lose up to 5" and "for each credit lost" agree.
 pub fn per_credit_lost_by(side: Side) -> Quantity {
     Quantity::CreditsLostThisAbility(side)
+}
+/// "the number of cards you would draw" (9.9.6) — the amount the draw this
+/// [interrupt] is interrupting is about to draw, read as it now stands. It is
+/// 0 anywhere else, so only an ability that runs while a draw is imminent can
+/// say anything with it.
+pub fn cards_you_would_draw() -> Quantity {
+    Quantity::ImminentValueOf(EffectClass::Draw)
 }

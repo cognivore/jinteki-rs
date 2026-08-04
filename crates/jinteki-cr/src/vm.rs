@@ -3642,6 +3642,9 @@ impl Vm {
                     .sum()
             }
             Q::AccessesThisRun => self.accesses_this_run() as i64,
+            // 9.9.6: "the number of cards you would draw" — the modifiable
+            // value of the instruction this interrupt window was opened over.
+            Q::ImminentValueOf(class) => self.imminent_value_of(*class),
             Q::DistinctIcePassedThisRun => {
                 // 1.12.6: the game history, not the present game state — an
                 // ice trashed after being passed is still one of the distinct
@@ -4142,14 +4145,14 @@ impl Vm {
         let mut turn_ordinal = BTreeMap::new();
         for a in &atoms {
             if a.expected() {
-                self.would.bump(a.class);
+                self.would.bump(a.class, a.side);
                 run_ordinal.insert(
                     class_key(a.class),
-                    self.would.count(WouldScope::Run, a.class),
+                    self.would.count(WouldScope::Run, a.class, a.side),
                 );
                 turn_ordinal.insert(
                     class_key(a.class),
-                    self.would.count(WouldScope::Turn, a.class),
+                    self.would.count(WouldScope::Turn, a.class, a.side),
                 );
             }
         }
@@ -4473,11 +4476,13 @@ impl Vm {
                     }
                     return true;
                 }
-                TriggerCond::WouldDraw { first_each_turn } => {
+                TriggerCond::WouldDraw { by, first_each_turn } => {
                     cite!("rule_would_relevant");
-                    let hit = atoms
-                        .iter()
-                        .any(|a| a.expected() && a.class == EffectClass::Draw);
+                    let hit = atoms.iter().any(|a| {
+                        a.expected()
+                            && a.class == EffectClass::Draw
+                            && by.is_none_or(|s| s == a.side)
+                    });
                     if !hit {
                         return false;
                     }
@@ -9661,20 +9666,29 @@ impl Vm {
 
     /// Apply a modification to the top-most OTHER imminence (the instruction
     /// this interrupt is modifying).
-    /// CR 9.9.7f: the value the innermost imminent instruction currently
-    /// expects for damage of this kind (0 when there is no such effect —
-    /// which 9.9.7b tombstoning is exactly the case of).
-    fn imminent_damage_value(&self, kind: DamageKind) -> i64 {
+    /// CR 9.9.6: the value the innermost imminent instruction currently
+    /// expects for effects of this class (0 when there is no such effect —
+    /// which 9.9.7b tombstoning is exactly the case of). Both the prevention
+    /// machinery and [`crate::instr::Quantity::ImminentValueOf`] read it
+    /// here, so "the damage that would be done" and "the number of cards you
+    /// would draw" cannot disagree about what a modifiable value is.
+    fn imminent_value_of(&self, class: EffectClass) -> i64 {
+        cite!("sec_modifiable_values");
         self.imminents
             .last()
             .map(|imm| {
                 imm.atoms
                     .iter()
-                    .filter(|a| a.expected() && a.class == EffectClass::Damage(kind))
+                    .filter(|a| a.expected() && a.class == class)
                     .map(|a| a.value)
                     .sum()
             })
             .unwrap_or(0)
+    }
+
+    /// CR 9.9.7f: the imminent damage value of this kind.
+    fn imminent_damage_value(&self, kind: DamageKind) -> i64 {
+        self.imminent_value_of(EffectClass::Damage(kind))
     }
 
     fn modify_parent_imminent(&mut self, mut f: impl FnMut(&mut EffectAtom) -> bool) {
@@ -9735,11 +9749,10 @@ impl Vm {
                     .into_iter()
                     .collect()
             }
-            TargetSpec::TopOfDeck(side, n) => self.st.deck[side]
-                .iter()
-                .take(*n as usize)
-                .copied()
-                .collect(),
+            TargetSpec::TopOfDeck { side, count } => {
+                let n = self.eval_quantity(count, source).max(0) as usize;
+                self.st.deck[side].iter().take(n).copied().collect()
+            }
             // CR 8.7.4: the cards this ability's search found, still set
             // aside facedown.
             TargetSpec::FoundBySearch => {
@@ -12725,10 +12738,25 @@ impl Vm {
                 self.changes.record(GameChange::CreditsGained { side, amount: 1 });
             }
             ActionOption::BasicDraw => {
+                // CR 5.2.6c / 5.2.7c: "[click]: Draw 1 card." The action's
+                // effect is the ordinary §8.4 draw procedure, run in a rules
+                // ability frame — the same shape the basic play, install and
+                // advance actions use. Taking the card off the deck here
+                // instead would skip 9.9.1 imminence entirely, so no "would
+                // draw" interrupt (The Class Act) and no 8.4.2 ability could
+                // ever act on the commonest draw in the game.
                 cite!("rule_corp_basic_action_draw");
+                cite!("runner_basic_action_card");
                 self.spend_click(side);
                 self.changes.bump_group();
-                self.draw_cards(side, 1, false);
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
+                    side,
+                    vec![Instruction::Draw(side, 1)],
+                    None,
+                    None,
+                );
             }
             ActionOption::BasicRun { server } => {
                 cite!("runner_basic_action_run");

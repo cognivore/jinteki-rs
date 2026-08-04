@@ -96,8 +96,10 @@ pub fn bellona() -> Card {
 ///  When a discard phase ends, if you scored this agenda this turn, the Runner
 ///  removes 2 tags."
 ///
-/// UNIMPLEMENTED: the second sentence — there is no "when a discard phase
-/// ends" condition (5.5.4).
+/// The second sentence names no player — "when A discard phase ends" — so
+/// either one meets it. The "this turn" requirement is what keeps the card
+/// honest either way: only the discard phase of the turn the agenda was
+/// scored in can find the requirement true.
 pub fn breaking_news() -> Card {
     card("Breaking News")
         .corp()
@@ -106,7 +108,7 @@ pub fn breaking_news() -> Card {
         .text("When a discard phase ends, if you scored this agenda this turn, the Runner removes 2 tags.")
         .when(scored(), [give_tags(2)])
         .when(
-            discard_phase_ends_if(Corp, &[self_scored_this_turn()]),
+            discard_phase_ends_if(&[self_scored_this_turn()]),
             [performed_by(Runner, remove_tags(2))],
         )
         .named("breaking news: the tags blow over")

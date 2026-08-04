@@ -118,6 +118,7 @@ sentence happens:
 .declares([/* … */])                  // a permanent fact, not an action
 .declares_at_threat(4, [/* … */])     // "Threat 4 → …"
 .interrupt(run_ends(), [/* … */])     // "[interrupt] → …"
+.may_interrupt(run_ends(), [/* … */]) // "[interrupt] → you may …"
 # }
 ```
 
@@ -158,7 +159,7 @@ Grouped by what the card is talking about. Every one of these is a call that
 returns one instruction; `.play([a, b])` takes as many as the sentence needs.
 
 **Credits and cards.** `gain(Runner, 9)`, `lose(Corp, 3)`, `draw(Corp, 2)`,
-`add_to_hand(…)`, `add_to_deck(…)`, `search_stack(…)`.
+`add_to_hand(…)`, `add_to_deck(…)`, `look_at(…, Runner)`, `search_stack(…)`.
 
 **Damage.** `net_damage(Corp, 3)`, `meat_damage(Corp, 7)`,
 `core_damage(Corp, 1)` — the side is who is *responsible*, which the rules
@@ -235,6 +236,8 @@ let _ = choose(1, &[installed_corp_card(), rezzed()]);// "a rezzed card you cont
 let _ = this_card();
 let _ = accessed_card();
 let _ = encountered_ice();
+let _ = top_of_stack(amount(3));                      // "the top 3 cards of your stack"
+let _ = choose(1, &[looked_at_by_this_ability()]);    // "1 of those cards"
 ```
 
 The descriptions stack: several of them together mean *all* of them, exactly
@@ -249,6 +252,9 @@ as the printed words do.
 let _ = per_runner_tag();
 let _ = per_hosted_counter(CounterKind::Advancement);
 let _ = plus(amount(1), times(1, per_hosted_counter(CounterKind::Advancement)));
+// "X is equal to the number of cards you would draw plus 1" — readable only
+// from inside an [interrupt] on the draw, and 0 anywhere else.
+let _ = plus(cards_you_would_draw(), amount(1));
 ```
 
 Resistor's whole strength sentence — "Resistor has +1 strength for each tag

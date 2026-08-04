@@ -482,9 +482,9 @@ pub fn bloo_moose() -> Card {
 ///  [interrupt] → [trash], trash all cards from your grip: Prevent all meat
 ///  damage."
 ///
-/// UNIMPLEMENTED: both. There is no "when a discard phase ends" condition
-/// (5.5.4), and `Cost::trash_from_hand` is a `u32` rather than a quantity, so
-/// "trash ALL cards from your grip" cannot be stated as a cost.
+/// COMPLETE. "When YOUR discard phase ends" names whose, which is the whole
+/// difference between this card and The Class Act's "when a discard phase
+/// ends" — one stipulation on one condition (§12 rule 2).
 pub fn citadel_sanctuary() -> Card {
     card("Citadel Sanctuary")
         .runner()
@@ -495,7 +495,7 @@ pub fn citadel_sanctuary() -> Card {
         .text("When your discard phase ends while you are tagged, the Corp must trace[1]. If unsuccessful, remove 1 tag.")
         .text("[interrupt] → [trash], trash all cards from your grip: Prevent all meat damage.")
         .when(
-            discard_phase_ends_if(Runner, &[runner_tags_at_least(1)]),
+            your_discard_phase_ends_if(Runner, &[runner_tags_at_least(1)]),
             [performed_by(Corp, trace_if_unsuccessful(1, [performed_by(Runner, remove_tags(1))]))],
         )
         .named("citadel sanctuary: the corp must trace")
@@ -579,9 +579,18 @@ pub fn miss_bones() -> Card {
 ///  look at the top X cards of your stack. Add 1 of those cards to the bottom
 ///  of your stack. X is equal to the number of cards you would draw plus 1."
 ///
-/// UNIMPLEMENTED: both. No "when a discard phase ends" condition, and
-/// `TargetSpec::TopOfDeck` takes a `u32` rather than a quantity, so a count
-/// derived from the imminent draw cannot be stated.
+/// COMPLETE. The first sentence names no player — "when A discard phase ends"
+/// — and the requirement is what scopes it: only a discard phase of the turn
+/// the resource was installed in can find "you installed this resource this
+/// turn" true.
+///
+/// The second is an [interrupt] on the draw itself, so "X is equal to the
+/// number of cards you would draw plus 1" reads 9.9.6's modifiable value of
+/// the instruction the window was opened over — which is why the look is
+/// always exactly one card deeper than the draw, whatever the draw was. The
+/// look ENDS an instruction (9.11.4e), so the card that goes to the bottom is
+/// announced with all X already visible, and 1.12.3 stamps them: a card that
+/// left for an unknown location would stop being one of "those cards".
 pub fn the_class_act() -> Card {
     card("The Class Act")
         .runner()
@@ -591,8 +600,19 @@ pub fn the_class_act() -> Card {
         .unique()
         .text("When a discard phase ends, if you installed this resource this turn, draw 4 cards.")
         .text("[interrupt] → The first time each turn you would draw any number of cards, look at the top X cards of your stack. Add 1 of those cards to the bottom of your stack. X is equal to the number of cards you would draw plus 1.")
-        .unimplemented("When a discard phase ends, if you installed this resource this turn, draw 4 cards.")
-        .unimplemented("[interrupt] → The first time each turn you would draw any number of cards, look at the top X cards of your stack. Add 1 of those cards to the bottom of your stack.")
+        .when(
+            discard_phase_ends_if(&[self_installed_this_turn()]),
+            [draw(Runner, 4)],
+        )
+        .named("the class act: settling in")
+        .interrupt(
+            would_draw(Runner, true),
+            [
+                look_at(top_of_stack(plus(cards_you_would_draw(), amount(1))), Runner),
+                add_to_deck(choose(1, &[looked_at_by_this_ability()]), false),
+            ],
+        )
+        .named("the class act: reading ahead")
         .build()
 }
 

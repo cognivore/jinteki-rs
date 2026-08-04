@@ -104,7 +104,13 @@ pub enum TriggerCond {
     /// "Whenever the Runner suffers damage." (per damage occurrence)
     RunnerSuffersDamage,
     /// Interrupt trigger: "…would draw any number of cards" (Class Act).
-    WouldDraw { first_each_turn: bool },
+    /// `by` is the sentence's stipulation about WHOSE draw — "the first time
+    /// each turn YOU would draw" is the ability's controller, and `None` is a
+    /// sentence naming no player, exactly as on
+    /// [`TriggerCond::CardPlayed`]. Without it a Runner card would interrupt
+    /// the Corp's mandatory draw, and 9.9.5a's "first time each turn" would
+    /// be spent by it.
+    WouldDraw { by: Option<Side>, first_each_turn: bool },
     /// CR 8.4.2: "abilities with trigger conditions related to cards being
     /// drawn can act on them" — met once per card drawn, while the drawn
     /// cards are still set aside (8.4.2a), which is what lets a Daily-Business
@@ -143,7 +149,14 @@ pub enum TriggerCond {
     /// related to a turn OR DISCARD PHASE ending are met at the same step —
     /// the formal end of that player's turn (5.6.3d / 5.7.2d) — so this is a
     /// distinct sentence met by the same occurrence, not a distinct moment.
-    DiscardPhaseEnds { side: Side, requires: Vec<TriggerRequirement> },
+    ///
+    /// `side` is the sentence's stipulation about WHOSE discard phase, as
+    /// content (§12 rule 2): `None` is a sentence naming no player ("when a
+    /// discard phase ends" — Breaking News, The Class Act), `Some(s)` names
+    /// one ("when YOUR discard phase ends" — Citadel Sanctuary). Both decks
+    /// print both wordings, which is the whole reason the stipulation is a
+    /// field rather than two conditions.
+    DiscardPhaseEnds { side: Option<Side>, requires: Vec<TriggerRequirement> },
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     UsesTrashAbility(Side),
     /// "Whenever you advance a card." `had_no_advancement` adds the
@@ -1487,7 +1500,8 @@ pub fn trigger_matches(
         (TriggerCond::DiscardPhaseEnds { side, .. }, GameChange::TurnEnded { side: s }) => {
             cite!("rule_turn_end_trigger_conditions");
             cite!("rule_discard_step");
-            side == s
+            // A sentence naming no player is met by EITHER discard phase.
+            side.is_none() || side.as_ref() == Some(s)
         }
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
         (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
