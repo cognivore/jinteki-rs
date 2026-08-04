@@ -3652,3 +3652,38 @@ fn paperclip_installs_itself_out_of_the_heap_and_pumps_before_it_breaks() {
         t.tail(24)
     );
 }
+
+/// Career Fair: "Install 1 resource from your grip, paying 3[credit] less."
+///
+/// Reported from a live game: the click was spent, the resource was chosen,
+/// and the card stayed in the grip. This test is that report.
+#[test]
+fn career_fair_actually_installs_the_resource_it_chose() {
+    let mut vm = Vm::empty(4800);
+    let cf = vm.new_object(card("Career Fair"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(cf);
+    let hotel = vm.new_object(card("Earthrise Hotel"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(hotel);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(cf))
+            .when(Match::targets().once(), Reply::Targets(vec![hotel]))
+            .when(Match::targets().once(), Reply::Targets(vec![]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&hotel].zone,
+        Zone::Rig,
+        "Earthrise Hotel is installed, not left in the grip: {}",
+        t.tail(24)
+    );
+    // Install 4, paying 3 less, floored at 0 by 1.16.2a — so 1 credit.
+    assert_eq!(vm.st.runner.credits, 4, "paid 1 (install 4 minus 3): {}", t.tail(24));
+}

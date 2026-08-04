@@ -5606,13 +5606,24 @@ impl Vm {
             // 6.9.1a: an effect that named no server — the Runner announces
             // the attacked one.
             Instruction::InitiateRun { server: None, .. } => 1,
-            // 8.5.16b: the installer declares the destination — but only when
-            // the card position is not itself a choice. The expansion reads
-            // ONE announced object for both (the chosen card, or the declared
-            // host), so the two share a slot by construction.
-            Instruction::InstallCard { card, .. } => {
-                usize::from(card.announcement_slots() == 0)
-            }
+            // 8.5.16b: the installer declares the destination.
+            //
+            // Where the effect NAMED a destination, 1.13.6a lets an eligible
+            // host be declared instead ("or as normal"), and that declaration
+            // reads the same one announced object the card position does — so
+            // the two genuinely share a slot, and a chosen card leaves nothing
+            // to ask.
+            //
+            // Where the effect named NO destination, the declaration is its
+            // OWN: the card position has already consumed the first slot, and
+            // sharing would leave the destination undeclared, the install with
+            // no zone to place into, and the whole instruction resolving to
+            // nothing (Career Fair: the click and the choice were spent and
+            // the resource stayed in the grip).
+            Instruction::InstallCard { card, dest, .. } => match dest {
+                crate::instr::InstallDest::DeclaredByInstaller => 1,
+                _ => usize::from(card.announcement_slots() == 0),
+            },
             _ => 0,
         }
     }

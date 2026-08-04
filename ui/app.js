@@ -780,10 +780,7 @@ function cardEl(c, opts) {
     ${opts.ice && c.subroutines ? `<div class="subs">${c.subroutines.map((s) => `<span class="${s.broken ? "broken" : ""}">↳</span>`).join("")}</div>` : ""}
     <div class="ctype">${facedown ? "" : (c.type || "")}</div>
     ${c.strength != null && !facedown ? `<div class="cstr">${c.strength}</div>` : ""}
-    <div class="badges">
-      ${c["advance-counter"] ? `<div class="badge adv">${c["advance-counter"]}</div>` : ""}
-      ${c.counter && c.counter.credit ? `<div class="badge cred">${c.counter.credit}</div>` : ""}
-    </div>`;
+    <div class="badges">${counterBadges(c)}</div>`;
   // Real card art from the NetrunnerDB CDN (code travels with every card);
   // text scaffold stays as fallback when the image can't load.
   const code = c.code || (c.images && c.images.en && ""); // jnet also carries :code
@@ -833,6 +830,31 @@ function cardImgUrl(code) {
   return `https://card-images.netrunnerdb.com/v2/large/${code}.jpg`;
 }
 
+/* Every counter a card is carrying, on the card. The server already sends
+   all of them (CR 1.9.5's kinds); the client used to draw only credits and
+   advancement, so a loaded Earthrise Hotel, a Datasucker with virus counters
+   and a scored AstroScript all looked bare, and there was no way to tell
+   which card held what. Advancement keeps its own badge because 1.18 makes
+   it the one counter the Corp acts on directly. */
+const COUNTER_BADGES = [
+  ["credit", "cred", "⬡", "credits hosted"],
+  ["power", "pow", "◈", "power counters"],
+  ["virus", "vir", "☣", "virus counters"],
+  ["agenda", "agn", "★", "agenda counters"],
+  ["bad-publicity", "badpub", "✖", "bad publicity"],
+];
+function counterBadges(c) {
+  const out = [];
+  if (c["advance-counter"]) {
+    out.push(`<div class="badge adv" title="advancement counters">${+c["advance-counter"]}</div>`);
+  }
+  const k = c.counter || {};
+  for (const [key, cls, glyph, hint] of COUNTER_BADGES) {
+    if (k[key]) out.push(`<div class="badge ${cls}" title="${hint}">${glyph}${+k[key]}</div>`);
+  }
+  return out.join("");
+}
+
 /* ── card info (shared by hover preview and long-press zoom) ─────────── */
 function cardInfoHtml(c) {
   const lines = [];
@@ -842,7 +864,9 @@ function cardInfoHtml(c) {
   if (c.advancementcost != null) lines.push(`Adv req ${c.advancementcost} · ${c.agendapoints} pts`);
   if (c["trash-cost"] != null) lines.push("Trash cost " + c["trash-cost"]);
   if (c["advance-counter"]) lines.push("Advancements: " + c["advance-counter"]);
-  if (c.counter && c.counter.credit) lines.push("Credits hosted: " + c.counter.credit);
+  for (const [key, , , hint] of COUNTER_BADGES) {
+    if (c.counter && c.counter[key]) lines.push(`${hint}: ${c.counter[key]}`);
+  }
   if (c.implementation) lines.push("⚠ " + c.implementation);
   const art = c.code
     ? `<img class="zart" src="${cardImgUrl(c.code)}" alt="" onerror="this.remove()">`
