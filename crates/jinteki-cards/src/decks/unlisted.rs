@@ -96,7 +96,411 @@ pub fn chaos_theory() -> Card {
         .build()
 }
 
+// ===========================================================================
+// CR 1.15.1b — the cards that NAME something
+// ===========================================================================
+//
+// "Only objects and subroutines are announced as targets. If an instruction
+// directs a player to choose (or 'name') a number, a card type, a subtype, a
+// card name, a server, or one of a specified set of effects, that choice is
+// not made until the instruction resolves."
+//
+// One rule, twelve cards, and none of them is in a priority deck — which is
+// exactly why they are here: the mechanism is stated by the CR, and proving
+// it needs real printed cards rather than invented ones (ARCHITECTURE §12).
+
+/// Ark Lockdown — Operation. Cost 1.
+/// "Name a card. Remove all copies of that card in the heap from the game."
+///
+/// COMPLETE. Two printed sentences, two instructions. 2.1.4's "copies of"
+/// is a name comparison, 4.4.7b makes the heap open information so nothing
+/// has to be revealed to demonstrate the match, and "all" is written as a
+/// count equal to how many there are, so 1.15.2e leaves no choice.
+pub fn ark_lockdown() -> Card {
+    card("Ark Lockdown")
+        .corp()
+        .operation()
+        .faction("Haas-Bioroid")
+        .cost(1)
+        .text("Name a card. Remove all copies of that card in the heap from the game.")
+        .play([
+            name_a_card("ark lockdown target"),
+            remove_from_game(all_named_cards_in_discard_of(Runner, "ark lockdown target")),
+        ])
+        .build()
+}
+
+/// Reclamation Order — Operation: Double. Cost 1.
+/// "As an additional cost to play this operation, spend [click].
+///  Name a card other than Reclamation Order. Reveal any number of copies of
+///  the named card from Archives and add them to HQ."
+///
+/// COMPLETE. "Other than Reclamation Order" is self-referential language:
+/// CR 10.1.5 reads a card's own name, used without the word "copy", as "this
+/// object", so the exclusion is stated without any name at all. "Reveal … and
+/// add them to HQ" is two instructions of different classes in one sentence
+/// (9.11.3), the second acting on the first's targets by 1.15.4.
+pub fn reclamation_order() -> Card {
+    card("Reclamation Order")
+        .corp()
+        .operation()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Double"])
+        .cost(1)
+        .text("As an additional cost to play this operation, spend [click].")
+        .text("Name a card other than Reclamation Order. Reveal any number of copies of the named card from Archives and add them to HQ.")
+        .additional_play_cost(clicks(1))
+        .play([
+            name_a_card_other_than_this_one("reclamation order target"),
+            reveal(any_number_of_named_cards_in_discard_of(
+                Corp,
+                "reclamation order target",
+            )),
+            add_to_hand(earlier_choices()),
+        ])
+        .build()
+}
+
+/// Salem's Hospitality — Operation: Alliance - Gray Ops. Cost 2.
+/// "This operation costs 0 influence if you have 6 or more
+///  non-<strong>alliance</strong> [nbn] cards in your deck.
+///  Choose a card name. The Runner reveals the grip and trashes all cards
+///  with the chosen name revealed this way."
+///
+/// COMPLETE as a card that is PLAYED. The alliance line is a deckbuilding
+/// restriction on influence (1.4.5), like "Limit 1 per deck" — it changes
+/// what may go in a deck, not what happens at the table, and nothing it says
+/// is a sentence this card does.
+///
+/// The rest is 1.15.1b and 1.21.3: the name is said when the play ability
+/// resolves, the grip is revealed (which is what lets the Corp see the match
+/// it is about to act on, 4.1.2a), and "all cards with the chosen name" is
+/// every card in the grip the name reaches.
+pub fn salems_hospitality() -> Card {
+    card("Salem's Hospitality")
+        .corp()
+        .operation()
+        .faction("NBN")
+        .subtypes(&["Alliance", "Gray Ops"])
+        .cost(2)
+        .text("This operation costs 0 influence if you have 6 or more non-<strong>alliance</strong> [nbn] cards in your deck.")
+        .text("Choose a card name. The Runner reveals the grip and trashes all cards with the chosen name revealed this way.")
+        .play([
+            name_a_card("salem's name"),
+            reveal(all_matching(&[in_hand_of(Runner)])),
+            trash(all_named_cards_in_hand_of(Runner, "salem's name")),
+        ])
+        .build()
+}
+
+/// Azmari EdTech: Shaping the Future — Identity: Division.
+/// "When your turn ends, you may name a card type. Gain 2[credit] the first
+///  time each turn the Runner plays or installs a card that has the type you
+///  last named this way."
+///
+/// COMPLETE. A card has exactly one type and CR 2.15.2 lists all ten, so
+/// "name a card type" is 9.11.4g's choice between options — ten branches,
+/// each remembering its own — and not an open namespace.
+///
+/// The duration is 9.10.3c and not 9.10.3b: 9.10.3b is written for a "when
+/// your turn BEGINS" ability with no effects other than making a choice, and
+/// this one triggers at the end of the turn, so the choice lasts until the
+/// source becomes inactive. An identity in the play area never does, which is
+/// what makes "the type you LAST named" a replacement each turn rather than
+/// an expiry.
+///
+/// "Plays or installs" is ONE trigger condition. Written as two abilities the
+/// "first time each turn" (9.3.6g) would be two flags, and the identity would
+/// pay out twice in a turn the Runner both played and installed.
+pub fn azmari_edtech() -> Card {
+    card("Azmari EdTech: Shaping the Future")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("When your turn ends, you may name a card type. Gain 2[credit] the first time each turn the Runner plays or installs a card that has the type you last named this way.")
+        .may_when(turn_ends(Corp), [name_a_card_type("azmari type")])
+        .when_first_each_turn(
+            plays_or_installs_named_by(Runner, "azmari type"),
+            [gain(Corp, 2)],
+        )
+        .build()
+}
+
+/// Falsified Credentials — Event. Cost 1.
+/// "Name a card type. Expose a card in a remote server, then gain 5[credit]
+///  if the exposed card has the named card type."
+///
+/// COMPLETE. 1.21.4: exposing is revealing, restricted to installed unrezzed
+/// cards, so the exposure is what demonstrates the match. "The exposed card"
+/// is 1.15.4's back-reference to the target this ability already chose, and
+/// the "if" is asked of that card through the same criteria vocabulary.
+pub fn falsified_credentials() -> Card {
+    card("Falsified Credentials")
+        .runner()
+        .event()
+        .faction("Criminal")
+        .cost(1)
+        .text("Name a card type. Expose a card in a remote server, then gain 5[credit] if the exposed card has the named card type.")
+        .play([
+            name_a_card_type("falsified type"),
+            expose(choose(1, &[in_a_remote_server()])),
+            if_met(
+                &[earlier_choice_matches(0, &[named_by("falsified type")])],
+                [gain(Runner, 5)],
+            ),
+        ])
+        .build()
+}
+
+/// Ibrahim Salem — Asset: Alliance - Character. Rez 2, trash 5. ◆
+/// "This card costs 0 influence if you have 6 or more
+///  non-<strong>alliance</strong> [nbn] cards in your deck.
+///  As an additional cost to rez Ibrahim Salem, forfeit an agenda.
+///  When your turn begins, name a card type. Look at the Runner's grip and
+///  trash 1 card in it of the named type."
+///
+/// COMPLETE as a card that is REZZED and used. The alliance line is a
+/// deckbuilding restriction on influence (1.4.5), not a sentence this card
+/// does — the same treatment Salem's Hospitality gets.
+///
+/// The duration is 9.10.3c, not 9.10.3b: 9.10.3b applies to a "when your turn
+/// begins" ability with **no effects other than making a choice**, and this
+/// one goes on to look and to trash.
+pub fn ibrahim_salem() -> Card {
+    card("Ibrahim Salem")
+        .corp()
+        .asset()
+        .faction("NBN")
+        .subtypes(&["Alliance", "Character"])
+        .cost(2)
+        .trash_cost(5)
+        .unique()
+        .text("This card costs 0 influence if you have 6 or more non-<strong>alliance</strong> [nbn] cards in your deck.")
+        .text("As an additional cost to rez Ibrahim Salem, forfeit an agenda.")
+        .text("When your turn begins, name a card type. Look at the Runner's grip and trash 1 card in it of the named type.")
+        .additional_rez_cost(forfeit_agenda(1))
+        .when(
+            turn_begins(Corp),
+            [
+                name_a_card_type("salem type"),
+                look_at_whole_hand_of(Runner, Corp),
+                trash(choose(1, &[in_hand_of(Runner), named_by("salem type")])),
+            ],
+        )
+        .build()
+}
+
+/// Wari — Program. Install 1, strength 0. ◆
+/// "The first time you make a successful run on HQ each turn, you may trash
+///  Wari to name <strong>sentry</strong>, <strong>code gate</strong> or
+///  <strong>barrier</strong>. Expose a piece of ice, then add it to HQ if it
+///  has the named subtype."
+///
+/// COMPLETE. Three printed subtypes, three branches (9.11.4g) — the choice
+/// between them is an option choice and never an open namespace.
+///
+/// The duration is stated rather than left to 9.10.3c, and it has to be:
+/// the card is TRASHED to make the choice, so "until the source becomes
+/// inactive" would expire the choice at the very next checkpoint, before the
+/// exposure it exists for. 9.10.3's cases are written for a choice a LATER
+/// ability reads; this one is read by the next instruction of the same
+/// ability, during the run the trigger condition names, so the run is the
+/// duration the card means.
+pub fn wari() -> Card {
+    card("Wari")
+        .runner()
+        .program()
+        .faction("Criminal")
+        .cost(1)
+        .strength(0)
+        .memory(1)
+        .unique()
+        .text("The first time you make a successful run on HQ each turn, you may trash Wari to name <strong>sentry</strong>, <strong>code gate</strong> or <strong>barrier</strong>. Expose a piece of ice, then add it to HQ if it has the named subtype.")
+        .when_first_each_turn(
+            makes_successful_run_on(&[ServerId::Hq]),
+            [
+                may_pay(
+                    trash_this_card(),
+                    name_one_of_these_subtypes_for(
+                        "wari subtype",
+                        &["Sentry", "Code Gate", "Barrier"],
+                        WantedDuration::ThisRun,
+                    ),
+                ),
+                expose(choose(1, &[of_type(CardType::Ice)])),
+                if_met(
+                    &[earlier_choice_matches(0, &[named_by("wari subtype")])],
+                    [add_to_hand(earlier_choice(0))],
+                ),
+            ],
+        )
+        .build()
+}
+
+/// Whistleblower — Resource: Connection. Install 2. ◆
+/// "Whenever you make a successful run, you may trash this resource to choose
+///  a card name. The next time this run you access an agenda with the chosen
+///  name, steal it, ignoring all costs. <em>(You are no longer accessing
+///  it.)</em>"
+///
+/// The first sentence is expressed: 1.15.1b's naming, paid for by trashing
+/// the source, with the run as the stated duration for the same reason Wari
+/// needs one — the card that would keep the choice alive under 9.10.3c is in
+/// the heap by the time the choice is made.
+///
+/// UNIMPLEMENTED: the second sentence. It needs two things the vocabulary
+/// does not have. "The next time this run you access an agenda with the
+/// chosen name" is a 9.6.13 delayed conditional that fires ONCE and then
+/// expires, and nothing states a one-shot access condition; "steal it,
+/// ignoring all costs" is a steal that overrides 1.16.10's additional steal
+/// costs, and `Instruction::StealIfAgenda` has no such position. Stating it
+/// with what exists would produce a card that steals while an Obokata-class
+/// cost stands unpaid, which is worse than a card that says it is partial.
+pub fn whistleblower() -> Card {
+    card("Whistleblower")
+        .runner()
+        .resource()
+        .faction("Neutral")
+        .subtypes(&["Connection"])
+        .cost(2)
+        .unique()
+        .text("Whenever you make a successful run, you may trash this resource to choose a card name. The next time this run you access an agenda with the chosen name, steal it, ignoring all costs. <em>(You are no longer accessing it.)</em>")
+        .when(
+            makes_successful_run(),
+            [may_pay(
+                trash_this_card(),
+                name_a_card_for("whistleblower name", WantedDuration::ThisRun),
+            )],
+        )
+        .unimplemented("The next time this run you access an agenda with the chosen name, steal it, ignoring all costs.")
+        .build()
+}
+
+/// RNG Key — Program. Install 0, strength 0. ◆
+/// "The first time you make a successful run on HQ or R&D each turn, you may
+///  name a number. If you do, reveal the next card that you access this run.
+///  If it has a rez cost, play cost, or advancement requirement equal to the
+///  named number, either gain 3[credit] or draw 2 cards."
+///
+/// The first sentence is expressed: "name a number" is 1.15.1b's other open
+/// namespace, and 1.1.3 makes it an integer. The number lasts the run, which
+/// is the window the card's own next sentence names.
+///
+/// UNIMPLEMENTED: the other two sentences. "Reveal the next card that you
+/// access this run" is a one-shot delayed conditional on the next access —
+/// the same missing shape as Whistleblower's — and "a rez cost, play cost, or
+/// advancement requirement equal to the named number" is a comparison of a
+/// printed VALUE against a maintained number, which the filter vocabulary
+/// cannot say: `MatchesMaintainedChoice` compares characteristics that ARE
+/// the named thing, and a number is not one of them.
+pub fn rng_key() -> Card {
+    card("RNG Key")
+        .runner()
+        .program()
+        .faction("Neutral")
+        .cost(0)
+        .strength(0)
+        .memory(1)
+        .unique()
+        .text("The first time you make a successful run on HQ or R&D each turn, you may name a number. If you do, reveal the next card that you access this run. If it has a rez cost, play cost, or advancement requirement equal to the named number, either gain 3[credit] or draw 2 cards.")
+        .when_first_each_turn(
+            makes_successful_run_on(&[ServerId::Hq, ServerId::Rnd]),
+            [may(name_a_number("rng key number", WantedDuration::ThisRun))],
+        )
+        .unimplemented("If you do, reveal the next card that you access this run.")
+        .unimplemented("If it has a rez cost, play cost, or advancement requirement equal to the named number, either gain 3[credit] or draw 2 cards.")
+        .build()
+}
+
+/// Complete Image — Operation: Terminal - Gray Ops. Cost 4, trash 2.
+/// "Play only if the Runner has 3 or more agenda points and they made a
+///  successful run during their last turn.
+///  After you resolve this operation, your action phase ends.
+///  Choose a card name, then do 1 net damage. If you trash a card with the
+///  chosen name this way, repeat this process."
+///
+/// The first two sentences are expressed — 9.1.8c's play restriction, over
+/// two ordinary state requirements, and 5.6.2b's Terminal — and so is the
+/// first half of the third: naming a card and doing 1 net damage.
+///
+/// UNIMPLEMENTED: "If you trash a card with the chosen name this way, repeat
+/// this process." Repeating is not a `ForEach` over a computed quantity: the
+/// number of repetitions is not known when the instruction resolves, it
+/// depends on what the RANDOM damage trash turned up, and each pass names a
+/// NEW card. Nothing in the instruction vocabulary loops on its own result,
+/// and 10.1.6a's loop machinery is about a loop that has already been created
+/// by abilities resolving each other. Written without it the card names and
+/// damages once, which is what it does say — the repetition is the marked
+/// sentence.
+pub fn complete_image() -> Card {
+    card("Complete Image")
+        .corp()
+        .operation()
+        .faction("Jinteki")
+        .subtypes(&["Terminal", "Gray Ops"])
+        .cost(4)
+        .trash_cost(2)
+        .text("Play only if the Runner has 3 or more agenda points and they made a successful run during their last turn.")
+        .text("After you resolve this operation, your action phase ends.")
+        .text("Choose a card name, then do 1 net damage. If you trash a card with the chosen name this way, repeat this process.")
+        .declares([play_only_if(&[
+            agenda_points_at_least(Runner, 3),
+            runner_made_a_successful_run_last_turn(),
+        ])])
+        .when(after_this_resolves(), [end_action_phase(Corp)])
+        .play([name_a_card("complete image name"), net_damage(Corp, 1)])
+        .unimplemented("If you trash a card with the chosen name this way, repeat this process.")
+        .build()
+}
+
+/// Embezzle — Event: Run - Sabotage. Cost 1.
+/// "Run HQ. If successful, instead of breaching HQ, name asset, ice,
+///  operation or upgrade, then reveal 2 cards from HQ at random. Trash each
+///  revealed card that has the named type, then gain 4[credit] for each card
+///  trashed this way."
+///
+/// The run is expressed. So is the naming it would need: "name asset, ice,
+/// operation or upgrade" is four branches of 9.11.4g, no different in kind
+/// from Azmari EdTech's ten.
+///
+/// UNIMPLEMENTED: the replacement itself and the payout, for two reasons that
+/// are not about naming. Nothing selects cards from a hand AT RANDOM as
+/// targets — `Instruction::TrashRandomFromHand` trashes them without ever
+/// naming them, so a later instruction cannot act on the same cards — and no
+/// quantity counts "each card trashed this way" (the `CreditsLostThisAbility`
+/// shape, for trashes). Stating the replacement without them would suppress
+/// the breach and then do nothing, which is strictly worse for the Runner
+/// than not playing the card.
+pub fn embezzle() -> Card {
+    card("Embezzle")
+        .runner()
+        .event()
+        .faction("Criminal")
+        .subtypes(&["Run", "Sabotage"])
+        .cost(1)
+        .text("Run HQ. If successful, instead of breaching HQ, name asset, ice, operation or upgrade, then reveal 2 cards from HQ at random. Trash each revealed card that has the named type, then gain 4[credit] for each card trashed this way.")
+        .play([run(ServerId::Hq)])
+        .unimplemented("If successful, instead of breaching HQ, name asset, ice, operation or upgrade, then reveal 2 cards from HQ at random.")
+        .unimplemented("Trash each revealed card that has the named type, then gain 4[credit] for each card trashed this way.")
+        .build()
+}
+
 /// Every card here, in the order the file lists it.
 pub fn cards() -> Vec<Card> {
-    vec![dj_fenris(), chaos_theory()]
+    vec![
+        dj_fenris(),
+        chaos_theory(),
+        ark_lockdown(),
+        reclamation_order(),
+        salems_hospitality(),
+        azmari_edtech(),
+        falsified_credentials(),
+        ibrahim_salem(),
+        wari(),
+        whistleblower(),
+        rng_key(),
+        complete_image(),
+        embezzle(),
+    ]
 }

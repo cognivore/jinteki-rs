@@ -975,7 +975,7 @@ pub fn ashigaru_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 9, 4);
     c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GainSubroutines {
         sub: Box::new(AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] ETR")),
-        count: Quantity::Count(crate::instr::TargetFilter::CardsInHandOf(Side::Corp)),
+        count: Quantity::Count(vec![crate::instr::TargetFilter::CardsInHandOf(Side::Corp)]),
     }])
     .labeled("ashigaru: sub per HQ card")];
     c
@@ -1961,7 +1961,7 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
     c.strength = Some(0);
     let x = Quantity::Times(
         2,
-        Box::new(Quantity::Count(crate::instr::TargetFilter::IceProtectingSourceServer)),
+        Box::new(Quantity::Count(vec![crate::instr::TargetFilter::IceProtectingSourceServer])),
     );
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::SelfStrength(x.clone())])
@@ -2236,7 +2236,7 @@ pub fn warroid_this_server_like(name: &'static str, trash_cost: u32) -> PrintedC
         TriggerCond::RunnerTrashesAtLeastOneCorpCard { in_this_server: true },
         vec![Instruction::GainCredits(
             Side::Corp,
-            Quantity::Count(crate::instr::TargetFilter::IceProtectingSourceServer),
+            Quantity::Count(vec![crate::instr::TargetFilter::IceProtectingSourceServer]),
         )],
         false,
     )
@@ -2257,7 +2257,7 @@ pub fn border_control_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 2, 3);
     let count_this_server = Instruction::GainCredits(
         Side::Corp,
-        Quantity::Count(crate::instr::TargetFilter::IceProtectingSourceServer),
+        Quantity::Count(vec![crate::instr::TargetFilter::IceProtectingSourceServer]),
     );
     c.abilities = vec![
         AbilityDef::subroutine(vec![count_this_server.clone()])
@@ -3062,9 +3062,9 @@ pub fn attacked_server_breaker(name: &'static str) -> PrintedCard {
     c.memory_cost = Some(1);
     c.subtypes = vec!["icebreaker"];
     c.abilities = vec![
-        AbilityDef::static_ability(vec![StaticDecl::SelfStrength(Quantity::Count(
+        AbilityDef::static_ability(vec![StaticDecl::SelfStrength(Quantity::Count(vec![
             crate::instr::TargetFilter::IceProtectingAttackedServer,
-        ))])
+        ]))])
         .labeled("nanotk-static"),
         AbilityDef::paid(
             Cost::credits(1),
@@ -3752,7 +3752,7 @@ pub fn cayambe_like(name: &'static str) -> PrintedCard {
         vec![Instruction::NestedCostUnless {
             cost: Cost::credits_q(Quantity::Times(
                 2,
-                Box::new(Quantity::Count(F::IceProtectingAttackedServer)),
+                Box::new(Quantity::Count(vec![F::IceProtectingAttackedServer])),
             )),
             effect: Box::new(Instruction::EndTheRun),
             payer: Some(Side::Runner),

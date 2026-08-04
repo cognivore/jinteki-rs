@@ -778,7 +778,7 @@ pub fn bookmark() -> PrintedCard {
     c.cost = Some(0);
     let hosted_to_grip = || Instruction::AddCardsToHand {
         cards: TargetSpec::Choose {
-            count: Quantity::Count(TargetFilter::HostedOnSource),
+            count: Quantity::Count(vec![TargetFilter::HostedOnSource]),
             criteria: vec![TargetFilter::HostedOnSource], up_to: false },
     };
     c.abilities = vec![

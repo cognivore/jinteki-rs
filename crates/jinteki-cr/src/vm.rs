@@ -3731,7 +3731,7 @@ impl Vm {
         cite!("rule_calculated_quantity");
         match q {
             Q::Const(n) => *n,
-            Q::Count(f) => self.count_filter(*f, source),
+            Q::Count(criteria) => self.count_filter(criteria, source),
             Q::CreditsLostThisAbility(side) => {
                 // "…for each credit lost" — credits the named player ACTUALLY
                 // lost during the resolution of the ability now resolving
@@ -3882,8 +3882,15 @@ impl Vm {
 
     /// Count objects matching a filter of the shared filter language,
     /// relative to `source` where the filter is source-relative.
-    fn count_filter(&self, f: TargetFilter, source: Option<ObjectId>) -> i64 {
-        match f {
+    fn count_filter(&self, criteria: &[TargetFilter], source: Option<ObjectId>) -> i64 {
+        // A single location atom has a direct answer that does not need the
+        // whole object table walked; anything else — and every conjunction —
+        // goes through the shared candidate derivation, so counting and
+        // choosing read the criteria identically (§12 rule 5).
+        let [f] = criteria else {
+            return self.filter_candidates_from(criteria, source).len() as i64;
+        };
+        match *f {
             // 4.6.6i: "ice protecting this server" reads the server the
             // source means by "this server" — which is the one it LEFT when
             // it is no longer installed (and it is no longer among the ice
@@ -5383,6 +5390,12 @@ impl Vm {
             | Instruction::ForceEncounter { ice: spec }
             | Instruction::RezCard { target: spec, .. }
             | Instruction::ExposeCards { cards: spec }
+            // 1.21.3 / 1.15.1: "reveal any number of copies of the named card
+            // from Archives" chooses the cards it shows, so the reveal's card
+            // position announces like every other one. (For the usual
+            // `SelfSource` or `FoundBySearch` position `announcement_for`
+            // returns `None` and nothing changes.)
+            | Instruction::RevealCards { cards: spec }
             | Instruction::ResolveAbilityOf { source: spec, .. }
             | Instruction::Derez { target: spec }
             // 8.2/1.15.1: "add 1 of the drawn cards to the bottom of R&D"
@@ -6214,6 +6227,13 @@ impl Vm {
                 cite!("rule_score_area");
                 o.zone == Zone::ScoreArea(side)
             }
+            // 4.6.6b: the root AND the ice protecting it are both "in" the
+            // server; 4.6.8 distinguishes the remote ones.
+            TargetFilter::InRemoteServer => {
+                cite!("rule_remote_server");
+                matches!(o.zone, Zone::Root(ServerId::Remote(_)) | Zone::Ice(ServerId::Remote(_)))
+                    && self.is_installed(o)
+            }
             TargetFilter::InRootOfServerOtherThanAttacked => {
                 cite!("rule_breaching_servers");
                 match (o.zone, self.current_run) {
@@ -6945,6 +6965,12 @@ impl Vm {
                 self.st.runner.tags >= *n
             }
             R::RunnerLinkAtLeast(n) => self.runner_link() >= *n as i32,
+            // 1.17.1: the named player's score, read through the same
+            // characteristics pipeline `Vm::score` uses everywhere else.
+            R::AgendaPointsAtLeast { side, points } => {
+                cite!("rule_score");
+                self.score(*side) >= *points
+            }
             // A question about the board, answered through the same criteria
             // vocabulary a target announcement uses — so "an installed AI
             // program" means here exactly what it would mean as a target.
@@ -9987,6 +10013,12 @@ impl Vm {
                     .flatten()
                     .into_iter()
                     .collect()
+            }
+            // 1.15.4: "them" — every target this ability has announced.
+            TargetSpec::EarlierTargets => {
+                cite!("rule_target_beyond_move");
+                cite!("rule_multiple_targets");
+                self.ability_targets()
             }
             TargetSpec::TopOfDeck { side, count } => {
                 let n = self.eval_quantity(count, source).max(0) as usize;

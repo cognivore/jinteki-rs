@@ -2710,3 +2710,271 @@ fn an_identity_leaving_the_play_area_goes_back_to_the_pile() {
     );
     assert!(vm.identity_pile(Side::Runner).contains(&chaos));
 }
+
+// ---------------------------------------------------------------------------
+// CR 1.15.1b — the cards that name something (`decks/unlisted.rs`)
+// ---------------------------------------------------------------------------
+
+/// Ark Lockdown: "Name a card. Remove all copies of that card in the heap
+/// from the game." 2.1.4's "copies of" is a name comparison and reaches
+/// every copy — and nothing else.
+#[test]
+fn ark_lockdown_removes_every_copy_of_the_named_card() {
+    let mut vm = Vm::empty(101);
+    let ark = vm.new_object(card("Ark Lockdown"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ark);
+    let a = vm.new_object(card("Sure Gamble"), Zone::Discard(Side::Runner));
+    let b = vm.new_object(card("Sure Gamble"), Zone::Discard(Side::Runner));
+    let other = vm.new_object(card("Diesel"), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().extend([a, b, other]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(ark))
+            .when(Match::name_value().once(), Reply::Name("Sure Gamble"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(vm.st.objects[&a].zone, Zone::RemovedFromGame, "{}", t.tail(14));
+    assert_eq!(vm.st.objects[&b].zone, Zone::RemovedFromGame, "{}", t.tail(14));
+    assert_eq!(
+        vm.st.objects[&other].zone,
+        Zone::Discard(Side::Runner),
+        "a card with another name is not a copy: {}",
+        t.tail(14)
+    );
+}
+
+/// Reclamation Order: "Name a card other than Reclamation Order. Reveal any
+/// number of copies of the named card from Archives and add them to HQ."
+/// CR 10.1.5 makes the exclusion self-referential — no name is written down.
+#[test]
+fn reclamation_order_returns_copies_of_the_named_card_from_archives() {
+    let mut vm = Vm::empty(102);
+    let order = vm.new_object(card("Reclamation Order"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(order);
+    let a = vm.new_object(card("Hedge Fund"), Zone::Discard(Side::Corp));
+    let b = vm.new_object(card("Hedge Fund"), Zone::Discard(Side::Corp));
+    let other = vm.new_object(card("BOOM!"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().extend([a, b, other]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(order))
+            .when(Match::name_value().once(), Reply::Name("Hedge Fund"))
+            .when(Match::targets().once(), Reply::Targets(vec![a, b]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(vm.st.objects[&a].zone, Zone::Hand(Side::Corp), "{}", t.tail(16));
+    assert_eq!(vm.st.objects[&b].zone, Zone::Hand(Side::Corp), "{}", t.tail(16));
+    assert_eq!(vm.st.objects[&other].zone, Zone::Discard(Side::Corp));
+    // 1.16.10b: the additional [click] joined the play cost, so the whole
+    // card cost two of the Corp's three clicks.
+    assert_eq!(vm.st.corp.clicks, 1, "{}", t.tail(16));
+}
+
+/// Salem's Hospitality: "Choose a card name. The Runner reveals the grip and
+/// trashes all cards with the chosen name revealed this way."
+#[test]
+fn salems_hospitality_trashes_every_copy_in_the_grip() {
+    let mut vm = Vm::empty(103);
+    let salem = vm.new_object(card("Salem's Hospitality"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(salem);
+    let a = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    let b = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    let other = vm.new_object(card("Diesel"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([a, b, other]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(salem))
+            .when(Match::name_value().once(), Reply::Name("Sure Gamble"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(vm.st.objects[&a].zone, Zone::Discard(Side::Runner), "{}", t.tail(16));
+    assert_eq!(vm.st.objects[&b].zone, Zone::Discard(Side::Runner), "{}", t.tail(16));
+    assert_eq!(vm.st.objects[&other].zone, Zone::Hand(Side::Runner));
+    // 1.21.3: the reveal showed the Corp the whole grip.
+    assert!(vm.view_of(Side::Corp).sees(other));
+}
+
+/// Azmari EdTech: "When your turn ends, you may name a card type. Gain
+/// 2[credit] the first time each turn the Runner plays or installs a card
+/// that has the type you last named this way."
+///
+/// The "first time each turn" is ONE flag over both halves of "plays or
+/// installs": two events of the named type in a turn pay once.
+#[test]
+fn azmari_edtech_names_a_type_and_pays_once_a_turn() {
+    let mut vm = Vm::empty(104);
+    tk::install_identity(&mut vm, card("Azmari EdTech: Shaping the Future"), Side::Corp);
+    let a = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    let b = vm.new_object(card("Diesel"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([a, b]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.st.runner.credits = 20;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // 9.6.9: the "you may" is the whole ability.
+            .when(Match::reaction().once(), Reply::take("azmari"))
+            .when(Match::options().once(), Reply::ChooseNamed("event"))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(a))
+            .when(Match::action().once(), Reply::play_card(b))
+            .stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&a].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.objects[&b].zone, Zone::Discard(Side::Runner));
+    assert_eq!(
+        vm.st.corp.credits, 5,
+        "3 basic credit actions + ONE payout for two events — 9.3.6g's flag \
+         is shared by \"plays or installs\": {}",
+        t.tail(24)
+    );
+}
+
+/// Falsified Credentials: "Name a card type. Expose a card in a remote
+/// server, then gain 5[credit] if the exposed card has the named card type."
+#[test]
+fn falsified_credentials_pays_only_when_the_exposed_card_matches() {
+    for (named, expected) in [("upgrade", 6u32), ("agenda", 1u32)] {
+        let mut vm = Vm::empty(105);
+        let fc = vm.new_object(card("Falsified Credentials"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(fc);
+        let upgrade = tk::install_root(
+            &mut vm,
+            PrintedCard::vanilla("Loose Upgrade", Side::Corp, CardType::Upgrade),
+            ServerId::Remote(1),
+            false,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 2;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(fc))
+                .when(Match::options().once(), Reply::ChooseNamed(named))
+                .when(Match::targets().once(), Reply::target(upgrade))
+                .stop_at_action(),
+        );
+
+        // 1.21.4: exposing is revealing, so the Runner has seen it either way.
+        assert!(vm.view_of(Side::Runner).sees(upgrade), "{}", t.tail(16));
+        assert_eq!(
+            vm.st.runner.credits, expected,
+            "named {named}, exposed an upgrade: {}",
+            t.tail(16)
+        );
+    }
+}
+
+/// Ibrahim Salem: "As an additional cost to rez Ibrahim Salem, forfeit an
+/// agenda. When your turn begins, name a card type. Look at the Runner's grip
+/// and trash 1 card in it of the named type."
+#[test]
+fn ibrahim_salem_names_a_type_and_trashes_one_of_it_from_the_grip() {
+    let mut vm = Vm::empty(106);
+    tk::install_root(&mut vm, card("Ibrahim Salem"), ServerId::Remote(1), true);
+    let event = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    let hardware = vm.new_object(card("Desperado"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([event, hardware]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::reaction().once(), Reply::take("ibrahim salem"))
+            .when(Match::options().once(), Reply::ChooseNamed("hardware"))
+            .when(Match::targets().once(), Reply::target(hardware))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(vm.st.objects[&hardware].zone, Zone::Discard(Side::Runner), "{}", t.tail(20));
+    assert_eq!(
+        vm.st.objects[&event].zone,
+        Zone::Hand(Side::Runner),
+        "only a card of the NAMED type is trashed: {}",
+        t.tail(20)
+    );
+    // 1.21.2: the Corp looked at the grip, so it saw the card it left behind.
+    assert!(vm.view_of(Side::Corp).sees(event));
+}
+
+/// Wari: "…you may trash Wari to name sentry, code gate or barrier. Expose a
+/// piece of ice, then add it to HQ if it has the named subtype."
+///
+/// The choice outlives the card that made it: 9.10.3c would expire it at the
+/// next checkpoint, since paying the [trash] cost put Wari in the heap before
+/// the exposure ever happened, so the card states the run as its duration.
+#[test]
+fn wari_names_a_subtype_and_bounces_matching_ice() {
+    for (named, bounced) in [("Barrier", true), ("Sentry", false)] {
+        let mut vm = Vm::empty(107);
+        let wari = tk::install_rig(&mut vm, card("Wari"));
+        let mut barrier = tk::vanilla_ice("Loose Barrier", 1, 1);
+        barrier.subtypes = vec!["Barrier"];
+        let ice = tk::install_ice(&mut vm, barrier, ServerId::Remote(1), false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Hq))
+                .when(Match::reaction().once(), Reply::take("wari"))
+                .when(Match::nested_cost().once(), Reply::PayCost(true))
+                .when(Match::options().once(), Reply::ChooseNamed(named))
+                .when(Match::targets().once(), Reply::target(ice))
+                .stop_at_action(),
+        );
+
+        assert_eq!(vm.st.objects[&wari].zone, Zone::Discard(Side::Runner), "{}", t.tail(24));
+        let expected = if bounced { Zone::Hand(Side::Corp) } else { Zone::Ice(ServerId::Remote(1)) };
+        assert_eq!(
+            vm.st.objects[&ice].zone, expected,
+            "named {named} against a barrier: {}",
+            t.tail(24)
+        );
+        if !bounced {
+            // 1.21.4: the ice was exposed either way — but 1.21.6 expires the
+            // sighting for the copy that MOVED, so only this branch can look.
+            assert!(vm.view_of(Side::Runner).sees(ice), "exposed: {}", t.tail(24));
+        }
+    }
+}

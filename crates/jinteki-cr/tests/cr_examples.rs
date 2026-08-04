@@ -3839,9 +3839,9 @@ fn example_rule_values_defined_by_x_1() {
         vec![jinteki_cr::instr::Instruction::Trace {
             base: Quantity::XOfSource(Box::new(Quantity::Times(
                 2,
-                Box::new(Quantity::Count(
+                Box::new(Quantity::Count(vec![
                     jinteki_cr::instr::TargetFilter::IceProtectingSourceServer,
-                )),
+                ])),
             ))),
             if_successful: vec![jinteki_cr::instr::Instruction::GainTags(1)],
             if_unsuccessful: vec![],

@@ -311,6 +311,12 @@ impl CardBuilder {
         self.printed.additional_steal_cost = Some(c);
         self
     }
+    /// "As an additional cost to rez this card, …" (Archer, Ibrahim Salem;
+    /// 1.16.4c). Declinable during an "install and rez" effect (8.5.13d).
+    pub fn additional_rez_cost(mut self, c: Cost) -> Self {
+        self.printed.additional_rez_cost = Some(c);
+        self
+    }
 
     // ---- the abilities ----------------------------------------------------
     /// The ability of an event or operation, resolved as it is played (9.7).
@@ -1342,6 +1348,26 @@ pub fn made_a_successful_run_this_turn() -> TriggerRequirement {
 pub fn link_at_least(n: u32) -> TriggerRequirement {
     TriggerRequirement::RunnerLinkAtLeast(n)
 }
+/// "…if the Runner has 3 or more agenda points" (Complete Image; 1.17.1).
+pub fn agenda_points_at_least(side: Side, points: i32) -> TriggerRequirement {
+    TriggerRequirement::AgendaPointsAtLeast { side, points }
+}
+/// "…a card in a remote server" (4.6.6 — the root and the ice protecting it).
+pub fn in_a_remote_server() -> TargetFilter {
+    TargetFilter::InRemoteServer
+}
+/// "Look at <side>'s grip." (1.21.2 — every card in that hand.)
+pub fn look_at_whole_hand_of(hand_of: Side, by: Side) -> Instruction {
+    look_at(all_matching(&[TargetFilter::CardsInHandOf(hand_of)]), by)
+}
+/// "When your turn ends, …" (5.6.3/5.7.2 — the formal end of the turn).
+pub fn turn_ends(side: Side) -> TriggerCond {
+    TriggerCond::TurnEnds(side)
+}
+/// "Remove <cards> from the game." (§4.9.)
+pub fn remove_from_game(targets: TargetSpec) -> Instruction {
+    Instruction::RemoveCardsFromGame { targets }
+}
 /// "Whenever the Runner breaks a printed subroutine on this ice, …"
 /// (Gold Farmer class — met once per subroutine broken, not once per
 /// encounter.)
@@ -1499,7 +1525,7 @@ pub fn per_hosted_counter(kind: CounterKind) -> Quantity {
 }
 /// "for each <description>" — the count of matching cards (9.12.2a).
 pub fn per_card(f: TargetFilter) -> Quantity {
-    Quantity::Count(f)
+    Quantity::Count(vec![f])
 }
 /// "N for each …" — scale a quantity.
 pub fn times(n: i64, q: Quantity) -> Quantity {
@@ -1696,19 +1722,29 @@ pub fn named_by(key: &'static str) -> TargetFilter {
 /// was named. "All" is written as a count equal to how many there are, which
 /// is 1.15.2e's "as many distinct targets as are available".
 pub fn all_named_cards_in_discard_of(side: Side, key: &'static str) -> TargetSpec {
-    let criteria = vec![TargetFilter::InDiscardOf(side), named_by(key)];
-    TargetSpec::Choose {
-        count: Quantity::Count(named_by(key)),
-        criteria,
-        up_to: false,
-    }
+    all_matching(&[TargetFilter::InDiscardOf(side), named_by(key)])
 }
 /// "…the Runner reveals the grip and trashes all cards with the chosen name"
 /// — every card in that hand matching what was named.
 pub fn all_named_cards_in_hand_of(side: Side, key: &'static str) -> TargetSpec {
+    all_matching(&[TargetFilter::CardsInHandOf(side), named_by(key)])
+}
+/// "…any number of copies of the named card from Archives" — the naming
+/// player picks however many they like, up to all of them (1.15.2e caps it).
+pub fn any_number_of_named_cards_in_discard_of(side: Side, key: &'static str) -> TargetSpec {
+    let criteria = vec![TargetFilter::InDiscardOf(side), named_by(key)];
     TargetSpec::Choose {
-        count: Quantity::Count(named_by(key)),
-        criteria: vec![TargetFilter::CardsInHandOf(side), named_by(key)],
+        count: Quantity::Count(criteria.clone()),
+        criteria,
+        up_to: true,
+    }
+}
+/// "**all** <description>" — every card the description reaches. Written as a
+/// count equal to how many there are, so 1.15.2e leaves no choice at all.
+pub fn all_matching(criteria: &[TargetFilter]) -> TargetSpec {
+    TargetSpec::Choose {
+        count: Quantity::Count(criteria.to_vec()),
+        criteria: criteria.to_vec(),
         up_to: false,
     }
 }
@@ -1723,6 +1759,11 @@ pub fn earlier_choice_matches(nth: usize, criteria: &[TargetFilter]) -> TriggerR
 /// again without choosing it a second time.
 pub fn earlier_choice(nth: usize) -> TargetSpec {
     TargetSpec::EarlierTarget { nth }
+}
+/// "…them" — ALL the cards this ability already chose (1.15.4, 1.15.2d: one
+/// choice can name several cards).
+pub fn earlier_choices() -> TargetSpec {
+    TargetSpec::EarlierTargets
 }
 /// "Expose <a card>." (1.21.4 — revealing an installed, unrezzed card.)
 pub fn expose(cards: TargetSpec) -> Instruction {

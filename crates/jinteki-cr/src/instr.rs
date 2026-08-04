@@ -18,9 +18,14 @@ use crate::object::{CardType, ObjectId, ServerId, Side, Zone};
 pub enum Quantity {
     /// A printed constant.
     Const(i64),
-    /// "…for each <object matching the filter>" — the count of matching
-    /// objects (9.12.2a).
-    Count(TargetFilter),
+    /// "…for each <object matching the criteria>" — the count of matching
+    /// objects (9.12.2a). The criteria are the shared filter vocabulary and
+    /// combine as a conjunction, exactly as a target announcement's and a
+    /// search's do (§12 rule 5), so "every copy of the named card in the
+    /// heap" is one selector and not a filter that has to be invented.
+    /// 1.15.2c applies to the list as a whole: with no criterion naming a
+    /// zone, only installed cards are counted.
+    Count(Vec<TargetFilter>),
     /// "…for each <kind> counter hosted on this card" — counts hosted
     /// counters INCLUDING those set aside by a [trash] trigger cost (9.5.5).
     CountersOnSource(crate::object::CounterKind),
@@ -1122,6 +1127,11 @@ pub enum TargetSpec {
     /// later instruction without re-announcing it (Howler class). `nth` is
     /// 0-based over the ability's announcements in order.
     EarlierTarget { nth: usize },
+    /// CR 1.15.4 in the PLURAL: "…and add **them** to HQ" (Reclamation
+    /// Order). One announcement can choose several cards (1.15.2d), and a
+    /// later instruction of the same ability acts on all of them — which
+    /// `EarlierTarget` cannot say, since it names one.
+    EarlierTargets,
 }
 
 /// Which subroutines of the encountered ice a break ability acts on
@@ -1197,6 +1207,11 @@ pub enum TargetFilter {
     /// "…a card in the root of another server" (Pinhole class): installed in
     /// the root of a server OTHER than the attacked one.
     InRootOfServerOtherThanAttacked,
+    /// CR 4.6.6: "…a card in a remote server" (Falsified Credentials). 4.6.6b
+    /// makes a server the cards installed in its root TOGETHER WITH the ice
+    /// protecting it, so both are "in" it; 4.6.8 is what makes "remote" a
+    /// distinction the criterion can draw. Names the play area (1.15.2c).
+    InRemoteServer,
     /// CR 4.2.2: "1 of the top N cards of R&D" (Top Hat class) — a criterion
     /// that explicitly specifies the zone, which is what lets 1.15.2c's
     /// play-area restriction lift for it.
@@ -1340,6 +1355,9 @@ impl TargetFilter {
                 // 1.18.3: only an INSTALLED card can be advanced, so this
                 // criterion already names the play area.
                 | TargetFilter::CanBeAdvanced
+                // 4.6.6: a server is a place, and only installed cards are in
+                // one.
+                | TargetFilter::InRemoteServer
                 // 1.13.2: a host relationship IS a location — "an agenda
                 // hosted on Film Critic" says where the card is as precisely
                 // as "a card in HQ" does. Without this the restriction never

@@ -417,6 +417,12 @@ pub enum TriggerRequirement {
     SourceNotInDiscard,
     /// "…if this program has a hosted Corp card" (Cupellation class).
     SourceHostsCorpCard,
+    /// CR 1.17.1: "…if the Runner has 3 or more agenda points" (Complete
+    /// Image). The score of the named player as 9.12.1a computes it, so an
+    /// agenda whose point value an active ability is modifying counts as
+    /// modified. Not the threat level (1.17.1a), which is the HIGHER of the
+    /// two scores and says nothing about whose.
+    AgendaPointsAtLeast { side: Side, points: i32 },
     /// CR 1.15.4: "…**if the exposed card** has the named card type"
     /// (Falsified Credentials), "…add it to HQ **if it** has the named
     /// subtype" (Wari). A question about a target this ability already
