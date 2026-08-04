@@ -1595,6 +1595,35 @@ pub fn play_event_button(name: &'static str, card: ObjectId) -> PrintedCard {
     c
 }
 
+/// A Runner button playing an event it CHOOSES from the grip — the printed
+/// class "play an event from your grip" (a Same-Old-Thing-class sentence with
+/// the zone the grip rather than the heap). 1.15.1: the card played is the
+/// instruction's target, announced under 1.15.2 before the play begins.
+///
+/// Elision (ARCHITECTURE §12 rule 3): the criteria say "an event in the grip"
+/// and no more, because no test using this shape restricts the choice
+/// further; the position takes the full criteria vocabulary.
+pub fn play_chosen_event_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::PlayCard {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![
+                    crate::instr::TargetFilter::CardsInHandOf(Side::Runner),
+                    crate::instr::TargetFilter::CardTypeIs(CardType::Event),
+                ],
+                up_to: false,
+            },
+            ignore_costs: false,
+            then_remove_from_game: false,
+        }],
+    )
+    .labeled("play-chosen-event: an event from the grip")];
+    c
+}
+
 /// The 5.2.7a "[click]: Play an event" basic action, as a card ability: the
 /// kernel has no basic install/play actions yet, so tests that need an event
 /// played from an ACTION window (rather than a paid one) use this.

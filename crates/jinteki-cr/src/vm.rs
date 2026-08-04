@@ -26,7 +26,7 @@ use crate::frames::{
     StructCtx, StructureFrame,
 };
 pub use crate::ability::SubKey;
-use crate::instr::{Instruction, TargetFilter, TargetSpec};
+use crate::instr::{Contained, Instruction, TargetFilter, TargetSpec};
 use crate::lingering::{Duration, LingeringEffect, Payload};
 use crate::change::{ActionIdentity, BasicAction, ChangeBuffer, GameChange};
 use crate::object::{
@@ -514,6 +514,9 @@ mod imminent {
         pub atoms: Vec<EffectAtom>,
         pub controller: Side,
         pub targets: Vec<ObjectId>,
+        /// CR 1.15.2: the size of each announcement, so a several-position
+        /// instruction can read them positionally.
+        pub target_spans: Vec<usize>,
         /// CR 1.15.1: announced SUBROUTINE targets (9.8.6).
         pub sub_targets: Vec<crate::ability::SubKey>,
         /// CR 1.15.1 / 1.12.1: announced COUNTER targets.
@@ -935,7 +938,15 @@ impl Vm {
                         let instr = self.step_instruction(k);
                         let atoms = self.expected_atoms(&instr, self.st.turn_side, &[], None);
                         let asked =
-                            self.push_imminent(instr, self.st.turn_side, Vec::new(), Vec::new(), Vec::new(), atoms);
+                            self.push_imminent(
+                                instr,
+                                self.st.turn_side,
+                                Vec::new(),
+                                Vec::new(),
+                                Vec::new(),
+                                Vec::new(),
+                                atoms,
+                            );
                         self.set_structure_phase(StepPhase::Exec);
                         if asked {
                             // 9.9.11 order Decision pending; the answer path
@@ -4324,6 +4335,7 @@ impl Vm {
         instr: Instruction,
         controller: Side,
         targets: Vec<ObjectId>,
+        target_spans: Vec<usize>,
         sub_targets: Vec<crate::ability::SubKey>,
         counter_targets: Vec<crate::object::CounterRef>,
         atoms: Vec<EffectAtom>,
@@ -4350,6 +4362,7 @@ impl Vm {
             atoms,
             controller,
             targets,
+            target_spans,
             sub_targets,
             counter_targets,
             run_ordinal,
@@ -4991,6 +5004,7 @@ impl Vm {
             instructions,
             idx: 0,
             phase,
+            target_spans: Vec::new(),
             targets: Vec::new(),
             sub_targets: Vec::new(),
             counter_targets: Vec::new(),
@@ -5320,6 +5334,7 @@ impl Vm {
                 // 1.15.2: the next instruction announces its own targets
                 // from scratch; 1.15.4 keeps the ability-wide list.
                 af.targets.clear();
+                af.target_spans.clear();
                 af.sub_targets.clear();
                 af.counter_targets.clear();
                 af.announce_slot = 0;
@@ -5397,46 +5412,106 @@ impl Vm {
 
     /// CR 1.15.2: how many separate announcements this instruction requires
     /// ("for each time the instruction requires a player to choose 1 or more
-    /// objects"). Every instruction in the vocabulary requires at most one
-    /// except a `TargetSpec::Each`, which requires one per element.
+    /// objects"), plus the slot every instruction gets for a decision that is
+    /// NOT a 1.15.2 announcement (a nested cost's payment, 8.5.16b's declared
+    /// destination, 6.9.1a's attacked server, an optional effect's yes/no).
+    ///
+    /// The floor of 1 is that slot: it is what makes an instruction whose
+    /// only decision is one of those reachable at slot 0, and it is why the
+    /// count is never derived downwards to zero.
     fn announcements_required(&self, instr: &Instruction) -> usize {
-        match instr {
-            Instruction::PerformedBy { instr, .. } => self.announcements_required(instr),
-            // 9.6.5d: the branch's instructions are this instruction's
-            // effects, so their announcements are its announcements.
-            Instruction::IfMet { .. } => self
-                .if_met_branch(instr)
-                .iter()
-                .map(|s| self.announcements_required(s))
-                .sum(),
-            Instruction::TrashCards(TargetSpec::Each(specs)) => specs.len(),
-            // 1.15.2: "for each time the instruction requires a player to
-            // choose 1 or more objects" — a swap has TWO target positions and
-            // asks once for each that is actually a choice.
-            Instruction::SwapCards { a, b } => {
-                [a, b].iter().filter(|s| matches!(s, TargetSpec::Choose { .. })).count()
+        self.announcements_owed(instr).max(1)
+    }
+
+    /// CR 1.15.2 exactly: the announcements this instruction owes, DERIVED
+    /// from its own target positions ([`Instruction::target_positions`]) and
+    /// from the instructions it contains ([`Instruction::contains`]).
+    ///
+    /// Derived, not listed: five instructions shipped missing from the
+    /// hand-maintained list this replaces (`MoveToDeck`, the counter family,
+    /// `ModifyStrength`, `RevealCards`, `IfMet`), and every one of them
+    /// silently resolved a `TargetSpec::Choose` position to nothing. An
+    /// instruction that declares a position here announces it with no other
+    /// code written anywhere, and the declaration is compile-time exhaustive.
+    fn announcements_owed(&self, instr: &Instruction) -> usize {
+        let own: usize =
+            instr.target_positions().iter().map(|s| s.announcement_slots()).sum();
+        let contained: usize = match instr.contains() {
+            // The contained instructions become instructions in their own
+            // right and announce for themselves when they get there.
+            Contained::Nothing | Contained::Deferred(_) => 0,
+            // 1.14.5/9.6.9/9.11.4a: they resolve as part of this instruction,
+            // so their choices are made here.
+            Contained::Inline(list) => list.iter().map(|i| self.announcements_owed(i)).sum(),
+            // 9.6.5d: only the live branch resolves, so only its
+            // announcements are owed.
+            Contained::Branches(_) => {
+                self.live_branch(instr).iter().map(|i| self.announcements_owed(i)).sum()
             }
+        };
+        own + contained + self.extra_announcements(instr)
+    }
+
+    /// The decisions an instruction asks for at announce time that are NOT
+    /// 1.15.2 target announcements, counted so that the slot walk in
+    /// [`Vm::targets_needed_at`] lands on them. Kept beside
+    /// [`Vm::extra_announcement`], which serves exactly these slots.
+    fn extra_announcements(&self, instr: &Instruction) -> usize {
+        match instr {
             // 1.15.1: "the targets of this operation are the advancement
-            // counters to be moved AND the destination card" — two
-            // announcements, the destination first so the counters can be
-            // required to come from another card.
-            Instruction::MoveCounters { .. } => 2,
-            _ => 1,
+            // counters to be moved AND the destination card" — the counters
+            // are the second announcement, after the destination, so that
+            // they can be required to come from another card.
+            Instruction::MoveCounters { .. } => 1,
+            // 9.8.6: the subroutines a break ability acts on ("all
+            // subroutines" targets nothing — 9.8.6a).
+            Instruction::BreakSubroutines { subs } => {
+                usize::from(!matches!(subs, crate::instr::SubroutineSpec::All))
+            }
+            // 9.11.4f: the nested cost's pay-or-not choice ends the
+            // instruction, so it is asked in this instruction's own slot.
+            Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } => 1,
+            // 9.6.9: the optional component's yes/no, before whatever the
+            // component itself announces.
+            Instruction::DeclineableChoice(_) => 1,
+            // 8.5.5/8.6.3: multi-installs and multi-plays pick ONE card at a
+            // time; the pick is a choice, not a 1.15.2 announcement of a
+            // target (the picked card is named by the instruction it becomes).
+            Instruction::InstallCards { count, .. } | Instruction::PlayCards { count, .. } => {
+                usize::from(*count > 0)
+            }
+            // 6.9.1a: an effect that named no server — the Runner announces
+            // the attacked one.
+            Instruction::InitiateRun { server: None, .. } => 1,
+            // 8.5.16b: the installer declares the destination — but only when
+            // the card position is not itself a choice. The expansion reads
+            // ONE announced object for both (the chosen card, or the declared
+            // host), so the two share a slot by construction.
+            Instruction::InstallCard { card, .. } => {
+                usize::from(card.announcement_slots() == 0)
+            }
+            _ => 0,
         }
     }
 
-    /// CR 9.6.5d: which branch of an "if <state>, … ; otherwise …" applies
+    /// CR 9.6.5d: which branch of an "if <state>, … ; otherwise …" resolves
     /// right now. The requirement is checked again when the instruction
     /// resolves — this is the reading the ANNOUNCEMENT has to make, because
-    /// 1.15.2 puts announcement before imminence.
-    fn if_met_branch(&self, instr: &Instruction) -> Vec<Instruction> {
-        let Instruction::IfMet { requires, then, otherwise } = instr else { return Vec::new() };
+    /// 1.15.2 puts announcement before imminence. Generic over
+    /// [`Contained::Branches`]: the guards ride on the classification, so a
+    /// second branching instruction needs no code here.
+    fn live_branch(&self, instr: &Instruction) -> Vec<Instruction> {
+        let Contained::Branches(branches) = instr.contains() else { return Vec::new() };
         let src = match self.frames.last() {
             Some(Frame::Ability(af)) => Some(af.source.obj),
             _ => None,
         };
-        let met = requires.iter().all(|r| self.state_requirement_holds_for(r, src));
-        if met { then.clone() } else { otherwise.clone() }
+        for (requires, effects) in branches {
+            if requires.iter().all(|r| self.state_requirement_holds_for(r, src)) {
+                return effects.to_vec();
+            }
+        }
+        Vec::new()
     }
 
     /// Compute targets that need a Decision (9.3.4b).
@@ -5455,90 +5530,159 @@ impl Vm {
     /// The same question with the announcement slot given explicitly, so an
     /// instruction that CONTAINS instructions (9.6.5d's "if <state>, <do
     /// this>") can rebase the slot onto the one that owns it.
+    ///
+    /// The slot is walked over the instruction's DECLARED target positions
+    /// ([`Instruction::target_positions`]) and then over the extra decisions
+    /// it asks for ([`Vm::extra_announcement`]) — never over a hand-kept list
+    /// of variants. A position declared on the instruction is therefore
+    /// announced whether or not anything is written here.
     fn targets_needed_at(&self, instr: &Instruction, slot: usize) -> Option<(Side, DecisionSpec)> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
-        match instr {
-            // 1.14.5: the named player makes the choices this instruction
-            // requires, in place of the ability's controller.
-            Instruction::PerformedBy { side, instr } => {
-                cite!("rule_controller_choices");
-                self.targets_needed_at(instr, slot).map(|(_, spec)| (*side, spec))
+        // 1.14.5: the named player makes the choices this instruction
+        // requires, in place of the ability's controller.
+        if let Instruction::PerformedBy { side, instr } = instr {
+            cite!("rule_controller_choices");
+            return self.targets_needed_at(instr, slot).map(|(_, spec)| (*side, spec));
+        }
+        // 1.15.2/9.6.5d/9.11.4a: an instruction whose effects are other
+        // instructions' — "if <state>, <do this>", a combined sentence, an
+        // optional component — makes their choices where they resolve, which
+        // is here. A targeting instruction inside one that never announced
+        // would silently act on nothing (the defect class of W14b's
+        // `MoveToDeck`, W17b's counters, W17c's `ModifyStrength`, W20's
+        // `RevealCards` and W21's `IfMet`).
+        match instr.contains() {
+            Contained::Inline(list) => {
+                let mut left = slot;
+                // 9.6.9: the optional yes/no comes before the component's own
+                // announcements, and a declined component announces nothing.
+                if let Some(spec) = self.extra_announcement(instr, left) {
+                    return Some(spec);
+                }
+                left = left.saturating_sub(self.extra_announcements(instr));
+                if af.declined {
+                    return None;
+                }
+                for step in list {
+                    let n = self.announcements_owed(step);
+                    if left < n {
+                        return self.targets_needed_at(step, left);
+                    }
+                    left -= n;
+                }
+                return None;
             }
-            // 9.6.5d: "if <state>, <do this>" is ONE instruction whose
-            // effects are the branch's, so the announcements it requires are
-            // the branch's too — a targeting instruction inside a branch that
-            // never announced would silently act on nothing (the defect class
-            // of W14b's `MoveToDeck` and W20's `RevealCards`). The branch is
-            // chosen by evaluating the requirement now: 1.15.2 puts the
-            // announcement before imminence, so this is the only moment there
-            // is, and 9.6.5d's own check at resolution still decides what
-            // actually happens.
-            Instruction::IfMet { .. } => {
+            Contained::Branches(_) => {
                 cite!("rule_condition_requirements_part_of_effect");
                 let mut left = slot;
-                for step in self.if_met_branch(instr) {
-                    let n = self.announcements_required(&step);
+                for step in self.live_branch(instr) {
+                    let n = self.announcements_owed(&step);
                     if left < n {
                         return self.targets_needed_at(&step, left);
                     }
                     left -= n;
                 }
-                None
+                return None;
             }
-            // 9.10.3: "choose an installed piece of ice" is a 1.15.2
-            // announcement like any other; the choice is then remembered.
-            Instruction::MaintainChoice { of: crate::instr::ChoiceSpec::Object(spec), .. } => {
-                self.announcement_for(spec).map(|s| (af.controller, s))
+            Contained::Nothing | Contained::Deferred(_) => {}
+        }
+        // 1.15.2: the instruction's own target positions, in the order it
+        // declared them.
+        let positions = instr.target_positions();
+        let mut left = slot;
+        for (i, pos) in positions.iter().enumerate() {
+            let n = pos.announcement_slots();
+            if left < n {
+                return self.announce_position(instr, i, pos, left);
             }
-            // 9.8.3a: "choose another rezzed piece of ice" — the ice whose
-            // subroutines are copied is a 1.15.2 target announcement.
-            Instruction::GrantSubroutines {
-                grant: crate::instr::SubroutineGrant::CopiedFrom(spec),
-                ..
-            } => self.announcement_for(spec).map(|s| (af.controller, s)),
-            Instruction::TrashCards(spec)
-            | Instruction::ShuffleCardsIntoDeck { targets: spec, .. }
-            | Instruction::RemoveCardsFromGame { targets: spec }
-            | Instruction::LookAtCards { cards: spec, .. }
-            | Instruction::AccessCards { cards: spec, .. }
-            | Instruction::ModifySubtypes { target: spec, .. }
-            | Instruction::MoveIce { ice: spec, .. }
-            | Instruction::ForceEncounter { ice: spec }
-            | Instruction::RezCard { target: spec, .. }
-            | Instruction::ExposeCards { cards: spec }
-            // 1.21.3 / 1.15.1: "reveal any number of copies of the named card
-            // from Archives" chooses the cards it shows, so the reveal's card
-            // position announces like every other one. (For the usual
-            // `SelfSource` or `FoundBySearch` position `announcement_for`
-            // returns `None` and nothing changes.)
-            | Instruction::RevealCards { cards: spec }
-            | Instruction::ResolveAbilityOf { source: spec, .. }
-            | Instruction::Derez { target: spec }
-            // 8.2/1.15.1: "add 1 of the drawn cards to the bottom of R&D"
-            // chooses its card, so the card position announces like any other.
-            | Instruction::MoveToDeck { card: spec, .. }
-            // 1.15.1: "place 2 advancement counters on 1 installed card" —
-            // the CARD is the target of the instruction, so every counter
-            // instruction whose card position is a choice announces it. (For
-            // the usual `SelfSource` position `announcement_for` returns
-            // `None` and nothing changes.)
-            | Instruction::PlaceCounters { target: spec, .. }
-            | Instruction::LoadCounters { target: spec, .. }
-            | Instruction::RemoveCounters { target: spec, .. }
-            | Instruction::TakeHostedCredits { from: spec, .. }
-            | Instruction::AdvanceCard { target: spec }
-            // 1.15.1: "Choose 1 rezzed piece of ice protecting this server.
-            // That ice gets +X strength" — 9.11.4c makes the choose sentence
-            // and the modifying sentence ONE instruction, and the ice is its
-            // target.
-            | Instruction::ModifyStrength { target: spec, .. }
-            // 1.15.1 / 1.5.4b: "switch your identity with another identity
-            // from the same faction" chooses the identity it acts on, and a
-            // pile card is an ordinary object, so it announces like any other.
-            | Instruction::SwitchIdentity { with: spec, .. }
-            | Instruction::MoveRunnerToIce { ice: spec, .. } => {
-                self.announcement_for(spec).map(|s| (af.controller, s))
+            left -= n;
+        }
+        self.extra_announcement(instr, left)
+    }
+
+    /// The announcement one declared target position asks for. The default is
+    /// the shared 1.15.2 announcement ([`Vm::announcement_for_at`]); the arms
+    /// are the positions whose candidate set or floor is shaped differently
+    /// by their own rule.
+    fn announce_position(
+        &self,
+        instr: &Instruction,
+        position: usize,
+        spec: &TargetSpec,
+        sub: usize,
+    ) -> Option<(Side, DecisionSpec)> {
+        let Some(Frame::Ability(af)) = self.frames.last() else { return None };
+        let TargetSpec::Choose { count, criteria, up_to } = spec else {
+            return self.announcement_for_at(spec, sub).map(|s| (af.controller, s));
+        };
+        match (instr, position) {
+            // 1.13.1/8.7.4: "host <cards> on this card" / "add <a card> to
+            // your grip" — the cards a search or a hand supplies, whose
+            // number is not forced (1.15.2e's completion applies to the
+            // ceiling the player reached for).
+            (Instruction::HostCards { .. }, 0)
+            | (Instruction::AddToScoreArea { .. }, 0)
+            | (Instruction::AddCardsToHand { .. }, 0)
+                if !*up_to =>
+            {
+                let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((
+                    af.controller,
+                    DecisionSpec::ChooseTargets {
+                        candidates,
+                        count: want,
+                        up_to: true,
+                        min: 0,
+                        distinct_names: false,
+                    },
+                ))
             }
+            // 8.8.1/8.8.2: a swap announces both cards it exchanges, and the
+            // SECOND is filtered by 8.8.2 — only cards each of which may
+            // occupy the other's location. The first is filtered the same way
+            // against the whole field, since a card with no legal partner is
+            // not a choice the swap could ever complete.
+            (Instruction::SwapCards { .. }, _) if !*up_to => {
+                let all = self.filter_candidates_from(criteria, Some(af.source.obj));
+                let chosen = af.targets.first().copied();
+                let mut candidates: Vec<ObjectId> = all
+                    .iter()
+                    .copied()
+                    .filter(|&c| Some(c) != chosen)
+                    .filter(|&c| match chosen {
+                        Some(first) => self.swap_legal(first, c),
+                        None => all.iter().any(|&o| o != c && self.swap_legal(c, o)),
+                    })
+                    .collect();
+                candidates.retain(|c| !af.targets.contains(c));
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
+            }
+            // 8.5.16b/9.5.5: the card an install picks, and the set-aside
+            // counters' destination, are described without reference to the
+            // source, so the description is read from nowhere in particular.
+            (Instruction::InstallCard { .. }, 0)
+            | (Instruction::MoveSetAsideCounters { .. }, 0)
+                if !*up_to =>
+            {
+                let candidates = self.filter_candidates(criteria, af.controller);
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
+            }
+            _ => self.announcement_for_at(spec, sub).map(|s| (af.controller, s)),
+        }
+    }
+
+    /// The decisions asked at announce time that are NOT 1.15.2 target
+    /// announcements, served in the slots [`Vm::extra_announcements`] counts.
+    /// `left` is the slot index with the target positions already consumed.
+    fn extra_announcement(&self, instr: &Instruction, left: usize) -> Option<(Side, DecisionSpec)> {
+        let Some(Frame::Ability(af)) = self.frames.last() else { return None };
+        if left >= self.extra_announcements(instr) {
+            return None;
+        }
+        match instr {
             // CR 1.15.1 / 9.8.6: a break ability announces the subroutines
             // it acts on. "All subroutines" (9.8.6a) announces nothing.
             Instruction::BreakSubroutines { subs } => {
@@ -5577,11 +5721,10 @@ impl Vm {
                     },
                 ))
             }
-            // 1.15.1: the destination card, then the counters.
-            Instruction::MoveCounters { kind, count, up_to, to, from_criteria } => {
-                if slot == 0 {
-                    return self.announcement_for(to).map(|s| (af.controller, s));
-                }
+            // 1.15.1: the destination card (a target position), then the
+            // counters — which are objects too (1.15.1/1.18.2) but are
+            // addressed by `CounterRef` rather than by `TargetSpec`.
+            Instruction::MoveCounters { kind, count, up_to, from_criteria, .. } => {
                 cite!("rule_target");
                 cite!("rule_object");
                 let dest = af.targets.first().copied();
@@ -5616,75 +5759,11 @@ impl Vm {
                 let (payer, _) = self.nested_cost_payer(instr);
                 Some((payer, DecisionSpec::NestedCost { cost: cost.clone() }))
             }
-            Instruction::MoveSetAsideCounters {
-                target: TargetSpec::Choose { count, criteria, up_to: false }, ..
-            } => {
-                let candidates = self.filter_candidates(criteria, af.controller);
-                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((af.controller, self.announcement(candidates, want)))
-            }
+            // 9.6.9: the optional component's yes/no.
             Instruction::DeclineableChoice(_) => Some((
                 af.controller,
                 DecisionSpec::OptionalEffect { label: "optional effect" },
             )),
-            // 1.13.1: "host <cards> on this card" / "add <a card> to your
-            // grip" announce which cards they act on (9.3.4b).
-            Instruction::HostCards { cards: TargetSpec::Choose { count, criteria, up_to: false }, .. }
-            | Instruction::AddToScoreArea { cards: TargetSpec::Choose { count, criteria, up_to: false }, .. }
-            | Instruction::AddCardsToHand { cards: TargetSpec::Choose { count, criteria, up_to: false } } => {
-                let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
-                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((
-                    af.controller,
-                    DecisionSpec::ChooseTargets {
-                        candidates,
-                        count: want,
-                        up_to: true,
-                        min: 0,
-                        distinct_names: false,
-                    },
-                ))
-            }
-            // 8.8.1/8.8.2: a swap announces both cards it exchanges, one
-            // announcement per position (1.15.2), and the SECOND is filtered
-            // by 8.8.2 — only cards each of which may occupy the other's
-            // location. The first is filtered the same way against the whole
-            // field, since a card with no legal partner is not a choice the
-            // swap could ever complete ("if a swap effect would resolve while
-            // there are no legal exchanges possible, then that effect does
-            // nothing").
-            Instruction::SwapCards { a, b } => {
-                let specs: Vec<&TargetSpec> = [a, b]
-                    .into_iter()
-                    .filter(|s| matches!(s, TargetSpec::Choose { .. }))
-                    .collect();
-                let TargetSpec::Choose { count, criteria, up_to: false } = specs.get(slot)? else {
-                    return None;
-                };
-                let all = self.filter_candidates_from(criteria, Some(af.source.obj));
-                let chosen = af.targets.first().copied();
-                let mut candidates: Vec<ObjectId> = all
-                    .iter()
-                    .copied()
-                    .filter(|&c| Some(c) != chosen)
-                    .filter(|&c| match chosen {
-                        Some(first) => self.swap_legal(first, c),
-                        None => all.iter().any(|&o| o != c && self.swap_legal(c, o)),
-                    })
-                    .collect();
-                candidates.retain(|c| !af.targets.contains(c));
-                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((af.controller, self.announcement(candidates, want)))
-            }
-            // 1.13.1: the other target position of a hosting instruction —
-            // WHICH CARD becomes the host (a Rook-class ability moving itself
-            // onto another piece of ice). 1.15.2e applies: as many distinct
-            // valid targets as the instruction asks for, or as many as exist.
-            Instruction::HostCards { host: TargetSpec::Choose { count, criteria, up_to: false }, .. } => {
-                let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
-                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((af.controller, self.announcement(candidates, want)))
-            }
             // 8.5.5: multi-installs choose ONE card at a time.
             Instruction::InstallCards {
                 count,
@@ -5734,15 +5813,6 @@ impl Vm {
                         },
                     ))
                 }
-            }
-            // 8.5.16b: the Runner declares a host or defaults to the rig.
-            Instruction::InstallCard {
-                card: TargetSpec::Choose { count, criteria, up_to: false },
-                ..
-            } => {
-                let candidates = self.filter_candidates(criteria, af.controller);
-                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((af.controller, self.announcement(candidates, want)))
             }
             // 6.9.1a: the effect initiated a run without naming a server, so
             // the Runner announces the attacked server. 6.7.4a fixes the set
@@ -6621,15 +6691,30 @@ impl Vm {
     /// instruction are out of the running (1.15.2e's distinctness applies
     /// per announcement; Colossus's program and resource cannot collide
     /// anyway, but a "2 different pieces of ice" spec relies on it).
-    fn announcement_for(&self, spec: &TargetSpec) -> Option<DecisionSpec> {
+    fn announcement_for_at(&self, spec: &TargetSpec, slot: usize) -> Option<DecisionSpec> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
-        let slot = af.announce_slot;
         let (count, criteria, up_to) = match spec {
             TargetSpec::Choose { count, criteria, up_to } if slot == 0 => (count, criteria, *up_to),
-            TargetSpec::Each(specs) => match specs.get(slot) {
-                Some(TargetSpec::Choose { count, criteria, up_to }) => (count, criteria, *up_to),
-                Some(_) | None => return None,
-            },
+            // 1.15.2: one Decision per announcing element, in order — an
+            // element that names its objects outright takes no slot.
+            TargetSpec::Each(specs) => {
+                let mut left = slot;
+                let mut found = None;
+                for s in specs {
+                    let n = s.announcement_slots();
+                    if left < n {
+                        found = Some(s);
+                        break;
+                    }
+                    left -= n;
+                }
+                match found {
+                    Some(TargetSpec::Choose { count, criteria, up_to }) => {
+                        (count, criteria, *up_to)
+                    }
+                    Some(_) | None => return None,
+                }
+            }
             _ => return None,
         };
         cite!("rule_announce_targets");
@@ -6689,11 +6774,12 @@ impl Vm {
             }
             _ => {}
         }
-        let (controller, targets, sub_targets, counter_targets) = {
+        let (controller, targets, target_spans, sub_targets, counter_targets) = {
             let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
             (
                 af.controller,
                 af.targets.clone(),
+                af.target_spans.clone(),
                 af.sub_targets.clone(),
                 af.counter_targets.clone(),
             )
@@ -6711,8 +6797,15 @@ impl Vm {
         // CR 9.6.12/9.8.8: independence at first-instruction imminence.
         cite!("rule_conditional_ability_independent");
         cite!("rule_subroutine_independent");
-        let asked =
-            self.push_imminent(instr, controller, targets, sub_targets, counter_targets, atoms);
+        let asked = self.push_imminent(
+            instr,
+            controller,
+            targets,
+            target_spans,
+            sub_targets,
+            counter_targets,
+            atoms,
+        );
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.imminent_index = Some(0);
         }
@@ -6843,6 +6936,7 @@ impl Vm {
                 af.instructions.insert(at, Instruction::InstallRezFinish);
             }
             af.targets.clear();
+            af.target_spans.clear();
             af.announce_slot = 0;
             // Phase stays Targets: the next tick makes InstallStepPlace
             // imminent.
@@ -7023,6 +7117,7 @@ impl Vm {
                 },
             );
             af.targets.clear();
+            af.target_spans.clear();
             af.announce_slot = 0;
             // Re-enter Targets: the InstallCard may itself need a
             // destination choice before expanding.
@@ -7078,6 +7173,7 @@ impl Vm {
             af.instructions.insert(af.idx + 3, Instruction::PlayStepResolve);
             af.instructions.insert(af.idx + 4, Instruction::PlayStepFinish);
             af.targets.clear();
+            af.target_spans.clear();
             af.announce_slot = 0;
         }
     }
@@ -7110,6 +7206,7 @@ impl Vm {
                 Instruction::PlayCards { count: count - 1, from_hand_of, ignore_costs },
             );
             af.targets.clear();
+            af.target_spans.clear();
             af.announce_slot = 0;
         }
     }
@@ -8054,11 +8151,22 @@ impl Vm {
                 // two kinds. Nothing in the corpus distinguishes them; a card
                 // that did would want its sentence written as two
                 // instructions, which 9.11.4a already permits.
+                //
+                // A sub-instruction that CHOOSES its own targets is spliced
+                // for the same reason: the merge carries the targets this
+                // instruction announced, and a `TargetSpec::Choose` position
+                // inside a merged sub has none of its own, so it would
+                // resolve to nothing at all (the defect class of W14b's
+                // `MoveToDeck`). Spliced, it is 9.11.3's own instruction and
+                // announces its targets where 1.15.2 puts them.
                 cite!("rule_instructions_in_ability_text");
                 cite!("rule_instruction_sentence_exceptions");
                 let deferred: Vec<Instruction> = list
                     .iter()
                     .filter(|i| {
+                        if i.chooses_targets() {
+                            return true;
+                        }
                         let atoms =
                             self.expected_atoms(i, controller, &imm.targets, Some(source.obj));
                         !atoms.is_empty()
@@ -8152,6 +8260,7 @@ impl Vm {
                         atoms: imm.atoms.clone(),
                         controller,
                         targets: imm.targets.clone(),
+                        target_spans: imm.target_spans.clone(),
                         sub_targets: imm.sub_targets.clone(),
                         run_ordinal: imm.run_ordinal.clone(),
                         turn_ordinal: imm.turn_ordinal.clone(),
@@ -9139,14 +9248,14 @@ impl Vm {
                     self.check_all_subs_broken();
                 }
             }
-            Instruction::HostCards { cards, host, faceup } => {
+            Instruction::HostCards { cards, faceup, .. } => {
                 cite!("rule_placed_loaded");
-                let h = self
-                    .resolve_targets(host, Some(source.obj), &imm.targets)
-                    .first()
-                    .copied();
+                // 1.15.2: two target positions, read positionally — the
+                // guests are one announcement and the host is another, and
+                // the union of the two is neither.
+                let h = self.position_targets(&instr, 1, Some(source.obj), &imm).first().copied();
                 let Some(h) = h else { return };
-                let guests = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                let guests = self.position_targets(&instr, 0, Some(source.obj), &imm);
                 if matches!(cards, TargetSpec::FoundBySearch) {
                     self.take_found_cards();
                 }
@@ -9165,24 +9274,14 @@ impl Vm {
                     }
                 }
             }
-            Instruction::SwapCards { a, b } => {
+            Instruction::SwapCards { .. } => {
                 cite!("rule_swap");
                 cite!("rule_swap_simultaneous");
                 // 1.15.2: each target POSITION got its own announcement, in
                 // order, so the announced list is read positionally here
                 // rather than as one union.
-                let a_chosen = matches!(a, TargetSpec::Choose { .. });
-                let b_chosen = matches!(b, TargetSpec::Choose { .. });
-                let x = if a_chosen {
-                    imm.targets.first().copied()
-                } else {
-                    self.resolve_targets(a, Some(source.obj), &imm.targets).first().copied()
-                };
-                let y = if b_chosen {
-                    imm.targets.get(usize::from(a_chosen)).copied()
-                } else {
-                    self.resolve_targets(b, Some(source.obj), &imm.targets).first().copied()
-                };
+                let x = self.position_targets(&instr, 0, Some(source.obj), &imm).first().copied();
+                let y = self.position_targets(&instr, 1, Some(source.obj), &imm).first().copied();
                 if let (Some(x), Some(y)) = (x, y) {
                     self.swap_cards(x, y);
                 }
@@ -10294,6 +10393,7 @@ impl Vm {
                         atoms,
                         controller,
                         targets: imm.targets.clone(),
+                        target_spans: imm.target_spans.clone(),
                         sub_targets: imm.sub_targets.clone(),
                         run_ordinal: imm.run_ordinal.clone(),
                         turn_ordinal: imm.turn_ordinal.clone(),
@@ -10413,6 +10513,36 @@ impl Vm {
                 self.found_cards()
             }
         }
+    }
+
+    /// CR 1.15.2: the objects announced for ONE target position of an
+    /// instruction that has several.
+    ///
+    /// `imm.targets` is the union of every announcement the instruction made
+    /// (1.15.2d — one instruction, one set), which is the right reading for a
+    /// single position and for a `TargetSpec::Each`, and the wrong one for an
+    /// instruction whose positions are different things: a swap's two cards,
+    /// a hosting instruction's guests and its host. `target_spans` records
+    /// how many objects each announcement named, so a position can be read
+    /// back exactly.
+    fn position_targets(
+        &self,
+        instr: &Instruction,
+        position: usize,
+        source: Option<ObjectId>,
+        imm: &ImminentWrap,
+    ) -> Vec<ObjectId> {
+        let positions = instr.target_positions();
+        let Some(spec) = positions.get(position) else { return Vec::new() };
+        if spec.announcement_slots() == 0 {
+            return self.resolve_targets(spec, source, &imm.targets);
+        }
+        let before: usize =
+            positions[..position].iter().map(|s| s.announcement_slots()).sum();
+        let mine = spec.announcement_slots();
+        let skip: usize = imm.target_spans.iter().take(before).sum();
+        let take: usize = imm.target_spans.iter().skip(before).take(mine).sum();
+        imm.targets.iter().copied().skip(skip).take(take).collect()
     }
 
     /// The cards found by the innermost resolving ability's search (4.8.4).
@@ -12834,6 +12964,9 @@ impl Vm {
                 let instr = {
                     let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
                     af.targets.extend(t.iter().copied());
+                    // 1.15.2: this announcement named these objects — a
+                    // several-position instruction reads them positionally.
+                    af.target_spans.push(t.len());
                     af.ability_targets.extend(t.iter().copied());
                     af.announce_slot += 1;
                     af.instructions[af.idx].clone()
@@ -13113,8 +13246,16 @@ impl Vm {
                 let instr = {
                     let Some(Frame::Ability(af)) = self.frames.last_mut() else { unreachable!() };
                     af.declined = !yes;
+                    af.announce_slot += 1;
                     af.instructions[idx].clone()
                 };
+                // 1.15.2/9.6.9: the optional component is carried out as part
+                // of THIS instruction, so whatever targets it chooses are
+                // announced here, after the yes/no and before imminence.
+                if let Some((side, next)) = self.targets_needed(&instr) {
+                    self.ask(side, next, DecisionCtx::Targets);
+                    return;
+                }
                 self.begin_imminence(instr);
             }
             (DecisionCtx::MinimalSet, DecisionAnswer::ChooseSet(i)) => {

@@ -209,6 +209,12 @@ pub struct AbilityFrame {
     /// round per announcement, so this is the whole set the instruction acts
     /// on once every slot is filled.
     pub targets: Vec<ObjectId>,
+    /// CR 1.15.2: how many objects each announcement of the current
+    /// instruction named, in order. An instruction with SEVERAL target
+    /// POSITIONS (a swap's two cards, a hosting instruction's guests and its
+    /// host) has to read its announcements positionally — the union
+    /// `targets` holds cannot say which position named what.
+    pub target_spans: Vec<usize>,
     /// CR 1.15.2: which announcement of the current instruction comes next.
     /// Reset when the frame moves on to the next instruction.
     pub announce_slot: usize,

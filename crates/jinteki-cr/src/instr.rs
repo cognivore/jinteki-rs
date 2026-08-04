@@ -964,6 +964,279 @@ impl Instruction {
             if_successful,
         }
     }
+
+    /// CR 1.15.1/1.15.2: **the instruction's target positions, in
+    /// announcement order** — every place this instruction's text directs a
+    /// player to choose the objects it acts on, as DATA.
+    ///
+    /// This function is the announcement obligation itself, not a description
+    /// of it: [`crate::vm::Vm`] derives both how many announcements an
+    /// instruction requires and what each one asks from what is returned
+    /// here, so a position declared here is announced with no other code
+    /// written anywhere. Five separate instructions shipped without one
+    /// (`MoveToDeck`, the counter family, `ModifyStrength`, `RevealCards`,
+    /// `IfMet`), each silently resolving a `TargetSpec::Choose` to nothing;
+    /// this match is exhaustive **on purpose**, with no wildcard arm, so a
+    /// new `Instruction` variant does not compile until its positions — or
+    /// their absence — are declared, and `tests/announcements.rs` reads this
+    /// function's own arms against the enum's fields so that declaring the
+    /// absence of a position a variant really has fails too.
+    ///
+    /// A position that is not a `TargetSpec::Choose` announces nothing
+    /// (1.15.1: the objects are already named), so listing one costs nothing
+    /// and omitting one is the defect.
+    pub fn target_positions(&self) -> Vec<&TargetSpec> {
+        match self {
+            Instruction::TrashCards(spec)
+            | Instruction::AccessCards { cards: spec, .. }
+            | Instruction::ResolveAbilityOf { source: spec, .. }
+            | Instruction::RezCard { target: spec, .. }
+            | Instruction::LookAtCards { cards: spec, .. }
+            | Instruction::ExposeCards { cards: spec }
+            | Instruction::RevealCards { cards: spec }
+            | Instruction::TakeHostedCredits { from: spec, .. }
+            | Instruction::RemoveCounters { target: spec, .. }
+            | Instruction::Derez { target: spec }
+            | Instruction::MoveSetAsideCounters { target: spec, .. }
+            | Instruction::ModifySubtypes { target: spec, .. }
+            | Instruction::ForceEncounter { ice: spec }
+            | Instruction::ModifyStrength { target: spec, .. }
+            | Instruction::PlaceCounters { target: spec, .. }
+            | Instruction::MoveCounters { to: spec, .. }
+            | Instruction::AdvanceCard { target: spec }
+            | Instruction::SwitchIdentity { with: spec, .. }
+            | Instruction::ShuffleCardsIntoDeck { targets: spec, .. }
+            | Instruction::RemoveCardsFromGame { targets: spec }
+            | Instruction::InstallCard { card: spec, .. }
+            | Instruction::PlayCard { card: spec, .. }
+            | Instruction::MoveToDeck { card: spec, .. }
+            | Instruction::AddCardsToHand { cards: spec }
+            | Instruction::AddToScoreArea { cards: spec, .. }
+            | Instruction::MoveIce { ice: spec, .. }
+            | Instruction::MoveRunnerToIce { ice: spec, .. }
+            | Instruction::LoadCounters { target: spec, .. } => vec![spec],
+            // 1.13.1: WHICH cards are hosted, then WHICH card hosts them —
+            // two positions, announced in printed order.
+            Instruction::HostCards { cards, host, .. } => vec![cards, host],
+            // 8.8.1: a swap names both cards it exchanges (8.8.2 filters the
+            // second by what may occupy the first's location).
+            Instruction::SwapCards { a, b } => vec![a, b],
+            // 9.10.3: "choose an installed piece of ice" — the object a
+            // maintained choice is a choice OF is announced like any other
+            // (1.15.1b's other namespaces are named at resolution instead,
+            // so they are not target positions at all).
+            Instruction::MaintainChoice { of: ChoiceSpec::Object(spec), .. } => vec![spec],
+            Instruction::MaintainChoice { .. } => Vec::new(),
+            // 9.8.3a: the ice whose subroutines are copied is a target, and
+            // so is the ice they are granted TO.
+            Instruction::GrantSubroutines { to, grant: SubroutineGrant::CopiedFrom(from), .. } => {
+                vec![to, from]
+            }
+            Instruction::GrantSubroutines { to, .. } => vec![to],
+            // Everything else acts on objects it does not choose (or on no
+            // object at all). Listed rather than wildcarded: this is the
+            // compile-time gate.
+            Instruction::GainCredits(..) | Instruction::LoseCredits(..) | Instruction::GainClicks(..)
+            | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
+            | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags(..)
+            | Instruction::MustTrashAccessedCard { .. } | Instruction::EndTheRun | Instruction::DeclineableChoice(..)
+            | Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } | Instruction::AdditionalAccesses(..)
+            | Instruction::EndActionPhase(..) | Instruction::Combined(..) | Instruction::PreventDamage { .. }
+            | Instruction::PreventAllDamage { .. } | Instruction::AvoidTags(..) | Instruction::RemoveTags(..)
+            | Instruction::IncreaseImminentDamage { .. } | Instruction::PreventTrashOf(..)
+            | Instruction::DamageUnpreventable { .. } | Instruction::ReplaceImminentDamageKind { .. }
+            | Instruction::InitiateRun { .. } | Instruction::Trace { .. } | Instruction::TraceInitiate { .. }
+            | Instruction::TraceCorpSpend | Instruction::TraceRunnerSpend | Instruction::TraceDetermine { .. }
+            | Instruction::PsiGame { .. } | Instruction::CorpDiscards { .. } | Instruction::RestrictAccessToSelf
+            | Instruction::CreateDelayedConditional { .. } | Instruction::CreateLingeringEffect { .. }
+            | Instruction::ReduceRunnerMemoryThisTurn(..) | Instruction::ChooseOne { .. } | Instruction::BreakSubroutines { .. }
+            | Instruction::BypassEncounteredIce | Instruction::ChangeAttackedServer { .. }
+            | Instruction::PurgeVirusCounters | Instruction::FlipIdentity(..) | Instruction::TrashSelf
+            | Instruction::StealSelfAgenda | Instruction::ScoreSelfAgenda | Instruction::InstallCards { .. }
+            | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete
+            | Instruction::InstallRezPayCost | Instruction::InstallRezFinish | Instruction::PlayCards { .. }
+            | Instruction::PlayStepPlace | Instruction::PlayStepPayCost | Instruction::PlayStepActivate
+            | Instruction::PlayStepResolve | Instruction::PlayStepFinish | Instruction::RemoveSelfFromGame
+            | Instruction::IfMet { .. } | Instruction::SetAsideTopOfDeck { .. } | Instruction::ArrangeSetAside { .. }
+            | Instruction::CorpRearrangesRnd | Instruction::Search { .. } | Instruction::TrashRandomFromHand { .. }
+            | Instruction::PerformedBy { .. } | Instruction::Sabotage { .. } | Instruction::RemoveCountersFromPlayer { .. }
+            | Instruction::ReduceImminentCost { .. } | Instruction::ForEach { .. } | Instruction::IdentifyMark
+            | Instruction::TakeBadPublicity { .. } | Instruction::GainAllottedClicks(..) | Instruction::RefillRecurring(..)
+            | Instruction::TurnFormallyBegins(..) | Instruction::MandatoryDraw | Instruction::DiscardToHandSize(..)
+            | Instruction::LoseUnspentClicks(..) | Instruction::TurnFormallyEnds(..) | Instruction::TurnComplete(..)
+            | Instruction::AnnounceAttackedServer(..) | Instruction::FillBadPubFund | Instruction::RunFormallyBegins
+            | Instruction::SetPositionOutermost | Instruction::ApproachIce | Instruction::EncounterIce
+            | Instruction::ResolveNextSubroutine | Instruction::PassIce | Instruction::JackOutChoice
+            | Instruction::MovePositionInward | Instruction::ApproachServer | Instruction::DeclareRunSuccessful
+            | Instruction::BreachServer(..) | Instruction::CloseRunPriorityWindows | Instruction::EmptyBadPubFund
+            | Instruction::DeclareRunUnsuccessfulIfApplicable | Instruction::RunComplete | Instruction::BreachBegins
+            | Instruction::FlipArchivesFaceup | Instruction::DetermineAccessLimit | Instruction::ChooseCandidate
+            | Instruction::AccessChosenCandidate | Instruction::BreachComplete | Instruction::CardBecomesAccessed
+            | Instruction::MidAccessWindow | Instruction::StealIfAgenda | Instruction::AccessComplete => Vec::new(),
+        }
+    }
+
+    /// CR 9.11.3/9.11.4: **the instructions this instruction contains**, and
+    /// whose choices those are (1.15.2 scopes an announcement to "the
+    /// instruction" that requires it).
+    ///
+    /// The same compile-time gate as [`Instruction::target_positions`], for
+    /// the other half of the defect class: a contained instruction with a
+    /// target position of its own is announced by whoever owns the
+    /// announcement, and getting that wrong is how `IfMet` shipped without
+    /// announcing its branch's targets. Exhaustive, no wildcard arm.
+    pub fn contains(&self) -> Contained<'_> {
+        match self {
+            // 9.11.4a: several effects in ONE instruction (Snare!'s "do 3 net
+            // damage and give the Runner 1 tag"). Their VALUES merge into
+            // this instruction's expected effects, so they carry the targets
+            // it announced and choose nothing themselves; a sub-instruction
+            // that does choose its own targets is 9.11.3's separate
+            // instruction and is spliced out to announce them.
+            Instruction::Combined(list) => Contained::Deferred(list.iter().collect()),
+            // 1.14.5: the wrapper only names who chooses; the choices are the
+            // wrapped instruction's, made here.
+            Instruction::PerformedBy { instr, .. } => Contained::Inline(vec![instr]),
+            // 9.6.9: the optional component is carried out as part of this
+            // instruction unless it is one of the §9.2.2e procedures, which
+            // are spliced in to expand and announce for themselves.
+            Instruction::DeclineableChoice(inner) => {
+                if inner.expands_into_steps() {
+                    Contained::Deferred(vec![inner])
+                } else {
+                    Contained::Inline(vec![inner])
+                }
+            }
+            // 9.6.5d: "if <state>, <do this>; otherwise <do that>" — ONE
+            // instruction whose effects are the live branch's, so the branch
+            // announces here. Which branch is live is a question about game
+            // state, which only the VM can answer: the guards ride along.
+            Instruction::IfMet { requires, then, otherwise } => {
+                Contained::Branches(vec![(requires.as_slice(), then.as_slice()), (&[], otherwise.as_slice())])
+            }
+            // 9.11.4f/9.12.2b/9.11.4g: the branch, the repetition and the
+            // chosen option all become instructions in their own right when
+            // this one resolves, and announce their targets when they get
+            // there.
+            Instruction::NestedCostThen { effect, .. } | Instruction::NestedCostUnless { effect, .. } => {
+                Contained::Deferred(vec![effect])
+            }
+            Instruction::ForEach { effects, .. } => Contained::Deferred(effects.iter().collect()),
+            Instruction::ChooseOne { options } => {
+                Contained::Deferred(options.iter().flat_map(|(_, i)| i.iter()).collect())
+            }
+            // 6.7.4/10.8/10.14: the conditional halves of a run, a trace and
+            // a psi game resolve as their own ability chains later.
+            Instruction::InitiateRun { if_successful, .. } => {
+                Contained::Deferred(if_successful.iter().collect())
+            }
+            Instruction::Trace { if_successful, if_unsuccessful, determined_min, .. }
+            | Instruction::TraceDetermine { if_successful, if_unsuccessful, determined_min, .. } => {
+                // 10.8.5's "if the trace is successful with a strength of N or
+                // more, also …" is a further chain of the same kind.
+                Contained::Deferred(
+                    if_successful
+                        .iter()
+                        .chain(if_unsuccessful.iter())
+                        .chain(determined_min.iter().flat_map(|(_, i)| i.iter()))
+                        .collect(),
+                )
+            }
+            Instruction::PsiGame { on_match, on_differ, .. } => {
+                Contained::Deferred(on_match.iter().chain(on_differ.iter()).collect())
+            }
+            Instruction::GainCredits(..) | Instruction::LoseCredits(..) | Instruction::GainClicks(..)
+            | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
+            | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags(..)
+            | Instruction::TrashCards(..) | Instruction::MaintainChoice { .. } | Instruction::MustTrashAccessedCard { .. }
+            | Instruction::EndTheRun | Instruction::AccessCards { .. } | Instruction::AdditionalAccesses(..)
+            | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)
+            | Instruction::LookAtCards { .. } | Instruction::ExposeCards { .. } | Instruction::RevealCards { .. }
+            | Instruction::TakeHostedCredits { .. } | Instruction::RemoveCounters { .. } | Instruction::Derez { .. }
+            | Instruction::MoveSetAsideCounters { .. } | Instruction::PreventDamage { .. }
+            | Instruction::PreventAllDamage { .. } | Instruction::AvoidTags(..) | Instruction::RemoveTags(..)
+            | Instruction::IncreaseImminentDamage { .. } | Instruction::PreventTrashOf(..)
+            | Instruction::DamageUnpreventable { .. } | Instruction::ReplaceImminentDamageKind { .. }
+            | Instruction::TraceInitiate { .. } | Instruction::TraceCorpSpend | Instruction::TraceRunnerSpend
+            | Instruction::GrantSubroutines { .. } | Instruction::CorpDiscards { .. } | Instruction::RestrictAccessToSelf
+            | Instruction::CreateDelayedConditional { .. } | Instruction::CreateLingeringEffect { .. }
+            | Instruction::ModifySubtypes { .. } | Instruction::ReduceRunnerMemoryThisTurn(..)
+            | Instruction::BreakSubroutines { .. } | Instruction::BypassEncounteredIce | Instruction::ForceEncounter { .. }
+            | Instruction::ModifyStrength { .. } | Instruction::PlaceCounters { .. } | Instruction::ChangeAttackedServer { .. }
+            | Instruction::MoveCounters { .. } | Instruction::AdvanceCard { .. } | Instruction::PurgeVirusCounters
+            | Instruction::FlipIdentity(..) | Instruction::SwitchIdentity { .. } | Instruction::ShuffleCardsIntoDeck { .. }
+            | Instruction::RemoveCardsFromGame { .. } | Instruction::TrashSelf | Instruction::StealSelfAgenda
+            | Instruction::ScoreSelfAgenda | Instruction::InstallCard { .. } | Instruction::InstallCards { .. }
+            | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete
+            | Instruction::InstallRezPayCost | Instruction::InstallRezFinish | Instruction::PlayCard { .. }
+            | Instruction::PlayCards { .. } | Instruction::PlayStepPlace | Instruction::PlayStepPayCost
+            | Instruction::PlayStepActivate | Instruction::PlayStepResolve | Instruction::PlayStepFinish
+            | Instruction::RemoveSelfFromGame | Instruction::SetAsideTopOfDeck { .. } | Instruction::ArrangeSetAside { .. }
+            | Instruction::CorpRearrangesRnd | Instruction::MoveToDeck { .. } | Instruction::Search { .. }
+            | Instruction::AddCardsToHand { .. } | Instruction::AddToScoreArea { .. } | Instruction::TrashRandomFromHand { .. }
+            | Instruction::HostCards { .. } | Instruction::SwapCards { .. } | Instruction::MoveIce { .. }
+            | Instruction::MoveRunnerToIce { .. } | Instruction::Sabotage { .. } | Instruction::RemoveCountersFromPlayer { .. }
+            | Instruction::ReduceImminentCost { .. } | Instruction::IdentifyMark | Instruction::LoadCounters { .. }
+            | Instruction::TakeBadPublicity { .. } | Instruction::GainAllottedClicks(..) | Instruction::RefillRecurring(..)
+            | Instruction::TurnFormallyBegins(..) | Instruction::MandatoryDraw | Instruction::DiscardToHandSize(..)
+            | Instruction::LoseUnspentClicks(..) | Instruction::TurnFormallyEnds(..) | Instruction::TurnComplete(..)
+            | Instruction::AnnounceAttackedServer(..) | Instruction::FillBadPubFund | Instruction::RunFormallyBegins
+            | Instruction::SetPositionOutermost | Instruction::ApproachIce | Instruction::EncounterIce
+            | Instruction::ResolveNextSubroutine | Instruction::PassIce | Instruction::JackOutChoice
+            | Instruction::MovePositionInward | Instruction::ApproachServer | Instruction::DeclareRunSuccessful
+            | Instruction::BreachServer(..) | Instruction::CloseRunPriorityWindows | Instruction::EmptyBadPubFund
+            | Instruction::DeclareRunUnsuccessfulIfApplicable | Instruction::RunComplete | Instruction::BreachBegins
+            | Instruction::FlipArchivesFaceup | Instruction::DetermineAccessLimit | Instruction::ChooseCandidate
+            | Instruction::AccessChosenCandidate | Instruction::BreachComplete | Instruction::CardBecomesAccessed
+            | Instruction::MidAccessWindow | Instruction::StealIfAgenda | Instruction::AccessComplete => {
+                Contained::Nothing
+            }
+        }
+    }
+
+    /// CR 1.15.2: does this instruction choose any of the objects it acts on?
+    /// True exactly when one of its declared target positions is an
+    /// announcement, which is what makes it an instruction of its own under
+    /// 9.11.3 rather than something another instruction can absorb.
+    pub fn chooses_targets(&self) -> bool {
+        self.target_positions().iter().any(|s| s.announcement_slots() > 0)
+    }
+
+    /// CR 9.2.2e: the instructions that are PROCEDURES — they expand into a
+    /// step sequence when they become imminent, and therefore announce their
+    /// own targets from inside that expansion rather than where they are
+    /// written.
+    pub fn expands_into_steps(&self) -> bool {
+        matches!(
+            self,
+            Instruction::InstallCard { .. }
+                | Instruction::InstallCards { .. }
+                | Instruction::PlayCard { .. }
+                | Instruction::PlayCards { .. }
+                | Instruction::Trace { .. }
+        )
+    }
+}
+
+/// CR 9.11.3/9.11.4: what an instruction contains, and where the contained
+/// instructions' target announcements belong. Returned by
+/// [`Instruction::contains`].
+#[derive(Debug)]
+pub enum Contained<'a> {
+    /// Nothing: this instruction's effects are its own.
+    Nothing,
+    /// Resolved as part of THIS instruction, so their choices are made when
+    /// this instruction announces (1.15.2).
+    Inline(Vec<&'a Instruction>),
+    /// They become instructions in their own right — spliced into the frame,
+    /// pushed as a new chain, or created as an ability later — and announce
+    /// their own targets when they do.
+    Deferred(Vec<&'a Instruction>),
+    /// One branch resolves as part of this instruction, chosen by game state
+    /// (9.6.5d). Each pair is (the requirements that select it, its
+    /// instructions); the first pair whose requirements all hold is live, so
+    /// a branch with no requirements is the "otherwise".
+    Branches(Vec<(&'a [crate::ability::TriggerRequirement], &'a [Instruction])>),
 }
 
 /// What a card's text asks a lingering effect to DO (§9.10 payload classes),
@@ -1155,6 +1428,30 @@ pub enum TargetSpec {
     /// later instruction of the same ability acts on all of them — which
     /// `EarlierTarget` cannot say, since it names one.
     EarlierTargets,
+}
+
+impl TargetSpec {
+    /// CR 1.15.2: how many separate announcements this position requires —
+    /// "for each time the instruction requires a player to choose 1 or more
+    /// objects". A position that names its objects outright requires none
+    /// (1.15.1: they are already the targets), and an `Each` requires one per
+    /// announcing element.
+    pub fn announcement_slots(&self) -> usize {
+        match self {
+            TargetSpec::Choose { .. } => 1,
+            TargetSpec::Each(specs) => specs.iter().map(|s| s.announcement_slots()).sum(),
+            TargetSpec::Objects(_)
+            | TargetSpec::SelfSource
+            | TargetSpec::HostOfSource
+            | TargetSpec::AccessedCard
+            | TargetSpec::MaintainedChoice(_)
+            | TargetSpec::EncounteredIce
+            | TargetSpec::TopOfDeck { .. }
+            | TargetSpec::FoundBySearch
+            | TargetSpec::EarlierTarget { .. }
+            | TargetSpec::EarlierTargets => 0,
+        }
+    }
 }
 
 /// Which subroutines of the encountered ice a break ability acts on
