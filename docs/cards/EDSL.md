@@ -244,6 +244,77 @@ let _ = choose(1, &[looked_at_by_this_ability()]);    // "1 of those cards"
 The descriptions stack: several of them together mean *all* of them, exactly
 as the printed words do.
 
+### Naming something
+
+Some cards tell a player to *name* a card, a card type, a subtype or a number,
+and then act on whatever was named. You pick a short word for what the card is
+remembering — write the card's own words for it — and use the same word again
+in the later sentences.
+
+```rust
+# use jinteki_cards::edsl::*;
+// "Name a card."
+let _ = name_a_card("marketing target");
+// "Name a card other than Reclamation Order." (Printed on Reclamation Order,
+//  so it means "other than this card" — you never write the name.)
+let _ = name_a_card_other_than_this_one("reclamation order target");
+// "Name a card type." — all ten of them.
+let _ = name_a_card_type("azmari type");
+// "Name asset, ice, operation or upgrade."
+let _ = name_one_of_these_card_types(
+    "embezzle type",
+    &[CardType::Asset, CardType::Ice, CardType::Operation, CardType::Upgrade],
+);
+// "Name sentry, code gate or barrier."
+let _ = name_one_of_these_subtypes("wari subtype", &["Sentry", "Code Gate", "Barrier"]);
+// "Name a number."
+let _ = name_a_number("rng key number", WantedDuration::ThisRun);
+```
+
+The card is remembered for as long as the card that named it is around. If the
+card is **trashed** to make the choice, say how long it lasts instead —
+`name_a_card_for(key, WantedDuration::ThisRun)`,
+`name_one_of_these_subtypes_for(key, &[…], WantedDuration::ThisRun)` — or the
+name dies before the sentence that uses it.
+
+Then the later sentences refer back:
+
+```rust
+# use jinteki_cards::edsl::*;
+// "…a copy of that card" / "…of the named type" / "…with the chosen name"
+let _ = choose(1, &[in_hand_of(Runner), named_by("salem type")]);
+// "…all copies of that card in the heap"
+let _ = all_named_cards_in_discard_of(Runner, "ark lockdown target");
+// "…any number of copies of the named card from Archives"
+let _ = any_number_of_named_cards_in_discard_of(Corp, "reclamation order target");
+// "Gain 10[credit] whenever the Runner plays or installs a copy of that card."
+let _ = plays_or_installs_named_by(Runner, "marketing target");
+// "…gain 5[credit] if the exposed card has the named card type."
+let _ = if_met(
+    &[earlier_choice_matches(0, &[named_by("falsified type")])],
+    [gain(Runner, 5)],
+);
+```
+
+`earlier_choice(0)` is "it" — a card this ability already chose — and
+`earlier_choices()` is "them", all of them.
+
+### Cards with different names
+
+"Choose up to 5 cards **with different names**" is one more description word,
+written beside the others. It works for a search too, which is what the rules
+say it does.
+
+```rust
+# use jinteki_cards::edsl::*;
+let _ = choose_up_to(5, &[in_heap(), with_different_names()]);
+let _ = search_stack(&[with_any_subtype(&["Virus", "Weapon"]), with_different_names()], 2);
+```
+
+`with_any_subtype(&[…])` is the printed "**virus** or **weapon**": several
+descriptions written separately mean *all* of them, so an "or" between
+subtypes is this one call.
+
 ### Amounts that count things
 
 "…for each tag the Runner has" is an amount, not a number:
@@ -363,7 +434,7 @@ cargo test -p jinteki-cards
 The deck tests print the manifest:
 
 ```text
-priority decks: 50 cards, 17 complete, 33 partial, 52 printed sentences still unsayable
+priority decks: 51 cards, 45 complete, 6 partial, 13 printed sentences still unsayable
 complete: ["Sure Gamble", "Diesel", "Clean Getaway", "Account Siphon", …]
 ```
 

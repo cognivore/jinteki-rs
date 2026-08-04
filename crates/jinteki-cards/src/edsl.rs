@@ -85,6 +85,52 @@
 //! let _ = look_at(top_of_stack(plus(cards_you_would_draw(), amount(1))), Runner);
 //! let _ = add_to_deck(choose(1, &[looked_at_by_this_ability()]), false);
 //! ```
+//!
+//! CR 1.15.1b's naming, and the sentences that refer back to what was named:
+//!
+//! ```
+//! use jinteki_cards::edsl::*;
+//! // "Name a card." / "Name a card other than <this card>." (10.1.5)
+//! let _ = name_a_card("marketing target");
+//! let _ = name_a_card_other_than_this_one("reclamation order target");
+//! // "Name a card type." — 2.15.2 lists ten, so this is a choice of options.
+//! let _ = name_a_card_type("azmari type");
+//! let _ = name_one_of_these_card_types(
+//!     "embezzle type",
+//!     &[CardType::Asset, CardType::Ice, CardType::Operation, CardType::Upgrade],
+//! );
+//! // "Name sentry, code gate or barrier." / "Name a number." (1.1.3)
+//! let _ = name_one_of_these_subtypes("wari subtype", &["Sentry", "Code Gate", "Barrier"]);
+//! let _ = name_a_number("rng key number", WantedDuration::ThisRun);
+//! // A card that is TRASHED to name says how long the name lasts.
+//! let _ = name_a_card_for("whistleblower name", WantedDuration::ThisRun);
+//! let _ = name_one_of_these_subtypes_for("wari subtype", &["Sentry"], WantedDuration::ThisRun);
+//! // "…of the named type" / "…all copies of that card in the heap"
+//! let _ = choose(1, &[in_hand_of(Runner), named_by("salem type")]);
+//! let _ = all_named_cards_in_discard_of(Runner, "ark lockdown target");
+//! let _ = all_named_cards_in_hand_of(Runner, "salem's name");
+//! let _ = any_number_of_named_cards_in_discard_of(Corp, "reclamation order target");
+//! // "…whenever the Runner plays or installs a copy of that card"
+//! let _ = plays_or_installs_named_by(Runner, "marketing target");
+//! // "…gain 5[credit] if the exposed card has the named card type."
+//! let _ = expose(choose(1, &[in_a_remote_server()]));
+//! let _ = if_met(
+//!     &[earlier_choice_matches(0, &[named_by("falsified type")])],
+//!     [gain(Runner, 5)],
+//! );
+//! let _ = add_to_hand(earlier_choice(0));
+//! let _ = add_to_hand(earlier_choices());
+//! ```
+//!
+//! CR 2.1.5's "cards with different names", for a choice and for a search:
+//!
+//! ```
+//! use jinteki_cards::edsl::*;
+//! let _ = shuffle_into_deck(choose_up_to(5, &[in_heap(), with_different_names()]), Runner);
+//! let _ = search_stack(&[with_any_subtype(&["Virus", "Weapon"]), with_different_names()], 2);
+//! let _ = host_faceup(found_by_search(), this_card());
+//! let _ = if_met(&[board_has_at_most(&[hosted_on_this_card()], 0)], [trash_self()]);
+//! ```
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
 pub use jinteki_cr::effects::{DamageKind, EffectClass};

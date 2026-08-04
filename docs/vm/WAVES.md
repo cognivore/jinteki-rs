@@ -6,19 +6,22 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W18b)
+## Odometers (after W20)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 870/1420** distinct rules cited (61.3%); traceability test fails
+- **DP-7b: 878/1420** distinct rules cited (61.8%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **Priority decks: 44/51 cards complete**, 14 printed sentences still
+- **Priority decks: 45/51 cards complete**, 13 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
-  ratcheted by `the_gap_list_is_measurable_and_honest`). The 51st card is
+  ratcheted by `the_gap_list_is_measurable_and_honest`, whose thresholds were
+  stale until W20 and now sit on the real numbers). The 51st card is
   CR 1.5.4a's additional-identities pile, which a player brings "along with
   their deck" and which the readiness gate therefore counts with it.
+  `decks/unlisted.rs` carries 15 further cards no deck lists, outside the
+  odometer.
 - **DP-7c: 68/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
@@ -82,6 +85,7 @@ prefer a slightly larger honest primitive and note it here.
 
 | commit | wave | delivered | DP-7a |
 |---|---|---|---|
+| `-` | W20 | **naming a card / type / subtype / number — CR 1.15.1b; 44 -> 45/51.** 1.15.1b is the rule the whole wave hangs on: "only objects and subroutines are announced as targets. If an instruction directs a player to choose (or 'name') a number, a card type, a subtype, a card name, a server, or one of a specified set of effects, that choice is not made until the instruction resolves." Naming is therefore NOT a 1.15.2 announcement, and `Instruction::MaintainChoice` (9.10.3) — already built for the server and the object — is the mechanism for all six. **The split between them is whether the namespace is ENUMERABLE**, and 9.11.4g decides it: a choice between the servers, between the subtypes a card prints, or between the ten card types 2.15.2 lists is a `ChooseOne` whose branches each maintain a different value (the Pelangi pattern, unchanged), so **`ChoiceSpec::CardType(CardType)`** joins `Server` and `Subtype` and Embezzle's four types and Azmari EdTech's unrestricted "name a card type" become the same shape with a different list. A card NAME and a NUMBER have no branches to write: **`ChoiceSpec::Named { of: NameSpace, excluding }`** → **`DecisionSpec::NameValue`** → **`DecisionAnswer::NamedValue(NamedValue)`**, asked where 1.15.1b puts it, at the instruction's RESOLUTION. **The decision offers no candidate list, deliberately**: the namespace is open, and the only list the kernel could build from its own state is the union of both decks, which §10.2 does not entitle the naming player to see — resolving a player's input to a real printed card is the DRIVER's job (the plan answers `Reply::Name(&'static str)`, the server offers `jinteki_cards::all_cards()`). That is also why a name is `&'static str` and not a `String`: it is what `PrintedCard::name` and `TargetFilter::HasName` already are, it keeps `ChoiceValue` `Copy`, and the kernel never manufactures a title, so nothing is interned and nothing leaks. **Reclamation Order's exclusion needs no card name** — 10.1.5 reads a card's own name, used without the word "copy", as "this object", so it is `NameExclusion::SourceName`. **`TargetFilter::MatchesMaintainedChoice(key)`** is the matching half in ONE atom: "a copy of that card", "all cards with the chosen name", "1 card of the named type", "if it has the named subtype" — WHICH characteristic is compared is content on the maintained VALUE (2.1.4 a name, 2.15.2 a type, 2.16 a subtype through the 9.12.1b pipeline), and `Vm::object_matches_maintained_choice` is the single answer shared by the filter and by the trigger condition. **`TriggerCond::CardPlayed` grows `also_installed` and `matching_choice`**: "plays or installs a copy of that card" is ONE condition, because the sentence is one and its 9.3.6g "first time each turn" must be spent by whichever of 8.6.1's play and 8.5.1's install happens first. **`TriggerRequirement::EarlierTargetMatches`** is 1.15.4 asked as a question ("if the exposed card has the named card type"), **`TargetSpec::EarlierTargets`** is 1.15.4 in the plural ("add THEM to HQ"), and **`Quantity::Count`** widens to a criteria LIST (§12 rule 5) so "every copy of the named card in the heap" is one selector and "all X" is a count equal to how many there are. **CR 2.1.5's "cards with different names"** is deliberately NOT naming: it constrains the SET, so `TargetFilter::DistinctNames` is the one criterion that is not a per-object predicate (`is_set_criterion` keeps it out of candidacy) and rides both places 2.1.5 names — the announcement and the search's find — as `distinct_names` on `DecisionSpec::ChooseTargets`. **Defect fixed: `Instruction::RevealCards` never announced its targets** — missing from `Vm::targets_needed`, the same class as W14b's `MoveToDeck`, W17b's counters and W17c's `ModifyStrength`, so a reveal whose card position was a `Choose` silently revealed nothing; latent because every revealing card so far revealed its own source or what a search found. Cards: **Targeted Marketing COMPLETE** (Gauntlet), and 13 more in `decks/unlisted.rs` — Ark Lockdown, Reclamation Order, Salem's Hospitality, Azmari EdTech, Falsified Credentials, Ibrahim Salem, Wari, Harmony AR Therapy and Asmund Pudlat complete; Whistleblower, RNG Key, Complete Image and Embezzle honestly partial (see the gap list) | 243 |
 | `-` | W19 | **the additional identities (CR 1.5.4) — Rebirth complete, DJ Fenris partial; 42/50 → 44/51.** **`Zone::OutsideGame(Side)`** is 1.5.4a's pile: a player's additional identities are ORDINARY objects in an ordinary zone, so `TargetSpec`/`TargetFilter`/`ChooseTargets` reach them unchanged and no parallel value-selection vocabulary is needed. Deliberately NOT `RemovedFromGame` — 4.9.5 is gone for good, 1.5.4a is available — and `card_active` has no arm for it, so a pile identity is inactive (1.8.3d). Its viewpoint entitlement is 1.5.4a's own words: open to the player who brought them, to nobody else. **Faction is an in-game characteristic** (2.13), not deckbuilding metadata: `PrintedCard::faction`, `.faction("Criminal")`, populated for all 51 cards from `carddata/cards.json`, and **`TargetFilter::FactionMatchesIdentityOf { side, same }`** — Rebirth's "same faction" and DJ Fenris's "does not match" are ONE atom with the polarity as content (§12 rule 2), measured against the CURRENT identity and re-read each time. **`TargetFilter::InIdentityPileOf(Side)`** names the zone, which is what lifts 1.15.2c. **`Instruction::SwitchIdentity { side, with }`** is 1.5.4b: the described identity takes the play area (3.1.1), the one it replaces goes back to the pile, and 1.5.4d puts a double-sided arrival front side faceup. Not an 8.8 swap — 3.1.1b, identities are not installed. **1.5.4b as a movement rule**: `trash_card` sends an identity leaving the play area to the pile, not to a discard pile, so 1.13.13's sweep of DJ Fenris's hosted identity lands where the CR says. **Defect fixed: "the player's identity" was any object of card type Identity on that side** — `starting_hand_size` and `FlipIdentity` scanned by type and side, so a second identity anywhere in the play area (hosted on a card, 1.13.12) would have been read as the player's; `Vm::identity_of` reads 3.1.1's LOCATION instead. `decks/unlisted.rs` opens for cards no priority deck lists (Chaos Theory, DJ Fenris), excluded from the deck odometer. DJ Fenris hosts correctly and is honestly partial on its other two sentences — see the gap list | 243 |
 | `-` | W18b | **the interrupt that reads the draw — The Class Act; 41 → 42/50.** **BREAKING: `TargetSpec::TopOfDeck(Side, u32)` → `TopOfDeck { side, count: Quantity }`** (§12 rule 6), **`TriggerCond::DiscardPhaseEnds.side` → `Option<Side>`**, **`TriggerCond::WouldDraw` grows `by: Option<Side>`**. **`Quantity::ImminentValueOf(EffectClass)`** is 9.9.6's modifiable value as a selector — "X is equal to the number of cards you would draw plus 1" reads the value of the very instruction the interrupt window was opened over, as it now STANDS (9.9.7a/b, so an earlier interrupt's modification is seen), and 0 outside an imminence, the treatment 1.16.2d gives an X outside its payment. `Vm::imminent_damage_value` is now one call to the same `imminent_value_of`, so prevention and this selector cannot disagree about what a modifiable value is. **Defect fixed: the basic draw action was not a draw instruction at all** — `ActionOption::BasicDraw` called `draw_cards` straight, so 5.2.6c/5.2.7c's draw never became imminent: no interrupt window, and no 8.4.2 ability could act on the commonest draw in the game. It now runs the §8.4 procedure in a rules ability frame, the shape the basic play/install/advance actions already used. **Defect fixed: 9.9.5a's ordinal counted both players together** — "the first time each turn YOU would draw" was spent by the Corp's mandatory draw, so a Runner card fired on the wrong turn and then not on its own; `WouldCounters` is keyed by the atom's side as well as its class (a no-op for damage and tags, which only ever name the Runner). **Whose discard phase is content** (§12 rule 2): 5.5.4's condition takes `None` for a sentence naming no player ("when A discard phase ends" — The Class Act, Breaking News) and `Some(s)` for one that does ("when YOUR discard phase ends" — Citadel Sanctuary); Breaking News had been reading the Corp's, which its "this turn" requirement made harmless and inexact. `.interrupt(…)` on the card builder is MANDATORY now, as "[interrupt] → …" with no "you may" is, with `.may_interrupt(…)` for the other wording | 243 |
 | `-` | W18a | **the current class, said whole — Employee Strike; 40 → 41/50.** **BREAKING: `StaticDecl::PlayedNotTrashedUntilAgendaSteal` → `PlayedNotTrashedUntil { until: Vec<TriggerCond> }`.** CR 3.5.1b and 3.7.1b print the same sentence with one word different — a current OPERATION is not trashed until another current is played or the Runner STEALS an agenda, a current EVENT until another current is played or the Corp SCORES one — so the ending occurrences are content on one declaration (§12 rule 2), stated in the vocabulary that already names occurrences. **Gap closed, not just widened: "another current is played" was never implemented at all**, so Targeted Marketing's whole first sentence was riding on the steal half; the shield now expires through the same `trigger_matches` a conditional's condition goes through, with the shielded card as the source. **`TriggerCond::CardPlayed` grows the rest of its stipulations** — `by: Option<Side>` (`None` is a sentence naming no player), `of_subtypes` (2.16, read through the 9.12.1b pipeline, so a list is a conjunction where the type list is a disjunction) and `other_than_source`, the word "another", the same reading `TargetFilter::OtherThanSource` gives "other". **`TargetFilter::ControlledBy(Side)`** is 1.14.2's controller: "the Corp's identity" needs a side-scoped criterion that does NOT require the card to be installed, since an identity never is — and that is exactly why it leaves the Runner's identity alone. Employee Strike's second sentence is then 9.1.9a with nothing left over: `Effective::ability_present` is a mask over `printed.abilities`, so removing all of them removes exactly the PRINTED ones the card names | 243 |
@@ -869,9 +873,37 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W18a it is **50 cards, 41 complete, 9 partial, 17
-printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
+prints the count. At W20 it is **51 cards, 45 complete, 6 partial, 13 printed
+sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
+
+**W20's four honest partials are in `decks/unlisted.rs`, outside the
+odometer**, and every one of their gaps is a general capability rather than a
+card:
+
+- **a one-shot delayed conditional on the NEXT access this run.** 9.6.13's
+  delayed conditionals exist, but nothing states "the next time this run you
+  access X" — met once and then gone. Whistleblower and RNG Key both need it.
+- **a steal that ignores all costs.** `Instruction::StealIfAgenda` has no
+  position for overriding 1.16.10's additional steal costs, and a steal that
+  quietly skipped an unpaid Obokata-class cost would be worse than a marker
+  (Whistleblower).
+- **comparing a printed VALUE against a maintained number.**
+  `TargetFilter::MatchesMaintainedChoice` compares characteristics that ARE
+  the named thing; "a rez cost, play cost, or advancement requirement equal
+  to the named number" compares a different characteristic to a named number
+  (RNG Key).
+- **cards selected from a hand AT RANDOM as targets.**
+  `Instruction::TrashRandomFromHand` trashes without naming, so no later
+  instruction can act on the same cards, and nothing counts "each card
+  trashed this way" (the `CreditsLostThisAbility` shape, for trashes) —
+  Embezzle needs both.
+- **repeating a process whose repetition count is not known when it
+  resolves.** Complete Image's "if you trash a card with the chosen name this
+  way, repeat this process" is not `ForEach` over a computed quantity (the
+  count depends on what the random damage trash turned up, and each pass
+  names a NEW card) and is not 10.1.6a's loop (which is about abilities
+  already resolving each other).
 
 The card-authoring surface is now an EMBEDDED DSL — typed builders over the
 kernel vocabulary, `docs/cards/EDSL.md` — so a missing verb is no longer a
