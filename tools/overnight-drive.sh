@@ -64,6 +64,13 @@ METHOD:
    Never work from memory.
 2. Write it in the EMBEDDED DSL: typed Rust builders in crates/jinteki-cards.
    Nothing is parsed; .text(...) is data for the SYS-D-10 agreement test.
+2a. CR 9.11.3: one SENTENCE is one INSTRUCTION. "draw 2 cards and take 1 tag"
+   is combined([draw(...), give_tags(...)]) — NOT two instructions. Splitting
+   it invents a checkpoint, a reaction window and a second interrupt window
+   the card does not have, so a prevention effect gets two chances where the
+   card gives one. 9.12.2c is about aggregating a CALCULATED QUANTITY ("for
+   each"), NOT about whether a sentence splits — do not cite it for that. The
+   only splits are 9.11.4b-g. See docs/cards/EDSL.md.
 3. Add a behaviour test per identity in
    crates/jinteki-cards/tests/behaviour.rs, driven by a PLAN. Never add a
    *_for_test backdoor to the VM and never write a vm.step() loop.
