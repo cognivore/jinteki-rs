@@ -1,7 +1,7 @@
 //! CR mode end to end: the completeness gate as an endpoint, and the
 //! decision→prompt adapter driven over the real WebSocket protocol.
 //!
-//! Two tests, one for each half of the mandate.
+//! Three tests: one for each half of the mandate, and one for the log.
 //!
 //! * `cr_readiness_endpoint_reports_the_true_fraction` hits
 //!   `GET /api/cr-readiness` over a real listener and checks the payload
@@ -15,6 +15,11 @@
 //!   browser actually sends. That is the adapter loop — decision → prompt →
 //!   command → answer → next decision — proven end to end, plus the
 //!   redaction invariant on every state it produces.
+//!
+//! * `cr_the_runner_reads_what_they_accessed_and_the_corp_only_what_it_may`
+//!   runs two centrals and reads BOTH seats' logs off the live game: CR 7.1.2
+//!   gives the Runner the card they accessed, 4.2.2 keeps R&D from the Corp,
+//!   and one record produces both sentences.
 
 use futures_util::{SinkExt, StreamExt};
 use jinteki_cr::object::{CardType, PrintedCard, Side};
@@ -454,4 +459,111 @@ async fn cr_ws_loop_drives_a_game_human_vs_bot() {
             .contains("CR engine")),
         "the log came back with it"
     );
+}
+
+/// "I don't see what I'm accessing while accessing HQ."
+///
+/// The regression test for the headline complaint, driven the way a player
+/// drives it: run a central, walk the run controls to the breach, and read
+/// BOTH seats' logs off the live game.
+///
+/// CR 7.1.2 gives the Runner the card they are accessing; 4.2.2 keeps R&D
+/// from the Corp. So an R&D access is named in the Runner's log and not in
+/// the Corp's, an HQ access is named in both (the Corp is looking at its own
+/// grip), and neither is ever the bare "a card" for the Runner — which is
+/// what the log said before, because the entitlement had lapsed by the time
+/// the line was rendered.
+#[tokio::test]
+async fn cr_the_runner_reads_what_they_accessed_and_the_corp_only_what_it_may() {
+    let addr = spawn_app().await;
+    let token = cr::create_session(small_setup(20_260_804), Side::Runner, 0).await;
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws/local"))
+        .await
+        .expect("ws connects");
+    send(&mut ws, json!({"type":"resume","token": token})).await;
+    let frames = drain(&mut ws, 1500).await;
+
+    // Keep the opening hand.
+    let st = last_state(&frames);
+    let keep = st["runner"]["prompt-state"]["choices"][0]["uuid"]
+        .as_str()
+        .expect("the mulligan prompt")
+        .to_string();
+    send(
+        &mut ws,
+        json!({"type":"action","command":"choice","args":{"choice":{"uuid": keep}}}),
+    )
+    .await;
+    drain(&mut ws, 1500).await;
+
+    // Run R&D, then HQ, answering whatever the run puts in front of us —
+    // "continue" past the jack-out choice, otherwise the first offered
+    // choice — until the run is over.
+    for server in ["rd", "hq"] {
+        send(
+            &mut ws,
+            json!({"type":"action","command":"run","args":{"server": server}}),
+        )
+        .await;
+        let mut frames = drain(&mut ws, 1200).await;
+        for _ in 0..12 {
+            let Some(last) = frames.iter().rev().find(|f| f["type"] == json!("state")).cloned()
+            else {
+                break;
+            };
+            let actions = last["actions"].as_array().cloned().unwrap_or_default();
+            let prompt = last["state"]["runner"]["prompt-state"].clone();
+            if actions.iter().any(|a| a["command"] == json!("continue")) {
+                send(&mut ws, json!({"type":"action","command":"continue","args":{}})).await;
+            } else if let Some(uuid) = prompt["choices"][0]["uuid"].as_str() {
+                let uuid = uuid.to_string();
+                send(
+                    &mut ws,
+                    json!({"type":"action","command":"choice","args":{"choice":{"uuid": uuid}}}),
+                )
+                .await;
+            } else {
+                break;
+            }
+            frames = drain(&mut ws, 1200).await;
+        }
+    }
+
+    let seat = cr::lookup(&token).await.expect("the session is registered");
+    let g = seat.game.lock().await;
+    let accesses = |side: Side| -> Vec<String> {
+        cr::state_json(&g, side)["log"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|l| l["text"].as_str().map(|s| s.to_string()))
+            .filter(|t| t.starts_with("Runner: accesses "))
+            .collect()
+    };
+    let mine = accesses(Side::Runner);
+    let theirs = accesses(Side::Corp);
+
+    assert_eq!(mine.len(), 2, "one access per central: {mine:#?}");
+    assert_eq!(theirs.len(), mine.len(), "both logs saw both accesses");
+    // 7.1.2: the Runner is allowed to look at the card they are accessing,
+    // and their log says which — for both servers, and still after the run.
+    for l in &mine {
+        assert!(
+            !l.contains("accesses a card"),
+            "the Runner sees what they accessed: {l:?}"
+        );
+    }
+    assert!(mine.iter().any(|l| l.contains("from R&D")));
+    assert!(mine.iter().any(|l| l.contains("from HQ")));
+    // 4.2.2: R&D is hidden from the Corp as much as from the Runner.
+    assert_eq!(
+        theirs.iter().find(|l| l.contains("from R&D")),
+        Some(&"Runner: accesses a card from R&D.".to_string()),
+        "the Corp is told an access happened and where, never what: {theirs:#?}"
+    );
+    // 4.3.2 the other way: HQ is the Corp's own grip, so its copy names it —
+    // and names the same card the Runner's does.
+    let hq_mine = mine.iter().find(|l| l.contains("from HQ")).unwrap();
+    let hq_theirs = theirs.iter().find(|l| l.contains("from HQ")).unwrap();
+    assert_eq!(hq_mine, hq_theirs, "an HQ access reads the same to both");
 }

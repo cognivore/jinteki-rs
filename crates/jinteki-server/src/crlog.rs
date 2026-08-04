@@ -295,12 +295,35 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
 
         // ── the run ────────────────────────────────────────────────────
         //
-        // The headline. CR 7.1.2 entitles the Runner to look at the card they
-        // are accessing; §4.2.2 does not entitle the Corp to a card in R&D.
-        // The very same record therefore names the card to one reader and not
-        // to the other, which is exactly why the two logs are separate.
+        // The headline, and the one record whose entitlement belongs to the
+        // EVENT rather than to the moment the line is read.
+        //
+        // CR 7.1.2: "While the Runner is accessing a card, the Runner is
+        // allowed to look at that card, even if it would normally not be
+        // visible to them." An access is over in a step or two — 7.3.1a keeps
+        // the card visible for the rest of the breach and no longer — while
+        // the LINE about it stays in the log for the rest of the game. Asking
+        // `identity_visible_to` here would therefore hand the Runner "you
+        // accessed a card" thirty seconds after they accessed it, which is
+        // the complaint this whole change answers. The Runner saw the card;
+        // their own log says which.
+        //
+        // The Corp's copy is the ordinary question, and 4.2.2 answers it: the
+        // Corp reads an access out of HQ, Archives or a remote, because those
+        // cards are already theirs to see, and reads "a card" out of R&D,
+        // which is hidden from them as much as from the Runner. Which server
+        // it came out of is open information either way (4.6.2/10.2.3a).
         GameChange::CardAccessed { obj } => {
-            format!("Runner: accesses {}{}.", card(*obj), from(*obj))
+            let name = match viewer {
+                Side::Runner => vm
+                    .st
+                    .objects
+                    .get(obj)
+                    .map(|o| o.printed.name.to_string())
+                    .unwrap_or_else(|| "a card".into()),
+                Side::Corp => card(*obj),
+            };
+            format!("Runner: accesses {name}{}.", from(*obj))
         }
         GameChange::RunBegan { server } => {
             format!("Runner: runs {}.", server_label(*server))
@@ -472,6 +495,13 @@ mod tests {
         for c in &vm.changes.log[from..] {
             for viewer in [Side::Corp, Side::Runner] {
                 let Some(line) = narrate(vm, c, viewer) else { continue };
+                // CR 7.1.2 is an entitlement of the ACCESS, not of the state
+                // this line is being read in: the Runner looked at the card
+                // they accessed, and their own log may go on saying so after
+                // the access is over. It is the only such record.
+                if viewer == Side::Runner && matches!(c, GameChange::CardAccessed { .. }) {
+                    continue;
+                }
                 for id in subjects(c) {
                     if vm.identity_visible_to(id, viewer) {
                         continue;
@@ -582,6 +612,28 @@ mod tests {
         assert!(corp.contains("a card"), "it says so plainly: {corp:?}");
         assert!(corp.contains("from R&D"), "location is open information: {corp:?}");
         assert_no_leaks(&vm, 0);
+
+        // And it still reads that way AFTER the access is over, which is the
+        // case a live game actually produces: several records can land
+        // between two renderings, and 7.1.2's entitlement is measured in
+        // steps while the line stays in the log for the rest of the game.
+        let mut s = Script::new(Plan::corp().stop_at_action(), Plan::runner().stop_at_action());
+        s.run(&mut vm);
+        assert!(vm.st.accessed.is_none(), "the access has ended");
+        assert!(
+            !vm.identity_visible_to(accessed, Side::Runner),
+            "and 7.3.1a's sighting has lapsed with the breach"
+        );
+        let after = narrate(&vm, &rec, Side::Runner).expect("still news");
+        assert!(
+            after.contains(title),
+            "the Runner saw the card; their log goes on saying which: {after:?}"
+        );
+        assert_eq!(
+            narrate(&vm, &rec, Side::Corp).unwrap(),
+            corp,
+            "and the Corp's copy is unchanged by any of it"
+        );
     }
 
     /// The blunt instrument: a few turns of a real game with a real run, and
