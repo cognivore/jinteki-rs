@@ -216,6 +216,13 @@ pub enum TriggerCond {
     /// "When you install this card…" (9.6.14b's class: met at step 8.5.16f of
     /// installing its own source).
     SelfInstalled,
+    /// "…if <this card> is uninstalled" (DJ Fenris class; the reminder text
+    /// of every Trojan says the same thing about its host). The move that
+    /// meets it is the one that makes the card INACTIVE, so 9.1.8g is what
+    /// keeps the ability active long enough to resolve — and an ability
+    /// carried by a lingering effect (9.6.13) does not even need that, since
+    /// 9.10.1 makes the effect independent of its source.
+    SelfUninstalled,
     /// "When this card is added to your stack…" (Nanuq class). The move that
     /// meets it is the move that makes the card INACTIVE, which is why
     /// 9.1.8g has to keep the ability active long enough to resolve.
@@ -790,6 +797,14 @@ pub enum StaticDecl {
     /// one declaration (§12 rule 2) — contrast `RemoveAbilitiesOf`, which
     /// names the hosting relation instead of a description.
     RemoveAbilitiesOfMatching { criteria: Vec<crate::instr::TargetFilter> },
+    /// CR 9.1.9b: "<this card> gains the text of <the described cards>."
+    /// (DJ Fenris class.) The abilities gained are the described cards'
+    /// EFFECTIVE abilities, read through the same 9.12.1d/e pipeline as
+    /// `GainSubtypesOf`'s subtypes — so a card that itself gained an ability
+    /// passes it on, and a card that lost one passes on nothing. The gaining
+    /// object is the SOURCE of every ability it gains (9.1.1b), so "this
+    /// card" inside a gained ability means the gainer.
+    GainAbilitiesOf { criteria: Vec<crate::instr::TargetFilter> },
     /// "This card gains the subtypes of <criteria>." (Mother Goddess class.)
     /// The subtypes copied are the source cards' EFFECTIVE subtypes, read
     /// through the same 9.12.1b pipeline — so a card that itself gained a
@@ -1770,6 +1785,10 @@ pub fn trigger_matches(
         // source itself.
         (TriggerCond::SelfInstalled, GameChange::CardInstalled { obj, .. }) => {
             cite!("rule_when_installed");
+            *obj == source.id
+        }
+        (TriggerCond::SelfUninstalled, GameChange::CardUninstalled { obj, .. }) => {
+            cite!("rule_active_exception_conditional_move_to_inactive_zone");
             *obj == source.id
         }
         (TriggerCond::PlayerGainsCredits(side), GameChange::CreditsGained { side: s, .. }) => {

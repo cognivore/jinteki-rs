@@ -2484,7 +2484,9 @@ impl Vm {
         let mut out = Vec::new();
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            // 9.1.9b: every ability the object HAS — printed and gained.
+            for (_i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if a.kind != AbilityKind::Static {
                     continue;
                 }
@@ -2495,9 +2497,6 @@ impl Vm {
                     if !self.static_cond_holds(o.id, sc) {
                         continue;
                     }
-                }
-                if !self.ability_present(o.id, i) {
-                    continue;
                 }
                 if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
@@ -2574,19 +2573,122 @@ impl Vm {
     pub fn ability_present(&self, obj: ObjectId, i: usize) -> bool {
         let effects = self.char_effects();
         let eff = crate::object::compute_effective(&self.st.objects, &effects, obj);
+        let printed = self.st.objects.get(&obj).map(|o| o.face().abilities.len()).unwrap_or(0);
+        if i >= printed {
+            return eff.gained_abilities.get(i - printed).is_some();
+        }
         eff.ability_present.get(i).copied().unwrap_or(true)
+    }
+
+    /// CR 9.1.9b: **the abilities an object actually has**, each with the
+    /// index that names it — the one place that knows how an `AbilityRef`
+    /// addresses them.
+    ///
+    /// 9.1.9 lets an object both LOSE and GAIN abilities, so the answer is a
+    /// list computed by the 9.12.1d/e pipeline, not a mask over the printed
+    /// list. Printed abilities keep their printed index (so every existing
+    /// `AbilityRef` still names the same thing, and 9.1.9c's play-ability and
+    /// subroutine ORDER is the printed order); a lost one is absent; gained
+    /// ones follow, indexed above the printed list, because they have no
+    /// printed position to occupy.
+    pub fn abilities_of(&self, obj: ObjectId) -> Vec<(usize, AbilityDef)> {
+        cite!("rule_determine_actual_abilities");
+        let Some(o) = self.st.objects.get(&obj) else { return Vec::new() };
+        let printed = &o.face().abilities;
+        let effects = self.char_effects();
+        let eff = crate::object::compute_effective(&self.st.objects, &effects, obj);
+        let mut out: Vec<(usize, AbilityDef)> = printed
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| eff.ability_present.get(*i).copied().unwrap_or(true))
+            .map(|(i, a)| (i, a.clone()))
+            .collect();
+        for (k, a) in eff.gained_abilities.iter().enumerate() {
+            out.push((printed.len() + k, a.clone()));
+        }
+        out
+    }
+
+    /// The ability an [`AbilityRef`] names, printed or gained (9.1.9b).
+    pub fn ability_at(&self, obj: ObjectId, index: usize) -> Option<AbilityDef> {
+        let printed = self.st.objects.get(&obj)?.face().abilities.len();
+        if index < printed {
+            return self.st.objects.get(&obj)?.face().abilities.get(index).cloned();
+        }
+        let effects = self.char_effects();
+        crate::object::compute_effective(&self.st.objects, &effects, obj)
+            .gained_abilities
+            .get(index - printed)
+            .cloned()
     }
 
     /// Gather characteristic effects from active statics + lingering value
     /// modifiers (the 9.12.1d/e pipeline input).
+    ///
+    /// CR 9.1.9b: an object's abilities include the ones it GAINED, and a
+    /// gained static ability modifies characteristics like any other. That is
+    /// a dependency in 9.12.1d's own sense — which abilities exist is itself
+    /// computed by this pipeline — so the gains are read from a first pass
+    /// over the printed abilities and their declarations join the second.
+    /// The extra pass costs nothing on a board where nothing gains abilities,
+    /// which is the usual case.
+    ///
+    /// DEVIATION (bounded, one level): a gained ability that itself makes its
+    /// object gain further abilities does not cascade — the second pass reads
+    /// the first pass's gains, not its own.
     pub fn char_effects(&self) -> Vec<crate::object::CharEffect> {
-        use crate::object::{CharEffect, CharOp};
+        let mut out = self.char_effects_from_printed();
+        if self.st.objects.values().any(|o| {
+            o.face().abilities.iter().any(|a| {
+                a.statics.iter().any(|d| matches!(d, StaticDecl::GainAbilitiesOf { .. }))
+            })
+        }) {
+            cite!("rule_determine_actual_abilities");
+            let threat = self.gather_threat_level();
+            let ids: Vec<ObjectId> = self.st.objects.keys().copied().collect();
+            for id in ids {
+                let gained =
+                    crate::object::compute_effective(&self.st.objects, &out, id).gained_abilities;
+                let Some(o) = self.st.objects.get(&id) else { continue };
+                let mut extra = Vec::new();
+                for a in &gained {
+                    self.char_effects_of_static(o, a, threat, &mut extra);
+                }
+                out.extend(extra);
+            }
+        }
+        out
+    }
+
+    /// The printed half of [`Vm::char_effects`].
+    fn char_effects_from_printed(&self) -> Vec<crate::object::CharEffect> {
         let mut out = Vec::new();
         let threat = self.gather_threat_level();
         for o in self.st.objects.values() {
             for a in &o.face().abilities {
+                self.char_effects_of_static(o, a, threat, &mut out);
+            }
+        }
+        self.char_effects_from_lingering(&mut out);
+        out
+    }
+
+    /// The characteristic effects one STATIC ability of `o` contributes.
+    /// Takes the ability by reference rather than by index so that a gained
+    /// ability (9.1.9b), which has no printed position, goes through exactly
+    /// the same code.
+    fn char_effects_of_static(
+        &self,
+        o: &Object,
+        a: &AbilityDef,
+        threat: i32,
+        out: &mut Vec<crate::object::CharEffect>,
+    ) {
+        use crate::object::{CharEffect, CharOp};
+        {
+            {
                 if a.kind != AbilityKind::Static {
-                    continue;
+                    return;
                 }
                 // 9.1.7/9.1.8 + 9.3.6f: a static ability contributes
                 // characteristic modifications only while it is ACTIVE, which
@@ -2602,11 +2704,11 @@ impl Vm {
                     self.st.accessed,
                     threat,
                 ) {
-                    continue;
+                    return;
                 }
                 if let Some(Condition::Static(sc)) = &a.condition {
                     if !self.static_cond_holds(o.id, sc) {
-                        continue;
+                        return;
                     }
                 }
                 for d in &a.statics {
@@ -2678,6 +2780,27 @@ impl Vm {
                                 }
                             }
                         }
+                        StaticDecl::GainAbilitiesOf { criteria } => {
+                            // 9.1.9b through 9.12.1d: one copy per described
+                            // card, resolved when the pipeline applies the
+                            // effect (see `CharOp::CopyAbilitiesFrom`). The
+                            // criteria are read shallowly here for the same
+                            // reason `GainSubtypesOf`'s are (deviation 2b).
+                            cite!("rule_gaining_losing_abilities");
+                            for other in self.st.objects.values() {
+                                if other.id != o.id
+                                    && criteria
+                                        .iter()
+                                        .all(|f| self.filter_matches_shallow(other, *f, Some(o.id)))
+                                {
+                                    out.push(CharEffect {
+                                        source: o.id,
+                                        target: o.id,
+                                        op: CharOp::CopyAbilitiesFrom(other.id),
+                                    });
+                                }
+                            }
+                        }
                         StaticDecl::GainSubtypesOf { criteria } => {
                             // 9.12.1b through 9.12.1d: one add per subtype of
                             // each described card, resolved when the pipeline
@@ -2734,6 +2857,10 @@ impl Vm {
                 }
             }
         }
+    }
+
+    /// CR 9.10: the lingering half of [`Vm::char_effects`].
+    fn char_effects_from_lingering(&self, out: &mut Vec<crate::object::CharEffect>) {
         for l in &self.lingering {
             if let Payload::SubtypeMod { target, add, remove } = &l.payload {
                 cite!("rule_add_remove_subtypes");
@@ -2764,7 +2891,6 @@ impl Vm {
                 });
             }
         }
-        out
     }
 
     pub fn effective_strength(&self, obj: ObjectId) -> Option<i32> {
@@ -3942,10 +4068,10 @@ impl Vm {
                 let defined = source.is_some_and(|s| {
                     self.st.objects.get(&s).is_some_and(|o| {
                         card_active(o)
-                            && o.face().abilities.iter().enumerate().any(|(i, a)| {
+                            && self.abilities_of(s).iter().any(|(_, a)| {
                                 a.statics.iter().any(|d| {
                                     matches!(d, StaticDecl::SelfStrength(_))
-                                }) && self.ability_present(s, i)
+                                })
                             })
                     })
                 });
@@ -4576,15 +4702,13 @@ impl Vm {
         let mut to_pend: Vec<(ObjectId, usize, AbilityDef, Side)> = Vec::new();
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if a.kind != AbilityKind::Conditional || !a.is_interrupt() {
                     continue;
                 }
                 if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
-                    continue;
-                }
-                if !self.ability_present(o.id, i) {
                     continue;
                 }
                 if self.interrupt_relevant(a, &atoms_snapshot, &ordinals, o.id) {
@@ -4865,15 +4989,13 @@ impl Vm {
             if o.controller != side {
                 continue;
             }
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if a.kind != AbilityKind::Paid || !a.is_interrupt() {
                     continue;
                 }
                 if !ability_active(o, a, self.st.encounter.as_ref().map(|e| e.ice), self.st.accessed, threat)
                 {
-                    continue;
-                }
-                if !self.ability_present(o.id, i) {
                     continue;
                 }
                 if !self.break_ability_timing_ok(a) {
@@ -6226,8 +6348,7 @@ impl Vm {
     /// abilities and is not an installation destination.
     fn hosts_onto_itself(&self, host: ObjectId) -> bool {
         cite!("rule_host_via_ability");
-        let Some(o) = self.st.objects.get(&host) else { return false };
-        o.face().abilities.iter().any(|a| {
+        self.abilities_of(host).iter().any(|(_, a)| {
             a.instructions.iter().any(|i| {
                 matches!(i, Instruction::HostCards { host: TargetSpec::SelfSource, .. })
             })
@@ -6237,9 +6358,8 @@ impl Vm {
     /// Does `host`'s hosting declaration accept `installee`, with room left
     /// (1.13.5: any number unless the ability says otherwise)?
     fn host_accepts(&self, host: &Object, installee: &Object) -> bool {
-        host.face().abilities.iter().enumerate().any(|(i, a)| {
+        self.abilities_of(host.id).iter().any(|(_, a)| {
             a.kind == AbilityKind::Static
-                && self.ability_present(host.id, i)
                 && a.statics.iter().any(|d| match d {
                     StaticDecl::CanHost { criteria, capacity } => {
                         cite!("rule_hosting_limit");
@@ -10644,7 +10764,8 @@ impl Vm {
                 .st
                 .objects
                 .get(&af.source.obj)
-                .and_then(|o| o.face().abilities.get(af.source.index))
+                .map(|_| self.ability_at(af.source.obj, af.source.index))
+                .unwrap_or_default()
                 .is_some_and(|d| {
                     d.optional && d.has_flag(crate::ability::AbilityFlag::OncePerTurn)
                 });
@@ -11022,7 +11143,8 @@ impl Vm {
             if o.controller != side {
                 continue;
             }
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if !a.is_action() {
                     continue;
                 }
@@ -11096,7 +11218,8 @@ impl Vm {
             if o.controller != side {
                 continue;
             }
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if a.kind != AbilityKind::Paid
                     || a.is_action()
                     || a.is_interrupt()
@@ -11347,7 +11470,8 @@ impl Vm {
             if src.controller != Side::Runner || self.ability_use_prohibited(src.id) {
                 continue;
             }
-            for (i, a) in src.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(src.id) {
+                let a = &a;
                 if a.kind == AbilityKind::Paid
                     && a.has_flag(AbilityFlag::Access)
                     && ability_active(src, a, None, self.st.accessed, threat)
@@ -11417,8 +11541,7 @@ impl Vm {
     /// of its instructions for a trash naming the accessed card — the same
     /// shape 1.13.6b's scan uses (deviation 16).
     fn ability_trashes_accessed_card(&self, ability: AbilityRef) -> bool {
-        let Some(o) = self.st.objects.get(&ability.obj) else { return false };
-        let Some(a) = o.face().abilities.get(ability.index) else { return false };
+        let Some(a) = self.ability_at(ability.obj, ability.index) else { return false };
         a.instructions
             .iter()
             .any(|i| matches!(i, Instruction::TrashCards(TargetSpec::AccessedCard)))
@@ -11572,7 +11695,8 @@ impl Vm {
     fn damage_cost_blocked(&self, kind: DamageKind) -> bool {
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
                     continue;
                 }
@@ -11821,7 +11945,8 @@ impl Vm {
     fn tag_cost_blocked(&self) -> bool {
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            for (i, a) in o.face().abilities.iter().enumerate() {
+            for (i, a) in self.abilities_of(o.id) {
+                let a = &a;
                 if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
                     continue;
                 }
@@ -12194,7 +12319,8 @@ impl Vm {
                     .st
                     .objects
                     .get(&source.obj)
-                    .and_then(|o| o.face().abilities.get(source.index))
+                    .map(|_| self.ability_at(source.obj, source.index))
+                    .unwrap_or_default()
                     .is_some_and(|d| d.has_flag(AbilityFlag::OncePerTurn));
                 if flagged {
                     cite!("rule_once_per_turn_flag");
@@ -13905,7 +14031,7 @@ impl Vm {
                 );
             }
             ActionOption::CardAction { ability, .. } => {
-                let def = self.st.objects[&ability.obj].face().abilities[ability.index].clone();
+                let Some(def) = self.ability_at(ability.obj, ability.index) else { return };
                 self.trigger_paid_ability(side, ability, def);
             }
         }
@@ -14070,7 +14196,7 @@ impl Vm {
                 );
             }
             WindowOption::TriggerPaid { ability, .. } => {
-                let def = self.st.objects[&ability.obj].face().abilities[ability.index].clone();
+                let Some(def) = self.ability_at(ability.obj, ability.index) else { return };
                 self.trigger_paid_ability(side, ability, def);
             }
             WindowOption::Rez { card } | WindowOption::RezApproachedIce { card } => {

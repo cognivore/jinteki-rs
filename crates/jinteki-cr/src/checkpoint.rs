@@ -123,8 +123,19 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     // Enumerate condition sources: printed conditional abilities + delayed
     // conditionals maintained by lingering effects (9.6.13) + granted ones.
     let mut sources: Vec<(ObjectId, usize, AbilityDef, Side, Option<u64>)> = Vec::new();
-    for o in vm.st.objects.values() {
-        for (i, a) in o.face().abilities.iter().enumerate() {
+    // 9.1.9b: the abilities an object HAS — printed ones it did not lose, and
+    // ones it gained (DJ Fenris class), which are conditional abilities of the
+    // gaining object like any other.
+    let all_abilities: Vec<(ObjectId, Vec<(usize, AbilityDef)>, Side)> = vm
+        .st
+        .objects
+        .values()
+        .map(|o| (o.id, vm.abilities_of(o.id), o.controller))
+        .collect();
+    for (obj, abilities, controller) in &all_abilities {
+        for (i, a) in abilities.iter().cloned() {
+            let (o, i, a) = (&vm.st.objects[obj], i, &a);
+            let _ = controller;
             if a.kind != AbilityKind::Conditional {
                 continue;
             }
@@ -845,9 +856,8 @@ fn step_e_restrictions(vm: &mut Vm) {
                 && o.host.is_some_and(|h| {
                     vm.st.objects.get(&h).is_some_and(|host| {
                         card_active(host)
-                            && host.face().abilities.iter().enumerate().any(|(i, a)| {
+                            && vm.abilities_of(h).iter().any(|(_, a)| {
                                 a.kind == AbilityKind::Static
-                                    && vm.ability_present(h, i)
                                     && a.statics
                                         .iter()
                                         .any(|d| matches!(d, crate::ability::StaticDecl::CannotHost))

@@ -115,6 +115,57 @@ pub fn host_on(vm: &mut Vm, guest: ObjectId, host: ObjectId) {
     vm.st.objects.get_mut(&host).unwrap().hosted.push(guest);
 }
 
+/// Host `guest` on `host` WITHOUT installing it (CR 1.13.2a) — the shape a
+/// DJ-Fenris-class ability creates, in which the guest is in the play area
+/// but inactive (4.6.5h).
+pub fn host_on_uninstalled(vm: &mut Vm, guest: ObjectId, host: ObjectId) {
+    host_on(vm, guest, host);
+    vm.st.objects.get_mut(&guest).unwrap().hosted_not_installed = true;
+}
+
+/// A DJ-Fenris-class card: "<this card> gains the text of the card hosted on
+/// it" (9.1.9b). The description is the shared criteria vocabulary, so the
+/// whole class — hosted, installed, named — is one declaration.
+pub fn gains_text_of_hosted(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::GainAbilitiesOf {
+        criteria: vec![crate::instr::TargetFilter::HostedOnSource],
+    }])
+    .labeled("gains-text: the text of what it hosts")];
+    c
+}
+
+/// An INSTALLED card declaring that identity cards have no abilities (9.1.9a)
+/// — the Direct Access class as a permanent, so the removal can be observed
+/// outside the window in which an event is active (9.1.2b).
+pub fn identity_blanker(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::RemoveAbilitiesOfMatching {
+        criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Identity)],
+    }])
+    .labeled("blanker: identity cards have no abilities")];
+    c
+}
+
+/// A card whose three abilities are one of each kind that has to survive
+/// being gained: a static declaration, a paid ability, and a conditional.
+pub fn three_ability_guest(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Identity);
+    c.abilities = vec![
+        AbilityDef::static_ability(vec![StaticDecl::MemoryLimitMod(1)])
+            .labeled("guest-static: +1 memory"),
+        AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))])
+            .labeled("guest-paid: gain 2"),
+        AbilityDef::conditional(
+            TriggerCond::RunEnds { successful_only: false },
+            vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+            false,
+        )
+        .labeled("guest-conditional: gain 1 when a run ends"),
+    ];
+    c
+}
+
 /// Place `n` counters of `kind` on a card as SETUP (CR 1.13.1: they are
 /// hosted on it). Board state, like credits or cards in hand — the ability
 /// that would have put them there is not what the examples using this are

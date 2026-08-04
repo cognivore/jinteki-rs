@@ -2671,6 +2671,125 @@ fn dj_fenris_hosts_a_g_mod_identity_of_another_faction() {
     assert!(vm.identity_pile(Side::Runner).contains(&ken));
 }
 
+/// DJ Fenris: "DJ Fenris gains the text of hosted identity."
+///
+/// CR 9.1.9's other direction, and the one the kernel could not say: an
+/// object can now GAIN abilities, not only lose them. The hosted identity is
+/// inactive where it sits (1.13.2a: hosted without being installed, so
+/// 4.6.5h makes it inactive), so its own "+1[mu]" does nothing — but DJ
+/// Fenris, who is active, HAS the ability now, and the memory limit moves by
+/// exactly one, not two.
+#[test]
+fn dj_fenris_gains_the_text_of_the_hosted_identity() {
+    let mut vm = Vm::empty(5507);
+    tk::install_identity(&mut vm, card("Andromeda: Dispossessed Ristie"), Side::Runner);
+    let base = vm.memory_limit();
+    let chaos =
+        vm.new_object(card("Chaos Theory: Wünderkind"), Zone::OutsideGame(Side::Runner));
+    vm.st.objects.get_mut(&chaos).unwrap().faceup = true;
+    let dj = vm.new_object(card_partial("DJ Fenris"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(dj);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+    assert_eq!(vm.memory_limit(), base, "1.5.4a: the identity in the pile is inactive");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(dj)))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Rig),
+            )
+            .when(Match::reaction().once(), Reply::take("guest of the evening"))
+            .when(Match::targets().once(), Reply::target(chaos))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&chaos].host, Some(dj), "hosted: {}", t.tail(16));
+    assert!(vm.st.objects[&chaos].hosted_not_installed);
+    assert!(
+        !jinteki_cr::object::card_active(&vm.st.objects[&chaos]),
+        "1.13.2a/4.6.5h: the hosted identity is not active, so its own text does nothing"
+    );
+    assert_eq!(
+        vm.memory_limit(),
+        base + 1,
+        "9.1.9b: DJ Fenris has the hosted identity's ability, once: {}",
+        t.tail(16)
+    );
+}
+
+/// DJ Fenris: "Remove hosted identity from the game if DJ Fenris is
+/// uninstalled."
+///
+/// The sentence belongs to the hosting ability — the same paragraph, and the
+/// same card it chose — so it is a delayed conditional (9.6.13) created when
+/// the hosting happens: 9.10.1 keeps the effect alive after its source has
+/// left the play area, and 1.15.4 lets it act on the card the ability already
+/// chose, which is the only way to still know WHICH identity once the hosting
+/// relationship is gone.
+///
+/// The identity therefore does NOT go back to the pile (1.5.4b), where a
+/// later Rebirth could take it: it is removed from the game.
+#[test]
+fn dj_fenris_removes_the_hosted_identity_when_he_is_uninstalled() {
+    let mut vm = Vm::empty(5509);
+    tk::install_identity(&mut vm, card("Andromeda: Dispossessed Ristie"), Side::Runner);
+    let chaos =
+        vm.new_object(card("Chaos Theory: Wünderkind"), Zone::OutsideGame(Side::Runner));
+    vm.st.objects.get_mut(&chaos).unwrap().faceup = true;
+    let dj = vm.new_object(card("DJ Fenris"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(dj);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.runner.credits = 5;
+    vm.st.corp.credits = 5;
+    // Setup state, not effect: the Runner is tagged, which is what 5.2.6g
+    // requires for the Corp's basic trash-resource action.
+    vm.st.runner.tags = 1;
+    vm.start_turn(Side::Runner);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::TrashResource))
+            .when(Match::targets().once(), Reply::target(dj))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(dj)))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Rig),
+            )
+            .when(Match::reaction().once(), Reply::take("guest of the evening"))
+            .when(Match::targets().once(), Reply::target(chaos))
+            .when(Match::reaction(), Reply::take("the guest leaves the game"))
+            // Halt once, to read the board while DJ Fenris is still installed.
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit(),
+    );
+    g.run(&mut vm);
+    assert_eq!(vm.st.objects[&chaos].host, Some(dj), "hosted: {}", g.transcript().tail(16));
+
+    // The Runner finishes the turn; the Corp trashes the resource.
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&dj].zone,
+        Zone::Discard(Side::Runner),
+        "{}",
+        g.transcript().tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&chaos].zone,
+        Zone::RemovedFromGame,
+        "the hosted identity was removed from the game, not returned to the pile: {}",
+        g.transcript().tail(20)
+    );
+    assert!(!vm.identity_pile(Side::Runner).contains(&chaos));
+}
+
 /// CR 1.5.4b: "if an identity card leaves the play area, it must be returned
 /// to the pile outside the game" — including when 1.13.13 trashes it because
 /// its host left. It does not go to the heap.

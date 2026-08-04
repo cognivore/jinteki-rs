@@ -28,21 +28,30 @@ use crate::edsl::*;
 /// ordinary criteria, none of which this card had to invent — and 1.13.2a's
 /// host-without-installing is what "host … on DJ Fenris" does.
 ///
-/// UNIMPLEMENTED: the other two sentences.
-///
-/// "Remove hosted identity from the game if DJ Fenris is uninstalled" is a
-/// destination override, and nothing can state it yet. 1.13.13 trashes a
-/// host's hosted objects "during the next checkpoint", by which time DJ
-/// Fenris is inactive, so neither a static declaration nor a conditional
-/// ability of his can still reach the identity. Left unstated, the identity
-/// goes where 1.5.4b sends any identity leaving the play area — back to the
-/// pile — which is a rule and not an approximation of this sentence.
+/// COMPLETE, and the two sentences that were unstatable are the whole of CR
+/// 9.1.9 and 9.6.13.
 ///
 /// "DJ Fenris gains the text of hosted identity" is 9.1.9's other direction.
-/// `Effective::ability_present` is a presence MASK over `printed.abilities`,
-/// so an ability can be taken away but not added, and `AbilityRef` indexes
-/// that same list — gaining abilities needs both to grow. Stating it wrongly
-/// would be a card that quietly does nothing while claiming to.
+/// An object's abilities are no longer a presence MASK over its printed ones:
+/// 9.1.9b says the abilities an object actually has come out of 9.12.1d/e's
+/// procedure, so they are a list the characteristics pipeline computes, and
+/// `StaticDecl::GainAbilitiesOf` adds the described cards' EFFECTIVE
+/// abilities to it. The gaining card is their source (9.1.1b), which is what
+/// "this card" means inside a gained ability, and the hosted identity's own
+/// copy stays inactive where it sits (1.13.2a/4.6.5h) — so the text applies
+/// once, not twice.
+///
+/// "Remove hosted identity from the game if DJ Fenris is uninstalled" belongs
+/// to the same ability as the hosting — one paragraph, one card chosen — so
+/// it is a 9.6.13 delayed conditional created when the hosting happens. Two
+/// rules make that the only shape that works: 9.10.1 keeps a lingering effect
+/// alive after its source has left the play area, and 1.15.4 lets the created
+/// ability act on the card the SAME ability already chose, which is the only
+/// way to still know which identity once 1.13.13 has severed the hosting.
+/// (9.1.8g would keep a printed conditional active for exactly this zone
+/// change, but by the time it resolved it would have nothing left to name.)
+/// The identity is therefore removed from the game rather than returning to
+/// the pile 1.5.4b otherwise sends it to.
 ///
 /// ("Limit 1 per deck" is a deckbuilding restriction, not a sentence a card
 /// does.)
@@ -59,21 +68,26 @@ pub fn dj_fenris() -> Card {
         .text("Limit 1 per deck.")
         .when(
             installed(),
-            [host(
-                choose(
-                    1,
-                    &[
-                        in_identity_pile_of(Runner),
-                        with_subtype("G-mod"),
-                        faction_matching_identity_of(Runner, false),
-                    ],
+            [
+                host(
+                    choose(
+                        1,
+                        &[
+                            in_identity_pile_of(Runner),
+                            with_subtype("G-mod"),
+                            faction_matching_identity_of(Runner, false),
+                        ],
+                    ),
+                    this_card(),
                 ),
-                this_card(),
-            )],
+                when_this_card_is_uninstalled(
+                    "dj fenris: the guest leaves the game",
+                    [remove_from_game(earlier_choice(0))],
+                ),
+            ],
         )
         .named("guest of the evening")
-        .unimplemented("Remove hosted identity from the game if DJ Fenris is uninstalled.")
-        .unimplemented("DJ Fenris gains the text of hosted identity.")
+        .declares([gains_the_text_of(&[hosted_on_this_card()])])
         .build()
 }
 

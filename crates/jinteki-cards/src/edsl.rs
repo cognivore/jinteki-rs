@@ -635,6 +635,7 @@ fn trigger_word(t: &TriggerCond) -> &'static str {
         TriggerCond::SelfScored { .. } => "scored",
         TriggerCond::SelfStolen => "stolen",
         TriggerCond::SelfInstalled => "installed",
+        TriggerCond::SelfUninstalled => "uninstalled",
         TriggerCond::SelfEmpty { .. } => "empty",
         TriggerCond::SelfEncountered => "encountered",
         TriggerCond::SelfAccessed { .. } => "accessed",
@@ -1750,14 +1751,21 @@ pub fn another_current_is_played() -> TriggerCond {
     }
 }
 /// "The <side>'s identity loses its printed abilities." (Employee Strike
-/// class; 9.1.9a.) In this kernel an object's abilities ARE its printed
-/// abilities — [`jinteki_cr::object::Effective::ability_present`] is a mask
-/// over `printed.abilities` — so removing all of them is exactly what the
-/// printed word says.
+/// class; 9.1.9a — "if an object loses an ability, that ability is completely
+/// ignored", and 9.1.9a reaches gained abilities too, since those are
+/// abilities the object has.)
 pub fn identity_of_loses_its_abilities(side: Side) -> StaticDecl {
     StaticDecl::RemoveAbilitiesOfMatching {
         criteria: vec![TargetFilter::CardTypeIs(CardType::Identity), controlled_by(side)],
     }
+}
+/// "<This card> gains the text of <the described cards>." (DJ Fenris class;
+/// 9.1.9b.) The abilities gained are the described cards' EFFECTIVE abilities,
+/// read through the 9.12.1d/e characteristics pipeline — so an identity that
+/// had lost its abilities passes on nothing — and the gaining card is their
+/// source, which is what "this card" means inside them.
+pub fn gains_the_text_of(criteria: &[TargetFilter]) -> StaticDecl {
+    StaticDecl::GainAbilitiesOf { criteria: criteria.to_vec() }
 }
 /// "As an additional cost to steal **an** agenda, pay <cost>." — reaching
 /// every agenda, for as long as this card is active (1.16.10).
@@ -2085,6 +2093,30 @@ pub fn all_matching(criteria: &[TargetFilter]) -> TargetSpec {
 /// 0, so the first card it chose is `0`.
 pub fn earlier_choice_matches(nth: usize, criteria: &[TargetFilter]) -> TriggerRequirement {
     TriggerRequirement::EarlierTargetMatches { nth, criteria: criteria.to_vec() }
+}
+/// "…**if this card is uninstalled**, <do this to what it chose>" (DJ Fenris)
+/// — a delayed conditional (9.6.13) created by the ability that made the
+/// choice, so 1.15.4 lets the later ability act on that card without choosing
+/// it again, and 9.10.1 keeps the effect alive after its source has left. A
+/// printed conditional would work too (9.1.8g keeps one active for exactly
+/// this move), but only a lingering one still knows WHICH card, since the
+/// hosting relationship is gone by the time it resolves.
+pub fn when_this_card_is_uninstalled(
+    label: &'static str,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::CreateDelayedConditional {
+        def: Box::new(
+            AbilityDef::conditional(
+                TriggerCond::SelfUninstalled,
+                instrs.into_iter().collect(),
+                false,
+            )
+            .labeled(label),
+        ),
+        // 9.6.13c: no stated duration — it exists until it first resolves.
+        duration: WantedDuration::UntilResolved,
+    }
 }
 /// "…it", "…that card" — a card this ability already chose (1.15.4), acted on
 /// again without choosing it a second time.

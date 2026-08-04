@@ -621,6 +621,13 @@ pub enum CharOp {
     CopySubtypesFrom(ObjectId),
     /// 9.1.9: gain/lose abilities. Losing all abilities is the Hush pattern.
     RemoveAllAbilities,
+    /// CR 9.1.9b / 9.12.1: "<this card> gains the text of <that card>" (DJ
+    /// Fenris class). Every ability the named object HAS — after its own
+    /// characteristics are computed, so an identity that had itself gained an
+    /// ability passes it on — is added to this object's abilities. The mirror
+    /// of `RemoveAllAbilities`, and the reason an object's abilities are a
+    /// LIST computed by the pipeline rather than a mask over the printed one.
+    CopyAbilitiesFrom(ObjectId),
 }
 
 /// A characteristic-affecting effect gathered from the board.
@@ -645,6 +652,12 @@ pub struct Effective {
     /// Indexes into `printed.abilities` that are present (9.1.9a: a lost
     /// ability is completely ignored).
     pub ability_present: Vec<bool>,
+    /// CR 9.1.9b: the abilities this object GAINED, in the order the effects
+    /// granting them applied. They are not printed on the card, so they are
+    /// addressed by indices ABOVE the printed ones — see
+    /// [`crate::vm::Vm::abilities_of`], which is the one place that knows the
+    /// layout, and `AbilityRef::index`, which names a position in it.
+    pub gained_abilities: Vec<crate::ability::AbilityDef>,
 }
 
 /// CR 9.12.1d/e: dependency-ordered application of characteristic effects.
@@ -686,6 +699,7 @@ fn compute_effective_inner(
         agenda_points: obj.converted_agenda.or(obj.printed.agenda_points),
         subtypes: obj.printed.subtypes.iter().copied().collect(),
         ability_present: vec![true; obj.printed.abilities.len()],
+        gained_abilities: Vec::new(),
     };
 
     // Resolve application order over ALL effects (they interact globally).
@@ -813,9 +827,42 @@ fn compute_effective_inner(
         .map(|(&s, _)| s)
         .collect();
 
+    // CR 9.1.9b/9.12.1d: the abilities gained from another object are the
+    // abilities that object HAS, so the pipeline re-enters itself for it —
+    // exactly as `CopySubtypesFrom` does, and with the same cycle guard (a
+    // re-entered object contributes its printed abilities only).
+    cite!("rule_determine_actual_abilities");
+    cite!("rule_gaining_losing_abilities");
+    visiting.insert(target);
+    for e in &on_target {
+        if let CharOp::CopyAbilitiesFrom(from) = e.op {
+            if !objects.contains_key(&from) {
+                continue;
+            }
+            let gained: Vec<crate::ability::AbilityDef> = if visiting.contains(&from) {
+                objects[&from].printed.abilities.clone()
+            } else {
+                let f = compute_effective_inner(objects, effects, from, visiting);
+                let printed = &objects[&from].printed.abilities;
+                printed
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| f.ability_present.get(*i).copied().unwrap_or(true))
+                    .map(|(_, a)| a.clone())
+                    .chain(f.gained_abilities.iter().cloned())
+                    .collect()
+            };
+            eff.gained_abilities.extend(gained);
+        }
+    }
+    visiting.remove(&target);
+
     cite!("rule_lose_ability");
     if abilities_removed.contains(&target) {
         eff.ability_present = vec![false; obj.printed.abilities.len()];
+        // 9.1.9a: "lose ALL of their abilities" reaches the gained ones too —
+        // they are abilities the object has.
+        eff.gained_abilities.clear();
     }
 
     eff

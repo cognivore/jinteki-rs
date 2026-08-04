@@ -78,6 +78,7 @@ fn tests_are_plans_not_loops() {
         ("playable_slice.rs", include_str!("playable_slice.rs")),
         ("announcements.rs", include_str!("announcements.rs")),
         ("using_abilities.rs", include_str!("using_abilities.rs")),
+        ("gained_abilities.rs", include_str!("gained_abilities.rs")),
     ];
     let mut bad: Vec<String> = Vec::new();
     for (name, text) in sources {
