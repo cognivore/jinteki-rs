@@ -532,11 +532,43 @@ function barHtml(st, side, isOpp) {
     <span class="idchip" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
     <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
     <span class="stat" title="clicks remaining">${clicks}</span>
-    <span class="stat" title="cards in hand">Hand ${st["hand-count"] ?? (st.hand || []).length}</span>
-    <span class="stat" title="cards in deck">Deck ${st["deck-count"] ?? 0}</span>
+    <span class="stat" title="${ZONE(side, "hand").hint}">${ZONE(side, "hand").label} ${st["hand-count"] ?? (st.hand || []).length}</span>
+    <span class="stat" title="${ZONE(side, "deck").hint}">${ZONE(side, "deck").label} ${st["deck-count"] ?? 0}</span>
+    <span class="stat tappable" data-stat="discard" data-side="${side}"
+      title="${ZONE(side, "discard").hint}">${ZONE(side, "discard").label} ${(st.discard || []).length}</span>
     <span class="stat tappable" data-stat="ap" data-side="${side}"
       title="agenda points — tap to see the agendas">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
 }
+
+/* Netrunner names each zone once per side, and players use those names and
+   no others: the Corp's are HQ / R&D / Archives, the Runner's are the grip /
+   the stack / the heap (CR 4.2-4.4 define one zone type per pair). Showing
+   "Hand" and "Deck" to a Runner is a translation nobody asked for, so the
+   client speaks the printed names. The kernel keeps `Zone::Discard(Side)`
+   because the RULE is one rule; only the label differs. */
+const ZONE_NAMES = {
+  corp:   { hand: ["HQ", "cards in HQ"],
+            deck: ["R&D", "cards in R&D"],
+            discard: ["Archives", "Archives — tap to look"] },
+  runner: { hand: ["Grip", "cards in the grip"],
+            deck: ["Stack", "cards in the stack"],
+            discard: ["Heap", "the heap — tap to look"] },
+};
+function ZONE(side, which) {
+  const z = (ZONE_NAMES[side] || ZONE_NAMES.runner)[which];
+  return { label: z[0], hint: z[1] };
+}
+
+// Both discard piles are public information (CR 4.4.2), so either side's is
+// readable by either player — the Runner's heap especially, since installing
+// and shuffling out of it is ordinary play.
+document.addEventListener("click", (e) => {
+  const stat = e.target.closest('.stat[data-stat="discard"]');
+  if (!stat || !S) return;
+  const side = stat.dataset.side;
+  const st = S[side] || {};
+  zoomPile(st.discard || [], `${ZONE(side, "discard").label} (${(st.discard || []).length})`);
+});
 
 // Tap an identity thumb to read the identity card.
 document.addEventListener("click", (e) => {
@@ -594,7 +626,7 @@ function renderServers() {
       box.className = "central";
       const n = key === "hq" ? (corp["hand-count"] ?? 0) : key === "rd" ? (corp["deck-count"] ?? 0) : (corp.discard || []).length;
       box.innerHTML = `<b>${n}</b><span>${key === "hq" ? "cards" : key === "rd" ? "cards" : "cards"}</span>`;
-      box.onclick = () => { if (key === "archives") zoomPile(corp.discard || [], "Archives"); };
+      box.onclick = () => { if (key === "archives") zoomPile(corp.discard || [], `Archives (${(corp.discard || []).length})`); };
       col.appendChild(box);
       (srv.content || []).forEach((c) => col.appendChild(cardEl(c, { side: "corp" })));
     } else {
