@@ -4372,3 +4372,281 @@ fn cupellation_digs_two_cards_deeper_out_of_hq() {
         t.tail(30)
     );
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue (docs/vm/IDENTITY-QUEUE.md) — Runner, Anarch
+// ---------------------------------------------------------------------------
+
+/// Alice Merchant: "The first time you make a successful run on Archives each
+/// turn, the Corp must trash 1 card from HQ."
+///
+/// Three successful runs — two on Archives and one on another central — cost
+/// HQ exactly one card, on the first Archives run. The choice is asserted to
+/// be the CORP's: 1.14.5 hands the naming to the player the sentence names,
+/// even though 9.1.1a makes the Runner the ability's controller.
+#[test]
+fn alice_merchant_makes_the_corp_pitch_one_card_on_the_first_archives_run() {
+    let mut vm = Vm::empty(6101);
+    tk::install_identity(&mut vm, card("Alice Merchant: Clan Agitator"), Side::Runner);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Corp].len(),
+        2,
+        "HQ lost one card, and only one — the second Archives run is not 'the first time each turn', \
+         and R&D is not Archives: {}",
+        t.tail(24)
+    );
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "one card was named, once: {}", t.tail(24));
+    assert_eq!(
+        announcements[0].side,
+        Side::Corp,
+        "1.14.5: the sentence says the CORP trashes, so the Corp names the card: {}",
+        t.tail(24)
+    );
+}
+
+/// Edward Kim: "Trash the first operation you access each turn at no cost."
+///
+/// Three accesses in one turn, in an order that pins both stipulations: an
+/// ASSET first (not an operation, so the condition is not met and the ordinal
+/// is not spent), then an operation (trashed, with nothing paid), then a
+/// second operation (not "the first … each turn", so it survives).
+#[test]
+fn edward_kim_trashes_the_first_operation_accessed_each_turn_and_no_others() {
+    let mut vm = Vm::empty(6102);
+    tk::install_identity(&mut vm, card("Edward Kim: Humanity's Hammer"), Side::Runner);
+    let asset = vm.new_object(tk::vanilla_asset("Some Asset", 0, 2), Zone::Hand(Side::Corp));
+    let first_op = vm.new_object(tk::operation("First Op", 0, vec![]), Zone::Hand(Side::Corp));
+    let second_op = vm.new_object(tk::operation("Second Op", 0, vec![]), Zone::Hand(Side::Corp));
+    for id in [asset, first_op, second_op] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::install_rig(&mut vm, tk::hq_access_button("Gang-Sign-like"));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    // 7.5.4's basic trash ability must never be what trashes anything here.
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("access-hq"))
+            .when(Match::targets().once(), Reply::Targets(vec![asset]))
+            .when(Match::paid().once(), Reply::take("access-hq"))
+            .when(Match::targets().once(), Reply::Targets(vec![first_op]))
+            .when(Match::paid().once(), Reply::take("access-hq"))
+            .when(Match::targets().once(), Reply::Targets(vec![second_op]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&first_op].zone,
+        Zone::Discard(Side::Corp),
+        "the first operation accessed this turn was trashed: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&second_op].zone,
+        Zone::Hand(Side::Corp),
+        "the SECOND operation is not 'the first … each turn' and stays in HQ: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&asset].zone,
+        Zone::Hand(Side::Corp),
+        "an asset is not an operation, so accessing it neither trashes it nor spends the ordinal: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.runner.credits, 0, "'at no cost' — nothing was paid: {}", t.tail(30));
+}
+
+/// Esâ Afontov: "The first time each turn you suffer core damage, you may
+/// draw 1 card and sabotage 2. (The Corp trashes 2 cards of their choice from
+/// HQ and/or the top of R&D.)"
+///
+/// Two core damages in one turn: the offer is made once, and taking it draws
+/// exactly one card and costs the Corp exactly two cards. The declined half
+/// of 9.6.9 is asserted too — passing the offer leaves both decks alone.
+#[test]
+fn esa_afontov_draws_and_sabotages_on_the_first_core_damage_of_the_turn() {
+    for accept in [false, true] {
+        let mut vm = Vm::empty(6103);
+        tk::install_identity(&mut vm, card("Esâ Afontov: Eco-Insurrectionist"), Side::Runner);
+        tk::install_root(&mut vm, tk::core_damage_button("Hurt", 1), ServerId::Remote(1), true);
+        tk::fill_hand(&mut vm, Side::Corp, 4);
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+        let corp_cards_before = vm.st.hand[&Side::Corp].len() + vm.st.deck[&Side::Corp].len();
+        let stack_before = vm.st.deck[&Side::Runner].len();
+
+        let mut runner = Plan::runner();
+        if accept {
+            runner = runner.when(
+                Match::reaction().offering("esâ afontov").once(),
+                Reply::take("esâ afontov"),
+            );
+        }
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("do core damage"))
+                .when(Match::paid().once(), Reply::take("do core damage"))
+                .stop_at_action(),
+            runner,
+        );
+        let offers: Vec<_> = t
+            .of_kind(Kind::Reaction)
+            .into_iter()
+            .filter(|e| plan::count_labelled(plan::window_options(&e.spec), "esâ afontov") > 0)
+            .collect();
+        assert_eq!(
+            offers.len(),
+            1,
+            "offered on the FIRST core damage of the turn and not the second (accept={accept}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            stack_before - vm.st.deck[&Side::Runner].len(),
+            usize::from(accept),
+            "one card drawn exactly when the Runner took the offer (accept={accept}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            corp_cards_before - (vm.st.hand[&Side::Corp].len() + vm.st.deck[&Side::Corp].len()),
+            if accept { 2 } else { 0 },
+            "sabotage 2 costs the Corp two cards from HQ and/or the top of R&D, once \
+             (accept={accept}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// MaxX: "When your turn begins, trash the top 2 cards of your stack. Draw 1
+/// card."
+///
+/// Two printed sentences on one condition, so the top THREE cards of the
+/// stack all move and each goes where its own sentence sends it: the top two
+/// to the heap, the third to the grip. The boundary is the count — a third
+/// card must not be trashed, and the drawn card must not be one of the two.
+#[test]
+fn maxx_trashes_the_top_two_cards_of_the_stack_then_draws_the_third() {
+    let mut vm = Vm::empty(6104);
+    tk::install_identity(&mut vm, card("MaxX: Maximum Punk Rock"), Side::Runner);
+    let stack = tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    assert!(vm.st.hand[&Side::Runner].is_empty(), "the grip starts empty");
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+    assert_eq!(
+        vm.st.objects[&stack[0]].zone,
+        Zone::Discard(Side::Runner),
+        "the top card of the stack was trashed: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&stack[1]].zone,
+        Zone::Discard(Side::Runner),
+        "and the second one: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&stack[2]].zone,
+        Zone::Hand(Side::Runner),
+        "the third card was DRAWN, not trashed — the second sentence is its own instruction: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.discard[&Side::Runner].len(),
+        2,
+        "exactly two cards were trashed: {}",
+        t.tail(24)
+    );
+}
+
+/// Nathaniel "Gnat" Hall: "When your turn begins, gain 1[credit] if you have
+/// 2 or fewer cards in your grip."
+///
+/// The requirement is inside the condition (9.6.5c), so it is the grip AT THE
+/// START OF THE TURN that decides. Two games: two cards in the grip pays, and
+/// three does not.
+#[test]
+fn nathaniel_gnat_hall_pays_only_while_the_grip_is_down_to_two() {
+    for (grip, expected) in [(2usize, 1u32), (3, 0)] {
+        let mut vm = Vm::empty(6105);
+        tk::install_identity(&mut vm, card("Nathaniel \"Gnat\" Hall: One-of-a-Kind"), Side::Runner);
+        tk::fill_hand(&mut vm, Side::Runner, grip);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+        assert_eq!(
+            vm.st.runner.credits, expected,
+            "with {grip} cards in the grip the turn-begin ability pays {expected}: {}",
+            t.tail(24)
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Runner, Neutral
+// ---------------------------------------------------------------------------
+
+/// Nova Initiumia: "Your deck cannot include more than 1 copy of any card."
+/// The Catalyst: "Starter game only."
+/// The Masque: "Draft format only."
+///
+/// All three print a deck-construction or format restriction and nothing
+/// else. CR 1.4.2 settles deck legality before the game begins, so none of it
+/// is an ability — there is no condition to meet and nothing to resolve — and
+/// this test is what says so out loud: each identity denotes into no
+/// abilities at all, and a turn played under it opens no window naming it.
+#[test]
+fn a_deckbuilding_restriction_is_not_an_ability_that_ever_fires() {
+    for name in [
+        "Nova Initiumia: Catalyst & Impetus",
+        "The Catalyst: Convention Breaker",
+        "The Masque: Cyber General",
+    ] {
+        let printed = card(name);
+        assert!(
+            printed.abilities.is_empty(),
+            "{name}: a deck-construction restriction denotes into no ability (EDSL rule of thumb 3)"
+        );
+
+        let mut vm = Vm::empty(6106);
+        tk::install_identity(&mut vm, printed, Side::Runner);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives)).stop_at_action(),
+        );
+        assert!(
+            !t.took(&name.to_lowercase()),
+            "{name}: nothing of this identity was ever offered or used during a turn: {}",
+            t.tail(24)
+        );
+    }
+}

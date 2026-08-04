@@ -56,4 +56,16 @@ pub const SOURCES: &[(&str, &str)] = &[
         "identities/runner_criminal.rs",
         include_str!("identities/runner_criminal.rs"),
     ),
+    (
+        "identities/runner_shaper.rs",
+        include_str!("identities/runner_shaper.rs"),
+    ),
+    (
+        "identities/runner_anarch.rs",
+        include_str!("identities/runner_anarch.rs"),
+    ),
+    (
+        "identities/runner_neutral.rs",
+        include_str!("identities/runner_neutral.rs"),
+    ),
 ];

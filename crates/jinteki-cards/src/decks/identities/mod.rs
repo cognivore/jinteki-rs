@@ -20,12 +20,16 @@
 
 use crate::edsl::Card;
 
+pub mod runner_anarch;
 pub mod runner_criminal;
+pub mod runner_neutral;
 pub mod runner_shaper;
 
 /// Every identity these modules carry, in queue order.
 pub fn cards() -> Vec<Card> {
     let mut all = runner_criminal::identities();
     all.extend(runner_shaper::identities());
+    all.extend(runner_anarch::identities());
+    all.extend(runner_neutral::identities());
     all
 }

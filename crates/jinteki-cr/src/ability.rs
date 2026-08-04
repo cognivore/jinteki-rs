@@ -142,7 +142,13 @@ pub enum TriggerCond {
     /// "Whenever the Runner takes a tag." (Mr. Stone class)
     RunnerTakesTag,
     /// "Whenever the Runner suffers damage." (per damage occurrence)
-    RunnerSuffersDamage,
+    ///
+    /// `kind` is the sentence's stipulation about WHICH damage — "whenever the
+    /// Runner takes at least 1 net damage" names one kind, and `None` is a
+    /// sentence naming none, exactly as [`TriggerCond::WouldDamage`] already
+    /// carries it on the interrupt side. Content on one condition, not a
+    /// condition per kind (§12 rule 1).
+    RunnerSuffersDamage { kind: Option<DamageKind> },
     /// Interrupt trigger: "…would draw any number of cards" (Class Act).
     /// `by` is the sentence's stipulation about WHOSE draw — "the first time
     /// each turn YOU would draw" is the ability's controller, and `None` is a
@@ -1764,7 +1770,12 @@ pub fn trigger_matches(
             side.is_none() || side.as_ref() == Some(s)
         }
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
-        (TriggerCond::RunnerSuffersDamage, GameChange::DamageSuffered { .. }) => true,
+        // 10.4.1: a sentence naming a kind of damage is met only by that kind;
+        // one naming none is met by any.
+        (
+            TriggerCond::RunnerSuffersDamage { kind },
+            GameChange::DamageSuffered { kind: k, .. },
+        ) => kind.is_none() || kind.as_ref() == Some(k),
         (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {
             side == s
         }

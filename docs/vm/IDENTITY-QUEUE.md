@@ -86,10 +86,30 @@ these is a general kernel capability, stated with the identities that want it.
   carries `first_each_run` as content on that one condition. The scope is
   content and belongs beside the ordinal, not on one condition.
   *(Jesminder Sareen: Girl Behind the Curtain.)*
+- **An installation cannot be described by what was installed.**
+  `TriggerCond::CardInstalledBy` names only the side and
+  `CardInstalledFrom` insists on a zone the sentence may not mention, so
+  "whenever you install a virus program" and "the first time you install a
+  card each turn" have no shared condition. The card type and subtype are
+  content on the install condition, exactly as `EncounterBegins` carries the
+  subtype of the ice. *(Noise: Hacker Extraordinaire; Hayley Kaplan and
+  Haas-Bioroid: Engineering the Future want it too.)*
+- **A spending restriction cannot say "cards" without meaning INSTALLED
+  cards.** `CreditUse::TrashingCards` describes the trashable cards with the
+  ordinary filter words, and 1.15.2c's default for a description naming no
+  zone is the installed cards — which is what Miss Bones prints. Whizzard
+  prints "cards", and the Corp card a Runner trashes on access out of HQ or
+  R&D is not installed, so the existing words say something narrower than the
+  card does. *(Whizzard: Master Gamer.)*
+- **No ability sees the score areas' agenda-point totals as a WIN
+  condition.** The kernel ends a game on a flatline or an empty R&D
+  (`GameResult`); nothing anywhere counts agenda points towards 7 or asks how
+  many are needed. *(Harmony Medtech: Biomedical Pioneer; Issuaq Adaptics:
+  Sustaining Diversity.)*
 
 ## Progress
 
-- Implemented: **17 / 150**
+- Implemented: **25 / 150**
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -150,17 +170,17 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (0/19)
+## Runner — Anarch (5/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
-- [ ] **Alice Merchant: Clan Agitator** — The first time you make a successful run on Archives each turn, the Corp must trash 1 card from HQ.
-- [ ] **Edward Kim: Humanity's Hammer** — Trash the first operation you access each turn at no cost.
-- [ ] **Esâ Afontov: Eco-Insurrectionist** — The first time each turn you suffer core damage, you may draw 1 card and sabotage 2. (The Corp trashes 2 cards of their choice from HQ and/or the top of R&D.)
+- [x] **Alice Merchant: Clan Agitator** — The first time you make a successful run on Archives each turn, the Corp must trash 1 card from HQ.
+- [x] **Edward Kim: Humanity's Hammer** — Trash the first operation you access each turn at no cost.
+- [x] **Esâ Afontov: Eco-Insurrectionist** — The first time each turn you suffer core damage, you may draw 1 card and sabotage 2. (The Corp trashes 2 cards of their choice from HQ and/or the top of R&D.)
 - [ ] **Freedom Khumalo: Crypto-Anarchist** — Access, once per turn → Any X virus counters: Trash the non-agenda card you are accessing. X must be equal to that card's rez or play cost.
 - [ ] **Hoshiko Shiro: Untold Protagonist** — When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.
-- [ ] **MaxX: Maximum Punk Rock** — When your turn begins, trash the top 2 cards of your stack. Draw 1 card.
-- [ ] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.
+- [x] **MaxX: Maximum Punk Rock** — When your turn begins, trash the top 2 cards of your stack. Draw 1 card.
+- [x] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.
 - [ ] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
 - [ ] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
 - [ ] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
@@ -174,13 +194,13 @@ Module: `decks/identities/runner_anarch.rs`
 - [ ] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.
 - [ ] **Wyvern: Chemically Enhanced** — Draft format only. You must maintain the order of your heap. Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.
 
-## Runner — Neutral (0/3)
+## Runner — Neutral (3/3)
 
 Module: `decks/identities/runner_neutral.rs`
 
-- [ ] **Nova Initiumia: Catalyst & Impetus** — Your deck cannot include more than 1 copy of any card.
-- [ ] **The Catalyst: Convention Breaker** — Starter game only.
-- [ ] **The Masque: Cyber General** — Draft format only.
+- [x] **Nova Initiumia: Catalyst & Impetus** — Your deck cannot include more than 1 copy of any card.
+- [x] **The Catalyst: Convention Breaker** — Starter game only.
+- [x] **The Masque: Cyber General** — Draft format only.
 
 ## Runner — Adam (0/1)
 

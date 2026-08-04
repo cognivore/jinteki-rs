@@ -1559,6 +1559,26 @@ pub fn prevent_all_damage(kind: DamageKind) -> Instruction {
 pub fn would_damage(kind: DamageKind) -> TriggerCond {
     TriggerCond::WouldDamage { kind: Some(kind), first_each_run: false }
 }
+/// "Whenever the Runner suffers <kind> damage…" (10.4.1) — the kind is the
+/// sentence's stipulation, and [`suffers_any_damage`] is the sentence that
+/// makes none.
+pub fn suffers_damage(kind: DamageKind) -> TriggerCond {
+    TriggerCond::RunnerSuffersDamage { kind: Some(kind) }
+}
+/// "Whenever the Runner suffers damage…" — any kind.
+pub fn suffers_any_damage() -> TriggerCond {
+    TriggerCond::RunnerSuffersDamage { kind: None }
+}
+/// "…sabotage N." (10.16: the Corp trashes N cards of their choice from HQ
+/// and/or the top of R&D.)
+pub fn sabotage(n: i64) -> Instruction {
+    Instruction::Sabotage { count: Quantity::c(n) }
+}
+/// "Whenever you access a <type>…" (9.6: the Runner's side of 7.3.6's
+/// access), with the sentence's card-type stipulation as content.
+pub fn accesses_a(of: CardType) -> TriggerCond {
+    TriggerCond::RunnerAccessesCard { of_types: vec![of] }
+}
 /// "Host the <accessed> card on this program/resource." (Cupellation and
 /// Film Critic class; the accessed card is no longer being accessed.)
 pub fn host_accessed_on_self() -> Instruction {

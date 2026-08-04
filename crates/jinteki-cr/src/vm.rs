@@ -8330,8 +8330,21 @@ impl Vm {
                         }
                         let atoms =
                             self.expected_atoms(i, controller, &imm.targets, Some(source.obj));
+                        // The merge applies an atom from its VALUE and its
+                        // TARGETS and nothing else. An atom carrying neither
+                        // has nothing for the merge to carry: a structural
+                        // atom has no value, and a trash atom with no targets
+                        // describes cards the sub-instruction picks for
+                        // itself when it resolves — a sabotage puts the
+                        // choice to the Corp (10.12.2), "trash this card"
+                        // means its own source (9.1.4). Both used to be
+                        // silently dropped, which is the same defect class
+                        // the paragraph above records for Earthrise Hotel.
                         !atoms.is_empty()
-                            && atoms.iter().all(|a| a.class == EffectClass::Structural)
+                            && atoms.iter().all(|a| {
+                                a.class == EffectClass::Structural
+                                    || (a.class == EffectClass::TrashCards && a.targets.is_empty())
+                            })
                     })
                     .cloned()
                     .collect();

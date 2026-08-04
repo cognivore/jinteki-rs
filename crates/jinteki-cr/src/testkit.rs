@@ -409,6 +409,21 @@ pub fn net_damage_button(name: &'static str, n: u32) -> PrintedCard {
     c
 }
 
+/// A corp card with a free paid ability doing N core damage (test driver).
+pub fn core_damage_button(name: &'static str, n: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::Damage {
+            kind: DamageKind::Core,
+            amount: Quantity::c(n as i64),
+            responsible: Side::Corp,
+        }],
+    )
+    .labeled("do core damage")];
+    c
+}
+
 /// A runner card with a free paid ability trashing fixed targets (Singularity
 /// stand-in driver: one instruction, simultaneous set trash — 9.12.2a).
 pub fn trash_set_button(name: &'static str, targets: Vec<ObjectId>) -> PrintedCard {
@@ -813,7 +828,7 @@ pub fn predictive_like(name: &'static str) -> PrintedCard {
 pub fn sol_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerSuffersDamage,
+        TriggerCond::RunnerSuffersDamage { kind: None },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -5200,7 +5215,7 @@ pub fn chronos_protocol_like(name: &'static str) -> PrintedCard {
         }])
         .labeled("chronos: the Corp chooses the first card trashed"),
         AbilityDef::conditional(
-            TriggerCond::RunnerSuffersDamage,
+            TriggerCond::RunnerSuffersDamage { kind: None },
             vec![Instruction::LookAtCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(1),

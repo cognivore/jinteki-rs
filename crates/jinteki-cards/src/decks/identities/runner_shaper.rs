@@ -8,9 +8,10 @@
 
 use crate::edsl::*;
 
-/// "2 installed pieces of ice", written once because Tāo Salonga's sentence
-/// says it twice. 8.8.2 filters the second announcement against the first, so
-/// the same description on both sides can never choose the same card twice.
+/// One installed piece of ice — the description Tāo Salonga's sentence makes
+/// twice, written once here. 8.8.2 filters the second announcement against
+/// the first, so the same description on both sides can never choose the same
+/// card twice.
 fn an_installed_piece_of_ice() -> TargetSpec {
     choose(1, &[installed_corp_card(), of_type(CardType::Ice)])
 }
