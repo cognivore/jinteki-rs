@@ -540,6 +540,12 @@ async fn api_cards(Query(q): Query<HashMap<String, String>>) -> Response {
                 "faction": c.faction,
                 "influence_cost": c.influence_cost,
                 "impl": crate::deckcheck::impl_status_str(&c.title),
+                // What the card SAYS. A picker that offers a card to name and
+                // shows nothing but its title is asking the player to
+                // remember, which is the thing the picker exists to avoid.
+                "subtypes": c.subtypes,
+                "cost": c.cost,
+                "text": crate::cr::oracle_text(&c.title),
             })
         })
         .collect();
