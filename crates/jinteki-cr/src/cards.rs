@@ -106,6 +106,7 @@ pub fn neural_emp() -> PrintedCard {
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
             TriggerRequirement::RunnerMadeRun {
+                made: true,
                 successful_only: false,
                 scope: crate::ability::TurnScope::LastCompletedTurn,
             },
@@ -332,7 +333,7 @@ pub fn pad_campaign() -> PrintedCard {
     c.cost = Some(2);
     c.trash_cost = Some(4);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Corp),
+        TriggerCond::turn_begins(Side::Corp),
         vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
@@ -374,7 +375,7 @@ pub fn rashida_jaheem() -> PrintedCard {
     c.cost = Some(0);
     c.trash_cost = Some(1);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Corp),
+        TriggerCond::turn_begins(Side::Corp),
         vec![Instruction::NestedCostThen {
             cost: Cost::trash_self(),
             effect: Box::new(Instruction::Combined(vec![
@@ -725,7 +726,7 @@ pub fn daily_casts() -> PrintedCard {
         )
         .labeled("daily casts: trash it when empty"),
         AbilityDef::conditional(
-            TriggerCond::TurnBegins(Side::Runner),
+            TriggerCond::turn_begins(Side::Runner),
             vec![Instruction::TakeHostedCredits {
                 from: TargetSpec::SelfSource,
                 amount: Quantity::c(2),
@@ -847,7 +848,7 @@ pub fn rezeki() -> PrintedCard {
     c.memory_cost = Some(1);
     c.strength = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Runner),
+        TriggerCond::turn_begins(Side::Runner),
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -1047,7 +1048,7 @@ pub fn botulus() -> PrintedCard {
         .labeled("botulus: install only on a piece of ice"),
         AbilityDef::conditional(TriggerCond::SelfInstalled, vec![place_one()], false)
             .labeled("botulus: place 1 virus counter (installed)"),
-        AbilityDef::conditional(TriggerCond::TurnBegins(Side::Runner), vec![place_one()], false)
+        AbilityDef::conditional(TriggerCond::turn_begins(Side::Runner), vec![place_one()], false)
             .labeled("botulus: place 1 virus counter (turn begins)"),
         AbilityDef::paid(
             Cost::spend_counters(CounterKind::Virus, 1),

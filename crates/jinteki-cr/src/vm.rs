@@ -6110,6 +6110,22 @@ impl Vm {
         }
     }
 
+    /// The same vocabulary asked of ONE object by id, as a conjunction — what
+    /// a trigger condition's criteria stipulate about the card an occurrence
+    /// names ("you play **a copy of <name>**"). An object the state no longer
+    /// holds matches nothing (1.15.3).
+    pub fn object_matches_criteria(
+        &self,
+        obj: ObjectId,
+        criteria: &[TargetFilter],
+        source: Option<ObjectId>,
+    ) -> bool {
+        match self.st.objects.get(&obj) {
+            Some(o) => criteria.iter().all(|f| self.filter_matches(o, *f, source)),
+            None => criteria.is_empty(),
+        }
+    }
+
     /// ONE predicate for the shared filter vocabulary (§12 rule 5): the same
     /// atoms decide announce-time candidacy, `Quantity::Count` membership and
     /// 8.7.2a search criteria. Location atoms read the object's zone;
@@ -7144,6 +7160,15 @@ impl Vm {
                     !matches!(o.zone, Zone::Discard(_))
                 })
             }
+            // "…if this card is in Archives" — the stipulation that also
+            // keeps the ability active there (9.1.8b's first sentence, read
+            // by `ability::ability_active`).
+            R::SourceInDiscard => {
+                cite!("rule_active_exception_catchall");
+                source
+                    .and_then(|c| self.st.objects.get(&c))
+                    .is_some_and(|o| matches!(o.zone, Zone::Discard(_)))
+            }
             R::SourceHostsCorpCard => {
                 cite!("rule_host_via_ability");
                 let Some(src) = source else { return false };
@@ -7152,7 +7177,7 @@ impl Vm {
                     .values()
                     .any(|o| o.host == Some(src) && o.printed.side == Side::Corp)
             }
-            R::RunnerMadeRun { successful_only, scope } => {
+            R::RunnerMadeRun { made, successful_only, scope } => {
                 cite!("rule_hidden_or_open_information");
                 let log = &self.changes.log;
                 // The window the sentence names. "This turn" is the current
@@ -7166,7 +7191,7 @@ impl Vm {
                             .iter()
                             .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
                         else {
-                            return false;
+                            return !*made;
                         };
                         (start, log.len())
                     }
@@ -7175,7 +7200,10 @@ impl Vm {
                             .iter()
                             .rposition(|c| matches!(c, GameChange::TurnEnded { side: Side::Runner }))
                         else {
-                            return false;
+                            // No Runner turn has finished yet, so the Runner
+                            // made no runs during it — which is what a
+                            // sentence asking for the NEGATIVE wants.
+                            return !*made;
                         };
                         let start = log[..end]
                             .iter()
@@ -7184,13 +7212,14 @@ impl Vm {
                         (start, end)
                     }
                 };
-                log[start..end].iter().any(|c| {
+                let any = log[start..end].iter().any(|c| {
                     if *successful_only {
                         matches!(c, GameChange::RunDeclaredSuccessful { .. })
                     } else {
                         matches!(c, GameChange::RunBegan { .. })
                     }
-                })
+                });
+                any == *made
             }
         }
     }

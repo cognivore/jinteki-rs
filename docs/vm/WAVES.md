@@ -873,7 +873,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W20 it is **51 cards, 45 complete, 6 partial, 13 printed
+prints the count. At W21 it is **51 cards, 46 complete, 5 partial, 11 printed
 sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -929,6 +929,10 @@ strength and subtype modification. Shibboleth is complete.
   ported.
 - ~~"remove N hosted <kind> counters" from a card, outside a cost~~ — **done,
   W16e**: `Instruction::RemoveCounters { target, kind, amount, up_to }`.
+- ~~"the Runner did NOT initiate any runs during their last turn"~~ — **done,
+  W21**: `TriggerRequirement::RunnerMadeRun` carries the polarity as content
+  (§12 rule 2), so the negative sentence is the same question asked for the
+  other answer.
 - ~~"gain [click]" (Petty Cash, Subliminal Messaging)~~ — **done, W16a**:
   `Instruction::GainClicks(Side, Quantity)` and its `LoseClicks` twin
   (1.11.3a/b).
@@ -1086,8 +1090,26 @@ scan of its instructions.
   Marketing), which also needs naming a card at all.
 - "when an agenda is scored **or** stolen", by either player (The Source);
   `RunnerStealsAgenda` is half of it.
-- a condition on a card sitting in a discard pile (9.1.8b) — "when your turn
-  begins, if this card is in Archives…" (Subliminal Messaging).
+- ~~a condition on a card sitting in a discard pile (9.1.8b) — "when your turn
+  begins, if this card is in Archives…" (Subliminal Messaging).~~ — **done,
+  W21**: 9.1.8b's FIRST sentence, which nothing had read yet. A 9.6.5c
+  requirement naming a zone IS the ability "stating that it is active in a
+  particular zone", so `ability::requirement_states_zone` answers it from the
+  requirement list and `TriggerRequirement::SourceInDiscard` is the statement
+  Subliminal Messaging makes. `TriggerCond::TurnBegins` grew `requires` (the
+  house shape `DiscardPhaseEnds` already had) because the stipulation has to
+  be part of the CONDITION: put in the instructions (9.6.5d) it would be
+  checked too late to make the ability active at all.
+- ~~"the first time each turn you play a **copy of** <this card>" (Subliminal
+  Messaging)~~ — **done, W21**: `TriggerCond::CardPlayed` grew `criteria`
+  (the shared filter vocabulary, so 10.1.5's "a copy of" is
+  `TargetFilter::HasName`) and `first_each_turn`. The ordinal is deliberately
+  NOT 9.3.6g's flag: 9.3.6g is per OBJECT (the CR's own Vaporframe Fabricator
+  examples), so a second copy of the card would carry a fresh one and gain a
+  second [click], and 9.1.6 never counts a MANDATORY ability as "used" at
+  all. It is a 9.6.5c stipulation about the occurrence, counted from the
+  change log since the turn began (10.2.1) — the same shape
+  `SuccessfulRunOnMark { first_each_turn }` already used.
 
 *Restrictions and declarations:*
 

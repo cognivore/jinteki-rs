@@ -559,7 +559,7 @@ impl CardBuilder {
 /// A short word for a trigger, for auto-generated labels.
 fn trigger_word(t: &TriggerCond) -> &'static str {
     match t {
-        TriggerCond::TurnBegins(_) => "turn begins",
+        TriggerCond::TurnBegins { .. } => "turn begins",
         TriggerCond::SelfScored { .. } => "scored",
         TriggerCond::SelfStolen => "stolen",
         TriggerCond::SelfInstalled => "installed",
@@ -1132,7 +1132,30 @@ impl CostExt for Cost {
 
 /// "When your turn begins, …"
 pub fn turn_begins(side: Side) -> TriggerCond {
-    TriggerCond::TurnBegins(side)
+    TriggerCond::turn_begins(side)
+}
+/// "When your turn begins, **if <state>**, …" (Subliminal Messaging) — the
+/// same sentence with 9.6.5c requirements. A requirement naming a ZONE is
+/// also what keeps the ability active there (9.1.8b), which is why a card
+/// that talks from its discard pile writes the zone here and not in an
+/// `if_met(…)` instruction.
+pub fn turn_begins_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::TurnBegins { side, requires: reqs.to_vec() }
+}
+/// "…if this card is in Archives" (Subliminal Messaging; 9.1.8b).
+pub fn source_in_discard() -> TriggerRequirement {
+    TriggerRequirement::SourceInDiscard
+}
+/// "…if the Runner did not initiate any runs during their last turn"
+/// (Subliminal Messaging) — the negative of
+/// [`runner_made_a_run_last_turn`], the polarity being content on the same
+/// question (§12 rule 2).
+pub fn runner_made_no_runs_last_turn() -> TriggerRequirement {
+    TriggerRequirement::RunnerMadeRun {
+        made: false,
+        successful_only: false,
+        scope: TurnScope::LastCompletedTurn,
+    }
 }
 /// "When you score this agenda, …"
 pub fn scored() -> TriggerCond {
@@ -1190,9 +1213,11 @@ pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
         by: Some(by),
         of_types: vec![of],
         of_subtypes: Vec::new(),
+        criteria: Vec::new(),
         other_than_source: false,
         also_installed: false,
         matching_choice: None,
+        first_each_turn: false,
     }
 }
 /// "…you play a **run** event" (Ken Tenma class) — the same trigger with the
@@ -1203,9 +1228,31 @@ pub fn plays_a_subtyped(by: Side, of: CardType, subtype: &'static str) -> Trigge
         by: Some(by),
         of_types: vec![of],
         of_subtypes: vec![subtype],
+        criteria: Vec::new(),
         other_than_source: false,
         also_installed: false,
         matching_choice: None,
+        first_each_turn: false,
+    }
+}
+/// "The first time each turn you play **a copy of** <name>…" (Subliminal
+/// Messaging). Two rules make this one condition: 10.1.5 — a card's own name
+/// used with the word "copy" is not self-reference, so every card with that
+/// name meets it — and 9.6.5c, which is where the ordinal lives. The "first
+/// time each turn" is a stipulation about the OCCURRENCE, counted from the
+/// game history, and deliberately not [`CardBuilder::when_first_each_turn`]'s
+/// 9.3.6g flag: that flag is per object, so a second copy of the card would
+/// carry a fresh one, and 9.1.6 never counts a mandatory ability as "used".
+pub fn first_time_each_turn_plays_a_copy_of(by: Side, name: &'static str) -> TriggerCond {
+    TriggerCond::CardPlayed {
+        by: Some(by),
+        of_types: Vec::new(),
+        of_subtypes: Vec::new(),
+        criteria: vec![TargetFilter::HasName(name)],
+        other_than_source: false,
+        also_installed: false,
+        matching_choice: None,
+        first_each_turn: true,
     }
 }
 /// "…if you played an operation this turn" (Nebula class; history 1.12.6).
@@ -1412,6 +1459,7 @@ pub fn runner_is_tagged() -> TriggerRequirement {
 /// "…the Runner made a run during their last turn."
 pub fn runner_made_a_run_last_turn() -> TriggerRequirement {
     TriggerRequirement::RunnerMadeRun {
+        made: true,
         successful_only: false,
         scope: TurnScope::LastCompletedTurn,
     }
@@ -1419,6 +1467,7 @@ pub fn runner_made_a_run_last_turn() -> TriggerRequirement {
 /// "…the Runner made a successful run during their last turn."
 pub fn runner_made_a_successful_run_last_turn() -> TriggerRequirement {
     TriggerRequirement::RunnerMadeRun {
+        made: true,
         successful_only: true,
         scope: TurnScope::LastCompletedTurn,
     }
@@ -1426,7 +1475,7 @@ pub fn runner_made_a_successful_run_last_turn() -> TriggerRequirement {
 /// "…you made a successful run this turn" (Mutual Favor class) — the same
 /// question asked of the CURRENT turn.
 pub fn made_a_successful_run_this_turn() -> TriggerRequirement {
-    TriggerRequirement::RunnerMadeRun { successful_only: true, scope: TurnScope::ThisTurn }
+    TriggerRequirement::RunnerMadeRun { made: true, successful_only: true, scope: TurnScope::ThisTurn }
 }
 /// "…you have at least N link" (1.20).
 pub fn link_at_least(n: u32) -> TriggerRequirement {
@@ -1557,9 +1606,11 @@ pub fn another_current_is_played() -> TriggerCond {
         by: None,
         of_types: vec![CardType::Operation, CardType::Event],
         of_subtypes: vec!["Current"],
+        criteria: Vec::new(),
         other_than_source: true,
         also_installed: false,
         matching_choice: None,
+        first_each_turn: false,
     }
 }
 /// "The <side>'s identity loses its printed abilities." (Employee Strike
@@ -1868,8 +1919,10 @@ pub fn plays_or_installs_named_by(by: Side, key: &'static str) -> TriggerCond {
         by: Some(by),
         of_types: Vec::new(),
         of_subtypes: Vec::new(),
+        criteria: Vec::new(),
         other_than_source: false,
         also_installed: true,
         matching_choice: Some(key),
+        first_each_turn: false,
     }
 }

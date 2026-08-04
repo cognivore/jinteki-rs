@@ -190,7 +190,7 @@ pub fn warroid_like(name: &'static str) -> PrintedCard {
 pub fn aesops_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Runner),
+        TriggerCond::turn_begins(Side::Runner),
         vec![
             Instruction::TrashCards(TargetSpec::Choose {
                 count: Quantity::c(1),
@@ -207,7 +207,7 @@ pub fn aesops_like(name: &'static str) -> PrintedCard {
 pub fn drug_dealer_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Runner),
+        TriggerCond::turn_begins(Side::Runner),
         vec![Instruction::LoseCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -1433,7 +1433,7 @@ pub fn ad_blitz_button(name: &'static str, count: u32, server: ServerId) -> Prin
 pub fn nico_like(name: &'static str, rez: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, rez, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Corp),
+        TriggerCond::turn_begins(Side::Corp),
         vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
@@ -1446,7 +1446,7 @@ pub fn nico_like(name: &'static str, rez: u32) -> PrintedCard {
 pub fn reaper_like(name: &'static str, installee: ObjectId) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Corp),
+        TriggerCond::turn_begins(Side::Corp),
         vec![
             Instruction::TrashSelf,
             Instruction::InstallCard {
@@ -1627,9 +1627,11 @@ pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
                 by: None,
                 of_types: vec![CardType::Operation, CardType::Event],
                 of_subtypes: vec!["Current"],
+                criteria: Vec::new(),
                 other_than_source: true,
                 also_installed: false,
                 matching_choice: None,
+                first_each_turn: false,
             },
             TriggerCond::RunnerStealsAgenda,
         ],
@@ -1675,7 +1677,7 @@ pub fn dyson_like(name: &'static str) -> PrintedCard {
 pub fn supplier_like(name: &'static str, installee: ObjectId) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Runner),
+        TriggerCond::turn_begins(Side::Runner),
         vec![Instruction::InstallCard {
             card: TargetSpec::Objects(vec![installee]),
             dest: crate::instr::InstallDest::Rig,
@@ -1696,7 +1698,7 @@ pub fn supplier_like(name: &'static str, installee: ObjectId) -> PrintedCard {
 pub fn underworld_contact_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::TurnBegins(Side::Runner),
+        TriggerCond::turn_begins(Side::Runner),
         vec![Instruction::IfMet {
             requires: vec![crate::ability::TriggerRequirement::RunnerLinkAtLeast(2)],
             then: vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
@@ -2043,7 +2045,7 @@ pub fn security_testing_choice_like(name: &'static str, servers: &[ServerId]) ->
         .collect();
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::TurnBegins(Side::Runner),
+            TriggerCond::turn_begins(Side::Runner),
             vec![Instruction::ChooseOne { options }],
             true,
         )
@@ -2094,7 +2096,7 @@ fn femme_choice_over(
     c.memory_cost = Some(1);
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::TurnBegins(Side::Runner),
+            TriggerCond::turn_begins(Side::Runner),
             vec![Instruction::MaintainChoice {
                 key: "femme-ice",
                 of: crate::instr::ChoiceSpec::Object(TargetSpec::Choose {

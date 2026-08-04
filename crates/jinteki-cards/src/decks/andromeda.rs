@@ -519,7 +519,7 @@ pub fn bloo_moose() -> Card {
         .unique()
         .text("When your turn begins, you may remove 1 card in the heap from the game. If you do, gain 2[credit].")
         .may_when(
-            TriggerCond::TurnBegins(Runner),
+            TriggerCond::turn_begins(Runner),
             [remove_from_heap_from_game(1), gain(Runner, 2)],
         )
         .named("bloo moose: cash in a memory")

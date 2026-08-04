@@ -421,8 +421,21 @@ pub fn self_growth_program() -> Card {
 ///  initiate any runs during their last turn, you may reveal this card and add
 ///  it to HQ."
 ///
-/// UNIMPLEMENTED: the second and third. No instruction gains a [click], and
-/// no condition is met by a card sitting in a discard pile (9.1.8b).
+/// COMPLETE. "A copy of Subliminal Messaging" is 10.1.5: a card's own name
+/// used WITH the word "copy" is not self-reference, so the condition is met
+/// by every card of that name — this one included. The ordinal is 9.6.5c's,
+/// a stipulation inside the condition rather than 9.3.6g's once-per-turn
+/// flag: the flag is per OBJECT (the CR's Vaporframe Fabricator examples), so
+/// a second copy would carry a fresh one and the Corp would gain a second
+/// [click], and 9.1.6 never counts a mandatory ability as "used" at all. The
+/// occurrence is counted from the game history, which 10.2.1 makes open.
+///
+/// The third sentence is 9.1.8b's first sentence in person: the ability
+/// STATES the zone it works from ("if this card is in Archives"), so it is
+/// active in the discard pile and nowhere else — in HQ the same card offers
+/// nothing. Both stipulations ride on the trigger condition (9.6.5c) rather
+/// than in the instructions (9.6.5d), because it is the stated zone that
+/// makes the ability active at all.
 pub fn subliminal_messaging() -> Card {
     card("Subliminal Messaging")
         .corp()
@@ -434,8 +447,16 @@ pub fn subliminal_messaging() -> Card {
         .text("The first time each turn you play a copy of Subliminal Messaging, gain [click].")
         .text("When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ.")
         .play([gain(Corp, 1)])
-        .unimplemented("The first time each turn you play a copy of Subliminal Messaging, gain [click].")
-        .unimplemented("When your turn begins, if this card is in Archives and the Runner did not initiate any runs during their last turn, you may reveal this card and add it to HQ.")
+        .when(
+            first_time_each_turn_plays_a_copy_of(Corp, "Subliminal Messaging"),
+            [gain_clicks(Corp, 1)],
+        )
+        .named("subliminal messaging: the first copy each turn")
+        .may_when(
+            turn_begins_if(Corp, &[source_in_discard(), runner_made_no_runs_last_turn()]),
+            [reveal_self(), add_to_hand(this_card())],
+        )
+        .named("subliminal messaging: back out of archives")
         .build()
 }
 

@@ -39,8 +39,15 @@ pub enum AbilityFlag {
 /// Trigger conditions the W1 kernel can detect in checkpoint step (a).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TriggerCond {
-    /// "When your turn begins." (side = controller's side)
-    TurnBegins(Side),
+    /// "When your turn begins." (`side` = whose turn), with 9.6.5c's
+    /// additional requirements riding along exactly as they do on
+    /// [`TriggerCond::DiscardPhaseEnds`] — "when your turn begins, **if this
+    /// card is in Archives and the Runner did not initiate any runs during
+    /// their last turn**, …" (Subliminal Messaging). The zone stipulation is
+    /// also what makes the ability active where it sits (9.1.8b's first
+    /// sentence), so it has to be part of the CONDITION and not of the
+    /// instructions.
+    TurnBegins { side: Side, requires: Vec<TriggerRequirement> },
     /// "When this run ends." Optionally only if it was successful.
     RunEnds { successful_only: bool },
     /// "Whenever a run on this server ends." (AMAZE class; source in root)
@@ -93,13 +100,30 @@ pub enum TriggerCond {
     /// exactly as [`crate::instr::TargetFilter::MatchesMaintainedChoice`]
     /// reads it for a description. `None` is a sentence that names no such
     /// value.
+    ///
+    /// `criteria` is anything else the sentence says about the card, in the
+    /// shared filter vocabulary (§12 rule 5) — "you play **a copy of
+    /// Subliminal Messaging**" is [`crate::instr::TargetFilter::HasName`],
+    /// which 10.1.5 reads as every card with that name rather than as a
+    /// self-reference.
+    ///
+    /// `first_each_turn` is the printed ordinal "**the first time each
+    /// turn** you play …" as a 9.6.5c stipulation IN the condition: it must
+    /// hold at the moment the condition would occur, so a play matches only
+    /// when no earlier play or install this turn matched the same
+    /// stipulations. Counted from the game history (10.2.1), which is what
+    /// makes it copy-agnostic — 9.3.6g's flag is per OBJECT (the Vaporframe
+    /// Fabricator examples), so a second copy of the card would carry a fresh
+    /// one, and a mandatory ability is never "used" at all (9.1.6).
     CardPlayed {
         by: Option<Side>,
         of_types: Vec<CardType>,
         of_subtypes: Vec<&'static str>,
+        criteria: Vec<crate::instr::TargetFilter>,
         other_than_source: bool,
         also_installed: bool,
         matching_choice: Option<&'static str>,
+        first_each_turn: bool,
     },
     /// `of_types` is the sentence's card-type stipulation ("whenever you
     /// access an agenda", Film Critic); empty means no stipulation, exactly
@@ -341,6 +365,14 @@ pub enum TriggerCond {
     PlayerPaysCredits(Side),
 }
 
+impl TriggerCond {
+    /// "When your turn begins, …" with no further stipulation — the plain
+    /// sentence most cards print.
+    pub fn turn_begins(side: Side) -> Self {
+        TriggerCond::TurnBegins { side, requires: Vec::new() }
+    }
+}
+
 /// Which turn a history question looks at. CR 10.2.1 makes the game history
 /// open information, and 1.12.6's "this turn" and "their last turn" are the
 /// two windows cards actually name — the window is content (§12 rule 2), not
@@ -404,10 +436,12 @@ pub enum TriggerRequirement {
     /// (SEA Source, Hard-Hitting News), and with `scope` "…if you made a
     /// successful run this turn" (Mutual Favor). The game history is public
     /// information (10.2.1), so this is read from the change log, exactly as
-    /// 1.12.6's "ice you passed during this run" is. Both the success
-    /// stipulation and the window are content, not separate atoms (§12
-    /// rule 2).
-    RunnerMadeRun { successful_only: bool, scope: TurnScope },
+    /// 1.12.6's "ice you passed during this run" is. The success stipulation,
+    /// the window and the POLARITY are all content, not separate atoms (§12
+    /// rule 2): `made: false` is "…the Runner **did not initiate any runs**
+    /// during their last turn" (Subliminal Messaging), the same question with
+    /// the answer the sentence wants.
+    RunnerMadeRun { made: bool, successful_only: bool, scope: TurnScope },
     /// "…if you played an operation this turn" (Nebula class) — the game
     /// history since the current turn began (1.12.6, 10.2.1).
     PlayedOperationThisTurn(Side),
@@ -421,6 +455,13 @@ pub enum TriggerRequirement {
     SourceInDeck,
     /// "…anywhere except in Archives" (Archangel).
     SourceNotInDiscard,
+    /// "…**if this card is in Archives**" (Subliminal Messaging) — the
+    /// positive twin, and the stipulation 9.1.8b's first sentence reads: an
+    /// ability stating that it is active in a particular zone is active in
+    /// that zone, so this requirement both gates the condition and keeps the
+    /// ability alive in the discard pile where it is the only thing that
+    /// could ever meet it.
+    SourceInDiscard,
     /// "…if this program has a hosted Corp card" (Cupellation class).
     SourceHostsCorpCard,
     /// CR 1.17.1: "…if the Runner has 3 or more agenda points" (Complete
@@ -1338,9 +1379,38 @@ pub fn ability_active(
             return true;
         }
     }
+    // The same sentence, for a TRIGGER condition that states the zone in one
+    // of its 9.6.5c requirements: "when your turn begins, **if this card is
+    // in Archives**…" (Subliminal Messaging) is a statement that the ability
+    // is active in the discard pile, and nowhere else — the requirement is
+    // what the rule reads, so an ability whose requirement is not met by the
+    // zone the card is actually in stays inactive.
+    if let Some(Condition::Trigger(t)) = &def.condition {
+        if trigger_requirements(t)
+            .iter()
+            .any(|r| requirement_states_zone(r, obj) == Some(obj.zone))
+        {
+            return true;
+        }
+    }
     // 9.1.8g is instance-driven (hangover) and handled by the checkpoint scan.
     // 9.1.8i persistent: handled via lingering effects.
     false
+}
+
+/// CR 9.1.8b, FIRST sentence: "abilities stating that they are active in a
+/// particular zone are active in that zone." A 9.6.5c requirement naming a
+/// zone is exactly such a statement — Subliminal Messaging's "if this card is
+/// in Archives" says where its "when your turn begins" ability lives — so the
+/// zone the requirement names is the zone it is active in. Only POSITIVE
+/// statements count: "anywhere except in Archives" names no zone to be active
+/// in.
+fn requirement_states_zone(req: &TriggerRequirement, obj: &Object) -> Option<Zone> {
+    match req {
+        TriggerRequirement::SourceInDiscard => Some(Zone::Discard(obj.owner)),
+        TriggerRequirement::SourceInDeck => Some(Zone::Deck(obj.owner)),
+        _ => None,
+    }
 }
 
 /// CR 9.1.8b, second sentence: "abilities that can only ever meet their
@@ -1397,10 +1467,18 @@ pub fn trigger_matches(
     // question `TargetFilter::MatchesMaintainedChoice` asks of a description,
     // asked here of an occurrence.
     matches_choice: impl Fn(ObjectId, &'static str) -> bool,
+    // §12 rule 5: whether an object named by the change matches the criteria
+    // the condition stipulates, in the shared filter vocabulary — the same
+    // question a description asks, asked here of an occurrence ("you play a
+    // copy of <name>").
+    matches_criteria: impl Fn(ObjectId, &[crate::instr::TargetFilter]) -> bool,
 ) -> bool {
     cite!("rule_trigger_condition_checked");
     match (cond, change) {
-        (TriggerCond::TurnBegins(side), GameChange::TurnBegan { side: s }) => side == s,
+        // 9.6.5c: the requirements riding on the condition are checked by the
+        // checkpoint scan (it has the state access); this arm matches the
+        // occurrence itself.
+        (TriggerCond::TurnBegins { side, .. }, GameChange::TurnBegan { side: s }) => side == s,
         (TriggerCond::RunEnds { .. }, GameChange::RunEnded { .. }) => true,
         (TriggerCond::DifferentActionsThisTurn { side, .. }, GameChange::ActionTaken { side: s, .. }) => {
             // 5.2.5b: the "all different" test is a game-state question the
@@ -1445,9 +1523,13 @@ pub fn trigger_matches(
                 by,
                 of_types,
                 of_subtypes,
+                criteria,
                 other_than_source,
                 also_installed,
                 matching_choice,
+                // The ordinal is a question about the HISTORY, which this
+                // function does not see; the checkpoint scan applies it.
+                first_each_turn: _,
             },
             GameChange::CardPlayed { obj, side } | GameChange::CardInstalled { obj, side, .. },
         ) => {
@@ -1467,6 +1549,9 @@ pub fn trigger_matches(
                 // played or installed is compared against what the source is
                 // remembering.
                 && matching_choice.is_none_or(|k| matches_choice(*obj, k))
+                // 10.1.5: "a copy of <name>" is a description of the card
+                // played, asked in the shared filter vocabulary.
+                && matches_criteria(*obj, criteria)
         }
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
@@ -1770,6 +1855,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::SelfScored { requires }
         | TriggerCond::ActionPhaseEnds { requires, .. }
         | TriggerCond::BreachesServer { requires, .. }
+        | TriggerCond::TurnBegins { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
         _ => &[],
     }

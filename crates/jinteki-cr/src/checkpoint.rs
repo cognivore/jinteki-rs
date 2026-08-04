@@ -79,7 +79,10 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     cite!("step_checkpoint_conditional_abilities");
     cite!("rule_condition_checked_in_checkpoints");
 
-    // Gather the scan window first (immutable borrow).
+    // Gather the scan window first (immutable borrow). Its absolute start in
+    // the log is what lets a condition ask how many times it has already been
+    // met earlier in the turn (9.6.5c ordinals).
+    let window_start = vm.changes.last_checkpoint_start;
     let window: Vec<(GameChange, u64)> = vm
         .changes
         .since_last_checkpoint()
@@ -254,7 +257,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     })
                 });
                 let mut occurrences: Vec<u64> = Vec::new();
-                for (c, group) in &window {
+                for (offset, (c, group)) in window.iter().enumerate() {
                     // 4.6.6i: "this server" in a trigger condition is read
                     // through `Vm::this_server`, so a condition met BY the
                     // source leaving its server still names the server it
@@ -268,6 +271,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
                         |o, s| vm.has_subtype(o, s),
                         |o, k| vm.object_matches_maintained_choice(o, obj_id, k),
+                        |o, cr| vm.object_matches_criteria(o, cr, Some(obj_id)),
                     ) && !persisted_server_override(vm, from_lingering, cond, c)
                     {
                         continue;
@@ -415,6 +419,41 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             if !ty.map(|t| of_types.contains(&t)).unwrap_or(false) {
                                 continue;
                             }
+                        }
+                    }
+                    // 9.6.5c again, for the ordinal a sentence states about
+                    // the occurrence itself: "**the first time each turn**
+                    // you play a copy of <name>". The stipulation has to hold
+                    // when the condition would occur, so this play meets it
+                    // only if no earlier play or install THIS TURN matched the
+                    // same stipulations — read from the change log, which
+                    // 10.2.1 makes open information. Deliberately not 9.3.6g's
+                    // flag: that is per object (the Vaporframe Fabricator
+                    // examples), so a second COPY of the card would carry a
+                    // fresh one, and 9.1.6 never counts a mandatory ability as
+                    // "used" at all.
+                    if let crate::ability::TriggerCond::CardPlayed { first_each_turn: true, .. } =
+                        cond
+                    {
+                        cite!("rule_condition_requirements_part_of_condition");
+                        cite!("rule_hidden_or_open_information");
+                        let here = window_start + offset;
+                        let from = vm.st.turn_log_start.min(here);
+                        let earlier = vm.changes.log[from..here].iter().any(|x| {
+                            trigger_matches(
+                                cond,
+                                x,
+                                source_obj,
+                                vm.this_server(obj_id),
+                                is_corp,
+                                |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
+                                |o, s| vm.has_subtype(o, s),
+                                |o, k| vm.object_matches_maintained_choice(o, obj_id, k),
+                                |o, cr| vm.object_matches_criteria(o, cr, Some(obj_id)),
+                            )
+                        });
+                        if earlier {
+                            continue;
                         }
                     }
                     // 9.6.5c: requirements listed in the trigger condition
@@ -611,6 +650,7 @@ fn step_b_durations(vm: &mut Vm) {
                     |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
                     |o, s| vm.has_subtype(o, s),
                     |o, k| vm.object_matches_maintained_choice(o, card, k),
+                    |o, cr| vm.object_matches_criteria(o, cr, Some(card)),
                 )
             })
         });

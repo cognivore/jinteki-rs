@@ -3065,3 +3065,97 @@ fn asmund_pudlat_finds_two_differently_named_virus_or_weapon_cards() {
     // Nothing else was found: 8.7.2a's criteria.
     assert_eq!(vm.st.objects[&plain].zone, Zone::Deck(Side::Runner));
 }
+
+// ---------------------------------------------------------------------------
+// The last six (W21)
+// ---------------------------------------------------------------------------
+
+/// Subliminal Messaging: "Gain 1[credit]." / "The first time each turn you
+/// play a copy of Subliminal Messaging, gain [click]."
+///
+/// Two copies are played on purpose. 10.1.5's "a copy of" reaches both, and
+/// the ordinal is a stipulation IN the condition — so the second play meets
+/// no condition at all, and the Corp gains exactly one [click] however many
+/// copies it plays. (9.3.6g's flag would have given a click per copy: it is
+/// keyed to the object.)
+#[test]
+fn subliminal_messaging_gives_one_click_however_many_copies_are_played() {
+    let mut vm = Vm::empty(600);
+    let s1 = vm.new_object(card("Subliminal Messaging"), Zone::Hand(Side::Corp));
+    let s2 = vm.new_object(card("Subliminal Messaging"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().extend([s1, s2]);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(s1))
+            .when(Match::action().once(), Reply::play_card(s2))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.corp.credits, 2, "1[credit] per copy played: {}", t.tail(14));
+    let clicks_gained = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::ClicksGained { side: Side::Corp, amount: 1 }))
+        .count();
+    assert_eq!(clicks_gained, 1, "the FIRST copy each turn only: {}", t.tail(14));
+    // 3 allotted − 2 spent playing + 1 gained.
+    assert_eq!(vm.st.corp.clicks, 2, "{}", t.tail(14));
+}
+
+/// Subliminal Messaging: "When your turn begins, if this card is in Archives
+/// and the Runner did not initiate any runs during their last turn, you may
+/// reveal this card and add it to HQ."
+///
+/// CR 9.1.8b: the ability STATES the zone it works from, so it is active in
+/// Archives — an operation's abilities are otherwise dead the moment it is
+/// trashed (8.6.7g). The Runner's turn is played twice over, once with a run
+/// and once without, because the requirement is what decides whether the
+/// ability is offered at all.
+#[test]
+fn subliminal_messaging_comes_back_from_archives_only_after_a_quiet_runner_turn() {
+    for runner_ran in [false, true] {
+        let mut vm = Vm::empty(601);
+        let sub = vm.new_object(card("Subliminal Messaging"), Zone::Discard(Side::Corp));
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(sub);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+
+        // A whole Runner turn first, spent either on a run or on credits.
+        vm.start_turn(Side::Runner);
+        let runner_plan = if runner_ran {
+            Plan::runner().when(Match::action().first(), Reply::run(ServerId::Archives))
+        } else {
+            Plan::runner()
+        };
+        // The Corp's plan carries the answer through the turn boundary: the
+        // "turn begins" window belongs to the turn that starts as the
+        // Runner's ends, so it is inside this same run of the driver.
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::reaction().offering("subliminal"), Reply::take("subliminal"))
+                .when(Match::action(), Reply::Halt),
+            runner_plan.otherwise_click_credit(),
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's turn came round");
+        assert_eq!(
+            vm.st.objects[&sub].zone,
+            if runner_ran { Zone::Discard(Side::Corp) } else { Zone::Hand(Side::Corp) },
+            "runner_ran={runner_ran}: {}",
+            t.tail(14)
+        );
+        assert_eq!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == sub)),
+            !runner_ran,
+            "1.21.3: it is revealed exactly when it comes back: {}",
+            t.tail(14)
+        );
+    }
+}
