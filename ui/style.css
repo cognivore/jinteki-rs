@@ -227,6 +227,29 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   background: var(--bg2); border-color: var(--gold); }
 .prompt-sheet.waiting { border-color: var(--line); opacity: .8; }
 
+/* CR 4.6.7 play area: the card resolving right now and every active current,
+   on their own right-hand rail. Fixed, so it NEVER reflows the board (THE
+   LAW §2); scrolls down its own column when several currents pile up.
+   Between the board's right edge and the log tab, clear of both. */
+#play-rail { position: fixed; display: none; flex-direction: column; gap: 6px;
+  right: calc(46px + var(--sar, 0px)); top: calc(10px + var(--sat, 0px));
+  max-height: calc(100vh - 200px); overflow-y: auto; overflow-x: hidden;
+  z-index: 28; padding: 4px; pointer-events: none;
+  -webkit-overflow-scrolling: touch; }
+#play-rail .playslot { pointer-events: auto; position: relative;
+  display: flex; flex-direction: column; align-items: center; }
+#play-rail .card { transform: scale(.72); transform-origin: top center;
+  margin-bottom: -22px; }
+#play-rail .playtag { font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+  color: #1a1200; background: var(--gold); border-radius: 999px;
+  padding: 1px 7px; font-weight: 700; position: relative; z-index: 2; }
+/* Phones: smaller still, and it must not eat the board. */
+@media (max-height: 640px) {
+  #play-rail { right: calc(40px + var(--sar, 0px)); max-height: calc(100vh - 150px); gap: 3px; }
+  #play-rail .card { transform: scale(.55); margin-bottom: -34px; }
+  #play-rail .playtag { font-size: 8px; padding: 0 5px; }
+}
+
 /* CR 8.3.3 arrangement: drag the cards into an order. Leftmost is topmost,
    and the ordinal is on the card so the answer is readable at a glance
    rather than inferred from position. */

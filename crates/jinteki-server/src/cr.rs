@@ -2020,6 +2020,13 @@ fn corp_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     m.insert("deck-count".into(), json!(view.count_in(Zone::Deck(side))));
     m.insert("discard".into(), zone_json(vm, view, Zone::Discard(side)));
     m.insert("scored".into(), zone_json(vm, view, Zone::ScoreArea(side)));
+    // CR 8.6.7g / 3.7.1: the play area is not a holding pen. A card being
+    // played SITS there while it resolves, and an active current STAYS there
+    // until another current replaces it — both are active, both are open
+    // information, and neither was ever sent, so a run event mid-resolution
+    // and every current were invisible. The identity lives here too and is
+    // sent separately, so it is excluded.
+    m.insert("play-area".into(), play_area_json(vm, view, side));
     let mut servers = Map::new();
     let mut ids: Vec<ServerId> = vec![ServerId::Hq, ServerId::Rnd, ServerId::Archives];
     ids.extend(vm.remote_servers());
@@ -2078,6 +2085,13 @@ fn runner_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     m.insert("deck-count".into(), json!(view.count_in(Zone::Deck(side))));
     m.insert("discard".into(), zone_json(vm, view, Zone::Discard(side)));
     m.insert("scored".into(), zone_json(vm, view, Zone::ScoreArea(side)));
+    // CR 8.6.7g / 3.7.1: the play area is not a holding pen. A card being
+    // played SITS there while it resolves, and an active current STAYS there
+    // until another current replaces it — both are active, both are open
+    // information, and neither was ever sent, so a run event mid-resolution
+    // and every current were invisible. The identity lives here too and is
+    // sent separately, so it is excluded.
+    m.insert("play-area".into(), play_area_json(vm, view, side));
     // The rig is one zone in the CR; the board draws it in three rows.
     let rig = vm.cards_in_zone(Zone::Rig);
     let seen = view.in_zone(Zone::Rig);
@@ -2123,6 +2137,26 @@ fn zone_json(vm: &Vm, view: &View, z: Zone) -> Value {
     Value::Array(
         ids.iter()
             .enumerate()
+            .map(|(i, id)| {
+                let visible = seen.get(i).map(|c| c.is_seen()).unwrap_or(false);
+                card_json(vm, view, *id, visible)
+            })
+            .collect(),
+    )
+}
+
+/// CR 4.6.7: the play area, minus the identity — a card resolving right now
+/// (8.6.7g) and any active current (3.7.1b / 3.5.1b).
+fn play_area_json(vm: &Vm, view: &View, side: Side) -> Value {
+    let z = Zone::PlayArea(side);
+    let ids = vm.cards_in_zone(z);
+    let seen = view.in_zone(z);
+    Value::Array(
+        ids.iter()
+            .enumerate()
+            .filter(|(_, id)| {
+                vm.st.objects.get(id).map(|o| o.printed.card_type) != Some(CardType::Identity)
+            })
             .map(|(i, id)| {
                 let visible = seen.get(i).map(|c| c.is_seen()).unwrap_or(false);
                 card_json(vm, view, *id, visible)

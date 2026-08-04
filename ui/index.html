@@ -233,6 +233,11 @@
 <div id="screen-game" class="screen">
   <div id="opp-bar" class="side-bar top"></div>
 
+  <!-- CR 4.6.7: the play area. A card resolving right now (8.6.7g) and every
+       active current (3.7.1b) live here, for BOTH seats. Pinned to the right
+       rail so it never reflows the board (UX.md THE LAW §2). -->
+  <div id="play-rail"></div>
+
   <div id="board">
     <div id="corp-zone" class="zone-half">
       <div id="servers" class="servers"></div>

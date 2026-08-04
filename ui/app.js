@@ -476,6 +476,7 @@ function render() {
   if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt()])) renderServers();
   if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt()])) renderRig();
   if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
+  renderPlayRail();
   renderPrompt();
   renderChips();
   renderTurnBtn();
@@ -1054,6 +1055,36 @@ function renderPrompt() {
     b.textContent = sym(typeof v === "object" && v ? (v.title || "card") : String(v));
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
+  });
+}
+
+/* CR 4.6.7: the play area, on its own rail.
+
+   A card BEING PLAYED sits in the play area while it resolves (8.6.7g), and
+   an active current stays there until another current replaces it (3.7.1b).
+   Both are active and both are open information — and neither was drawn
+   anywhere, so a run event mid-resolution had no card on screen to outline,
+   and a current did its work invisibly.
+
+   The rail is pinned right and never reflows the board (THE LAW §2). Cards
+   are real `cardEl`s, so hover and long-press preview work and the green
+   `.usable` outline lands on them like any other card. */
+function renderPlayRail() {
+  const rail = $("play-rail");
+  if (!rail) return;
+  const cards = [...((S.corp || {})["play-area"] || []).map((c) => ["corp", c]),
+                 ...((S.runner || {})["play-area"] || []).map((c) => ["runner", c])];
+  if (!cards.length) { rail.style.display = "none"; rail.innerHTML = ""; return; }
+  rail.style.display = "flex";
+  rail.innerHTML = "";
+  cards.forEach(([side, c]) => {
+    const wrap = el("div", "playslot");
+    wrap.appendChild(cardEl(c, { side }));
+    const sub = (c.subtypes || []).map(String);
+    if (sub.some((x) => x.toLowerCase() === "current")) {
+      wrap.appendChild(el("div", "playtag", "current"));
+    }
+    rail.appendChild(wrap);
   });
 }
 
