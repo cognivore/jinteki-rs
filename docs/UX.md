@@ -27,6 +27,34 @@ conflict.
    to use — not a button naming it. A legal target is a GOLD outline
    (`.selectable`). Two different questions, two colours, never merged.
 
+   A third colour answers a third question. WHITE (`.priority`) on an
+   identity means **the game is waiting on that seat** — continuously,
+   including while they are only choosing an action on their own turn.
+   Gold and green say *what you may do*; white says *whose word it is*, so
+   it lives on the identities and nowhere else, and it is a hueless white
+   that neither amber nor acid green can be confused with. Both identities
+   are drawn: the seat rails carry an `.idchip` in every layout, and the
+   identity card column exists only where the screen is tall enough
+   (`.identity-col` is hidden under 640px), so the chip is the copy that
+   must always carry the signal.
+
+   The corollary: a prompt may only fall silent about a card **because the
+   board is already showing it**. That test is the server's `on_screen`, one
+   function, used by every prompt that considers keeping quiet — a zone the
+   board draws as cards *and* a face this viewer may see. If it were two
+   tests they would drift, and a drifted test is a question with no answer
+   anywhere on screen.
+
+3b. **Nothing that merely shows you something may hold the board hostage.**
+   Every reader closes by tapping away from it — on pointer and on touch,
+   via `pointerdown` (a long-press opens a reader with the pointer already
+   down, so no `click` is ever synthesised) — and by Escape. A reader that
+   is also a decision steps aside instead of discarding it, leaving a way
+   back. The one preview that cannot be tapped through (`.hover-preview` is
+   `pointer-events: none` by design) is tied to the element it belongs to
+   and dies with it, because a re-render destroys hovered elements without
+   ever firing `mouseleave`.
+
 4. **Chips are the exception, and only for crowding.** When too much ice
    protects one server to show as cards, that stack — and only that stack —
    collapses to chips. Nothing else may.
@@ -39,6 +67,14 @@ conflict.
    icebreaker" with no icebreaker left says so — a prompt that silently does
    not appear is indistinguishable from a bug, and players reported exactly
    that about Mutual Favor.
+
+7. **What a rule entitles you to see, you are SHOWN.** CR 7.1.2 lets the
+   Runner look at a card they are accessing; most accesses ask them nothing,
+   so for most accesses the card existed only as a line in the log drawer.
+   An entitlement discharged into a log is not discharged. The card is
+   snapshot when the entitlement is live (`state.accessed`) — by the time a
+   state is pushed the access is over and `vm.st.accessed` is already null —
+   and carried until the player has dismissed it.
 
 ## The lessons, and where each one lives
 

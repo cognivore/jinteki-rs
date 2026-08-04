@@ -196,6 +196,36 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   }
 }
 .card.identity { border-style: dashed; }
+
+/* ── WHITE: the third signal (UX.md THE LAW §3) ─────────────────────────
+   Gold says "legal target", green says "usable now" — both answer "what can
+   I do". White answers a different question entirely: "is the game waiting
+   on ME". It rides the identities, and only the identities, so it can never
+   be read as an affordance on a card; and it is a cold neutral white with no
+   hue in it, so it cannot be mistaken for the amber gold or the acid green
+   even at a glance on a sunlit phone. */
+.card.priority { border-color: #ffffff; border-style: solid;
+  box-shadow: 0 0 10px rgba(255,255,255,.75), 0 0 26px rgba(255,255,255,.3); }
+.idchip.priority { border-color: #ffffff;
+  box-shadow: 0 0 8px rgba(255,255,255,.7), 0 0 20px rgba(255,255,255,.25); }
+/* An identity that is ALSO usable keeps both: the white ring stays the
+   border (whose turn to speak), the green becomes the outer halo (what is
+   on offer). Neither erases the other. */
+.idchip.usable { border-color: #39ff88;
+  box-shadow: 0 0 8px rgba(57,255,136,.85), 0 0 20px rgba(57,255,136,.4); }
+.idchip.priority.usable { border-color: #ffffff;
+  box-shadow: 0 0 8px rgba(255,255,255,.7), 0 0 22px rgba(57,255,136,.55); }
+.idchip.selectable { border-color: var(--gold);
+  box-shadow: 0 0 8px rgba(232,185,63,.7); }
+.idchip.legal { border-color: var(--legal); box-shadow: 0 0 8px rgba(53,208,186,.5); }
+@media (prefers-reduced-motion: no-preference) {
+  .card.priority, .idchip.priority { animation: prioshimmer 2.2s ease-in-out infinite; }
+  @keyframes prioshimmer {
+    0%, 100% { box-shadow: 0 0 6px rgba(255,255,255,.55), 0 0 16px rgba(255,255,255,.18); }
+    50%      { box-shadow: 0 0 13px rgba(255,255,255,.95), 0 0 32px rgba(255,255,255,.42); }
+  }
+  .idchip.usable { animation: usablepulse 1.8s ease-in-out infinite; }
+}
 .card .subs { font-size: 8px; color: var(--dim); }
 .card .subs .broken { text-decoration: line-through; opacity: .5; }
 
@@ -417,6 +447,15 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .ice-sliver.current { border-color: var(--danger); color: var(--text);
   box-shadow: 0 0 10px rgba(255,92,92,.6); animation: runpulse 1.2s infinite; }
 .ice-sliver .imeta { font-size: 8.5px; color: var(--gold); flex-shrink: 0; margin-left: 4px; }
+/* THE LAW §4/§5: a chip is still a card, so it wears the same three colours
+   the cards do — a stack collapsed for space must not also collapse the only
+   affordance saying it can be tapped. */
+.ice-sliver.selectable { border-color: var(--gold); color: var(--text);
+  box-shadow: 0 0 9px rgba(232,185,63,.7); }
+.ice-sliver.usable { border-color: #39ff88; color: var(--text);
+  box-shadow: 0 0 9px rgba(57,255,136,.8); }
+.ice-sliver.legal { border-color: var(--legal); color: var(--text);
+  box-shadow: 0 0 8px rgba(53,208,186,.5); }
 
 /* focused decision panel */
 .focus-panel { position: fixed; left: 12px; bottom: calc(150px + env(safe-area-inset-bottom, 0));
@@ -722,6 +761,27 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .access-actions .chip { min-height: 40px; font-size: 13px; padding: 9px 16px; }
   .peek-back { min-height: 40px; font-size: 13px; padding: 9px 16px; }
 }
+
+/* Every reader says how to leave. A preview that cannot be dismissed is a
+   preview that has taken the board hostage, and a player who cannot find the
+   way out cannot tell it from a hang. */
+.tapaway { position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(10px + var(--sab)); font-size: 12px; color: var(--dim);
+  letter-spacing: .5px; pointer-events: none; }
+
+/* ── The accessed card (CR 7.1.2) ────────────────────────────────────────
+   Shown whether or not the access asks anything. Bordered in the run's own
+   red so it reads as "this happened during your run", not as a question. */
+.reveal-overlay .zoom-card { border-color: var(--runner); }
+.reveal-overlay .zoom-card > .chip.go { align-self: flex-start; margin-top: 8px;
+  min-height: 46px; font-size: 15px; font-weight: 700; padding: 12px 22px; }
+.reveal-overlay .cardprompt { display: flex; gap: 8px; flex-wrap: wrap;
+  justify-content: center; }
+
+/* Where the board already holds the cards, the sheet holds only the words —
+   and says where to look, in the colour it is looking for. */
+.prompt-sheet .picker-hint.onboard { color: #39ff88; }
+.prompt-sheet .pbtns .chip.oncard { border-color: #39ff88; }
 
 /* Pile reader (Archives, score areas): tappable rows with thumbnails. */
 .zoom-card.pile { max-height: 86vh; overflow-y: auto; gap: 6px; }

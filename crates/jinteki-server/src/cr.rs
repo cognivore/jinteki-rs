@@ -500,6 +500,24 @@ pub struct CrGame {
     seed: u64,
     pending: Option<Pending>,
     picked: Vec<ObjectId>,
+    /// Who the engine last put on the clock — PRIORITY, as the board shows it.
+    ///
+    /// `pending` is only Some while a PERSON owes the decision; the bot's are
+    /// answered inside `drive`, and a state pushed mid-drive would therefore
+    /// say nobody is deciding while the bot plainly is. This is the one
+    /// notion, written at the single place the engine asks (`Yield::Decision`),
+    /// so the white glow can never disagree with whose turn to speak it is.
+    asked: Option<Side>,
+    /// CR 7.1.2: cards the Runner has accessed and has not yet been shown.
+    ///
+    /// An access is over in a step or two (`vm.st.accessed` is cleared the
+    /// moment it ends) and `drive` only pushes a state when the machine
+    /// STOPS — so an access that asks the Runner nothing has no state to
+    /// appear in at all, which is exactly the complaint: the card existed
+    /// only in the log. The card is therefore SNAPSHOT here, at the instant
+    /// the entitlement is live, and carried until the client has shown it.
+    accesses: Vec<Value>,
+    access_seq: u64,
     /// ONE LOG PER SIDE (SYS-S-1). A game event is rendered once per viewer,
     /// each from that viewer's own `view_of`, so a line can never name a card
     /// its reader is not entitled to see. Chat is the one thing written to
@@ -589,8 +607,21 @@ impl CrGame {
             return;
         }
         let mut lines: Vec<(Side, String)> = Vec::new();
+        let mut seen: Vec<Value> = Vec::new();
+        let view = self.vm.view_of(Side::Runner);
         for c in &self.vm.changes.log[self.narrated..upto] {
             self.transcript.change(c);
+            // CR 7.1.2, as a CARD rather than a sentence. The log already said
+            // "Runner: accesses X from R&D" and that was the only place the
+            // card appeared — a player had to read the drawer to learn what
+            // they had just looked at. The entitlement is live exactly here,
+            // so the card is rendered here and carried to the client.
+            if let jinteki_cr::change::GameChange::CardAccessed { obj } = c {
+                seen.push(json!({
+                    "card": card_json(&self.vm, &view, *obj, true),
+                    "from": accessed_from(&self.vm, *obj),
+                }));
+            }
             for viewer in [Side::Corp, Side::Runner] {
                 if let Some(l) = crate::crlog::narrate(&self.vm, c, viewer) {
                     lines.push((viewer, l));
@@ -598,10 +629,42 @@ impl CrGame {
             }
         }
         self.narrated = upto;
+        for mut s in seen {
+            self.access_seq += 1;
+            if let Some(m) = s.as_object_mut() {
+                m.insert("seq".into(), json!(self.access_seq));
+            }
+            self.accesses.push(s);
+        }
+        // A breach of R&D 3 is three cards to show; a whole game of them is
+        // not. Old reveals fall off the front — the log still has the line.
+        if self.accesses.len() > ACCESS_REVEALS {
+            let drop = self.accesses.len() - ACCESS_REVEALS;
+            self.accesses.drain(..drop);
+        }
         for (side, l) in lines {
             self.say_to(side, l);
         }
     }
+}
+
+/// How many accessed cards the client is offered at once. Deep R&D digs are
+/// the reason this is not 1; a bounded queue is the reason it is not the game.
+const ACCESS_REVEALS: usize = 6;
+
+/// Which server an accessed card came out of (CR 4.6.2/10.2.3a: WHERE a card
+/// is, is open information even where WHAT it is is not). Read at access time,
+/// because the card is about to move.
+fn accessed_from(vm: &Vm, id: ObjectId) -> Option<String> {
+    let z = vm.st.objects.get(&id)?.zone;
+    let s = match z {
+        Zone::Hand(Side::Corp) => ServerId::Hq,
+        Zone::Deck(Side::Corp) => ServerId::Rnd,
+        Zone::Discard(Side::Corp) => ServerId::Archives,
+        Zone::Root(s) | Zone::Ice(s) => s,
+        _ => return None,
+    };
+    Some(server_label(s))
 }
 
 /// Lines kept per side. Older ones fall off the front; nothing is lost that
@@ -692,6 +755,9 @@ fn new_game(setup: GameSetup, seats: [SeatState; 2], bot_delay_ms: u64) -> CrGam
         seed,
         pending: None,
         picked: Vec::new(),
+        asked: None,
+        accesses: Vec::new(),
+        access_seq: 0,
         log: [Vec::new(), Vec::new()],
         narrated: 0,
         transcript,
@@ -972,6 +1038,11 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
             }
             Yield::Decision(side, spec) => {
                 g.narrate();
+                // PRIORITY, written once, where the engine actually hands it
+                // over. Everything the board says about whose decision it is
+                // reads off this — including the bot's, so a state pushed
+                // between two of its moves still says who is speaking.
+                g.asked = Some(side);
                 g.transcript.decision(side, &spec);
                 if !g.seats[six(side)].bot {
                     let p = present(&g.vm, side, &spec);
@@ -1971,7 +2042,24 @@ pub fn state_json(g: &CrGame, viewer: Side) -> Value {
     root.insert("turn".into(), json!(vm.st.turn_seq));
     root.insert("active-player".into(), json!(side_key(vm.st.turn_side)));
     root.insert("turn-state".into(), json!("acting"));
+    // Whose decision it is, continuously — the active player is not the same
+    // question (the Corp answers paid windows all through the Runner's turn),
+    // and a board that only says "waiting for the Runner" in a sheet leaves
+    // the commonest case of all — your own action window — saying nothing.
+    root.insert(
+        "priority".into(),
+        match (g.over(), g.asked) {
+            (false, Some(s)) => json!(side_key(s)),
+            _ => Value::Null,
+        },
+    );
     root.insert("run".into(), run_json(vm));
+    // CR 7.1.2: the cards the Runner has accessed, as cards. The Corp's copy
+    // is deliberately empty — they are looking at their own board already,
+    // and an R&D access is theirs to see no more than the deck was (4.2.2).
+    if viewer == Side::Runner {
+        root.insert("accessed".into(), Value::Array(g.accesses.clone()));
+    }
     root.insert("corp".into(), corp_json(g, &view, viewer));
     root.insert("runner".into(), runner_json(g, &view, viewer));
     root.insert("log".into(), Value::Array(g.log[six(viewer)].clone()));
@@ -2037,19 +2125,33 @@ fn run_phase(vm: &Vm) -> &'static str {
     }
 }
 
-/// Is this card DRAWN on `viewer`'s board? Not "may they see it" — where it
-/// physically appears on screen. The board draws the servers, the rig, the
-/// play-area rail, the score areas and the viewer's own hand; a discard pile
-/// is a count you tap to open, and a deck is a count, so cards there are
-/// nowhere a gold outline could land.
-fn drawn_on_board(vm: &Vm, viewer: Side, id: ObjectId) -> bool {
+/// Is this card ALREADY ON `viewer`'S SCREEN, readable, where it lies?
+///
+/// THE ONE NOTION. Both "the sheet may keep quiet and let the board answer"
+/// questions read off this and nothing else, so they cannot disagree: a
+/// prompt that hides its cards because the board has them, and a board that
+/// never draws them, is a question with no answer on screen anywhere.
+///
+/// Two halves, and both are required:
+///
+/// * The zone is one the board DRAWS as cards — the servers, the ice, the
+///   rig, the play-area rail, the viewer's own hand. A discard pile and a
+///   deck are counts you tap to open, and the score areas are an AP chip
+///   that opens a list, so a card in any of those is nowhere an outline
+///   could land. (The score area used to count as drawn, and did not, so a
+///   choice among scored agendas showed nothing and lit nothing.)
+/// * The viewer may SEE it (§10.2). An unrezzed asset is drawn as a facedown
+///   rectangle: repeating it in the sheet is not a repetition at all, it is
+///   the only place its face appears. This is why the accessed card's reader
+///   survives — 7.1.2 hands the Runner a face the board would not show.
+fn on_screen(vm: &Vm, view: &View, viewer: Side, id: ObjectId) -> bool {
     let Some(o) = vm.st.objects.get(&id) else { return false };
-    match o.zone {
-        Zone::Root(_) | Zone::Ice(_) | Zone::Rig => true,
-        Zone::PlayArea(_) | Zone::ScoreArea(_) => true,
+    let drawn = match o.zone {
+        Zone::Root(_) | Zone::Ice(_) | Zone::Rig | Zone::PlayArea(_) => true,
         Zone::Hand(s) => s == viewer,
         _ => false,
-    }
+    };
+    drawn && view.sees(id)
 }
 
 fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
@@ -2086,6 +2188,19 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             msg.push_str(&format!(" ({} of {} chosen)", g.picked.len(), s.count));
         }
     }
+    // …and, for exactly the same reason `select-onboard` exists, whether the
+    // board is ALREADY SHOWING every card these options live on.
+    //
+    // A reaction window on Daily Casts drew a large Daily Casts in the sheet
+    // while Daily Casts sat two inches away in the rig, already outlined green
+    // — the same card twice, the second copy over the board it was asking
+    // about. Where the board has them, the board answers (THE LAW §3) and the
+    // sheet keeps only the sentence and the labels. All or nothing, and the
+    // same `on_screen` the select path uses, so a prompt can never hide a card
+    // the board is not drawing.
+    let option_cards: Vec<ObjectId> = p.choices.iter().filter_map(|(_, _, _, c)| *c).collect();
+    let choices_onboard = !option_cards.is_empty()
+        && option_cards.iter().all(|c| on_screen(&g.vm, view, viewer, *c));
     let mut obj = json!({
         "msg": msg,
         "prompt-type": "prompt",
@@ -2116,6 +2231,7 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             p.spec,
             DecisionSpec::NameValue { of: jinteki_cr::instr::NameSpace::CardName, .. }
         ),
+        "choices-onboard": choices_onboard,
     });
     // Tapping a highlighted card is one of the two ways a target announcement
     // is answered, and the other one is the prompt itself — so the prompt
@@ -2132,7 +2248,7 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
         m.insert(
             "select-onboard".into(),
             json!(!s.candidates.is_empty()
-                && s.candidates.iter().all(|c| drawn_on_board(&g.vm, viewer, *c))),
+                && s.candidates.iter().all(|c| on_screen(&g.vm, view, viewer, *c))),
         );
         m.insert(
             "select-cards".into(),
@@ -2635,6 +2751,189 @@ mod tests {
                 "{spec:?}"
             );
         }
+    }
+
+    /// THE LAW §3, the half that lets a prompt keep quiet. A reaction window
+    /// on a card in the rig drew that card AGAIN, large, in a sheet on top of
+    /// the board the card was already sitting on and already outlined green.
+    /// The sheet may only fall silent where the board really is showing it —
+    /// and the same `on_screen` decides for both prompt shapes, so the two
+    /// cannot disagree about what "on screen" means.
+    #[test]
+    fn a_window_whose_options_are_already_on_the_board_does_not_redraw_them() {
+        let mut g = dealt_game();
+        // The rig is where an installed Runner card lives, and it is drawn.
+        let hand = g.vm.cards_in_zone(Zone::Hand(Side::Runner));
+        let on_board = hand[0];
+        {
+            let o = g.vm.st.objects.get_mut(&on_board).expect("a card");
+            o.zone = Zone::Rig;
+            o.faceup = true;
+        }
+        let spec = DecisionSpec::ReactionWindow {
+            options: vec![WindowOption::TriggerPaid {
+                ability: AbilityRef { obj: on_board, index: 0 },
+                label: "use it",
+            }],
+            can_pass: true,
+        };
+        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+        let view = g.vm.view_of(Side::Runner);
+        let out = prompt_json(&g, &view, Side::Runner);
+        assert_eq!(
+            out["choices-onboard"],
+            json!(true),
+            "the rig is drawn and the Runner sees it: {out:#?}"
+        );
+        // The card still travels — the sheet's labels and the board's outline
+        // are drawn from one list, exactly as the select path does it.
+        let ch = &out["choices"].as_array().expect("choices")[0];
+        assert_eq!(ch["cid"].as_u64(), Some(on_board.0 as u64));
+
+        // …and the same option on a card in the STACK is not on the board at
+        // all, so the sheet must draw it or the question is unaskable.
+        let deep = g.vm.cards_in_zone(Zone::Deck(Side::Runner))[0];
+        let spec = DecisionSpec::ReactionWindow {
+            options: vec![WindowOption::TriggerPaid {
+                ability: AbilityRef { obj: deep, index: 0 },
+                label: "use it",
+            }],
+            can_pass: true,
+        };
+        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+        let view = g.vm.view_of(Side::Runner);
+        assert_eq!(
+            prompt_json(&g, &view, Side::Runner)["choices-onboard"],
+            json!(false),
+            "nothing in the stack is drawn anywhere"
+        );
+    }
+
+    /// "On screen" is one notion, and it is not "may they see it" nor "is it
+    /// installed". A facedown card in a remote is DRAWN and unreadable; a
+    /// scored agenda is READABLE and drawn nowhere (the score area is an AP
+    /// chip that opens a list). Either mistake produces the same bug: a
+    /// prompt that shows no cards over a board that lights none.
+    #[test]
+    fn on_screen_means_drawn_as_a_card_and_readable() {
+        let g = dealt_game();
+        let view = g.vm.view_of(Side::Runner);
+        let mine = g.vm.cards_in_zone(Zone::Hand(Side::Runner))[0];
+        assert!(on_screen(&g.vm, &view, Side::Runner, mine), "your own hand is drawn");
+        let theirs = g.vm.cards_in_zone(Zone::Hand(Side::Corp))[0];
+        assert!(!on_screen(&g.vm, &view, Side::Runner, theirs), "HQ is a count");
+        let deep = g.vm.cards_in_zone(Zone::Deck(Side::Runner))[0];
+        assert!(!on_screen(&g.vm, &view, Side::Runner, deep), "the stack is a count");
+
+        let mut g = g;
+        // Installed facedown in a remote: drawn, but as a blank rectangle.
+        {
+            let o = g.vm.st.objects.get_mut(&theirs).expect("a card");
+            o.zone = Zone::Root(ServerId::Remote(1));
+            o.faceup = false;
+        }
+        let view = g.vm.view_of(Side::Runner);
+        assert!(
+            !on_screen(&g.vm, &view, Side::Runner, theirs),
+            "an unrezzed card's FACE is not on screen — the sheet is its only copy"
+        );
+        {
+            g.vm.st.objects.get_mut(&theirs).expect("a card").faceup = true;
+        }
+        let view = g.vm.view_of(Side::Runner);
+        assert!(on_screen(&g.vm, &view, Side::Runner, theirs), "rezzed, it is");
+
+        // A scored agenda is open information and is drawn nowhere.
+        {
+            let o = g.vm.st.objects.get_mut(&theirs).expect("a card");
+            o.zone = Zone::ScoreArea(Side::Corp);
+            o.faceup = true;
+        }
+        let view = g.vm.view_of(Side::Runner);
+        assert!(
+            !on_screen(&g.vm, &view, Side::Runner, theirs),
+            "the score area is an AP chip, not a row of cards"
+        );
+    }
+
+    /// PRIORITY, as the identities show it. `pending` is only Some while a
+    /// PERSON owes the decision, so a state pushed while the bot is being
+    /// driven would say nobody is deciding — which is most of the frames the
+    /// watching player sees.
+    #[test]
+    fn the_state_says_whose_decision_it_is() {
+        let mut g = dealt_game();
+        assert_eq!(
+            state_json(&g, Side::Runner)["priority"],
+            Value::Null,
+            "nobody has been asked yet"
+        );
+        g.asked = Some(Side::Runner);
+        for viewer in [Side::Corp, Side::Runner] {
+            assert_eq!(
+                state_json(&g, viewer)["priority"],
+                json!("runner"),
+                "both seats see the same clock"
+            );
+        }
+        g.asked = Some(Side::Corp);
+        assert_eq!(state_json(&g, Side::Runner)["priority"], json!("corp"));
+        // An action window is a decision like any other: the commonest case
+        // of all must not be the one that says nothing.
+        g.pending = Some(present(&g.vm, Side::Corp, &DecisionSpec::TakeAction { options: vec![] }));
+        assert_eq!(state_json(&g, Side::Corp)["priority"], json!("corp"));
+        assert_eq!(
+            state_json(&g, Side::Corp)["corp"]["prompt-state"],
+            Value::Null,
+            "…and it still drives the board rather than a sheet"
+        );
+        g.conceded = Some(Side::Runner);
+        assert_eq!(
+            state_json(&g, Side::Runner)["priority"],
+            Value::Null,
+            "a finished game is waiting on nobody"
+        );
+    }
+
+    /// CR 7.1.2 as a CARD, not a log line. The sharp case is the one the
+    /// player hit: an access that asks the Runner NOTHING. `vm.st.accessed`
+    /// is cleared the moment the access ends and `drive` only pushes a state
+    /// when the machine stops, so reading the live field at push time shows
+    /// nothing at all — which is exactly the bug. The snapshot is taken when
+    /// the entitlement is live and outlives it.
+    #[test]
+    fn an_accessed_card_reaches_the_runner_even_with_no_decision_attached() {
+        let mut g = dealt_game();
+        let card = g.vm.cards_in_zone(Zone::Deck(Side::Corp))[0];
+        let title = g.vm.st.objects[&card].printed.name;
+        // The access, and its end, in one batch — the shape a decisionless
+        // access has by the time anybody could look at the state.
+        g.vm.st.accessed = Some(card);
+        g.vm.changes.log.push(jinteki_cr::change::GameChange::CardAccessed { obj: card });
+        g.narrate();
+        g.vm.st.accessed = None;
+
+        assert!(g.vm.st.accessed.is_none(), "the access is over, as it would be");
+        let out = state_json(&g, Side::Runner);
+        let seen = out["accessed"].as_array().expect("the Runner's reveals");
+        assert_eq!(seen.len(), 1, "one access, one card: {out:#?}");
+        assert_eq!(seen[0]["card"]["title"], json!(title), "the CARD, not a sentence");
+        assert_eq!(seen[0]["from"], json!("R&D"), "and which server it came out of");
+        assert!(seen[0]["seq"].as_u64().is_some(), "so the client can dismiss it once");
+        // 4.2.2: R&D is hidden from the Corp as much as from the Runner, and
+        // the reveal is the Runner's entitlement in any case.
+        assert!(
+            state_json(&g, Side::Corp).get("accessed").is_none(),
+            "the Corp is not handed the Runner's access reader"
+        );
+
+        // A deep dig does not become the whole game: the queue is bounded.
+        for _ in 0..ACCESS_REVEALS * 2 {
+            g.vm.changes.log.push(jinteki_cr::change::GameChange::CardAccessed { obj: card });
+            g.narrate();
+        }
+        let out = state_json(&g, Side::Runner);
+        assert_eq!(out["accessed"].as_array().expect("reveals").len(), ACCESS_REVEALS);
     }
 
     /// Every choice that is about a card carries the card. The audit that

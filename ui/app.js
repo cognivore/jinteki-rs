@@ -473,6 +473,31 @@ function isSelectCandidate(cid) {
 }
 function actionsFor(cid) { return ACTIONS.filter((a) => a.cid === cid); }
 
+/* THE LAW §3, in one place, so nothing that draws a card can disagree with
+   anything else that draws the same card:
+     GOLD  (.selectable) — a legal TARGET for the question being asked
+     GREEN (.usable)     — an ability on this card you can use RIGHT NOW
+     TEAL  (.legal)      — an ordinary action is available on it
+   A target is the only question on the table while it is being asked, so a
+   candidate is gold and never green. Identities are cards and go through
+   this too — their chip in the seat rail is the only copy of them a phone
+   draws at all, so if the ladder lived only inside `cardEl` an identity's
+   own ability would be usable nowhere. */
+function glowClass(cid) {
+  if (cid == null) return "";
+  if (isSelectMode()) return isSelectCandidate(cid) ? "selectable" : "";
+  if (promptChoicesFor(cid).length) return "usable";
+  if (actionsFor(cid).length) return "legal";
+  return "";
+}
+
+/* WHITE — a third thing, and not one of the three above (UX.md THE LAW §3).
+   Gold and green answer "what can I do"; white answers "is the game waiting
+   on ME". It rides the identities, both of them, continuously: the seat whose
+   identity is shimmering white owes the next word, including when that word
+   is just which action to take on their own turn. */
+function hasPriority(side) { return !!S && S.priority === side; }
+
 function dirty(key, val) {
   const s = JSON.stringify(val);
   if (sectionCache[key] === s) return false;
@@ -499,18 +524,22 @@ function render() {
   // Seat orientation: YOUR territory renders on YOUR half of the board,
   // adjacent to your bar and hand; the opponent's on theirs.
   $("board").classList.toggle("flipped", mySide === "corp");
+  // A preview whose card was just redrawn out from under the pointer has no
+  // `mouseleave` coming: reap it here, before anything rebuilds a subtree.
+  section("hover", reapHoverPreview);
   section("bars", renderBars);
   section("servers", () => {
-    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt()])) renderServers();
+    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority])) renderServers();
   });
   section("rig", () => {
-    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt()])) renderRig();
+    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt(), S.priority])) renderRig();
   });
   section("hand", () => {
     if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
   });
   section("play area", renderPlayRail);
   section("the prompt", renderPrompt);
+  section("access", renderAccessReveal);
   section("actions", renderChips);
   section("end turn", renderTurnBtn);
   section("run controls", renderRunControls);
@@ -561,9 +590,20 @@ function barHtml(st, side, isOpp) {
   const s = sideStats(st, side);
   const clicks = "●".repeat(Math.max(0, st.click || 0)) || "–";
   const art = idt.code ? ` style="background-image:url(${cardImgUrl(idt.code)})"` : "";
+  // The identity IS a card, and the seat rail's chip is the only copy of it
+  // that is drawn in every layout — the identity card column is hidden
+  // outright on a phone (`.identity-col { display: none }` under 640px), so
+  // the chip is the one that has to carry both signals:
+  //   white = this seat has priority (whose decision it is, continuously)
+  //   green = this identity has an ability that can be used right now
+  // Both come from the same places every other card's do, so they cannot
+  // say something the board does not.
+  const glow = idt.cid != null ? glowClass(idt.cid) : "";
+  const chip = ["idchip", hasPriority(side) ? "priority" : "", glow]
+    .filter(Boolean).join(" ");
   // MTGA-style corner cluster: tappable identity art + compact stat chips.
   return `
-    <span class="idchip" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
+    <span class="${chip}" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
     <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
     <span class="stat" title="clicks remaining">${clicks}</span>
     <span class="stat zones">
@@ -606,12 +646,15 @@ document.addEventListener("click", (e) => {
   zoomPile(st.discard || [], `${ZONE(side, "discard").label} (${(st.discard || []).length})`);
 });
 
-// Tap an identity thumb to read the identity card.
+// Tap an identity chip. It is a card, so it answers like one: an ability
+// that is on offer is taken, a legal target is picked, and otherwise the tap
+// reads the card — exactly what tapping the identity card itself does,
+// through the same `onCardTap`, because a phone draws no identity card.
 document.addEventListener("click", (e) => {
   const chip = e.target.closest(".idchip");
   if (!chip || !S) return;
   const st = S[chip.dataset.side];
-  if (st && st.identity) zoomCard(st.identity);
+  if (st && st.identity) onCardTap(st.identity, { identity: true }, chip);
 });
 
 // Tap AP to see the agendas behind the number (both sides' score areas are
@@ -645,7 +688,11 @@ function renderServers() {
     nm.className = "sname";
     nm.textContent = "Identity";
     idcol.appendChild(nm);
-    idcol.appendChild(cardEl(corp.identity, { side: "corp", identity: true }));
+    const idEl = cardEl(corp.identity, { side: "corp", identity: true });
+    // The same white the seat rail's chip carries, on the card where the
+    // layout is wide enough to draw one. One signal, two places it can land.
+    if (hasPriority("corp")) idEl.classList.add("priority");
+    idcol.appendChild(idEl);
     wrap.appendChild(idcol);
   }
   Object.keys(servers).sort((a, b) => SERVER_ORDER(a) - SERVER_ORDER(b)).forEach((key) => {
@@ -686,20 +733,34 @@ function renderServers() {
         S.run && (S.run.phase === "encounter-ice" || S.run.phase === "approach-ice");
       const sliver = document.createElement("div");
       const rezzed = !!c.rezzed && c.title;
-      sliver.className = "ice-sliver" + (rezzed ? " rezzed" : "") + (isCurrent ? " current" : "");
+      // THE LAW §4/§5: the stack collapses to chips for space, and a chip is
+      // STILL A CARD. It therefore carries the same glow ladder every card
+      // does and answers the same questions — without this an ice was the one
+      // place the server could say "the board is showing it" and the board
+      // would light nothing and accept nothing, leaving a choose-an-ice
+      // prompt with no answer on screen anywhere.
+      const glow = glowClass(c.cid);
+      sliver.className = "ice-sliver" + (rezzed ? " rezzed" : "") + (isCurrent ? " current" : "") +
+        (glow ? " " + glow : "");
       const subsN = (c.subroutines || []).length;
       sliver.innerHTML = `<span class="iname">${rezzed ? c.title : "?"}</span>` +
         (rezzed ? `<span class="imeta">${c.strength ?? ""}${subsN ? " · " + "↳".repeat(subsN) : ""}</span>` : "");
       let t = null, fired = false;
+      // A tap answers where there is something to answer; otherwise it reads.
+      const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
       sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; zoomCard(c); }, 380); });
-      sliver.addEventListener("pointerup", () => { clearTimeout(t); if (!fired) zoomCard(c); });
+      sliver.addEventListener("pointerup", () => {
+        clearTimeout(t);
+        if (fired) return;
+        if (answerable) onCardTap(c, { ice: true }, sliver); else zoomCard(c);
+      });
       sliver.addEventListener("pointerleave", () => clearTimeout(t));
       sliver.addEventListener("pointercancel", () => clearTimeout(t));
       sliver.addEventListener("contextmenu", (e) => e.preventDefault());
       // THE LAW §5: a chip is still a card — hover reads it on a pointer
       // device, exactly as hovering the card it stands for would.
       if (hoverCapable) {
-        sliver.addEventListener("mouseenter", () => showHoverPreview(c));
+        sliver.addEventListener("mouseenter", () => showHoverPreview(c, sliver));
         sliver.addEventListener("mouseleave", hideHoverPreview);
       }
       stack.appendChild(sliver);
@@ -778,6 +839,7 @@ function renderRig() {
     if (k === "program" && runner.identity) {
       const idEl = cardEl(runner.identity, { side: "runner", identity: true });
       idEl.classList.add("identity-col");
+      if (hasPriority("runner")) idEl.classList.add("priority");
       row.appendChild(idEl);
     }
     rigEl.appendChild(row);
@@ -946,21 +1008,9 @@ function cardEl(c, opts) {
   }
 
   // legality glow (local mode) / select hint
-  const acts = actionsFor(c.cid);
-  // Green: this card has an option on offer RIGHT NOW. The board answers the
-  // window instead of a list of text buttons — nothing to read, nothing
-  // moves. Gold means "legal target for the question being asked", and while
-  // a target is what is being asked for, that is the ONLY question on the
-  // table: a candidate is gold and never green (THE LAW §3).
-  if (isSelectMode()) {
-    if (isSelectCandidate(c.cid)) el.classList.add("selectable");
-  } else if (promptChoicesFor(c.cid).length) {
-    el.classList.add("usable");
-  } else if (acts.length) {
-    el.classList.add("legal");
-  } else if (mode === "bridge" && !facedown && opts.hand) {
-    el.classList.add("legal");
-  }
+  const glow = glowClass(c.cid);
+  if (glow) el.classList.add(glow);
+  else if (mode === "bridge" && !facedown && opts.hand) el.classList.add("legal");
 
   // tap + long-press (mobile read gesture) + hover preview (desktop)
   let pressTimer = null, longFired = false;
@@ -977,7 +1027,7 @@ function cardEl(c, opts) {
   // Suppress the iOS long-press callout / selection so the read gesture is ours.
   el.addEventListener("contextmenu", (e) => e.preventDefault());
   if (hoverCapable) {
-    el.addEventListener("mouseenter", () => showHoverPreview(c));
+    el.addEventListener("mouseenter", () => showHoverPreview(c, el));
     el.addEventListener("mouseleave", hideHoverPreview);
   }
   return el;
@@ -1034,7 +1084,16 @@ function cardInfoHtml(c) {
     ${(c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
 }
 
-function showHoverPreview(c) {
+/* The hover preview is the one thing on screen a click CANNOT close: it is
+   `pointer-events: none` by design, so the pointer reads the board through
+   it. That is fine while `mouseleave` is guaranteed to fire — and it is not.
+   Acting on a card pushes a new state, `renderServers`/`renderRig` rebuild
+   their subtrees, and the element the mouse was over is destroyed without
+   ever leaving: no `mouseleave`, no hide, and a preview pinned to the top
+   right of the board that no amount of clicking will shift. So the preview
+   remembers the element it belongs to and goes when that element does. */
+let hoverOwner = null;
+function showHoverPreview(c, owner) {
   let hp = document.getElementById("hover-preview");
   if (!hp) {
     hp = document.createElement("div");
@@ -1042,13 +1101,24 @@ function showHoverPreview(c) {
     hp.className = "hover-preview";
     document.body.appendChild(hp);
   }
+  hoverOwner = owner || null;
   hp.innerHTML = `<div class="zoom-card small">${cardInfoHtml(c)}</div>`;
   hp.style.display = "block";
 }
 function hideHoverPreview() {
+  hoverOwner = null;
   const hp = document.getElementById("hover-preview");
   if (hp) hp.style.display = "none";
 }
+/* Its owner left the DOM (or the board redrew under it): the preview goes
+   with it. Called once per frame — cheap, and it cannot get stuck. */
+function reapHoverPreview() {
+  if (hoverOwner && !hoverOwner.isConnected) hideHoverPreview();
+}
+// A press anywhere is an ACT, not a read: the preview is not what you are
+// looking at any more. Capture phase, so nothing can swallow it first.
+document.addEventListener("pointerdown", hideHoverPreview, true);
+window.addEventListener("blur", hideHoverPreview);
 
 /* ── interactions ────────────────────────────────────────────────────── */
 /* The options on offer that live on this card (server sends `cid` on each
@@ -1348,11 +1418,22 @@ function makeDraggable(wrap, cid, repaint) {
    to see it, or the option names no card at all — "No action", "Done") stay
    as chips underneath, so nothing is ever lost by rendering cards. */
 function renderCardPrompt(sheet, p, choices) {
-  const withCards = choices.filter((ch) => ch.card);
+  // Where the board is ALREADY drawing every one of these cards, drawing them
+  // again in a sheet on top of the board is the same question twice — and the
+  // second copy covers the very cards it is asking about. A reaction window on
+  // Daily Casts, with Daily Casts sitting in the rig two inches away already
+  // outlined green, needs no picture of Daily Casts: it needs the sentence,
+  // the label, and the shimmer that is already there (THE LAW §3). The server
+  // decides, from the same `on_screen` the select path uses.
+  const onboard = p["choices-onboard"] === true;
+  const withCards = onboard ? [] : choices.filter((ch) => ch.card);
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
     <div class="cardprompt${withCards.length > 8 ? " many" : ""}"></div><div class="pbtns"></div>`;
   const row = sheet.querySelector(".cardprompt");
   const btns = sheet.querySelector(".pbtns");
+  if (onboard) {
+    row.appendChild(el("div", "picker-hint onboard", "Tap the card outlined in green — or use a label below."));
+  }
   const mid = (withCards.length - 1) / 2;
   withCards.forEach((ch, i) => {
     const wrap = document.createElement("div");
@@ -1378,9 +1459,13 @@ function renderCardPrompt(sheet, p, choices) {
     // the prompt answer the same way.
     row.appendChild(wrap);
   });
-  choices.filter((ch) => !ch.card).forEach((ch) => {
+  // Everything that did not become a card: the options naming no card at all
+  // ("Pass", "No action"), and — when the board is already showing them — the
+  // LABELS of the options that do, which say what the ability actually does
+  // and which the card face cannot. Same uuid, so both paths are one answer.
+  choices.filter((ch) => onboard || !ch.card).forEach((ch) => {
     const b = document.createElement("button");
-    b.className = "chip";
+    b.className = "chip" + (ch.card ? " oncard" : "");
     b.textContent = sym(String(ch.value));
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
@@ -1639,11 +1724,116 @@ function renderAccessReader(p) {
     <div class="access-actions">
       ${btns.map(([l, cls, uuid]) => `<button class="chip ${cls}" data-uuid="${uuid}">${l}</button>`).join("")}
       <button class="chip peek" id="access-peek">Peek board</button>
-    </div></div>`;
+    </div></div>
+    <div class="tapaway">tap away to peek the board</div>`;
   o.querySelectorAll("[data-uuid]").forEach((b) => {
     b.onclick = () => { peekingBoard = false; act("choice", { choice: { uuid: b.dataset.uuid } }); };
   });
-  document.getElementById("access-peek").onclick = () => { peekingBoard = true; renderAccessReader(p); };
+  const peek = () => { peekingBoard = true; renderAccessReader(p); };
+  document.getElementById("access-peek").onclick = peek;
+  // Tapping away from a reader that is ALSO a decision cannot simply throw
+  // the decision away — but it must not trap the player either. So it does
+  // what the Peek button does: steps aside, leaving the ↩ tab that steps
+  // back. Nothing is lost and nothing is stuck.
+  dismissOnTapAway(o, (e) => !!e.target.closest(".zoom-card"), peek);
+}
+
+/* ── the accessed card, whether or not it asks you anything ──────────────
+   CR 7.1.2 entitles the Runner to look at a card they are accessing. Most
+   accesses offer no decision at all — an agenda with no counters, an ice, an
+   upgrade with no trash cost — so there was no prompt, so nothing was drawn,
+   and the only trace of the card was one line in the log drawer: "Runner:
+   accesses 24/7 News Cycle from R&D". That is a card you are entitled to see
+   rendered as a sentence you have to go looking for.
+
+   The server carries every access as a SNAPSHOT (`state.accessed`), taken at
+   the instant the entitlement is live, because by the time a state is pushed
+   the access is long over and `vm.st.accessed` is already null — which is why
+   sending the live field alone would have shown nothing in exactly the case
+   this is about. Each snapshot has a sequence number; the client shows what
+   it has not yet dismissed, and dismissing is one tap anywhere. */
+let accessSeen = 0;      // the highest reveal sequence already dismissed
+
+function pendingAccesses() {
+  if (!S || mySide !== "runner") return [];
+  const all = S.accessed || [];
+  // A fresh game counts from 1 again. A floor above everything the server is
+  // offering can only mean the sequence restarted, and a stale floor would
+  // silently swallow the first accesses of the new game.
+  const top = all.reduce((m, a) => Math.max(m, a.seq || 0), 0);
+  if (top < accessSeen) accessSeen = 0;
+  return all.filter((a) => (a.seq || 0) > accessSeen && a.card && a.card.title);
+}
+
+function revealOverlayEl() {
+  let o = document.getElementById("reveal-overlay");
+  if (!o) {
+    o = document.createElement("div");
+    o.id = "reveal-overlay";
+    o.className = "zoom-overlay reveal-overlay";
+    document.getElementById("screen-game").appendChild(o);
+  }
+  return o;
+}
+
+function renderAccessReveal() {
+  const o = document.getElementById("reveal-overlay");
+  const hide = () => { if (o) o.style.display = "none"; };
+  if (S && S.winner) { hide(); return; }
+  const list = pendingAccesses();
+  if (!list.length) { hide(); return; }
+
+  // The mid-access reader is already showing one of these, full size, with
+  // its question attached. Two overlays for one card is the fault above, not
+  // the fix: mark those seen and let the reader do the work.
+  const p = myPrompt();
+  const shown = p && p.card && p.card.cid;
+  const rest = list.filter((a) => a.card.cid !== shown);
+  if (rest.length !== list.length) {
+    accessSeen = Math.max(accessSeen, ...list.filter((a) => a.card.cid === shown).map((a) => a.seq));
+  }
+  // …and nothing else may sit on top of a decision either. A reveal waits
+  // its turn; the seq floor means it is still there when the decision is done.
+  if (!rest.length || (p && p["prompt-type"] !== "waiting")) { hide(); return; }
+
+  const top = Math.max(...rest.map((a) => a.seq));
+  const many = rest.length > 1;
+  const ov = revealOverlayEl();
+  ov.style.display = "flex";
+  ov.innerHTML = "";
+  const card = el("div", "zoom-card" + (many ? " pile" : ""));
+  const where = rest[rest.length - 1].from;
+  card.appendChild(el("h3", "", many
+    ? `You accessed ${rest.length} cards`
+    : `You accessed ${rest[0].card.title}`));
+  if (!many && where) card.appendChild(el("div", "zline", `from ${where}`));
+  if (many) {
+    const row = el("div", "cardprompt");
+    rest.forEach((a) => {
+      const wrap = el("div", "cardpick");
+      wrap.appendChild(cardEl(a.card, { side: "runner" }));
+      if (a.from) wrap.appendChild(el("div", "cardpick-label", a.from));
+      row.appendChild(wrap);
+    });
+    card.appendChild(row);
+    card.appendChild(el("div", "picker-hint", "Press and hold a card to read it."));
+  } else {
+    // §12.6: card text is the card layer's, never a user string.
+    const body = document.createElement("div");
+    body.innerHTML = cardInfoHtml(rest[0].card);
+    while (body.firstChild) card.appendChild(body.firstChild);
+  }
+  const ok = el("button", "chip go", "Got it");
+  const done = () => { accessSeen = Math.max(accessSeen, top); ov.style.display = "none"; render(); };
+  ok.onclick = done;
+  card.appendChild(ok);
+  ov.appendChild(card);
+  ov.appendChild(el("div", "tapaway", "tap away to close"));
+  // Inside the reader the cards are real cards — press and hold still reads
+  // one — so only a tap OUTSIDE it dismisses. Nothing here traps anybody:
+  // the button, the dim area and Escape all close it, and what was accessed
+  // stays in the log either way.
+  dismissOnTapAway(ov, (e) => !!e.target.closest(".zoom-card"), done);
 }
 
 /* ── chips / turn / run ──────────────────────────────────────────────── */
@@ -1768,12 +1958,50 @@ function renderLog() {
 }
 
 /* ── zoom / gameover / toast ─────────────────────────────────────────── */
+
+/* Nothing that merely SHOWS you something may ever hold the board hostage.
+   An overlay opened to read a card is closed by tapping away from it, on
+   every input the platform has, and by Escape where there is a keyboard.
+   `click` alone was not enough: a long-press opens the reader with the
+   pointer already down, so the release lands on the overlay without a
+   matching press and no `click` is ever synthesised — and on iOS a tap on a
+   plain div is not guaranteed to produce one at all. `pointerdown` is the
+   event every device does fire, so that is the one that closes.
+
+   `hit` gets first refusal on the tap: it returns true when the tap meant
+   something inside the overlay (a pile row to read), false to dismiss. */
+function dismissOnTapAway(o, hit, onClose) {
+  const close = () => {
+    o.style.display = "none";
+    o.__dismiss = null;
+    if (onClose) onClose();
+  };
+  o.__dismiss = close;
+  o.onclick = null;
+  o.onpointerdown = (e) => {
+    if (hit && hit(e)) return;
+    e.preventDefault();
+    close();
+  };
+}
+
+// Escape closes whatever reader is open, topmost first. A keyboard is not
+// the phone case, but a stuck overlay on a laptop is the same bug.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  for (const id of ["zoom-overlay", "access-overlay", "reveal-overlay"]) {
+    const o = document.getElementById(id);
+    if (o && o.style.display !== "none" && o.__dismiss) { o.__dismiss(); return; }
+  }
+});
+
 function zoomCard(c) {
   hideHoverPreview();
   const o = $("zoom-overlay");
   o.style.display = "flex";
-  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>`;
-  o.onclick = () => { o.style.display = "none"; };
+  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>
+    <div class="tapaway">tap anywhere to close</div>`;
+  dismissOnTapAway(o, null);
 }
 
 function zoomPile(cards, title) {
@@ -1786,7 +2014,8 @@ function zoomPile(cards, title) {
       ${c.agendapoints != null ? `<span class="pilepts">${c.agendapoints} pts</span>` : ""}
     </div>`).join("");
   o.innerHTML = `<div class="zoom-card pile"><h3>${title}</h3>
-    ${rows || "<div class='zline'>none yet</div>"}</div>`;
+    ${rows || "<div class='zline'>none yet</div>"}</div>
+    <div class="tapaway">tap anywhere to close</div>`;
   // UX.md THE LAW §5: every display mode previews. A pile row is a card in
   // compact clothing, so it gets hover preview on a pointer device and
   // long-press on touch, exactly like the card it stands for.
@@ -1795,17 +2024,17 @@ function zoomPile(cards, title) {
     if (!c || !c.title) return;
     attachZoom(row, c);
     if (hoverCapable) {
-      row.addEventListener("pointerenter", () => showHoverPreview(c));
+      row.addEventListener("pointerenter", () => showHoverPreview(c, row));
       row.addEventListener("pointerleave", hideHoverPreview);
     }
   });
   // Tap a row to read that card; tap anywhere else to close.
-  o.onclick = (e) => {
+  dismissOnTapAway(o, (e) => {
     const row = e.target.closest(".pilerow");
     const c = row ? cards[+row.dataset.i] : null;
-    if (c && c.title) zoomCard(c);
-    else o.style.display = "none";
-  };
+    if (c && c.title) { zoomCard(c); return true; }
+    return false;
+  });
 }
 
 function renderGameOver() {
@@ -1903,7 +2132,7 @@ function showStrictRefusal(msg) {
     card.appendChild(d);
   });
   o.appendChild(card);
-  o.onclick = () => { o.style.display = "none"; };
+  dismissOnTapAway(o, null);
 }
 
 /* ── build stamp + self-heal ─────────────────────────────────────────────
