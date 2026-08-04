@@ -6,28 +6,28 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W20)
+## Odometers (after W22)
 
-- **DP-7a: 243/243** — **COMPLETE.** Every worked example in
+- **DP-7a: 247/247** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 878/1420** distinct rules cited (61.8%); traceability test fails
+- **DP-7b: 883/1420** distinct rules cited (62.2%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **Priority decks: 45/51 cards complete**, 13 printed sentences still
+- **Priority decks: 51/51 cards complete**, 0 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
-  ratcheted by `the_gap_list_is_measurable_and_honest`, whose thresholds were
-  stale until W20 and now sit on the real numbers). The 51st card is
+  ratcheted by `the_gap_list_is_measurable_and_honest`). The 51st card is
   CR 1.5.4a's additional-identities pile, which a player brings "along with
   their deck" and which the readiness gate therefore counts with it.
   `decks/unlisted.rs` carries 15 further cards no deck lists, outside the
-  odometer.
-- **DP-7c: 68/3717** reference tests ported and passing
+  odometer; **DJ Fenris is complete there since W22d**, and five sentences
+  across four other unlisted cards remain (see the gap list).
+- **DP-7c: 70/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
   `docs/vm/CORPUS.md`; the divergence ledger is
   `docs/vm/UPSTREAM-DEFECTS.md`.
-- Full workspace: 24 suites green; jinteki-core/-server untouched by VM work
+- Full workspace: 28 suites green; jinteki-core/-server untouched by VM work
 - **Commit gate (both, every time):** `nix develop --command cargo test
   --workspace` AND `nix build .#default` (then `rm -f result`). Workspace
   green does NOT imply the artifact builds — `nix/package.nix` filters the
