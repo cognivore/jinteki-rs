@@ -81,6 +81,30 @@ pub fn the_outfit() -> Card {
         .build()
 }
 
+/// Titan Transnational: Investing In Your Future — Identity: Corp.
+/// "Whenever you score an agenda, you may place 1 agenda counter on it."
+///
+/// COMPLETE. "It" is 1.15.4's back-reference to the card the OCCURRENCE
+/// named — the agenda that was just scored — and it is not a target: nothing
+/// is announced, because the condition already fixed which card the sentence
+/// is about, exactly as an access fixes "the card you are accessing".
+///
+/// The counter is an AGENDA counter (1.9), which is why it goes on a card in
+/// the score area at all: 4.5.1 keeps a scored agenda there as an object, and
+/// 9.1.8a keeps its abilities active, so a counter placed on it is something
+/// a later ability can spend.
+pub fn titan_transnational() -> Card {
+    card("Titan Transnational: Investing In Your Future")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("Whenever you score an agenda, you may place 1 agenda counter on it.")
+        .may_when(corp_scores_agenda(), [place_on(the_triggering_card(), CounterKind::Agenda, 1)])
+        .named("investing in your future")
+        .build()
+}
+
 /// Weyland Consortium: Building a Better World — Identity: Megacorp.
 /// "Whenever you play a transaction operation, gain 1[credit]."
 ///
@@ -128,6 +152,7 @@ pub fn identities() -> Vec<Card> {
         argus_security(),
         grndl(),
         the_outfit(),
+        titan_transnational(),
         weyland_building_a_better_world(),
         weyland_built_to_last(),
     ]

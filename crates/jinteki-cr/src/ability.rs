@@ -1426,6 +1426,14 @@ pub struct AbilityInstance {
     /// Structure instance this pending is tied to (persistent/9.12.5d and
     /// run-scoped conditions).
     pub run_id: Option<u64>,
+    /// CR 1.15.4: the card the OCCURRENCE that met this condition named —
+    /// what a printed "…place 1 agenda counter on **it**" (Titan
+    /// Transnational) or "…you may expose **that card**" (419) points at.
+    /// It is not a target: nothing was announced, and the card is fixed by
+    /// the condition rather than chosen. `None` for a condition that names no
+    /// card (a turn beginning, a tag taken) and for an instance created by
+    /// something other than the checkpoint scan.
+    pub triggering_card: Option<ObjectId>,
 }
 
 /// CR 9.1.7 + 9.1.8: whether an ability is active. `encounter_ice` is the

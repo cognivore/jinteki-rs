@@ -67,6 +67,41 @@ pub fn exile() -> Card {
         .build()
 }
 
+/// Hayley Kaplan: Universal Scholar — Identity: Natural. Link 0.
+/// "The first time you install a card each turn, you may install another card
+///  of the same type from your grip (paying its install cost)."
+///
+/// COMPLETE. 8.5's install with no stipulation about what was installed, and
+/// 9.6.5c's ordinal about the occurrence.
+///
+/// "Of the same type" is 1.15.4's back-reference: the type is read off the
+/// card the OCCURRENCE named, and 2.15 gives a card exactly one type, so this
+/// is an equality rather than a list. "Another" needs no word of its own —
+/// the card that met the condition has left the grip, and the description
+/// names the grip.
+///
+/// The parenthesis is 1.4's reminder text: 8.5.11 already makes an install
+/// pay its cost unless the sentence says otherwise, so it is not a second
+/// instruction. 9.11.4b is why the install is its own instruction and not
+/// something the condition's ability could absorb.
+pub fn hayley_kaplan() -> Card {
+    card("Hayley Kaplan: Universal Scholar")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).")
+        .may_when_first_each_turn(
+            installs_a_card(Runner),
+            [install(
+                choose(1, &[in_hand_of(Runner), of_the_same_type_as_the_triggering_card()]),
+                InstallDest::RunnerChoiceHostOrRig,
+            )],
+        )
+        .named("universal scholar")
+        .build()
+}
+
 /// Rielle "Kit" Peddler: Transhuman — Identity: Cyborg. Link 0.
 /// "The first time each turn you encounter a piece of ice, it gains code gate
 ///  for the remainder of this run."
@@ -137,5 +172,5 @@ pub fn tao_salonga() -> Card {
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
-    vec![akiko_nisei(), exile(), rielle_kit_peddler(), tao_salonga()]
+    vec![akiko_nisei(), exile(), hayley_kaplan(), rielle_kit_peddler(), tao_salonga()]
 }

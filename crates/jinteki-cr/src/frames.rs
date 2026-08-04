@@ -245,6 +245,11 @@ pub struct AbilityFrame {
     pub imminent_index: Option<usize>,
     /// The conditional-instance id this frame resolves (drops pending).
     pub instance: Option<u64>,
+    /// CR 1.15.4: the card the occurrence that met this ability's condition
+    /// NAMED — inherited from the instance when the frame is pushed, because
+    /// the instance stops being pending as soon as it starts resolving. This
+    /// is what a printed "it" or "that card" reads.
+    pub triggering_card: Option<ObjectId>,
     /// CR 9.1.4: source zone-move stamp at independence; if the source moved
     /// since, self-referencing effects are stranded.
     pub source_generation: u32,

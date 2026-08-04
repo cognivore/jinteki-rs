@@ -267,7 +267,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         _ => None,
                     })
                 });
-                let mut occurrences: Vec<u64> = Vec::new();
+                let mut occurrences: Vec<(u64, Option<ObjectId>)> = Vec::new();
                 for (offset, (c, group)) in window.iter().enumerate() {
                     // 4.6.6i: "this server" in a trigger condition is read
                     // through `Vm::this_server`, so a condition met BY the
@@ -549,14 +549,14 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             }
                         }
                     }
-                    occurrences.push(*group);
+                    occurrences.push((*group, crate::change::card_named_by(c)));
                 }
                 if occurrences.is_empty() {
                     continue;
                 }
                 let n = if trigger_per_event(cond) {
                     cite!("rule_act_on_multiple_cards");
-                    let mut gs = occurrences.clone();
+                    let mut gs: Vec<u64> = occurrences.iter().map(|o| o.0).collect();
                     gs.sort_unstable();
                     gs.dedup();
                     gs.len()
@@ -581,9 +581,13 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             hangover,
                             independent: false,
                             source_generation: vm.generation(obj_id),
-                            occurrence_group: occurrences.get(k).copied().unwrap_or(0),
+                            occurrence_group: occurrences.get(k).map(|o| o.0).unwrap_or(0),
                             from_lingering,
                             run_id: vm.current_run.map(|(r, _, _)| r),
+                            // 1.15.4: the card the OCCURRENCE named, so a
+                            // later sentence of the same ability can say
+                            // "it" without announcing anything.
+                            triggering_card: occurrences.get(k).and_then(|o| o.1),
                         },
                     );
                     newly.push(id);
@@ -643,6 +647,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         occurrence_group: 0,
                         from_lingering,
                         run_id: vm.current_run.map(|(r, _, _)| r),
+                        triggering_card: None,
                     },
                 );
                 newly.push(id);

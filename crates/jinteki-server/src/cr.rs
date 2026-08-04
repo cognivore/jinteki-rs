@@ -135,6 +135,7 @@ pub const GAUNTLET_LIST: &[(&str, u32)] = &[
 /// make both priority decks unplayable.
 pub const ANDROMEDA_PILE: &[&str] = &[
     "Ken \"Express\" Tenma: Disappeared Clone",
+    "419: Amoral Scammer",
     "Gabriel Santiago: Consummate Professional",
     "Los: Data Hijacker",
     "Liza Talking Thunder: Prominent Legislator",

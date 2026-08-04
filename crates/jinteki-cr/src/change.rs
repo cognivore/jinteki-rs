@@ -230,3 +230,26 @@ impl ChangeBuffer {
         old
     }
 }
+
+/// CR 1.15.4: the card an occurrence NAMES, if it names one — what a printed
+/// "it" or "that card" points at once the condition has been met. Listed
+/// rather than wildcarded on purpose: a change that names several cards
+/// (damage's trashed set) or a card only incidentally names none here, so a
+/// card that says "it" about such an occurrence will read `None` and act on
+/// nothing rather than on the wrong card.
+pub fn card_named_by(c: &GameChange) -> Option<ObjectId> {
+    match c {
+        GameChange::CardInstalled { obj, .. }
+        | GameChange::CardRezzed { obj, .. }
+        | GameChange::CardDerezzed { obj }
+        | GameChange::CardTrashed { obj, .. }
+        | GameChange::CardAdvanced { obj }
+        | GameChange::CardExposed { obj }
+        | GameChange::CardRevealed { obj }
+        | GameChange::CardAccessed { obj }
+        | GameChange::CardPlayed { obj, .. }
+        | GameChange::AgendaScored { obj, .. }
+        | GameChange::AgendaStolen { obj, .. } => Some(*obj),
+        _ => None,
+    }
+}

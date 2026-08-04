@@ -2401,6 +2401,7 @@ impl Vm {
                     occurrence_group: 0,
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
+                    triggering_card: None,
                 },
             );
             out.push(id);
@@ -2456,6 +2457,7 @@ impl Vm {
                 occurrence_group: 0,
                 from_lingering: None,
                 run_id: self.current_run.map(|(r, _, _)| r),
+                triggering_card: None,
             },
         );
         self.pending_from_effect.push(id);
@@ -4759,6 +4761,7 @@ impl Vm {
                     occurrence_group: 0,
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
+                    triggering_card: None,
                 },
             );
             pending_ids.push(id);
@@ -5159,6 +5162,11 @@ impl Vm {
             ability_targets: Vec::new(),
             imminent_index: None,
             instance,
+            // 1.15.4: the card the condition's occurrence named, carried
+            // over while the instance is still pending.
+            triggering_card: instance
+                .and_then(|i| self.instances.get(&i))
+                .and_then(|i| i.triggering_card),
             // CR 9.1.4 via 1.12.3: the ability's source is an OBJECT, i.e. an
             // (id, generation) pair. A conditional instance remembers the
             // generation it came into being with (9.6.2), and the frame
@@ -6584,6 +6592,18 @@ impl Vm {
             }
             // 1.13.2: the plain question, asked of any card in any zone.
             TargetFilter::Facedown => !o.faceup,
+            // 1.15.4 + 2.15: the same type as the card the condition named.
+            TargetFilter::SameCardTypeAsTriggeringCard => self
+                .frames
+                .iter()
+                .rev()
+                .find_map(|f| match f {
+                    Frame::Ability(af) => Some(af.triggering_card),
+                    _ => None,
+                })
+                .flatten()
+                .and_then(|t| self.st.objects.get(&t))
+                .is_some_and(|t| t.printed.card_type == o.printed.card_type),
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.this_server(s))
                 .map(|sv| self.ice_at(sv).contains(&o.id))
@@ -10690,6 +10710,19 @@ impl Vm {
                 .into_iter()
                 .collect(),
             TargetSpec::AccessedCard => self.st.accessed.into_iter().collect(),
+            // 1.15.4: the card the condition's occurrence named. Read off the
+            // innermost ability frame, which inherited it from the instance.
+            TargetSpec::TriggeringCard => self
+                .frames
+                .iter()
+                .rev()
+                .find_map(|f| match f {
+                    Frame::Ability(af) => Some(af.triggering_card),
+                    _ => None,
+                })
+                .flatten()
+                .into_iter()
+                .collect(),
             // 9.10.3: "that ice" — the object the source is remembering.
             TargetSpec::MaintainedChoice(key) => source
                 .and_then(|src| self.maintained_choice(src, key))

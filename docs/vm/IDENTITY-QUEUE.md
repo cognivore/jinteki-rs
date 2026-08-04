@@ -37,7 +37,9 @@ these is a general kernel capability, stated with the identities that want it.
   a rezzed one silently exposes nothing. The restriction belongs where 9.5.6a's
   break restriction went: DERIVED from the instruction, not written into the
   card's criteria, which would be words the card does not print.
-  *(Silhouette: Stealth Operative; 419: Amoral Scammer wants it too.)*
+  *(Silhouette: Stealth Operative. 419: Amoral Scammer escaped it —
+  "expose THAT card" announces nothing at all, so there are no candidates to
+  offer wrongly.)*
 - **"A [trash] ability" is not distinguished from the basic trash ability.**
   `TriggerCond::UsesTrashAbility` exists, but `GameChange::TrashAbilityUsed` is
   recorded both where a 1.19.4 [trash] trigger cost is paid AND where the
@@ -48,12 +50,6 @@ these is a general kernel capability, stated with the identities that want it.
   `TriggerRequirement::AgendaPointsAtLeast` is an absolute threshold against a
   printed number; nothing asks whether one score area is ahead of the other.
   *(Iain Stirling: Retired Spook.)*
-- **Nothing describes a card by the TYPE OF ANOTHER card.** "Install another
-  card **of the same type**" needs a filter comparing a candidate against a
-  card an earlier occurrence names; `Quantity::LargestGroupSharingCardType`
-  answers a different question (how many of a set share a type) and no filter
-  reads back the type of the card that met the condition.
-  *(Hayley Kaplan: Universal Scholar.)*
 - **A description cannot say "or" between card TYPES.**
   `TargetFilter::HasAnySubtype` says it for subtypes, but `CardTypeIs` names
   exactly one and several filters together mean ALL of them — so "1 resource
@@ -113,14 +109,6 @@ these is a general kernel capability, stated with the identities that want it.
   many are needed. *(Harmony Medtech: Biomedical Pioneer; Issuaq Adaptics:
   Sustaining Diversity.)*
 
-- **No description reaches "that card" — the card an occurrence named.**
-  An `AbilityInstance` records which ability became pending and not which
-  change met it, so "place 1 agenda counter on **it**", "you may expose
-  **that card**", "install 1 card **of the same type**" have nothing to point
-  at. `TargetSpec` reaches the source, the host, the accessed card and the
-  encountered ice — every fixed relation but this one.
-  *(Titan Transnational: Investing In Your Future; 419: Amoral Scammer,
-  Hayley Kaplan, Poétrï Luxury Brands and Sebastião Souza Pessoa want it too.)*
 - **An ordinal cannot be SHARED between two conditions.**
   `AbilityDef::first_each_turn` belongs to one ability, and a sentence with
   two conditions is written as two abilities (Leela Patel class) — which is
@@ -152,7 +140,7 @@ these is a general kernel capability, stated with the identities that want it.
 
 ## Progress
 
-- Implemented: **52 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **55 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -160,11 +148,11 @@ Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable" Sintashta, Virtual
 Intelligence, P.I.
 
 
-## Runner — Criminal (9/22)
+## Runner — Criminal (10/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
-- [ ] **419: Amoral Scammer** — The first time the Corp installs a card each turn, you may expose that card unless the Corp pays 1[credit].
+- [x] **419: Amoral Scammer** — The first time the Corp installs a card each turn, you may expose that card unless the Corp pays 1[credit].
 - [x] **Andromeda: Dispossessed Ristie** — You draw a starting hand of 9 cards.
 - [ ] **Armand "Geist" Walker: Tech Lord** — Whenever you use a [trash] ability, draw 1 card.
 - [ ] **Az McCaffrey: Mechanical Prodigy** — The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.
@@ -187,7 +175,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [ ] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (5/21)
+## Runner — Shaper (6/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -199,7 +187,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
 - [ ] **Ele "Smoke" Scovak: Cynosure of the Net** — 1[recurring-credit] Use this credit to pay for using icebreakers.
 - [x] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
-- [ ] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
+- [x] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
 - [ ] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
 - [ ] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
 - [ ] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
@@ -337,7 +325,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (5/19)
+## Corp — Weyland Consortium (6/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -355,7 +343,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
 - [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
 - [ ] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
-- [ ] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.
+- [x] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.
 - [ ] **Weyland Consortium: Because We Built It** — 1[recurring-credit] Use this credit to advance ice.
 - [ ] **Weyland Consortium: Builder of Nations** — The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.
 - [x] **Weyland Consortium: Building a Better World** — Whenever you play a transaction operation, gain 1[credit].

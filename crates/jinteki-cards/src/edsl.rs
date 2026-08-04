@@ -1110,6 +1110,12 @@ pub fn this_card() -> TargetSpec {
 pub fn accessed_card() -> TargetSpec {
     TargetSpec::AccessedCard
 }
+/// "it" / "that card" — the card the OCCURRENCE that met this ability's
+/// condition named (1.15.4). Nothing is announced: the condition fixed the
+/// card, exactly as an access fixes [`accessed_card`].
+pub fn the_triggering_card() -> TargetSpec {
+    TargetSpec::TriggeringCard
+}
 /// "the ice you are encountering."
 pub fn encountered_ice() -> TargetSpec {
     TargetSpec::EncounteredIce
@@ -1673,6 +1679,11 @@ pub fn max_hand_size_mod(n: i32) -> StaticDecl {
 /// Division class — the same declaration, with the other scope.)
 pub fn each_players_max_hand_size_mod(n: i32) -> StaticDecl {
     StaticDecl::MaxHandSizeMod { whose: jinteki_cr::ability::DeclSubject::EachPlayer, amount: n }
+}
+/// "…another card **of the same type**" (Hayley Kaplan) — the same type as
+/// the card the occurrence that met this ability's condition named (1.15.4).
+pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
+    TargetFilter::SameCardTypeAsTriggeringCard
 }
 /// "…a facedown card" (1.13.2) — the plain question, in whatever zone the
 /// rest of the description names.

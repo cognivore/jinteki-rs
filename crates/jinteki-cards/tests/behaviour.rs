@@ -5693,3 +5693,183 @@ fn seidr_laboratories_acts_on_a_click_lost_during_a_run_not_only_one_spent() {
     );
     assert_eq!(vm.st.deck[&Side::Corp].len(), rnd.len() + 1, "and R&D grew by one: {}", t.tail(40));
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — "it" and "that card": CR 1.15.4's back-reference
+// ---------------------------------------------------------------------------
+
+/// Titan Transnational: "Whenever you score an agenda, you may place 1 agenda
+/// counter on it."
+///
+/// "It" is the agenda that was scored, and nothing is announced — the
+/// condition already fixed which card the sentence is about. The proof is
+/// that a SECOND agenda sitting in the score area is left alone, and that no
+/// target announcement is ever put to anyone.
+#[test]
+fn titan_transnational_counters_the_agenda_it_just_scored_and_no_other() {
+    let mut vm = Vm::empty(6130);
+    tk::install_identity(&mut vm, card("Titan Transnational: Investing In Your Future"), Side::Corp);
+    // One already in the score area, so "it" has a wrong answer available.
+    let old = vm.new_object(tk::vanilla_agenda("Old Agenda", 3, 2), Zone::ScoreArea(Side::Corp));
+    vm.st.score_area.get_mut(&Side::Corp).unwrap().push(old);
+    let scored =
+        tk::install_root(&mut vm, tk::vanilla_agenda("New Agenda", 3, 2), ServerId::Remote(1), false);
+    vm.st.objects.get_mut(&scored).unwrap().counters.insert(CounterKind::Advancement, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid(), Reply::score(scored))
+            .when(Match::reaction().offering("titan"), Reply::take("titan"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        t.of_kind(Kind::Targets).is_empty(),
+        "nothing was announced — 1.15.4's 'it' is fixed by the condition: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&scored].counters.get(&CounterKind::Agenda).copied().unwrap_or(0),
+        1,
+        "the agenda just scored carries the counter: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&old].counters.get(&CounterKind::Agenda).copied().unwrap_or(0),
+        0,
+        "and the one already in the score area does not: {}",
+        t.tail(30)
+    );
+}
+
+/// 419: Amoral Scammer — "The first time the Corp installs a card each turn,
+/// you may expose that card unless the Corp pays 1[credit]."
+///
+/// Three things at once: "that card" is the card the Corp just installed and
+/// not some other facedown card on the board; the Corp's 1[credit] stops the
+/// exposure; and the ordinal means a second install the same turn offers
+/// nothing.
+#[test]
+fn four_one_nine_exposes_the_first_corp_install_unless_the_corp_pays() {
+    for corp_pays in [false, true] {
+        let mut vm = Vm::empty(6131);
+        tk::install_identity(&mut vm, card("419: Amoral Scammer"), Side::Runner);
+        // A decoy: another facedown Corp card, which "that card" must not reach.
+        let decoy = tk::install_root(&mut vm, tk::vanilla_asset("Decoy", 0, 2), ServerId::Remote(9), false);
+        let first = vm.new_object(tk::vanilla_asset("First Install", 0, 2), Zone::Hand(Side::Corp));
+        let second = vm.new_object(tk::vanilla_asset("Second Install", 0, 2), Zone::Hand(Side::Corp));
+        for id in [first, second] {
+            vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+        }
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(first)))
+                .when(Match::of(Kind::NestedCost).once(), Reply::PayCost(corp_pays))
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(second)))
+                .stop_at_action(),
+            Plan::runner().when(Match::reaction().offering("419"), Reply::take("419")),
+        );
+        let exposed: Vec<_> = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::CardExposed { obj } => Some(*obj),
+                _ => None,
+            })
+            .collect();
+        if corp_pays {
+            assert!(
+                exposed.is_empty(),
+                "1[credit] from the Corp stopped the exposure altogether: {}",
+                t.tail(40)
+            );
+            assert_eq!(vm.st.corp.credits, 4, "and cost them the credit: {}", t.tail(40));
+        } else {
+            assert_eq!(
+                exposed,
+                [first],
+                "the card just installed was exposed — not the decoy, and not the second \
+                 install, which is no longer 'the first time each turn': {}",
+                t.tail(40)
+            );
+            assert_eq!(vm.st.corp.credits, 5, "the Corp declined and kept its credit: {}", t.tail(40));
+        }
+        assert!(
+            !exposed.contains(&decoy) && !exposed.contains(&second),
+            "1.15.4's 'that card' reaches exactly one card (corp_pays={corp_pays}): {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// Hayley Kaplan: "The first time you install a card each turn, you may
+/// install another card of the same type from your grip (paying its install
+/// cost)."
+///
+/// "Of the same type" is read off the card the condition named, so the grip
+/// is offered exactly the cards matching it: installing a PROGRAM offers the
+/// other program and never the hardware beside it, and the install really
+/// pays its cost.
+#[test]
+fn hayley_kaplan_offers_only_the_grip_cards_sharing_the_installed_cards_type() {
+    let mut vm = Vm::empty(6132);
+    tk::install_identity(&mut vm, card("Hayley Kaplan: Universal Scholar"), Side::Runner);
+    let mut mk = |name: &'static str, ty: CardType, cost: u32| {
+        let mut c = tk::vanilla_runner_card(name, ty);
+        c.cost = Some(cost);
+        if ty == CardType::Program {
+            c.memory_cost = Some(1);
+        }
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    let first_program = mk("First Program", CardType::Program, 0);
+    let second_program = mk("Second Program", CardType::Program, 2);
+    let hardware = mk("Some Hardware", CardType::Hardware, 0);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(first_program)))
+            .when(Match::reaction().offering("universal scholar"), Reply::take("universal scholar"))
+            .stop_at_action(),
+    );
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "one card was chosen from the grip: {}", t.tail(40));
+    assert_eq!(
+        announcements[0].candidates(),
+        [second_program],
+        "only the grip card of the SAME type is a candidate — the hardware is not: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&second_program].zone,
+        Zone::Rig,
+        "and it was really installed: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&hardware].zone,
+        Zone::Hand(Side::Runner),
+        "the hardware stayed in the grip: {}",
+        t.tail(40)
+    );
+    assert_eq!(vm.st.runner.credits, 3, "'paying its install cost' — 2 was paid: {}", t.tail(40));
+}

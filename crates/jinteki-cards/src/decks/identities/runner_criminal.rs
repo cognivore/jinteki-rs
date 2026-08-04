@@ -9,6 +9,41 @@
 
 use crate::edsl::*;
 
+/// 419: Amoral Scammer — Identity: Natural. Link 1.
+/// "The first time the Corp installs a card each turn, you may expose that
+///  card unless the Corp pays 1[credit]."
+///
+/// COMPLETE. 8.5's install with no stipulation about what was installed, and
+/// 9.6.5c's ordinal about the occurrence.
+///
+/// "That card" is 1.15.4's back-reference to the card the OCCURRENCE named,
+/// so nothing is announced — which is also what makes the sentence sayable
+/// at all. 1.21.4 restricts exposing to installed UNREZZED cards, and a bare
+/// "expose 1 card" would have to describe candidates, which is words the card
+/// does not print; here the condition fixes the card and the restriction is
+/// simply honoured when the exposure resolves.
+///
+/// The printed "you may" is the whole ability, so it is 9.6.9's declinable
+/// conditional and the decision is the Runner's (9.1.1a); "unless the Corp
+/// pays 1[credit]" is 1.16.9's alternative cost put to the player the
+/// sentence names, so the Corp answers second and only if the Runner said
+/// yes.
+pub fn amoral_scammer() -> Card {
+    card("419: Amoral Scammer")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .link(1)
+        .text("The first time the Corp installs a card each turn, you may expose that card unless the Corp pays 1[credit].")
+        .may_when_first_each_turn(
+            installs_a_card(Corp),
+            [unless_pays(Corp, credits(1), expose(the_triggering_card()))],
+        )
+        .named("the first corp install of the turn")
+        .build()
+}
+
 /// Gabriel Santiago: Consummate Professional — Identity: Cyborg. Link 0.
 /// "The first time you make a successful run on HQ each turn, gain 2[credit]."
 ///
@@ -204,6 +239,7 @@ pub fn virtual_intelligence_pi() -> Card {
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        amoral_scammer(),
         gabriel_santiago(),
         los(),
         liza_talking_thunder(),

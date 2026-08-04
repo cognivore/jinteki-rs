@@ -1392,6 +1392,15 @@ pub enum TargetSpec {
     MaintainedChoice(&'static str),
     /// The ice currently being encountered (Forked class).
     EncounteredIce,
+    /// CR 1.15.4: "…place 1 agenda counter on **it**" / "…you may expose
+    /// **that card**" — the card the OCCURRENCE that met this ability's
+    /// condition named. Nothing is announced: the condition fixed the card,
+    /// exactly as an access fixes [`TargetSpec::AccessedCard`] and an
+    /// encounter fixes [`TargetSpec::EncounteredIce`]. A condition that names
+    /// no card, or an ability resolving for some other reason, reaches
+    /// nothing — the same "acts on nothing" a stranded self-reference gets
+    /// under 9.1.4.
+    TriggeringCard,
     /// Chosen by the controller at announce time from the shared filter
     /// vocabulary. Several atoms combine as a conjunction, exactly as a
     /// search's 8.7.2a criteria do — "an installed program" is
@@ -1446,6 +1455,7 @@ impl TargetSpec {
             | TargetSpec::AccessedCard
             | TargetSpec::MaintainedChoice(_)
             | TargetSpec::EncounteredIce
+            | TargetSpec::TriggeringCard
             | TargetSpec::TopOfDeck { .. }
             | TargetSpec::FoundBySearch
             | TargetSpec::EarlierTarget { .. }
@@ -1519,6 +1529,13 @@ pub enum TargetFilter {
     /// something only the Corp does, so only a Corp card has a rez state to
     /// be in. This mirrors [`TargetFilter::Rezzed`]'s own Corp restriction.
     Unrezzed,
+    /// CR 1.15.4 + 2.15: "…another card **of the same type**" (Hayley Kaplan)
+    /// — the same type as the card the OCCURRENCE that met this ability's
+    /// condition named. A card has exactly one type, so this is an equality
+    /// and not a list. With no such card (a condition naming none, or an
+    /// ability resolving for another reason) nothing matches, which is the
+    /// same "reaches nothing" a stranded self-reference gets under 9.1.4.
+    SameCardTypeAsTriggeringCard,
     /// CR 1.13.2: a card that is FACEDOWN — its back face is the one showing,
     /// wherever it is. Not [`TargetFilter::Unrezzed`], which 8.1.2 restricts
     /// to installed Corp cards: 10.3.1a puts a card the Corp trashes into
