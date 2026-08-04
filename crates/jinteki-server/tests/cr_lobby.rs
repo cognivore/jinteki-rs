@@ -453,7 +453,12 @@ async fn two_humans_play_and_neither_sees_the_others_grip() {
     //    mandatory draw), so it discards — a decision the Runner is shown
     //    nothing of, not even that it is happening to cards it could name.
     settle(&mut corp, &mut runner).await;
-    if corp.msg().contains("Discard") {
+    // 5.5.4c is staged and then confirmed, so the wording of its first phase
+    // is "choose … to discard"; matched case-insensitively so a sentence that
+    // is allowed to be rewritten cannot silently skip this whole step (it
+    // did: the `if` stopped matching, the discard was never answered, and the
+    // failure surfaced three assertions later as "it is still the Corp's turn").
+    if corp.msg().to_lowercase().contains("discard") {
         assert!(runner.msg().contains("Waiting"), "the Runner just waits");
         let uuid = corp.prompt()["choices"][0]["uuid"].as_str().unwrap().to_string();
         corp.choose(&uuid).await;

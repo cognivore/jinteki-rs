@@ -224,6 +224,14 @@ pub fn viewable_zones(remotes: &[ServerId]) -> Vec<Zone> {
         Zone::PlayArea(Side::Runner),
         Zone::SetAside,
         Zone::RemovedFromGame,
+        // CR 1.5.4a: the additional-identities pile. It is a zone a player
+        // may LOOK AT at any time, so it has to be enumerated here or the
+        // View never contains its cards at all and `sees()` answers false
+        // for every one of them — whatever `identity_visible_to` says. That
+        // is what made Rebirth offer "Unseen card 2 … 7" instead of the
+        // identities the Runner brought and is entitled to read.
+        Zone::OutsideGame(Side::Corp),
+        Zone::OutsideGame(Side::Runner),
     ];
     for s in [ServerId::Hq, ServerId::Rnd, ServerId::Archives] {
         z.push(Zone::Root(s));

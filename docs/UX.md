@@ -27,6 +27,37 @@ conflict.
    to use — not a button naming it. A legal target is a GOLD outline
    (`.selectable`). Two different questions, two colours, never merged.
 
+   A third colour answers a third question. Gold and green say *what you
+   may do*; WHITE says *what the game is waiting on you for*, and it is
+   never an affordance. It lands in two places and means one thing:
+
+   * `.priority` on an identity — **that seat owes the next word**,
+     continuously, including while they are only choosing an action on
+     their own turn. Both identities are drawn, but the identity card
+     column exists only where the screen is tall enough (`.identity-col`
+     is hidden under 640px), so the seat rail's `.idchip` is the copy that
+     must always carry it.
+   * `.staged` on a card — **marked by you, not yet done**. See §8.
+
+   A hueless white, so neither amber nor acid green can be confused with it.
+
+   The corollary: a prompt may only fall silent about a card **because the
+   board is already showing it**. That test is the server's `on_screen`, one
+   function, used by every prompt that considers keeping quiet — a zone the
+   board draws as cards *and* a face this viewer may see. If it were two
+   tests they would drift, and a drifted test is a question with no answer
+   anywhere on screen.
+
+3b. **Nothing that merely shows you something may hold the board hostage.**
+   Every reader closes by tapping away from it — on pointer and on touch,
+   via `pointerdown` (a long-press opens a reader with the pointer already
+   down, so no `click` is ever synthesised) — and by Escape. A reader that
+   is also a decision steps aside instead of discarding it, leaving a way
+   back. The one preview that cannot be tapped through (`.hover-preview` is
+   `pointer-events: none` by design) is tied to the element it belongs to
+   and dies with it, because a re-render destroys hovered elements without
+   ever firing `mouseleave`.
+
 4. **Chips are the exception, and only for crowding.** When too much ice
    protects one server to show as cards, that stack — and only that stack —
    collapses to chips. Nothing else may.
@@ -39,6 +70,34 @@ conflict.
    icebreaker" with no icebreaker left says so — a prompt that silently does
    not appear is indistinguishable from a bug, and players reported exactly
    that about Mutual Favor.
+
+7. **An irreversible choice is staged, then confirmed.** MTG Arena's
+   discard, and for MTG Arena's reason: 5.5.4c cannot be taken back, and it
+   is the one decision a player makes with no clicks left and their mind
+   already on next turn. So the taps MARK cards (white, `.staged`), the
+   sentence changes to name what is about to happen, and a separate button
+   does it. Every other card choice is an *announcement* (CR 1.15.2) with
+   nothing yet to undo, and those still commit on the last pick — staging
+   everything would be ceremony, staging nothing was a trap.
+
+8. **In a fan, the first tap focuses and the second acts.** A bounded fan
+   shows nine cards in the width five used to, so a resting card is a 16px
+   strip and a strip is far below the 48px a tap target has to be. The first
+   tap brings a card to focus, where it is 78px wide and lifted clear of its
+   neighbours; the second tap is the one that plays, marks or picks it. On a
+   pointer device the focus simply follows the mouse (MTGA), so the two taps
+   are only ever two on touch. Cards outside the window are reached by the
+   rail, by the peeks, by a swipe that scrubs the window — the frame stays
+   put and the cards flow THROUGH it, never sliding the hand off the table —
+   or, on a pointer, by hovering the fan's outer edge.
+
+9. **What a rule entitles you to see, you are SHOWN.** CR 7.1.2 lets the
+   Runner look at a card they are accessing; most accesses ask them nothing,
+   so for most accesses the card existed only as a line in the log drawer.
+   An entitlement discharged into a log is not discharged. The card is
+   snapshot when the entitlement is live (`state.accessed`) — by the time a
+   state is pushed the access is over and `vm.st.accessed` is already null —
+   and carried until the player has dismissed it.
 
 ## The lessons, and where each one lives
 

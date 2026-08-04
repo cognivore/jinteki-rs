@@ -473,6 +473,44 @@ function isSelectCandidate(cid) {
 }
 function actionsFor(cid) { return ACTIONS.filter((a) => a.cid === cid); }
 
+/* THE LAW §3, in one place, so nothing that draws a card can disagree with
+   anything else that draws the same card:
+     GOLD  (.selectable) — a legal TARGET for the question being asked
+     GREEN (.usable)     — an ability on this card you can use RIGHT NOW
+     TEAL  (.legal)      — an ordinary action is available on it
+   A target is the only question on the table while it is being asked, so a
+   candidate is gold and never green. Identities are cards and go through
+   this too — their chip in the seat rail is the only copy of them a phone
+   draws at all, so if the ladder lived only inside `cardEl` an identity's
+   own ability would be usable nowhere. */
+function glowClass(cid) {
+  if (cid == null) return "";
+  if (isSelectMode()) {
+    if (!isSelectCandidate(cid)) return "";
+    const p = myPrompt() || {};
+    // WHITE (.staged) — marked by you, not yet done, still yours to take
+    // back. The third colour, and the same meaning it has on an identity:
+    // the game is waiting on your word.
+    if ((p["select-picked"] || []).includes(cid)) {
+      // A staged card is WHITE and nothing else — `.picked` is the gold
+      // "counted towards the announcement" mark, and gold over white would
+      // say both things at once.
+      return p["select-kind"] === "discard" ? "staged" : "selectable picked";
+    }
+    return "selectable";
+  }
+  if (promptChoicesFor(cid).length) return "usable";
+  if (actionsFor(cid).length) return "legal";
+  return "";
+}
+
+/* WHITE — a third thing, and not one of the three above (UX.md THE LAW §3).
+   Gold and green answer "what can I do"; white answers "is the game waiting
+   on ME". It rides the identities, both of them, continuously: the seat whose
+   identity is shimmering white owes the next word, including when that word
+   is just which action to take on their own turn. */
+function hasPriority(side) { return !!S && S.priority === side; }
+
 function dirty(key, val) {
   const s = JSON.stringify(val);
   if (sectionCache[key] === s) return false;
@@ -499,18 +537,22 @@ function render() {
   // Seat orientation: YOUR territory renders on YOUR half of the board,
   // adjacent to your bar and hand; the opponent's on theirs.
   $("board").classList.toggle("flipped", mySide === "corp");
+  // A preview whose card was just redrawn out from under the pointer has no
+  // `mouseleave` coming: reap it here, before anything rebuilds a subtree.
+  section("hover", reapHoverPreview);
   section("bars", renderBars);
   section("servers", () => {
-    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt()])) renderServers();
+    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority])) renderServers();
   });
   section("rig", () => {
-    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt()])) renderRig();
+    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt(), S.priority])) renderRig();
   });
   section("hand", () => {
     if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
   });
   section("play area", renderPlayRail);
   section("the prompt", renderPrompt);
+  section("access", renderAccessReveal);
   section("actions", renderChips);
   section("end turn", renderTurnBtn);
   section("run controls", renderRunControls);
@@ -561,9 +603,20 @@ function barHtml(st, side, isOpp) {
   const s = sideStats(st, side);
   const clicks = "●".repeat(Math.max(0, st.click || 0)) || "–";
   const art = idt.code ? ` style="background-image:url(${cardImgUrl(idt.code)})"` : "";
+  // The identity IS a card, and the seat rail's chip is the only copy of it
+  // that is drawn in every layout — the identity card column is hidden
+  // outright on a phone (`.identity-col { display: none }` under 640px), so
+  // the chip is the one that has to carry both signals:
+  //   white = this seat has priority (whose decision it is, continuously)
+  //   green = this identity has an ability that can be used right now
+  // Both come from the same places every other card's do, so they cannot
+  // say something the board does not.
+  const glow = idt.cid != null ? glowClass(idt.cid) : "";
+  const chip = ["idchip", hasPriority(side) ? "priority" : "", glow]
+    .filter(Boolean).join(" ");
   // MTGA-style corner cluster: tappable identity art + compact stat chips.
   return `
-    <span class="idchip" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
+    <span class="${chip}" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
     <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
     <span class="stat" title="clicks remaining">${clicks}</span>
     <span class="stat zones">
@@ -606,12 +659,15 @@ document.addEventListener("click", (e) => {
   zoomPile(st.discard || [], `${ZONE(side, "discard").label} (${(st.discard || []).length})`);
 });
 
-// Tap an identity thumb to read the identity card.
+// Tap an identity chip. It is a card, so it answers like one: an ability
+// that is on offer is taken, a legal target is picked, and otherwise the tap
+// reads the card — exactly what tapping the identity card itself does,
+// through the same `onCardTap`, because a phone draws no identity card.
 document.addEventListener("click", (e) => {
   const chip = e.target.closest(".idchip");
   if (!chip || !S) return;
   const st = S[chip.dataset.side];
-  if (st && st.identity) zoomCard(st.identity);
+  if (st && st.identity) onCardTap(st.identity, { identity: true }, chip);
 });
 
 // Tap AP to see the agendas behind the number (both sides' score areas are
@@ -645,7 +701,11 @@ function renderServers() {
     nm.className = "sname";
     nm.textContent = "Identity";
     idcol.appendChild(nm);
-    idcol.appendChild(cardEl(corp.identity, { side: "corp", identity: true }));
+    const idEl = cardEl(corp.identity, { side: "corp", identity: true });
+    // The same white the seat rail's chip carries, on the card where the
+    // layout is wide enough to draw one. One signal, two places it can land.
+    if (hasPriority("corp")) idEl.classList.add("priority");
+    idcol.appendChild(idEl);
     wrap.appendChild(idcol);
   }
   Object.keys(servers).sort((a, b) => SERVER_ORDER(a) - SERVER_ORDER(b)).forEach((key) => {
@@ -686,20 +746,34 @@ function renderServers() {
         S.run && (S.run.phase === "encounter-ice" || S.run.phase === "approach-ice");
       const sliver = document.createElement("div");
       const rezzed = !!c.rezzed && c.title;
-      sliver.className = "ice-sliver" + (rezzed ? " rezzed" : "") + (isCurrent ? " current" : "");
+      // THE LAW §4/§5: the stack collapses to chips for space, and a chip is
+      // STILL A CARD. It therefore carries the same glow ladder every card
+      // does and answers the same questions — without this an ice was the one
+      // place the server could say "the board is showing it" and the board
+      // would light nothing and accept nothing, leaving a choose-an-ice
+      // prompt with no answer on screen anywhere.
+      const glow = glowClass(c.cid);
+      sliver.className = "ice-sliver" + (rezzed ? " rezzed" : "") + (isCurrent ? " current" : "") +
+        (glow ? " " + glow : "");
       const subsN = (c.subroutines || []).length;
       sliver.innerHTML = `<span class="iname">${rezzed ? c.title : "?"}</span>` +
         (rezzed ? `<span class="imeta">${c.strength ?? ""}${subsN ? " · " + "↳".repeat(subsN) : ""}</span>` : "");
       let t = null, fired = false;
+      // A tap answers where there is something to answer; otherwise it reads.
+      const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
       sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; zoomCard(c); }, 380); });
-      sliver.addEventListener("pointerup", () => { clearTimeout(t); if (!fired) zoomCard(c); });
+      sliver.addEventListener("pointerup", () => {
+        clearTimeout(t);
+        if (fired) return;
+        if (answerable) onCardTap(c, { ice: true }, sliver); else zoomCard(c);
+      });
       sliver.addEventListener("pointerleave", () => clearTimeout(t));
       sliver.addEventListener("pointercancel", () => clearTimeout(t));
       sliver.addEventListener("contextmenu", (e) => e.preventDefault());
       // THE LAW §5: a chip is still a card — hover reads it on a pointer
       // device, exactly as hovering the card it stands for would.
       if (hoverCapable) {
-        sliver.addEventListener("mouseenter", () => showHoverPreview(c));
+        sliver.addEventListener("mouseenter", () => showHoverPreview(c, sliver));
         sliver.addEventListener("mouseleave", hideHoverPreview);
       }
       stack.appendChild(sliver);
@@ -778,121 +852,307 @@ function renderRig() {
     if (k === "program" && runner.identity) {
       const idEl = cardEl(runner.identity, { side: "runner", identity: true });
       idEl.classList.add("identity-col");
+      if (hasPriority("runner")) idEl.classList.add("priority");
       row.appendChild(idEl);
     }
     rigEl.appendChild(row);
   });
 }
 
-/* The hand: a WINDOW of at most 5 cards, with a rail to move it.
+/* ══ THE FAN ═════════════════════════════════════════════════════════════
  *
- * A centre-anchored fan grows outward as the hand grows, so past ~6 cards it
- * slides under the action bar and the run controls on every iPhone in
- * landscape — and Netrunner hands do not stay small. Andromeda opens on 9,
- * and a deck that goes infinite draws itself.
+ * A bounded window over a list of cards, with peeks, a rail, hover-scroll on
+ * a pointer and a momentum swipe on touch. ONE implementation, used by two
+ * callers, because the hand and the prompt's card row are the same object
+ * seen twice — and the prompt row was the proof: it was still a plain flex
+ * strip that scrolled sideways, which is exactly the failure the hand was
+ * rebuilt to fix. Rebirth (CR 1.5.4a) offers up to 22 identities; a
+ * choose-1-of-22 as a horizontal scroll bar is not a choice, it is a search.
  *
- * So the fan is bounded, not elastic (MTG Arena's solution): at most
- * HAND_WINDOW cards are laid out at once, the focused card sits in the
- * middle, and its neighbours peek in from either side so you can see there
- * IS more hand. The rail underneath moves the window and is deliberately
- * large — it is the one control that is useless if you cannot hit it.
+ * A centre-anchored fan grows outward as its list grows, so past a few cards
+ * it slides under the action bar and the run controls on every iPhone in
+ * landscape. The fix is MTG Arena's: the fan is BOUNDED, not elastic. At most
+ * FAN_WINDOW cards are laid out at once, the focused one sits in the middle
+ * standing proud of its neighbours, and the cards either side peek in so it
+ * is visible that there IS more.
+ *
+ * THE ARITHMETIC (ui/style.css keeps the constants; this is why they are what
+ * they are). The hand is centre-anchored and `.action-bar`/`.run-controls`
+ * are bounded to `calc(50vw - 122px)` at `left: 10px`, so the nearest either
+ * bar can come to the centre line is `50vw - 112px`: the fan's half-width
+ * must stay under 112px AT EVERY VIEWPORT WIDTH — which is why widening the
+ * phone never bought the hand a single pixel.
+ *
+ *     card 44 x 61, step 18 (margin 0 -13px), peek 12, window 9
+ *     row = 44 + 8*18 + 2*12 = 212px      half = 106px  <= 112  ✓
+ *
+ * 212px is EXACTLY what the old five-card fan occupied (60 + 4*28 + 2*20).
+ * Nothing got wider; nine cards now live where five did. The clearance is
+ * 6px per side on every device, because the budget is width-independent:
+ *
+ *     iPhone SE      667x375   50vw=333.5  bar edge 221.5  fan 229.5..437.5
+ *     iPhone 15      852x393   50vw=426    bar edge 314    fan 322..530
+ *     iPhone 15 PM   932x430   50vw=466    bar edge 354    fan 362..570
+ *     SE portrait    375x667   50vw=187.5  bar edge  75.5  fan  83.5..291.5
+ *
+ * THE COST, stated: an unfocused card shows an 18px strip of a 44px card, and
+ * an 18px strip is not the 48px tap target the rest of this UI holds to. So
+ * tapping a specific unfocused card is NOT the interaction. Moving the focus
+ * is — the rail's 44px chevrons, its 40px scrub track, the peeks, hover-scroll
+ * on a pointer, swipe on touch — and the focused card, at 57x79 and lifted
+ * clear of its neighbours, is the target. Tapping it raises it to 88x122, the
+ * same size the raised card has always been. This is Hearthstone's own
+ * big-hand behaviour and it is a deliberate deviation, recorded in UX.md.
  */
-const HAND_WINDOW = 5;
-let handFocus = 0;
+const FAN_WINDOW = 9;
 
-function renderHand() {
-  const handEl = $("hand");
-  handEl.innerHTML = "";
-  const cards = me().hand || [];
-  if (!cards.length) { hideHandRail(); return; }
+/* Per-fan state, keyed by caller ("hand", "prompt"). `repaint` is the
+ * caller's own redraw: a fan move is a LOCAL change and must not push a
+ * state or redraw the board (THE LAW §2). */
+const fans = {};
+function fanOf(key) {
+  if (!fans[key]) fans[key] = { focus: 0, total: 0, repaint: null };
+  return fans[key];
+}
+function fanGoto(key, i) {
+  const f = fanOf(key);
+  const next = Math.max(0, Math.min(i, Math.max(0, f.total - 1)));
+  if (next === f.focus) return;
+  f.focus = next;
+  fanStopHover();
+  // The caller's own housekeeping: the hand drops its raised card, or the
+  // focus would be dragged straight back to it by `pin` on the next draw.
+  if (f.onMove) f.onMove();
+  if (f.repaint) f.repaint();
+}
+function fanMove(key, d) { fanGoto(key, fanOf(key).focus + d); }
 
-  // Keep the focus inside the hand as cards are drawn and played, and keep
-  // a raised card in view — raising a card you cannot see would be a lie.
-  handFocus = Math.max(0, Math.min(handFocus, cards.length - 1));
-  if (raised != null) {
-    const ri = cards.findIndex((c) => c.cid === raised);
-    if (ri >= 0) handFocus = ri;
+/* A swipe must never also play a card. `cardEl`'s tap checks this, so one
+ * guard covers the hand, the prompt row and anything else drawn with a real
+ * card — the same class of hazard as a long-press that committed a choice. */
+let fanDragging = false;
+let fanTapUntil = 0;
+// A WINDOW, not a one-shot flag: the pointerup after a swipe may land on a
+// card, on a peek, or on nothing at all, and whichever it is must not be
+// treated as a tap. A flag consumed by the first of those would let the
+// others through.
+function fanSuppressesTap() { return performance.now() < fanTapUntil; }
+
+/* ── the pointer: the focus follows the mouse ────────────────────────────
+ * MTG Arena's hand does not wait to be told which card you mean — the card
+ * under the pointer rises out of the fan and is readable where it lies. So
+ * hovering a card FOCUSES it. Nothing scrolls: with the whole list in the
+ * window there is nothing to scroll to, and a hand that slid sideways every
+ * time the mouse crossed it would be unusable.
+ *
+ * Edge hover-scroll exists only for the case it was invented for — a list
+ * LONGER than the window — and only in the outer band. It reads the pointer's
+ * position off the HOST rather than hanging off the edge cards, because
+ * moving the window destroys the element the mouse was over and a
+ * `mouseleave` that never fires would strand the timer running forever
+ * (the hover preview's bug, which is not worth having twice). */
+let fanHover = { key: null, dir: 0, timer: null };
+function fanStopHover() {
+  if (fanHover.timer) clearInterval(fanHover.timer);
+  fanHover = { key: null, dir: 0, timer: null };
+}
+function fanHoverEdge(host, key, e) {
+  if (!hoverCapable || fanDragging) return;
+  const f = fanOf(key);
+  // Nothing off-window means nothing to scroll to.
+  if (f.total <= f.size) { fanStopHover(); return; }
+  const r = host.getBoundingClientRect();
+  const edge = Math.max(16, r.width * 0.14);
+  const dir = e.clientX < r.left + edge ? -1 : e.clientX > r.right - edge ? 1 : 0;
+  if (dir === fanHover.dir && key === fanHover.key) return;
+  fanStopHover();
+  if (!dir) return;
+  fanHover = { key, dir, timer: null };
+  fanHover.timer = setInterval(() => {
+    if (!host.isConnected) { fanStopHover(); return; }
+    const g = fanOf(key);
+    if ((dir < 0 && g.focus <= 0) || (dir > 0 && g.focus >= g.total - 1)) { fanStopHover(); return; }
+    fanGoto(key, g.focus + dir);
+  }, 340);
+}
+
+/* ── the swipe: scrub the WINDOW, never slide the hand ───────────────────
+ * The first attempt dragged the whole row sideways and sprang it back, which
+ * is not a hand — it is a strip of paper being pushed around a table. MTG
+ * Arena's hand is a CAROUSEL: the frame stays exactly where it is and the
+ * cards flow THROUGH it, one entering as another leaves, with the card you
+ * are on always in the middle.
+ *
+ * So the drag drives the FOCUS, continuously. A thumb travelling one card's
+ * step advances the focus by one and the row re-lays out one card over; all
+ * that is ever translated is the sub-step remainder, at most half a step, so
+ * the motion is smooth and yet the hand never leaves its place. The
+ * discontinuity at each half-step is exactly cancelled by the relayout — the
+ * two are the same movement counted twice, which is why it reads continuous.
+ *
+ * Past either end the remaining pull is damped to a third: an edge is felt.
+ * A flick carries momentum in proportion to its speed. `prefers-reduced-
+ * motion` drops the glide, never the snap — the snap is the correctness. */
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function fanGestures(host, key) {
+  // Attach ONCE per host. `renderFan` runs on every repaint, and a repaint
+  // happens on every step of a drag: re-wiring here would add a listener per
+  // card of travel and fire the whole stack of them on the next touch.
+  if (host.__fanwired) return;
+  host.__fanwired = true;
+  const rowOf = () => host.querySelector(".fanrow");
+
+  host.addEventListener("pointermove", (e) => fanHoverEdge(host, key, e));
+  host.addEventListener("pointerleave", fanStopHover);
+
+  host.addEventListener("pointerdown", (e) => {
+    if (e.button != null && e.button !== 0) return;
+    const f = fanOf(key);
+    if (f.total <= 1) return;
+    fanStopHover();
+    const step = f.step || 18;
+    const x0 = e.clientX, startFocus = f.focus;
+    let last = e.clientX, lastT = performance.now(), vel = 0, moved = false;
+
+    const paint = (dx, animate) => {
+      const row = rowOf();
+      if (!row) return;
+      // Where the thumb says we are, in cards; the integer part is the focus
+      // and the remainder is all that ever moves.
+      const want = startFocus - dx / step;
+      const target = Math.max(0, Math.min(Math.round(want), f.total - 1));
+      if (target !== fanOf(key).focus) fanGoto(key, target);
+      let slid = dx + (target - startFocus) * step;
+      // Only the part of the pull that ran out of hand is damped.
+      if (Math.abs(slid) > step / 2) slid = Math.sign(slid) * (step / 2 + (Math.abs(slid) - step / 2) * 0.33);
+      const r2 = rowOf();
+      if (!r2) return;
+      r2.style.transition = animate && !reduceMotion ? "transform .18s cubic-bezier(.22,.7,.3,1)" : "none";
+      r2.style.transform = `translateX(${slid}px)`;
+    };
+
+    const move = (ev) => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 8) return;
+      if (!moved) { moved = true; fanDragging = true; }
+      const now = performance.now();
+      const dt = Math.max(1, now - lastT);
+      vel = 0.7 * vel + 0.3 * ((ev.clientX - last) / dt);   // px/ms, smoothed
+      last = ev.clientX; lastT = now;
+      paint(dx, false);
+    };
+    const up = (ev) => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      if (!moved) return;
+      fanDragging = false;
+      fanTapUntil = performance.now() + 350;
+      // Momentum: 110ms of the release velocity, so a flick keeps going.
+      const dx = (ev.clientX - x0) + (reduceMotion ? 0 : vel * 110);
+      const want = startFocus - dx / step;
+      fanGoto(key, Math.max(0, Math.min(Math.round(want), fanOf(key).total - 1)));
+      const row = rowOf();
+      if (row) {
+        row.style.transition = reduceMotion ? "none" : "transform .2s cubic-bezier(.22,.7,.3,1)";
+        row.style.transform = "translateX(0)";
+      }
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+  });
+}
+
+/* Draw `cards` into `host` as a bounded fan.
+ *   key     — which fan's focus this is
+ *   build   — (card, index, focused, offsetFromMiddle) => the slot element
+ *   rail    — where the rail goes (an element), or null for none
+ *   pin     — a cid the focus must sit on (a raised hand card)
+ * The geometry comes from CSS custom properties, so it lives in one place. */
+function renderFan(host, cards, opts) {
+  const key = opts.key;
+  const f = fanOf(key);
+  f.total = cards.length;
+  f.repaint = opts.repaint || null;
+  f.onMove = opts.onMove || null;
+  host.classList.add("fan");
+  host.innerHTML = "";
+  const css = getComputedStyle(host);
+  f.step = parseFloat(css.getPropertyValue("--fstep")) || 18;
+  f.size = Math.min(opts.size || FAN_WINDOW, Math.max(1, cards.length));
+  if (!cards.length) { renderFanRail(opts.rail, key, 0, f.size); return; }
+
+  f.focus = Math.max(0, Math.min(f.focus, cards.length - 1));
+  if (opts.pin != null) {
+    const pi = cards.findIndex((c) => c.cid === opts.pin);
+    if (pi >= 0) f.focus = pi;
   }
-
-  // The window: HAND_WINDOW cards centred on the focus where possible,
-  // clamped at both ends so the last page is full rather than ragged.
-  const half = Math.floor(HAND_WINDOW / 2);
-  let start = Math.max(0, Math.min(handFocus - half, cards.length - HAND_WINDOW));
-  if (start < 0) start = 0;
-  const end = Math.min(cards.length, start + HAND_WINDOW);
+  const size = f.size;
+  const half = Math.floor(size / 2);
+  const start = Math.max(0, Math.min(f.focus - half, cards.length - size));
+  const end = Math.min(cards.length, start + size);
   const shown = cards.slice(start, end);
   const mid = (shown.length - 1) / 2;
 
+  // The row is the only thing a drag ever moves, and never by more than half
+  // a step; the host stays put, so the board's layout does not shift (§2).
+  const row = el("div", "fanrow");
   shown.forEach((c, i) => {
-    const el = cardEl(c, { side: mySide, hand: true });
-    const focused = (start + i) === handFocus;
-    if (raised === c.cid) {
-      el.classList.add("raised");
-    } else {
-      // Tighter than the old fan so the window stays inside the free band,
-      // with the focused card standing slightly proud of its neighbours.
-      const rot = (i - mid) * 4;
-      const lift = Math.abs(i - mid) * 4 + (focused ? -8 : 0);
-      el.style.transform = `rotate(${rot}deg) translateY(${lift}px)`;
-      if (focused) el.classList.add("focused");
+    const idx = start + i;
+    const slot = opts.build(c, idx, idx === f.focus, i - mid);
+    if (!slot) return;
+    // MTGA: the card under the pointer IS the card you mean, and it rises out
+    // of the fan to be read where it lies. Suspended while a card is raised
+    // (the raise owns the focus until it is put down) and while a drag is in
+    // flight (the drag drives the focus itself).
+    if (hoverCapable && opts.pin == null) {
+      slot.addEventListener("mouseenter", () => { if (!fanDragging) fanGoto(key, idx); });
     }
-    handEl.appendChild(el);
+    row.appendChild(slot);
   });
+  if (start > 0) row.prepend(fanPeek(cards[start - 1], "left", opts, key));
+  if (end < cards.length) row.append(fanPeek(cards[end], "right", opts, key));
+  host.appendChild(row);
 
-  // Half-cards at the edges: proof there is more hand, and a tap target to
-  // get to it without the rail.
-  if (start > 0) handEl.prepend(peekEl(cards[start - 1], "left", () => moveHandFocus(-1)));
-  if (end < cards.length) handEl.append(peekEl(cards[end], "right", () => moveHandFocus(1)));
-
-  renderHandRail(cards.length);
+  renderFanRail(opts.rail, key, cards.length, size);
+  fanGestures(host, key);
 }
 
-function peekEl(c, side, onTap) {
-  const w = el("div", "handpeek " + side);
-  w.appendChild(cardEl(c, { side: mySide, hand: true }));
-  w.onclick = (e) => { e.stopPropagation(); onTap(); };
+function fanPeek(c, side, opts, key) {
+  const w = el("div", "fanpeek " + side);
+  w.appendChild(cardEl(c, opts.cardOpts || {}));
+  w.onclick = (e) => {
+    e.stopPropagation();
+    if (fanSuppressesTap()) return;
+    fanMove(key, side === "left" ? -1 : 1);
+  };
   return w;
 }
 
-function moveHandFocus(d) {
-  const n = (me().hand || []).length;
-  handFocus = Math.max(0, Math.min(handFocus + d, n - 1));
-  raised = null;
-  renderHand();
-}
-
-function hideHandRail() {
-  const r = document.getElementById("hand-rail");
-  if (r) r.style.display = "none";
-}
-
-/* The rail. Big on purpose: it is how you reach most of your hand once the
- * hand outgrows the window, and a thin scrollbar on a phone is unusable. */
-function renderHandRail(total) {
-  let rail = document.getElementById("hand-rail");
-  if (!rail) {
-    rail = el("div", "hand-rail");
-    rail.id = "hand-rail";
-    document.getElementById("screen-game").appendChild(rail);
-  }
-  if (total <= HAND_WINDOW) { rail.style.display = "none"; return; }
+/* The rail. Deliberately large: it is the one way to reach the rest of a big
+ * list, and a hairline scrollbar on a phone is decoration, not a control. */
+function renderFanRail(rail, key, total, size) {
+  if (!rail) return;
+  const f = fanOf(key);
+  if (total <= (size || FAN_WINDOW)) { rail.style.display = "none"; return; }
   rail.style.display = "flex";
   rail.innerHTML = "";
 
   const left = el("button", "railbtn", "‹");
-  left.disabled = handFocus <= 0;
-  left.onclick = () => moveHandFocus(-1);
+  left.disabled = f.focus <= 0;
+  left.onclick = () => fanMove(key, -1);
 
   const right = el("button", "railbtn", "›");
-  right.disabled = handFocus >= total - 1;
-  right.onclick = () => moveHandFocus(1);
+  right.disabled = f.focus >= total - 1;
+  right.onclick = () => fanMove(key, 1);
 
-  // One pip per card, the focused one lit: the position in the hand is the
+  // One pip per card, the focused one lit: position in the list is the
   // information, and a count of cards is small enough to show honestly.
   const track = el("div", "railtrack");
   for (let i = 0; i < total; i++) {
-    const pip = el("div", "railpip" + (i === handFocus ? " on" : ""));
-    pip.onclick = () => { handFocus = i; raised = null; renderHand(); };
+    const pip = el("div", "railpip" + (i === f.focus ? " on" : ""));
+    pip.onclick = () => fanGoto(key, i);
     track.appendChild(pip);
   }
   // Drag anywhere along the track to scrub, which is faster than pips at 40
@@ -900,16 +1160,59 @@ function renderHandRail(total) {
   const scrub = (e) => {
     const r = track.getBoundingClientRect();
     const t = Math.min(1, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width)));
-    const i = Math.round(t * (total - 1));
-    if (i !== handFocus) { handFocus = i; raised = null; renderHand(); }
+    fanGoto(key, Math.round(t * (total - 1)));
   };
   track.addEventListener("pointerdown", (e) => { track.setPointerCapture(e.pointerId); scrub(e); });
   track.addEventListener("pointermove", (e) => {
     if (track.hasPointerCapture && track.hasPointerCapture(e.pointerId)) scrub(e);
   });
 
-  const count = el("div", "railcount", `${handFocus + 1}/${total}`);
+  const count = el("div", "railcount", `${f.focus + 1}/${total}`);
   rail.append(left, track, count, right);
+}
+
+function handRailEl() {
+  let rail = document.getElementById("hand-rail");
+  if (!rail) {
+    rail = el("div", "fanrail");
+    rail.id = "hand-rail";
+    document.getElementById("screen-game").appendChild(rail);
+  }
+  return rail;
+}
+
+function renderHand() {
+  const handEl = $("hand");
+  renderFan(handEl, me().hand || [], {
+    key: "hand",
+    rail: handRailEl(),
+    pin: raised,
+    repaint: renderHand,
+    // Moving the window puts a different card under your thumb, so the one
+    // you had raised is no longer the one you are looking at.
+    onMove: () => { raised = null; closeSheet(); },
+    cardOpts: { side: mySide, hand: true },
+    build: (c, idx, focused, off) => {
+      const node = cardEl(c, { side: mySide, hand: true, fanKey: "hand", fanIndex: idx });
+      if (raised === c.cid) {
+        node.classList.add("raised");
+      } else {
+        // A whisper of rotation, and the focused card lifted AND scaled clear
+        // of its neighbours: at an 18px step the resting cards are strips, so
+        // the focused one is the card you are actually reading. The scale is
+        // inline because the tilt is, and an inline transform is one string.
+        // A SHALLOW arc, MTGA's rather than a card-table fan: at nine cards
+        // a steep one dips the outer cards straight off the bottom of the
+        // screen, and every degree of tilt also widens the row's ink against
+        // a band that has none to spare.
+        const lift = Math.abs(off) * 1 + (focused ? -8 : 0);
+        node.style.transform =
+          `rotate(${off * 1.2}deg) translateY(${lift}px)` + (focused ? " scale(1.22)" : "");
+        if (focused) node.classList.add("focused");
+      }
+      return node;
+    },
+  });
 }
 
 function cardEl(c, opts) {
@@ -946,38 +1249,51 @@ function cardEl(c, opts) {
   }
 
   // legality glow (local mode) / select hint
-  const acts = actionsFor(c.cid);
-  // Green: this card has an option on offer RIGHT NOW. The board answers the
-  // window instead of a list of text buttons — nothing to read, nothing
-  // moves. Gold means "legal target for the question being asked", and while
-  // a target is what is being asked for, that is the ONLY question on the
-  // table: a candidate is gold and never green (THE LAW §3).
-  if (isSelectMode()) {
-    if (isSelectCandidate(c.cid)) el.classList.add("selectable");
-  } else if (promptChoicesFor(c.cid).length) {
-    el.classList.add("usable");
-  } else if (acts.length) {
-    el.classList.add("legal");
-  } else if (mode === "bridge" && !facedown && opts.hand) {
-    el.classList.add("legal");
-  }
+  const glow = glowClass(c.cid);
+  if (glow) el.classList.add(...glow.split(" "));
+  else if (mode === "bridge" && !facedown && opts.hand) el.classList.add("legal");
 
   // tap + long-press (mobile read gesture) + hover preview (desktop)
-  let pressTimer = null, longFired = false;
+  let pressTimer = null, longFired = false, pressX = 0, pressY = 0;
   el.addEventListener("pointerdown", (e) => {
     longFired = false;
+    pressX = e.clientX; pressY = e.clientY;
     pressTimer = setTimeout(() => { longFired = true; zoomCard(c); }, 420);
   });
-  el.addEventListener("pointerup", (e) => {
-    clearTimeout(pressTimer);
-    if (!longFired) onCardTap(c, opts, el);
+  // A pointer that has TRAVELLED is a swipe, not a press: cancel the read.
+  // Pointer capture during a fan drag lives on the document, so the card may
+  // never see `pointerleave` — this is the check that does not depend on it.
+  el.addEventListener("pointermove", (e) => {
+    if (!pressTimer) return;
+    if (Math.abs(e.clientX - pressX) > 8 || Math.abs(e.clientY - pressY) > 8) {
+      clearTimeout(pressTimer); pressTimer = null;
+    }
   });
-  el.addEventListener("pointerleave", () => clearTimeout(pressTimer));
-  el.addEventListener("pointercancel", () => clearTimeout(pressTimer));
+  el.addEventListener("pointerup", (e) => {
+    clearTimeout(pressTimer); pressTimer = null;
+    // …and a swipe that ENDED on this card is still a swipe. Same hazard as
+    // the long-press that used to commit a choice: a gesture must resolve to
+    // exactly one meaning.
+    if (fanSuppressesTap()) return;
+    if (longFired) return;
+    // TWO TAPS in a fan, MTGA's rule: the first brings the card to focus,
+    // the second acts on it. At a 16px step the resting cards are strips, and
+    // a strip is far below the 48px a tap target has to be — so a single tap
+    // there would be a misplay waiting to happen, on a decision (play a card,
+    // discard to hand size) that cannot be taken back. Once it is focused it
+    // is 78px wide and lifted clear, and THAT is the thing you tap.
+    if (opts.fanKey != null && fanOf(opts.fanKey).focus !== opts.fanIndex) {
+      fanGoto(opts.fanKey, opts.fanIndex);
+      return;
+    }
+    onCardTap(c, opts, el);
+  });
+  el.addEventListener("pointerleave", () => { clearTimeout(pressTimer); pressTimer = null; });
+  el.addEventListener("pointercancel", () => { clearTimeout(pressTimer); pressTimer = null; });
   // Suppress the iOS long-press callout / selection so the read gesture is ours.
   el.addEventListener("contextmenu", (e) => e.preventDefault());
   if (hoverCapable) {
-    el.addEventListener("mouseenter", () => showHoverPreview(c));
+    el.addEventListener("mouseenter", () => showHoverPreview(c, el));
     el.addEventListener("mouseleave", hideHoverPreview);
   }
   return el;
@@ -1034,7 +1350,16 @@ function cardInfoHtml(c) {
     ${(c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
 }
 
-function showHoverPreview(c) {
+/* The hover preview is the one thing on screen a click CANNOT close: it is
+   `pointer-events: none` by design, so the pointer reads the board through
+   it. That is fine while `mouseleave` is guaranteed to fire — and it is not.
+   Acting on a card pushes a new state, `renderServers`/`renderRig` rebuild
+   their subtrees, and the element the mouse was over is destroyed without
+   ever leaving: no `mouseleave`, no hide, and a preview pinned to the top
+   right of the board that no amount of clicking will shift. So the preview
+   remembers the element it belongs to and goes when that element does. */
+let hoverOwner = null;
+function showHoverPreview(c, owner) {
   let hp = document.getElementById("hover-preview");
   if (!hp) {
     hp = document.createElement("div");
@@ -1042,13 +1367,24 @@ function showHoverPreview(c) {
     hp.className = "hover-preview";
     document.body.appendChild(hp);
   }
+  hoverOwner = owner || null;
   hp.innerHTML = `<div class="zoom-card small">${cardInfoHtml(c)}</div>`;
   hp.style.display = "block";
 }
 function hideHoverPreview() {
+  hoverOwner = null;
   const hp = document.getElementById("hover-preview");
   if (hp) hp.style.display = "none";
 }
+/* Its owner left the DOM (or the board redrew under it): the preview goes
+   with it. Called once per frame — cheap, and it cannot get stuck. */
+function reapHoverPreview() {
+  if (hoverOwner && !hoverOwner.isConnected) hideHoverPreview();
+}
+// A press anywhere is an ACT, not a read: the preview is not what you are
+// looking at any more. Capture phase, so nothing can swallow it first.
+document.addEventListener("pointerdown", hideHoverPreview, true);
+window.addEventListener("blur", hideHoverPreview);
 
 /* ── interactions ────────────────────────────────────────────────────── */
 /* The options on offer that live on this card (server sends `cid` on each
@@ -1182,6 +1518,7 @@ document.addEventListener("pointerdown", (e) => {
 });
 
 /* ── prompts ─────────────────────────────────────────────────────────── */
+let promptFanKey = null;
 function renderPrompt() {
   const sheet = $("prompt-sheet");
   const p = myPrompt();
@@ -1196,6 +1533,12 @@ function renderPrompt() {
   // Bloo Moose are two buttons reading "Bloo Moose" and no way to tell them
   // apart; as cards they are simply two cards. This outranks the picker: a
   // list of REAL cards is never a search box, however long it is.
+  // A new decision is a new list: the fan starts at its first card rather
+  // than wherever the last question left the window. (The uuids carry the
+  // per-decision stamp the server puts on them, so this cannot false-negative
+  // on two consecutive prompts that happen to look alike.)
+  const pkey = `${p.msg}|${choices.map((ch) => ch.uuid).join(",")}`;
+  if (promptFanKey !== pkey) { promptFanKey = pkey; fanOf("prompt").focus = 0; }
   if (p.arrange && p.arrange.length > 1) { renderArrangePrompt(sheet, p); return; }
   if (p["select-cards"]) { renderSelectPrompt(sheet, p, choices); return; }
   if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
@@ -1348,43 +1691,70 @@ function makeDraggable(wrap, cid, repaint) {
    to see it, or the option names no card at all — "No action", "Done") stay
    as chips underneath, so nothing is ever lost by rendering cards. */
 function renderCardPrompt(sheet, p, choices) {
-  const withCards = choices.filter((ch) => ch.card);
-  sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
-    <div class="cardprompt${withCards.length > 8 ? " many" : ""}"></div><div class="pbtns"></div>`;
-  const row = sheet.querySelector(".cardprompt");
-  const btns = sheet.querySelector(".pbtns");
-  const mid = (withCards.length - 1) / 2;
-  withCards.forEach((ch, i) => {
-    const wrap = document.createElement("div");
-    wrap.className = "cardpick";
-    const node = cardEl(ch.card, { side: mySide });
-    // A far wider arc than the hand's 6°, so the set reads as laid out
-    // rather than held. Beyond a few cards it flattens completely. The tilt
-    // rides the WRAPPER, leaving the card's own transform free for the hover
-    // lift and the picked state (an inline transform beats any stylesheet).
-    const rot = withCards.length > 5 ? 0 : (i - mid) * 2.2;
-    if (rot) wrap.style.transform = `rotate(${rot}deg)`;
-    // THE LAW §3: green = an ability you can use now, gold = a legal target.
-    // A select prompt is asking for TARGETS, so its cards are gold, and they
-    // are the same gold the board paints on the same cards.
-    node.classList.add(isSelectMode() ? "selectable" : "usable");
-    wrap.appendChild(node);
-    // A card the viewer is not entitled to see has nothing on its face, so
-    // its caption is the only thing telling two of them apart — it stays.
-    if (!ch.card.title) wrap.classList.add("blind");
-    wrap.appendChild(el("div", "cardpick-label", sym(String(ch.value))));
-    // The tap is the CARD's own (cardEl wires it): one handler, so a
-    // long-press to read can never also commit the choice, and the board and
-    // the prompt answer the same way.
-    row.appendChild(wrap);
+  // Where the board is ALREADY drawing every one of these cards, drawing them
+  // again in a sheet on top of the board is the same question twice — and the
+  // second copy covers the very cards it is asking about. A reaction window on
+  // Daily Casts, with Daily Casts sitting in the rig two inches away already
+  // outlined green, needs no picture of Daily Casts: it needs the sentence,
+  // the label, and the shimmer that is already there (THE LAW §3). The server
+  // decides, from the same `on_screen` the select path uses.
+  const onboard = p["choices-onboard"] === true;
+  const withCards = onboard ? [] : choices.filter((ch) => ch.card);
+  const { row, btns } = promptSheetFrame(sheet, p);
+  if (onboard) {
+    row.appendChild(el("div", "picker-hint onboard", "Tap the card outlined in green — or use a label below."));
+  }
+  renderFan(row, withCards, {
+    key: "prompt",
+    rail: sheet.querySelector(".fanrail"),
+    repaint: () => renderCardPrompt(sheet, p, choices),
+    cardOpts: { side: mySide },
+    build: (ch, idx, focused, off) => {
+      const wrap = el("div", "cardpick");
+      const node = cardEl(ch.card, { side: mySide });
+      // A far shallower arc than the hand's: a fan reads as "yours, held",
+      // and these are a set being OFFERED. The tilt rides the WRAPPER,
+      // leaving the card's own transform free for the hover lift and the
+      // picked state (an inline transform beats any stylesheet).
+      wrap.style.transform = `rotate(${off * 1.6}deg)` + (focused ? " translateY(-8px)" : "");
+      if (focused) wrap.classList.add("focused");
+      // THE LAW §3: green = an ability you can use now, gold = a legal target.
+      // A select prompt is asking for TARGETS, so its cards are gold, and they
+      // are the same gold the board paints on the same cards.
+      node.classList.add(isSelectMode() ? "selectable" : "usable");
+      wrap.appendChild(node);
+      // A card the viewer is not entitled to see has nothing on its face, so
+      // its caption is the only thing telling two of them apart — it stays.
+      if (!ch.card.title) wrap.classList.add("blind");
+      wrap.appendChild(el("div", "cardpick-label", sym(String(ch.value))));
+      // The tap is the CARD's own (cardEl wires it): one handler, so a
+      // long-press to read can never also commit the choice, and the board and
+      // the prompt answer the same way.
+      return wrap;
+    },
   });
-  choices.filter((ch) => !ch.card).forEach((ch) => {
+  // Everything that did not become a card: the options naming no card at all
+  // ("Pass", "No action"), and — when the board is already showing them — the
+  // LABELS of the options that do, which say what the ability actually does
+  // and which the card face cannot. Same uuid, so both paths are one answer.
+  choices.filter((ch) => onboard || !ch.card).forEach((ch) => {
     const b = document.createElement("button");
-    b.className = "chip";
+    b.className = "chip" + (ch.card ? " oncard" : "");
     b.textContent = sym(String(ch.value));
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
+}
+
+/* The sheet's own skeleton: sentence, the fan's host, the fan's rail, the
+   chips. One frame for both card-shaped prompts, so the rail can never end
+   up in one of them and not the other. */
+function promptSheetFrame(sheet, p) {
+  sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
+    <div class="cardprompt"></div>
+    <div class="fanrail" style="display:none"></div>
+    <div class="pbtns"></div>`;
+  return { row: sheet.querySelector(".cardprompt"), btns: sheet.querySelector(".pbtns") };
 }
 
 /* A target announcement (CR 1.15.2), drawn as the cards it is about.
@@ -1402,28 +1772,49 @@ function renderSelectPrompt(sheet, p, choices) {
   // buttons that are not cards.
   const cards = p["select-onboard"] ? [] : (p["select-cards"] || []);
   const picked = new Set(p["select-picked"] || []);
-  sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
-    <div class="cardprompt${cards.length > 8 ? " many" : ""}"></div><div class="pbtns"></div>`;
-  const row = sheet.querySelector(".cardprompt");
-  const btns = sheet.querySelector(".pbtns");
-  const mid = (cards.length - 1) / 2;
-  cards.forEach((c, i) => {
-    const wrap = el("div", "cardpick");
-    const node = cardEl(c, { side: mySide });
-    const rot = cards.length > 5 ? 0 : (i - mid) * 2.2;
-    const on = picked.has(c.cid);
-    // One inline transform carries both the tilt and the "already chosen"
-    // lift: an inline transform beats the stylesheet, so it cannot be two.
-    const tilt = `${rot ? `rotate(${rot}deg)` : ""} ${on ? "translateY(-8px)" : ""}`.trim();
-    if (tilt) wrap.style.transform = tilt;
-    node.classList.add("selectable");
-    if (on) { node.classList.add("picked"); wrap.classList.add("on"); }
-    wrap.appendChild(node);
-    if (!c.title) {
-      wrap.classList.add("blind");
-      wrap.appendChild(el("div", "cardpick-label", `Unseen card ${i + 1}`));
+  // MTG Arena's discard, in two phases: MARK the cards, look at what you
+  // marked, and only then throw them away. 5.5.4c cannot be taken back, and
+  // it is the one decision a player makes with no clicks left and their mind
+  // already on next turn — a single tap that binned a card would be the most
+  // expensive misclick in the game. Every other select is an ANNOUNCEMENT
+  // (1.15.2) with nothing yet to undo, so those still commit on the last pick.
+  const staging = p["select-kind"] === "discard";
+  const ready = p["select-confirm"] === true;
+  const { row, btns } = promptSheetFrame(sheet, p);
+  if (staging) {
+    // The server's sentence already carries "(n of m chosen)"; phase two
+    // replaces it outright, because the question itself has changed.
+    if (ready) {
+      sheet.querySelector(".pmsg").textContent =
+        `Discard ${picked.size} card${picked.size === 1 ? "" : "s"}? Tap one to put it back.`;
     }
-    row.appendChild(wrap);
+    sheet.classList.toggle("confirming", ready);
+  }
+  renderFan(row, cards, {
+    key: "prompt",
+    rail: sheet.querySelector(".fanrail"),
+    repaint: () => renderSelectPrompt(sheet, p, choices),
+    cardOpts: { side: mySide },
+    build: (c, idx, focused, off) => {
+      const wrap = el("div", "cardpick");
+      const node = cardEl(c, { side: mySide, fanKey: "prompt", fanIndex: idx });
+      const on = picked.has(c.cid);
+      // One inline transform carries the tilt, the focus lift and the
+      // "already chosen" lift: an inline transform beats the stylesheet, so
+      // it cannot be two fighting each other.
+      wrap.style.transform = `rotate(${off * 1.6}deg) translateY(${(on ? -8 : 0) + (focused ? -8 : 0)}px)`;
+      if (focused) wrap.classList.add("focused");
+      // The glow is `cardEl`'s, from the one ladder in `glowClass` — gold
+      // for a candidate, WHITE for one you have staged — so the sheet's copy
+      // and the board's copy of the same card can never disagree.
+      if (on) wrap.classList.add("on");
+      wrap.appendChild(node);
+      if (!c.title) {
+        wrap.classList.add("blind");
+        wrap.appendChild(el("div", "cardpick-label", `Unseen card ${idx + 1}`));
+      }
+      return wrap;
+    },
   });
   // §6: an empty answer is stated, never implied — a prompt asking for a card
   // when no card qualifies has to SAY so, or it is indistinguishable from a
@@ -1432,7 +1823,23 @@ function renderSelectPrompt(sheet, p, choices) {
   if (!cards.length && !(p["select-cards"] || []).length) {
     row.appendChild(el("div", "picker-hint", "No card qualifies — there is nothing to choose."));
   } else if (!cards.length) {
-    row.appendChild(el("div", "picker-hint", "Tap a card outlined in gold."));
+    row.appendChild(el("div", "picker-hint",
+      !staging ? "Tap a card outlined in gold."
+      : ready ? "The cards in white are the ones that go."
+      : "Tap a card outlined in gold to mark it."));
+  }
+  if (staging) {
+    // Phase two, and only once the set is the size the rule asks for: a
+    // confirm button that can commit a half-answer is a trap, not a gate.
+    const go = el("button", "chip go confirm", `Discard ${picked.size} card${picked.size === 1 ? "" : "s"}`);
+    go.disabled = !ready;
+    go.onclick = () => act("select-confirm", {});
+    btns.appendChild(go);
+    if (picked.size) {
+      const clear = el("button", "chip", "Start over");
+      clear.onclick = () => act("select-clear", {});
+      btns.appendChild(clear);
+    }
   }
   if (p["select-done"]) {
     const done = el("button", "chip go", `Done (${picked.size} chosen)`);
@@ -1639,11 +2046,117 @@ function renderAccessReader(p) {
     <div class="access-actions">
       ${btns.map(([l, cls, uuid]) => `<button class="chip ${cls}" data-uuid="${uuid}">${l}</button>`).join("")}
       <button class="chip peek" id="access-peek">Peek board</button>
-    </div></div>`;
+    </div></div>
+    <div class="tapaway">tap away to peek the board</div>`;
   o.querySelectorAll("[data-uuid]").forEach((b) => {
     b.onclick = () => { peekingBoard = false; act("choice", { choice: { uuid: b.dataset.uuid } }); };
   });
-  document.getElementById("access-peek").onclick = () => { peekingBoard = true; renderAccessReader(p); };
+  const peek = () => { peekingBoard = true; renderAccessReader(p); };
+  document.getElementById("access-peek").onclick = peek;
+  // Tapping away from a reader that is ALSO a decision cannot simply throw
+  // the decision away — but it must not trap the player either. So it does
+  // what the Peek button does: steps aside, leaving the ↩ tab that steps
+  // back. Nothing is lost and nothing is stuck.
+  dismissOnTapAway(o, (e) => !!e.target.closest(".zoom-card"), peek);
+}
+
+/* ── the accessed card, whether or not it asks you anything ──────────────
+   CR 7.1.2 entitles the Runner to look at a card they are accessing. Most
+   accesses offer no decision at all — an agenda with no counters, an ice, an
+   upgrade with no trash cost — so there was no prompt, so nothing was drawn,
+   and the only trace of the card was one line in the log drawer: "Runner:
+   accesses 24/7 News Cycle from R&D". That is a card you are entitled to see
+   rendered as a sentence you have to go looking for.
+
+   The server carries every access as a SNAPSHOT (`state.accessed`), taken at
+   the instant the entitlement is live, because by the time a state is pushed
+   the access is long over and `vm.st.accessed` is already null — which is why
+   sending the live field alone would have shown nothing in exactly the case
+   this is about. Each snapshot has a sequence number; the client shows what
+   it has not yet dismissed, and dismissing is one tap anywhere. */
+let accessSeen = 0;      // the highest reveal sequence already dismissed
+
+function pendingAccesses() {
+  if (!S || mySide !== "runner") return [];
+  const all = S.accessed || [];
+  // A fresh game counts from 1 again. A floor above everything the server is
+  // offering can only mean the sequence restarted, and a stale floor would
+  // silently swallow the first accesses of the new game.
+  const top = all.reduce((m, a) => Math.max(m, a.seq || 0), 0);
+  if (top < accessSeen) accessSeen = 0;
+  return all.filter((a) => (a.seq || 0) > accessSeen && a.card && a.card.title);
+}
+
+function revealOverlayEl() {
+  let o = document.getElementById("reveal-overlay");
+  if (!o) {
+    o = document.createElement("div");
+    o.id = "reveal-overlay";
+    o.className = "zoom-overlay reveal-overlay";
+    document.getElementById("screen-game").appendChild(o);
+  }
+  return o;
+}
+
+function renderAccessReveal() {
+  const o = document.getElementById("reveal-overlay");
+  const hide = () => { if (o) o.style.display = "none"; };
+  if (S && S.winner) { hide(); return; }
+  const list = pendingAccesses();
+  if (!list.length) { hide(); return; }
+
+  // The mid-access reader is already showing one of these, full size, with
+  // its question attached. Two overlays for one card is the fault above, not
+  // the fix: mark those seen and let the reader do the work.
+  const p = myPrompt();
+  const shown = p && p.card && p.card.cid;
+  const rest = list.filter((a) => a.card.cid !== shown);
+  if (rest.length !== list.length) {
+    accessSeen = Math.max(accessSeen, ...list.filter((a) => a.card.cid === shown).map((a) => a.seq));
+  }
+  // …and nothing else may sit on top of a decision either. A reveal waits
+  // its turn; the seq floor means it is still there when the decision is done.
+  if (!rest.length || (p && p["prompt-type"] !== "waiting")) { hide(); return; }
+
+  const top = Math.max(...rest.map((a) => a.seq));
+  const many = rest.length > 1;
+  const ov = revealOverlayEl();
+  ov.style.display = "flex";
+  ov.innerHTML = "";
+  const card = el("div", "zoom-card" + (many ? " pile" : ""));
+  const where = rest[rest.length - 1].from;
+  // An eyebrow, not a second title: `cardInfoHtml` prints the card's own
+  // name, and printing it twice reads as a bug rather than as emphasis.
+  card.appendChild(el("div", "acc-eyebrow", many
+    ? `You accessed ${rest.length} cards`
+    : where ? `You accessed — from ${where}` : "You accessed"));
+  if (many) {
+    const row = el("div", "cardprompt");
+    rest.forEach((a) => {
+      const wrap = el("div", "cardpick");
+      wrap.appendChild(cardEl(a.card, { side: "runner" }));
+      if (a.from) wrap.appendChild(el("div", "cardpick-label", a.from));
+      row.appendChild(wrap);
+    });
+    card.appendChild(row);
+    card.appendChild(el("div", "picker-hint", "Press and hold a card to read it."));
+  } else {
+    // §12.6: card text is the card layer's, never a user string.
+    const body = document.createElement("div");
+    body.innerHTML = cardInfoHtml(rest[0].card);
+    while (body.firstChild) card.appendChild(body.firstChild);
+  }
+  const ok = el("button", "chip go", "Got it");
+  const done = () => { accessSeen = Math.max(accessSeen, top); ov.style.display = "none"; render(); };
+  ok.onclick = done;
+  card.appendChild(ok);
+  ov.appendChild(card);
+  ov.appendChild(el("div", "tapaway", "tap away to close"));
+  // Inside the reader the cards are real cards — press and hold still reads
+  // one — so only a tap OUTSIDE it dismisses. Nothing here traps anybody:
+  // the button, the dim area and Escape all close it, and what was accessed
+  // stays in the log either way.
+  dismissOnTapAway(ov, (e) => !!e.target.closest(".zoom-card"), done);
 }
 
 /* ── chips / turn / run ──────────────────────────────────────────────── */
@@ -1768,12 +2281,50 @@ function renderLog() {
 }
 
 /* ── zoom / gameover / toast ─────────────────────────────────────────── */
+
+/* Nothing that merely SHOWS you something may ever hold the board hostage.
+   An overlay opened to read a card is closed by tapping away from it, on
+   every input the platform has, and by Escape where there is a keyboard.
+   `click` alone was not enough: a long-press opens the reader with the
+   pointer already down, so the release lands on the overlay without a
+   matching press and no `click` is ever synthesised — and on iOS a tap on a
+   plain div is not guaranteed to produce one at all. `pointerdown` is the
+   event every device does fire, so that is the one that closes.
+
+   `hit` gets first refusal on the tap: it returns true when the tap meant
+   something inside the overlay (a pile row to read), false to dismiss. */
+function dismissOnTapAway(o, hit, onClose) {
+  const close = () => {
+    o.style.display = "none";
+    o.__dismiss = null;
+    if (onClose) onClose();
+  };
+  o.__dismiss = close;
+  o.onclick = null;
+  o.onpointerdown = (e) => {
+    if (hit && hit(e)) return;
+    e.preventDefault();
+    close();
+  };
+}
+
+// Escape closes whatever reader is open, topmost first. A keyboard is not
+// the phone case, but a stuck overlay on a laptop is the same bug.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  for (const id of ["zoom-overlay", "access-overlay", "reveal-overlay"]) {
+    const o = document.getElementById(id);
+    if (o && o.style.display !== "none" && o.__dismiss) { o.__dismiss(); return; }
+  }
+});
+
 function zoomCard(c) {
   hideHoverPreview();
   const o = $("zoom-overlay");
   o.style.display = "flex";
-  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>`;
-  o.onclick = () => { o.style.display = "none"; };
+  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>
+    <div class="tapaway">tap anywhere to close</div>`;
+  dismissOnTapAway(o, null);
 }
 
 function zoomPile(cards, title) {
@@ -1786,7 +2337,8 @@ function zoomPile(cards, title) {
       ${c.agendapoints != null ? `<span class="pilepts">${c.agendapoints} pts</span>` : ""}
     </div>`).join("");
   o.innerHTML = `<div class="zoom-card pile"><h3>${title}</h3>
-    ${rows || "<div class='zline'>none yet</div>"}</div>`;
+    ${rows || "<div class='zline'>none yet</div>"}</div>
+    <div class="tapaway">tap anywhere to close</div>`;
   // UX.md THE LAW §5: every display mode previews. A pile row is a card in
   // compact clothing, so it gets hover preview on a pointer device and
   // long-press on touch, exactly like the card it stands for.
@@ -1795,17 +2347,17 @@ function zoomPile(cards, title) {
     if (!c || !c.title) return;
     attachZoom(row, c);
     if (hoverCapable) {
-      row.addEventListener("pointerenter", () => showHoverPreview(c));
+      row.addEventListener("pointerenter", () => showHoverPreview(c, row));
       row.addEventListener("pointerleave", hideHoverPreview);
     }
   });
   // Tap a row to read that card; tap anywhere else to close.
-  o.onclick = (e) => {
+  dismissOnTapAway(o, (e) => {
     const row = e.target.closest(".pilerow");
     const c = row ? cards[+row.dataset.i] : null;
-    if (c && c.title) zoomCard(c);
-    else o.style.display = "none";
-  };
+    if (c && c.title) { zoomCard(c); return true; }
+    return false;
+  });
 }
 
 function renderGameOver() {
@@ -1903,7 +2455,7 @@ function showStrictRefusal(msg) {
     card.appendChild(d);
   });
   o.appendChild(card);
-  o.onclick = () => { o.style.display = "none"; };
+  dismissOnTapAway(o, null);
 }
 
 /* ── build stamp + self-heal ─────────────────────────────────────────────
