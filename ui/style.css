@@ -267,8 +267,14 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .fanrow > * { flex-shrink: 0; margin: 0 calc((var(--fstep) - var(--fw)) / 2); }
 .fan .card { width: var(--fw); height: var(--fh); }
 /* The peek is a sliver of the next card: proof there is more, and a target
-   to get there. Its own width, not the cards' step. */
+   to get there. Its own width, not the cards' step — and pushed clear of the
+   end card's overhang, or it sits UNDER the card it is supposed to be peeking
+   past and the row silently loses its only "there is more" affordance. Each
+   end card's ink runs (fw - fstep)/2 beyond its margin box; that is exactly
+   how far the peek has to stand off. */
 .fanrow > .fanpeek { margin: 0; }
+.fanrow > .fanpeek.left { margin-right: calc((var(--fw) - var(--fstep)) / 2); }
+.fanrow > .fanpeek.right { margin-left: calc((var(--fw) - var(--fstep)) / 2); }
 .fanpeek { pointer-events: auto; cursor: pointer; opacity: .5;
   width: var(--fpeek); overflow: hidden; align-self: flex-end; }
 .fanpeek .card { pointer-events: none; transform: scale(.9); }
@@ -417,7 +423,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    READ it, and only then commit — naming cannot be taken back. */
 /* It has to FIT above the hand and its rail, not merely be tall: a sheet
    that overflows the top of a 375px-tall phone hides its own buttons. */
-.prompt-sheet { max-height: min(70vh, 640px, calc(100vh - 216px - var(--sat, 0px))); }
+.prompt-sheet { max-height: min(70vh, 640px, calc(100vh - 232px - var(--sat, 0px))); }
 .picker-input { background: var(--bg2); color: var(--text); border: 1px solid var(--gold);
   border-radius: 10px; padding: 12px 14px; font: inherit; font-size: 15px; min-height: 48px; }
 .picker-input::placeholder { color: var(--muted, #7c8aa5); }
@@ -606,7 +612,6 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .hand { --fw: 52px; --fh: 72px; height: 86px;
     bottom: calc(12px + env(safe-area-inset-bottom, 0)); }
   .hand .card { font-size: 8px; }
-  #hand-rail { bottom: calc(116px + env(safe-area-inset-bottom, 0)); }
   /* Action chips live in the bottom strip beside the hand fan, not on top
      of the board's lowest row. */
   .action-bar { bottom: calc(6px + env(safe-area-inset-bottom, 0)); left: 6px;
@@ -908,6 +913,10 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .hand .card.focused { z-index: 3; }
 
 @media (max-height: 640px) {
+  /* Above the focused card, which tops out at 12 + 72*1.22 + 8 = 108px.
+     (This has to live HERE, after the base rule: same specificity, and the
+     copy that came first in the file simply lost.) */
+  #hand-rail { bottom: calc(116px + env(safe-area-inset-bottom, 0)); }
   .fanrail { gap: 6px; padding: 4px 6px; }
   .fanrail .railbtn { min-width: 40px; min-height: 36px; font-size: 18px; }
   .fanrail .railtrack { height: 36px; min-width: 70px; }
