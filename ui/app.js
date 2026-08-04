@@ -532,10 +532,12 @@ function barHtml(st, side, isOpp) {
     <span class="idchip" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
     <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
     <span class="stat" title="clicks remaining">${clicks}</span>
-    <span class="stat" title="${ZONE(side, "hand").hint}">${ZONE(side, "hand").label} ${st["hand-count"] ?? (st.hand || []).length}</span>
-    <span class="stat" title="${ZONE(side, "deck").hint}">${ZONE(side, "deck").label} ${st["deck-count"] ?? 0}</span>
-    <span class="stat tappable" data-stat="discard" data-side="${side}"
-      title="${ZONE(side, "discard").hint}">${ZONE(side, "discard").label} ${(st.discard || []).length}</span>
+    <span class="stat zones">
+      <span title="${ZONE(side, "hand").hint}">${ZONE(side, "hand").label} ${st["hand-count"] ?? (st.hand || []).length}</span>
+      <span title="${ZONE(side, "deck").hint}">${ZONE(side, "deck").label} ${st["deck-count"] ?? 0}</span>
+      <span class="tappable" data-stat="discard" data-side="${side}"
+        title="${ZONE(side, "discard").hint}">${ZONE(side, "discard").label} ${(st.discard || []).length}</span>
+    </span>
     <span class="stat tappable" data-stat="ap" data-side="${side}"
       title="agenda points — tap to see the agendas">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
 }
