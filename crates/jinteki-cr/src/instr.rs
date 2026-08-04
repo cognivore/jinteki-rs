@@ -1536,6 +1536,14 @@ pub enum TargetFilter {
     /// ability resolving for another reason) nothing matches, which is the
     /// same "reaches nothing" a stranded self-reference gets under 9.1.4.
     SameCardTypeAsTriggeringCard,
+    /// "…a **non**-agenda card" / "…a **non**-virus program" — the negation
+    /// of another criterion, in the same shared filter vocabulary (§12 rule
+    /// 5). One word for every "non-", rather than a filter per thing negated.
+    ///
+    /// A negation never names a zone: "a non-agenda card" says nothing about
+    /// where the card is, so 1.15.2c's play-area default still applies unless
+    /// another criterion beside it lifts it.
+    Not(&'static TargetFilter),
     /// CR 1.13.2: a card that is FACEDOWN — its back face is the one showing,
     /// wherever it is. Not [`TargetFilter::Unrezzed`], which 8.1.2 restricts
     /// to installed Corp cards: 10.3.1a puts a card the Corp trashes into

@@ -155,6 +155,52 @@ pub fn haas_bioroid_precision_design() -> Card {
         .build()
 }
 
+/// Poétrï Luxury Brands: All the Rage — Identity: Division.
+/// "Whenever you score an agenda, look at the top 3 cards of R&D. You may
+///  install 1 non-agenda card from among them.
+///  Whenever an agenda is stolen, you may install 1 non-agenda card from HQ."
+///
+/// COMPLETE. Two printed lines meeting two different conditions (1.17.3a's
+/// score and 1.17.3b's steal), so two conditional abilities — and the first
+/// line is TWO sentences, so two instructions: 9.11.4e keeps a look separate
+/// from what follows it, and 9.11.4b keeps an install its own instruction.
+/// The look therefore finishes, a checkpoint occurs, and only then is the
+/// install imminent — which is what makes "from among them" mean the cards
+/// this ability looked at rather than the top of R&D as it stands now.
+///
+/// "Non-agenda" is the ordinary description vocabulary, negated. It names no
+/// zone, so on the first line "from among them" supplies the zone and on the
+/// second HQ does.
+pub fn poetri_luxury_brands() -> Card {
+    card("Poétrï Luxury Brands: All the Rage")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them.")
+        .text("Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.")
+        .when(
+            corp_scores_agenda(),
+            [
+                look_at(top_of_rnd(amount(3)), Corp),
+                may(install(
+                    choose(1, &[looked_at_by_this_ability(), non(of_type(CardType::Agenda))]),
+                    InstallDest::DeclaredByInstaller,
+                )),
+            ],
+        )
+        .named("an agenda was scored")
+        .may_when(
+            runner_steals_agenda(),
+            [install(
+                choose(1, &[in_hand_of(Corp), non(of_type(CardType::Agenda))]),
+                InstallDest::DeclaredByInstaller,
+            )],
+        )
+        .named("an agenda was stolen")
+        .build()
+}
+
 /// Seidr Laboratories: Destiny Defined — Identity: Division.
 /// "The first time each turn the Runner loses or spends [click] during a run,
 ///  you may add 1 card from Archives to the top of R&D."
@@ -192,6 +238,7 @@ pub fn identities() -> Vec<Card> {
         cybernetics_division(),
         haas_bioroid_engineering_the_future(),
         haas_bioroid_precision_design(),
+        poetri_luxury_brands(),
         seidr_laboratories(),
         sportsmetal(),
         thule_subsea(),

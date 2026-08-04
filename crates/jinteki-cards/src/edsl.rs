@@ -1685,6 +1685,17 @@ pub fn each_players_max_hand_size_mod(n: i32) -> StaticDecl {
 pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
     TargetFilter::SameCardTypeAsTriggeringCard
 }
+/// "…a **non**-agenda card", "…a **non**-virus program" — any description
+/// word, negated. It names no zone of its own, so 1.15.2c's play-area default
+/// still applies unless another word beside it lifts it.
+pub fn non(f: TargetFilter) -> TargetFilter {
+    TargetFilter::Not(Box::leak(Box::new(f)))
+}
+/// "As an additional cost to access a card in the root of a remote server,
+/// the Runner must pay <cost>." (Gagarin class; 1.16.10 / 7.4.3.)
+pub fn additional_cost_to_access_a_card_in_a_remote_root(c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalAccessCost(c)
+}
 /// "…a facedown card" (1.13.2) — the plain question, in whatever zone the
 /// rest of the description names.
 pub fn facedown() -> TargetFilter {

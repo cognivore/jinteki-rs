@@ -61,6 +61,31 @@ pub fn grndl() -> Card {
         .build()
 }
 
+/// Gagarin Deep Space: Expanding the Horizon — Identity: Corp.
+/// "As an additional cost to access a card in the root of a remote server,
+///  the Runner must pay 1[credit]."
+///
+/// COMPLETE. CR 1.16.10 makes an additional cost part of the payment for
+/// something that would otherwise have none, and 7.4.3 is where an access
+/// pays it — before the card is accessed, so a Runner who cannot pay does not
+/// access the card at all and the breach moves on.
+///
+/// It is a permanent fact about every access matching the description, not
+/// something that happens, so it is a static declaration. The description is
+/// the root of a REMOTE server: 4.6.5's centrals are untouched, and so is ice
+/// protecting the remote, which is not in its root (4.6.6).
+pub fn gagarin_deep_space() -> Card {
+    card("Gagarin Deep Space: Expanding the Horizon")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].")
+        .declares([additional_cost_to_access_a_card_in_a_remote_root(credits(1))])
+        .named("expanding the horizon")
+        .build()
+}
+
 /// The Outfit: Family Owned and Operated — Identity: Subsidiary.
 /// "Whenever you take 1 or more bad publicity, gain 3[credit]."
 ///
@@ -150,6 +175,7 @@ pub fn weyland_built_to_last() -> Card {
 pub fn identities() -> Vec<Card> {
     vec![
         argus_security(),
+        gagarin_deep_space(),
         grndl(),
         the_outfit(),
         titan_transnational(),

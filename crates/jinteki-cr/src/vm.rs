@@ -6592,6 +6592,8 @@ impl Vm {
             }
             // 1.13.2: the plain question, asked of any card in any zone.
             TargetFilter::Facedown => !o.faceup,
+            // "non-<something>": the criterion negated, asked the same way.
+            TargetFilter::Not(inner) => !self.filter_matches(o, *inner, source),
             // 1.15.4 + 2.15: the same type as the card the condition named.
             TargetFilter::SameCardTypeAsTriggeringCard => self
                 .frames

@@ -5873,3 +5873,123 @@ fn hayley_kaplan_offers_only_the_grip_cards_sharing_the_installed_cards_type() {
     );
     assert_eq!(vm.st.runner.credits, 3, "'paying its install cost' — 2 was paid: {}", t.tail(40));
 }
+
+/// Gagarin Deep Space: "As an additional cost to access a card in the root of
+/// a remote server, the Runner must pay 1[credit]."
+///
+/// Both halves of the description, in two runs of the same game: accessing
+/// the card in the remote's root costs a credit, and breaching a CENTRAL
+/// costs nothing. 1.16.10 puts the payment before the access, so a Runner
+/// with no credits accesses nothing.
+#[test]
+fn gagarin_taxes_a_remote_root_access_and_leaves_the_centrals_alone() {
+    let mut vm = Vm::empty(6133);
+    tk::install_identity(&mut vm, card("Gagarin Deep Space: Expanding the Horizon"), Side::Corp);
+    let asset = tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 99), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::of(Kind::NestedCost), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { .. })),
+        "the HQ breach accessed a card: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == asset)),
+        "and so did the remote's root, once paid for: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "exactly one credit was paid — for the remote root, not for the HQ breach: {}",
+        t.tail(40)
+    );
+}
+
+/// Poétrï Luxury Brands: "Whenever you score an agenda, look at the top 3
+/// cards of R&D. You may install 1 non-agenda card from among them." /
+/// "Whenever an agenda is stolen, you may install 1 non-agenda card from HQ."
+///
+/// Both lines, one game each, and the "non-agenda" word in both: the agenda
+/// sitting among the candidates is never offered.
+#[test]
+fn poetri_installs_a_non_agenda_on_a_score_from_rnd_and_on_a_steal_from_hq() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(6134);
+        tk::install_identity(&mut vm, card("Poétrï Luxury Brands: All the Rage"), Side::Corp);
+        let scored =
+            tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+        vm.st.objects.get_mut(&scored).unwrap().counters.insert(CounterKind::Advancement, 3);
+
+        // The candidate pool: one asset and one agenda, in whichever zone the
+        // line under test names.
+        let zone = if stolen { Zone::Hand(Side::Corp) } else { Zone::Deck(Side::Corp) };
+        let asset = vm.new_object(tk::vanilla_asset("Installable", 0, 2), zone);
+        let decoy = vm.new_object(tk::vanilla_agenda("Not Installable", 3, 2), zone);
+        if stolen {
+            for id in [asset, decoy] {
+                vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+            }
+        } else {
+            for id in [asset, decoy] {
+                vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+            }
+        }
+        tk::fill_deck(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+
+        let corp = Plan::corp()
+            .when(Match::reaction().offering("poétrï"), Reply::take("poétrï"))
+            .when(Match::of(Kind::Optional), Reply::Optional(true))
+            .when(Match::targets().once(), Reply::Targets(vec![asset]))
+            .when(Match::of(Kind::Destination), Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot));
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                corp,
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            )
+        } else {
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                corp.when(Match::paid(), Reply::score(scored)).stop_at_action(),
+                Plan::runner(),
+            )
+        };
+        let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+        assert_eq!(announcements.len(), 1, "one card was chosen (stolen={stolen}): {}", t.tail(40));
+        assert!(
+            announcements[0].candidates().contains(&asset),
+            "the non-agenda card is a candidate (stolen={stolen}): {}",
+            t.tail(40)
+        );
+        assert!(
+            !announcements[0].candidates().contains(&decoy),
+            "'non-agenda' keeps the agenda beside it out of the candidates \
+             (stolen={stolen}): {}",
+            t.tail(40)
+        );
+        assert!(
+            vm.st.objects[&asset].zone.is_installed(),
+            "and the card was installed (stolen={stolen}): {}",
+            t.tail(40)
+        );
+    }
+}
