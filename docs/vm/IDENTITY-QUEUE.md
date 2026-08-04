@@ -72,14 +72,6 @@ kernel words, not card patches.
   carries `first_each_run` as content on that one condition. The scope is
   content and belongs beside the ordinal, not on one condition.
   *(Jesminder Sareen: Girl Behind the Curtain.)*
-- **An installation cannot be described by what was installed.**
-  `TriggerCond::CardInstalledBy` names only the side and
-  `CardInstalledFrom` insists on a zone the sentence may not mention, so
-  "whenever you install a virus program" and "the first time you install a
-  card each turn" have no shared condition. The card type and subtype are
-  content on the install condition, exactly as `EncounterBegins` carries the
-  subtype of the ice. *(Noise: Hacker Extraordinaire; Hayley Kaplan and
-  Haas-Bioroid: Engineering the Future want it too.)*
 - **A spending restriction cannot say "cards" without meaning INSTALLED
   cards.** `CreditUse::TrashingCards` describes the trashable cards with the
   ordinary filter words, and 1.15.2c's default for a description naming no
