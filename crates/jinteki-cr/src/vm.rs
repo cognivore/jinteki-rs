@@ -494,6 +494,10 @@ pub struct GameSetup {
     pub runner_deck: Vec<PrintedCard>,
     pub corp_identity: Option<PrintedCard>,
     pub runner_identity: Option<PrintedCard>,
+    /// CR 1.5.4a: the additional identity cards each player brings along with
+    /// their deck. They never enter a zone at setup — they are outside the
+    /// game — so they are handed straight to `CoreState::additional_identities`.
+    pub additional_identities: BTreeMap<Side, Vec<PrintedCard>>,
     pub seed: u64,
     /// Test-harness determinism hook: skip the 1.6.5 shuffle so decks stay
     /// in the given order (SYS-F-8 stack-deck semantics).
@@ -521,6 +525,21 @@ impl Vm {
             for card in deck {
                 let id = vm.new_object(card, Zone::Deck(side));
                 vm.st.deck.get_mut(&side).unwrap().push(id);
+            }
+        }
+        // CR 1.5.4a: "A player may bring any number of additional Runner
+        // identity cards along with their deck. These cards are kept in a pile
+        // outside the game." They are ordinary cards in an ordinary zone —
+        // `Zone::OutsideGame`, which `card_active` leaves inactive — so an
+        // ability can describe one (1.5.4b) with the criteria vocabulary every
+        // other card uses.
+        cite!("rule_additional_identities_pile");
+        for (side, pile) in setup.additional_identities {
+            for card in pile {
+                let id = vm.new_object(card, Zone::OutsideGame(side));
+                // 1.5.4a: "the Runner may look at these cards at any time" —
+                // the pile is open information, so nothing about it is hidden.
+                vm.st.objects.get_mut(&id).unwrap().faceup = true;
             }
         }
         cite!("rule_start_credits");
@@ -1997,6 +2016,14 @@ impl Vm {
                 }
             }
             Zone::RemovedFromGame => o.faceup || o.controller == side,
+            // 1.5.4a: "the Runner may look at these cards at any time" — the
+            // pile is open information to its owner. It is not open to the
+            // opponent: the rule grants the look to the player who brought
+            // them, and nothing else does.
+            Zone::OutsideGame(s) => {
+                cite!("rule_additional_identities_pile");
+                o.controller == s && s == side
+            }
             Zone::Bank => true,
         }
     }
@@ -6099,6 +6126,30 @@ impl Vm {
                 cite!("rule_discard_pile");
                 o.zone == Zone::Discard(side)
             }
+            // 1.5.4a: the pile outside the game. 1.5.4b makes it what an
+            // ability naming an identity other than the current one refers to.
+            TargetFilter::InIdentityPileOf(side) => {
+                cite!("rule_additional_identities_pile");
+                cite!("rule_additional_identities_reference");
+                o.zone == Zone::OutsideGame(side)
+            }
+            // 2.13.3: "each identity is associated with one faction". The
+            // comparison is against the faction of that player's CURRENT
+            // identity (3.1.1), read fresh, so a switch changes what every
+            // later reading of this criterion means.
+            TargetFilter::FactionMatchesIdentityOf { side, same } => {
+                cite!("rule_faction_citation");
+                cite!("rule_faction_list");
+                let mine = self
+                    .identity_of(side)
+                    .and_then(|id| self.st.objects[&id].face().faction);
+                match (mine, o.printed.faction) {
+                    (Some(a), Some(b)) => (a == b) == same,
+                    // A card that prints no faction meets no faction
+                    // stipulation, either way round.
+                    _ => false,
+                }
+            }
             // CR 4.2.2: the deck is ordered; "the top N cards" are its first
             // N, and a card must still be there to be a valid target.
             TargetFilter::TopOfDeckOf { side, n } => {
@@ -6707,14 +6758,47 @@ impl Vm {
         })
     }
 
-    /// CR 1.6.6 / rule_start_hand: the starting hand size — 5 unless this
-    /// side's identity prints another number (Andromeda class).
-    pub fn starting_hand_size(&self, side: Side) -> u32 {
+    /// CR 3.1.1: "each player starts the game with a single identity active in
+    /// the play area" — that card, and only it, is this player's identity.
+    ///
+    /// The location is what identifies it, not the card type: 3.1.1b says
+    /// identities are not installed, so an identity that is anywhere ELSE in
+    /// the play area — hosted on a card (1.13.12, the DJ Fenris class) — is
+    /// not the player's identity and must not be read as one.
+    pub fn identity_of(&self, side: Side) -> Option<ObjectId> {
+        cite!("rule_identity_play_area");
+        cite!("rule_identity_not_installed");
+        cite!("rule_play_area_identity");
         self.st
             .objects
             .values()
-            .find(|o| o.printed.card_type == CardType::Identity && o.printed.side == side)
-            .and_then(|o| o.face().starting_hand_size)
+            .find(|o| {
+                o.printed.card_type == CardType::Identity
+                    && o.printed.side == side
+                    && o.zone == Zone::PlayArea(side)
+                    && o.host.is_none()
+            })
+            .map(|o| o.id)
+    }
+
+    /// CR 1.5.4a: the additional identities this player brought along with
+    /// their deck. "The Runner may look at these cards at any time", so this
+    /// is open information and no viewpoint redacts it.
+    pub fn identity_pile(&self, side: Side) -> Vec<ObjectId> {
+        cite!("rule_additional_identities_pile");
+        self.st
+            .objects
+            .values()
+            .filter(|o| o.zone == Zone::OutsideGame(side))
+            .map(|o| o.id)
+            .collect()
+    }
+
+    /// CR 1.6.6 / rule_start_hand: the starting hand size — 5 unless this
+    /// side's identity prints another number (Andromeda class).
+    pub fn starting_hand_size(&self, side: Side) -> u32 {
+        self.identity_of(side)
+            .and_then(|id| self.st.objects[&id].face().starting_hand_size)
             .unwrap_or(5)
     }
 
@@ -8830,14 +8914,7 @@ impl Vm {
                 // abilities from the new face, so pendings/statics follow.
                 cite!("rule_identity_double_sided");
                 cite!("rule_double_sided_identity");
-                let id = self
-                    .st
-                    .objects
-                    .values()
-                    .find(|o| {
-                        o.printed.card_type == CardType::Identity && o.printed.side == *side
-                    })
-                    .map(|o| o.id);
+                let id = self.identity_of(*side);
                 if let Some(id) = id {
                     if let Some(o) = self.st.objects.get_mut(&id) {
                         if o.printed.flip_face.is_some() {

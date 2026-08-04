@@ -103,6 +103,20 @@ pub enum Zone {
     SetAside,
     /// CR 4.9 (`sec_removed_from_game`).
     RemovedFromGame,
+    /// CR 1.5.4a: the pile of additional identity cards a player brought
+    /// "along with their deck", kept OUTSIDE the game.
+    ///
+    /// Distinct from [`Zone::RemovedFromGame`], and the distinction is the
+    /// whole point: 4.9.5 says a removed card "cannot move out of the
+    /// removed-from-game zone or otherwise be interacted with", while 1.5.4b
+    /// says a card here is exactly what an ability naming another identity
+    /// refers to — and that an identity leaving the play area comes BACK
+    /// here. Gone for good versus available.
+    ///
+    /// A card here is inactive (`card_active` has no arm for it), which is
+    /// what keeps a pile identity's abilities silent until 1.8.3d/3.1.1 puts
+    /// it in the play area.
+    OutsideGame(Side),
 }
 
 impl Zone {
@@ -166,6 +180,10 @@ impl Zone {
             Zone::Bank => 9,
             Zone::SetAside => 10,
             Zone::RemovedFromGame => 11,
+            // 1.5.4a: one pile per player, and moving between a pile and
+            // anywhere else is a zone change (1.12.3 re-makes the object).
+            Zone::OutsideGame(Side::Corp) => 12,
+            Zone::OutsideGame(Side::Runner) => 13,
         }
     }
 }
@@ -229,6 +247,14 @@ pub struct PrintedCard {
     pub name: &'static str,
     pub side: Side,
     pub card_type: CardType,
+    /// CR 2.13.1/2.13.3: the card's faction, exactly as printed. `None` is
+    /// "this card does not say" — a testkit shape that has no faction to
+    /// declare — and is NOT the same as the neutral faction, which 2.13.2
+    /// gives a printed identity of its own ("a white background and no
+    /// logo"). Deck construction (1.4.5) reads factions before the game
+    /// begins; a faction is a runtime characteristic too, because 1.5.4b's
+    /// identity references are stated in terms of it.
+    pub faction: Option<&'static str>,
     pub subtypes: Vec<&'static str>,
     /// CR 2.7: strength (ice and icebreakers).
     pub strength: Option<i32>,
@@ -283,6 +309,7 @@ impl PrintedCard {
             name,
             side,
             card_type,
+            faction: None,
             subtypes: Vec::new(),
             strength: None,
             cost: Some(0),
@@ -544,6 +571,16 @@ pub fn card_active(obj: &Object) -> bool {
             Side::Corp => obj.faceup,
             Side::Runner => true,
         },
+        // CR 1.5.4a / 1.8.3d: an identity in the pile is outside the game.
+        // Identities "become active when the game begins" and 3.1.1 puts the
+        // single active one in the play area, so a card waiting in the pile
+        // is inactive and its abilities are silent — which is what lets a
+        // pile hold a Chaos Theory without granting anybody +1[mu].
+        Zone::OutsideGame(_) => {
+            cite!("rule_additional_identities_pile");
+            cite!("rule_identity_become_active");
+            false
+        }
         _ => false,
     }
 }

@@ -21,7 +21,7 @@
 pub mod decks;
 pub mod edsl;
 
-pub use decks::{priority_decks, SOURCES};
+pub use decks::{all_cards, priority_decks, SOURCES};
 pub use edsl::{card, Card, CardBuilder};
 
 /// One deck, by name — what a deck list will ask for at cutover.
@@ -33,7 +33,14 @@ pub fn deck_named(name: &str) -> Option<Vec<Card>> {
     }
 }
 
-/// Find one card of either priority deck by its printed name.
+/// CR 1.5.4a: the additional identities that deck brings along with it, kept
+/// in a pile outside the game. Separate from [`deck_named`] because the pile
+/// is not part of the deck — 1.5.4a puts it beside it.
+pub fn pile_named(name: &str) -> Option<Vec<Card>> {
+    decks::identity_pile(name)
+}
+
+/// Find one card by its printed name.
 pub fn find(name: &str) -> Option<Card> {
-    priority_decks().into_iter().find(|c| c.printed.name == name)
+    all_cards().into_iter().find(|c| c.printed.name == name)
 }

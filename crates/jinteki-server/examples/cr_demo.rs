@@ -46,6 +46,8 @@ fn setup(seed: u64) -> GameSetup {
             Side::Runner,
             CardType::Identity,
         )),
+        // CR 1.5.4a: no additional identities brought.
+        additional_identities: Default::default(),
         seed,
         shuffle: true,
     }

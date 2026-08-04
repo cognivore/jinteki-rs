@@ -5,15 +5,33 @@
 //! doc comment and the data say the same thing, and the gap list is what the
 //! deck files say it is.
 
-use jinteki_cards::{deck_named, priority_decks, SOURCES};
+use jinteki_cards::{deck_named, pile_named, priority_decks, SOURCES};
 
 #[test]
 fn both_decks_build() {
     let cards = priority_decks();
-    assert_eq!(cards.len(), 50, "both decks, one entry per distinct card (Hedge Fund is not in the printed Gauntlet list)");
+    assert_eq!(cards.len(), 51, "both decks, one entry per distinct card (Hedge Fund is not in the printed Gauntlet list), plus CR 1.5.4a's pile");
     assert_eq!(deck_named("andromeda").unwrap().len(), 24);
     assert_eq!(deck_named("gauntlet").unwrap().len(), 26, "49 printed cards, 26 distinct — Hedge Fund left on the deck photo's authority");
     assert!(deck_named("nonesuch").is_none());
+    // CR 1.5.4a: the pile is beside the deck, not in it, and it is the
+    // Runner's.
+    assert_eq!(pile_named("andromeda").unwrap().len(), 1);
+    assert!(pile_named("gauntlet").unwrap().is_empty());
+    assert!(pile_named("nonesuch").is_none());
+}
+
+/// CR 1.5.4a: every card of the pile is a Runner IDENTITY, and 1.5.4b's
+/// "from the same faction" needs one to be readable off the card.
+#[test]
+fn the_identity_pile_is_identities_with_factions() {
+    for deck in ["andromeda", "gauntlet"] {
+        for c in pile_named(deck).unwrap() {
+            assert_eq!(c.printed.card_type, jinteki_cr::object::CardType::Identity, "{}", c.name());
+            assert_eq!(c.printed.side, jinteki_cr::object::Side::Runner, "{}", c.name());
+            assert!(c.printed.faction.is_some(), "{}: 2.13.3 gives every identity a faction", c.name());
+        }
+    }
 }
 
 #[test]
@@ -40,6 +58,10 @@ fn every_card_is_named_and_typed_consistently() {
         if c.printed.card_type == jinteki_cr::object::CardType::Ice {
             assert!(c.printed.strength.is_some(), "{}: ice has a strength", c.name());
         }
+        // 2.13: every card is in a faction — 2.13.2 gives even a card with no
+        // logo one ("if a card has a white background and no logo, it is
+        // neutral"). It is an in-game characteristic, not deck metadata.
+        assert!(c.printed.faction.is_some(), "{}: every card prints a faction", c.name());
     }
 }
 
@@ -127,7 +149,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 52, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face)");
+    assert_eq!(checked, 53, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and

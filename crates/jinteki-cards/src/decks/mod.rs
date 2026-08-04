@@ -8,14 +8,33 @@ use crate::edsl::Card;
 pub mod andromeda;
 pub mod gauntlet;
 
-/// Every card of both decks.
+/// Every card of both decks — the deck proper, plus CR 1.5.4a's pile of
+/// additional identities, which a player brings "along with their deck" and
+/// which therefore has to be as playable as the deck is.
 pub fn priority_decks() -> Vec<Card> {
     let mut out = andromeda::deck();
+    out.extend(andromeda::additional_identities());
     out.extend(gauntlet::deck());
+    out.extend(gauntlet::additional_identities());
     out
 }
 
-/// The source of each deck module, for the manifest test — the doc comments
+/// CR 1.5.4a: the additional identities a deck brings along with it.
+pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
+    match deck {
+        "andromeda" => Some(andromeda::additional_identities()),
+        "gauntlet" => Some(gauntlet::additional_identities()),
+        _ => None,
+    }
+}
+
+/// Every card this crate carries, priority decks and all — what
+/// [`crate::find`] searches.
+pub fn all_cards() -> Vec<Card> {
+    priority_decks()
+}
+
+/// The source of each card module, for the manifest test — the doc comments
 /// are the human-readable half of SYS-D-10 and the test checks they agree
 /// with the `.text(…)` data.
 pub const SOURCES: &[(&str, &str)] = &[

@@ -90,6 +90,7 @@ the same thing, which is the only reason writing it twice is safe.
 | `.ice(4)` | "ICE" — and its strength |
 | `.agenda(3, 2)` | "3/2" — advancement requirement and points |
 | `.subtypes(&["Barrier", "Tracer"])` | the subtypes, exactly as printed |
+| `.faction("Criminal")` | the faction, exactly as printed (`"Neutral"` for a white card) |
 | `.cost(3)` | play, install or rez cost |
 | `.strength(1)` | icebreaker strength |
 | `.trash_cost(2)` `.memory(1)` `.link(1)` `.recurring_credits(2)` | the rest of the numbers |

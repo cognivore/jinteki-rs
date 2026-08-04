@@ -1596,6 +1596,7 @@ fn andromeda_draws_a_starting_hand_of_nine() {
         (0..20).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
     let vm = Vm::new_game(GameSetup {
         seed: 7,
+        additional_identities: Default::default(),
         corp_identity: None,
         runner_identity: Some(card("Andromeda: Dispossessed Ristie")),
         corp_deck,
@@ -2292,4 +2293,74 @@ fn the_class_act_reads_one_card_deeper_than_the_draw() {
         "and both draws took what was left on top: {}",
         t.tail(24)
     );
+}
+
+// ---------------------------------------------------------------------------
+// CR 1.5.4: the additional identities pile
+// ---------------------------------------------------------------------------
+
+/// Ken "Express" Tenma: "The first time each turn you play a run event, gain
+/// 1[credit]." — the once-per-turn ordinal is the point, so two run events are
+/// played and only the first pays.
+#[test]
+fn ken_tenma_pays_for_the_first_run_event_each_turn() {
+    let mut vm = Vm::empty(5501);
+    tk::install_identity(&mut vm, card("Ken \"Express\" Tenma: Disappeared Clone"), Side::Runner);
+    let cg1 = vm.new_object(card("Clean Getaway"), Zone::Hand(Side::Runner));
+    let cg2 = vm.new_object(card("Clean Getaway"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([cg1, cg2]);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 6;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(cg1))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            .when(Match::action().once(), Reply::play_card(cg2))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            .stop_at_action(),
+    );
+    // 6 − 3 + 6 + 1 (Ken, first run event) − 3 + 6 (no second payment).
+    assert_eq!(vm.st.runner.credits, 13, "the first run event only: {}", t.tail(20));
+}
+
+/// CR 1.5.4a: the pile is beside the game, not in it — an identity waiting
+/// there is INACTIVE, so its abilities do nothing.
+///
+/// Chaos Theory prints "+1[mu]", which is visible in one number, and the
+/// Runner's memory limit must not move while she sits in the pile.
+#[test]
+fn an_identity_in_the_pile_is_inactive() {
+    use jinteki_cr::vm::GameSetup;
+    let corp_deck: Vec<PrintedCard> = (0..20).map(|_| tk::corp_filler("C-filler")).collect();
+    let runner_deck: Vec<PrintedCard> =
+        (0..20).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    let mut pile = std::collections::BTreeMap::new();
+    pile.insert(Side::Runner, vec![card("Ken \"Express\" Tenma: Disappeared Clone")]);
+    let vm = Vm::new_game(GameSetup {
+        seed: 9,
+        additional_identities: pile,
+        corp_identity: None,
+        runner_identity: Some(card("Andromeda: Dispossessed Ristie")),
+        corp_deck,
+        runner_deck,
+        shuffle: true,
+    });
+    let carried = vm.identity_pile(Side::Runner);
+    assert_eq!(carried.len(), 1, "1.5.4a: the pile came to the table");
+    assert_eq!(vm.st.objects[&carried[0]].zone, Zone::OutsideGame(Side::Runner));
+    assert!(
+        !jinteki_cr::object::card_active(&vm.st.objects[&carried[0]]),
+        "1.8.3d: an identity outside the game is not active"
+    );
+    // 3.1.1: the identity is still the one in the play area, and it is
+    // Andromeda — so her nine-card hand, not Ken's five.
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 9);
+    let id = vm.identity_of(Side::Runner).expect("one identity in the play area");
+    assert_eq!(vm.st.objects[&id].printed.name, "Andromeda: Dispossessed Ristie");
 }

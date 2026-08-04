@@ -120,13 +120,26 @@ pub const GAUNTLET_LIST: &[(&str, u32)] = &[
     ("Crisium Grid", 2),
 ];
 
+/// CR 1.5.4a: the additional identity cards this table brings along with the
+/// Andromeda deck, kept in a pile outside the game.
+///
+/// Not part of the printed deck list — 1.5.4a makes the pile a choice a
+/// player makes at the table, and the deck photo records no such choice. This
+/// deck plays Rebirth, and 1.5.4b's "another identity from the same faction"
+/// has to have something to name, so it brings a second Criminal.
+pub const ANDROMEDA_PILE: &[&str] = &["Ken \"Express\" Tenma: Disappeared Clone"];
+
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed
-/// deck name, and the list with its copy counts.
+/// deck name, the list with its copy counts, and CR 1.5.4a's pile.
 pub struct DeckSpec {
     pub key: &'static str,
     pub title: &'static str,
     pub side: Side,
     pub list: &'static [(&'static str, u32)],
+    /// CR 1.5.4a: additional identities brought along with the deck. One
+    /// entry per card — the pile is a set of distinct identities, not a list
+    /// with copy counts.
+    pub pile: &'static [&'static str],
 }
 
 pub const ANDROMEDA: DeckSpec = DeckSpec {
@@ -134,9 +147,16 @@ pub const ANDROMEDA: DeckSpec = DeckSpec {
     title: "estrike Regular Andromeda",
     side: Side::Runner,
     list: ANDROMEDA_LIST,
+    pile: ANDROMEDA_PILE,
 };
-pub const GAUNTLET: DeckSpec =
-    DeckSpec { key: "gauntlet", title: "Gauntlet", side: Side::Corp, list: GAUNTLET_LIST };
+pub const GAUNTLET: DeckSpec = DeckSpec {
+    key: "gauntlet",
+    title: "Gauntlet",
+    side: Side::Corp,
+    list: GAUNTLET_LIST,
+    // 1.5.4a: the pile is the Runner's.
+    pile: &[],
+};
 
 pub fn deck_specs() -> [&'static DeckSpec; 2] {
     [&ANDROMEDA, &GAUNTLET]
@@ -245,14 +265,40 @@ pub fn readiness() -> Readiness {
                 ));
             }
         }
-        r.total += cards.len();
+        // CR 1.5.4a: the additional identities come to the table with the
+        // deck, so they are gated exactly like the deck is — a pile card that
+        // cannot be played is a Rebirth that cannot resolve. They carry no
+        // copy count: the pile is a set of distinct identities.
+        let pile = jinteki_cards::pile_named(spec.key).unwrap_or_default();
+        for title in spec.pile {
+            match pile.iter().find(|c| c.name() == *title) {
+                Some(c) => {
+                    if c.is_complete() {
+                        complete += 1;
+                    } else {
+                        r.missing.push(MissingCard {
+                            deck: spec.key,
+                            title: c.name().to_string(),
+                            copies: 1,
+                            unimplemented: c.unimplemented.iter().map(|s| s.to_string()).collect(),
+                        });
+                    }
+                }
+                None => r.problems.push(format!(
+                    "{}: the additional-identities pile names {title:?}, which the card layer \
+                     does not carry",
+                    spec.title
+                )),
+            }
+        }
+        r.total += cards.len() + spec.pile.len();
         r.complete += complete;
         r.decks.push(DeckReadiness {
             key: spec.key,
             title: spec.title,
             side: side_key(spec.side),
             identity,
-            distinct: cards.len(),
+            distinct: cards.len() + spec.pile.len(),
             complete,
             copies,
         });
@@ -261,9 +307,10 @@ pub fn readiness() -> Readiness {
     r
 }
 
-/// Expand one deck into one `PrintedCard` per COPY, plus the identity.
+/// Expand one deck into one `PrintedCard` per COPY, plus the identity and
+/// CR 1.5.4a's pile of additional identities.
 /// Refuses (via the caller's gate) rather than dropping anything.
-fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>) {
+fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>, Vec<PrintedCard>) {
     let mut deck = Vec::new();
     let mut identity = None;
     let cards = jinteki_cards::deck_named(spec.key).unwrap_or_default();
@@ -278,7 +325,16 @@ fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>) {
             deck.push(c.printed.clone());
         }
     }
-    (deck, identity)
+    // 1.5.4a: one copy of each named identity, in the order the spec names
+    // them. The pile never enters a zone, so nothing is shuffled into it.
+    let carried = jinteki_cards::pile_named(spec.key).unwrap_or_default();
+    let pile = spec
+        .pile
+        .iter()
+        .filter_map(|t| carried.iter().find(|c| c.name() == *t))
+        .map(|c| c.printed.clone())
+        .collect();
+    (deck, identity, pile)
 }
 
 /// The two eternal decks as a VM setup — or the refusal that says why not.
@@ -287,13 +343,16 @@ pub fn eternal_setup(seed: u64) -> Result<GameSetup, Readiness> {
     if !r.ready {
         return Err(r);
     }
-    let (runner_deck, runner_identity) = expand(&ANDROMEDA);
-    let (corp_deck, corp_identity) = expand(&GAUNTLET);
+    let (runner_deck, runner_identity, runner_pile) = expand(&ANDROMEDA);
+    let (corp_deck, corp_identity, corp_pile) = expand(&GAUNTLET);
     Ok(GameSetup {
         corp_deck,
         runner_deck,
         corp_identity,
         runner_identity,
+        additional_identities: [(Side::Corp, corp_pile), (Side::Runner, runner_pile)]
+            .into_iter()
+            .collect(),
         seed,
         shuffle: true,
     })

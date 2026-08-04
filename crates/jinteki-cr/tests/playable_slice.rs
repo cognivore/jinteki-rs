@@ -47,6 +47,7 @@ fn full_game_slice() {
         corp_identity: None,
         runner_identity: None,
         seed: 7,
+        additional_identities: Default::default(),
         shuffle: true,
     };
     let mut vm = Vm::new_game(setup);

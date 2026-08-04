@@ -16,10 +16,31 @@ pub fn andromeda() -> Card {
     card("Andromeda: Dispossessed Ristie")
         .runner()
         .identity()
+        .faction("Criminal")
         .subtypes(&["Natural"])
         .link(1)
         .text("You draw a starting hand of 9 cards.")
         .starting_hand(9)
+        .build()
+}
+
+/// Ken "Express" Tenma: Disappeared Clone — Identity: Clone. Link 0.
+/// "The first time each turn you play a run event, gain 1[credit]."
+///
+/// COMPLETE. Not a card of the deck: CR 1.5.4a's pile, which a player brings
+/// "along with their deck" and which is what 1.5.4b's "another identity"
+/// refers to. This deck plays Rebirth, so it has to bring something for
+/// Rebirth to switch to, and 1.5.4b's "from the same faction" makes that a
+/// second Criminal.
+pub fn ken_tenma() -> Card {
+    card("Ken \"Express\" Tenma: Disappeared Clone")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Clone"])
+        .text("The first time each turn you play a run event, gain 1[credit].")
+        .when_first_each_turn(plays_a_subtyped(Runner, CardType::Event, "Run"), [gain(Runner, 1)])
+        .named("a cut of every job")
         .build()
 }
 
@@ -29,6 +50,7 @@ pub fn sure_gamble() -> Card {
     card("Sure Gamble")
         .runner()
         .event()
+        .faction("Neutral")
         .cost(5)
         .text("Gain 9[credit].")
         .play([gain(Runner, 9)])
@@ -41,6 +63,7 @@ pub fn diesel() -> Card {
     card("Diesel")
         .runner()
         .event()
+        .faction("Shaper")
         .cost(0)
         .text("Draw 3 cards.")
         .play([draw(Runner, 3)])
@@ -56,6 +79,7 @@ pub fn clean_getaway() -> Card {
     card("Clean Getaway")
         .runner()
         .event()
+        .faction("Criminal")
         .subtypes(&["Run"])
         .cost(3)
         .text("Run any server. If successful, gain 6[credit].")
@@ -77,6 +101,7 @@ pub fn account_siphon() -> Card {
     card("Account Siphon")
         .runner()
         .event()
+        .faction("Criminal")
         .subtypes(&["Run", "Sabotage"])
         .cost(0)
         .text("Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags.")
@@ -106,6 +131,7 @@ pub fn career_fair() -> Card {
     card("Career Fair")
         .runner()
         .event()
+        .faction("Criminal")
         .cost(0)
         .text("Install 1 resource from your grip, paying 3[credit] less.")
         .play([install_paying_less(
@@ -138,6 +164,7 @@ pub fn employee_strike() -> Card {
     card("Employee Strike")
         .runner()
         .event()
+        .faction("Neutral")
         .subtypes(&["Current"])
         .cost(1)
         .text("This event is not trashed until another current is played or an agenda is scored.")
@@ -168,6 +195,7 @@ pub fn mutual_favor() -> Card {
     card("Mutual Favor")
         .runner()
         .event()
+        .faction("Criminal")
         .cost(0)
         .text("Search your stack for 1 icebreaker and reveal it. (Shuffle your stack after searching it.) If you made a successful run this turn, you may install that program. If you do not, add it to your grip.")
         .play([
@@ -205,6 +233,7 @@ pub fn pinhole_threading() -> Card {
     card("Pinhole Threading")
         .runner()
         .event()
+        .faction("Criminal")
         .subtypes(&["Run"])
         .cost(1)
         .text("Run any server. If successful, instead of breaching the attacked server, access 1 card in the root of another server. If that card is an agenda, you cannot steal or trash it during this access.")
@@ -238,6 +267,7 @@ pub fn rebirth() -> Card {
     card("Rebirth")
         .runner()
         .event()
+        .faction("Neutral")
         .cost(0)
         .text("Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it.")
         .text("Limit 1 per deck.")
@@ -262,6 +292,7 @@ pub fn boomerang() -> Card {
     card("Boomerang")
         .runner()
         .hardware()
+        .faction("Criminal")
         .cost(2)
         .unique()
         .text("When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice.")
@@ -281,6 +312,7 @@ pub fn desperado() -> Card {
     card("Desperado")
         .runner()
         .hardware()
+        .faction("Criminal")
         .subtypes(&["Console"])
         .cost(3)
         .unique()
@@ -305,6 +337,7 @@ pub fn bukhgalter() -> Card {
     card("Bukhgalter")
         .runner()
         .program()
+        .faction("Criminal")
         .subtypes(&["Icebreaker", "Killer"])
         .cost(3)
         .strength(1)
@@ -334,6 +367,7 @@ pub fn paperclip() -> Card {
     card("Paperclip")
         .runner()
         .program()
+        .faction("Anarch")
         .subtypes(&["Icebreaker", "Fracter"])
         .cost(4)
         .strength(1)
@@ -357,6 +391,7 @@ pub fn shibboleth() -> Card {
     card("Shibboleth")
         .runner()
         .program()
+        .faction("Criminal")
         .subtypes(&["Icebreaker", "Decoder"])
         .cost(1)
         .strength(3)
@@ -391,6 +426,7 @@ pub fn cupellation() -> Card {
     card("Cupellation")
         .runner()
         .program()
+        .faction("Criminal")
         .cost(1)
         .strength(0)
         .memory(1)
@@ -419,6 +455,7 @@ pub fn daily_casts() -> Card {
     card("Daily Casts")
         .runner()
         .resource()
+        .faction("Neutral")
         .cost(3)
         .text("When you install this resource, load 8[credit] onto it. When it is empty, trash it.")
         .text("When your turn begins, take 2[credit] from this resource.")
@@ -436,6 +473,7 @@ pub fn earthrise_hotel() -> Card {
     card("Earthrise Hotel")
         .runner()
         .resource()
+        .faction("Neutral")
         .subtypes(&["Location", "Ritzy"])
         .cost(4)
         .unique()
@@ -464,6 +502,7 @@ pub fn bloo_moose() -> Card {
     card("Bloo Moose")
         .runner()
         .resource()
+        .faction("Neutral")
         .subtypes(&["Location", "Seedy"])
         .cost(4)
         .unique()
@@ -489,6 +528,7 @@ pub fn citadel_sanctuary() -> Card {
     card("Citadel Sanctuary")
         .runner()
         .resource()
+        .faction("Neutral")
         .subtypes(&["Location"])
         .cost(2)
         .unique()
@@ -525,6 +565,7 @@ pub fn film_critic() -> Card {
     card("Film Critic")
         .runner()
         .resource()
+        .faction("Shaper")
         .subtypes(&["Connection"])
         .cost(1)
         .text("Film Critic can host a single agenda.")
@@ -561,6 +602,7 @@ pub fn miss_bones() -> Card {
     card("Miss Bones")
         .runner()
         .resource()
+        .faction("Criminal")
         .subtypes(&["Connection"])
         .cost(2)
         .unique()
@@ -595,6 +637,7 @@ pub fn the_class_act() -> Card {
     card("The Class Act")
         .runner()
         .resource()
+        .faction("Criminal")
         .subtypes(&["Connection", "Ritzy"])
         .cost(4)
         .unique()
@@ -634,6 +677,7 @@ pub fn the_source() -> Card {
     card("The Source")
         .runner()
         .resource()
+        .faction("Neutral")
         .subtypes(&["Connection"])
         .cost(2)
         .unique()
@@ -674,4 +718,13 @@ pub fn deck() -> Vec<Card> {
         the_class_act(),
         the_source(),
     ]
+}
+
+/// CR 1.5.4a: the additional identities this deck brings along with it, kept
+/// in a pile outside the game. Which identities a player brings is a choice
+/// at the table rather than part of the printed deck list — this deck plays
+/// Rebirth, so it brings the Criminal that gives Rebirth something to switch
+/// to.
+pub fn additional_identities() -> Vec<Card> {
+    vec![ken_tenma()]
 }

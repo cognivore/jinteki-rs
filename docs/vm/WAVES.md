@@ -14,9 +14,11 @@ truth.
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
 - **DP-7b: 861/1420** distinct rules cited (60.6%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **Priority decks: 42/50 cards complete**, 15 printed sentences still
+- **Priority decks: 43/51 cards complete**, 15 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
-  ratcheted by `the_gap_list_is_measurable_and_honest`)
+  ratcheted by `the_gap_list_is_measurable_and_honest`). The 51st card is
+  CR 1.5.4a's additional-identities pile, which a player brings "along with
+  their deck" and which the readiness gate therefore counts with it.
 - **DP-7c: 68/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are

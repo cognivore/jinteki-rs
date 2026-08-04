@@ -82,7 +82,10 @@ async fn cr_readiness_endpoint_reports_the_true_fraction() {
     let mut incomplete: Vec<(String, Vec<String>)> = Vec::new();
     for key in ["andromeda", "gauntlet"] {
         let deck = jinteki_cards::deck_named(key).expect("the deck exists");
-        for c in deck {
+        // CR 1.5.4a: the additional identities come to the table with the
+        // deck, so the gate counts them with it.
+        let pile = jinteki_cards::pile_named(key).expect("the pile exists");
+        for c in deck.into_iter().chain(pile) {
             total += 1;
             if c.is_complete() {
                 complete += 1;
@@ -230,6 +233,8 @@ fn small_setup(seed: u64) -> GameSetup {
             Side::Runner,
             CardType::Identity,
         )),
+        // CR 1.5.4a: no additional identities brought.
+        additional_identities: Default::default(),
         seed,
         shuffle: true,
     }

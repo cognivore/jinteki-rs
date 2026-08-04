@@ -1161,6 +1161,19 @@ pub enum TargetFilter {
     /// the same derivation the basic advance action uses, so the criterion
     /// and the action can never disagree. Names the play area (1.15.2c).
     CanBeAdvanced,
+    /// CR 1.5.4a/b: "another identity" — a card in the additional-identities
+    /// pile that player brought along with their deck. A criterion that names
+    /// a zone (1.15.2c lifts for it), which is what lets an ability reach
+    /// outside the game at all; 1.5.4b is the rule that says an ability
+    /// naming an identity other than the current one means exactly these.
+    InIdentityPileOf(Side),
+    /// CR 2.13: "…from the same faction" (Rebirth) / "…that does not match
+    /// the faction of your identity" (DJ Fenris) — the card's faction (2.13.3
+    /// gives every identity one) compared against the faction of the named
+    /// player's CURRENT identity (3.1.1: the single one in the play area).
+    /// The polarity is content (§12 rule 2), so one atom says both sentences.
+    /// A card with no printed faction matches neither way.
+    FactionMatchesIdentityOf { side: Side, same: bool },
     /// "each **other** rezzed piece of ice", "another installed program" —
     /// the word "other" in a description, which excludes the ability's own
     /// source from the set it describes (Mother Goddess and Warden Fatuma
@@ -1181,6 +1194,9 @@ impl TargetFilter {
                 | TargetFilter::HasSubtype(_)
                 | TargetFilter::PrintedCostAtMost(_)
                 | TargetFilter::HasName(_)
+                // 2.13: the faction is a printed characteristic like any
+                // other, so a sentence stipulating one has to be demonstrated.
+                | TargetFilter::FactionMatchesIdentityOf { .. }
         )
     }
 }
@@ -1235,6 +1251,9 @@ impl TargetFilter {
                 // card could never be targeted by the very ability that put
                 // it there.
                 | TargetFilter::HostedOnSource
+                // 1.5.4a: the pile is a place, and naming it is the only way
+                // an ability can reach a card outside the game.
+                | TargetFilter::InIdentityPileOf(_)
         )
     }
 }

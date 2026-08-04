@@ -217,6 +217,15 @@ impl CardBuilder {
         self.printed.subtypes = s.to_vec();
         self
     }
+    /// The faction printed on the card (2.13): "Anarch", "Criminal",
+    /// "Shaper", "Haas-Bioroid", "Jinteki", "NBN", "Weyland Consortium",
+    /// "Adam", "Apex", "Sunny Lebeau" — or "Neutral" for 2.13.2's white
+    /// background and no logo. Deckbuilding reads it (1.4.5), and so do the
+    /// two cards that talk about a faction while the game is running.
+    pub fn faction(mut self, f: &'static str) -> Self {
+        self.printed.faction = Some(f);
+        self
+    }
     /// Play, install or rez cost (2.3).
     pub fn cost(mut self, n: u32) -> Self {
         self.printed.cost = Some(n);
@@ -1096,6 +1105,17 @@ pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
         by: Some(by),
         of_types: vec![of],
         of_subtypes: Vec::new(),
+        other_than_source: false,
+    }
+}
+/// "…you play a **run** event" (Ken Tenma class) — the same trigger with the
+/// sentence's subtype stipulation (2.16), which is read through the 9.12.1b
+/// pipeline like every other subtype query.
+pub fn plays_a_subtyped(by: Side, of: CardType, subtype: &'static str) -> TriggerCond {
+    TriggerCond::CardPlayed {
+        by: Some(by),
+        of_types: vec![of],
+        of_subtypes: vec![subtype],
         other_than_source: false,
     }
 }
