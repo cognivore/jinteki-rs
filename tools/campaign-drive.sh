@@ -83,6 +83,16 @@ while true; do
   sleep 45
   while pgrep -f "overnight-drive.sh" >/dev/null; do sleep 60; done
 
+  # Assess for DRIFT after every wave. Unattended agents are fast and
+  # confident, which is what makes drift expensive: a wrong pattern is copied
+  # into the next batch before anyone reads it. Every check in the assessor
+  # is one that has already been violated here at least once. If it fires,
+  # STOP — waving another agent on top of drifted work multiplies it.
+  if ! "$REPO/tools/assess-drift.sh" >>"$LOG" 2>&1; then
+    log "DRIFT DETECTED after this wave — stopping the campaign for review"
+    break
+  fi
+
   if [[ "$(git rev-parse HEAD)" == "$before_head" && "$(ids_done)" -le "$before_ids" ]]; then
     stalls=$((stalls + 1))
     log "no progress this wave (stall ${stalls}/${MAX_STALLS})"
