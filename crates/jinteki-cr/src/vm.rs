@@ -6064,6 +6064,11 @@ impl Vm {
                 .unwrap_or(false),
             TargetFilter::CardsInHandOf(side) => o.zone == Zone::Hand(side),
             TargetFilter::CardTypeIs(t) => o.printed.card_type == t,
+            // 1.14.2: the controller is the player responsible for the object.
+            TargetFilter::ControlledBy(side) => {
+                cite!("rule_controller_object");
+                o.controller == side
+            }
             // 9.12.1b: subtypes come from the characteristics pipeline, so a
             // subtype granted or removed by an active effect counts.
             TargetFilter::HasSubtype(s) => {
@@ -9316,16 +9321,25 @@ impl Vm {
                 if in_play_area {
                     // 8.6.6c: a "not trashed until <effect>" ability keeps
                     // the card in the play area via a lingering effect.
-                    let shielded = self.st.objects[&c].face().abilities.iter().any(|a| {
-                        a.statics.iter().any(|d| {
-                            matches!(d, StaticDecl::PlayedNotTrashedUntilAgendaSteal)
-                        })
-                    });
-                    if shielded {
+                    let shielded = self.st.objects[&c]
+                        .face()
+                        .abilities
+                        .iter()
+                        .flat_map(|a| a.statics.iter())
+                        .find_map(|d| match d {
+                            StaticDecl::PlayedNotTrashedUntil { until } => Some(until.clone()),
+                            _ => None,
+                        });
+                    if let Some(until) = shielded {
                         cite!("rule_play_not_trashed_until");
                         let id = self.next_lingering;
                         self.next_lingering += 1;
-                        self.lingering.push(LingeringEffect::new(id, c, Payload::PlayedTrashShield { card: c }, Duration::UntilResolved));
+                        self.lingering.push(LingeringEffect::new(
+                            id,
+                            c,
+                            Payload::PlayedTrashShield { card: c, until },
+                            Duration::UntilResolved,
+                        ));
                     } else {
                         // (g) trash the card.
                         let owner = self.st.objects[&c].owner;

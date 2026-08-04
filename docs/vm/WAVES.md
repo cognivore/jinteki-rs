@@ -6,14 +6,17 @@ ARCHITECTURE.md, then the code. Odometers are enforced by tests in
 `crates/jinteki-cr/tests/` — this file is the narrative, the tests are the
 truth.
 
-## Odometers (after W17d)
+## Odometers (after W18a)
 
 - **DP-7a: 243/243** — **COMPLETE.** Every worked example in
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 854/1420** distinct rules cited (60.1%); traceability test fails
+- **DP-7b: 860/1420** distinct rules cited (60.6%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
+- **Priority decks: 41/50 cards complete**, 17 printed sentences still
+  unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
+  ratcheted by `the_gap_list_is_measurable_and_honest`)
 - **DP-7c: 68/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
@@ -77,6 +80,7 @@ prefer a slightly larger honest primitive and note it here.
 
 | commit | wave | delivered | DP-7a |
 |---|---|---|---|
+| `-` | W18a | **the current class, said whole — Employee Strike; 40 → 41/50.** **BREAKING: `StaticDecl::PlayedNotTrashedUntilAgendaSteal` → `PlayedNotTrashedUntil { until: Vec<TriggerCond> }`.** CR 3.5.1b and 3.7.1b print the same sentence with one word different — a current OPERATION is not trashed until another current is played or the Runner STEALS an agenda, a current EVENT until another current is played or the Corp SCORES one — so the ending occurrences are content on one declaration (§12 rule 2), stated in the vocabulary that already names occurrences. **Gap closed, not just widened: "another current is played" was never implemented at all**, so Targeted Marketing's whole first sentence was riding on the steal half; the shield now expires through the same `trigger_matches` a conditional's condition goes through, with the shielded card as the source. **`TriggerCond::CardPlayed` grows the rest of its stipulations** — `by: Option<Side>` (`None` is a sentence naming no player), `of_subtypes` (2.16, read through the 9.12.1b pipeline, so a list is a conjunction where the type list is a disjunction) and `other_than_source`, the word "another", the same reading `TargetFilter::OtherThanSource` gives "other". **`TargetFilter::ControlledBy(Side)`** is 1.14.2's controller: "the Corp's identity" needs a side-scoped criterion that does NOT require the card to be installed, since an identity never is — and that is exactly why it leaves the Runner's identity alone. Employee Strike's second sentence is then 9.1.9a with nothing left over: `Effective::ability_present` is a mask over `printed.abilities`, so removing all of them removes exactly the PRINTED ones the card names | 243 |
 | `93fceec` | W17d | **DP-7c sub-wave 12 — the coordinator's gap requests, and the `Combined` defect.** **Defect: `Instruction::Combined` silently dropped STRUCTURAL sub-instructions.** `Combined` exists because the CR forces it (Snare!'s "3 net damage and 1 tag" is ONE instruction, so one interrupt window sees both) and works by MERGING the sub-instructions' expected atoms — a sub-instruction whose expected effect is structural carries no value to merge and resolved as nothing (Earthrise Hotel removed no counter). Those are 9.11.3's separate instructions and are now spliced in after the merged one (DEVIATION, annotated: a spliced sub-instruction resolves after every merged one, so printed order is not preserved between the two kinds). **`TriggerRequirement::RunnerTagsAtLeast(u32)`** replaces `RunnerTagged` — the threshold is content (§12 rule 2), so BOOM!'s "at least 2 tags" is sayable and `RunnerTagsAtLeast(1)` IS "tagged". **`TriggerCond::DiscardPhaseEnds { side, requires }`** — 5.5.4's condition can now carry a 9.6.5c state requirement (Citadel Sanctuary needs no new predicate, only this field). **`TriggerCond::RunnerAccessesCard { of_types }`** — a card-type stipulation, mirroring `CorpRezzesCard` (Film Critic's "whenever you access an agenda"); `trigger_matches` takes the printed type through a lookup closure. **`TargetFilter::CanBeAdvanced`** — 1.18.3's permission as a criterion, derived from the SAME `Vm::advanceable_cards` the basic advance action reads, so criterion and action cannot disagree | 243 |
 | `5e3004f` | W17c | **DP-7c sub-wave 11 — BREAKING: quantity positions on `ModifyStrength.amount` and `LoseCredits`.** Both signature changes in ONE commit so the card layer takes one break: `LoseCredits(Side, u32)` → `LoseCredits(Side, Quantity)` and `ModifyStrength { amount: i32 }` → `{ amount: Quantity }`. `Quantity::CreditsInPoolOf(Side)` (1.10.2 — the credit POOL, which 1.13.3 keeps distinct from credits hosted on cards) is Closed Accounts' "loses all credits in their credit pool"; `Quantity::AnnouncedX` in a strength modification is Corporate Troubleshooter's and Paperclip's "+X strength". `crates/jinteki-cards/src/edsl.rs`'s two-helper compile fix (the cards agent's) is committed in the same atomic break. **Defect fixed: 1.16.2c keyed the X announcement on the wrong thing** — "some costs CONTAIN the variable X", but the kernel asked only when the ability also stated a RESTRICTION, so a cost of plain X silently announced 0. The announcement is now owed by the cost's SHAPE (`Quantity::mentions_announced_x`) and `Vm::x_bound` is the bound: the stated restriction where there is one, and in every case what 1.16.1c leaves. **Defect fixed: `ModifyStrength` never announced its target** (same class as W14b's `MoveToDeck`, W17b's `PlaceCounters`) — 1.15.1/9.11.4c make the ice the target of "choose 1 rezzed piece of ice … that ice gets +X strength". Cards: Closed Accounts, Corporate Troubleshooter, Quandary. Ported: `closed-accounts`, `corporate-troubleshooter` | 243 |
 | `b31eac8` | W17b | **DP-7c sub-wave 10 — "installed this turn", and a prohibition on scoring.** **`TargetFilter::InstalledThisTurn(bool)`** — CR 1.12.6, a GAME HISTORY query over the change log since the turn began (10.2.1 makes the history open information), the polarity as content (§12 rule 2) so one atom says both Clot's "an agenda installed this turn" and Seamless Launch's "1 installed card that you did not install this turn". **`StaticDecl::CannotScoreMatching { criteria }`** — CR 1.2.2: "if a rule or ability directs something to happen, but another effect states that it cannot happen, the 'cannot' ability takes precedence", so the declaration removes the (S) option (9.2.7d) rather than competing with it; scoring is not an ability (1.17.3c), so 9.1.9's restriction machinery could never have reached it. The description is re-read whenever a paid window opens, which is why the prohibition lifts by itself next turn and why installing Clot AFTER the agenda still blocks. **Defect fixed: a counter instruction's card position never announced its targets** — `PlaceCounters`, `LoadCounters`, `RemoveCounters`, `TakeHostedCredits` and `AdvanceCard` were missing from `targets_needed`, so a `TargetSpec::Choose` position silently did nothing (W14b's `MoveToDeck` bug again). Cards: Seamless Launch; Clot COMPLETE. Ported: `clot`, `seamless-launch` | 243 |
@@ -857,7 +861,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W17b it is **50 cards, 20 complete, 30 partial, 47
+prints the count. At W18a it is **50 cards, 41 complete, 9 partial, 17
 printed sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -965,8 +969,10 @@ classify will cut someone again.
   `TargetFilter::CanBeAdvanced`, derived from the same
   `Vm::advanceable_cards` the basic advance action reads.
 - "a card you did not install this turn" (Seamless Launch).
-- "the Corp's identity" — an identity is not installed, so every side-scoped
-  filter misses it (Employee Strike).
+- ~~"the Corp's identity" — an identity is not installed, so every side-scoped
+  filter misses it (Employee Strike).~~ — **done, W18a**:
+  `TargetFilter::ControlledBy(Side)`, which is 1.14.2's controller and
+  therefore reaches a card that is not installed.
 - criteria on `TargetSpec::AccessedCard` — "the non-agenda card you are
   accessing" (Cupellation).
 
@@ -1033,9 +1039,12 @@ scan of its instructions.
     play — and is still unsayable.
 - "The advancement requirement of all agendas is increased by 1" (The
   Source); `ScoreRequirementModInSourceServer` is scoped to one server.
-- `PlayedNotTrashedUntilAgendaSteal` ends only on a steal, so a Runner
+- ~~`PlayedNotTrashedUntilAgendaSteal` ends only on a steal, so a Runner
   current reading "…or an agenda is **scored**" cannot use it (Employee
-  Strike). The ending condition wants to be content, not a variant name.
+  Strike). The ending condition wants to be content, not a variant name.~~ —
+  **done, W18a (BREAKING)**: `PlayedNotTrashedUntil { until: Vec<TriggerCond> }`
+  carries the ending occurrences as content, including the "another current is
+  played" half that neither side's shield used to have.
 - a `TimingRestriction` keyed to a maintained choice — "use this hardware
   only during encounters with that ice" (Boomerang). The existing variants
   key on subtype.

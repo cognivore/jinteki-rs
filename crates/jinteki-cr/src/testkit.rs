@@ -1615,13 +1615,23 @@ pub fn play_operation_button(name: &'static str, card: ObjectId) -> PrintedCard 
     c
 }
 
-/// Targeted-Marketing shape: an operation that is not trashed until the
-/// Runner steals an agenda (8.6.6c).
+/// Targeted-Marketing shape (8.6.6c, 3.5.1b): a CURRENT operation — "this
+/// card is not trashed until another current is played or an agenda is
+/// stolen", re-derived from the printed sentence.
 pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
     let mut c = operation(name, 0, vec![]);
-    c.abilities = vec![AbilityDef::static_ability(vec![
-        StaticDecl::PlayedNotTrashedUntilAgendaSteal,
-    ])
+    c.subtypes = vec!["Current"];
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::PlayedNotTrashedUntil {
+        until: vec![
+            TriggerCond::CardPlayed {
+                by: None,
+                of_types: vec![CardType::Operation, CardType::Event],
+                of_subtypes: vec!["Current"],
+                other_than_source: true,
+            },
+            TriggerCond::RunnerStealsAgenda,
+        ],
+    }])
     .labeled("tm: current-style trash shield")];
     c
 }

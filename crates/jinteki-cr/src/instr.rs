@@ -1120,6 +1120,13 @@ pub enum TargetFilter {
     /// self-referential language: it describes every card with that name,
     /// including but not limited to the ability's own source.
     HasName(&'static str),
+    /// "the Corp's identity", "a card the Runner controls" — CR 1.14.2's
+    /// controller, which is the player responsible for the object and by
+    /// 1.14.2c defaults to its owner. The side is content (§12 rule 2), and
+    /// the criterion names no zone: an identity is never installed, so every
+    /// other side-scoped atom in this vocabulary (`InstalledCorpCard`,
+    /// `InstalledRunnerCard`) excludes it by construction.
+    ControlledBy(Side),
     /// "this card" as a criterion — the ability's own source, and only it.
     /// Self-referential language (10.1.4), the complement of `OtherThanSource`.
     IsSource,

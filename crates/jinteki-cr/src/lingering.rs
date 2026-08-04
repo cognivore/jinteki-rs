@@ -97,10 +97,16 @@ pub enum Payload {
     /// (9.5.3), a 9.12.3a "must" cannot force one that is prohibited.
     CannotUseAbilitiesOf(ObjectId),
     /// CR 8.6.6c: a played card kept in the play area instead of being
-    /// trashed at 8.6.7g; when the indicated effect occurs (kernel wave: the
-    /// Runner steals an agenda), the effect expires at checkpoint step
-    /// 10.3.1b and the card is trashed as if completing its resolution.
-    PlayedTrashShield { card: ObjectId },
+    /// trashed at 8.6.7g; when one of the indicated effects occurs, the
+    /// effect expires at checkpoint step 10.3.1b and the card is trashed as
+    /// if completing its resolution.
+    ///
+    /// `until` is copied off the declaration that created the shield rather
+    /// than re-read from the card, because 9.1.9a can take the ability away
+    /// while the shield is standing (a second Direct-Access-class effect) and
+    /// 8.6.6c's lingering effect has already been created by then — the
+    /// duration is a property of the effect, not of the ability.
+    PlayedTrashShield { card: ObjectId, until: Vec<crate::ability::TriggerCond> },
     /// "Prevent all damage." for a duration (The Noble Path class; 6.8.5) —
     /// removes damage from expected effects while it lives. Run-bound
     /// durations expire at step 6.9.6d (10.3.1b of the checkpoint after the

@@ -66,7 +66,26 @@ pub enum TriggerCond {
     /// "The first time each turn you play an operation…" (Gemilang class,
     /// with the once-per-turn flag carrying the "first time"): a card of one
     /// of these types was played by `by`. Empty `of_types` = any card.
-    CardPlayed { by: Side, of_types: Vec<CardType> },
+    ///
+    /// Every stipulation the sentence can make about the play is content on
+    /// this one atom (§12 rule 2): `by` is `None` when the sentence names no
+    /// player ("another current operation or event is played", 3.5.1b), the
+    /// type and subtype lists are the 2.15/2.16 stipulations (each empty
+    /// meaning no stipulation, exactly as on
+    /// [`TriggerCond::RunnerAccessesCard`]), and `other_than_source` is the
+    /// word "another" — the same reading
+    /// [`crate::instr::TargetFilter::OtherThanSource`] gives "other".
+    ///
+    /// A card has exactly one type (2.15) and any number of subtypes (2.16),
+    /// so `of_types` is read as "any of these" and `of_subtypes` as "all of
+    /// these" — which is how the printed phrase "another current operation or
+    /// event" reads in one condition.
+    CardPlayed {
+        by: Option<Side>,
+        of_types: Vec<CardType>,
+        of_subtypes: Vec<&'static str>,
+        other_than_source: bool,
+    },
     /// `of_types` is the sentence's card-type stipulation ("whenever you
     /// access an agenda", Film Critic); empty means no stipulation, exactly
     /// as it does on [`TriggerCond::CorpRezzesCard`].
@@ -724,11 +743,19 @@ pub enum StaticDecl {
     InstallOnlyHostedOn(Vec<crate::instr::TargetFilter>),
     /// "+N link" (Dyson Mem Chip class; the 9.6.5d link example).
     LinkBonus(i32),
-    /// "This operation is not trashed until the Runner steals an agenda."
-    /// (Targeted Marketing / current class — 8.6.6c: instead of trashing at
-    /// 8.6.7g, a lingering effect keeps it in the play area until the
-    /// indicated effect occurs.)
-    PlayedNotTrashedUntilAgendaSteal,
+    /// "This card is not trashed until another current is played or an agenda
+    /// is <scored|stolen>." (The current class — 8.6.6c: instead of trashing
+    /// at 8.6.7g, a lingering effect keeps the card in the play area until
+    /// the indicated effect occurs.)
+    ///
+    /// CR 3.5.1b and 3.7.1b print the two halves of the same sentence with
+    /// one word different — a current OPERATION lasts until the Runner
+    /// steals an agenda, a current EVENT until the Corp scores one — so the
+    /// indicated effect is content on this one declaration (§12 rule 2)
+    /// rather than a declaration per side. The occurrences are stated in the
+    /// vocabulary that already names occurrences, so "another current
+    /// operation or event is played" needs nothing of its own.
+    PlayedNotTrashedUntil { until: Vec<TriggerCond> },
     /// "As an additional cost to access a card in the root of a remote
     /// server, pay N." (Gagarin class — 7.4.3 example 2.)
     AdditionalAccessCost(Cost),
@@ -1312,6 +1339,10 @@ pub fn trigger_matches(
     // The printed card type of an object named by the change, for a condition
     // that stipulates one (2.15).
     card_type_of: impl Fn(ObjectId) -> Option<crate::object::CardType>,
+    // Whether an object named by the change has a subtype the condition
+    // stipulates (2.16) — read through the 9.12.1b pipeline, so a subtype an
+    // active effect granted counts.
+    has_subtype: impl Fn(ObjectId, &'static str) -> bool,
 ) -> bool {
     cite!("rule_trigger_condition_checked");
     match (cond, change) {
@@ -1351,9 +1382,16 @@ pub fn trigger_matches(
             cite!("rule_action_phase_duration");
             side == s
         }
-        (TriggerCond::CardPlayed { by, of_types }, GameChange::CardPlayed { obj, side }) => {
+        (
+            TriggerCond::CardPlayed { by, of_types, of_subtypes, other_than_source },
+            GameChange::CardPlayed { obj, side },
+        ) => {
             cite!("rule_play_ability");
-            by == side && (of_types.is_empty() || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
+            by.is_none_or(|b| b == *side)
+                && (of_types.is_empty()
+                    || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
+                && of_subtypes.iter().all(|s| has_subtype(*obj, s))
+                && (!*other_than_source || *obj != source.id)
         }
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)

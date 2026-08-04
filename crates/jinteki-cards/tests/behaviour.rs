@@ -665,6 +665,174 @@ fn the_source_taxes_every_steal() {
     assert_eq!(vm.st.runner.credits, 0);
 }
 
+/// How many of an object's abilities are actually present, read off the
+/// 9.12.1d/e pipeline (9.1.9b). A lost ability is completely ignored (9.1.9a),
+/// and in this kernel `ability_present` is a mask over `printed.abilities` —
+/// so this counts exactly the PRINTED abilities a card still has.
+fn abilities_present(vm: &Vm, obj: jinteki_cr::object::ObjectId) -> usize {
+    jinteki_cr::object::compute_effective(&vm.st.objects, &vm.char_effects(), obj)
+        .ability_present
+        .iter()
+        .filter(|p| **p)
+        .count()
+}
+
+/// Employee Strike: "The Corp's identity loses its printed abilities."
+/// (9.1.9a.) The description reaches the identity through 1.14.2's controller
+/// rather than through an installed-card criterion — an identity is never
+/// installed — so the Runner's own identity keeps everything.
+#[test]
+fn employee_strike_blanks_the_corp_identity_and_leaves_the_runners_alone() {
+    for played in [true, false] {
+        let mut vm = Vm::empty(48);
+        // "Whenever the Runner spends credits, gain 1[credit]" — a Corp
+        // identity ability with something to do on the Runner's turn.
+        let corp_id = tk::install_identity(&mut vm, tk::gamenet_like("GameNET-like"), Side::Corp);
+        // "When a run ends, gain 1[credit]" — the Runner's own identity.
+        let runner_id =
+            tk::install_identity(&mut vm, tk::run_end_identity("Zahya-like"), Side::Runner);
+        let es = vm.new_object(card("Employee Strike"), Zone::Hand(Side::Runner));
+        let gamble = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().extend([es, gamble]);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 6;
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let mut g = jinteki_cr::plan::Script::new(
+            Plan::corp(),
+            Plan::runner()
+                // The event, or a click for a credit in its place.
+                .when(
+                    Match::action().once(),
+                    if played { Reply::play_card(es) } else { Reply::credit() },
+                )
+                // Halt once, to read the board with the current in play and to
+                // start counting the Corp's credits from here: the play cost of
+                // the event itself was paid before it reached the play area,
+                // and this test is about what happens afterwards.
+                .when(Match::action().once(), Reply::Halt)
+                .when(Match::action().once(), Reply::play_card(gamble))
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .when(Match::reaction(), Reply::take("identity"))
+                .stop_at_action(),
+        );
+        g.run(&mut vm);
+        let corp_before = vm.st.corp.credits;
+        g.run(&mut vm);
+        let t = g.transcript();
+
+        assert_eq!(
+            abilities_present(&vm, corp_id),
+            if played { 0 } else { 1 },
+            "the Corp's identity (played={played}): {}",
+            t.tail(12)
+        );
+        assert_eq!(
+            abilities_present(&vm, runner_id),
+            1,
+            "the Runner's identity is never touched (played={played}): {}",
+            t.tail(12)
+        );
+        assert_eq!(
+            vm.st.corp.credits - corp_before,
+            if played { 0 } else { 1 },
+            "Sure Gamble's 5[credit] was spent either way; only the blanked \
+             identity failed to notice (played={played}): {}",
+            t.tail(16)
+        );
+        assert!(
+            t.took("identity"),
+            "…and the Runner's identity still resolved (played={played}): {}",
+            t.tail(12)
+        );
+    }
+}
+
+/// Employee Strike: "This event is not trashed until another current is played
+/// or an agenda is scored." (8.6.6c / 3.7.1b — a current EVENT waits for the
+/// Corp to SCORE, where a current operation waits for the Runner to steal.)
+#[test]
+fn employee_strike_stays_in_the_play_area_until_the_corp_scores() {
+    let mut vm = Vm::empty(49);
+    let es = vm.new_object(card("Employee Strike"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(es);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::vanilla_agenda("Loose Agenda", 3, 1),
+        ServerId::Remote(1),
+        false,
+    );
+    vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(es))
+            // Halt once, to read the board while the current is in play.
+            .when(Match::action().once(), Reply::Halt)
+            .otherwise_click_credit(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&es].zone,
+        Zone::PlayArea(Side::Runner),
+        "8.6.6c: not trashed at step 8.6.7g"
+    );
+
+    // The Runner finishes the turn, and the Corp scores: the shield expires.
+    g.run(&mut vm);
+    assert_eq!(vm.st.objects[&agenda].zone, Zone::ScoreArea(Side::Corp));
+    assert_eq!(
+        vm.st.objects[&es].zone,
+        Zone::Discard(Side::Runner),
+        "the score ended the lingering effect: {}",
+        g.transcript().tail(12)
+    );
+}
+
+/// Employee Strike and Targeted Marketing print the same first sentence, and
+/// its other half is "until another current is played" (3.5.1b/3.7.1b): the
+/// Corp's current trashes the Runner's, and its own play does not trash
+/// itself.
+#[test]
+fn another_current_trashes_the_one_already_in_the_play_area() {
+    let mut vm = Vm::empty(50);
+    let es = vm.new_object(card("Employee Strike"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(es);
+    let tm = vm.new_object(card_partial("Targeted Marketing"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action().once(), Reply::play_card(tm)).stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(es))
+            .otherwise_click_credit(),
+    );
+    assert_eq!(
+        vm.st.objects[&es].zone,
+        Zone::Discard(Side::Runner),
+        "another current was played: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        vm.st.objects[&tm].zone,
+        Zone::PlayArea(Side::Corp),
+        "…and \"another\" excludes the card being played: {}",
+        t.tail(12)
+    );
+}
+
 /// Targeted Marketing: "This card is not trashed until another current is
 /// played or an agenda is stolen." (8.6.6c.)
 #[test]

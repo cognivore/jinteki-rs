@@ -926,6 +926,11 @@ pub fn in_score_area_of(side: Side) -> TargetFilter {
 pub fn other_than_this_card() -> TargetFilter {
     TargetFilter::OtherThanSource
 }
+/// "the Corp's …" / "the Runner's …" — the player responsible for the object
+/// (1.14.2), which reaches a card that is not installed, such as an identity.
+pub fn controlled_by(side: Side) -> TargetFilter {
+    TargetFilter::ControlledBy(side)
+}
 /// "cards hosted on this card" (1.13.2) — installed or not.
 pub fn hosted_on_this_card() -> TargetFilter {
     TargetFilter::HostedOnSource
@@ -1048,7 +1053,12 @@ pub fn action_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerC
 /// [`CardBuilder::when_first_each_turn`] for the printed "first time each
 /// turn").
 pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
-    TriggerCond::CardPlayed { by, of_types: vec![of] }
+    TriggerCond::CardPlayed {
+        by: Some(by),
+        of_types: vec![of],
+        of_subtypes: Vec::new(),
+        other_than_source: false,
+    }
 }
 /// "…if you played an operation this turn" (Nebula class; history 1.12.6).
 pub fn played_operation_this_turn(side: Side) -> TriggerRequirement {
@@ -1310,9 +1320,42 @@ pub fn removed_from_game_instead_of_trashed() -> StaticDecl {
     }
 }
 /// "This card is not trashed until another current is played or an agenda is
-/// stolen." (8.6.6c.)
+/// stolen." — the whole printed sentence of a CURRENT OPERATION (8.6.6c,
+/// 3.5.1b).
 pub fn not_trashed_until_an_agenda_is_stolen() -> StaticDecl {
-    StaticDecl::PlayedNotTrashedUntilAgendaSteal
+    StaticDecl::PlayedNotTrashedUntil {
+        until: vec![another_current_is_played(), runner_steals_agenda()],
+    }
+}
+/// "This card is not trashed until another current is played or an agenda is
+/// scored." — the same sentence on a CURRENT EVENT (8.6.6c, 3.7.1b); the one
+/// word that differs is which player putting an agenda in their score area
+/// ends it.
+pub fn not_trashed_until_an_agenda_is_scored() -> StaticDecl {
+    StaticDecl::PlayedNotTrashedUntil {
+        until: vec![another_current_is_played(), corp_scores_agenda()],
+    }
+}
+/// "…another current is played" (3.5.1b/3.7.1b: a current is an operation or
+/// an event with the subtype, played by either player, and "another" is any
+/// but this one).
+pub fn another_current_is_played() -> TriggerCond {
+    TriggerCond::CardPlayed {
+        by: None,
+        of_types: vec![CardType::Operation, CardType::Event],
+        of_subtypes: vec!["Current"],
+        other_than_source: true,
+    }
+}
+/// "The <side>'s identity loses its printed abilities." (Employee Strike
+/// class; 9.1.9a.) In this kernel an object's abilities ARE its printed
+/// abilities — [`jinteki_cr::object::Effective::ability_present`] is a mask
+/// over `printed.abilities` — so removing all of them is exactly what the
+/// printed word says.
+pub fn identity_of_loses_its_abilities(side: Side) -> StaticDecl {
+    StaticDecl::RemoveAbilitiesOfMatching {
+        criteria: vec![TargetFilter::CardTypeIs(CardType::Identity), controlled_by(side)],
+    }
 }
 /// "As an additional cost to steal **an** agenda, pay <cost>." — reaching
 /// every agenda, for as long as this card is active (1.16.10).

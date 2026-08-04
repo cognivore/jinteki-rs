@@ -121,9 +121,19 @@ pub fn career_fair() -> Card {
 ///  scored.
 ///  The Corp's identity loses its printed abilities."
 ///
-/// UNIMPLEMENTED: both. `PlayedNotTrashedUntilAgendaSteal` ends on a STEAL,
-/// not on a score; and no filter can name one player's identity, since an
-/// identity is not installed and every side-scoped atom requires that.
+/// COMPLETE. Both sentences are declarations, and both are true for exactly
+/// as long as the event sits in the play area — which is the whole point of
+/// the first one. CR 3.7.1b prints the current EVENT's ending occurrences and
+/// 3.5.1b the current OPERATION's, differing in one word, so the pair rides
+/// as content on one declaration: "another current operation or event is
+/// played" plus, here, the Corp scoring an agenda.
+///
+/// "Loses its PRINTED abilities" is 9.1.9a with nothing left over: an
+/// object's abilities in this kernel are a presence mask over
+/// `printed.abilities`, so removing them all removes exactly the printed
+/// ones. The description reaches the identity through 1.14.2's controller
+/// rather than through an installed-card criterion — an identity is never
+/// installed — and therefore leaves the Runner's own identity alone.
 pub fn employee_strike() -> Card {
     card("Employee Strike")
         .runner()
@@ -132,8 +142,10 @@ pub fn employee_strike() -> Card {
         .cost(1)
         .text("This event is not trashed until another current is played or an agenda is scored.")
         .text("The Corp's identity loses its printed abilities.")
-        .unimplemented("This event is not trashed until another current is played or an agenda is scored.")
-        .unimplemented("The Corp's identity loses its printed abilities.")
+        .declares([
+            not_trashed_until_an_agenda_is_scored(),
+            identity_of_loses_its_abilities(Corp),
+        ])
         .build()
 }
 

@@ -259,10 +259,15 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // through `Vm::this_server`, so a condition met BY the
                     // source leaving its server still names the server it
                     // left (Warroid Tracker class).
-                    if !trigger_matches(cond, c, source_obj, vm.this_server(obj_id), is_corp, |o| {
-                        vm.st.objects.get(&o).map(|x| x.printed.card_type)
-                    })
-                        && !persisted_server_override(vm, from_lingering, cond, c)
+                    if !trigger_matches(
+                        cond,
+                        c,
+                        source_obj,
+                        vm.this_server(obj_id),
+                        is_corp,
+                        |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
+                        |o, s| vm.has_subtype(o, s),
+                    ) && !persisted_server_override(vm, from_lingering, cond, c)
                     {
                         continue;
                     }
@@ -576,30 +581,51 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
 fn step_b_durations(vm: &mut Vm) {
     cite!("step_checkpoint_duration_abilities");
     // CR 8.6.6c: a played card's "not trashed until <effect>" shield expires
-    // when the indicated effect occurs (kernel wave: the Runner steals an
-    // agenda); the game recognizes the ability no longer applies and the
-    // card is trashed as if completing its resolution (the Targeted
-    // Marketing example).
-    let steal_occurred = vm
-        .last_scan_window
+    // as one of the indicated effects occurs; the card is then trashed as if
+    // completing its resolution. 3.5.1b/3.7.1b list them for the current
+    // class — another current operation or event being played, and the
+    // opponent putting an agenda in their score area — and the shield carries
+    // whichever its declaration named, evaluated through the same
+    // `trigger_matches` a conditional ability's condition goes through, with
+    // the shielded card as the source (so "another" excludes its own play).
+    let shields: Vec<(u64, crate::object::ObjectId, Vec<crate::ability::TriggerCond>)> = vm
+        .lingering
         .iter()
-        .any(|(c, _)| matches!(c, GameChange::AgendaStolen { .. }));
-    if steal_occurred {
-        cite!("rule_play_not_trashed_until");
-        let expired: Vec<(u64, crate::object::ObjectId)> = vm
-            .lingering
-            .iter()
-            .filter_map(|l| match &l.payload {
-                Payload::PlayedTrashShield { card } => Some((l.id, *card)),
-                _ => None,
+        .filter_map(|l| match &l.payload {
+            Payload::PlayedTrashShield { card, until } => Some((l.id, *card, until.clone())),
+            _ => None,
+        })
+        .collect();
+    let mut expired: Vec<(u64, crate::object::ObjectId)> = Vec::new();
+    for (lid, card, until) in shields {
+        let Some(source_obj) = vm.st.objects.get(&card) else { continue };
+        let occurred = vm.last_scan_window.iter().any(|(c, _)| {
+            until.iter().any(|cond| {
+                trigger_matches(
+                    cond,
+                    c,
+                    source_obj,
+                    vm.this_server(card),
+                    |o| vm.st.objects.get(&o).is_some_and(|x| is_corp_card(x.printed.card_type)),
+                    |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
+                    |o, s| vm.has_subtype(o, s),
+                )
             })
-            .collect();
-        for (lid, card) in expired {
-            vm.lingering.retain(|l| l.id != lid);
-            if matches!(vm.st.objects.get(&card).map(|o| o.zone), Some(Zone::PlayArea(_))) {
-                let owner = vm.st.objects[&card].owner;
-                vm.trash_card(card, owner);
-            }
+        });
+        if occurred {
+            expired.push((lid, card));
+        }
+    }
+    if !expired.is_empty() {
+        cite!("rule_play_not_trashed_until");
+        cite!("rule_operation_current");
+        cite!("rule_event_current");
+    }
+    for (lid, card) in expired {
+        vm.lingering.retain(|l| l.id != lid);
+        if matches!(vm.st.objects.get(&card).map(|o| o.zone), Some(Zone::PlayArea(_))) {
+            let owner = vm.st.objects[&card].owner;
+            vm.trash_card(card, owner);
         }
     }
     let current_encounter = vm.st.encounter.as_ref().map(|e| e.id);
