@@ -1716,6 +1716,24 @@ pub fn times(n: i64, q: Quantity) -> Quantity {
 pub fn plus(a: Quantity, b: Quantity) -> Quantity {
     Quantity::Plus(Box::new(a), Box::new(b))
 }
+/// "…cards **that share a type**" (Slot Machine) — among the cards the
+/// description reaches, how many are of the commonest card type (2.15: a card
+/// has exactly one). Pair it with [`if_met`] and the printed number.
+pub fn sharing_a_card_type(criteria: &[TargetFilter]) -> Quantity {
+    Quantity::LargestGroupSharingCardType(criteria.to_vec())
+}
+/// "…the cards **you revealed when this encounter began**" (Slot Machine) —
+/// 1.21.3a puts a revealed card back exactly as it was, so the encounter is
+/// what remembers, and the memory dies with it.
+pub fn revealed_this_encounter() -> TargetFilter {
+    TargetFilter::RevealedThisEncounter
+}
+/// "If <amount> is N or more, …" (Slot Machine's "if you revealed 2 or more
+/// cards that share a type") — a calculated amount against a printed
+/// threshold.
+pub fn at_least(amount: Quantity, n: i64) -> TriggerRequirement {
+    TriggerRequirement::QuantityAtLeast { amount, at_least: n }
+}
 /// "…for each credit lost" — the credits this ability has ACTUALLY caused
 /// `side` to lose, which 1.10.3b caps at what their pool held. That is what
 /// makes "lose up to 5" and "for each credit lost" agree.

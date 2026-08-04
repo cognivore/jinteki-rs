@@ -426,6 +426,12 @@ pub enum TriggerRequirement {
     /// direction is part of what the sentence says, and "at most 0" is the
     /// only way to say "none" with a count.
     BoardHasAtMostMatching { criteria: Vec<crate::instr::TargetFilter>, at_most: u32 },
+    /// "…if you revealed **2 or more** cards that share a type" (Slot
+    /// Machine) — a calculated amount (9.12.2) compared against a threshold.
+    /// The amount is the shared quantity language (§12 rule 6) and the
+    /// threshold is content (§12 rule 2), so a card asking the same question
+    /// about a different number is the same atom.
+    QuantityAtLeast { amount: crate::instr::Quantity, at_least: i64 },
     /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
     /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
     /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`

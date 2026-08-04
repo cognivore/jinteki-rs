@@ -3283,3 +3283,67 @@ fn petty_cash_replays_itself_out_of_archives_and_leaves_the_game() {
     // 3 allotted − 1 for the [click] ability + 1 gained.
     assert_eq!(vm.st.corp.clicks, 3, "{}", t.tail(20));
 }
+
+/// Slot Machine: "When the Runner encounters this ice, they put the top card
+/// of the stack on the bottom, then you reveal the top 3 cards of the stack."
+/// / "[subroutine] The Runner loses 3[credit]." / "…If you revealed 2 or more
+/// cards that share a type when this encounter began, gain 3[credit]." /
+/// "…If you revealed 3 or more cards that share a type…, place 3 advancement
+/// tokens on an installed card."
+///
+/// One stack per outcome, because the two later subroutines are the same
+/// question asked with different numbers: three of a kind pays both, two of a
+/// kind pays one, three different types pays neither.
+#[test]
+fn slot_machine_pays_out_on_the_types_it_revealed() {
+    // (the three cards under the top one, largest same-type group, gains)
+    let cases: [( [CardType; 3], u32, bool ); 3] = [
+        ([CardType::Event, CardType::Event, CardType::Event], 3, true),
+        ([CardType::Event, CardType::Event, CardType::Program], 3, false),
+        ([CardType::Event, CardType::Program, CardType::Resource], 0, false),
+    ];
+    for (types, gained, advanced) in cases {
+        let mut vm = Vm::empty(604);
+        let sm = tk::install_ice(&mut vm, card("Slot Machine"), ServerId::Hq, true);
+        // The top card goes to the bottom before the reveal, so it is NOT one
+        // of the three the subroutines ask about.
+        let bottomed = vm.new_object(
+            tk::vanilla_runner_card("Bottomed", CardType::Hardware),
+            Zone::Deck(Side::Runner),
+        );
+        vm.st.deck.get_mut(&Side::Runner).unwrap().push(bottomed);
+        for (i, t) in types.iter().enumerate() {
+            let name: &'static str = Box::leak(format!("reel-{i}").into_boxed_str());
+            let id = vm.new_object(tk::vanilla_runner_card(name, *t), Zone::Deck(Side::Runner));
+            vm.st.deck.get_mut(&Side::Runner).unwrap().push(id);
+        }
+        tk::fill_deck(&mut vm, Side::Runner, 3);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.runner.credits = 5;
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::targets(), Reply::target(sm)),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Hq))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.deck[&Side::Runner].last(),
+            Some(&bottomed),
+            "1.14.5: the RUNNER put their top card on the bottom: {}",
+            t.tail(16)
+        );
+        assert_eq!(vm.st.runner.credits, 2, "the first subroutine: {}", t.tail(16));
+        assert_eq!(vm.st.corp.credits, gained, "{types:?}: {}", t.tail(16));
+        assert_eq!(
+            vm.st.objects[&sm].counter(CounterKind::Advancement) == 3,
+            advanced,
+            "{types:?}: three of a kind advances, nothing else does: {}",
+            t.tail(16)
+        );
+    }
+}

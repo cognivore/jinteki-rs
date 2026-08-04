@@ -26,6 +26,13 @@ pub enum Quantity {
     /// 1.15.2c applies to the list as a whole: with no criterion naming a
     /// zone, only installed cards are counted.
     Count(Vec<TargetFilter>),
+    /// "…N or more cards **that share a type**" (Slot Machine) — among the
+    /// objects matching the criteria, the size of the LARGEST group sharing
+    /// one card type (2.15: a card has exactly one type). The threshold the
+    /// card compares this against is content on whatever asks (§12 rule 2),
+    /// which is why Slot Machine's two subroutines — "2 or more" and "3 or
+    /// more" — are the same selector twice and not two selectors.
+    LargestGroupSharingCardType(Vec<TargetFilter>),
     /// "…for each <kind> counter hosted on this card" — counts hosted
     /// counters INCLUDING those set aside by a [trash] trigger cost (9.5.5).
     CountersOnSource(crate::object::CounterKind),
@@ -1221,6 +1228,14 @@ pub enum TargetFilter {
     /// — no longer matches, so the ability can no longer act on it. A
     /// zone-naming criterion, so 1.15.2c's play-area restriction lifts.
     LookedAtByThisAbility,
+    /// CR 1.21.3 + 6.1.3: a card REVEALED during the encounter in progress —
+    /// "the cards you revealed when this encounter began" (Slot Machine). A
+    /// reveal puts the card back exactly as it was (1.21.3a), so nothing
+    /// about the card records it; the encounter does, and the record dies
+    /// with the encounter. A zone-naming criterion, because the cards it
+    /// describes are wherever the reveal left them — on top of a deck, in a
+    /// hand — and 1.15.2c would otherwise see none of them.
+    RevealedThisEncounter,
     /// CR 4.5: "an agenda in the Runner's score area".
     InScoreAreaOf(Side),
     /// CR 4.4: "a card in Archives" / "a card in your heap" — a criterion
@@ -1393,6 +1408,7 @@ impl TargetFilter {
                 | TargetFilter::SetAsideByThisAbility
                 | TargetFilter::DrawnCards
                 | TargetFilter::LookedAtByThisAbility
+                | TargetFilter::RevealedThisEncounter
                 | TargetFilter::TopOfDeckOf { .. }
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.

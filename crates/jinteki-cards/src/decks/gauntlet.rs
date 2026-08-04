@@ -689,9 +689,20 @@ pub fn resistor() -> Card {
 ///  [subroutine] If you revealed 3 or more cards that share a type when this
 ///  encounter began, place 3 advancement tokens on an installed card."
 ///
-/// UNIMPLEMENTED: everything but the first subroutine. There is no REVEAL
-/// instruction, nothing remembers what was revealed when an encounter began,
-/// and no quantity counts cards sharing a type.
+/// COMPLETE. The encounter ability is two instructions, not one (9.11.3):
+/// "they put the top card of the stack on the bottom" is the RUNNER's to
+/// perform (1.14.5), and the reveal that follows is the Corp's.
+///
+/// What the two later subroutines ask about is the reveal, and CR 1.21.3a is
+/// why that needs remembering at all: revealing shows a card and puts it back
+/// exactly as it was, so nothing about the card itself records that it
+/// happened. The encounter does — which is also the scope the printed words
+/// name ("when this encounter began") — and the record dies with it.
+///
+/// "2 or more cards that share a type" and "3 or more cards that share a
+/// type" are ONE amount asked twice with different numbers (§12 rule 2): 2.15
+/// gives every card exactly one type, so the question is the size of the
+/// largest same-type group among the cards revealed.
 pub fn slot_machine() -> Card {
     card("Slot Machine")
         .corp()
@@ -703,10 +714,27 @@ pub fn slot_machine() -> Card {
         .text("[subroutine] The Runner loses 3[credit].")
         .text("[subroutine] If you revealed 2 or more cards that share a type when this encounter began, gain 3[credit].")
         .text("[subroutine] If you revealed 3 or more cards that share a type when this encounter began, place 3 advancement tokens on an installed card.")
+        .when(
+            encountered(),
+            [
+                performed_by(Runner, add_to_deck(top_of_stack(amount(1)), false)),
+                reveal(top_of_stack(amount(3))),
+            ],
+        )
+        .named("spin the reels")
         .subroutine([lose(Runner, 3)])
-        .unimplemented("When the Runner encounters this ice, they put the top card of the stack on the bottom, then you reveal the top 3 cards of the stack.")
-        .unimplemented("[subroutine] If you revealed 2 or more cards that share a type when this encounter began, gain 3[credit].")
-        .unimplemented("[subroutine] If you revealed 3 or more cards that share a type when this encounter began, place 3 advancement tokens on an installed card.")
+        .subroutine([if_met(
+            &[at_least(sharing_a_card_type(&[revealed_this_encounter()]), 2)],
+            [gain(Corp, 3)],
+        )])
+        .named("two of a kind")
+        .subroutine([if_met(
+            &[at_least(sharing_a_card_type(&[revealed_this_encounter()]), 3)],
+            // "an installed card": 1.15.2c's default is exactly that, so the
+            // description needs no criterion at all.
+            [place_on(choose(1, &[]), CounterKind::Advancement, 3)],
+        )])
+        .named("three of a kind")
         .build()
 }
 

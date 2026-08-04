@@ -86,6 +86,14 @@ pub struct EncounterState {
     /// encounter (at most once) — vacuously true for zero-sub ice as soon
     /// as step 6.9.3b begins.
     pub all_broken_noted: bool,
+    /// CR 1.21.3: the cards REVEALED during this encounter, in the order they
+    /// were revealed. A reveal shows a card and puts it back as it was
+    /// (1.21.3a), so nothing about the card itself records that it happened —
+    /// but "the cards you revealed when this encounter began" (Slot Machine)
+    /// is a description a later subroutine of the same encounter uses, and
+    /// 6.1.3's encounter is the scope the sentence names. It dies with the
+    /// encounter, which is what makes it the right home.
+    pub revealed: Vec<ObjectId>,
 }
 
 
@@ -2816,6 +2824,7 @@ impl Vm {
             broken: std::collections::BTreeSet::new(),
             resolved: std::collections::BTreeSet::new(),
             all_broken_noted: false,
+            revealed: Vec::new(),
         });
         self.changes.record(GameChange::EncounterBegan { ice, encounter_id: id });
     }
@@ -3761,6 +3770,21 @@ impl Vm {
         match q {
             Q::Const(n) => *n,
             Q::Count(criteria) => self.count_filter(criteria, source),
+            // 2.15: every card has exactly one type, so "cards that share a
+            // type" is the biggest same-type group among the described cards.
+            Q::LargestGroupSharingCardType(criteria) => {
+                cite!("rule_card_type_list");
+                let types: Vec<CardType> = self
+                    .filter_candidates_from(criteria, source)
+                    .into_iter()
+                    .filter_map(|id| self.st.objects.get(&id).map(|o| o.printed.card_type))
+                    .collect();
+                types
+                    .iter()
+                    .map(|t| types.iter().filter(|x| *x == t).count() as i64)
+                    .max()
+                    .unwrap_or(0)
+            }
             Q::CreditsLostThisAbility(side) => {
                 // "…for each credit lost" — credits the named player ACTUALLY
                 // lost during the resolution of the ability now resolving
@@ -5365,6 +5389,13 @@ impl Vm {
     fn announcements_required(&self, instr: &Instruction) -> usize {
         match instr {
             Instruction::PerformedBy { instr, .. } => self.announcements_required(instr),
+            // 9.6.5d: the branch's instructions are this instruction's
+            // effects, so their announcements are its announcements.
+            Instruction::IfMet { .. } => self
+                .if_met_branch(instr)
+                .iter()
+                .map(|s| self.announcements_required(s))
+                .sum(),
             Instruction::TrashCards(TargetSpec::Each(specs)) => specs.len(),
             // 1.15.2: "for each time the instruction requires a player to
             // choose 1 or more objects" — a swap has TWO target positions and
@@ -5381,6 +5412,20 @@ impl Vm {
         }
     }
 
+    /// CR 9.6.5d: which branch of an "if <state>, … ; otherwise …" applies
+    /// right now. The requirement is checked again when the instruction
+    /// resolves — this is the reading the ANNOUNCEMENT has to make, because
+    /// 1.15.2 puts announcement before imminence.
+    fn if_met_branch(&self, instr: &Instruction) -> Vec<Instruction> {
+        let Instruction::IfMet { requires, then, otherwise } = instr else { return Vec::new() };
+        let src = match self.frames.last() {
+            Some(Frame::Ability(af)) => Some(af.source.obj),
+            _ => None,
+        };
+        let met = requires.iter().all(|r| self.state_requirement_holds_for(r, src));
+        if met { then.clone() } else { otherwise.clone() }
+    }
+
     /// Compute targets that need a Decision (9.3.4b).
     fn targets_needed(&self, instr: &Instruction) -> Option<(Side, DecisionSpec)> {
         let Some(Frame::Ability(af)) = self.frames.last() else { return None };
@@ -5391,12 +5436,41 @@ impl Vm {
             cite!("rule_targeting_only_once");
             return None;
         }
+        self.targets_needed_at(instr, af.announce_slot)
+    }
+
+    /// The same question with the announcement slot given explicitly, so an
+    /// instruction that CONTAINS instructions (9.6.5d's "if <state>, <do
+    /// this>") can rebase the slot onto the one that owns it.
+    fn targets_needed_at(&self, instr: &Instruction, slot: usize) -> Option<(Side, DecisionSpec)> {
+        let Some(Frame::Ability(af)) = self.frames.last() else { return None };
         match instr {
             // 1.14.5: the named player makes the choices this instruction
             // requires, in place of the ability's controller.
             Instruction::PerformedBy { side, instr } => {
                 cite!("rule_controller_choices");
-                self.targets_needed(instr).map(|(_, spec)| (*side, spec))
+                self.targets_needed_at(instr, slot).map(|(_, spec)| (*side, spec))
+            }
+            // 9.6.5d: "if <state>, <do this>" is ONE instruction whose
+            // effects are the branch's, so the announcements it requires are
+            // the branch's too — a targeting instruction inside a branch that
+            // never announced would silently act on nothing (the defect class
+            // of W14b's `MoveToDeck` and W20's `RevealCards`). The branch is
+            // chosen by evaluating the requirement now: 1.15.2 puts the
+            // announcement before imminence, so this is the only moment there
+            // is, and 9.6.5d's own check at resolution still decides what
+            // actually happens.
+            Instruction::IfMet { .. } => {
+                cite!("rule_condition_requirements_part_of_effect");
+                let mut left = slot;
+                for step in self.if_met_branch(instr) {
+                    let n = self.announcements_required(&step);
+                    if left < n {
+                        return self.targets_needed_at(&step, left);
+                    }
+                    left -= n;
+                }
+                None
             }
             // 9.10.3: "choose an installed piece of ice" is a 1.15.2
             // announcement like any other; the choice is then remembered.
@@ -5492,7 +5566,7 @@ impl Vm {
             }
             // 1.15.1: the destination card, then the counters.
             Instruction::MoveCounters { kind, count, up_to, to, from_criteria } => {
-                if af.announce_slot == 0 {
+                if slot == 0 {
                     return self.announcement_for(to).map(|s| (af.controller, s));
                 }
                 cite!("rule_target");
@@ -5567,7 +5641,6 @@ impl Vm {
             // there are no legal exchanges possible, then that effect does
             // nothing").
             Instruction::SwapCards { a, b } => {
-                let slot = af.announce_slot;
                 let specs: Vec<&TargetSpec> = [a, b]
                     .into_iter()
                     .filter(|s| matches!(s, TargetSpec::Choose { .. }))
@@ -6363,6 +6436,13 @@ impl Vm {
                 cite!("sec_old_self_reference_rules");
                 o.printed.name == n
             }
+            // 1.21.3: revealed during the encounter in progress. 1.12.3: the
+            // entry is an object, so a card that has since moved to an
+            // unknown location is a NEW object and no longer one of them.
+            TargetFilter::RevealedThisEncounter => {
+                cite!("rule_reveal");
+                self.st.encounter.as_ref().is_some_and(|e| e.revealed.contains(&o.id))
+            }
         }
     }
 
@@ -7144,6 +7224,12 @@ impl Vm {
             R::RunnerTagsAtLeast(n) => {
                 cite!("rule_tagged");
                 self.st.runner.tags >= *n
+            }
+            // 9.12.2: a calculated amount, read the same way every quantity
+            // position reads one, compared against the printed threshold.
+            R::QuantityAtLeast { amount, at_least } => {
+                cite!("rule_calculated_quantity");
+                self.eval_quantity(amount, source) >= *at_least
             }
             R::RunnerLinkAtLeast(n) => self.runner_link() >= *n as i32,
             // 1.17.1: the named player's score, read through the same
@@ -8881,6 +8967,12 @@ impl Vm {
                         continue;
                     }
                     self.st.seen.show_all(t);
+                    // 1.21.3a: the card goes back to what it was, so the
+                    // encounter is the only thing that can remember it
+                    // happened (Slot Machine's later subroutines).
+                    if let Some(e) = self.st.encounter.as_mut() {
+                        e.revealed.push(t);
+                    }
                     self.changes.record(GameChange::CardRevealed { obj: t });
                 }
             }

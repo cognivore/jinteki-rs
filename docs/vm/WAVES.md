@@ -873,7 +873,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W21 it is **51 cards, 47 complete, 4 partial, 8 printed
+prints the count. At W21 it is **51 cards, 48 complete, 3 partial, 5 printed
 sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -936,6 +936,20 @@ strength and subtype modification. Shibboleth is complete.
 - ~~"gain [click]" (Petty Cash, Subliminal Messaging)~~ — **done, W16a**:
   `Instruction::GainClicks(Side, Quantity)` and its `LoseClicks` twin
   (1.11.3a/b).
+- ~~"cards that share a type when this encounter began" (Slot Machine)~~ —
+  **done, W21**: 1.21.3a is why it needed anything at all — revealing puts the
+  card back exactly as it was, so nothing about the card records that it
+  happened. `EncounterState.revealed` does, which is also the scope the
+  printed words name, and `TargetFilter::RevealedThisEncounter` is the
+  description; `Quantity::LargestGroupSharingCardType(criteria)` is the amount
+  (2.15: exactly one type per card), and
+  `TriggerRequirement::QuantityAtLeast { amount, at_least }` compares any
+  calculated amount to a printed threshold — so "2 or more" and "3 or more"
+  are ONE selector asked twice (§12 rule 2). **Defect fixed: `Instruction::IfMet`
+  never announced its branch's targets**, the same class as W14b's
+  `MoveToDeck`, W17b's counters, W17c's `ModifyStrength` and W20's
+  `RevealCards`: a targeting instruction inside "if <state>, <do this>"
+  silently acted on nothing.
 - ~~1.21.3 REVEAL~~ — **done, W16e**: `Instruction::RevealCards { cards }`,
   with 1.21.3a (revealing is not turning faceup) exact. **On the deck rung it
   unblocks nothing yet.** Mutual Favor's first sentence ("Search your stack
