@@ -4626,6 +4626,7 @@ fn a_deckbuilding_restriction_is_not_an_ability_that_ever_fires() {
         "Nova Initiumia: Catalyst & Impetus",
         "The Catalyst: Convention Breaker",
         "The Masque: Cyber General",
+        "The Professor: Keeper of Knowledge",
     ] {
         let printed = card(name);
         assert!(

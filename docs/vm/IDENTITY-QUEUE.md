@@ -124,7 +124,7 @@ kernel words, not card patches.
 
 ## Progress
 
-- Implemented: **61 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **62 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -159,7 +159,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [ ] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (6/21)
+## Runner — Shaper (7/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -182,7 +182,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
 - [x] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
 - [ ] **The Collective: Williams, Wu, et al.** — The first time you perform the same action three times in a row each turn, gain [click].
-- [ ] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
+- [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
 ## Runner — Anarch (8/19)

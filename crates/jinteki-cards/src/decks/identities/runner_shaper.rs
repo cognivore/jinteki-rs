@@ -130,6 +130,26 @@ pub fn rielle_kit_peddler() -> Card {
         .build()
 }
 
+/// The Professor: Keeper of Knowledge — Identity: Natural. Link 0.
+/// "The first copy of each program in this deck does not count against your
+///  influence limit."
+///
+/// COMPLETE. A DECK-CONSTRUCTION rule and nothing else: CR 1.4.5 counts
+/// influence by copy when a deck is built, and 1.4.2 settles legality before
+/// the game begins. There is no condition to meet, nothing to resolve and no
+/// game state it reads — the same class of sentence as Ampère's singleton
+/// rule and Custom Biotics' faction ban, and the writing guide's third rule
+/// of thumb puts all of them in the facts or nowhere.
+pub fn the_professor() -> Card {
+    card("The Professor: Keeper of Knowledge")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("The first copy of each program in this deck does not count against your influence limit.")
+        .build()
+}
+
 /// Tāo Salonga: Telepresence Magician — Identity: Natural. Link 0.
 /// "Whenever an agenda is scored or stolen, you may swap 2 installed pieces
 ///  of ice."
@@ -172,5 +192,12 @@ pub fn tao_salonga() -> Card {
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
-    vec![akiko_nisei(), exile(), hayley_kaplan(), rielle_kit_peddler(), tao_salonga()]
+    vec![
+        akiko_nisei(),
+        exile(),
+        hayley_kaplan(),
+        rielle_kit_peddler(),
+        the_professor(),
+        tao_salonga(),
+    ]
 }
