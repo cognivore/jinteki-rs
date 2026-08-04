@@ -7344,6 +7344,23 @@ impl Vm {
                     .and_then(|c| self.st.objects.get(&c))
                     .is_some_and(|o| matches!(o.zone, Zone::Discard(_)))
             }
+            // 3.9.5g/h: can this icebreaker interface with the ice being
+            // encountered — strength at least the ice's, and the subtype the
+            // sentence stipulates if it stipulates one? Read through the
+            // 9.12.1 pipeline, so a pump that has already resolved counts.
+            R::CanInterfaceWithEncounteredIce { required_subtype } => {
+                cite!("rule_icebreaker_interface_strength");
+                cite!("rule_icebreaker_interface_subtype");
+                let Some(src) = source else { return false };
+                let Some(ice) = self.st.encounter.as_ref().map(|e| e.ice) else { return false };
+                if let Some(sub) = required_subtype {
+                    if !self.has_subtype(ice, sub) {
+                        return false;
+                    }
+                }
+                self.effective_strength(src).unwrap_or(0)
+                    >= self.effective_strength(ice).unwrap_or(0)
+            }
             R::SourceHostsCorpCard => {
                 cite!("rule_host_via_ability");
                 let Some(src) = source else { return false };

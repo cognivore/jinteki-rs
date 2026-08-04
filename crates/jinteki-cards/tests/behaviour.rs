@@ -3483,3 +3483,53 @@ fn boomerang_breaks_only_its_chosen_ice_and_comes_back_from_the_heap() {
         t.tail(24)
     );
 }
+
+/// Paperclip: "Whenever you encounter a barrier, you may install this program
+/// from your heap." / "X[credit]: +X strength. Then, if this program can
+/// interface with the barrier you are encountering, break up to X
+/// subroutines."
+///
+/// CR 9.1.8b puts the first ability in the heap — the sentence states the
+/// zone it works from — and 9.6.5d puts the interface question after the
+/// pump: the Runner announces X = 3 against a strength-3 barrier that
+/// Paperclip's printed 1 could not have matched when the ability was offered,
+/// and breaks its subroutine anyway.
+#[test]
+fn paperclip_installs_itself_out_of_the_heap_and_pumps_before_it_breaks() {
+    let mut vm = Vm::empty(607);
+    let wall = tk::install_ice(&mut vm, tk::etr_ice("Big Wall", 0, 3), ServerId::Hq, true);
+    vm.st.objects.get_mut(&wall).unwrap().printed.subtypes = vec!["Barrier"];
+    let clip = vm.new_object(card("Paperclip"), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(clip);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 8;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::reaction().offering("out of the heap").once(), Reply::take("out of the heap"))
+            .when(Match::destination(), Reply::Destination(jinteki_cr::instr::InstallDest::Rig))
+            .when(Match::paid().offering("pump and break").once(), Reply::take("pump and break"))
+            .when(Match::declare_x().once(), Reply::DeclareX(3))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("End the run"))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&clip].zone,
+        Zone::Rig,
+        "9.1.8b: the ability worked from the heap: {}",
+        t.tail(24)
+    );
+    // 8 − 4 install − 3 announced for X.
+    assert_eq!(vm.st.runner.credits, 1, "{}", t.tail(24));
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "the subroutine was broken, so the run was not ended: {}",
+        t.tail(24)
+    );
+}

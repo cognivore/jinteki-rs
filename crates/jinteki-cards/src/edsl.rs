@@ -1194,6 +1194,49 @@ pub fn turn_begins(side: Side) -> TriggerCond {
 pub fn turn_begins_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
     TriggerCond::TurnBegins { side, requires: reqs.to_vec() }
 }
+/// "Whenever you encounter a **barrier**, …" (Paperclip) — the encounter with
+/// the sentence's subtype stipulation (2.16) and its 9.6.5c requirements. A
+/// requirement naming a zone is also what keeps the ability active there
+/// (9.1.8b), which is how a program talks from the heap.
+pub fn encounters_a(subtype: &'static str, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::EncounterBegins {
+        of_subtypes: vec![subtype],
+        requires: reqs.to_vec(),
+    }
+}
+/// "…if this program **can interface with the barrier you are encountering**"
+/// (Paperclip) — CR 3.9.5g's strength comparison and 3.9.5h's subtype, asked
+/// as a question the INSTRUCTIONS check (9.6.5d) rather than as the interface
+/// flag, because the card asks it after "+X strength" has resolved.
+pub fn can_interface_with_the_encountered(subtype: &'static str) -> TriggerRequirement {
+    TriggerRequirement::CanInterfaceWithEncounteredIce { required_subtype: Some(subtype) }
+}
+/// "X[credit]:" — 1.16.2c's variable cost, announced before it is paid. With
+/// no printed restriction on X, 1.16.1c is the only bound: what the payer can
+/// actually pay.
+pub fn credits_x() -> Cost {
+    Cost { credits: Quantity::AnnouncedX, ..Cost::free() }
+}
+/// "+X strength" (Paperclip, Corporate Troubleshooter) — the value announced
+/// for this use of the ability (1.16.2c).
+pub fn pump_x() -> Instruction {
+    Instruction::ModifyStrength {
+        target: TargetSpec::SelfSource,
+        amount: Quantity::AnnouncedX,
+        duration: None,
+    }
+}
+/// "Break up to X subroutines."
+pub fn break_up_to_x() -> Instruction {
+    Instruction::BreakSubroutines {
+        subs: SubroutineSpec::Chosen { count: Quantity::AnnouncedX, up_to: true },
+    }
+}
+/// "…install this card from your heap." (Paperclip; 8.5.) The install is the
+/// ordinary procedure, so its cost is the printed one.
+pub fn install_this_card() -> Instruction {
+    install(this_card(), InstallDest::DeclaredByInstaller)
+}
 /// "…if this card is in Archives" (Subliminal Messaging; 9.1.8b).
 pub fn source_in_discard() -> TriggerRequirement {
     TriggerRequirement::SourceInDiscard

@@ -2084,6 +2084,19 @@ mod tests {
         }
     }
 
+    /// SYS-D-12's gate, from the other side: with every printed sentence of
+    /// both decks expressed, the eternal setup is a game and not a refusal.
+    #[test]
+    fn the_two_eternal_decks_are_playable() {
+        let r = readiness();
+        assert!(r.ready, "{}/{} complete; missing {:?}", r.complete, r.total, r.missing);
+        let setup = eternal_setup(1).expect("a complete pair of decks is a game");
+        assert!(setup.corp_identity.is_some(), "Nebula Talent Management sits down");
+        assert!(setup.runner_identity.is_some(), "Andromeda sits down");
+        assert_eq!(setup.corp_deck.len(), 49, "the printed Gauntlet list, by copies");
+        assert_eq!(setup.runner_deck.len(), 45, "the printed Andromeda list, by copies");
+    }
+
     #[test]
     fn server_keys_round_trip() {
         for s in [ServerId::Hq, ServerId::Rnd, ServerId::Archives, ServerId::Remote(3)] {

@@ -465,7 +465,7 @@ pub fn femme_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(1);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::EncounterBegins,
+        TriggerCond::encounter_begins(),
         vec![Instruction::NestedCostThen {
             cost: Cost::credits(1),
             effect: Box::new(Instruction::BypassEncounteredIce),
@@ -482,7 +482,7 @@ pub fn femme_like(name: &'static str) -> PrintedCard {
 pub fn nexus_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Hardware);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::EncounterBegins,
+        TriggerCond::encounter_begins(),
         vec![Instruction::DeclineableChoice(Box::new(Instruction::EndTheRun))],
         true,
     )
@@ -3767,7 +3767,7 @@ pub fn cayambe_like(name: &'static str) -> PrintedCard {
     use crate::instr::TargetFilter as F;
     let mut c = vanilla_upgrade(name, 0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::EncounterBegins,
+        TriggerCond::encounter_begins(),
         vec![Instruction::NestedCostUnless {
             cost: Cost::credits_q(Quantity::Times(
                 2,

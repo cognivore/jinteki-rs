@@ -434,13 +434,13 @@ cargo test -p jinteki-cards
 The deck tests print the manifest:
 
 ```text
-priority decks: 51 cards, 45 complete, 6 partial, 13 printed sentences still unsayable
+priority decks: 51 cards, 51 complete, 0 partial, 0 printed sentences still unsayable
 complete: ["Sure Gamble", "Diesel", "Clean Getaway", "Account Siphon", …]
 ```
 
-That count is ratcheted: a change that makes it worse fails, so the gap list
-cannot quietly grow. If a card *has* to become partial, say why in
-`docs/vm/WAVES.md` and move the ratchet deliberately.
+Both priority decks are whole as of W21, and the test now asserts it exactly:
+a card that becomes partial fails the suite. If one *has* to, say why in
+`docs/vm/WAVES.md` and move the assertion deliberately.
 
 The examples in this guide are mirrored as doctests in `src/edsl.rs`, so a
 call named here always exists. (They would be doctested from this file

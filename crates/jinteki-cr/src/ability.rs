@@ -131,8 +131,14 @@ pub enum TriggerCond {
     RunnerAccessesCard { of_types: Vec<crate::object::CardType> },
     /// "When the Runner encounters this ice."
     SelfEncountered,
-    /// "Whenever the Runner encounters a piece of ice." (Runner-side class)
-    EncounterBegins,
+    /// "Whenever the Runner encounters a piece of ice." (Runner-side class),
+    /// with the sentence's stipulations as content (§12 rule 2):
+    /// `of_subtypes` is 2.16's subtype stipulation — "whenever you encounter a
+    /// **barrier**" (Paperclip), read through the 9.12.1b pipeline like every
+    /// other subtype query — and `requires` carries 9.6.5c requirements,
+    /// including the zone statement ("install this program **from your heap**")
+    /// that 9.1.8b reads to keep the ability active where it can act.
+    EncounterBegins { of_subtypes: Vec<&'static str>, requires: Vec<TriggerRequirement> },
     /// CR 6.9.4g: "Whenever the Runner approaches a server." (Formicary class
     /// — the last step of the Movement Phase, so the reaction window that
     /// follows it is not one a phase BEGINNING opened, which is what 6.8.2c
@@ -371,6 +377,11 @@ impl TriggerCond {
     pub fn turn_begins(side: Side) -> Self {
         TriggerCond::TurnBegins { side, requires: Vec::new() }
     }
+    /// "Whenever the Runner encounters a piece of ice, …" — no stipulation
+    /// about which ice, and none about the source.
+    pub fn encounter_begins() -> Self {
+        TriggerCond::EncounterBegins { of_subtypes: Vec::new(), requires: Vec::new() }
+    }
 }
 
 /// Which turn a history question looks at. CR 10.2.1 makes the game history
@@ -483,6 +494,17 @@ pub enum TriggerRequirement {
     SourceInDiscard,
     /// "…if this program has a hosted Corp card" (Cupellation class).
     SourceHostsCorpCard,
+    /// "…if this program **can interface with the barrier you are
+    /// encountering**" (Paperclip). CR 3.9.5g is the strength half — an
+    /// interface ability is usable only while the icebreaker's strength is
+    /// greater than or equal to the encountered ice's — and 3.9.5h is the
+    /// subtype half, which is content here (`None` stipulates no subtype).
+    ///
+    /// Deliberately a REQUIREMENT rather than 9.3.6d's interface flag: the
+    /// flag is checked when the ability is offered, and this sentence asks
+    /// after "+X strength" has already resolved. Written as the flag, the
+    /// card could never pump itself up to a barrier it did not already match.
+    CanInterfaceWithEncounteredIce { required_subtype: Option<&'static str> },
     /// CR 1.17.1: "…if the Runner has 3 or more agenda points" (Complete
     /// Image). The score of the named player as 9.12.1a computes it, so an
     /// agenda whose point value an active ability is modifying counts as
@@ -1623,7 +1645,13 @@ pub fn trigger_matches(
         (TriggerCond::SelfEncountered, GameChange::EncounterBegan { ice, .. }) => {
             *ice == source.id
         }
-        (TriggerCond::EncounterBegins, GameChange::EncounterBegan { .. }) => true,
+        (
+            TriggerCond::EncounterBegins { of_subtypes, .. },
+            GameChange::EncounterBegan { ice, .. },
+        ) => {
+            cite!("rule_subtypes_active");
+            of_subtypes.iter().all(|s| has_subtype(*ice, s))
+        }
         (TriggerCond::ServerApproached, GameChange::ServerApproached { .. }) => {
             cite!("step_approach_server");
             true
@@ -1896,6 +1924,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::ActionPhaseEnds { requires, .. }
         | TriggerCond::BreachesServer { requires, .. }
         | TriggerCond::TurnBegins { requires, .. }
+        | TriggerCond::EncounterBegins { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
         _ => &[],
     }

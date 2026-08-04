@@ -406,9 +406,19 @@ pub fn bukhgalter() -> Card {
 ///  X[credit]: +X strength. Then, if this program can interface with the
 ///  barrier you are encountering, break up to X subroutines."
 ///
-/// UNIMPLEMENTED: both. `EncounterBegins` carries no subtype stipulation, and
-/// `ModifyStrength::amount` is an `i32` rather than a quantity position, so
-/// "+X strength" cannot be stated.
+/// COMPLETE. The first sentence works from the HEAP, and 9.1.8b is what puts
+/// it there: the ability states the zone it acts from, so it is active in the
+/// heap — the requirement is the statement, and it is also what keeps the
+/// same ability from offering an install out of the grip, where the printed
+/// words do not reach.
+///
+/// "If this program can interface with the barrier you are encountering" is
+/// deliberately NOT 9.3.6d's interface flag, even though 3.9.5g is exactly
+/// the question it asks. The flag is checked when the ability is OFFERED;
+/// this sentence is checked when the break instruction resolves (9.6.5d),
+/// which is after "+X strength" — and a Paperclip that had to match the
+/// barrier's strength BEFORE pumping could never break anything it was not
+/// already big enough for.
 pub fn paperclip() -> Card {
     card("Paperclip")
         .runner()
@@ -420,8 +430,22 @@ pub fn paperclip() -> Card {
         .memory(1)
         .text("Whenever you encounter a barrier, you may install this program from your heap.")
         .text("X[credit]: +X strength. Then, if this program can interface with the barrier you are encountering, break up to X subroutines.")
-        .unimplemented("Whenever you encounter a barrier, you may install this program from your heap.")
-        .unimplemented("X[credit]: +X strength. Then, if this program can interface with the barrier you are encountering, break up to X subroutines.")
+        .may_when(
+            encounters_a("Barrier", &[source_in_discard()]),
+            [install_this_card()],
+        )
+        .named("install itself out of the heap")
+        .paid(
+            credits_x(),
+            [
+                pump_x(),
+                if_met(
+                    &[can_interface_with_the_encountered("Barrier")],
+                    [break_up_to_x()],
+                ),
+            ],
+        )
+        .named("pump and break")
         .build()
 }
 
