@@ -53,8 +53,13 @@ stop:
     crates/jinteki-cards/src/decks/identities/<name>.rs, register it in
     decks/mod.rs, and implement the FIRST few identities of that faction in
     it. Commit that.
-  * Otherwise implement the next 2-4 unchecked identities of the faction
-    currently in progress, whole. Commit that.
+  * Otherwise implement the next 8-12 unchecked identities of the faction
+    currently in progress, whole. Commit that. Batch them: the full workspace
+    suite runs once per commit and is most of the wall-clock, so a bigger
+    batch is far cheaper than more commits. If an identity in the batch needs
+    kernel vocabulary you would rather not rush, SKIP it, leave its box
+    unticked, and take the next one — do not block the batch on the hardest
+    card.
 
 Tick the boxes in docs/vm/IDENTITY-QUEUE.md as you go and update the
 "Implemented: N / 150" line, in the same commit.
