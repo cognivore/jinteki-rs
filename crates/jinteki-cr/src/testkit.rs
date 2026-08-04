@@ -1359,6 +1359,7 @@ pub fn corp_install_button(
             ignore_costs: false,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
     )
     .labeled("corp-install: fixed card")];
@@ -1384,6 +1385,7 @@ pub fn corp_install_rez_button(
             ignore_costs,
             reveal_check,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
     )
     .labeled("corp-install-rez: fixed card")];
@@ -1401,6 +1403,7 @@ pub fn bran_like(name: &'static str, installee: ObjectId) -> PrintedCard {
         ignore_costs: true,
         reveal_check: None,
         reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
     }])
     .labeled("[sub] install ice directly inward")];
     c
@@ -1453,6 +1456,7 @@ pub fn reaper_like(name: &'static str, installee: ObjectId) -> PrintedCard {
                 ignore_costs: false,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
         ],
         true,
@@ -1487,6 +1491,7 @@ pub fn adt_button(name: &'static str, installee: ObjectId) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
     )
     .labeled("adt: install and rez ignoring costs")];
@@ -1507,6 +1512,7 @@ pub fn ganked_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
         true,
     )
@@ -1665,6 +1671,7 @@ pub fn supplier_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
         true,
     )
@@ -1907,6 +1914,7 @@ pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
         true,
     )
@@ -2115,6 +2123,7 @@ pub fn poetri_like(name: &'static str, n: u32) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
         false,
     )
@@ -2361,6 +2370,7 @@ pub fn artist_colony_like(name: &'static str) -> PrintedCard {
                 ignore_costs: false,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
         ],
     )
@@ -2389,6 +2399,7 @@ pub fn smc_like(name: &'static str) -> PrintedCard {
                 ignore_costs: false,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
         ],
     )
@@ -2432,6 +2443,7 @@ pub fn tucana_like(name: &'static str, server: ServerId) -> PrintedCard {
                 ignore_costs: false,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
         ],
     )
@@ -2460,6 +2472,7 @@ pub fn tech_startup_like(name: &'static str) -> PrintedCard {
                 ignore_costs: false,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
         ],
     )
@@ -2697,6 +2710,7 @@ pub fn ip_enforcement_like(name: &'static str) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
     )
 }
@@ -3269,6 +3283,7 @@ pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         },
         Instruction::CreateDelayedConditional {
             def: Box::new(
@@ -3482,6 +3497,7 @@ pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> P
                 ignore_costs: true,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
             Instruction::PlaceCounters {
                 target: TargetSpec::EarlierTarget { nth: 0 },
@@ -3527,6 +3543,7 @@ pub fn drafter_like(name: &'static str, installee: ObjectId, server: ServerId) -
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         },
         Instruction::TrashCards(TargetSpec::Choose {
             count: Quantity::c(2),
@@ -3674,6 +3691,7 @@ pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> P
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
         true,
     )
@@ -3702,6 +3720,7 @@ pub fn total_discount_install_rez(
             ignore_costs: false,
             reveal_check: None,
             reduce_total: Quantity::c(total),
+            reduce_install: Quantity::c(0),
         }],
     )
     .labeled("tucana-total: install and rez for a total less")];
@@ -3989,6 +4008,7 @@ pub fn mushin_like(name: &'static str, card: ObjectId, server: ServerId) -> Prin
                 ignore_costs: true,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
             Instruction::PlaceCounters {
                 target: TargetSpec::Objects(vec![card]),
@@ -4010,7 +4030,10 @@ pub fn dividends_agenda(name: &'static str, req: u32, points: i32, n: i64) -> Pr
 /// lowers the advancement requirement of the agendas in its server.
 pub fn sansan_like(name: &'static str, fewer: i32) -> PrintedCard {
     let mut c = vanilla_upgrade(name, 0);
-    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::ScoreRequirementModInSourceServer(-fewer)])
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::ScoreRequirementMod {
+        scope: crate::ability::ReqScope::SourceServer,
+        amount: -fewer,
+    }])
     .labeled("sansan: score for 1 fewer advancement")];
     c
 }
@@ -4383,6 +4406,7 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         })),
     ])
     .labeled("[sub] look at the top of R&D and install one of those cards")];
@@ -4636,6 +4660,7 @@ pub fn test_run_like(name: &'static str, zone: Zone) -> PrintedCard {
                 ignore_costs: true,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             },
         ],
     )
@@ -4861,6 +4886,7 @@ pub fn street_peddler_like(name: &'static str) -> PrintedCard {
                 ignore_costs: true,
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
             }],
         )
         .labeled("peddler: install one of the hosted cards"),
@@ -5436,6 +5462,7 @@ pub fn install_from_hq_button(name: &'static str) -> PrintedCard {
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
         }],
     )
     .labeled("install-hq: install a card from HQ in a new remote")];

@@ -156,6 +156,13 @@ pub enum GameChange {
     /// encounter — including vacuously, for ice with zero subroutines, as
     /// soon as step 6.9.3b begins.
     AllSubsBroken { ice: ObjectId },
+    /// CR 9.8.6: ONE subroutine on `ice` was broken. Recorded per
+    /// subroutine, so an ability that watches for breaking is met once for
+    /// each — Gold Farmer taxes twice when both its subroutines are broken.
+    /// `printed` distinguishes 9.8.3's printed-origin subroutines from ones
+    /// a grant added, which is the distinction "a PRINTED subroutine on this
+    /// ice" draws.
+    SubroutineBroken { ice: ObjectId, printed: bool },
     /// CR 8.7.3: a deck was shuffled. Recorded when the shuffle happens, so
     /// the log order witnesses "immediately, before continuing to resolve
     /// any remaining effects".

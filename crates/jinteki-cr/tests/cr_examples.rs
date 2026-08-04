@@ -2814,6 +2814,7 @@ vm.push_ability_frame(
             ignore_costs: true,
             reveal_check: None,
             reduce_total: Quantity::c(0),
+                    reduce_install: Quantity::c(0),
         }],
         None,
         Some(0),
@@ -3053,6 +3054,7 @@ fn example_rule_playing_lingering_effects_1() {
                     ignore_costs: true,
                     reveal_check: None,
                     reduce_total: Quantity::c(0),
+                    reduce_install: Quantity::c(0),
                 },
                 jinteki_cr::instr::Instruction::CreateDelayedConditional {
                     def: Box::new(jinteki_cr::ability::AbilityDef::conditional(

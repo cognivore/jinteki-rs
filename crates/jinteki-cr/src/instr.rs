@@ -587,6 +587,12 @@ pub enum Instruction {
         /// "no total modifier", and the modifier is inert without `and_rez`,
         /// since there is no second cost to divide it with.
         reduce_total: Quantity,
+        /// CR 1.16.6: "…paying N[credit] less" — a reduction of the INSTALL
+        /// cost alone (Career Fair class). Distinct from `reduce_total`:
+        /// nothing is divided, so it needs no second cost and applies to a
+        /// plain install. A quantity position (§12 rule 6); 0 is no
+        /// reduction. 1.16.2a floors the result at 0.
+        reduce_install: Quantity,
     },
     /// 8.5.5: an effect installing more than one card — the cards are chosen
     /// and installed ONE AT A TIME, each as a separate instruction

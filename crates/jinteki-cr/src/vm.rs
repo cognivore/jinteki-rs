@@ -3390,14 +3390,23 @@ impl Vm {
             if gone.contains(&src) {
                 continue;
             }
-            if let StaticDecl::ScoreRequirementModInSourceServer(delta) = d {
+            if let StaticDecl::ScoreRequirementMod { scope, amount } = d {
                 cite!("rule_active_exception_advancement_requirement");
-                let src_server = self.st.objects.get(&src).and_then(|s| match s.zone {
-                    Zone::Root(sv) | Zone::Ice(sv) => Some(sv),
-                    _ => None,
-                });
-                if src_server.is_some() && src_server == server {
-                    req += delta as i64;
+                let applies = match scope {
+                    // Every agenda in the game, wherever it is — so the
+                    // raised requirement is already true of an agenda the
+                    // Corp has not installed yet.
+                    crate::ability::ReqScope::AllAgendas => true,
+                    crate::ability::ReqScope::SourceServer => {
+                        let src_server = self.st.objects.get(&src).and_then(|s| match s.zone {
+                            Zone::Root(sv) | Zone::Ice(sv) => Some(sv),
+                            _ => None,
+                        });
+                        src_server.is_some() && src_server == server
+                    }
+                };
+                if applies {
+                    req += amount as i64;
                 }
             }
         }
@@ -6291,6 +6300,7 @@ impl Vm {
             ignore_costs,
             reveal_check,
             reduce_total,
+            reduce_install,
         } = instr
         else {
             unreachable!()
@@ -6366,7 +6376,11 @@ impl Vm {
             } else {
                 0
             },
-            reduce_install: 0,
+            // 1.16.6: a reduction of the install cost alone needs no second
+            // cost to divide with, so unlike `reduce_total` it applies to a
+            // plain install and is seeded here rather than by 8.5.16d's
+            // division.
+            reduce_install: self.eval_quantity(&reduce_install, Some(source_obj)).max(0) as u32,
             // 4.8.3: where the card is treated as coming from.
             from_zone: {
                 let o = &self.st.objects[&c];
@@ -6557,6 +6571,7 @@ impl Vm {
                 ignore_costs,
                 reveal_check: None,
                 reduce_total: crate::instr::Quantity::c(0),
+                reduce_install: crate::instr::Quantity::c(0),
             };
             af.instructions.insert(
                 af.idx + 1,
@@ -8514,10 +8529,22 @@ impl Vm {
                             }
                         }
                     };
+                    let mut just_broken: Vec<SubKey> = Vec::new();
                     if let Some(e) = self.st.encounter.as_mut() {
                         for k in broken_now {
-                            e.broken.insert(k);
+                            // Only a subroutine that was NOT already broken
+                            // is newly broken — 9.8.6 lets the same key be
+                            // named twice without taxing twice.
+                            if e.broken.insert(k) {
+                                just_broken.push(k);
+                            }
                         }
+                    }
+                    for k in just_broken {
+                        cite!("rule_break_subroutine");
+                        // 9.8.3: category 3 is the printed-origin band.
+                        self.changes
+                            .record(GameChange::SubroutineBroken { ice, printed: k.category == 3 });
                     }
                     // 9.12.2d: breaking the last subroutine satisfies
                     // "all subroutines broken".
@@ -12758,6 +12785,7 @@ impl Vm {
                         ignore_costs: false,
                         reveal_check: None,
                         reduce_total: crate::instr::Quantity::Const(0),
+                        reduce_install: crate::instr::Quantity::Const(0),
                     }],
                     None,
                     None,

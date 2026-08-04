@@ -97,16 +97,22 @@ pub fn account_siphon() -> Card {
 /// Career Fair — Event. Cost 0.
 /// "Install 1 resource from your grip, paying 3[credit] less."
 ///
-/// UNIMPLEMENTED: `InstallCard::reduce_total` is evaluated only when the
-/// effect also rezzes (1.16.2f's "total" needs two costs to divide between),
-/// so a plain 1.16.6 install discount has nowhere to land.
+/// COMPLETE. "Paying 3[credit] less" is 1.16.6's reduction of the INSTALL
+/// cost, which is not 1.16.2f's divisible "total" — nothing is divided, so it
+/// needs no rez cost beside it and applies to a plain install. 1.16.2a floors
+/// the result at 0, so a resource costing less than 3 is simply free rather
+/// than paying the Runner the difference.
 pub fn career_fair() -> Card {
     card("Career Fair")
         .runner()
         .event()
         .cost(0)
         .text("Install 1 resource from your grip, paying 3[credit] less.")
-        .unimplemented("Install 1 resource from your grip, paying 3[credit] less.")
+        .play([install_paying_less(
+            choose(1, &[in_hand_of(Runner), of_type(CardType::Resource)]),
+            InstallDest::DeclaredByInstaller,
+            3,
+        )])
         .build()
 }
 
@@ -588,8 +594,10 @@ pub fn the_class_act() -> Card {
 /// several); whichever occurs first trashes the card, and the other has no
 /// source left to act on.
 ///
-/// UNIMPLEMENTED: the first sentence — `ScoreRequirementModInSourceServer` is
-/// scoped to the source's server, not to every agenda in the game.
+/// COMPLETE. The first sentence reaches EVERY agenda, wherever it sits, so
+/// an agenda still in HQ already has the raised requirement — which is why
+/// the reach is carried as scope on one declaration rather than as a second
+/// declaration next to SanSan City Grid's server-scoped one.
 pub fn the_source() -> Card {
     card("The Source")
         .runner()
@@ -600,10 +608,9 @@ pub fn the_source() -> Card {
         .text("The advancement requirement of all agendas is increased by 1.")
         .text("As an additional cost to steal an agenda, you must pay 3[credit].")
         .text("Trash The Source when an agenda is scored or stolen.")
-        .declares([additional_cost_to_steal_any_agenda(credits(3))])
+        .declares([all_agendas_cost_more(1), additional_cost_to_steal_any_agenda(credits(3))])
         .when(corp_scores_agenda(), [trash_self()])
         .when(runner_steals_agenda(), [trash_self()])
-        .unimplemented("The advancement requirement of all agendas is increased by 1.")
         .build()
 }
 

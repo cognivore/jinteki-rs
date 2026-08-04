@@ -88,7 +88,9 @@ use jinteki_cr::object::PrintedCard;
 // Re-exported so a deck file needs exactly one `use` line. These are the
 // kernel's own types: a designer who outgrows the helpers below can reach
 // for them directly and is still inside the public vocabulary.
-pub use jinteki_cr::ability::{Cost, StaticDecl, TriggerCond, TriggerRequirement, TurnScope};
+pub use jinteki_cr::ability::{
+    Cost, ReqScope, StaticDecl, TriggerCond, TriggerRequirement, TurnScope,
+};
 pub use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
 pub use jinteki_cr::instr::{
     InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, SubroutineSpec,
@@ -754,6 +756,20 @@ pub fn install(card: TargetSpec, dest: InstallDest) -> Instruction {
         ignore_costs: false,
         reveal_check: None,
         reduce_total: Quantity::c(0),
+        reduce_install: Quantity::c(0),
+    }
+}
+/// "Install <a card>, paying N[credit] less." (1.16.6 — a reduction of the
+/// install cost alone, so it needs no rez cost to divide with.)
+pub fn install_paying_less(card: TargetSpec, dest: InstallDest, less: i64) -> Instruction {
+    Instruction::InstallCard {
+        card,
+        dest,
+        and_rez: false,
+        ignore_costs: false,
+        reveal_check: None,
+        reduce_total: Quantity::c(0),
+        reduce_install: Quantity::c(less),
     }
 }
 /// "You may play N operations from HQ." (8.6.3 — chosen one at a time, and
@@ -1218,6 +1234,12 @@ pub fn made_a_successful_run_this_turn() -> TriggerRequirement {
 pub fn link_at_least(n: u32) -> TriggerRequirement {
     TriggerRequirement::RunnerLinkAtLeast(n)
 }
+/// "Whenever the Runner breaks a printed subroutine on this ice, …"
+/// (Gold Farmer class — met once per subroutine broken, not once per
+/// encounter.)
+pub fn printed_subroutine_broken() -> TriggerCond {
+    TriggerCond::SubroutineBrokenOnSelf { printed_only: true }
+}
 /// "…there is an installed AI program" (IP Block class) — at least `n` cards
 /// on the board match the description. The criteria are the same ones a
 /// target announcement uses, so 1.15.2c applies: without a criterion naming
@@ -1302,6 +1324,16 @@ pub fn additional_cost_to_steal_any_agenda(c: Cost) -> StaticDecl {
 /// an effect that would play a card cannot choose it.
 pub fn play_only_if(reqs: &[TriggerRequirement]) -> StaticDecl {
     StaticDecl::PlayOnlyIf(reqs.to_vec())
+}
+/// "The advancement requirement of all agendas is increased by N."
+/// (The Source class — every agenda in the game, not just installed ones.)
+pub fn all_agendas_cost_more(n: i32) -> StaticDecl {
+    StaticDecl::ScoreRequirementMod { scope: ReqScope::AllAgendas, amount: n }
+}
+/// "Agendas in this server may be scored with N fewer advancement counters."
+/// (SanSan City Grid class — scoped to the source's own server.)
+pub fn agendas_here_cost_less(n: i32) -> StaticDecl {
+    StaticDecl::ScoreRequirementMod { scope: ReqScope::SourceServer, amount: -n }
 }
 /// "You can advance this card." (1.18.3.)
 pub fn can_be_advanced() -> StaticDecl {

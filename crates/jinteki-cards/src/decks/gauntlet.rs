@@ -325,9 +325,12 @@ pub fn petty_cash() -> Card {
 ///  Gain 3[credit].
 ///  Draw 3 cards."
 ///
-/// UNIMPLEMENTED: the "both instead" clause — an option whose availability
-/// depends on the game state has no expression (`ChooseOne` offers a fixed
-/// list).
+/// COMPLETE. `ChooseOne` offers a fixed list, so the state-dependent extra
+/// option is the LIST being chosen by 9.6.5d's requirement rather than an
+/// option carrying a condition of its own: tagged, the Corp picks from three
+/// options; untagged, from the printed two. "You MAY resolve both" is the
+/// third option existing, not a separate permission — declining it is
+/// picking one of the other two.
 pub fn predictive_planogram() -> Card {
     card("Predictive Planogram")
         .corp()
@@ -337,11 +340,18 @@ pub fn predictive_planogram() -> Card {
         .text("Resolve 1 of the following. If the Runner is tagged, you may resolve both instead.")
         .text("Gain 3[credit].")
         .text("Draw 3 cards.")
-        .play([choose_one([
-            ("Gain 3[credit].", vec![gain(Corp, 3)]),
-            ("Draw 3 cards.", vec![draw(Corp, 3)]),
-        ])])
-        .unimplemented("If the Runner is tagged, you may resolve both instead.")
+        .play([if_met_else(
+            &[runner_is_tagged()],
+            [choose_one([
+                ("Gain 3[credit].", vec![gain(Corp, 3)]),
+                ("Draw 3 cards.", vec![draw(Corp, 3)]),
+                ("Resolve both.", vec![gain(Corp, 3), draw(Corp, 3)]),
+            ])],
+            [choose_one([
+                ("Gain 3[credit].", vec![gain(Corp, 3)]),
+                ("Draw 3 cards.", vec![draw(Corp, 3)]),
+            ])],
+        )])
         .build()
 }
 
@@ -520,9 +530,10 @@ pub fn gold_farmer() -> Card {
         .text("Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit].")
         .text("[subroutine] End the run unless the Runner pays 3[credit].")
         .text("[subroutine] End the run unless the Runner pays 3[credit].")
+        .when(printed_subroutine_broken(), [lose(Runner, 1)])
+        .named("gold farmer: the toll on breaking")
         .subroutine([unless_pays(Runner, credits(3), end_the_run())])
         .subroutine([unless_pays(Runner, credits(3), end_the_run())])
-        .unimplemented("Whenever the Runner breaks a printed subroutine on this ice, they lose 1[credit].")
         .build()
 }
 

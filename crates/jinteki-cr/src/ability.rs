@@ -224,6 +224,11 @@ pub enum TriggerCond {
     /// (ice with no subroutines) meets it too, and 6.5.7d means it is never
     /// retracted.
     SelfFullyBroken,
+    /// "Whenever the Runner breaks a printed subroutine on this ice…"
+    /// (Gold Farmer class.) Met once per subroutine, unlike
+    /// [`TriggerCond::SelfFullyBroken`] which is met once per encounter.
+    /// `printed_only` is the origin stipulation as content (§12 rule 2).
+    SubroutineBrokenOnSelf { printed_only: bool },
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples).
     RunnerStealsAgenda,
@@ -300,6 +305,20 @@ pub enum TurnScope {
     ThisTurn,
     /// The most recently COMPLETED turn of the side in question.
     LastCompletedTurn,
+}
+
+/// Which agendas a modification of the advancement requirement reaches. The
+/// reach is content (§12 rule 2), not a declaration of its own: SanSan City
+/// Grid and The Source say the same thing about a different set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReqScope {
+    /// "…agendas in this server" — the source's own server, exactly as
+    /// `TargetFilter::IceProtectingSourceServer` scopes ice. A source that is
+    /// not itself in a server reaches nothing.
+    SourceServer,
+    /// "…all agendas" (The Source) — every agenda in the game, wherever it
+    /// sits, so an agenda still in HQ already has the raised requirement.
+    AllAgendas,
 }
 
 /// CR 9.6.5c: an ADDITIONAL requirement listed inside a trigger condition
@@ -737,7 +756,7 @@ pub enum StaticDecl {
     /// of the advancement REQUIREMENT of every agenda in the source's server.
     /// The scope is the source's server, exactly as
     /// `TargetFilter::IceProtectingSourceServer` scopes ice.
-    ScoreRequirementModInSourceServer(i32),
+    ScoreRequirementMod { scope: ReqScope, amount: i32 },
     /// CR 4.6.8f: "Limit N remote servers." (Earth Station class.) While
     /// active, the Corp cannot create a new remote server that would take the
     /// total above N.
@@ -1540,6 +1559,13 @@ pub fn trigger_matches(
             cite!("rule_fully_break");
             cite!("rule_fully_break_no_subroutines");
             *ice == source.id
+        }
+        (
+            TriggerCond::SubroutineBrokenOnSelf { printed_only },
+            GameChange::SubroutineBroken { ice, printed },
+        ) => {
+            cite!("rule_break_subroutine");
+            *ice == source.id && (!*printed_only || *printed)
         }
         (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
         (TriggerCond::CorpScoresAgenda, GameChange::AgendaScored { .. }) => {

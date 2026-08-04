@@ -436,7 +436,14 @@ fn gold_farmer_subroutines_end_the_run_unless_paid() {
     for (credits, expect_ended) in [(6u32, false), (3u32, true)] {
         let mut vm = Vm::empty(22);
         let gf = card_partial("Gold Farmer");
-        assert_eq!(gf.abilities.len(), 2, "two printed subroutines");
+        assert_eq!(
+            gf.abilities
+                .iter()
+                .filter(|a| a.kind == jinteki_cr::ability::AbilityKind::Subroutine)
+                .count(),
+            2,
+            "two printed subroutines (the break toll is a conditional, not a subroutine)"
+        );
         tk::install_ice(&mut vm, gf, ServerId::Hq, true);
         tk::fill_hand(&mut vm, Side::Corp, 3);
         tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -871,7 +878,11 @@ fn builder_calls_denote_into_the_right_ability_kinds() {
         card_partial(name).abilities.iter().map(|a| a.kind).collect()
     };
     assert_eq!(kinds("Crisium Grid"), vec![AbilityKind::Static]);
-    assert_eq!(kinds("Gold Farmer"), vec![AbilityKind::Subroutine, AbilityKind::Subroutine]);
+    assert_eq!(
+        kinds("Gold Farmer"),
+        vec![AbilityKind::Conditional, AbilityKind::Subroutine, AbilityKind::Subroutine],
+        "the break toll is a conditional ability, the two printed subroutines follow it"
+    );
     assert_eq!(kinds("Hedge Fund"), vec![AbilityKind::Play]);
     assert_eq!(
         kinds("Shibboleth"),
@@ -1288,7 +1299,11 @@ fn the_source_trashes_itself_when_an_agenda_is_scored_or_stolen() {
                     .stop_at_action(),
             )
         } else {
-            vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 2);
+            // The printed requirement is 2, but The Source is installed and
+            // raises the requirement of ALL agendas by 1 — so 2 counters is
+            // no longer enough and the Corp needs a third. That the score
+            // fails at 2 is the first sentence working.
+            vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
             vm.start_turn(Side::Corp);
             plan::play(
                 &mut vm,
@@ -1931,5 +1946,71 @@ fn mutual_favor_without_a_run_puts_the_breaker_in_the_grip() {
         Zone::Hand(Side::Runner),
         "no successful run this turn, so it goes to the grip: {}",
         t.tail(16)
+    );
+}
+
+/// The Source: "The advancement requirement of all agendas is increased by 1."
+///
+/// "All agendas" reaches every agenda wherever it sits, so the raised
+/// requirement is already true of an agenda the Corp has not installed yet —
+/// which is what makes the reach a scope on the declaration rather than a
+/// server-scoped one like SanSan City Grid's.
+#[test]
+fn the_source_raises_every_agendas_requirement() {
+    let mut vm = Vm::empty(4703);
+    let installed =
+        tk::install_root(&mut vm, tk::vanilla_agenda("Contested", 2, 1), ServerId::Remote(1), false);
+    let in_hq = vm.new_object(tk::vanilla_agenda("Still In Hand", 3, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(in_hq);
+    assert_eq!(vm.advancement_requirement(installed), 2, "printed 2 with no Source out");
+    assert_eq!(vm.advancement_requirement(in_hq), 3, "printed 3 with no Source out");
+
+    tk::install_rig(&mut vm, card_partial("The Source"));
+    assert_eq!(vm.advancement_requirement(installed), 3, "+1 while The Source is active");
+    assert_eq!(vm.advancement_requirement(in_hq), 4, "…and it reaches HQ too");
+}
+
+/// Gold Farmer: "Whenever the Runner breaks a printed subroutine on this ice,
+/// they lose 1[credit]." — met once PER subroutine, not once per encounter,
+/// which is what distinguishes it from a fully-broken condition.
+#[test]
+fn gold_farmer_taxes_each_broken_subroutine() {
+    let mut vm = Vm::empty(4704);
+    let gf = tk::install_ice(&mut vm, card("Gold Farmer"), ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::break_button("Breaker"));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let before = vm.st.runner.credits;
+    // Break both subroutines with a real breaker, in the encounter's paid
+    // ability window — the toll is on BREAKING, so which ability did it does
+    // not matter, but it has to actually happen in the run.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().at_step("step_encounter_paw").times(2), Reply::take("break"))
+            .when(Match::targets().times(2), Reply::Pass)
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::SubroutineBroken { ice, printed: true } if *ice == gf))
+            .count(),
+        2,
+        "both printed subroutines were broken: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        before - vm.st.runner.credits,
+        2,
+        "1[credit] for each of the two printed subroutines broken: {}",
+        t.tail(20)
     );
 }
