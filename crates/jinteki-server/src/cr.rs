@@ -374,8 +374,11 @@ pub fn eternal_setup(seed: u64) -> Result<GameSetup, Readiness> {
 }
 
 /// Oracle text by title, from the card layer (SYS-D-10: the text a card was
-/// implemented from is the text the player is shown).
-fn oracle_text(title: &str) -> Option<&'static str> {
+/// implemented from is the text the player is shown). Public to the crate so
+/// the card API serves the same text the board does — the "name a card"
+/// picker asks the player to READ a card before committing to it, which it
+/// cannot do if the only thing the lookup returns is a title.
+pub(crate) fn oracle_text(title: &str) -> Option<&'static str> {
     static TEXTS: OnceLock<HashMap<String, String>> = OnceLock::new();
     TEXTS
         .get_or_init(|| {
@@ -403,8 +406,12 @@ struct Pending {
     side: Side,
     spec: DecisionSpec,
     msg: String,
-    /// (uuid, label, the answer taking it produces).
-    choices: Vec<(String, String, DecisionAnswer)>,
+    /// (uuid, label, the answer taking it produces, the card it is about).
+    /// The card rides WITH the option because a decision about cards has to
+    /// render as cards (UX.md THE LAW §1), and the answer alone cannot always
+    /// say which card an option is about — a division of credits answers with
+    /// numbers, a minimal set with an index.
+    choices: Vec<(String, String, DecisionAnswer, Option<ObjectId>)>,
     /// Card-tap selection, where the decision is about cards on the board.
     select: Option<Select>,
     /// A decision ABOUT one card puts the card itself in front of the player.
@@ -1006,6 +1013,12 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
 /// can outline that card as usable instead of printing its label as a button.
 /// A `TriggerInstance` names a pending ability rather than a card, so the
 /// instance is resolved back to the source it belongs to.
+///
+/// A TARGET ANNOUNCEMENT (1.15.2) names cards too, and answering it with one
+/// card is the commonest decision in the game — "Choose 1 card" over two
+/// copies of Boomerang is two identical text buttons unless the card travels
+/// with the choice. Only single-card answers map: an answer naming several
+/// cards is not ABOUT one card, and the client picks those by tapping.
 fn choice_card(vm: &Vm, a: &DecisionAnswer) -> Option<ObjectId> {
     match a {
         DecisionAnswer::Take(w) => match w {
@@ -1015,13 +1028,25 @@ fn choice_card(vm: &Vm, a: &DecisionAnswer) -> Option<ObjectId> {
             | WindowOption::Score { card }
             | WindowOption::BasicTrash { card, .. } => Some(*card),
             WindowOption::TriggerInstance { instance, .. } => vm.instance_source(*instance),
-            _ => None,
         },
         DecisionAnswer::Action(o) => match o {
             ActionOption::BasicPlayOperation { card }
             | ActionOption::BasicInstall { card }
             | ActionOption::BasicAdvance { card } => Some(*card),
             ActionOption::CardAction { ability, .. } => Some(ability.obj),
+            _ => None,
+        },
+        // 1.15.2 target announcements, 1.16.1 cards spent for a cost, 5.5.4c
+        // discards and 11.5's access candidate: each one card, each a card.
+        DecisionAnswer::Targets(cs) | DecisionAnswer::Discard(cs) => match cs.as_slice() {
+            [c] => Some(*c),
+            _ => None,
+        },
+        DecisionAnswer::Candidate(c) => Some(*c),
+        // 1.12.1: a counter is an object, and the object a player recognises
+        // is the card holding it. All from one host, or it is not one card.
+        DecisionAnswer::Counters(cs) => match cs.split_first() {
+            Some((first, rest)) if rest.iter().all(|c| c.host == first.host) => Some(first.host),
             _ => None,
         },
         _ => None,
@@ -1115,8 +1140,8 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
         let answer = p
             .choices
             .iter()
-            .find(|(u, _, _)| u == uuid)
-            .map(|(_, _, a)| a.clone())
+            .find(|(u, ..)| u == uuid)
+            .map(|(_, _, a, _)| a.clone())
             .ok_or("that choice is not on offer")?;
         return Ok(answer_now(g, answer));
     }
@@ -1136,6 +1161,26 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
             return Err("that is not an arrangement of these cards".into());
         }
         return Ok(answer_now(g, DecisionAnswer::Arrangement(got)));
+    }
+
+    // CR 1.15.2e: "choose UP TO n" is finished when the chooser says it is,
+    // any time from `min` picks onward. Without this the only expressible
+    // answer is exactly `count` cards, so a player who wants one of the two
+    // targets on offer is forced to announce both.
+    if cmd == "select-done" {
+        let sel = p.select.as_ref().ok_or("nothing to select right now")?;
+        if !sel.up_to || (g.picked.len() as u32) < sel.min {
+            return Err("you have not chosen enough cards yet".into());
+        }
+        let picks = std::mem::take(&mut g.picked);
+        let answer = match sel.kind {
+            SelectKind::Targets => DecisionAnswer::Targets(picks),
+            SelectKind::Discard => DecisionAnswer::Discard(picks),
+            // 11.5 step 4a always names exactly one candidate; there is no
+            // "up to" access, so this is unreachable rather than a policy.
+            SelectKind::Candidate => return Err("an access candidate is not optional".into()),
+        };
+        return Ok(answer_now(g, answer));
     }
 
     // 2. A card tap in select mode.
@@ -1238,8 +1283,32 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
         arrange: None,
         actions: Vec::new(),
     };
+    // A choice uuid is unique to the DECISION, not just to its position in
+    // the list. Two prompts in a row both numbering their options from 0 mean
+    // a tap that lands a frame late answers the NEXT question with whatever
+    // happens to sit at that index — a misplay the player never made and
+    // cannot see. A per-decision stamp makes a stale uuid simply not match.
+    static DECISION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = DECISION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let push = |p: &mut Pending, label: String, a: DecisionAnswer| {
-        p.choices.push((p.choices.len().to_string(), label, a));
+        let card = choice_card(vm, &a);
+        p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, card));
+    };
+    // The same, where the option is about a card the ANSWER does not name
+    // (a division of credits, a set to trash): the arm knows, so it says.
+    let push_on = |p: &mut Pending, label: String, a: DecisionAnswer, card: ObjectId| {
+        p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, Some(card)));
+    };
+    // Every card the board should light up GOLD for this decision, as an
+    // affordance the client already knows how to draw and tap (THE LAW §3).
+    // Without these the CR engine asked "tap the cards" and lit nothing:
+    // a multi-card choice, whose per-card buttons are dropped below, had no
+    // answer the player could give at all.
+    let selectable = |p: &mut Pending, candidates: &[ObjectId]| {
+        p.actions = candidates
+            .iter()
+            .map(|c| json!({"command":"select","cid": c.0, "label": name_of(vm, &view, *c)}))
+            .collect();
     };
     match spec {
         DecisionSpec::Mulligan => {
@@ -1318,6 +1387,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 up_to: *up_to,
                 kind: SelectKind::Targets,
             });
+            selectable(&mut p, candidates);
             for c in candidates {
                 push(
                     &mut p,
@@ -1329,14 +1399,22 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, "None".into(), DecisionAnswer::Targets(Vec::new()));
             }
             // A multi-card choice is made by tapping; the buttons above answer
-            // only the one-card case, so drop them when more are needed.
+            // only the one-card case, so drop them when more are needed. The
+            // candidate list still travels (as `select`), so the prompt shows
+            // the cards and the board lights them — the tap is not a guess.
             if *count > 1 {
-                p.choices.clear();
+                p.choices.retain(|(_, _, a, _)| {
+                    matches!(a, DecisionAnswer::Targets(t) if t.is_empty())
+                });
                 p.msg.push_str(" Tap the cards.");
             }
         }
         DecisionSpec::PaymentCards { candidates, count, label } => {
-            p.msg = format!("Choose {count} card(s) to {label} (CR 1.16.1).");
+            p.msg = format!(
+                "Choose {count} card{} to {label} (CR 1.16.1).{}",
+                if *count == 1 { "" } else { "s" },
+                if *count == 1 { "" } else { " Tap the cards." }
+            );
             p.select = Some(Select {
                 candidates: candidates.clone(),
                 count: *count,
@@ -1344,6 +1422,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 up_to: false,
                 kind: SelectKind::Targets,
             });
+            selectable(&mut p, candidates);
             if *count == 1 {
                 for c in candidates {
                     push(
@@ -1356,8 +1435,9 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
         }
         DecisionSpec::DiscardCards { count, hand } => {
             p.msg = format!(
-                "Discard {count} card{} down to your maximum hand size (5.5.4c).",
-                if *count == 1 { "" } else { "s" }
+                "Discard {count} card{} down to your maximum hand size (5.5.4c).{}",
+                if *count == 1 { "" } else { "s" },
+                if *count == 1 { "" } else { " Tap the cards." }
             );
             p.select = Some(Select {
                 candidates: hand.clone(),
@@ -1366,6 +1446,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 up_to: false,
                 kind: SelectKind::Discard,
             });
+            selectable(&mut p, hand);
             if *count == 1 {
                 for c in hand {
                     push(
@@ -1385,6 +1466,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 up_to: false,
                 kind: SelectKind::Candidate,
             });
+            selectable(&mut p, candidates);
             for (i, c) in candidates.iter().enumerate() {
                 let label = if view.sees(*c) {
                     name_of(vm, &view, *c)
@@ -1399,17 +1481,22 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 "{} entered this server — access it too? (7.4.6a)",
                 name_of(vm, &view, *card)
             );
+            // The question is about ONE card, so the card is the prompt.
+            p.focus = Some(Focus { card: *card, kind: "candidate", trash_cost: None });
             push(&mut p, "Yes".into(), DecisionAnswer::ResolveOptional(true));
             push(&mut p, "No".into(), DecisionAnswer::ResolveOptional(false));
         }
         DecisionSpec::DeclareInstallDestination { options } => {
             p.msg = "Where does it go? (8.5.16b)".into();
             for d in options {
-                push(
-                    &mut p,
-                    install_dest_label(vm, &view, d),
-                    DecisionAnswer::InstallDestination(*d),
-                );
+                let label = install_dest_label(vm, &view, d);
+                let a = DecisionAnswer::InstallDestination(*d);
+                // 1.13.6a: hosting names a card, and "Hosted on Sahasrara"
+                // is a card the player should see rather than read.
+                match d {
+                    jinteki_cr::instr::InstallDest::HostedOn(c) => push_on(&mut p, label, a, *c),
+                    _ => push(&mut p, label, a),
+                }
             }
         }
         DecisionSpec::DeclareAttackedServer { options } => {
@@ -1529,7 +1616,13 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             for (i, s) in sets.iter().enumerate() {
                 let label =
                     s.iter().map(|c| name_of(vm, &view, *c)).collect::<Vec<_>>().join(", ");
-                push(&mut p, label, DecisionAnswer::ChooseSet(i));
+                let a = DecisionAnswer::ChooseSet(i);
+                // The common case by far is one card per set — "trash this or
+                // that" — and that case is a choice about cards.
+                match s.as_slice() {
+                    [c] => push_on(&mut p, label, a, *c),
+                    _ => push(&mut p, label, a),
+                }
             }
         }
         DecisionSpec::TraceSpend { max, strength_so_far, corp_side } => {
@@ -1587,10 +1680,11 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 if mine.len() < *count as usize && !*up_to {
                     continue;
                 }
-                push(
+                push_on(
                     &mut p,
                     format!("{count} from {}", name_of(vm, &view, h)),
                     DecisionAnswer::Counters(mine),
+                    h,
                 );
             }
             if *up_to {
@@ -1614,11 +1708,21 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 if left > 0 {
                     continue;
                 }
-                let label = match loc {
-                    None => "Credit pool first".to_string(),
-                    Some(c) => format!("{} first", name_of(vm, &view, *c)),
-                };
-                push(&mut p, label, DecisionAnswer::Division(div));
+                // Recurring credits sit ON a card, and which card is the whole
+                // question — Net Mercur or the pool is a real decision.
+                match loc {
+                    None => push(
+                        &mut p,
+                        "Credit pool first".into(),
+                        DecisionAnswer::Division(div),
+                    ),
+                    Some(c) => push_on(
+                        &mut p,
+                        format!("{} first", name_of(vm, &view, *c)),
+                        DecisionAnswer::Division(div),
+                        *c,
+                    ),
+                }
             }
         }
         // Ordering declarations have no shape in this UI yet. They are offered
@@ -1933,6 +2037,21 @@ fn run_phase(vm: &Vm) -> &'static str {
     }
 }
 
+/// Is this card DRAWN on `viewer`'s board? Not "may they see it" — where it
+/// physically appears on screen. The board draws the servers, the rig, the
+/// play-area rail, the score areas and the viewer's own hand; a discard pile
+/// is a count you tap to open, and a deck is a count, so cards there are
+/// nowhere a gold outline could land.
+fn drawn_on_board(vm: &Vm, viewer: Side, id: ObjectId) -> bool {
+    let Some(o) = vm.st.objects.get(&id) else { return false };
+    match o.zone {
+        Zone::Root(_) | Zone::Ice(_) | Zone::Rig => true,
+        Zone::PlayArea(_) | Zone::ScoreArea(_) => true,
+        Zone::Hand(s) => s == viewer,
+        _ => false,
+    }
+}
+
 fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     if g.over() {
         return Value::Null;
@@ -1966,15 +2085,11 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
         if s.count > 1 {
             msg.push_str(&format!(" ({} of {} chosen)", g.picked.len(), s.count));
         }
-        if s.up_to && g.picked.len() as u32 >= s.min {
-            // "up to" with a floor already met: the None/Done button is in the
-            // choices list, built at present() time.
-        }
     }
     let mut obj = json!({
         "msg": msg,
         "prompt-type": "prompt",
-        "choices": p.choices.iter().map(|(u, l, a)| {
+        "choices": p.choices.iter().map(|(u, l, _, card)| {
             // The card the option LIVES ON, where it has one. Without this a
             // client can only render a wall of text buttons: nothing maps
             // "use this ability" back to the card it belongs to, so the board
@@ -1982,20 +2097,58 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             // The CARD, not just its id — a choice about cards must be able
             // to render as cards, and the candidates are often somewhere the
             // client cannot otherwise see (the stack during a search, the
-            // heap, the opponent's HQ mid-access). Sent only where the viewer
-            // is entitled to it (§10.2), so this discloses nothing a board
-            // reading would not.
-            match choice_card(&g.vm, a) {
-                Some(c) if view.sees(c) => {
-                    json!({"uuid": u, "value": l, "cid": c.0,
-                           "card": card_json(&g.vm, view, c, true)})
-                }
-                Some(c) => json!({"uuid": u, "value": l, "cid": c.0}),
+            // heap, the opponent's HQ mid-access). `card_json` applies §10.2
+            // itself: a card this viewer may not see travels as a FACEDOWN
+            // card, which is what it looks like on the table too.
+            match card {
+                Some(c) => json!({"uuid": u, "value": l, "cid": c.0,
+                                  "card": card_json(&g.vm, view, *c, view.sees(*c))}),
                 None => json!({"uuid": u, "value": l}),
             }
         }).collect::<Vec<_>>(),
         "select": p.select.is_some(),
     });
+    // Tapping a highlighted card is one of the two ways a target announcement
+    // is answered, and the other one is the prompt itself — so the prompt
+    // carries the candidates AS CARDS. Half the time the candidates are
+    // somewhere the board cannot show them (the stack mid-search, the heap,
+    // HQ during an access), where a board highlight highlights nothing at
+    // all; and where they ARE on the board, both paths are drawn from this
+    // one list, so they cannot disagree.
+    if let (Some(s), Some(m)) = (p.select.as_ref(), obj.as_object_mut()) {
+        // …and it says whether the board is showing them, so the client can
+        // let the board answer where the board CAN answer (THE LAW §3) and
+        // only put the cards in the sheet when it cannot. All or nothing: a
+        // set split between the sheet and the board cannot be compared.
+        m.insert(
+            "select-onboard".into(),
+            json!(!s.candidates.is_empty()
+                && s.candidates.iter().all(|c| drawn_on_board(&g.vm, viewer, *c))),
+        );
+        m.insert(
+            "select-cards".into(),
+            Value::Array(
+                s.candidates
+                    .iter()
+                    .map(|c| card_json(&g.vm, view, *c, view.sees(*c)))
+                    .collect(),
+            ),
+        );
+        m.insert("select-count".into(), json!(s.count));
+        m.insert("select-min".into(), json!(s.min));
+        m.insert("select-up-to".into(), json!(s.up_to));
+        m.insert(
+            "select-picked".into(),
+            Value::Array(g.picked.iter().map(|c| json!(c.0)).collect()),
+        );
+        // CR 1.15.2e: "up to" with its floor met can stop here. Nothing else
+        // in the prompt says so, and a player who has taken the one target
+        // they wanted out of two must be able to finish (THE LAW §6).
+        m.insert(
+            "select-done".into(),
+            json!(s.up_to && g.picked.len() as u32 >= s.min),
+        );
+    }
     // CR 8.3.3: the cards being arranged, in their current order, as CARDS —
     // the player is choosing an order and cannot do that from titles alone.
     if let (Some(ids), Some(m)) = (p.arrange.as_ref(), obj.as_object_mut()) {
@@ -2320,6 +2473,167 @@ mod tests {
     fn server_keys_round_trip() {
         for s in [ServerId::Hq, ServerId::Rnd, ServerId::Archives, ServerId::Remote(3)] {
             assert_eq!(server_from_key(&server_key(s)), Some(s));
+        }
+    }
+
+    /// A game stepped far enough that the opening hands exist, with every
+    /// decision answered by the engine's own neutral policy — the fixture for
+    /// asking "what would this prompt look like".
+    fn dealt_game() -> CrGame {
+        let setup = eternal_setup(7).expect("a complete pair of decks is a game");
+        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0);
+        for _ in 0..20_000 {
+            if g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len() >= 2 {
+                break;
+            }
+            match g.vm.step() {
+                Yield::Decision(_, spec) => {
+                    let a = default_answer(&spec);
+                    g.vm.answer(a);
+                }
+                Yield::GameOver(_) => break,
+                Yield::Progressed => {}
+            }
+        }
+        assert!(
+            g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len() >= 2,
+            "the opening hand is dealt"
+        );
+        g
+    }
+
+    /// The reported bug, in one assertion. "Choose 1 card (CR 1.15.2)" over
+    /// two copies of Boomerang is two buttons both reading "Boomerang" and no
+    /// way to tell them apart, unless the CARD travels with the choice —
+    /// which it did not, because only window options and actions were mapped
+    /// back to a card and a target announcement is answered with neither.
+    #[test]
+    fn a_target_announcement_offers_cards_not_titles() {
+        let mut g = dealt_game();
+        let hand = g.vm.cards_in_zone(Zone::Hand(Side::Runner));
+        let want: Vec<ObjectId> = hand[..2].to_vec();
+        let spec = DecisionSpec::ChooseTargets {
+            candidates: want.clone(),
+            count: 1,
+            up_to: false,
+            min: 1,
+            distinct_names: false,
+        };
+        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+        let view = g.vm.view_of(Side::Runner);
+        let out = prompt_json(&g, &view, Side::Runner);
+
+        let choices = out["choices"].as_array().expect("choices").clone();
+        assert_eq!(choices.len(), 2, "one per candidate: {out:#?}");
+        for (ch, id) in choices.iter().zip(&want) {
+            assert_eq!(ch["cid"].as_u64(), Some(id.0 as u64), "the choice names its card");
+            assert!(
+                ch["card"]["title"].is_string(),
+                "…and carries the card itself, or the client can only print the label: {ch:#?}"
+            );
+        }
+        // The other half of the same question: the board lights the same
+        // cards, from the same list, so the two can never disagree.
+        let cards = out["select-cards"].as_array().expect("select-cards");
+        let lit: Vec<u64> = cards.iter().filter_map(|c| c["cid"].as_u64()).collect();
+        let acts: Vec<u64> = g
+            .pending
+            .as_ref()
+            .unwrap()
+            .actions
+            .iter()
+            .filter(|a| a["command"] == json!("select"))
+            .filter_map(|a| a["cid"].as_u64())
+            .collect();
+        let ids: Vec<u64> = want.iter().map(|c| c.0 as u64).collect();
+        assert_eq!(lit, ids, "the prompt shows every candidate");
+        assert_eq!(acts, ids, "and the board offers exactly those to tap");
+    }
+
+    /// CR 1.15.2e: "choose UP TO n". Picking is by tapping, so the per-card
+    /// buttons go — but the answer "none of them" is a real answer and has to
+    /// survive (THE LAW §6), and so does the way to stop after one.
+    #[test]
+    fn up_to_two_can_still_be_answered_with_none_or_stopped_early() {
+        let mut g = dealt_game();
+        let hand = g.vm.cards_in_zone(Zone::Hand(Side::Runner));
+        let want: Vec<ObjectId> = hand[..2].to_vec();
+        let spec = DecisionSpec::ChooseTargets {
+            candidates: want.clone(),
+            count: 2,
+            up_to: true,
+            min: 0,
+            distinct_names: false,
+        };
+        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+        let view = g.vm.view_of(Side::Runner);
+        let out = prompt_json(&g, &view, Side::Runner);
+        let choices = out["choices"].as_array().expect("choices");
+        assert_eq!(choices.len(), 1, "the None button, and nothing else: {out:#?}");
+        assert_eq!(choices[0]["value"], json!("None"));
+        assert_eq!(out["select-done"], json!(true), "0 picks already meets a floor of 0");
+
+        // The same with a floor of 1 (10.12.3a): stopping is offered only
+        // once the floor is met, and one pick of two is a whole answer —
+        // which the count-driven path alone cannot express at all.
+        let spec = DecisionSpec::ChooseTargets {
+            candidates: want.clone(),
+            count: 2,
+            up_to: true,
+            min: 1,
+            distinct_names: false,
+        };
+        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+        let view = g.vm.view_of(Side::Runner);
+        assert_eq!(
+            prompt_json(&g, &view, Side::Runner)["select-done"],
+            json!(false),
+            "nothing chosen yet, so there is nothing to be done with"
+        );
+        assert!(
+            apply_command(&mut g, Side::Runner, &json!({"command":"select-done","args":{}}))
+                .is_err(),
+            "and the command refuses too, not just the button"
+        );
+        let cmd = json!({"command":"select","args":{"cid": want[0].0}});
+        assert_eq!(apply_command(&mut g, Side::Runner, &cmd), Ok(false), "one of two picked");
+        assert_eq!(g.picked, vec![want[0]]);
+        let view = g.vm.view_of(Side::Runner);
+        let out = prompt_json(&g, &view, Side::Runner);
+        assert_eq!(out["select-done"], json!(true), "the floor is met: stopping is legal");
+        assert_eq!(out["select-picked"], json!([want[0].0]), "and the sheet says which");
+    }
+
+    /// Every choice that is about a card carries the card. The audit that
+    /// caught the bug, kept as a standing invariant: a `cid` without a `card`
+    /// is a client that can only draw a button.
+    #[test]
+    fn a_choice_that_names_a_card_always_carries_it() {
+        let mut g = dealt_game();
+        let hand = g.vm.cards_in_zone(Zone::Hand(Side::Runner));
+        let specs = [
+            DecisionSpec::DiscardCards { count: 1, hand: hand.clone() },
+            DecisionSpec::PaymentCards {
+                candidates: hand[..2].to_vec(),
+                count: 1,
+                label: "trash",
+            },
+            DecisionSpec::ChooseCandidate { candidates: hand[..2].to_vec() },
+            DecisionSpec::MinimalSet { sets: vec![vec![hand[0]], vec![hand[1]]] },
+        ];
+        for spec in specs {
+            g.pending = Some(present(&g.vm, Side::Runner, &spec));
+            let view = g.vm.view_of(Side::Runner);
+            let out = prompt_json(&g, &view, Side::Runner);
+            for ch in out["choices"].as_array().expect("choices") {
+                if ch["cid"].is_null() {
+                    continue;
+                }
+                assert!(
+                    ch["card"].is_object(),
+                    "{spec:?}: a choice that names a card must carry it: {ch:#?}"
+                );
+            }
         }
     }
 }

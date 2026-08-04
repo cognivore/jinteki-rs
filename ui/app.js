@@ -458,6 +458,19 @@ function isSelectMode() {
   const p = myPrompt();
   return p && (p.select === true || p["prompt-type"] === "select");
 }
+/* Is this card a legal target for the select question being asked? The
+   candidate list is the server's, and it is the SAME list the prompt row is
+   drawn from, so the board's gold and the sheet's gold can never disagree
+   (UX.md THE LAW §3). In bridge mode there is no list — the reference server
+   is the authority there, so any card may be offered. */
+function isSelectCandidate(cid) {
+  if (!isSelectMode()) return false;
+  if (mode === "bridge") return true;
+  const p = myPrompt();
+  const cards = p["select-cards"];
+  if (Array.isArray(cards)) return cards.some((c) => c.cid === cid);
+  return ACTIONS.some((a) => a.command === "select" && a.cid === cid);
+}
 function actionsFor(cid) { return ACTIONS.filter((a) => a.cid === cid); }
 
 function dirty(key, val) {
@@ -467,24 +480,44 @@ function dirty(key, val) {
   return true;
 }
 
+/* One section of the board. A renderer that throws must not take the rest of
+   the frame with it: the prompt sheet is the most data-driven thing here, and
+   for a while a shadowed variable in it meant the End Turn button, the run
+   controls and the log all silently stopped redrawing behind an exception
+   nobody saw. A half-drawn board you can still act on beats a frozen one. */
+const renderFailed = new Set();
+function section(name, fn) {
+  try { fn(); }
+  catch (e) {
+    console.error(`render(${name}) failed`, e);
+    if (!renderFailed.has(name)) { renderFailed.add(name); toast(`Display error in ${name} — the game is fine`); }
+  }
+}
+
 function render() {
   if (!S) return;
   // Seat orientation: YOUR territory renders on YOUR half of the board,
   // adjacent to your bar and hand; the opponent's on theirs.
   $("board").classList.toggle("flipped", mySide === "corp");
-  renderBars();
-  if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt()])) renderServers();
-  if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt()])) renderRig();
-  if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
-  renderPlayRail();
-  renderPrompt();
-  renderChips();
-  renderTurnBtn();
-  renderRunControls();
-  renderLog();
-  renderPhasePill();
-  renderFocus();
-  renderGameOver();
+  section("bars", renderBars);
+  section("servers", () => {
+    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt()])) renderServers();
+  });
+  section("rig", () => {
+    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt()])) renderRig();
+  });
+  section("hand", () => {
+    if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
+  });
+  section("play area", renderPlayRail);
+  section("the prompt", renderPrompt);
+  section("actions", renderChips);
+  section("end turn", renderTurnBtn);
+  section("run controls", renderRunControls);
+  section("log", renderLog);
+  section("phase", renderPhasePill);
+  section("focus", renderFocus);
+  section("game over", renderGameOver);
 }
 
 function statBump(key, val, elm) {
@@ -663,6 +696,12 @@ function renderServers() {
       sliver.addEventListener("pointerleave", () => clearTimeout(t));
       sliver.addEventListener("pointercancel", () => clearTimeout(t));
       sliver.addEventListener("contextmenu", (e) => e.preventDefault());
+      // THE LAW §5: a chip is still a card — hover reads it on a pointer
+      // device, exactly as hovering the card it stands for would.
+      if (hoverCapable) {
+        sliver.addEventListener("mouseenter", () => showHoverPreview(c));
+        sliver.addEventListener("mouseleave", hideHoverPreview);
+      }
       stack.appendChild(sliver);
     });
     if (ices.length) {
@@ -800,13 +839,13 @@ function cardEl(c, opts) {
   const acts = actionsFor(c.cid);
   // Green: this card has an option on offer RIGHT NOW. The board answers the
   // window instead of a list of text buttons — nothing to read, nothing
-  // moves. Gold still means "legal target for the question being asked", and
-  // a card that is both reads as a target first (that is the live question).
-  if (promptChoicesFor(c.cid).length) el.classList.add("usable");
+  // moves. Gold means "legal target for the question being asked", and while
+  // a target is what is being asked for, that is the ONLY question on the
+  // table: a candidate is gold and never green (THE LAW §3).
   if (isSelectMode()) {
-    const selActs = ACTIONS.filter((a) => a.command === "select");
-    const eligible = mode === "bridge" || selActs.some((a) => a.cid === c.cid);
-    if (eligible) el.classList.add("selectable");
+    if (isSelectCandidate(c.cid)) el.classList.add("selectable");
+  } else if (promptChoicesFor(c.cid).length) {
+    el.classList.add("usable");
   } else if (acts.length) {
     el.classList.add("legal");
   } else if (mode === "bridge" && !facedown && opts.hand) {
@@ -915,6 +954,15 @@ function onCardTap(c, opts, el) {
   closeSheet();
   if (S.winner) return;
 
+  // A target announcement is answered by tapping the card, wherever that card
+  // is drawn — on the board or in the prompt row. One path, so the pick
+  // accumulates the same way from either, and tapping again un-picks.
+  if (isSelectCandidate(c.cid)) {
+    if (native()) act("select", { card: { cid: c.cid } });
+    else act("select", { card: c });
+    return;
+  }
+
   // A card the current window offers something on: tapping it takes that
   // option. One option resolves immediately; several open a sheet naming
   // them, so a card with two abilities is still unambiguous.
@@ -932,11 +980,10 @@ function onCardTap(c, opts, el) {
     return;
   }
 
-  if (isSelectMode()) {
-    if (native()) act("select", { card: { cid: c.cid } });
-    else act("select", { card: c });
-    return;
-  }
+  // While a target is being asked for, a card that is NOT a legal target has
+  // no move to make: tapping it reads it rather than offering an action the
+  // engine would only refuse.
+  if (isSelectMode()) { zoomCard(c); return; }
 
   if (opts.hand) {
     if (raised === c.cid) { raised = null; renderHand(); return; }
@@ -1035,16 +1082,18 @@ function renderPrompt() {
   sheet.style.display = "flex";
   sheet.classList.toggle("waiting", p["prompt-type"] === "waiting");
   const choices = p.choices || [];
+  // UX.md THE LAW §1: a decision about cards renders as CARDS. Two copies of
+  // Bloo Moose are two buttons reading "Bloo Moose" and no way to tell them
+  // apart; as cards they are simply two cards. This outranks the picker: a
+  // list of REAL cards is never a search box, however long it is.
+  if (p.arrange && p.arrange.length > 1) { renderArrangePrompt(sheet, p); return; }
+  if (p["select-cards"]) { renderSelectPrompt(sheet, p, choices); return; }
+  if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
   // A choice list long enough to be a wall of chips is a SEARCH, not a row
   // of buttons. Naming a card (CR 1.15.1b) offers every card the layer
   // knows, so this is the affordance that keeps it usable as the pool grows
   // — and it generalises to any long list, not just naming.
   if (choices.length > PICKER_THRESHOLD) { renderPickerPrompt(sheet, p, choices); return; }
-  // UX.md THE LAW §1: a decision about cards renders as CARDS. Two copies of
-  // Bloo Moose are two buttons reading "Bloo Moose" and no way to tell them
-  // apart; as cards they are simply two cards.
-  if (p.arrange && p.arrange.length > 1) { renderArrangePrompt(sheet, p); return; }
-  if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
   const selectHint = isSelectMode() ? `<div class="pmsg" style="color:var(--gold)">Tap a highlighted card</div>` : "";
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>${selectHint}<div class="pbtns"></div>`;
   const btns = sheet.querySelector(".pbtns");
@@ -1183,31 +1232,100 @@ function makeDraggable(wrap, cid, repaint) {
    to see it, or the option names no card at all — "No action", "Done") stay
    as chips underneath, so nothing is ever lost by rendering cards. */
 function renderCardPrompt(sheet, p, choices) {
+  const withCards = choices.filter((ch) => ch.card);
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
-    <div class="cardprompt"></div><div class="pbtns"></div>`;
+    <div class="cardprompt${withCards.length > 8 ? " many" : ""}"></div><div class="pbtns"></div>`;
   const row = sheet.querySelector(".cardprompt");
   const btns = sheet.querySelector(".pbtns");
-  const withCards = choices.filter((ch) => ch.card);
   const mid = (withCards.length - 1) / 2;
   withCards.forEach((ch, i) => {
     const wrap = document.createElement("div");
     wrap.className = "cardpick";
-    const el = cardEl(ch.card, { side: mySide });
+    const node = cardEl(ch.card, { side: mySide });
     // A far wider arc than the hand's 6°, so the set reads as laid out
-    // rather than held. Beyond a few cards it flattens completely.
+    // rather than held. Beyond a few cards it flattens completely. The tilt
+    // rides the WRAPPER, leaving the card's own transform free for the hover
+    // lift and the picked state (an inline transform beats any stylesheet).
     const rot = withCards.length > 5 ? 0 : (i - mid) * 2.2;
-    if (rot) el.style.transform = `rotate(${rot}deg)`;
-    el.classList.add("usable");
-    wrap.appendChild(el);
-    const cap = el("div", "cardpick-label", sym(String(ch.value)));
-    wrap.appendChild(cap);
-    wrap.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
+    if (rot) wrap.style.transform = `rotate(${rot}deg)`;
+    // THE LAW §3: green = an ability you can use now, gold = a legal target.
+    // A select prompt is asking for TARGETS, so its cards are gold, and they
+    // are the same gold the board paints on the same cards.
+    node.classList.add(isSelectMode() ? "selectable" : "usable");
+    wrap.appendChild(node);
+    // A card the viewer is not entitled to see has nothing on its face, so
+    // its caption is the only thing telling two of them apart — it stays.
+    if (!ch.card.title) wrap.classList.add("blind");
+    wrap.appendChild(el("div", "cardpick-label", sym(String(ch.value))));
+    // The tap is the CARD's own (cardEl wires it): one handler, so a
+    // long-press to read can never also commit the choice, and the board and
+    // the prompt answer the same way.
     row.appendChild(wrap);
   });
   choices.filter((ch) => !ch.card).forEach((ch) => {
     const b = document.createElement("button");
     b.className = "chip";
     b.textContent = sym(String(ch.value));
+    b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
+    btns.appendChild(b);
+  });
+}
+
+/* A target announcement (CR 1.15.2), drawn as the cards it is about.
+   The same list drives the board's gold outlines, so the two never disagree;
+   the row exists because half the time the candidates are somewhere the board
+   cannot show them at all — the stack mid-search, the heap, HQ during an
+   access — and a highlight on a card that is not on screen highlights
+   nothing. Picking accumulates until the count is met (or the player says
+   they are done), exactly as tapping the board does. */
+function renderSelectPrompt(sheet, p, choices) {
+  // Where every candidate is already drawn on the board, the board is where
+  // the question is asked (§3) — repeating the cards in a sheet on top of
+  // them would be the same question twice, and on a phone it would cover the
+  // very cards it is asking about. The sheet keeps the sentence and the
+  // buttons that are not cards.
+  const cards = p["select-onboard"] ? [] : (p["select-cards"] || []);
+  const picked = new Set(p["select-picked"] || []);
+  sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
+    <div class="cardprompt${cards.length > 8 ? " many" : ""}"></div><div class="pbtns"></div>`;
+  const row = sheet.querySelector(".cardprompt");
+  const btns = sheet.querySelector(".pbtns");
+  const mid = (cards.length - 1) / 2;
+  cards.forEach((c, i) => {
+    const wrap = el("div", "cardpick");
+    const node = cardEl(c, { side: mySide });
+    const rot = cards.length > 5 ? 0 : (i - mid) * 2.2;
+    const on = picked.has(c.cid);
+    // One inline transform carries both the tilt and the "already chosen"
+    // lift: an inline transform beats the stylesheet, so it cannot be two.
+    const tilt = `${rot ? `rotate(${rot}deg)` : ""} ${on ? "translateY(-8px)" : ""}`.trim();
+    if (tilt) wrap.style.transform = tilt;
+    node.classList.add("selectable");
+    if (on) { node.classList.add("picked"); wrap.classList.add("on"); }
+    wrap.appendChild(node);
+    if (!c.title) {
+      wrap.classList.add("blind");
+      wrap.appendChild(el("div", "cardpick-label", `Unseen card ${i + 1}`));
+    }
+    row.appendChild(wrap);
+  });
+  // §6: an empty answer is stated, never implied — a prompt asking for a card
+  // when no card qualifies has to SAY so, or it is indistinguishable from a
+  // bug. (A board-answerable question is not empty: the cards are lit behind
+  // this sheet.)
+  if (!cards.length && !(p["select-cards"] || []).length) {
+    row.appendChild(el("div", "picker-hint", "No card qualifies — there is nothing to choose."));
+  } else if (!cards.length) {
+    row.appendChild(el("div", "picker-hint", "Tap a card outlined in gold."));
+  }
+  if (p["select-done"]) {
+    const done = el("button", "chip go", `Done (${picked.size} chosen)`);
+    done.onclick = () => act("select-done", {});
+    btns.appendChild(done);
+  }
+  // "None", "Pass" and anything else the decision offers besides the cards.
+  choices.filter((ch) => !ch.card).forEach((ch) => {
+    const b = el("button", "chip", sym(String(ch.value)));
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
@@ -1387,6 +1505,10 @@ function renderAccessReader(p) {
     tc != null ? `Trash <b>${c.title}</b> for <span class="cost">${tc}⬡</span>?` :
     p.focus === "rez" ? `Rez <b>${c.title}</b>${c.cost != null ? ` for <span class="cost">${c.cost}⬡</span>` : ""}?` :
     yes && /^steal/i.test(String(yes.value)) ? `Steal <b>${c.title}</b>?` :
+    // Any other decision ABOUT one card asks its own question; the reader is
+    // only the frame. (7.4.6a's "access it too?" is not an access at all, and
+    // saying "you accessed" there would be a lie.)
+    p.focus !== "access" ? sym(p.msg || "") :
     `You accessed <b>${c.title}</b>.`;
   const binary = tc != null || p.focus === "rez";
 
@@ -1840,9 +1962,15 @@ function renderEditor() {
   renderValidStrip();
 }
 
+/* Long-press to read, on anything that stands for a card but is not drawn as
+   one: a pile row, a deck-editor row. THE LAW §5 — collapsing a card for
+   space must never cost the ability to read what it says, so the WHOLE card
+   goes to the reader. Passing only title+code showed a card with its rules
+   text, counters and subroutines stripped, which is exactly the reading the
+   press was asking for. */
 function attachZoom(elm, c) {
   let t = null;
-  elm.addEventListener("pointerdown", () => { t = setTimeout(() => zoomCard({ title: c.title, code: c.code }), 420); });
+  elm.addEventListener("pointerdown", () => { t = setTimeout(() => zoomCard(c), 420); });
   ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => elm.addEventListener(ev, () => clearTimeout(t)));
   elm.addEventListener("contextmenu", (e) => e.preventDefault());
 }

@@ -98,6 +98,13 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .side-bar.bottom { bottom: calc(88px + env(safe-area-inset-bottom, 0)); }
 .side-bar .stat { background: rgba(20,28,46,.85); border: 1px solid var(--line);
   border-radius: 999px; padding: 3px 10px; display: flex; gap: 6px; align-items: center; }
+/* The bar does not take taps — it sits over the board — but the things ON it
+   that ARE questions do. Without this the heap, Archives and both score areas
+   have no way in at all: `pointer-events: none` on the bar swallows the tap
+   before the delegated handler can ever see it, and a pile you cannot open is
+   a card you cannot read (THE LAW §5). */
+.side-bar .tappable { pointer-events: auto; cursor: pointer;
+  text-decoration: underline dotted rgba(232,185,63,.5); text-underline-offset: 2px; }
 .side-bar .who { font-weight: 700; }
 .side-bar.top .who { color: var(--corp); }
 .side-bar.bottom .who { color: var(--runner); }
@@ -219,7 +226,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* ── Prompt sheet (HS discover style) ─────────────────────────────────── */
 .prompt-sheet { position: fixed; left: 50%; transform: translateX(-50%);
   bottom: calc(150px + env(safe-area-inset-bottom, 0)); z-index: 70; background: rgba(16,22,38,.97);
-  border: 1px solid var(--gold); border-radius: 16px; padding: 14px; max-width: min(92vw, 480px);
+  border: 1px solid var(--gold); border-radius: 16px; padding: 14px; max-width: min(calc(.92 * var(--safew)), 480px);
   display: flex; flex-direction: column; gap: 10px; animation: pop .2s; }
 .prompt-sheet .pmsg { font-size: 15px; text-align: center; }
 .prompt-sheet .pbtns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -231,9 +238,15 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    on their own right-hand rail. Fixed, so it NEVER reflows the board (THE
    LAW §2); scrolls down its own column when several currents pile up.
    Between the board's right edge and the log tab, clear of both. */
+/* The End Turn button is pinned at the vertical middle of the same edge, and
+   84px of circle plus the rail's own width is wider than the strip they share
+   — so the rail STOPS above it. Two fixed rails on the same edge must be told
+   about each other or they overlap on any short viewport (landscape phone),
+   and the one that loses is the one you cannot scroll. */
 #play-rail { position: fixed; display: none; flex-direction: column; gap: 6px;
   right: calc(46px + var(--sar, 0px)); top: calc(10px + var(--sat, 0px));
-  max-height: calc(100vh - 200px); overflow-y: auto; overflow-x: hidden;
+  max-height: min(calc(100vh - 200px), calc(50vh - 60px - var(--sat, 0px)));
+  overflow-y: auto; overflow-x: hidden;
   z-index: 28; padding: 4px; pointer-events: none;
   -webkit-overflow-scrolling: touch; }
 #play-rail .playslot { pointer-events: auto; position: relative;
@@ -245,7 +258,8 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   padding: 1px 7px; font-weight: 700; position: relative; z-index: 2; }
 /* Phones: smaller still, and it must not eat the board. */
 @media (max-height: 640px) {
-  #play-rail { right: calc(40px + var(--sar, 0px)); max-height: calc(100vh - 150px); gap: 3px; }
+  #play-rail { right: calc(40px + var(--sar, 0px)); gap: 3px;
+    max-height: min(calc(100vh - 150px), calc(50vh - 56px - var(--sat, 0px))); }
   #play-rail .card { transform: scale(.55); margin-bottom: -34px; }
   #play-rail .playtag { font-size: 8px; padding: 0 5px; }
 }
@@ -255,7 +269,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    rather than inferred from position. */
 .arrangerow { display: flex; gap: 10px; justify-content: center; flex-wrap: nowrap;
   overflow-x: auto; padding: 6px 2px; touch-action: pan-y;
-  -webkit-overflow-scrolling: touch; max-width: min(88vw, 900px); }
+  -webkit-overflow-scrolling: touch; max-width: min(calc(.88 * var(--safew)), 900px); }
 .arrangepick { flex: 0 0 auto; position: relative; cursor: grab; user-select: none;
   transition: transform .1s ease; }
 .arrangepick.dragging { cursor: grabbing; transform: translateY(-8px) scale(1.05);
@@ -265,7 +279,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   min-width: 20px; height: 20px; line-height: 20px; text-align: center;
   border-radius: 10px; }
 @media (max-width: 560px) {
-  .arrangerow { gap: 6px; max-width: 94vw; }
+  .arrangerow { gap: 6px; max-width: calc(.94 * var(--safew)); }
   .arrangepick .card { transform: scale(.82); transform-origin: center bottom; }
 }
 /* A pile row is a card in compact clothing — it previews like one (§5). */
@@ -278,18 +292,37 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    so the board behind it never has to move (§2). */
 .cardprompt { display: flex; gap: 10px; justify-content: center; flex-wrap: nowrap;
   overflow-x: auto; overflow-y: hidden; padding: 6px 2px 2px;
-  -webkit-overflow-scrolling: touch; max-width: min(88vw, 900px); }
-.cardpick { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
-  gap: 4px; cursor: pointer; }
+  -webkit-overflow-scrolling: touch;
+  /* Landscape puts the camera cutout on one SIDE. A centred row bounded by
+     viewport width alone slides straight under it. */
+  max-width: min(calc(.88 * var(--safew)), 900px); }
+.cardpick { flex: 0 0 auto; position: relative; display: flex; flex-direction: column;
+  align-items: center; gap: 4px; cursor: pointer; transition: transform .12s ease; }
 .cardpick .card { position: relative; transition: transform .12s ease; }
 .cardpick:hover .card, .cardpick:active .card { transform: translateY(-6px) scale(1.03); }
 .cardpick-label { font-size: 12px; color: var(--muted, #7c8aa5); max-width: 104px;
   text-align: center; line-height: 1.2; }
+/* Enough cards that one row would scroll past the screen edge: wrap into a
+   grid that scrolls DOWN inside the sheet. Still cards, still one sheet, and
+   still nothing behind it moves (§2). */
+.cardprompt.many { flex-wrap: wrap; overflow-y: auto; max-height: min(42vh, 320px);
+  justify-content: flex-start; }
+/* A card the viewer may not see has a blank face, so its caption is the only
+   thing telling two of them apart: that caption survives every breakpoint. */
+.cardpick.blind .cardpick-label { display: block; color: var(--text); }
+/* Already chosen, on the way to "2 of 3". Colour and lift, never a reflow. */
+.cardpick.on .card, .card.picked { border-color: var(--gold);
+  box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(232,185,63,.8); }
+.cardpick.on::after { content: "✓"; position: absolute; top: -6px; right: -4px;
+  background: var(--gold); color: #241c04; font-weight: 800; font-size: 12px;
+  width: 20px; height: 20px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; }
 /* Phones: smaller cards so three still fit without the sheet growing. */
 @media (max-width: 560px) {
-  .cardprompt { gap: 6px; max-width: 94vw; }
+  .cardprompt { gap: 6px; max-width: calc(.94 * var(--safew)); }
   .cardpick .card { transform: scale(.82); transform-origin: center bottom; }
   .cardpick-label { display: none; }
+  .cardpick.blind .cardpick-label { display: block; font-size: 10px; }
 }
 
 /* the picker: a long choice list is a search, not a wall of chips.
@@ -481,7 +514,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     flex-direction: row; gap: 6px; }
   .run-controls .chip { padding: 9px 14px; font-size: 13px; min-height: 40px; }
   .prompt-sheet { bottom: calc(96px + env(safe-area-inset-bottom, 0));
-    padding: 8px 10px; gap: 6px; max-width: min(72vw, 420px); border-radius: 12px; }
+    padding: 8px 10px; gap: 6px; max-width: min(calc(.72 * var(--safew)), 420px); border-radius: 12px; }
   .prompt-sheet .pmsg { font-size: 13px; }
   .prompt-sheet .pbtns { gap: 6px; }
   .prompt-sheet .pbtns .chip { font-size: 13px; padding: 8px 14px; min-height: 40px; }
@@ -504,6 +537,10 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   --sar: env(safe-area-inset-right, 0px);
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
+  /* The width a CENTRED overlay may use. Percentages of the viewport are not
+     it: landscape puts the cutout on one side, so a sheet sized at 92vw runs
+     under it however the phone is held. Everything centred sizes off this. */
+  --safew: calc(100vw - var(--sal) - var(--sar));
 }
 .side-bar { left: calc(6px + var(--sal)); }
 /* Landscape puts the cutout on one SIDE, and iOS reports it per rotation —
