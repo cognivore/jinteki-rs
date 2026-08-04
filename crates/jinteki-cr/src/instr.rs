@@ -1447,6 +1447,23 @@ pub enum TrashDestination {
     FacedownInPlay,
 }
 
+/// CR 1.10.3c: "credits hosted on cards may only be spent as the card's
+/// ability allows." WHAT the card allows is content (§12 rule 2), not a
+/// yes/no: one card lets its credits pay for anything, another names a class
+/// of payment and nothing else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreditUse {
+    /// "You can spend these credits on anything." (Fencer Fueno class, and
+    /// every recurring-credit card that names no restriction.)
+    AnyPayment,
+    /// "Use these credits **to trash installed cards**." (Miss Bones.) The
+    /// cards are described in the shared filter vocabulary (§12 rule 5), so
+    /// 1.15.2c's default applies to the list as a whole: with no criterion
+    /// naming a zone, the description reaches installed cards — which is
+    /// exactly what "installed cards" says.
+    TrashingCards(Vec<TargetFilter>),
+}
+
 /// CR 8.5.16b: the install destination, declared as part of installing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstallDest {

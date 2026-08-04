@@ -954,7 +954,7 @@ pub fn psi_button(name: &'static str) -> PrintedCard {
 /// Fencer-Fueno shape: hosted credits are spendable by the Runner.
 pub fn fencer_like(name: &'static str, credits: u32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.hosted_credits_spendable = true;
+    c.hosted_credits_spendable = Some(crate::instr::CreditUse::AnyPayment);
     let _ = credits; // loaded by the test after install
     c
 }
@@ -2211,13 +2211,14 @@ pub fn imp_like(name: &'static str) -> PrintedCard {
 }
 
 /// Scrubber shape (1.10.3c): a Runner card hosting credits its controller may
-/// spend. Simplification: the printed card restricts them to trashing Corp
-/// cards; the kernel's `hosted_credits_spendable` carries no restriction, and
-/// the examples using this shape spend them on exactly that.
+/// spend. Simplification (§12 rule 3): the printed card restricts them to
+/// trashing Corp cards; this shape allows any payment, and the examples using
+/// it spend them on exactly that. (The restriction itself IS sayable —
+/// `CreditUse::TrashingCards` — but no CR example turns on it.)
 pub fn scrubber_like(name: &'static str, recurring: u32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.recurring_credits = Some(recurring);
-    c.hosted_credits_spendable = true;
+    c.hosted_credits_spendable = Some(crate::instr::CreditUse::AnyPayment);
     c
 }
 
@@ -2793,7 +2794,7 @@ pub fn remove_bad_pub_operation(name: &'static str, n: i64) -> PrintedCard {
 /// spendable for any cost, which is what 9.1.6c's example needs.
 pub fn hosted_credit_source(name: &'static str, ty: CardType) -> PrintedCard {
     let mut c = vanilla_runner_card(name, ty);
-    c.hosted_credits_spendable = true;
+    c.hosted_credits_spendable = Some(crate::instr::CreditUse::AnyPayment);
     c
 }
 
@@ -2923,7 +2924,7 @@ pub fn mem_chip_like(name: &'static str, plus: i32) -> PrintedCard {
 pub fn recurring_card(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Hardware);
     c.recurring_credits = Some(n);
-    c.hosted_credits_spendable = true;
+    c.hosted_credits_spendable = Some(crate::instr::CreditUse::AnyPayment);
     c
 }
 
@@ -5085,7 +5086,7 @@ pub fn alternate_payment_ice(name: &'static str, rez: u32, covers: u32) -> Print
 /// "allowed locations" a payer divides a payment among.
 pub fn hosted_credit_upgrade(name: &'static str) -> PrintedCard {
     let mut c = vanilla_upgrade(name, 0);
-    c.hosted_credits_spendable = true;
+    c.hosted_credits_spendable = Some(crate::instr::CreditUse::AnyPayment);
     c
 }
 

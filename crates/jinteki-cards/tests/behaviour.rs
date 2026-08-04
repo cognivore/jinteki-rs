@@ -3347,3 +3347,61 @@ fn slot_machine_pays_out_on_the_types_it_revealed() {
         );
     }
 }
+
+/// Miss Bones: "Place 12[credit] from the bank on Miss Bones when she is
+/// installed." / "Use these credits to trash installed cards."
+///
+/// CR 1.10.3c is the whole sentence: hosted credits may only be spent as the
+/// card's ability allows, and this card allows one class of payment. The
+/// Runner's own pool is empty in both halves, so the credits are the only
+/// thing that could pay — and 1.15.2c's reading of "installed cards" is what
+/// separates them: the asset in a remote is trashable, the operation being
+/// accessed in HQ is not.
+#[test]
+fn miss_bones_pays_to_trash_installed_cards_and_nothing_else() {
+    for installed in [true, false] {
+        let mut vm = Vm::empty(605);
+        let mb = tk::install_rig(&mut vm, card("Miss Bones"));
+        {
+            let o = vm.st.objects.get_mut(&mb).unwrap();
+            o.counters.insert(CounterKind::Credit, 12);
+            o.loaded_kinds.insert(CounterKind::Credit);
+        }
+        let mut loot = PrintedCard::vanilla("Loot", Side::Corp, CardType::Asset);
+        loot.trash_cost = Some(3);
+        let (server, target) = if installed {
+            (ServerId::Remote(1), tk::install_root(&mut vm, loot, ServerId::Remote(1), true))
+        } else {
+            let id = vm.new_object(loot, Zone::Hand(Side::Corp));
+            vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+            (ServerId::Hq, id)
+        };
+        tk::fill_deck(&mut vm, Side::Corp, 4);
+        tk::fill_deck(&mut vm, Side::Runner, 4);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(server))
+                .when(Match::of(Kind::MidAccess).once(), Reply::trash_accessed())
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&target].zone == Zone::Discard(Side::Corp),
+            installed,
+            "installed={installed}: the trash happens only where the card allows the credits: {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.objects[&mb].counter(CounterKind::Credit),
+            if installed { 9 } else { 12 },
+            "installed={installed}: 1.10.3a — the credits left the card only for the payment \
+             it was allowed to make: {}",
+            t.tail(16)
+        );
+        assert_eq!(vm.st.runner.credits, 0, "nothing came out of the pool");
+    }
+}

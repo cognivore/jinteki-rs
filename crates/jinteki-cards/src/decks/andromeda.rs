@@ -606,9 +606,14 @@ pub fn film_critic() -> Card {
 ///  there are no credits left on Miss Bones, trash her.
 ///  Use these credits to trash installed cards."
 ///
-/// UNIMPLEMENTED: the last sentence. `hosted_credits_spendable` makes hosted
-/// credits usable for ANY cost; there is no way to restrict them to a
-/// described class of cost.
+/// COMPLETE. CR 1.10.3a is why the last sentence is not about the counters at
+/// all: credits taken from a card ENTER the credit pool, so nothing about a
+/// hosted credit differs from any other. 1.10.3c is the sentence — "credits
+/// hosted on cards may only be spent as the card's ability allows" — and what
+/// this card allows is one class of PAYMENT: one made to trash an installed
+/// card. The description is written with the ordinary filter words and no
+/// criterion at all, because 1.15.2c already reads that as "the installed
+/// cards".
 pub fn miss_bones() -> Card {
     card("Miss Bones")
         .runner()
@@ -619,9 +624,9 @@ pub fn miss_bones() -> Card {
         .unique()
         .text("Place 12[credit] from the bank on Miss Bones when she is installed. When there are no credits left on Miss Bones, trash her.")
         .text("Use these credits to trash installed cards.")
+        .credits_only_for_trashing(&[])
         .when(installed(), [load(CounterKind::Credit, 12)])
         .when(empty_of(CounterKind::Credit), [trash_self()])
-        .unimplemented("Use these credits to trash installed cards.")
         .build()
 }
 

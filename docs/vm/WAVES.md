@@ -873,7 +873,7 @@ example needs** (the honest gap list; the DP-7c half of it is CORPUS.md §5):
 ### The two priority decks: what the kernel cannot yet say
 
 Measured, not guessed: `crates/jinteki-cards` carries both decks as cards and
-prints the count. At W21 it is **51 cards, 48 complete, 3 partial, 5 printed
+prints the count. At W21 it is **51 cards, 49 complete, 2 partial, 4 printed
 sentences unsayable** (from 80 unsayable across 5 complete cards, on a
 51-card list before Hedge Fund left it).
 
@@ -1178,9 +1178,18 @@ scan of its instructions.
 - a `TimingRestriction` keyed to a maintained choice — "use this hardware
   only during encounters with that ice" (Boomerang). The existing variants
   key on subtype.
-- hosted credits usable for a DESCRIBED class of cost — "use these credits to
-  trash installed cards" (Miss Bones). `hosted_credits_spendable` is
-  all-or-nothing.
+- ~~hosted credits usable for a DESCRIBED class of cost — "use these credits
+  to trash installed cards" (Miss Bones). `hosted_credits_spendable` is
+  all-or-nothing.~~ — **done, W21**: 1.10.3a says credits taken from a card
+  ENTER the pool, so nothing about a hosted credit differs from any other and
+  the restriction is on what a PAYMENT may be for. 1.10.3c is the sentence —
+  "credits hosted on cards may only be spent as the card's ability allows" —
+  so `PrintedCard::hosted_credits_spendable` carries what the card allows
+  (`CreditUse::{AnyPayment, TrashingCards(criteria)}`) instead of a yes/no,
+  and `Vm::CreditPurpose` is read off the payment's own continuation, which is
+  where the kernel already recorded what the cost is being paid for. "Installed
+  cards" needs no criterion: 1.15.2c already reads a description with no zone
+  criterion that way.
 - starting hand size: `Vm::new_game` draws 5 (1.6.6) with no hook, so an
   identity cannot change it (Andromeda).
 - "while the Runner is accessing this ice in R&D, they must reveal it"

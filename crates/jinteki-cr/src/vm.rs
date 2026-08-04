@@ -469,6 +469,19 @@ pub enum PaymentRestriction {
     ScoreRequirement(ObjectId),
 }
 
+/// CR 1.10.3c: what a payment is FOR, as far as a card restricting its hosted
+/// credits to one class of payment needs to know. Read from the payment's own
+/// continuation, so it is the kernel's existing record of the purpose rather
+/// than a second one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreditPurpose {
+    /// No purpose stated — an affordability question in general, or a payment
+    /// for something no card describes.
+    Unspecified,
+    /// A payment made to trash this card (7.1.5's basic trash ability).
+    Trashing(ObjectId),
+}
+
 /// What a completed payment goes on to do. Every payment has one, because a
 /// payment that can suspend cannot simply return to its caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11112,9 +11125,16 @@ impl Vm {
         if let (false, Some(tc)) = (in_archives, o.printed.trash_cost) {
             cite!("rule_basic_trash_ability");
             cite!("rule_spend_credits");
+            // 1.10.3c: the credits a card allows to be spent on THIS payment
+            // — a card whose ability names one class of payment ("use these
+            // credits to trash installed cards") answers for the card being
+            // trashed, not in general.
             let avail = self.st.runner.credits
                 + self.st.bp_fund
-                + self.spendable_hosted_credits(Side::Runner);
+                + self.spendable_hosted_credits_for(
+                    Side::Runner,
+                    CreditPurpose::Trashing(card),
+                );
             if avail >= tc {
                 if !self.access_restricted() {
                     out.push(WindowOption::BasicTrash { card, cost: tc });
@@ -11416,13 +11436,58 @@ impl Vm {
     /// ability allows them to spend. 1.13.3 keeps them out of the credit
     /// pool: they are never "on" the player.
     fn spendable_hosted_credits(&self, side: Side) -> u32 {
+        self.spendable_hosted_credits_for(side, self.payment_purpose())
+    }
+
+    /// The same, for a payment whose PURPOSE is known — which is what decides
+    /// whether a card allowing its credits for one class of payment ("use
+    /// these credits to trash installed cards") allows them here.
+    fn spendable_hosted_credits_for(&self, side: Side, purpose: CreditPurpose) -> u32 {
         cite!("rule_hosted_counters_not_on_player");
         self.st
             .objects
             .values()
-            .filter(|o| o.controller == side && card_active(o) && o.printed.hosted_credits_spendable)
+            .filter(|o| o.controller == side && card_active(o))
+            .filter(|o| self.hosted_credits_allowed(o, purpose))
             .map(|o| o.counter(CounterKind::Credit))
             .sum()
+    }
+
+    /// CR 1.10.3c: does this card's ability allow its hosted credits to be
+    /// spent on a payment made for this purpose?
+    fn hosted_credits_allowed(&self, o: &Object, purpose: CreditPurpose) -> bool {
+        cite!("rule_spend_credits");
+        match (&o.printed.hosted_credits_spendable, purpose) {
+            (None, _) => false,
+            (Some(crate::instr::CreditUse::AnyPayment), _) => true,
+            (Some(crate::instr::CreditUse::TrashingCards(criteria)), CreditPurpose::Trashing(c)) => {
+                // The description reads exactly as it would anywhere else,
+                // 1.15.2c included: no criterion naming a zone means the
+                // installed cards, which is what "installed cards" says.
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::TrashingCards(_)), _) => false,
+        }
+    }
+
+    /// What the payment in progress is FOR (1.10.3c). Read from the payment's
+    /// continuation, which is where the kernel already records what the cost
+    /// is being paid for; with no payment in progress the question is being
+    /// asked about affordability in general, and a restricted card answers no.
+    fn payment_purpose(&self) -> CreditPurpose {
+        match self.payment.as_ref() {
+            Some(p) => Vm::purpose_of(&p.cont),
+            None => CreditPurpose::Unspecified,
+        }
+    }
+
+    /// The same question asked of a payment's continuation directly, which is
+    /// what `commit_payment` has left once the payment record is gone.
+    fn purpose_of(cont: &PaymentCont) -> CreditPurpose {
+        match cont {
+            PaymentCont::BasicTrash { card, .. } => CreditPurpose::Trashing(*card),
+            _ => CreditPurpose::Unspecified,
+        }
     }
 
     /// 10.14.6b + 10.14.3: legal Psi bids — 0, 1, or 2, capped by what the
@@ -11438,9 +11503,9 @@ impl Vm {
     /// allowed locations. `v` is one number per location, in the order
     /// `credit_locations` returned them; anything the answer leaves unpaid is
     /// completed greedily, the way every other Decision is clamped.
-    fn spend_divided(&mut self, side: Side, total: u32, v: &[u32]) {
+    fn spend_divided(&mut self, side: Side, total: u32, v: &[u32], purpose: CreditPurpose) {
         cite!("rule_spend_credits");
-        let locations = self.credit_locations(side);
+        let locations = self.credit_locations(side, purpose);
         let mut left = total;
         for (i, (loc, have)) in locations.iter().enumerate() {
             if left == 0 {
@@ -11506,7 +11571,7 @@ impl Vm {
     }
 
     /// Spend credits from the pool first, then from spendable hosted pools.
-    fn spend_flexible(&mut self, side: Side, mut n: u32) {
+    fn spend_flexible(&mut self, side: Side, mut n: u32, purpose: CreditPurpose) {
         let from_pool = n.min(self.st.player(side).credits);
         self.st.player_mut(side).credits -= from_pool;
         n -= from_pool;
@@ -11516,7 +11581,7 @@ impl Vm {
                 .objects
                 .values()
                 .filter(|o| {
-                    o.controller == side && card_active(o) && o.printed.hosted_credits_spendable
+                    o.controller == side && card_active(o) && self.hosted_credits_allowed(o, purpose)
                 })
                 .map(|o| o.id)
                 .collect();
@@ -11632,11 +11697,11 @@ impl Vm {
     /// CR 1.10.3c: the locations this player may spend credits from, and how
     /// many are in each — the credit pool first, then each card whose ability
     /// allows its hosted credits to be spent.
-    fn credit_locations(&self, side: Side) -> Vec<(Option<ObjectId>, u32)> {
+    fn credit_locations(&self, side: Side, purpose: CreditPurpose) -> Vec<(Option<ObjectId>, u32)> {
         cite!("rule_spend_credits");
         let mut out = vec![(None, self.st.player(side).credits)];
         for o in self.st.objects.values() {
-            if o.controller == side && card_active(o) && o.printed.hosted_credits_spendable {
+            if o.controller == side && card_active(o) && self.hosted_credits_allowed(o, purpose) {
                 let n = o.counter(CounterKind::Credit);
                 if n > 0 {
                     out.push((Some(o.id), n));
@@ -11805,7 +11870,7 @@ impl Vm {
         // 1.10.3c: the division of the credits among the allowed locations.
         if p.division.is_none() {
             let total = self.payment_credits_from_locations(&p);
-            let locations = self.credit_locations(p.side);
+            let locations = self.credit_locations(p.side, Vm::purpose_of(&p.cont));
             let available: u32 = locations.iter().map(|(_, n)| *n).sum();
             // The choice is real only when there is more than one location and
             // the payer is not spending everything they have.
@@ -11967,9 +12032,13 @@ impl Vm {
         // 9.1.6c then makes each card whose hosted credits were spent used
         // alongside the card whose ability is being paid for.
         cite!("rule_spend_credits");
+        // 1.10.3c: the purpose travels with the payment record, so a card
+        // that allows its credits for one class of payment answers the same
+        // way when the division is ASKED and when it is spent.
+        let purpose = Vm::purpose_of(&p.cont);
         match &p.division {
-            Some(v) => self.spend_divided(side, credits_to_pay, v),
-            None => self.spend_flexible(side, credits_to_pay),
+            Some(v) => self.spend_divided(side, credits_to_pay, v, purpose),
+            None => self.spend_flexible(side, credits_to_pay, purpose),
         }
         // 5.2.1a: a "Lose [click]" component spends clicks exactly like a
         // [click] cost — the difference is only that it is not an action.
@@ -13302,7 +13371,7 @@ impl Vm {
                 // 10.8.2/10.8.3: openly spend credits; this is a payment, so
                 // its checkpoint follows (10.3.4).
                 let n = n.min(self.spendable_credits(side));
-                self.spend_flexible(side, n);
+                self.spend_flexible(side, n, CreditPurpose::Unspecified);
                 if n > 0 {
                     self.changes.record(GameChange::CreditsLost { side, amount: n });
                     self.changes.record(GameChange::CostPaid {
@@ -13351,8 +13420,8 @@ impl Vm {
                         cite!("rule_bid_is_cost");
                         let corp_bid = self.psi_first_bid.take().unwrap_or(0);
                         let runner_bid = n;
-                        self.spend_flexible(Side::Corp, corp_bid);
-                        self.spend_flexible(Side::Runner, runner_bid);
+                        self.spend_flexible(Side::Corp, corp_bid, CreditPurpose::Unspecified);
+                        self.spend_flexible(Side::Runner, runner_bid, CreditPurpose::Unspecified);
                         if corp_bid > 0 {
                             self.changes.record(GameChange::CreditsLost {
                                 side: Side::Corp,

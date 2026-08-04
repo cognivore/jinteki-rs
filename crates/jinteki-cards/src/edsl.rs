@@ -312,6 +312,22 @@ impl CardBuilder {
         self.printed.recurring_credits = Some(n);
         self
     }
+    /// "You can spend these credits on anything." — CR 1.10.3c: hosted
+    /// credits may only be spent as the card's ability allows, and this card
+    /// allows everything.
+    pub fn credits_spendable_on_anything(mut self) -> Self {
+        self.printed.hosted_credits_spendable = Some(jinteki_cr::instr::CreditUse::AnyPayment);
+        self
+    }
+    /// "Use these credits **to trash installed cards**." (Miss Bones; CR
+    /// 1.10.3c.) The cards are described with the ordinary filter words, so
+    /// an empty description is 1.15.2c's default — the installed cards — and
+    /// that is exactly what the sentence says.
+    pub fn credits_only_for_trashing(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::TrashingCards(criteria.to_vec()));
+        self
+    }
 
     // ---- the printed text ------------------------------------------------
     /// One printed line of the card's text box, copied exactly. Call it once

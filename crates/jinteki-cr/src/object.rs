@@ -297,9 +297,12 @@ pub struct PrintedCard {
     /// CR 1.4 double-sided identities: the back face's printed
     /// characteristics ("flip this identity" — Nebula/Gemilang class).
     pub flip_face: Option<Box<PrintedCard>>,
-    /// CR 1.10.3c: hosted credits on this card are spendable by its
-    /// controller (Fencer Fueno class — drives bid legality, 10.14.3).
-    pub hosted_credits_spendable: bool,
+    /// CR 1.10.3c: "credits hosted on cards may only be spent as the card's
+    /// ability allows" — so what the card allows is the content, not a
+    /// yes/no (Fencer Fueno allows anything, Miss Bones allows one class of
+    /// payment). `None` is a card whose hosted credits cannot be spent at
+    /// all. Drives bid legality (10.14.3) as well as ordinary payments.
+    pub hosted_credits_spendable: Option<crate::instr::CreditUse>,
     pub abilities: Vec<AbilityDef>,
 }
 
@@ -327,7 +330,7 @@ impl PrintedCard {
             additional_play_cost: None,
             starting_hand_size: None,
             flip_face: None,
-            hosted_credits_spendable: false,
+            hosted_credits_spendable: None,
             abilities: Vec::new(),
         }
     }
