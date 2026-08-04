@@ -5,6 +5,41 @@ nine figures solving it. This document records the lessons we assimilated and
 maps each one to a concrete feature in `ui/`. The card pool is text-rendered
 for now (no art assets), so all the juice budget went into interaction.
 
+## THE LAW: cards are shown as cards, and the board does not move
+
+This governs every prompt, and it outranks the lessons below where they
+conflict.
+
+1. **If a decision is about cards, it renders as CARDS.** Not a list of
+   titles in buttons. A player recognises art and layout faster than they
+   read, and half of Netrunner's decisions are "which of these do I know
+   least about". A prompt naming Boomerang and Pinhole Threading must show
+   Boomerang and Pinhole Threading.
+
+2. **The board LAYOUT does not move to ask a question.** Cards do not
+   reflow, servers do not resize, the rig does not reorder. A player is
+   holding a mental picture of the board; rearranging it to ask something
+   destroys that picture and costs them the read they had already done.
+   Prompts overlay; they do not rearrange.
+
+3. **Where the board itself can answer, ask it there.** An ability that can
+   be used right now is a GREEN outline on its own card (`.usable`), tapped
+   to use — not a button naming it. A legal target is a GOLD outline
+   (`.selectable`). Two different questions, two colours, never merged.
+
+4. **Chips are the exception, and only for crowding.** When too much ice
+   protects one server to show as cards, that stack — and only that stack —
+   collapses to chips. Nothing else may.
+
+5. **A chip is still a card.** Every chip keeps hover preview on a pointer
+   device and long-press preview on touch. Collapsing for space must never
+   cost the ability to read what a card says.
+
+6. **An empty answer is stated, never implied.** "Search your stack for an
+   icebreaker" with no icebreaker left says so — a prompt that silently does
+   not appear is indistinguishable from a bug, and players reported exactly
+   that about Mutual Favor.
+
 ## The lessons, and where each one lives
 
 1. **One decision on screen at a time** (HS's whole design thesis). The engine

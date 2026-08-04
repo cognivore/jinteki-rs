@@ -795,6 +795,11 @@ function cardEl(c, opts) {
 
   // legality glow (local mode) / select hint
   const acts = actionsFor(c.cid);
+  // Green: this card has an option on offer RIGHT NOW. The board answers the
+  // window instead of a list of text buttons — nothing to read, nothing
+  // moves. Gold still means "legal target for the question being asked", and
+  // a card that is both reads as a target first (that is the live question).
+  if (promptChoicesFor(c.cid).length) el.classList.add("usable");
   if (isSelectMode()) {
     const selActs = ACTIONS.filter((a) => a.command === "select");
     const eligible = mode === "bridge" || selActs.some((a) => a.cid === c.cid);
@@ -894,9 +899,35 @@ function hideHoverPreview() {
 }
 
 /* ── interactions ────────────────────────────────────────────────────── */
+/* The options on offer that live on this card (server sends `cid` on each
+   choice that has one). This is what makes the green outline mean something
+   you can act on rather than decoration. */
+function promptChoicesFor(cid) {
+  const p = myPrompt();
+  if (!p || cid == null || p["prompt-type"] === "waiting") return [];
+  return (p.choices || []).filter((ch) => ch.cid === cid);
+}
+
 function onCardTap(c, opts, el) {
   closeSheet();
   if (S.winner) return;
+
+  // A card the current window offers something on: tapping it takes that
+  // option. One option resolves immediately; several open a sheet naming
+  // them, so a card with two abilities is still unambiguous.
+  const offered = promptChoicesFor(c.cid);
+  if (offered.length === 1) {
+    act("choice", { choice: { uuid: offered[0].uuid } });
+    return;
+  }
+  if (offered.length > 1) {
+    const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 40, bottom: 120 };
+    openSheet(offered.map((ch) => [
+      sym(String(ch.value)),
+      () => act("choice", { choice: { uuid: ch.uuid } }),
+    ]), r.left, r.bottom + 6);
+    return;
+  }
 
   if (isSelectMode()) {
     if (native()) act("select", { card: { cid: c.cid } });

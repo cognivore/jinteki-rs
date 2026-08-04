@@ -982,6 +982,34 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
 /// `view_of` (a card a reader is not entitled to see is never named in their
 /// log). `None` = not worth a frame: passing a window is declining to act,
 /// and the CR opens a great many windows.
+/// The card an offered choice lives on, where it lives on one.
+///
+/// Every window option and action that names a card yields it, so the client
+/// can outline that card as usable instead of printing its label as a button.
+/// A `TriggerInstance` names a pending ability rather than a card, so the
+/// instance is resolved back to the source it belongs to.
+fn choice_card(vm: &Vm, a: &DecisionAnswer) -> Option<ObjectId> {
+    match a {
+        DecisionAnswer::Take(w) => match w {
+            WindowOption::TriggerPaid { ability, .. } => Some(ability.obj),
+            WindowOption::Rez { card }
+            | WindowOption::RezApproachedIce { card }
+            | WindowOption::Score { card }
+            | WindowOption::BasicTrash { card, .. } => Some(*card),
+            WindowOption::TriggerInstance { instance, .. } => vm.instance_source(*instance),
+            _ => None,
+        },
+        DecisionAnswer::Action(o) => match o {
+            ActionOption::BasicPlayOperation { card }
+            | ActionOption::BasicInstall { card }
+            | ActionOption::BasicAdvance { card } => Some(*card),
+            ActionOption::CardAction { ability, .. } => Some(ability.obj),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn describe_move(
     g: &CrGame,
     spec: &DecisionSpec,
@@ -1900,8 +1928,16 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     let mut obj = json!({
         "msg": msg,
         "prompt-type": "prompt",
-        "choices": p.choices.iter().map(|(u, l, _)| json!({"uuid": u, "value": l}))
-            .collect::<Vec<_>>(),
+        "choices": p.choices.iter().map(|(u, l, a)| {
+            // The card the option LIVES ON, where it has one. Without this a
+            // client can only render a wall of text buttons: nothing maps
+            // "use this ability" back to the card it belongs to, so the board
+            // cannot light up and the player has to read instead of look.
+            match choice_card(&g.vm, a) {
+                Some(c) => json!({"uuid": u, "value": l, "cid": c.0}),
+                None => json!({"uuid": u, "value": l}),
+            }
+        }).collect::<Vec<_>>(),
         "select": p.select.is_some(),
     });
     if let (Some(f), Some(m)) = (p.focus.as_ref(), obj.as_object_mut()) {

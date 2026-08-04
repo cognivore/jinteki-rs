@@ -2178,6 +2178,13 @@ impl Vm {
     }
 
     /// CR 10.2: one card as `side` sees it (`Unseen` for hidden identities).
+    /// The card a pending ability instance belongs to. A driver needs this
+    /// to point at the card an offered trigger lives on; the instance itself
+    /// names only the ability.
+    pub fn instance_source(&self, instance: u64) -> Option<ObjectId> {
+        self.instances.get(&instance).map(|i| i.ability.obj)
+    }
+
     pub fn card_view(&self, id: ObjectId, side: Side) -> crate::view::CardView {
         if self.identity_visible_to(id, side) {
             crate::view::CardView::Seen(id)
