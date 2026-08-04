@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>de.memorici.jinteki-overnight</string>
+
+  <!-- Runs the card drive headlessly. This is the ONLY way unattended
+       progress happens: Claude Code executes only while a turn is active,
+       and CronCreate jobs are session-only. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>DEADLINE=11:45 /Users/sweater/Github/jinteki/jinteki-rs/tools/overnight-drive.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>5</integer>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/sweater/Github/jinteki/jinteki-rs</string>
+  <key>StandardOutPath</key>
+  <string>/Users/sweater/Github/jinteki/jinteki-rs/.overnight/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/sweater/Github/jinteki/jinteki-rs/.overnight/launchd.err.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

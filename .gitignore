@@ -6,3 +6,4 @@
 # nix build output symlink
 result
 result-*
+.overnight/
