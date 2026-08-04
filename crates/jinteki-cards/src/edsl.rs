@@ -2208,3 +2208,59 @@ pub fn plays_or_installs_named_by(by: Side, key: &'static str) -> TriggerCond {
         matching_choice: Some(key),
     }
 }
+/// "…you and the Corp secretly spend 0[credit], 1[credit], or 2[credit].
+///  Reveal spent credits. If you and the Corp spent the same number of
+///  credits, <effect>." (Akiko Nisei class.) CR 10.14.6 calls the whole
+/// construction ONE instruction — sealed bids, reveal, immediate spend, then
+/// the outcome branch — so the three printed sentences that describe it are
+/// one call, and only the branch is written out.
+pub fn psi_game(
+    on_match: impl IntoIterator<Item = Instruction>,
+    on_differ: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::PsiGame {
+        on_match: on_match.into_iter().collect(),
+        on_differ: on_differ.into_iter().collect(),
+    }
+}
+/// "Whenever you encounter a piece of ice, …" (Rielle "Kit" Peddler class) —
+/// the encounter with no stipulation about which ice. Pair it with
+/// [`CardBuilder::when_first_each_turn`] for the printed "the first time each
+/// turn".
+pub fn encounters_any_ice() -> TriggerCond {
+    TriggerCond::encounter_begins()
+}
+/// "…it gains **code gate** for the remainder of this run." (Rielle "Kit"
+/// Peddler class; 2.16.5 counts instances, so a granted subtype coexists with
+/// a printed one.)
+pub fn gains_subtypes(
+    target: TargetSpec,
+    add: &[&'static str],
+    duration: WantedDuration,
+) -> Instruction {
+    Instruction::ModifySubtypes {
+        target,
+        add: add.to_vec(),
+        remove: Vec::new(),
+        duration,
+    }
+}
+/// "Swap 2 installed pieces of ice." (Tāo Salonga class; 8.8.1/8.8.2.) Each
+/// side of the swap is its own target position, and 8.8.2 filters the second
+/// against the first, so the two descriptions are written the same way and
+/// the same card can never be chosen twice.
+pub fn swap(a: TargetSpec, b: TargetSpec) -> Instruction {
+    Instruction::SwapCards { a, b }
+}
+/// "Whenever you install a **program** from your heap, …" (Exile class; CR
+/// 4.8.3 — the set-aside zone is never the zone the sentence names, because
+/// 4.8.3 reports where the card was before it was set aside).
+pub fn installs_a_from(side: Side, of: CardType, from: Zone) -> TriggerCond {
+    TriggerCond::CardInstalledFrom { side, from, of_types: vec![of] }
+}
+/// "…your heap" (CR 4.3) — the Runner's discard pile, named as a ZONE, for
+/// the sentences that stipulate where a card came from rather than describing
+/// a card sitting there. [`in_heap`] is the description of the same place.
+pub fn the_heap() -> Zone {
+    Zone::Discard(Runner)
+}

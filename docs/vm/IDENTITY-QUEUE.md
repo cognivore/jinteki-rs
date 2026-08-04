@@ -48,10 +48,48 @@ these is a general kernel capability, stated with the identities that want it.
   `TriggerRequirement::AgendaPointsAtLeast` is an absolute threshold against a
   printed number; nothing asks whether one score area is ahead of the other.
   *(Iain Stirling: Retired Spook.)*
+- **A description cannot say "or" between card TYPES.**
+  `TargetFilter::HasAnySubtype` says it for subtypes, but `CardTypeIs` names
+  exactly one and several filters together mean ALL of them — so "1 resource
+  or piece of hardware" describes nothing, and `InstallFilter` is narrower
+  still (Program / Ice / Any). The fix is the one `HasAnySubtype` already is:
+  the type LIST as content on one filter. *(Barry "Baz" Wong: Tri-Maf Veteran;
+  Magdalene Keino-Chemutai and Kate "Mac" McCaffrey want it too.)*
+- **No automatic, described reduction of an install cost.**
+  `StaticDecl::InstallDiscount` is Patchwork's — a reduction the installer
+  may PAY for. Nothing declares a free one that applies of its own accord to
+  the first card each turn matching a description. *(Az McCaffrey: Mechanical
+  Prodigy; Kate "Mac" McCaffrey: Digital Tinker.)*
+- **No condition for passing a piece of ice, plainly.** `SelfPassed` scopes to
+  the source, and `PassedIceAfterFullyBreaking` /
+  `PassedIceWithResolvedSubroutines` each state something more than the pass.
+  A Runner-side "you
+  pass a piece of ice" is the same occurrence with neither stipulation.
+  *(Khan: Savvy Skiptracer.)*
+- **Jacking out is a run step, not an effect.** `Instruction::JackOutChoice`
+  is 6.9.4c's step; a card that OFFERS the choice outside that step has
+  nothing to denote into. *(Nero Severn: Information Broker.)*
+- **No comparison between two calculated quantities.**
+  `TriggerRequirement::QuantityAtLeast` measures one amount against a printed
+  number; "the same number of cards in your grip as the Corp has in HQ" needs
+  two amounts and an equality. *(Lat: Ethical Freelancer.)*
+- **Nothing counts accesses within a run.** 7.4.3 records the accessed cards
+  per BREACH; "for each time you accessed a card during that run" spans every
+  breach of one run. *(Zahya Sadeghi: Versatile Smuggler.)*
+- **"more [faction] cards installed than any other faction" is unsayable.**
+  A comparison across the faction partition of the board, not a threshold.
+  Every draft-format identity opens with it. *(Boris "Syfr" Kovac, Jamie
+  "Bzzz" Micken, Strategic Innovations, Fringe Applications, Information
+  Dynamics, Synthetic Systems, Wyvern.)*
+- **The ordinal "the first time each RUN" has no home.**
+  `AbilityDef::first_each_turn` is the turn-scoped one, and `WouldDamage`
+  carries `first_each_run` as content on that one condition. The scope is
+  content and belongs beside the ordinal, not on one condition.
+  *(Jesminder Sareen: Girl Behind the Curtain.)*
 
 ## Progress
 
-- Implemented: **13 / 150**
+- Implemented: **17 / 150**
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -86,18 +124,18 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [ ] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (1/21)
+## Runner — Shaper (5/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
-- [ ] **Akiko Nisei: Head Case** — Whenever you breach R&D, you and the Corp secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Corp spent the same number of credits, access 1 additional card.
+- [x] **Akiko Nisei: Head Case** — Whenever you breach R&D, you and the Corp secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Corp spent the same number of credits, access 1 additional card.
 - [ ] **Arissana Rocha Nahu: Street Artist** — Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.
 - [ ] **Ayla "Bios" Rahim: Simulant Specialist** — Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack. [click]: Add 1 card set aside with this identity to your grip.
 - [ ] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
 - [x] **Chaos Theory: Wünderkind** — +1[mu]
 - [ ] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
 - [ ] **Ele "Smoke" Scovak: Cynosure of the Net** — 1[recurring-credit] Use this credit to pay for using icebreakers.
-- [ ] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
+- [x] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
 - [ ] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
 - [ ] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
 - [ ] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
@@ -107,10 +145,10 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Lat: Ethical Freelancer** — When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.
 - [ ] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.
 - [ ] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
-- [ ] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
+- [x] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
 - [ ] **The Collective: Williams, Wu, et al.** — The first time you perform the same action three times in a row each turn, gain [click].
 - [ ] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
-- [ ] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
+- [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
 ## Runner — Anarch (0/19)
 

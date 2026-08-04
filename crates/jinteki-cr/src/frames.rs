@@ -108,6 +108,19 @@ pub struct BreachCtx {
     /// access limit, decremented as those choices are made (7.3.5c: a chosen
     /// candidate counts even if it is never accessed).
     pub remaining_from_zone: u32,
+    /// CR 7.3.5b: additional accesses granted BY AN ABILITY for this breach.
+    /// Kept separately from the remainder because step 11.5.3 computes the
+    /// limit from scratch and would otherwise erase what was granted before
+    /// it ran — and 11.5.1's reaction window, which is where an ability
+    /// triggered by the breach BEGINNING resolves (Cupellation, Akiko Nisei),
+    /// is two steps earlier. That is also the only place such an ability may
+    /// act: 7.3.5b says it "can only be applied at the beginning of the
+    /// breach, before the value of the random access limit is set", and 7.3.5
+    /// says the limit "will not change for the remainder of that breach".
+    pub granted_extra: u32,
+    /// CR 7.3.5: whether step 11.5.3 has set the limit for this breach, after
+    /// which 7.3.5b's grants no longer apply.
+    pub limit_determined: bool,
     /// CR 7.4.6a: root entries the Runner declared NON-candidates at
     /// 10.3.1j — they cannot become candidates for the rest of the breach.
     pub declined: Vec<ObjectId>,

@@ -276,7 +276,15 @@ pub enum TriggerCond {
     /// class) — a condition stipulating the zone the installed card came
     /// from. The set-aside zone is never that zone: 4.8.3 reports the
     /// location the card was in before it was set aside.
-    CardInstalledFrom { side: Side, from: Zone },
+    ///
+    /// `of_types` is the sentence's OTHER stipulation, about the installed
+    /// card itself — "a **program** from your heap" — carried as content on
+    /// the same atom (§12 rule 2), exactly as it is on
+    /// [`TriggerCond::CorpRezzesCard`] and
+    /// [`TriggerCond::RunnerAccessesCard`]. Empty is a sentence that names no
+    /// type, and a card has exactly one type (2.15), so the list reads as
+    /// "any of these".
+    CardInstalledFrom { side: Side, from: Zone, of_types: Vec<CardType> },
     /// Interrupt trigger: "…would do damage" (ordinal: Some(1) = "the first
     /// time each run you would…", Tori Hanzō class).
     WouldDamage { kind: Option<DamageKind>, first_each_run: bool },
@@ -1886,14 +1894,18 @@ pub fn trigger_matches(
             by == side && *zone == Zone::Deck(*side)
         }
         (
-            TriggerCond::CardInstalledFrom { side, from },
-            GameChange::CardInstalled { side: s, from: f, .. },
+            TriggerCond::CardInstalledFrom { side, from, of_types },
+            GameChange::CardInstalled { side: s, from: f, obj },
         ) => {
             // 4.8.3: `from` is the location the card is TREATED as having come
             // from, so an Exile-class "whenever you install a program from
             // your heap" is met by an install out of an 8.7.4 set-aside.
             cite!("rule_set_aside_zone_passthrough");
-            side == s && from == f
+            // 2.15: the type stipulation, asked of the card the change names.
+            side == s
+                && from == f
+                && (of_types.is_empty()
+                    || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
         }
         (TriggerCond::CardInstalledBy(side), GameChange::CardInstalled { side: s, .. }) => {
             side == s

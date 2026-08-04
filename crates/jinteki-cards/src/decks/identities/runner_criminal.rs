@@ -142,7 +142,7 @@ pub fn leela_patel() -> Card {
         .build()
 }
 
-/// Nyusha "Sable" Sintashta: Symphonic Prodigy — Identity: Natural. Link 0.
+/// Nyusha "Sable" Sintashta: Symphonic Prodigy — Identity: G-mod. Link 0.
 /// "When your turn begins, identify your mark. (If you don’t have a mark, a
 ///  random central server becomes your mark for this turn.)
 ///  The first time each turn you make a successful run on your mark, gain
@@ -162,7 +162,7 @@ pub fn nyusha_sintashta() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&["G-mod"])
         .text("When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.)")
         .text("The first time each turn you make a successful run on your mark, gain [click].")
         .when(turn_begins(Runner), [identify_mark()])

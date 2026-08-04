@@ -4864,13 +4864,45 @@ pub fn test_run_like(name: &'static str, zone: Zone) -> PrintedCard {
     c
 }
 
+/// "0[credit]: Install 1 card from your heap, ignoring all costs." A driver
+/// for conditions that stipulate something about an install — the zone the
+/// card came from (4.8.3) or its type — with no stipulation of its own, so
+/// the test decides what is installed by announcing it. Unlike
+/// [`test_run_like`] nothing is set aside on the way, which is what makes the
+/// two shapes together separate 4.8.3's passthrough from the plain case.
+pub fn heap_install_button(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::InstallCard {
+            card: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![crate::instr::TargetFilter::InDiscardOf(Side::Runner)],
+                up_to: false,
+            },
+            dest: crate::instr::InstallDest::Rig,
+            and_rez: false,
+            ignore_costs: true,
+            reveal_check: None,
+            reduce_total: Quantity::c(0),
+            reduce_install: Quantity::c(0),
+        }],
+    )
+    .labeled("heap install: install 1 card from the heap")];
+    c
+}
+
 /// Exile shape (4.8.3): "Whenever you install a program from your heap, draw
 /// 1 card." A condition that stipulates the zone the installed card came
 /// from — the one kind of ability 4.8.3's passthrough is written for.
 pub fn exile_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::CardInstalledFrom { side: Side::Runner, from: Zone::Discard(Side::Runner) },
+        TriggerCond::CardInstalledFrom {
+            side: Side::Runner,
+            from: Zone::Discard(Side::Runner),
+            of_types: vec![CardType::Program],
+        },
         vec![Instruction::Draw(Side::Runner, 1)],
         false,
     )

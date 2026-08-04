@@ -4066,3 +4066,309 @@ fn an_and_sentence_is_one_instruction_not_two() {
     // "…gain 1[credit] and flip this identity."
     one_instruction("Nebula Talent Management: Making Stars", 0);
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue (docs/vm/IDENTITY-QUEUE.md) — Runner, Shaper
+// ---------------------------------------------------------------------------
+
+/// Akiko Nisei: "Whenever you breach R&D, you and the Corp secretly spend
+/// 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the
+/// Corp spent the same number of credits, access 1 additional card."
+///
+/// The same breach twice over: matched bids access two cards out of R&D,
+/// differing bids access one. The bids are also spent either way (10.14.6c),
+/// which is what makes the "secretly spend" half more than flavour.
+#[test]
+fn akiko_nisei_accesses_a_second_card_when_the_bids_match() {
+    for matched in [true, false] {
+        let mut vm = Vm::empty(6010);
+        tk::install_identity(&mut vm, card("Akiko Nisei: Head Case"), Side::Runner);
+        let deck = tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 3;
+        vm.st.corp.credits = 3;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::psi_bid(), Reply::Bid(1)),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Rnd))
+                .when(Match::psi_bid(), Reply::Bid(if matched { 1 } else { 0 }))
+                .stop_at_action(),
+        );
+        let accessed = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| {
+                matches!(c, GameChange::CardAccessed { obj } if deck.contains(obj))
+            })
+            .count();
+        assert_eq!(
+            accessed,
+            if matched { 2 } else { 1 },
+            "7.3.5's limit rose only on the matched bid (matched={matched}): {}",
+            t.tail(24)
+        );
+        // 10.14.6c: the bid is spent whatever the outcome.
+        assert_eq!(
+            vm.st.runner.credits,
+            if matched { 2 } else { 3 },
+            "the Runner spent their bid (matched={matched}): {}",
+            t.tail(24)
+        );
+        assert_eq!(vm.st.corp.credits, 2, "and the Corp spent theirs (matched={matched})");
+    }
+}
+
+/// Exile: "Whenever you install a program from your heap, draw 1 card."
+///
+/// Both stipulations of the one sentence, one at a time: a program installed
+/// out of the heap draws (and 4.8.3 keeps that true when a search sets it
+/// aside on the way), while a RESOURCE installed out of the same heap does
+/// not — the sentence names a type, and that type is part of the condition.
+#[test]
+fn exile_draws_only_for_a_program_out_of_the_heap() {
+    for program in [true, false] {
+        let mut vm = Vm::empty(6011);
+        tk::install_identity(&mut vm, card("Exile: Streethawk"), Side::Runner);
+        let card_in_heap = vm.new_object(
+            if program {
+                tk::program_cost("Heap-Program", 0)
+            } else {
+                tk::vanilla_runner_card("Heap-Resource", CardType::Resource)
+            },
+            Zone::Discard(Side::Runner),
+        );
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(card_in_heap);
+        tk::install_rig(&mut vm, tk::heap_install_button("Heap-Install"));
+        tk::fill_deck(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 3);
+        let before = vm.st.hand[&Side::Runner].len();
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::paid().once(), Reply::take("heap install"))
+                .when(Match::targets().once(), Reply::Targets(vec![card_in_heap]))
+                .stop_at_action(),
+        );
+        assert_eq!(vm.st.objects[&card_in_heap].zone, Zone::Rig, "installed: {}", t.tail(24));
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            before + usize::from(program),
+            "only the program install met the condition (program={program}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Exile again, through 4.8.3: a Test Run-class search sets the program aside
+/// before installing it, and the install is still reported as coming from the
+/// heap — so the type stipulation reads the same card and the Runner draws.
+#[test]
+fn exile_draws_for_a_program_installed_out_of_a_set_aside() {
+    let mut vm = Vm::empty(6012);
+    tk::install_identity(&mut vm, card("Exile: Streethawk"), Side::Runner);
+    let prog = vm.new_object(tk::program_cost("Heap-Program", 0), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(prog);
+    tk::install_rig(&mut vm, tk::test_run_like("TestRun-like", Zone::Discard(Side::Runner)));
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    let before = vm.st.hand[&Side::Runner].len();
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::paid().once(), Reply::take("test-run")).stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Rig, "installed: {}", t.tail(24));
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        before + 1,
+        "4.8.3: the set-aside is transparent, so the condition was met: {}",
+        t.tail(24)
+    );
+}
+
+/// Rielle "Kit" Peddler: "The first time each turn you encounter a piece of
+/// ice, it gains code gate for the remainder of this run."
+///
+/// Two pieces of ice on the attacked server: the outermost is encountered
+/// first, gains the subtype, and KEEPS it after that encounter has ended —
+/// the duration the sentence names is the run, not the encounter. The second
+/// gains nothing, because the printed ordinal is a stipulation about the
+/// occurrence; and when the run ends, so does the grant.
+#[test]
+fn rielle_kit_peddler_makes_the_first_ice_of_the_turn_a_code_gate() {
+    let mut vm = Vm::empty(6013);
+    tk::install_identity(&mut vm, card("Rielle \"Kit\" Peddler: Transhuman"), Side::Runner);
+    let mut barrier = tk::vanilla_ice("Some Barrier", 0, 1);
+    barrier.subtypes = vec!["Barrier"];
+    let mut sentry = tk::vanilla_ice("Some Sentry", 0, 1);
+    sentry.subtypes = vec!["Sentry"];
+    // 6.2.2a: `install_ice` places each piece outermost, so the sentry is the
+    // inner one and the barrier is encountered first.
+    let inner = tk::install_ice(&mut vm, sentry, ServerId::Archives, true);
+    let outer = tk::install_ice(&mut vm, barrier, ServerId::Archives, true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    // The grant lives for the run, so it has to be read from inside one:
+    // halt at 6.9.4c's jack-out decision, which follows passing the first ice.
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::of(Kind::JackOut).once(), Reply::Halt)
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+    assert!(
+        vm.has_subtype(outer, "Code Gate"),
+        "the first ice encountered gained it, and still has it now the encounter has ended: {}",
+        t.tail(28)
+    );
+    // 2.16.5 counts instances: the grant ADDS, it does not replace.
+    assert!(vm.has_subtype(outer, "Barrier"), "and is still a barrier");
+    assert!(
+        !vm.has_subtype(inner, "Code Gate"),
+        "the second piece of ice has not been encountered yet: {}",
+        t.tail(28)
+    );
+
+    script.run(&mut vm); // resume: encounter the second ice and finish the run
+    let t = script.transcript();
+    assert!(
+        !vm.has_subtype(inner, "Code Gate"),
+        "the second encounter of the turn is not the first: {}",
+        t.tail(28)
+    );
+    assert!(
+        !vm.has_subtype(outer, "Code Gate"),
+        "and the grant died with the run it was made for: {}",
+        t.tail(28)
+    );
+}
+
+/// Tāo Salonga: "Whenever an agenda is scored or stolen, you may swap 2
+/// installed pieces of ice."
+///
+/// Both halves of the one sentence, and 9.1.1a's controller on each: two
+/// pieces of ice protecting different servers exchange positions, and the
+/// Runner announces both — even on the half the CORP's score meets.
+#[test]
+fn tao_salonga_swaps_two_pieces_of_ice_on_a_score_and_on_a_steal() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(6014);
+        tk::install_identity(&mut vm, card("Tāo Salonga: Telepresence Magician"), Side::Runner);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Some Agenda", 3, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+        let a = tk::install_ice(&mut vm, tk::vanilla_ice("Ice A", 0, 1), ServerId::Hq, false);
+        let b = tk::install_ice(&mut vm, tk::vanilla_ice("Ice B", 0, 1), ServerId::Rnd, false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .when(Match::reaction().once(), Reply::take("an agenda was stolen"))
+                    .when(Match::targets().once(), Reply::Targets(vec![a]))
+                    .when(Match::targets().once(), Reply::Targets(vec![b]))
+                    .stop_at_action(),
+            )
+        } else {
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+                Plan::runner()
+                    .when(Match::reaction().once(), Reply::take("an agenda was scored"))
+                    .when(Match::targets().once(), Reply::Targets(vec![a]))
+                    .when(Match::targets().once(), Reply::Targets(vec![b])),
+            )
+        };
+
+        assert_eq!(
+            vm.st.objects[&a].zone,
+            Zone::Ice(ServerId::Rnd),
+            "Ice A took Ice B's position (stolen={stolen}): {}",
+            t.tail(28)
+        );
+        assert_eq!(
+            vm.st.objects[&b].zone,
+            Zone::Ice(ServerId::Hq),
+            "and Ice B took Ice A's (stolen={stolen}): {}",
+            t.tail(28)
+        );
+        // 9.1.1a: it is the Runner's identity, so the Runner announces both.
+        for e in t.of_kind(Kind::Targets) {
+            assert_eq!(e.side, Side::Runner, "the ability's controller announces (stolen={stolen})");
+        }
+    }
+}
+
+/// Cupellation's third sentence, which the same 7.3.5b hole hid: "Whenever
+/// you breach HQ, if this program has a hosted Corp card, you may pay
+/// 1[credit] and trash this program to access 2 additional cards."
+///
+/// The grant is made by an ability the breach BEGINNING triggered (11.5.1),
+/// two steps before 11.5.3 determines the limit — so it only means anything
+/// if the determination adds it rather than overwriting it. Three cards out
+/// of HQ is the whole assertion.
+#[test]
+fn cupellation_digs_two_cards_deeper_out_of_hq() {
+    let mut vm = Vm::empty(4602);
+    let cup = tk::install_rig(&mut vm, card("Cupellation"));
+    let hand = tk::fill_hand(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            // Run 1: pocket a card, so the program has a hosted Corp card.
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::of(Kind::MidAccess).once(), Reply::take("pocket the evidence"))
+            // Run 2: the breach begins, the deep dig is offered and paid for.
+            .when(Match::action().once(), Reply::Take(Pick::Run(ServerId::Hq)))
+            .when(Match::reaction().once(), Reply::take("deep dig"))
+            .when(Match::of(Kind::NestedCost).once(), Reply::PayCost(true))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&cup].zone, Zone::Discard(Side::Runner), "trashed: {}", t.tail(30));
+    let accessed: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CardAccessed { obj } if hand.contains(obj) => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        accessed.len(),
+        4,
+        "1 on the first breach, then 1 + 2 additional on the second: {}",
+        t.tail(30)
+    );
+}

@@ -1726,7 +1726,13 @@ impl Vm {
                     }
                 }
                 if let Some(b) = self.breach_ctx_mut() {
-                    b.remaining_from_zone = n;
+                    // 7.3.5b: an ability that granted additional accesses for
+                    // this breach did so before this step could run (11.5.1's
+                    // reaction window precedes 11.5.3), so its grant is added
+                    // here rather than overwritten. 7.3.5: from now on the
+                    // limit does not change.
+                    b.remaining_from_zone = n + b.granted_extra;
+                    b.limit_determined = true;
                 }
                 // Populate the first hand/deck candidate (7.4.6/7.4.7).
                 self.refresh_candidates_after_access();
@@ -3368,6 +3374,8 @@ impl Vm {
                 chosen: None,
                 accessed: Vec::new(),
                 remaining_from_zone: 0,
+                granted_extra: 0,
+                limit_determined: false,
                 declined: Vec::new(),
                 chosen_ever: Vec::new(),
             }),
@@ -8559,12 +8567,19 @@ impl Vm {
                 });
             }
             Instruction::AdditionalAccesses(n) => {
-                // 7.3.5: the random-access limit for the breach in progress
-                // grows by the calculated amount (Cupellation class).
-                cite!("rule_counting_random_access_limit");
+                // 7.3.5b: "access additional cards" IS an increase of the
+                // random access limit for the breach in progress (Cupellation
+                // class), and it "can only be applied at the beginning of the
+                // breach, before the value of the random access limit is
+                // set". So it is recorded and read by step 11.5.3, rather
+                // than added to the remainder — which 7.3.5 forbids changing
+                // once the limit has been determined.
+                cite!("rule_increasing_random_access_limit");
                 let extra = self.eval_quantity(n, Some(source.obj)).max(0) as u32;
                 if let Some(b) = self.breach_ctx_mut() {
-                    b.remaining_from_zone += extra;
+                    if !b.limit_determined {
+                        b.granted_extra += extra;
+                    }
                 }
             }
             Instruction::AccessCards { cards, restricted } => {

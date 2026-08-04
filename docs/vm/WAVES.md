@@ -12,7 +12,7 @@ truth.
   `docs/rules/examples.json` is an example-named passing test in
   `crates/jinteki-cr/tests/cr_examples.rs` (100.0%). No blockers, no
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
-- **DP-7b: 883/1420** distinct rules cited (62.2%); traceability test fails
+- **DP-7b: 884/1420** distinct rules cited (62.3%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
 - **Priority decks: 58/58 cards complete**, 0 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
@@ -25,12 +25,16 @@ truth.
   `decks/unlisted.rs` carries 15 further cards no deck lists, outside the
   odometer; **DJ Fenris is complete there since W22d**, and five sentences
   across four other unlisted cards remain (see the gap list).
-- **Identity queue: 13/150** (`docs/vm/IDENTITY-QUEUE.md`, the list and the
+- **Identity queue: 17/150** (`docs/vm/IDENTITY-QUEUE.md`, the list and the
   ledger). `decks/identities/<faction>.rs`, outside the deck odometer until
   enlisted in a pile. Runner Criminal is 9/22: Andromeda and Ken Tenma in
   `decks/andromeda.rs`, then Gabriel Santiago, Los, Liza Talking Thunder,
   Laramy Fisk, Leela Patel, Nyusha "Sable" Sintashta and Virtual
-  Intelligence, P.I.
+  Intelligence, P.I. Runner Shaper is 5/21: Chaos Theory in
+  `decks/gauntlet.rs`, then Akiko Nisei, Exile, Rielle "Kit" Peddler and Tāo
+  Salonga. Nothing Shaper is enlisted: the only 1.5.4a pile in the priority
+  decks is Andromeda's, and 1.5.4b's "another identity from the same faction"
+  makes that pile Criminal.
 - **DP-7c: 70/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are
