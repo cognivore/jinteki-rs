@@ -2692,7 +2692,11 @@ pub fn tech_startup_like(name: &'static str) -> PrintedCard {
 pub fn near_earth_hub_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::CardInstalledBy(Side::Corp),
+        TriggerCond::CardInstalledBy {
+            side: Side::Corp,
+            of_types: Vec::new(),
+            of_subtypes: Vec::new(),
+        },
         vec![Instruction::Draw(Side::Corp, 1)],
         false,
     )
@@ -3892,7 +3896,11 @@ pub fn tatu_bola_like(name: &'static str, from_hq: ObjectId) -> PrintedCard {
 pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::CardInstalledBy(Side::Corp),
+        TriggerCond::CardInstalledBy {
+            side: Side::Corp,
+            of_types: Vec::new(),
+            of_subtypes: Vec::new(),
+        },
         vec![Instruction::InstallCard {
             card: TargetSpec::Objects(vec![installee]),
             dest: crate::instr::InstallDest::Root(into),

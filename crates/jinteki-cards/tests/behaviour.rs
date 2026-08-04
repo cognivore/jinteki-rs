@@ -4650,3 +4650,433 @@ fn a_deckbuilding_restriction_is_not_an_ability_that_ever_fires() {
         );
     }
 }
+
+/// Noise: "Whenever you install a virus program, the Corp trashes the top
+/// card of R&D."
+///
+/// Both stipulations, in one game: installing a virus program mills R&D,
+/// installing a non-virus program does not, and neither does installing a
+/// virus-subtyped card that is not a program.
+#[test]
+fn noise_mills_rnd_only_for_a_virus_program() {
+    let mut vm = Vm::empty(6107);
+    tk::install_identity(&mut vm, card("Noise: Hacker Extraordinaire"), Side::Runner);
+    let mut virus = tk::vanilla_runner_card("Some Virus", CardType::Program);
+    virus.subtypes = vec!["Virus"];
+    virus.cost = Some(0);
+    let mut plain = tk::vanilla_runner_card("Some Program", CardType::Program);
+    plain.cost = Some(0);
+    // A virus that is NOT a program — the type stipulation on its own.
+    let mut virus_hardware = tk::vanilla_runner_card("Some Virus Rig", CardType::Hardware);
+    virus_hardware.subtypes = vec!["Virus"];
+    virus_hardware.cost = Some(0);
+    let ids: Vec<_> = [virus, plain, virus_hardware]
+        .into_iter()
+        .map(|c| {
+            let id = vm.new_object(c, Zone::Hand(Side::Runner));
+            vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        })
+        .collect();
+    let rnd = tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut runner = Plan::runner();
+    for id in &ids {
+        runner = runner.when(Match::action().once(), Reply::Take(Pick::InstallCard(*id)));
+    }
+    let t = plan::play(&mut vm, Plan::corp(), runner.stop_at_action());
+    for id in &ids {
+        assert_eq!(vm.st.objects[id].zone, Zone::Rig, "all three were installed: {}", t.tail(30));
+    }
+    assert_eq!(
+        vm.st.deck[&Side::Corp].len(),
+        4,
+        "exactly one card left R&D — the virus PROGRAM's install, and neither of the others: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&rnd[0]].zone,
+        Zone::Discard(Side::Corp),
+        "and it was the top card of R&D: {}",
+        t.tail(30)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Runner, Sunny Lebeau
+// ---------------------------------------------------------------------------
+
+/// Sunny Lebeau: Security Specialist — Link 2, and a blank text box.
+///
+/// The whole card is its base link, so the proof is the link: 5.5.2 makes it
+/// a characteristic the Runner has while the identity is active, and a trace
+/// the Runner would otherwise lose is one they win by 2.
+#[test]
+fn sunny_lebeau_is_two_link_and_nothing_else() {
+    let printed = card("Sunny Lebeau: Security Specialist");
+    assert!(
+        printed.abilities.iter().all(|a| a.label == "base link"),
+        "a blank text box denotes into the base link and nothing else"
+    );
+    let mut vm = Vm::empty(6108);
+    tk::install_identity(&mut vm, printed, Side::Runner);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Runner);
+    plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+    assert_eq!(vm.runner_link(), 2, "5.5.2: the identity's printed link is the Runner's link");
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Corp, Haas-Bioroid
+// ---------------------------------------------------------------------------
+
+/// Haas-Bioroid: Engineering the Future — "The first time you install a card
+/// each turn, gain 1[credit]."
+///
+/// Two installs in one turn pay once. The sentence names no card type, so the
+/// test installs two different ones — a piece of ice and an asset — and the
+/// FIRST is what pays, whichever it is.
+#[test]
+fn engineering_the_future_pays_for_the_first_corp_install_of_the_turn() {
+    let mut vm = Vm::empty(6109);
+    tk::install_identity(&mut vm, card("Haas-Bioroid: Engineering the Future"), Side::Corp);
+    let ice = vm.new_object(tk::vanilla_ice("Some Ice", 0, 1), Zone::Hand(Side::Corp));
+    let asset = vm.new_object(tk::vanilla_asset("Some Asset", 0, 2), Zone::Hand(Side::Corp));
+    for id in [ice, asset] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(ice)))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset)))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        vm.st.objects[&ice].zone.is_installed() && vm.st.objects[&asset].zone.is_installed(),
+        "both cards were installed: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 1,
+        "only the FIRST install of the turn paid — the second is not 'the first time each turn': {}",
+        t.tail(30)
+    );
+}
+
+/// Sportsmetal: "Whenever an agenda is scored or stolen, gain 2[credit] or
+/// draw 2 cards."
+///
+/// Both halves of the printed sentence, one game each, and the option choice
+/// in both: the Corp is offered exactly two options and takes a different one
+/// each time, so the credits and the cards are each shown to be reachable.
+/// 9.1.1a is what puts the choice with the Corp even on the STEAL.
+#[test]
+fn sportsmetal_offers_the_corp_credits_or_cards_on_a_score_and_on_a_steal() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(6110);
+        tk::install_identity(&mut vm, card("Sportsmetal: Go Big or Go Home"), Side::Corp);
+        let agenda =
+            tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+        vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        // Score => take the credits; steal => take the cards.
+        let want_credits = !stolen;
+        let pick = if want_credits { "gain 2[credit]" } else { "draw 2 cards" };
+
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                Plan::corp().when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick)),
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            )
+        } else {
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                Plan::corp()
+                    .when(Match::paid(), Reply::score(agenda))
+                    .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                    .stop_at_action(),
+                Plan::runner(),
+            )
+        };
+        let asked = t.of_kind(Kind::Options);
+        assert_eq!(asked.len(), 1, "one option choice was put (stolen={stolen}): {}", t.tail(30));
+        assert_eq!(
+            asked[0].side,
+            Side::Corp,
+            "9.1.1a: the Corp's identity, so the Corp chooses — even on a steal (stolen={stolen})"
+        );
+        if want_credits {
+            // The Corp's own turn, so HQ holds the one card 5.6.2b's
+            // mandatory draw put there and nothing this ability added.
+            assert_eq!(vm.st.corp.credits, 2, "the credits were taken: {}", t.tail(30));
+            assert_eq!(vm.st.hand[&Side::Corp].len(), 1, "and not the cards: {}", t.tail(30));
+        } else {
+            // The Runner's turn, so the Corp draws nothing of its own.
+            assert_eq!(vm.st.hand[&Side::Corp].len(), 2, "the cards were taken: {}", t.tail(30));
+            assert_eq!(vm.st.corp.credits, 0, "and not the credits: {}", t.tail(30));
+        }
+    }
+}
+
+/// Thule Subsea: "Whenever the Runner steals an agenda, do 1 core damage
+/// unless they spend [click] and 2[credit]."
+///
+/// Both sides of "unless", in two games: a Runner who pays loses a click and
+/// two credits and takes nothing, and a Runner who declines keeps them and
+/// suffers the core damage — which 10.4.4 also costs them a card and a point
+/// of maximum hand size.
+#[test]
+fn thule_subsea_charges_a_click_and_two_credits_or_does_the_core_damage() {
+    for pay in [false, true] {
+        let mut vm = Vm::empty(6111);
+        tk::install_identity(&mut vm, card("Thule Subsea: Safety Below"), Side::Corp);
+        let agenda =
+            tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                .when(Match::of(Kind::NestedCost).once(), Reply::PayCost(pay))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&agenda].zone,
+            Zone::ScoreArea(Side::Runner),
+            "the agenda was stolen either way (pay={pay}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            if pay { 3 } else { 5 },
+            "2[credit] of the cost, paid only when the Runner said so (pay={pay}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            if pay { 3 } else { 2 },
+            "10.4.4: the core damage trashed a card exactly when the cost was declined (pay={pay}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.max_hand_size(Side::Runner),
+            if pay { 5 } else { 4 },
+            "and lowered the maximum hand size exactly then too (pay={pay}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Corp, Jinteki
+// ---------------------------------------------------------------------------
+
+/// Jinteki: Personal Evolution — "Whenever an agenda is scored or stolen, do
+/// 1 net damage."
+///
+/// Both halves of the one printed sentence, one game each. The damage is the
+/// CORP's on both, including the half the Runner's own theft meets.
+#[test]
+fn personal_evolution_does_a_net_damage_on_a_score_and_on_a_steal() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(6112);
+        tk::install_identity(&mut vm, card("Jinteki: Personal Evolution"), Side::Corp);
+        let agenda =
+            tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+        vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            )
+        } else {
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+                Plan::runner(),
+            )
+        };
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            2,
+            "one net damage, once (stolen={stolen}): {}",
+            t.tail(30)
+        );
+        assert!(
+            vm.changes.log.iter().any(
+                |c| matches!(c, GameChange::DamageSuffered { kind, .. } if *kind == jinteki_cr::effects::DamageKind::Net)
+            ),
+            "and it was NET damage (stolen={stolen}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Jinteki: Potential Unleashed — "Whenever the Runner takes at least 1 net
+/// damage, trash the top card of the stack."
+///
+/// The kind stipulation is what is under test: two net damage in one
+/// occurrence mills one card and not two — the condition is met once per
+/// occurrence, not once per point — and a MEAT damage of the same size mills
+/// nothing at all.
+#[test]
+fn potential_unleashed_mills_once_per_net_damage_and_never_for_meat() {
+    for (label, meat) in [("net", false), ("meat", true)] {
+        let mut vm = Vm::empty(6113);
+        tk::install_identity(&mut vm, card("Jinteki: Potential Unleashed"), Side::Corp);
+        let button = if meat {
+            tk::meat_damage_button("Hurt", 2)
+        } else {
+            tk::net_damage_button("Hurt", 2)
+        };
+        tk::install_root(&mut vm, button, ServerId::Remote(1), true);
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        let stack = tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let label_of = if meat { "do meat damage" } else { "do net damage" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid().once(), Reply::take(label_of)).stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            2,
+            "the {label} damage landed: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.deck[&Side::Runner].len(),
+            if meat { 5 } else { 4 },
+            "the stack was milled exactly once, and only for NET damage ({label}): {}",
+            t.tail(30)
+        );
+        if !meat {
+            assert_eq!(
+                vm.st.objects[&stack[0]].zone,
+                Zone::Discard(Side::Runner),
+                "and it was the top card of the stack: {}",
+                t.tail(30)
+            );
+        }
+    }
+}
+
+/// Pālanā Foods: "The first time each turn the Runner draws a card, gain
+/// 1[credit]."
+///
+/// CR 8.4.2 meets a draw condition once PER CARD, so the ordinal is what is
+/// under test: the Runner spends two clicks drawing — three cards in all —
+/// and the Corp is paid once. The Corp's own mandatory draw does not count,
+/// because the sentence names the Runner.
+#[test]
+fn palana_foods_pays_once_however_many_cards_the_runner_draws() {
+    let mut vm = Vm::empty(6114);
+    tk::install_identity(&mut vm, card("Pālanā Foods: Sustainable Growth"), Side::Corp);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::Draw))
+            .when(Match::action().once(), Reply::Take(Pick::Draw))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "two cards were drawn: {}", t.tail(30));
+    assert_eq!(
+        vm.st.corp.credits, 1,
+        "8.4.2 meets the condition once per card, and 9.6.5c pays only for the first: {}",
+        t.tail(30)
+    );
+}
+
+/// Tennin Institute: "When your turn begins, if the Runner did not make a
+/// successful run during their last turn, you may place 1 advancement counter
+/// on an installed card."
+///
+/// The requirement is the card, so both readings are asserted: a SUCCESSFUL
+/// run last turn shuts the ability off, and an unsuccessful one does not —
+/// "did not make a successful run" is not "made no runs".
+#[test]
+fn tennin_institute_advances_unless_the_runner_ran_successfully_last_turn() {
+    for successful in [false, true] {
+        let mut vm = Vm::empty(6115);
+        tk::install_identity(&mut vm, card("Tennin Institute: The Secrets Within"), Side::Corp);
+        let target =
+            tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 2), ServerId::Remote(1), false);
+        // An unsuccessful run needs something to end it: a rezzed ETR piece of
+        // ice on the server the Runner will attack.
+        tk::install_ice(&mut vm, tk::etr_ice("Wall", 0, 1), ServerId::Archives, true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+
+        // A whole Runner turn first: one run, successful or not, then clicks
+        // spent on credits until the turn ends. The Corp's plan carries
+        // through the turn boundary, because the "when your turn begins"
+        // window belongs to the turn that starts as the Runner's ends.
+        vm.start_turn(Side::Runner);
+        let server = if successful { ServerId::Rnd } else { ServerId::Archives };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::reaction().offering("tennin institute"), Reply::take("tennin institute"))
+                .when(Match::targets().once(), Reply::Targets(vec![target]))
+                .when(Match::action(), Reply::Halt),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(server))
+                .otherwise_click_credit(),
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's turn came round: {}", t.tail(30));
+        assert_eq!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+            successful,
+            "the run went as the case intends: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&target].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+            u32::from(!successful),
+            "the counter is placed exactly when the Runner's last turn held no SUCCESSFUL run \
+             (successful={successful}): {}",
+            t.tail(30)
+        );
+    }
+}

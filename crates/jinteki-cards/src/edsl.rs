@@ -185,6 +185,7 @@ pub fn card(name: &'static str) -> CardBuilder {
         unimplemented: Vec::new(),
         side_set: false,
         type_set: false,
+        blank_text_box: false,
     }
 }
 
@@ -196,6 +197,7 @@ pub struct CardBuilder {
     unimplemented: Vec<&'static str>,
     side_set: bool,
     type_set: bool,
+    blank_text_box: bool,
 }
 
 impl CardBuilder {
@@ -347,6 +349,16 @@ impl CardBuilder {
     }
     pub fn text(mut self, line: &'static str) -> Self {
         self.text.push(line);
+        self
+    }
+
+    /// The card's text box is BLANK — it prints no rules text at all (Sunny
+    /// Lebeau, whose whole card is its link and its deckbuilding numbers).
+    /// Say it explicitly rather than by omitting `.text(…)`: a card that
+    /// simply forgot its printed text is a bug, and this is what tells the
+    /// two apart.
+    pub fn no_printed_text(mut self) -> Self {
+        self.blank_text_box = true;
         self
     }
 
@@ -635,8 +647,9 @@ impl CardBuilder {
         assert!(self.side_set, "{}: say whether it is a .corp() or a .runner() card", self.printed.name);
         assert!(self.type_set, "{}: say what type of card it is, e.g. .event()", self.printed.name);
         assert!(
-            !self.text.is_empty(),
-            "{}: copy the printed text into .text(…) — behaviour is checked against it (SYS-D-10)",
+            !self.text.is_empty() || self.blank_text_box,
+            "{}: copy the printed text into .text(…) — behaviour is checked against it (SYS-D-10). \
+             If the card's text box really is blank, say .no_printed_text().",
             self.printed.name
         );
         Card {
@@ -1578,6 +1591,35 @@ pub fn sabotage(n: i64) -> Instruction {
 /// access), with the sentence's card-type stipulation as content.
 pub fn accesses_a(of: CardType) -> TriggerCond {
     TriggerCond::RunnerAccessesCard { of_types: vec![of] }
+}
+/// "Whenever you install a card…" — 8.5's install, with no stipulation about
+/// what was installed.
+pub fn installs_a_card(side: Side) -> TriggerCond {
+    TriggerCond::CardInstalledBy { side, of_types: Vec::new(), of_subtypes: Vec::new() }
+}
+/// "Whenever you install a <subtype> <type>…" (Noise class) — 2.15's type and
+/// 2.16's subtype, both stipulations on the one install condition.
+pub fn installs_a_subtyped(side: Side, of: CardType, subtype: &'static str) -> TriggerCond {
+    TriggerCond::CardInstalledBy { side, of_types: vec![of], of_subtypes: vec![subtype] }
+}
+/// "Whenever the Runner draws a card…" (8.4.2: met once per card drawn).
+pub fn draws_a_card(side: Side) -> TriggerCond {
+    TriggerCond::PlayerDrawsCards(side)
+}
+/// "…if the Runner did not make a successful run during their last turn"
+/// (Tennin Institute class) — the negative of
+/// [`runner_made_a_successful_run_last_turn`], and NOT the same sentence as
+/// "made no runs at all".
+pub fn runner_made_no_successful_run_last_turn() -> TriggerRequirement {
+    TriggerRequirement::RunnerMadeRun {
+        made: false,
+        successful_only: true,
+        scope: jinteki_cr::ability::TurnScope::LastCompletedTurn,
+    }
+}
+/// "Whenever you take 1 or more bad publicity…" (10.6.1.)
+pub fn takes_bad_publicity(side: Side) -> TriggerCond {
+    TriggerCond::PlayerTakesBadPublicity(side)
 }
 /// "Host the <accessed> card on this program/resource." (Cupellation and
 /// Film Critic class; the accessed card is no longer being accessed.)

@@ -341,8 +341,23 @@ pub enum TriggerCond {
     /// that pends this ability is the one ending the search instruction
     /// (9.11.4d).
     PlayerSearchesDeck(Side),
-    /// "Whenever you install a card…" (Near-Earth Hub class).
-    CardInstalledBy(Side),
+    /// "Whenever you install a card…" (Near-Earth Hub class), with whatever
+    /// the sentence says about the card INSTALLED.
+    ///
+    /// `of_types` and `of_subtypes` are the 2.15/2.16 stipulations, read the
+    /// way [`TriggerCond::CardPlayed`] reads its pair: a card has exactly one
+    /// type and any number of subtypes, so the types are "any of these" and
+    /// the subtypes "all of these", and either list empty is a sentence
+    /// making no such stipulation. Noise's "whenever you install a **virus**
+    /// program" is one condition with both; Engineering the Future's
+    /// "whenever you install a card" is the same condition with neither.
+    ///
+    /// This is deliberately NOT [`TriggerCond::CardInstalledFrom`]: that
+    /// condition insists on a zone, which a sentence saying only "whenever
+    /// you install a virus program" does not name. Nor is it `CardPlayed`
+    /// with `also_installed`, which is the sentence that names BOTH ways a
+    /// card leaves a hand (8.5.1 / 8.6.1) and would fire on a play as well.
+    CardInstalledBy { side: Side, of_types: Vec<CardType>, of_subtypes: Vec<&'static str> },
     /// "Whenever you make a successful run on the chosen server…" (Security
     /// Testing class). CR 9.10.3b: the server is read from the maintained
     /// choice under `key`, so the condition is met only by a run on the
@@ -1918,8 +1933,15 @@ pub fn trigger_matches(
                 && (of_types.is_empty()
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
         }
-        (TriggerCond::CardInstalledBy(side), GameChange::CardInstalled { side: s, .. }) => {
+        (
+            TriggerCond::CardInstalledBy { side, of_types, of_subtypes },
+            GameChange::CardInstalled { side: s, obj, .. },
+        ) => {
+            // 2.15/2.16: the stipulations, asked of the card the change names.
             side == s
+                && (of_types.is_empty()
+                    || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
+                && of_subtypes.iter().all(|s| has_subtype(*obj, s))
         }
         (
             TriggerCond::SuccessfulRunOnChosenServer { .. },

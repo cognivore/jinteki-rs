@@ -144,6 +144,17 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
     let mut checked = 0;
     for (file, src) in SOURCES {
         for (func, doc, data) in cards_in(src) {
+            // A card whose text box really is blank says so with
+            // `.no_printed_text()`. Then the doc comment must quote nothing
+            // either — the two halves still have to agree.
+            if data == BLANK_TEXT_BOX {
+                assert!(
+                    doc.is_empty(),
+                    "{file}: {func} says its text box is blank but its doc comment quotes text"
+                );
+                checked += 1;
+                continue;
+            }
             assert!(!doc.is_empty(), "{file}: {func} has no quoted printed text in its doc comment");
             assert_eq!(
                 normalise(&doc),
@@ -153,7 +164,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 87, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue)");
+    assert_eq!(checked, 96, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and
@@ -161,6 +172,10 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
 fn normalise(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
+
+/// What `cards_in` reports for a card that declared `.no_printed_text()` —
+/// distinguishable from a card that merely forgot to copy its text in.
+const BLANK_TEXT_BOX: &str = "\u{0}blank text box";
 
 /// Walk a deck module: for each `pub fn … -> Card`, the quoted block of its
 /// doc comment and the concatenation of its `.text(…)` arguments.
@@ -213,7 +228,9 @@ fn cards_in(src: &str) -> Vec<(String, String, String)> {
             continue;
         }
         if current.is_some() {
-            if let Some(arg) = text_argument(t) {
+            if t.starts_with(".no_printed_text()") {
+                data = BLANK_TEXT_BOX.to_string();
+            } else if let Some(arg) = text_argument(t) {
                 if !data.is_empty() {
                     data.push('\n');
                 }

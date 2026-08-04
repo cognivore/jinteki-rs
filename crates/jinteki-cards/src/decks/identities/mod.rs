@@ -20,10 +20,13 @@
 
 use crate::edsl::Card;
 
+pub mod corp_haas_bioroid;
+pub mod corp_jinteki;
 pub mod runner_anarch;
 pub mod runner_criminal;
 pub mod runner_neutral;
 pub mod runner_shaper;
+pub mod runner_sunny;
 
 /// Every identity these modules carry, in queue order.
 pub fn cards() -> Vec<Card> {
@@ -31,5 +34,8 @@ pub fn cards() -> Vec<Card> {
     all.extend(runner_shaper::identities());
     all.extend(runner_anarch::identities());
     all.extend(runner_neutral::identities());
+    all.extend(runner_sunny::identities());
+    all.extend(corp_haas_bioroid::identities());
+    all.extend(corp_jinteki::identities());
     all
 }

@@ -48,6 +48,12 @@ these is a general kernel capability, stated with the identities that want it.
   `TriggerRequirement::AgendaPointsAtLeast` is an absolute threshold against a
   printed number; nothing asks whether one score area is ahead of the other.
   *(Iain Stirling: Retired Spook.)*
+- **Nothing describes a card by the TYPE OF ANOTHER card.** "Install another
+  card **of the same type**" needs a filter comparing a candidate against a
+  card an earlier occurrence names; `Quantity::LargestGroupSharingCardType`
+  answers a different question (how many of a set share a type) and no filter
+  reads back the type of the card that met the condition.
+  *(Hayley Kaplan: Universal Scholar.)*
 - **A description cannot say "or" between card TYPES.**
   `TargetFilter::HasAnySubtype` says it for subtypes, but `CardTypeIs` names
   exactly one and several filters together mean ALL of them — so "1 resource
@@ -109,7 +115,7 @@ these is a general kernel capability, stated with the identities that want it.
 
 ## Progress
 
-- Implemented: **25 / 150**
+- Implemented: **34 / 150**
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -170,7 +176,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (5/19)
+## Runner — Anarch (6/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -181,7 +187,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [ ] **Hoshiko Shiro: Untold Protagonist** — When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.
 - [x] **MaxX: Maximum Punk Rock** — When your turn begins, trash the top 2 cards of your stack. Draw 1 card.
 - [x] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.
-- [ ] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
+- [x] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
 - [ ] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
 - [ ] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
 - [ ] **Quetzal: Free Spirit** — Once per turn → 0[credit]: Break 1 barrier subroutine.
@@ -214,13 +220,13 @@ Module: `decks/identities/runner_apex.rs`
 
 - [ ] **Apex: Invasive Predator** — You cannot install non-virtual resources. When your turn begins, you may install 1 card from your grip facedown.
 
-## Runner — Sunny Lebeau (0/1)
+## Runner — Sunny Lebeau (1/1)
 
 Module: `decks/identities/runner_sunny.rs`
 
-- [ ] **Sunny Lebeau: Security Specialist** — 
+- [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (0/19)
+## Corp — Haas-Bioroid (3/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
@@ -230,7 +236,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [ ] **Custom Biotics: Engineered for Success** — You cannot include Jinteki cards in this deck.
 - [ ] **Cybernetics Division: Humanity Upgraded** — Each player's maximum hand size is reduced by 1.
 - [ ] **Haas-Bioroid: Architects of Tomorrow** — The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.
-- [ ] **Haas-Bioroid: Engineering the Future** — The first time you install a card each turn, gain 1[credit].
+- [x] **Haas-Bioroid: Engineering the Future** — The first time you install a card each turn, gain 1[credit].
 - [ ] **Haas-Bioroid: Precision Design** — You get +1 maximum hand size. Whenever you score an agenda, you may add 1 card from Archives to HQ.
 - [ ] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
 - [ ] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
@@ -238,13 +244,13 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [ ] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.
 - [ ] **Poétrï Luxury Brands: All the Rage** — Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them. Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.
 - [ ] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.
-- [ ] **Sportsmetal: Go Big or Go Home** — Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.
+- [x] **Sportsmetal: Go Big or Go Home** — Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.
 - [ ] **Strategic Innovations: Future Forward** — Draft format only. If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.
 - [ ] **The Foundry: Refining the Process** — The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.
-- [ ] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
+- [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [ ] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (0/21)
+## Corp — Jinteki (4/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
@@ -257,18 +263,18 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **Industrial Genomics: Growing Solutions** — The trash cost of each card is increased by 1 for each facedown card in Archives.
 - [ ] **Issuaq Adaptics: Sustaining Diversity** — Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity. For each hosted power counter, you need 1 less agenda point to win the game.
 - [ ] **Jinteki Biotech: Life Imagined** — Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech. [click][click][click]: Flip this identity.
-- [ ] **Jinteki: Personal Evolution** — Whenever an agenda is scored or stolen, do 1 net damage.
-- [ ] **Jinteki: Potential Unleashed** — Whenever the Runner takes at least 1 net damage, trash the top card of the stack.
+- [x] **Jinteki: Personal Evolution** — Whenever an agenda is scored or stolen, do 1 net damage.
+- [x] **Jinteki: Potential Unleashed** — Whenever the Runner takes at least 1 net damage, trash the top card of the stack.
 - [ ] **Jinteki: Replicating Perfection** — The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.
 - [ ] **Jinteki: Restoring Humanity** — When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].
 - [ ] **Mti Mwekundu: Life Improved** — Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.
 - [ ] **Méliès U: Only the Brightest** — When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest. When the Runner makes a successful run on a central server, flip this identity. When the Runner’s action phase ends, gain 1[credit].
 - [ ] **Nisei Division: The Next Generation** — Whenever you and the Runner reveal secretly spent credits, gain 1[credit].
 - [ ] **PT Untaian: Life's Building Blocks** — When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)
-- [ ] **Pālanā Foods: Sustainable Growth** — The first time each turn the Runner draws a card, gain 1[credit].
+- [x] **Pālanā Foods: Sustainable Growth** — The first time each turn the Runner draws a card, gain 1[credit].
 - [ ] **Saraswati Mnemonics: Endless Exploration** — [click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.
 - [ ] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
-- [ ] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
+- [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
 ## Corp — NBN (2/19)
 

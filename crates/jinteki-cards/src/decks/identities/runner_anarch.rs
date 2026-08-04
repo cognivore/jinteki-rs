@@ -143,8 +143,37 @@ pub fn nathaniel_gnat_hall() -> Card {
         .build()
 }
 
+/// Noise: Hacker Extraordinaire — Identity: G-mod. Link 0.
+/// "Whenever you install a virus program, the Corp trashes the top card of
+///  R&D."
+///
+/// COMPLETE. Two stipulations about one occurrence — 2.15's card type and
+/// 2.16's subtype — both riding on 8.5's install condition as content. The
+/// sentence names no zone the card came from, so the condition names none
+/// either: a virus program installed out of the heap or the stack meets it
+/// just as one installed from the grip does.
+///
+/// "The Corp trashes the top card of R&D" is 1.14.5's attribution. The card
+/// is named by the description, not chosen, so naming the Corp changes
+/// nothing the Corp decides — but 10.3.1a makes the trash the CORP's, which
+/// is what puts the card in Archives facedown rather than faceup.
+pub fn noise() -> Card {
+    card("Noise: Hacker Extraordinaire")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["G-mod"])
+        .text("Whenever you install a virus program, the Corp trashes the top card of R&D.")
+        .when(
+            installs_a_subtyped(Runner, CardType::Program, "Virus"),
+            [performed_by(Corp, trash(top_of_rnd(amount(1))))],
+        )
+        .named("hacker extraordinaire")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
-    vec![alice_merchant(), edward_kim(), esa_afontov(), maxx(), nathaniel_gnat_hall()]
+    vec![alice_merchant(), edward_kim(), esa_afontov(), maxx(), nathaniel_gnat_hall(), noise()]
 }
