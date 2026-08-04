@@ -80,6 +80,17 @@ METHOD:
    crates/jinteki-cards/tests/behaviour.rs, driven by a PLAN. Never add a
    *_for_test backdoor to the VM and never write a vm.step() loop.
 4. Run: nix develop --command cargo test --workspace  (must be fully green)
+4a. Then verify the RELEASE build of exactly what you are about to commit, in
+   a CLEAN worktree, so another agent editing this shared checkout cannot
+   mask or fake the result:
+     git stash -u
+     nix build .#default; echo "EXIT=$?"; rm -f result
+     git stash pop
+   Capture the exit code EXPLICITLY. Piping nix build into `tail` returns
+   TAIL's status, not the build's, which has already hidden one failure here.
+   nix/package.nix filters the source tree, so a workspace-green tree can
+   still fail the artifact build (WAVES.md, W7e). Do NOT commit if this
+   fails.
 5. Commit in the established style (see git log).
 
 ENLISTING INTO A PILE — the rule that must not be broken:
