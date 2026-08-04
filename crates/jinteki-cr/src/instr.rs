@@ -1508,6 +1508,17 @@ pub enum TargetFilter {
     /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed
     /// faceup Corp card.
     Rezzed,
+    /// CR 8.1.2's other half: "1 unrezzed card" (Leela Patel class) — an
+    /// installed FACEDOWN Corp card. 8.1.2 defines the pair together ("a card
+    /// that is installed faceup is rezzed… a card that is installed facedown
+    /// is unrezzed"), so the word names the play area exactly as its opposite
+    /// does, and it reaches every installed Corp card that is not faceup —
+    /// including an agenda, which can never be rezzed at all.
+    ///
+    /// A facedown RUNNER card is not "unrezzed": 8.1.1 makes rezzing
+    /// something only the Corp does, so only a Corp card has a rez state to
+    /// be in. This mirrors [`TargetFilter::Rezzed`]'s own Corp restriction.
+    Unrezzed,
     /// CR 9.5.5 / 4.8.3: a card SET ASIDE by the trigger cost of the ability
     /// making this selection — the only kind of ability that can see the
     /// set-aside zone at all (Street Peddler class). A zone-naming criterion,
@@ -1697,6 +1708,7 @@ impl TargetFilter {
                 | TargetFilter::InstalledRunnerCard
                 | TargetFilter::InstalledResource
                 | TargetFilter::Rezzed
+                | TargetFilter::Unrezzed
                 | TargetFilter::IceProtectingSourceServer
                 | TargetFilter::IceProtectingAttackedServer
                 | TargetFilter::CardsInHandOf(_)

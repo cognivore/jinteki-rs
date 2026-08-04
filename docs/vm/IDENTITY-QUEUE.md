@@ -51,14 +51,15 @@ these is a general kernel capability, stated with the identities that want it.
 
 ## Progress
 
-- Implemented: **10 / 150**
+- Implemented: **13 / 150**
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
-Talking Thunder, Laramy Fisk.
+Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable" Sintashta, Virtual
+Intelligence, P.I.
 
 
-## Runner — Criminal (6/22)
+## Runner — Criminal (9/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
@@ -73,16 +74,16 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Ken "Express" Tenma: Disappeared Clone** — The first time each turn you play a run event, gain 1[credit].
 - [ ] **Khan: Savvy Skiptracer** — The first time you pass a piece of ice each turn, you may install an icebreaker from your hand, lowering the install cost by 1.
 - [x] **Laramy Fisk: Savvy Investor** — The first time you make a successful run on a central server each turn, you may force the Corp to draw 1 card.
-- [ ] **Leela Patel: Trained Pragmatist** — Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ.
+- [x] **Leela Patel: Trained Pragmatist** — Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ.
 - [x] **Liza Talking Thunder: Prominent Legislator** — The first time you make a successful run on a central server each turn, draw 2 cards and take 1 tag.
 - [x] **Los: Data Hijacker** — The first time the Corp rezzes a piece of ice each turn, gain 2[credit].
 - [ ] **Mercury: Chrome Libertador** — Once per turn → When you breach HQ or R&D during a run, if you did not break any subroutines during that run, you may access 1 additional card.
 - [ ] **MuslihaT: Multifarious Marketeer** — When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.
 - [ ] **Nero Severn: Information Broker** — Once per turn → When you encounter a sentry, you may jack out.
-- [ ] **Nyusha "Sable" Sintashta: Symphonic Prodigy** — When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) The first time each turn you make a successful run on your mark, gain [click].
+- [x] **Nyusha "Sable" Sintashta: Symphonic Prodigy** — When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) The first time each turn you make a successful run on your mark, gain [click].
 - [ ] **Silhouette: Stealth Operative** — The first time you make a successful run on HQ each turn, you may expose 1 card.
 - [ ] **Steve Cambridge: Master Grifter** — The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.
-- [ ] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
+- [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [ ] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
 ## Runner — Shaper (1/21)

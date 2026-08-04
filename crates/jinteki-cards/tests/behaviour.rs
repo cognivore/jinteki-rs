@@ -3855,6 +3855,175 @@ fn laramy_fisk_lets_the_runner_force_one_corp_draw_a_turn() {
     }
 }
 
+/// Leela Patel: "Whenever an agenda is scored or stolen, add 1 unrezzed card
+/// to HQ."
+///
+/// Both halves of the one printed sentence, in one game each, and both halves
+/// of "unrezzed": an unrezzed piece of ice is the only card the Runner is
+/// offered — the rezzed asset beside it is never a candidate — and the card
+/// really lands in HQ.
+#[test]
+fn leela_patel_bounces_an_unrezzed_card_on_a_score_and_on_a_steal() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(6005);
+        tk::install_identity(&mut vm, card("Leela Patel: Trained Pragmatist"), Side::Runner);
+        let agenda =
+            tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 2), ServerId::Remote(1), false);
+        vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+        // 8.1.2's pair, side by side: one installed facedown Corp card and
+        // one installed faceup one.
+        let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 1, 1), ServerId::Archives, false);
+        let asset =
+            tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 2), ServerId::Remote(2), true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            let t = plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            );
+            assert_eq!(vm.st.objects[&agenda].zone, Zone::ScoreArea(Side::Runner));
+            t
+        } else {
+            vm.start_turn(Side::Corp);
+            let t = plan::play(
+                &mut vm,
+                Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+                Plan::runner(),
+            );
+            assert_eq!(vm.st.objects[&agenda].zone, Zone::ScoreArea(Side::Corp));
+            t
+        };
+
+        // 9.1.1a: the ability is the Runner's identity's, so the Runner
+        // announces the target — even on the half the CORP's score meets.
+        let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+        assert_eq!(announcements.len(), 1, "one target announcement (stolen={stolen}): {}", t.tail(24));
+        assert_eq!(announcements[0].side, Side::Runner, "the ability's controller announces");
+        assert_eq!(
+            announcements[0].candidates(),
+            [ice],
+            "only the unrezzed card is a candidate — the rezzed asset is not (stolen={stolen}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.objects[&ice].zone,
+            Zone::Hand(Side::Corp),
+            "the unrezzed card is in HQ (stolen={stolen}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.objects[&asset].zone,
+            Zone::Root(ServerId::Remote(2)),
+            "the rezzed card stayed where it was (stolen={stolen}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Nyusha "Sable" Sintashta: "When your turn begins, identify your mark."
+/// "The first time each turn you make a successful run on your mark, gain
+///  [click]."
+///
+/// Both sentences: the turn begins and a central server becomes the mark
+/// (10.11.2a), then three successful runs — two on the mark and one on
+/// another central — pay exactly one click, on the first run on the mark.
+#[test]
+fn nyusha_identifies_a_mark_and_pays_the_first_run_on_it() {
+    let mut vm = Vm::empty(6006);
+    tk::install_identity(
+        &mut vm,
+        card("Nyusha \"Sable\" Sintashta: Symphonic Prodigy"),
+        Side::Runner,
+    );
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    assert_eq!(vm.mark(), None, "10.11.2: no mark until a card identifies one");
+
+    // The mark is identified in the turn-begin window, before the first
+    // action — so the plan can be written against it.
+    let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+    let mark = vm.mark().map(|(s, _)| s).expect("the turn-begin ability identified a mark");
+    assert_eq!(mark, ServerId::Hq, "seed 6006 designates HQ: {}", t.tail(24));
+    let other = ServerId::Rnd;
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(other))
+            .when(Match::action().once(), Reply::run(mark))
+            .when(Match::action().once(), Reply::run(mark))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. }))
+            .count(),
+        3,
+        "all three runs were successful: {}",
+        t.tail(24)
+    );
+    // 4 allotted clicks (5.6.2a), 3 spent on runs, 1 gained: 2 left. Without
+    // the gain there would be 1, and with a gain per run on the mark, 3.
+    assert_eq!(
+        vm.st.runner.clicks, 2,
+        "exactly one click, on the FIRST run on the mark: {}",
+        t.tail(24)
+    );
+}
+
+/// Virtual Intelligence, P.I.: "Once per turn → [click], 1[credit]: Draw 1
+/// card and remove 1 tag."
+///
+/// The cost is paid, both halves of the effect happen, and 9.3.6g's flag is
+/// spent by using it: the next action window of the same turn does not offer
+/// it again, however many credits and clicks are left. (A paid ability whose
+/// cost includes [click] is offered where 5.2.7 puts it — in the action
+/// window — because that is the only place a click can be spent.)
+#[test]
+fn virtual_intelligence_draws_and_removes_a_tag_once_a_turn() {
+    let mut vm = Vm::empty(6007);
+    tk::install_identity(
+        &mut vm,
+        card("Virtual Intelligence, P.I.: \"You Can Call Me Vic\""),
+        Side::Runner,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 4;
+    vm.st.runner.tags = 2;
+    vm.start_turn(Side::Runner);
+    assert!(vm.st.hand[&Side::Runner].is_empty(), "the grip starts empty");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        // No `.once()`: the plan would take the ability EVERY time it were
+        // offered, so a second draw would mean the flag was not spent.
+        Plan::runner().when(Match::action(), Reply::take("vic")).stop_at_action(),
+    );
+    let offers = t
+        .of_kind(Kind::Action)
+        .into_iter()
+        .filter(|e| Pick::Labeled("vic").find_action(e.actions()).is_some())
+        .count();
+    assert_eq!(offers, 1, "9.3.6g: offered once, and not again this turn: {}", t.tail(24));
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 1, "drew 1 card: {}", t.tail(24));
+    assert_eq!(vm.st.runner.tags, 1, "removed 1 tag: {}", t.tail(24));
+    assert_eq!(vm.st.runner.credits, 3, "the credit half of the cost: {}", t.tail(24));
+    assert_eq!(vm.st.runner.clicks, 3, "the click half of the cost: {}", t.tail(24));
+}
+
 /// CR 9.11.3: "usually, each SENTENCE in the text of an ability forms a
 /// single instruction." 9.11.4's exceptions are plays/installs/accesses,
 /// choose-then-act, nested costs, searches, look/reveal and option choices —

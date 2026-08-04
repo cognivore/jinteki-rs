@@ -14,9 +14,9 @@ truth.
   elisions, no example unimplemented. `dp7a_complete` is a ratchet.
 - **DP-7b: 883/1420** distinct rules cited (62.2%); traceability test fails
   on any cited id absent from `docs/rules/cr-index.json`
-- **Priority decks: 55/55 cards complete**, 0 printed sentences still
+- **Priority decks: 58/58 cards complete**, 0 printed sentences still
   unsayable (`cargo test -p jinteki-cards --test decks -- --nocapture`,
-  ratcheted by `the_gap_list_is_measurable_and_honest`). Cards 51–55 are
+  ratcheted by `the_gap_list_is_measurable_and_honest`). Cards 51–58 are
   CR 1.5.4a's additional-identities pile, which a player brings "along with
   their deck" and which the readiness gate therefore counts with it — it
   GROWS as the identity queue (`docs/vm/IDENTITY-QUEUE.md`) completes
@@ -25,11 +25,12 @@ truth.
   `decks/unlisted.rs` carries 15 further cards no deck lists, outside the
   odometer; **DJ Fenris is complete there since W22d**, and five sentences
   across four other unlisted cards remain (see the gap list).
-- **Identity queue: 10/150** (`docs/vm/IDENTITY-QUEUE.md`, the list and the
+- **Identity queue: 13/150** (`docs/vm/IDENTITY-QUEUE.md`, the list and the
   ledger). `decks/identities/<faction>.rs`, outside the deck odometer until
-  enlisted in a pile. Runner Criminal is 6/22: Andromeda and Ken Tenma in
-  `decks/andromeda.rs`, then Gabriel Santiago, Los, Liza Talking Thunder and
-  Laramy Fisk.
+  enlisted in a pile. Runner Criminal is 9/22: Andromeda and Ken Tenma in
+  `decks/andromeda.rs`, then Gabriel Santiago, Los, Liza Talking Thunder,
+  Laramy Fisk, Leela Patel, Nyusha "Sable" Sintashta and Virtual
+  Intelligence, P.I.
 - **DP-7c: 70/3717** reference tests ported and passing
   (`crates/jinteki-cr/tests/corpus.rs`, manifest-ratcheted by
   `dp7c_odometer`). The plan, the measurement and the triage are

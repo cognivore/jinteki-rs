@@ -6557,6 +6557,14 @@ impl Vm {
                 cite!("rule_rezzed_unrezzed");
                 self.is_installed(o) && is_corp_card(o.printed.card_type) && o.faceup
             }
+            // 8.1.2, the other half: an installed FACEDOWN Corp card. An
+            // agenda is never rezzed, so it is unrezzed for as long as it is
+            // installed — which is why the test is the negation of faceup and
+            // not "could have been rezzed but was not".
+            TargetFilter::Unrezzed => {
+                cite!("rule_rezzed_unrezzed");
+                self.is_installed(o) && is_corp_card(o.printed.card_type) && !o.faceup
+            }
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.this_server(s))
                 .map(|sv| self.ice_at(sv).contains(&o.id))
@@ -11197,6 +11205,17 @@ impl Vm {
                 // holds wherever the ability is offered — an action window as
                 // much as a paid window.
                 if !self.use_restriction_ok(o, a) {
+                    continue;
+                }
+                // 9.3.6g: "usable once per turn" is a property of the ABILITY,
+                // not of the window it is offered in — a paid ability whose
+                // cost includes [click] is only ever offered here (5.2.1), so
+                // without this check the flag would be unenforceable for
+                // exactly the abilities that print it as a click action.
+                if a.has_flag(AbilityFlag::OncePerTurn)
+                    && self.once_per_turn_used.contains(&(AbilityRef { obj: o.id, index: i }, o.generation))
+                {
+                    cite!("rule_once_per_turn_flag");
                     continue;
                 }
                 if self.cost_payable(side, o.id, a.cost.as_ref().unwrap()) {

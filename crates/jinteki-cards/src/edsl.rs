@@ -395,6 +395,25 @@ impl CardBuilder {
     pub fn paid(self, cost: Cost, instrs: impl IntoIterator<Item = Instruction>) -> Self {
         self.ability(AbilityDef::paid(cost, instrs.into_iter().collect()))
     }
+    /// "Once per turn → [click], 1[credit]: …" — a paid ability carrying
+    /// 9.3.6g's once-per-turn flag, which is spent by USING the ability and
+    /// comes back when the turn ends.
+    ///
+    /// This is the flag, not [`CardBuilder::when_first_each_turn`]'s 9.6.5c
+    /// stipulation: the printed words are different sentences and the rules
+    /// treat them differently. A paid ability is used (9.1.6), so the flag has
+    /// something to be spent by — which is exactly what a mandatory
+    /// conditional does not.
+    pub fn paid_once_per_turn(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_flag(AbilityFlag::OncePerTurn),
+        )
+    }
     /// "Interface → 1[credit]: …" — a paid ability gated by strength (9.3.6c)
     /// and usable only during an encounter (9.5.6a). Naming a subtype makes
     /// it usable only against ice of that kind (9.5.6c), which is exactly
@@ -1082,6 +1101,11 @@ pub fn installed_runner_card() -> TargetFilter {
 pub fn rezzed() -> TargetFilter {
     TargetFilter::Rezzed
 }
+/// "1 unrezzed card" — CR 8.1.2's other half: an installed facedown Corp
+/// card. It names the play area on its own, exactly as [`rezzed`] does.
+pub fn unrezzed() -> TargetFilter {
+    TargetFilter::Unrezzed
+}
 pub fn of_type(t: CardType) -> TargetFilter {
     TargetFilter::CardTypeIs(t)
 }
@@ -1349,6 +1373,18 @@ pub fn makes_successful_run_on(servers: &[ServerId]) -> TriggerCond {
 pub fn makes_successful_run_on_a_central_server() -> TriggerCond {
     makes_successful_run_on(&[ServerId::Hq, ServerId::Rnd, ServerId::Archives])
 }
+/// "…you make a successful run on **your mark**" (Virtuoso, Nyusha Sintashta;
+/// CR 10.11.5).
+///
+/// The printed "the first time each turn" rides on THIS condition instead of
+/// on [`CardBuilder::when_first_each_turn`], because 10.11.5 counts it
+/// differently: a condition that checks a game property related to the mark
+/// only checks from the moment that server was designated, so a successful run
+/// on the same server EARLIER in the turn — before it was the mark — is not
+/// one of the times this condition counts.
+pub fn makes_successful_run_on_your_mark(first_each_turn: bool) -> TriggerCond {
+    TriggerCond::SuccessfulRunOnMark { first_each_turn }
+}
 /// "…the Corp rezzes a piece of ice" (Los class; 8.1.2) — the rez of a card
 /// of the type the sentence names. The condition names no player because only
 /// the Corp rezzes cards (8.1.1), which is what lets a Runner card watch for
@@ -1416,6 +1452,14 @@ pub fn played_operation_this_turn(side: Side) -> TriggerRequirement {
 /// "Gain [click]." (1.11.3a.)
 pub fn gain_clicks(side: Side, n: u32) -> Instruction {
     Instruction::GainClicks(side, Quantity::c(n as i64))
+}
+/// "Identify your mark." (CR 10.11.2.) The parenthetical every card printing
+/// this sentence carries — "if you don't have a mark, a random central server
+/// becomes your mark for this turn" — is 1.4's reminder text: it restates
+/// 10.11.2a and 10.11.3, which this instruction already is, so it needs no
+/// second call.
+pub fn identify_mark() -> Instruction {
+    Instruction::IdentifyMark
 }
 /// "<side> loses N credits" with a calculated amount (1.10.3b; W17c made the
 /// position a quantity).

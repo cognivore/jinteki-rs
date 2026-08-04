@@ -139,6 +139,9 @@ pub const ANDROMEDA_PILE: &[&str] = &[
     "Los: Data Hijacker",
     "Liza Talking Thunder: Prominent Legislator",
     "Laramy Fisk: Savvy Investor",
+    "Leela Patel: Trained Pragmatist",
+    "Nyusha \"Sable\" Sintashta: Symphonic Prodigy",
+    "Virtual Intelligence, P.I.: \"You Can Call Me Vic\"",
 ];
 
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed

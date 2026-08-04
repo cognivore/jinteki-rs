@@ -110,7 +110,106 @@ pub fn laramy_fisk() -> Card {
         .build()
 }
 
-/// Every Criminal identity this module carries, in the queue's order.
+/// Leela Patel: Trained Pragmatist — Identity: Natural. Link 0.
+/// "Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ."
+///
+/// COMPLETE. One printed sentence with two conditions, so it is two
+/// conditional abilities with the same effect (9.6.1: a card may have several)
+/// — the same shape The Source's "trash this when an agenda is scored or
+/// stolen" already takes. Writing it as one ability is not available: 9.6.1
+/// gives an ability ONE primary condition, and an agenda being scored
+/// (1.17.3a) and one being stolen (1.17.3b) are different occurrences.
+///
+/// "1 unrezzed card" is 8.1.2's other half — an installed facedown Corp card.
+/// It reaches an installed agenda too, which can never be rezzed at all, and
+/// it is not a stipulation about a CHARACTERISTIC (rez state is open
+/// information, 1.12.1), so nothing is revealed by choosing one.
+///
+/// The choice belongs to the ability's controller, which 9.1.1a makes the
+/// Runner for a Runner identity — even on the half that fires when the CORP
+/// scores.
+pub fn leela_patel() -> Card {
+    card("Leela Patel: Trained Pragmatist")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .text("Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ.")
+        .when(corp_scores_agenda(), [add_to_hand(choose(1, &[unrezzed()]))])
+        .named("an agenda was scored")
+        .when(runner_steals_agenda(), [add_to_hand(choose(1, &[unrezzed()]))])
+        .named("an agenda was stolen")
+        .build()
+}
+
+/// Nyusha "Sable" Sintashta: Symphonic Prodigy — Identity: Natural. Link 0.
+/// "When your turn begins, identify your mark. (If you don’t have a mark, a
+///  random central server becomes your mark for this turn.)
+///  The first time each turn you make a successful run on your mark, gain
+///  [click]."
+///
+/// COMPLETE. The parenthesis is 1.4's reminder text: it restates 10.11.2a's
+/// method and 10.11.3's "if one already is, nothing happens", both of which
+/// "identify your mark" already is, so it is not a second instruction.
+///
+/// The ordinal on the second sentence rides on the CONDITION rather than on
+/// 9.6.5c's usual stipulation, because 10.11.5 counts it from a different
+/// moment: a condition checking a property related to the mark only checks
+/// from the designation, so a successful run on that same server earlier in
+/// the turn — before it was the mark — is not one of the times counted.
+pub fn nyusha_sintashta() -> Card {
+    card("Nyusha \"Sable\" Sintashta: Symphonic Prodigy")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .text("When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.)")
+        .text("The first time each turn you make a successful run on your mark, gain [click].")
+        .when(turn_begins(Runner), [identify_mark()])
+        .named("identify your mark")
+        .when(makes_successful_run_on_your_mark(true), [gain_clicks(Runner, 1)])
+        .named("the first run on the mark")
+        .build()
+}
+
+/// Virtual Intelligence, P.I.: "You Can Call Me Vic" — Identity: Digital.
+/// Link 0.
+/// "Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag."
+///
+/// COMPLETE. Everything printed before the colon is the cost — a click and a
+/// credit, one cost with two components (1.16.2) — and "Once per turn →" is
+/// 9.3.6g's flag, which a PAID ability has something to spend it with (9.1.6:
+/// a player uses a paid ability, which is what expends the flag).
+///
+/// "Draw 1 card and remove 1 tag" is one printed sentence, so one instruction
+/// (9.11.3): joining them with `combined` keeps the single checkpoint and the
+/// single interrupt window the card gives. The ability is usable with no tags
+/// to remove — 9.5.3 only asks that the cost be payable.
+pub fn virtual_intelligence_pi() -> Card {
+    card("Virtual Intelligence, P.I.: \"You Can Call Me Vic\"")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Digital"])
+        .text("Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.")
+        .paid_once_per_turn(
+            clicks(1).plus_cost(credits(1)),
+            [combined([draw(Runner, 1), remove_tags(1)])],
+        )
+        .named("draw 1 card and remove 1 tag")
+        .build()
+}
+
+/// Every Criminal identity this module carries, in the order the queue reached
+/// them.
 pub fn identities() -> Vec<Card> {
-    vec![gabriel_santiago(), los(), liza_talking_thunder(), laramy_fisk()]
+    vec![
+        gabriel_santiago(),
+        los(),
+        liza_talking_thunder(),
+        laramy_fisk(),
+        leela_patel(),
+        nyusha_sintashta(),
+        virtual_intelligence_pi(),
+    ]
 }
