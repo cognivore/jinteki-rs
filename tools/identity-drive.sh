@@ -35,6 +35,18 @@ while true; do
     break
   fi
   if pgrep -f "overnight-drive.sh" >/dev/null; then sleep 60; continue; fi
+  # Another agent may be working this repo directly (a forked subagent, not
+  # our drive). Launching a second one would have two writers in one checkout.
+  # There is no lock to take, so require a QUIET PERIOD: the tree clean and
+  # HEAD unchanged for QUIET consecutive minutes. A working agent trips this
+  # constantly; a finished one never does.
+  quiet=0
+  while [[ "$quiet" -lt "${QUIET:-5}" ]]; do
+    if [[ -n "$(git status --porcelain)" ]]; then quiet=0; else quiet=$((quiet + 1)); fi
+    h="$(git rev-parse HEAD)"
+    sleep 60
+    [[ "$(git rev-parse HEAD)" != "$h" ]] && quiet=0
+  done
 
   before_done="$(done_count)"
   before_head="$(git rev-parse HEAD)"
