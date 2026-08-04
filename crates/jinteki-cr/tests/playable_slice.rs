@@ -363,3 +363,33 @@ fn basic_install_is_not_offered_when_the_install_cost_cannot_be_paid() {
     assert!(offered(3), "3 credits can");
     assert!(offered(9), "and so can more");
 }
+
+/// CR 1.5.4a: "A player may bring any number of additional Runner identity
+/// cards along with their deck… **The Runner may look at these cards at any
+/// time.**"
+///
+/// Reported from a live game: Rebirth offered "Unseen card 2 … 7" instead of
+/// the identities. `identity_visible_to` was right all along — the pile zone
+/// simply was not enumerated by `viewable_zones`, so no pile card ever
+/// entered the `View` and `sees()` answered false for all of them.
+#[test]
+fn the_identity_pile_is_open_to_the_player_who_brought_it() {
+    let mut vm = Vm::empty(4900);
+    let spare = vm.new_object(
+        tk::vanilla_runner_card("Spare ID", jinteki_cr::object::CardType::Identity),
+        Zone::OutsideGame(Side::Runner),
+    );
+    // 1.5.4a: the pile is open information to its owner, so its cards sit
+    // faceup exactly as `new_game` seats them.
+    vm.st.objects.get_mut(&spare).unwrap().faceup = true;
+    let runner_view = vm.view_of(Side::Runner);
+    assert!(
+        runner_view.sees(spare),
+        "1.5.4a: the Runner may look at the identities they brought, at any time"
+    );
+    let corp_view = vm.view_of(Side::Corp);
+    assert!(
+        !corp_view.sees(spare),
+        "1.5.4a grants the look to the player who brought them and to nobody else"
+    );
+}
