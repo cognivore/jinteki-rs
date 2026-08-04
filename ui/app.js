@@ -784,22 +784,132 @@ function renderRig() {
   });
 }
 
+/* The hand: a WINDOW of at most 5 cards, with a rail to move it.
+ *
+ * A centre-anchored fan grows outward as the hand grows, so past ~6 cards it
+ * slides under the action bar and the run controls on every iPhone in
+ * landscape — and Netrunner hands do not stay small. Andromeda opens on 9,
+ * and a deck that goes infinite draws itself.
+ *
+ * So the fan is bounded, not elastic (MTG Arena's solution): at most
+ * HAND_WINDOW cards are laid out at once, the focused card sits in the
+ * middle, and its neighbours peek in from either side so you can see there
+ * IS more hand. The rail underneath moves the window and is deliberately
+ * large — it is the one control that is useless if you cannot hit it.
+ */
+const HAND_WINDOW = 5;
+let handFocus = 0;
+
 function renderHand() {
   const handEl = $("hand");
   handEl.innerHTML = "";
   const cards = me().hand || [];
-  const mid = (cards.length - 1) / 2;
-  cards.forEach((c, i) => {
+  if (!cards.length) { hideHandRail(); return; }
+
+  // Keep the focus inside the hand as cards are drawn and played, and keep
+  // a raised card in view — raising a card you cannot see would be a lie.
+  handFocus = Math.max(0, Math.min(handFocus, cards.length - 1));
+  if (raised != null) {
+    const ri = cards.findIndex((c) => c.cid === raised);
+    if (ri >= 0) handFocus = ri;
+  }
+
+  // The window: HAND_WINDOW cards centred on the focus where possible,
+  // clamped at both ends so the last page is full rather than ragged.
+  const half = Math.floor(HAND_WINDOW / 2);
+  let start = Math.max(0, Math.min(handFocus - half, cards.length - HAND_WINDOW));
+  if (start < 0) start = 0;
+  const end = Math.min(cards.length, start + HAND_WINDOW);
+  const shown = cards.slice(start, end);
+  const mid = (shown.length - 1) / 2;
+
+  shown.forEach((c, i) => {
     const el = cardEl(c, { side: mySide, hand: true });
-    if (raised !== c.cid) {
-      const rot = (i - mid) * 6;
-      const lift = Math.abs(i - mid) * 5;
-      el.style.transform = `rotate(${rot}deg) translateY(${lift}px)`;
-    } else {
+    const focused = (start + i) === handFocus;
+    if (raised === c.cid) {
       el.classList.add("raised");
+    } else {
+      // Tighter than the old fan so the window stays inside the free band,
+      // with the focused card standing slightly proud of its neighbours.
+      const rot = (i - mid) * 4;
+      const lift = Math.abs(i - mid) * 4 + (focused ? -8 : 0);
+      el.style.transform = `rotate(${rot}deg) translateY(${lift}px)`;
+      if (focused) el.classList.add("focused");
     }
     handEl.appendChild(el);
   });
+
+  // Half-cards at the edges: proof there is more hand, and a tap target to
+  // get to it without the rail.
+  if (start > 0) handEl.prepend(peekEl(cards[start - 1], "left", () => moveHandFocus(-1)));
+  if (end < cards.length) handEl.append(peekEl(cards[end], "right", () => moveHandFocus(1)));
+
+  renderHandRail(cards.length);
+}
+
+function peekEl(c, side, onTap) {
+  const w = el("div", "handpeek " + side);
+  w.appendChild(cardEl(c, { side: mySide, hand: true }));
+  w.onclick = (e) => { e.stopPropagation(); onTap(); };
+  return w;
+}
+
+function moveHandFocus(d) {
+  const n = (me().hand || []).length;
+  handFocus = Math.max(0, Math.min(handFocus + d, n - 1));
+  raised = null;
+  renderHand();
+}
+
+function hideHandRail() {
+  const r = document.getElementById("hand-rail");
+  if (r) r.style.display = "none";
+}
+
+/* The rail. Big on purpose: it is how you reach most of your hand once the
+ * hand outgrows the window, and a thin scrollbar on a phone is unusable. */
+function renderHandRail(total) {
+  let rail = document.getElementById("hand-rail");
+  if (!rail) {
+    rail = el("div", "hand-rail");
+    rail.id = "hand-rail";
+    document.getElementById("screen-game").appendChild(rail);
+  }
+  if (total <= HAND_WINDOW) { rail.style.display = "none"; return; }
+  rail.style.display = "flex";
+  rail.innerHTML = "";
+
+  const left = el("button", "railbtn", "‹");
+  left.disabled = handFocus <= 0;
+  left.onclick = () => moveHandFocus(-1);
+
+  const right = el("button", "railbtn", "›");
+  right.disabled = handFocus >= total - 1;
+  right.onclick = () => moveHandFocus(1);
+
+  // One pip per card, the focused one lit: the position in the hand is the
+  // information, and a count of cards is small enough to show honestly.
+  const track = el("div", "railtrack");
+  for (let i = 0; i < total; i++) {
+    const pip = el("div", "railpip" + (i === handFocus ? " on" : ""));
+    pip.onclick = () => { handFocus = i; raised = null; renderHand(); };
+    track.appendChild(pip);
+  }
+  // Drag anywhere along the track to scrub, which is faster than pips at 40
+  // cards and is what a thumb expects to be able to do.
+  const scrub = (e) => {
+    const r = track.getBoundingClientRect();
+    const t = Math.min(1, Math.max(0, (e.clientX - r.left) / Math.max(1, r.width)));
+    const i = Math.round(t * (total - 1));
+    if (i !== handFocus) { handFocus = i; raised = null; renderHand(); }
+  };
+  track.addEventListener("pointerdown", (e) => { track.setPointerCapture(e.pointerId); scrub(e); });
+  track.addEventListener("pointermove", (e) => {
+    if (track.hasPointerCapture && track.hasPointerCapture(e.pointerId)) scrub(e);
+  });
+
+  const count = el("div", "railcount", `${handFocus + 1}/${total}`);
+  rail.append(left, track, count, right);
 }
 
 function cardEl(c, opts) {

@@ -733,3 +733,68 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   background-size: cover; background-position: center 15%; }
 .pilename { flex: 1; font-size: 13px; }
 .pilepts { color: var(--gold); font-weight: 700; font-size: 12px; }
+
+/* ── The hand rail: MTGA's bounded fan, in Netrunner's clothes ──────────
+   A centre-anchored fan grows outward as the hand grows, so past ~6 cards
+   it slides under the action bar on every iPhone in landscape — and hands
+   here do not stay small (Andromeda opens on 9; an infinite deck draws
+   itself). The fan is therefore a WINDOW of 5, and this rail moves it.
+
+   Deliberately large. It is the only way to reach most of a big hand, and a
+   hairline scrollbar on a phone is decoration, not a control. Sized to the
+   48px tap target the rest of the UI holds to. */
+.hand-rail { position: fixed; z-index: 41; display: none; align-items: center; gap: 8px;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(96px + env(safe-area-inset-bottom, 0));
+  max-width: min(86vw, 620px); padding: 5px 8px;
+  background: rgba(10,14,22,.92); border: 1px solid var(--legal);
+  border-radius: 999px; box-shadow: 0 0 14px rgba(53,208,186,.28); }
+.hand-rail .railbtn { min-width: 44px; min-height: 40px; font-size: 20px; line-height: 1;
+  background: var(--bg2); color: var(--legal); border: 1px solid var(--line);
+  border-radius: 999px; font-weight: 700; }
+.hand-rail .railbtn:disabled { opacity: .3; color: var(--dim); }
+/* The track is the tap target, not the pips — scrub anywhere along it. */
+.hand-rail .railtrack { flex: 1; min-width: 90px; height: 40px; display: flex;
+  align-items: center; gap: 3px; padding: 0 6px; cursor: pointer;
+  touch-action: none; }
+.hand-rail .railpip { flex: 1; min-width: 4px; height: 8px; border-radius: 4px;
+  background: #24314a; transition: background .12s, height .12s; }
+.hand-rail .railpip.on { background: var(--legal); height: 18px;
+  box-shadow: 0 0 8px rgba(53,208,186,.9); }
+.hand-rail .railcount { font-size: 12px; color: var(--legal); font-weight: 700;
+  min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* The focused card stands proud of its neighbours; the peeks are the proof
+   that there is more hand either side, and a tap target to get there. */
+.hand .card.focused { z-index: 3; }
+.handpeek { pointer-events: auto; cursor: pointer; opacity: .5;
+  width: 26px; overflow: hidden; align-self: flex-end; }
+.handpeek .card { pointer-events: none; transform: scale(.9); }
+.handpeek.left { direction: rtl; }
+.handpeek:hover { opacity: .85; }
+
+@media (max-height: 640px) {
+  .hand-rail { bottom: calc(74px + env(safe-area-inset-bottom, 0));
+    max-width: 92vw; gap: 6px; padding: 4px 6px; }
+  .hand-rail .railbtn { min-width: 40px; min-height: 36px; font-size: 18px; }
+  .hand-rail .railtrack { height: 36px; min-width: 70px; }
+  .hand-rail .railcount { font-size: 11px; min-width: 38px; }
+  .handpeek { width: 20px; }
+}
+
+/* The hand window is a CONSTANT width now (5 cards + two peeks ≈ 212px),
+   so the bottom rails can be given a hard budget that leaves it alone.
+   Previously `.action-bar` was `38vw`, which grows at the same rate as the
+   centred fan's left edge advances — so a wider phone bought nothing and
+   every device overlapped. Bounding it to the space left of the fan is what
+   actually separates them, at every width and every hand size.
+
+   The bar wraps upward into empty board space when the budget is tight,
+   which is the right direction to lose room: the board above is empty at
+   the bottom edge, the hand below is not. */
+.action-bar { max-width: calc(50vw - 122px); }
+.run-controls { max-width: calc(50vw - 122px); }
+@media (max-height: 640px) {
+  .action-bar { max-width: calc(50vw - 118px); }
+  .run-controls { max-width: calc(50vw - 118px); }
+}
