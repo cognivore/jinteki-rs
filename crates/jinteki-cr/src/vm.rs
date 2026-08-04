@@ -5804,6 +5804,29 @@ impl Vm {
                     },
                 ))
             }
+            // 1.21.4: "only installed cards that are not rezzed can be
+            // exposed". The restriction belongs to the INSTRUCTION, not to
+            // the card's words — "expose 1 card" prints no criteria at all —
+            // so it is derived here, exactly as 9.5.6a's break timing is
+            // derived from a break ability's instructions. Written into the
+            // description instead, it would be words the card does not print;
+            // left out entirely, announcing a rezzed card silently exposed
+            // nothing.
+            (Instruction::ExposeCards { .. }, 0) => {
+                cite!("rule_expose");
+                let candidates: Vec<ObjectId> = self
+                    .filter_candidates_from(criteria, Some(af.source.obj))
+                    .into_iter()
+                    .filter(|c| {
+                        self.st
+                            .objects
+                            .get(c)
+                            .is_some_and(|o| self.is_installed(o) && !o.faceup)
+                    })
+                    .collect();
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
+            }
             // 8.8.1/8.8.2: a swap announces both cards it exchanges, and the
             // SECOND is filtered by 8.8.2 — only cards each of which may
             // occupy the other's location. The first is filtered the same way
@@ -6612,6 +6635,8 @@ impl Vm {
                 .unwrap_or(false),
             TargetFilter::CardsInHandOf(side) => o.zone == Zone::Hand(side),
             TargetFilter::CardTypeIs(t) => o.printed.card_type == t,
+            // 2.15: one type, so the list is "any of these".
+            TargetFilter::CardTypeIsAny(list) => list.contains(&o.printed.card_type),
             // 1.14.2: the controller is the player responsible for the object.
             TargetFilter::ControlledBy(side) => {
                 cite!("rule_controller_object");
@@ -7543,6 +7568,13 @@ impl Vm {
             R::AgendaPointsAtLeast { side, points } => {
                 cite!("rule_score");
                 self.score(*side) >= *points
+            }
+            // 1.17.1: one score area against the other, rather than against a
+            // printed number. Strictly ahead — "MORE scored agenda points
+            // than you" is not met by a tie.
+            R::AgendaPointsAhead { side } => {
+                cite!("rule_score");
+                self.score(*side) > self.score(side.other())
             }
             // A question about the board, answered through the same criteria
             // vocabulary a target announcement uses — so "an installed AI
@@ -12493,7 +12525,11 @@ impl Vm {
                     }
                 }
                 self.changes
-                    .record(GameChange::TrashAbilityUsed { source: card, side: Side::Runner });
+                    .record(GameChange::TrashAbilityUsed {
+                        source: card,
+                        side: Side::Runner,
+                        basic: true,
+                    });
             }
         }
     }
@@ -12552,7 +12588,7 @@ impl Vm {
             cite!("rule_trash_symbol");
             self.trash_card(source, side);
             trashed.push(source);
-            self.changes.record(GameChange::TrashAbilityUsed { source, side });
+            self.changes.record(GameChange::TrashAbilityUsed { source, side, basic: false });
         }
         if cost.remove_self_from_game {
             // "Remove <this card> from the game:" as a trigger cost (Jackson

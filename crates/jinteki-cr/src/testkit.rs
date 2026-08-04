@@ -292,11 +292,23 @@ pub fn decoy_like(name: &'static str) -> PrintedCard {
     c
 }
 
+/// A Runner card with a plain "[trash]: Gain 1[credit]." paid ability — the
+/// 1.19.4 trigger cost, usable in an ordinary paid window (test driver).
+pub fn trash_cost_ability_card(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::trash_self(),
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+    )
+    .labeled("trash-cost: gain 1")];
+    c
+}
+
 /// Geist shape: "Whenever you use a [trash] ability, draw 1 card."
 pub fn geist_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::UsesTrashAbility(Side::Runner),
+        TriggerCond::UsesTrashAbility { side: Side::Runner, basic: None },
         vec![Instruction::Draw(Side::Runner, 1)],
         false,
     )

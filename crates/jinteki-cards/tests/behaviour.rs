@@ -5993,3 +5993,187 @@ fn poetri_installs_a_non_agenda_on_a_score_from_rnd_and_on_a_steal_from_hq() {
         );
     }
 }
+
+/// Armand "Geist" Walker: "Whenever you use a [trash] ability, draw 1 card."
+///
+/// 1.19.4's printed [trash] symbol is not 7.1.5's basic trash ability, and the
+/// test is that difference: using a card's own [trash] ability draws, and the
+/// Runner paying an accessed card's trash cost does not.
+#[test]
+fn armand_geist_walker_draws_on_a_trash_symbol_and_not_on_a_basic_trash() {
+    for basic in [false, true] {
+        let mut vm = Vm::empty(6135);
+        tk::install_identity(&mut vm, card("Armand \"Geist\" Walker: Tech Lord"), Side::Runner);
+        // The 1.19.4 half: a Runner card whose ability costs [trash].
+        tk::install_rig(&mut vm, tk::trash_cost_ability_card("Aesop-like"));
+        // The 7.1.5 half: an accessible Corp card with a trash cost.
+        let asset = tk::install_root(&mut vm, tk::vanilla_asset("Trashable", 0, 1), ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+        assert!(vm.st.hand[&Side::Runner].is_empty(), "the grip starts empty");
+
+        let t = if basic {
+            plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                    .when(Match::of(Kind::MidAccess).once(), Reply::Take(Pick::BasicTrash))
+                    .stop_at_action(),
+            )
+        } else {
+            plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner().when(Match::paid().once(), Reply::take("trash-cost")).stop_at_action(),
+            )
+        };
+        if basic {
+            assert_eq!(
+                vm.st.objects[&asset].zone,
+                Zone::Discard(Side::Corp),
+                "the Runner paid the trash cost with 7.1.5's basic ability: {}",
+                t.tail(30)
+            );
+        }
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            usize::from(!basic),
+            "the draw happens for the printed [trash] symbol and NOT for the basic trash \
+             ability (basic={basic}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Barry "Baz" Wong: "Whenever the Corp rezzes a piece of ice, you may install
+/// 1 resource or piece of hardware from your grip."
+///
+/// "Or" between two card TYPES is one description word, and the test is what
+/// it reaches: with a resource, a piece of hardware and a program in the grip,
+/// exactly the first two are candidates.
+#[test]
+fn barry_baz_wong_offers_the_grips_resources_and_hardware_but_not_its_programs() {
+    let mut vm = Vm::empty(6136);
+    tk::install_identity(&mut vm, card("Barry \"Baz\" Wong: Tri-Maf Veteran"), Side::Runner);
+    let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 0, 1), ServerId::Archives, false);
+    let mut mk = |name: &'static str, ty: CardType| {
+        let mut c = tk::vanilla_runner_card(name, ty);
+        c.cost = Some(0);
+        if ty == CardType::Program {
+            c.memory_cost = Some(1);
+        }
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    let resource = mk("Some Resource", CardType::Resource);
+    let hardware = mk("Some Hardware", CardType::Hardware);
+    let program = mk("Some Program", CardType::Program);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::reaction().offering("tri-maf"), Reply::take("tri-maf"))
+            .stop_at_action(),
+    );
+    assert!(vm.st.objects[&ice].faceup, "the ice was rezzed: {}", t.tail(40));
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "one card was chosen from the grip: {}", t.tail(40));
+    let candidates = announcements[0].candidates();
+    assert!(
+        candidates.contains(&resource) && candidates.contains(&hardware),
+        "both named types are candidates: {}",
+        t.tail(40)
+    );
+    assert!(
+        !candidates.contains(&program),
+        "and a program is not — the sentence names two types, not any type: {}",
+        t.tail(40)
+    );
+}
+
+/// Iain Stirling: "When your turn begins, gain 2[credit] if the Corp has more
+/// scored agenda points than you."
+///
+/// A comparison, so all three orderings matter: behind pays, level does not
+/// ("MORE than" is strict), and ahead does not either.
+#[test]
+fn iain_stirling_pays_only_while_the_corp_is_strictly_ahead() {
+    for (corp_points, runner_points, expected) in [(2i32, 0i32, 2u32), (2, 2, 0), (0, 2, 0)] {
+        let mut vm = Vm::empty(6137);
+        tk::install_identity(&mut vm, card("Iain Stirling: Retired Spook"), Side::Runner);
+        for (side, points) in [(Side::Corp, corp_points), (Side::Runner, runner_points)] {
+            if points > 0 {
+                let a = vm.new_object(tk::vanilla_agenda("Scored", 3, points), Zone::ScoreArea(side));
+                vm.st.score_area.get_mut(&side).unwrap().push(a);
+            }
+        }
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+        assert_eq!(
+            vm.st.runner.credits, expected,
+            "Corp {corp_points} vs Runner {runner_points} pays {expected}: {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Silhouette: "The first time you make a successful run on HQ each turn, you
+/// may expose 1 card."
+///
+/// The card prints no description at all, so the candidates are what CR
+/// 1.21.4 leaves: installed cards that are not rezzed. The test puts a rezzed
+/// asset beside an unrezzed one and asserts only the unrezzed one is offered
+/// — and that the exposure really happens.
+#[test]
+fn silhouette_may_expose_only_an_installed_unrezzed_card() {
+    let mut vm = Vm::empty(6138);
+    tk::install_identity(&mut vm, card("Silhouette: Stealth Operative"), Side::Runner);
+    let hidden = tk::install_root(&mut vm, tk::vanilla_asset("Hidden", 0, 2), ServerId::Remote(1), false);
+    let shown = tk::install_root(&mut vm, tk::vanilla_asset("Shown", 0, 2), ServerId::Remote(2), true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::reaction().offering("silhouette"), Reply::take("silhouette"))
+            .stop_at_action(),
+    );
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "one card was named, once: {}", t.tail(40));
+    assert_eq!(
+        announcements[0].candidates(),
+        [hidden],
+        "1.21.4: only an installed card that is NOT rezzed can be exposed — the rezzed \
+         asset is never a candidate: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardExposed { obj } if *obj == hidden)),
+        "and the exposure really happened: {}",
+        t.tail(40)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardExposed { obj } if *obj == shown)),
+        "never the rezzed one: {}",
+        t.tail(40)
+    );
+}

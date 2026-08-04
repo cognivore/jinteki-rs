@@ -1536,6 +1536,12 @@ pub enum TargetFilter {
     /// ability resolving for another reason) nothing matches, which is the
     /// same "reaches nothing" a stranded self-reference gets under 9.1.4.
     SameCardTypeAsTriggeringCard,
+    /// CR 2.15: "…1 resource **or** piece of hardware" (Barry "Baz" Wong) —
+    /// a card has exactly one type, so several `CardTypeIs` criteria together
+    /// would mean ALL of them and describe nothing. The type LIST is content
+    /// on one criterion, exactly as [`TargetFilter::HasAnySubtype`] already
+    /// is for the subtype "or".
+    CardTypeIsAny(&'static [CardType]),
     /// "…a **non**-agenda card" / "…a **non**-virus program" — the negation
     /// of another criterion, in the same shared filter vocabulary (§12 rule
     /// 5). One word for every "non-", rather than a filter per thing negated.

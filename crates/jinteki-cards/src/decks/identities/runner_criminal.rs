@@ -44,6 +44,61 @@ pub fn amoral_scammer() -> Card {
         .build()
 }
 
+/// Armand "Geist" Walker: Tech Lord — Identity: G-mod. Link 1.
+/// "Whenever you use a [trash] ability, draw 1 card."
+///
+/// COMPLETE. The [trash] symbol is 1.19.4: a trigger cost that trashes the
+/// ability's own source. That is NOT 7.1.5's basic trash ability, where the
+/// Runner pays an accessed card's trash cost — two different abilities, and
+/// the sentence names only the first, so the condition stipulates which.
+pub fn armand_geist_walker() -> Card {
+    card("Armand \"Geist\" Walker: Tech Lord")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["G-mod"])
+        .link(1)
+        .text("Whenever you use a [trash] ability, draw 1 card.")
+        .when(uses_a_trash_symbol_ability(Runner), [draw(Runner, 1)])
+        .named("tech lord")
+        .build()
+}
+
+/// Barry "Baz" Wong: Tri-Maf Veteran — Identity: Cyborg. Link 0.
+/// "Whenever the Corp rezzes a piece of ice, you may install 1 resource or
+///  piece of hardware from your grip."
+///
+/// COMPLETE. The condition is Los's — 8.1.2's rez with the sentence's
+/// card-type stipulation — without the ordinal, so every ice rez offers it.
+///
+/// "1 resource **or** piece of hardware" is 2.15's type list as one
+/// description word. It cannot be two: a card has exactly one type, so two
+/// type words beside each other would mean a card that is both, which is no
+/// card at all.
+pub fn barry_baz_wong() -> Card {
+    card("Barry \"Baz\" Wong: Tri-Maf Veteran")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Cyborg"])
+        .text("Whenever the Corp rezzes a piece of ice, you may install 1 resource or piece of hardware from your grip.")
+        .may_when(
+            corp_rezzes_a(CardType::Ice),
+            [install(
+                choose(
+                    1,
+                    &[
+                        in_hand_of(Runner),
+                        of_any_type(&[CardType::Resource, CardType::Hardware]),
+                    ],
+                ),
+                InstallDest::RunnerChoiceHostOrRig,
+            )],
+        )
+        .named("tri-maf veteran")
+        .build()
+}
+
 /// Gabriel Santiago: Consummate Professional — Identity: Cyborg. Link 0.
 /// "The first time you make a successful run on HQ each turn, gain 2[credit]."
 ///
@@ -62,6 +117,57 @@ pub fn gabriel_santiago() -> Card {
         .text("The first time you make a successful run on HQ each turn, gain 2[credit].")
         .when_first_each_turn(makes_successful_run_on(&[ServerId::Hq]), [gain(Runner, 2)])
         .named("the first HQ run of the turn")
+        .build()
+}
+
+/// Iain Stirling: Retired Spook — Identity: Natural. Link 1.
+/// "When your turn begins, gain 2[credit] if the Corp has more scored agenda
+///  points than you."
+///
+/// COMPLETE. The "if …" clause is 9.6.5c's additional requirement listed
+/// inside the trigger condition, so it is asked as the turn begins and not
+/// again while the ability resolves.
+///
+/// It compares the two SCORE AREAS (1.17.1) rather than testing one against a
+/// printed number, and "more … than" is strict: a tie leaves the requirement
+/// unmet and the identity pays nothing.
+pub fn iain_stirling() -> Card {
+    card("Iain Stirling: Retired Spook")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .link(1)
+        .text("When your turn begins, gain 2[credit] if the Corp has more scored agenda points than you.")
+        .when(turn_begins_if(Runner, &[agenda_points_ahead(Corp)]), [gain(Runner, 2)])
+        .named("retired spook")
+        .build()
+}
+
+/// Silhouette: Stealth Operative — Identity: Natural. Link 0.
+/// "The first time you make a successful run on HQ each turn, you may expose
+///  1 card."
+///
+/// COMPLETE. Gabriel Santiago's condition exactly, and the printed "you may"
+/// is the whole ability, so 9.6.9 puts the decision with the Runner.
+///
+/// "1 card" describes nothing else, and it does not have to: CR 1.21.4
+/// restricts exposing to installed cards that are not rezzed, and that
+/// restriction is the INSTRUCTION's rather than the card's words, so it
+/// narrows the candidates without being written here. Writing it into the
+/// description would be words the card does not print.
+pub fn silhouette() -> Card {
+    card("Silhouette: Stealth Operative")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .text("The first time you make a successful run on HQ each turn, you may expose 1 card.")
+        .may_when_first_each_turn(
+            makes_successful_run_on(&[ServerId::Hq]),
+            [expose(choose(1, &[]))],
+        )
+        .named("the first hq run of the turn")
         .build()
 }
 
@@ -240,7 +346,11 @@ pub fn virtual_intelligence_pi() -> Card {
 pub fn identities() -> Vec<Card> {
     vec![
         amoral_scammer(),
+        armand_geist_walker(),
+        barry_baz_wong(),
         gabriel_santiago(),
+        iain_stirling(),
+        silhouette(),
         los(),
         liza_talking_thunder(),
         laramy_fisk(),

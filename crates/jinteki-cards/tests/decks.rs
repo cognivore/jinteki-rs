@@ -10,14 +10,14 @@ use jinteki_cards::{deck_named, pile_named, priority_decks, SOURCES};
 #[test]
 fn both_decks_build() {
     let cards = priority_decks();
-    assert_eq!(cards.len(), 59, "both decks, one entry per distinct card (Hedge Fund is not in the printed Gauntlet list), plus CR 1.5.4a's pile");
+    assert_eq!(cards.len(), 63, "both decks, one entry per distinct card (Hedge Fund is not in the printed Gauntlet list), plus CR 1.5.4a's pile");
     assert_eq!(deck_named("andromeda").unwrap().len(), 24);
     assert_eq!(deck_named("gauntlet").unwrap().len(), 26, "49 printed cards, 26 distinct — Hedge Fund left on the deck photo's authority");
     assert!(deck_named("nonesuch").is_none());
     // CR 1.5.4a: the pile is beside the deck, not in it, and it is the
     // Runner's. "Any number" of identities, so it grows as the identity queue
     // completes them (docs/vm/IDENTITY-QUEUE.md).
-    assert_eq!(pile_named("andromeda").unwrap().len(), 9);
+    assert_eq!(pile_named("andromeda").unwrap().len(), 13);
     assert!(pile_named("gauntlet").unwrap().is_empty());
     assert!(pile_named("nonesuch").is_none());
 }
@@ -164,7 +164,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 120, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue)");
+    assert_eq!(checked, 124, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and

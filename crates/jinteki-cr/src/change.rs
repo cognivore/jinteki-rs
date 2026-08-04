@@ -151,9 +151,13 @@ pub enum GameChange {
     CostPaid { side: Side, credits: u32, clicks: u32, trashed: Vec<ObjectId> },
     /// CR 9.1.6: an ability/source was used.
     AbilityUsed { source: ObjectId },
-    /// A [trash]-cost ability's trigger cost trashed its own source
-    /// (9.1.6a-adjacent; drives Geist-style "use a trash ability" triggers).
-    TrashAbilityUsed { source: ObjectId, side: Side },
+    /// A trash ability was used. `basic` says WHICH: `true` is 7.1.5's basic
+    /// trash ability, where the Runner pays an accessed card's trash cost;
+    /// `false` is a card's own printed [trash] ability, whose 1.19.4 trigger
+    /// cost trashed its source. They are different abilities and a card that
+    /// names one does not name the other (Geist prints the [trash] symbol),
+    /// so the record has to say which happened.
+    TrashAbilityUsed { source: ObjectId, side: Side, basic: bool },
     BreachBegan { server: ServerId },
     BreachEnded { server: ServerId },
     CardEnteredRoot { obj: ObjectId, server: ServerId },

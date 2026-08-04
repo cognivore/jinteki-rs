@@ -1696,6 +1696,22 @@ pub fn non(f: TargetFilter) -> TargetFilter {
 pub fn additional_cost_to_access_a_card_in_a_remote_root(c: Cost) -> StaticDecl {
     StaticDecl::AdditionalAccessCost(c)
 }
+/// "…1 resource **or** piece of hardware" (2.15) — the type LIST as one
+/// description word, because a card has exactly one type and several
+/// [`of_type`] words together would mean all of them.
+pub fn of_any_type(list: &'static [CardType]) -> TargetFilter {
+    TargetFilter::CardTypeIsAny(list)
+}
+/// "Whenever you use a [trash] ability…" (Geist class) — 1.19.4's printed
+/// [trash] symbol, which is not 7.1.5's basic trash ability.
+pub fn uses_a_trash_symbol_ability(side: Side) -> TriggerCond {
+    TriggerCond::UsesTrashAbility { side, basic: Some(false) }
+}
+/// "…if <side> has MORE scored agenda points than the other player" (1.17.1).
+/// Strictly ahead: a tie does not meet it.
+pub fn agenda_points_ahead(side: Side) -> TriggerRequirement {
+    TriggerRequirement::AgendaPointsAhead { side }
+}
 /// "…a facedown card" (1.13.2) — the plain question, in whatever zone the
 /// rest of the description names.
 pub fn facedown() -> TargetFilter {

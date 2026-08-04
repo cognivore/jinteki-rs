@@ -29,39 +29,23 @@ Double-sided identities (Nebula/Gemilang class) carry their back face with
 
 An identity is skipped rather than written wrong (ARCHITECTURE §12). Each of
 these is a general kernel capability, stated with the identities that want it.
+A blocker is DELETED from this list when the capability lands, not struck
+through — `git log` is where the history lives.
 
-- **Exposing is restricted, but the announcement is not.** CR 1.21.4 restricts
-  exposing to installed UNREZZED cards, and `Instruction::ExposeCards` honours
-  that when it resolves — but a bare "expose 1 card" describes no criteria, so
-  1.15.2c's default offers every installed card as a candidate and announcing
-  a rezzed one silently exposes nothing. The restriction belongs where 9.5.6a's
-  break restriction went: DERIVED from the instruction, not written into the
-  card's criteria, which would be words the card does not print.
-  *(Silhouette: Stealth Operative. 419: Amoral Scammer escaped it —
-  "expose THAT card" announces nothing at all, so there are no candidates to
-  offer wrongly.)*
-- **"A [trash] ability" is not distinguished from the basic trash ability.**
-  `TriggerCond::UsesTrashAbility` exists, but `GameChange::TrashAbilityUsed` is
-  recorded both where a 1.19.4 [trash] trigger cost is paid AND where the
-  Runner pays a card's trash cost with 7.1.5's basic trash ability. The printed
-  sentence names only the first, so the condition needs that stipulation as
-  content before it can be used. *(Armand "Geist" Walker: Tech Lord.)*
-- **No comparison between the two players' agenda points.**
-  `TriggerRequirement::AgendaPointsAtLeast` is an absolute threshold against a
-  printed number; nothing asks whether one score area is ahead of the other.
-  *(Iain Stirling: Retired Spook.)*
-- **A description cannot say "or" between card TYPES.**
-  `TargetFilter::HasAnySubtype` says it for subtypes, but `CardTypeIs` names
-  exactly one and several filters together mean ALL of them — so "1 resource
-  or piece of hardware" describes nothing, and `InstallFilter` is narrower
-  still (Program / Ice / Any). The fix is the one `HasAnySubtype` already is:
-  the type LIST as content on one filter. *(Barry "Baz" Wong: Tri-Maf Veteran;
-  Magdalene Keino-Chemutai and Kate "Mac" McCaffrey want it too.)*
+Still wanted by identities other than the ones named, in every case: these are
+kernel words, not card patches.
+
 - **No automatic, described reduction of an install cost.**
   `StaticDecl::InstallDiscount` is Patchwork's — a reduction the installer
   may PAY for. Nothing declares a free one that applies of its own accord to
   the first card each turn matching a description. *(Az McCaffrey: Mechanical
   Prodigy; Kate "Mac" McCaffrey: Digital Tinker.)*
+- **No condition for discarding down to maximum hand size.**
+  `Instruction::DiscardToHandSize` is 5.7.4's step and
+  `TriggerCond::DiscardPhaseEnds` is the phase around it; neither is "whenever
+  you discard cards to reach your maximum hand size", which names the discard
+  itself and hands the cards discarded to the next sentence.
+  *(Magdalene Keino-Chemutai: Cryptarchitect.)*
 - **No condition for passing a piece of ice, plainly.** `SelfPassed` scopes to
   the source, and `PassedIceAfterFullyBreaking` /
   `PassedIceWithResolvedSubroutines` each state something more than the pass.
@@ -140,7 +124,7 @@ these is a general kernel capability, stated with the identities that want it.
 
 ## Progress
 
-- Implemented: **57 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **61 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
@@ -148,18 +132,18 @@ Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable" Sintashta, Virtual
 Intelligence, P.I.
 
 
-## Runner — Criminal (10/22)
+## Runner — Criminal (14/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
 - [x] **419: Amoral Scammer** — The first time the Corp installs a card each turn, you may expose that card unless the Corp pays 1[credit].
 - [x] **Andromeda: Dispossessed Ristie** — You draw a starting hand of 9 cards.
-- [ ] **Armand "Geist" Walker: Tech Lord** — Whenever you use a [trash] ability, draw 1 card.
+- [x] **Armand "Geist" Walker: Tech Lord** — Whenever you use a [trash] ability, draw 1 card.
 - [ ] **Az McCaffrey: Mechanical Prodigy** — The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.
-- [ ] **Barry "Baz" Wong: Tri-Maf Veteran** — Whenever the Corp rezzes a piece of ice, you may install 1 resource or piece of hardware from your grip.
+- [x] **Barry "Baz" Wong: Tri-Maf Veteran** — Whenever the Corp rezzes a piece of ice, you may install 1 resource or piece of hardware from your grip.
 - [ ] **Boris "Syfr" Kovac: Crafty Veteran** — Draft format only. If you have more [criminal] cards installed than any other faction, when your turn begins, remove 1 tag.
 - [x] **Gabriel Santiago: Consummate Professional** — The first time you make a successful run on HQ each turn, gain 2[credit].
-- [ ] **Iain Stirling: Retired Spook** — When your turn begins, gain 2[credit] if the Corp has more scored agenda points than you.
+- [x] **Iain Stirling: Retired Spook** — When your turn begins, gain 2[credit] if the Corp has more scored agenda points than you.
 - [x] **Ken "Express" Tenma: Disappeared Clone** — The first time each turn you play a run event, gain 1[credit].
 - [ ] **Khan: Savvy Skiptracer** — The first time you pass a piece of ice each turn, you may install an icebreaker from your hand, lowering the install cost by 1.
 - [x] **Laramy Fisk: Savvy Investor** — The first time you make a successful run on a central server each turn, you may force the Corp to draw 1 card.
@@ -170,7 +154,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [ ] **MuslihaT: Multifarious Marketeer** — When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.
 - [ ] **Nero Severn: Information Broker** — Once per turn → When you encounter a sentry, you may jack out.
 - [x] **Nyusha "Sable" Sintashta: Symphonic Prodigy** — When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) The first time each turn you make a successful run on your mark, gain [click].
-- [ ] **Silhouette: Stealth Operative** — The first time you make a successful run on HQ each turn, you may expose 1 card.
+- [x] **Silhouette: Stealth Operative** — The first time you make a successful run on HQ each turn, you may expose 1 card.
 - [ ] **Steve Cambridge: Master Grifter** — The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [ ] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.

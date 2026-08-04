@@ -211,7 +211,14 @@ pub enum TriggerCond {
     /// field rather than two conditions.
     DiscardPhaseEnds { side: Option<Side>, requires: Vec<TriggerRequirement> },
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
-    UsesTrashAbility(Side),
+    /// "Whenever you use a [trash] ability…" (Geist class). `basic` is the
+    /// sentence's stipulation about WHICH trash ability: `Some(false)` is the
+    /// printed [trash] symbol (1.19.4's trigger cost), `Some(true)` is
+    /// 7.1.5's basic trash ability, and `None` a sentence naming neither.
+    /// Without it the two are indistinguishable and a Geist-class card fires
+    /// on the Runner paying an accessed card's trash cost, which it does not
+    /// print.
+    UsesTrashAbility { side: Side, basic: Option<bool> },
     /// "Whenever you advance a card." `had_no_advancement` adds the
     /// 9.6.6a "had"-condition read against the previous checkpoint snapshot.
     /// CR 1.18.2: met by an ADVANCE only — never by an instruction that
@@ -554,6 +561,12 @@ pub enum TriggerRequirement {
     /// modified. Not the threat level (1.17.1a), which is the HIGHER of the
     /// two scores and says nothing about whose.
     AgendaPointsAtLeast { side: Side, points: i32 },
+    /// CR 1.17.1: "…if the Corp has MORE scored agenda points than you" (Iain
+    /// Stirling). A comparison between the two score areas, not a threshold
+    /// against a printed number — which is what
+    /// [`TriggerRequirement::AgendaPointsAtLeast`] is and why it cannot say
+    /// this. `side` is the player the sentence puts AHEAD.
+    AgendaPointsAhead { side: Side },
     /// CR 1.15.4: "…**if the exposed card** has the named card type"
     /// (Falsified Credentials), "…add it to HQ **if it** has the named
     /// subtype" (Wari). A question about a target this ability already
@@ -1844,7 +1857,14 @@ pub fn trigger_matches(
             TriggerCond::RunnerSuffersDamage { kind },
             GameChange::DamageSuffered { kind: k, .. },
         ) => kind.is_none() || kind.as_ref() == Some(k),
-        (TriggerCond::UsesTrashAbility(side), GameChange::TrashAbilityUsed { side: s, .. }) => {
+        (
+            TriggerCond::UsesTrashAbility { side, basic },
+            GameChange::TrashAbilityUsed { side: s, basic: b, .. },
+        ) => {
+            let _ = basic.is_none_or(|w| w == *b);
+            if !basic.is_none_or(|w| w == *b) {
+                return false;
+            }
             side == s
         }
         // 1.18.2: only an ADVANCE meets this condition. An instruction that
