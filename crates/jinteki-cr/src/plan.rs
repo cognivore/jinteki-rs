@@ -432,6 +432,10 @@ impl Match {
     pub fn destination() -> Match {
         Match::of(Kind::Destination)
     }
+    /// 1.15.1b: naming a card or a number.
+    pub fn name_value() -> Match {
+        Match::of(Kind::NameValue)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()

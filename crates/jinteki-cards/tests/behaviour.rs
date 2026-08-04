@@ -805,7 +805,7 @@ fn another_current_trashes_the_one_already_in_the_play_area() {
     let mut vm = Vm::empty(50);
     let es = vm.new_object(card("Employee Strike"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(es);
-    let tm = vm.new_object(card_partial("Targeted Marketing"), Zone::Hand(Side::Corp));
+    let tm = vm.new_object(card("Targeted Marketing"), Zone::Hand(Side::Corp));
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -838,7 +838,7 @@ fn another_current_trashes_the_one_already_in_the_play_area() {
 #[test]
 fn targeted_marketing_stays_in_the_play_area() {
     let mut vm = Vm::empty(30);
-    let tm = vm.new_object(card_partial("Targeted Marketing"), Zone::Hand(Side::Corp));
+    let tm = vm.new_object(card("Targeted Marketing"), Zone::Hand(Side::Corp));
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
     let agenda = tk::install_root(&mut vm, tk::vanilla_agenda("Loose Agenda", 3, 1), ServerId::Remote(1), false);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -872,6 +872,125 @@ fn targeted_marketing_stays_in_the_play_area() {
         Zone::Discard(Side::Corp),
         "the steal ended the lingering effect: {}",
         g.transcript().tail(12)
+    );
+}
+
+/// Targeted Marketing's second sentence: "Name a card. Gain 10[credit]
+/// whenever the Runner plays or installs a copy of that card."
+///
+/// CR 1.15.1b: the name is said when the play ability RESOLVES, not announced
+/// beforehand. 2.1.4: "a copy of that card" is any card with that name, so the
+/// Runner's own Sure Gamble is one; 9.10.3c keeps the name for as long as the
+/// current is active, which 8.6.6c makes the rest of the game.
+#[test]
+fn targeted_marketing_names_a_card_and_taxes_every_copy() {
+    let mut vm = Vm::empty(31);
+    let tm = vm.new_object(card("Targeted Marketing"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
+    // Two copies of the named card and one card that is not it: 2.1.4's
+    // "copies of" has to reach both copies and neither of the others.
+    let gamble_a = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    let gamble_b = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    let diesel = vm.new_object(card("Diesel"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([gamble_a, gamble_b, diesel]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.st.runner.credits = 20;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(tm))
+            .when(Match::name_value().once(), Reply::Name("Sure Gamble"))
+            .otherwise_click_credit(),
+        Plan::runner()
+            // A card that is NOT the named one first: it must pay nothing.
+            .when(Match::action().once(), Reply::play_card(diesel))
+            .when(Match::action().once(), Reply::play_card(gamble_a))
+            .when(Match::action().once(), Reply::play_card(gamble_b))
+            .stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&gamble_a].zone, Zone::Discard(Side::Runner));
+    assert_eq!(vm.st.objects[&gamble_b].zone, Zone::Discard(Side::Runner));
+    // The Corp clicked for credits through the rest of its own turn; the two
+    // Sure Gambles are the only thing that could have added 10 each.
+    assert_eq!(
+        vm.st.corp.credits, 22,
+        "2 basic credit actions + 10 for each of the two copies, and nothing \
+         for Diesel: {}",
+        t.tail(20)
+    );
+}
+
+/// The same sentence's other half: "…or INSTALLS a copy of that card." One
+/// trigger condition covers both, which is what keeps a "first time each
+/// turn" from being spent twice (Azmari EdTech's reading of the same words).
+#[test]
+fn targeted_marketing_taxes_an_install_too() {
+    let mut vm = Vm::empty(37);
+    let tm = vm.new_object(card("Targeted Marketing"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
+    let hotel = vm.new_object(card("Earthrise Hotel"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(hotel);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 10;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(tm))
+            .when(Match::name_value().once(), Reply::Name("Earthrise Hotel"))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(hotel)))
+            .stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&hotel].zone, Zone::Rig);
+    assert_eq!(
+        vm.st.corp.credits, 12,
+        "2 basic credit actions + 10 for the install: {}",
+        t.tail(20)
+    );
+}
+
+/// 10.1.5 read the other way round: naming a card the Runner does not play is
+/// simply inert, and the ability never fires. The point of the assertion is
+/// that `MatchesMaintainedChoice` is a real comparison, not a wildcard.
+#[test]
+fn targeted_marketing_taxes_nothing_when_the_named_card_is_not_played() {
+    let mut vm = Vm::empty(41);
+    let tm = vm.new_object(card("Targeted Marketing"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
+    let gamble = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(gamble);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 10;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(tm))
+            .when(Match::name_value().once(), Reply::Name("Diesel"))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(gamble))
+            .stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.st.corp.credits, 2,
+        "the played card is not the named one: {}",
+        t.tail(20)
     );
 }
 

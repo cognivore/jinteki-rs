@@ -445,8 +445,16 @@ pub fn subliminal_messaging() -> Card {
 ///  Name a card. Gain 10[credit] whenever the Runner plays or installs a copy
 ///  of that card."
 ///
-/// UNIMPLEMENTED: the second sentence. Nothing names a card, and no condition
-/// is met by the Runner playing or installing a copy of a named one.
+/// COMPLETE. "Name a card" is CR 1.15.1b's naming — not a target
+/// announcement, so the name is said when the play ability resolves — and the
+/// current stays in the play area (8.6.6c), which is what gives the name
+/// something to be remembered by: 9.10.3c keeps it for exactly as long as the
+/// card is active, so it dies with the same lingering effect the first
+/// sentence created.
+///
+/// "A copy of that card" is 2.1.4's "copies of": any card with that name,
+/// including a second copy the Runner holds. "Plays or installs" is ONE
+/// trigger condition (8.6.1 and 8.5.1 named together), not two abilities.
 pub fn targeted_marketing() -> Card {
     card("Targeted Marketing")
         .corp()
@@ -457,7 +465,11 @@ pub fn targeted_marketing() -> Card {
         .text("This card is not trashed until another current is played or an agenda is stolen.")
         .text("Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card.")
         .declares([not_trashed_until_an_agenda_is_stolen()])
-        .unimplemented("Name a card. Gain 10[credit] whenever the Runner plays or installs a copy of that card.")
+        .play([name_a_card("marketing target")])
+        .when(
+            plays_or_installs_named_by(Runner, "marketing target"),
+            [gain(Corp, 10)],
+        )
         .build()
 }
 
