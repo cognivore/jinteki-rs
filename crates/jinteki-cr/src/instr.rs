@@ -983,6 +983,16 @@ pub enum SubroutineGrant {
 }
 
 /// CR 9.10.3: what a maintained choice is a choice OF.
+///
+/// CR 1.15.1b enumerates what an instruction can direct a player to choose or
+/// "name": *"a number, a card type, a subtype, a card name, a server, or one
+/// of a specified set of effects"*. Every one of those is here, and the split
+/// between the variants is exactly whether the namespace is ENUMERABLE. A
+/// choice between the servers, the subtypes a card lists, the ten card types
+/// (2.15.2) or a stated set of effects is 9.11.4g's option choice — an
+/// [`Instruction::ChooseOne`] whose branches each maintain a different value
+/// — so those variants name ONE value each. A card NAME and a NUMBER have no
+/// such branches to enumerate, and are [`ChoiceSpec::Named`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChoiceSpec {
     /// "…this server." (Security Testing class.) A choice BETWEEN servers is
@@ -995,6 +1005,58 @@ pub enum ChoiceSpec {
     /// "…this ice subtype." (Pelangi class.) As with `Server`, the choice
     /// between subtypes is an `Instruction::ChooseOne`.
     Subtype(&'static str),
+    /// CR 2.15.2: "name **asset**, **ice**, **operation** or **upgrade**"
+    /// (Embezzle), "name a card type" (Azmari EdTech, Falsified Credentials,
+    /// Ibrahim Salem). A card has exactly one type and there are ten of them,
+    /// so an unrestricted "name a card type" is as enumerable as Embezzle's
+    /// four — both are an `Instruction::ChooseOne` whose branches each
+    /// maintain one type, and this variant names one.
+    CardType(crate::object::CardType),
+    /// CR 1.15.1b: "name a card" (Ark Lockdown, Targeted Marketing…), "name a
+    /// number" (RNG Key). The namespace is OPEN — every printed title, every
+    /// integer (1.1.3) — so there are no branches to write and the value
+    /// arrives as an answer to a decision instead. The namespace and the
+    /// exclusion are both content on this one variant (§12 rule 2).
+    Named { of: NameSpace, excluding: Option<NameExclusion> },
+}
+
+/// CR 1.15.1b: the OPEN namespaces a card can direct a player to name — the
+/// two entries of 1.15.1b's list that cannot be written as a set of branches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameSpace {
+    /// "Name a card." CR 2.1.1: the identifier of a card is its name.
+    CardName,
+    /// "Name a number." CR 1.1.3: all numbers used in the game are integers.
+    Number,
+}
+
+/// CR 10.1.5 / 2.1.3: a name the naming player may NOT say.
+///
+/// Reclamation Order's "name a card other than Reclamation Order" is
+/// self-referential language: 10.1.5 says a card referencing its own name
+/// without the word "copy" is to be read as "this object", so the exclusion
+/// is the SOURCE's own name and no card name enters the kernel (§12 rule 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameExclusion {
+    /// "…other than <this card>."
+    SourceName,
+}
+
+/// CR 1.15.1b: a value a player NAMED, in whichever open namespace was asked
+/// for. Not a target (1.15.1b: "only objects and subroutines are announced as
+/// targets"), which is why it is chosen at RESOLUTION and not announced.
+///
+/// A card name is carried as `&'static str`, the same representation
+/// [`crate::object::PrintedCard::name`] and [`TargetFilter::HasName`] already
+/// use: the kernel never manufactures a title, so every name that reaches it
+/// came from a real printed card, and a driver that cannot resolve a player's
+/// input to one has not been given a legal answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NamedValue {
+    /// CR 2.1.1: a card's title.
+    CardName(&'static str),
+    /// CR 1.1.3: an integer.
+    Number(i64),
 }
 
 /// CR 9.12.3a/b: how a "must trash" requirement may be satisfied.
@@ -1148,6 +1210,24 @@ pub enum TargetFilter {
     /// self-referential language: it describes every card with that name,
     /// including but not limited to the ability's own source.
     HasName(&'static str),
+    /// CR 9.10.3 + 2.1.4: "…a copy of **that card**" (Targeted Marketing),
+    /// "…all cards with **the chosen name**" (Salem's Hospitality), "…1 card
+    /// in it **of the named type**" (Ibrahim Salem), "…if it has **the named
+    /// subtype**" (Wari). One atom: the card is compared against the value
+    /// the ability's SOURCE is maintaining under this key.
+    ///
+    /// WHICH characteristic is compared is content on the maintained value
+    /// (§12 rule 2), not a variant here — a maintained card name is matched
+    /// against the card's name (2.1.4 makes that "copies of"), a card type
+    /// against its type (2.15.2), a subtype against its subtypes (2.16, read
+    /// through the 9.12.1b pipeline). A maintained SERVER, OBJECT or NUMBER
+    /// describes no card, so nothing matches — 1.15.3's "as much as possible"
+    /// with nothing possible.
+    ///
+    /// Matches nothing at all while no choice is being maintained under the
+    /// key, which is what makes a Targeted Marketing whose naming was never
+    /// resolved simply inert.
+    MatchesMaintainedChoice(&'static str),
     /// "the Corp's identity", "a card the Runner controls" — CR 1.14.2's
     /// controller, which is the player responsible for the object and by
     /// 1.14.2c defaults to its owner. The side is content (§12 rule 2), and
@@ -1206,6 +1286,11 @@ impl TargetFilter {
                 | TargetFilter::HasSubtype(_)
                 | TargetFilter::PrintedCostAtMost(_)
                 | TargetFilter::HasName(_)
+                // 9.10.3: the maintained value IS a characteristic — a name,
+                // a card type or a subtype — so a card chosen for matching it
+                // has to be demonstrated to match (Salem's Hospitality trashes
+                // from the grip, and the Runner shows what they trashed).
+                | TargetFilter::MatchesMaintainedChoice(_)
                 // 2.13: the faction is a printed characteristic like any
                 // other, so a sentence stipulating one has to be demonstrated.
                 | TargetFilter::FactionMatchesIdentityOf { .. }

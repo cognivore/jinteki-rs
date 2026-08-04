@@ -202,6 +202,20 @@ pub enum DecisionSpec {
     /// and `Some(card)` credits hosted on that card; the answer is one number
     /// per location, in order, summing to `total`.
     DivideCreditPayment { total: u32, locations: Vec<(Option<ObjectId>, u32)> },
+    /// CR 1.15.1b: "name a card" / "name a number" — the naming player says a
+    /// value from an OPEN namespace. Not a target announcement: 1.15.1b puts
+    /// this choice at the instruction's RESOLUTION, which is where it is
+    /// asked.
+    ///
+    /// There is no candidate list. For a card name the namespace is every
+    /// printed title, and the only list the kernel could build from its own
+    /// state is the union of both decks — offering it would hand the naming
+    /// player their opponent's decklist, which §10.2 does not entitle them
+    /// to. `excluding` is the one restriction a printed card in the two
+    /// decks states (Reclamation Order), and it is carried as content
+    /// (§12 rule 2); a namespace that IS enumerable is 9.11.4g's option
+    /// choice and never reaches this decision at all.
+    NameValue { of: crate::instr::NameSpace, excluding: Option<crate::instr::NameExclusion> },
 }
 
 /// Defunctionalized answers.
@@ -245,4 +259,6 @@ pub enum DecisionAnswer {
     InstallDestination(crate::instr::InstallDest),
     /// CR 6.9.1a: the announced attacked server.
     AttackedServer(ServerId),
+    /// CR 1.15.1b: the value the naming player said.
+    NamedValue(crate::instr::NamedValue),
 }

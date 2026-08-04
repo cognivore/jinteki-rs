@@ -80,11 +80,26 @@ pub enum TriggerCond {
     /// so `of_types` is read as "any of these" and `of_subtypes` as "all of
     /// these" — which is how the printed phrase "another current operation or
     /// event" reads in one condition.
+    /// `also_installed` is CR 8.5.1's half of the same sentence: some cards
+    /// name BOTH ways a card can be used out of a hand — "whenever the Runner
+    /// **plays or installs** a copy of that card" (Targeted Marketing), "the
+    /// Runner **plays or installs** a card that has the type you last named"
+    /// (Azmari EdTech). That is ONE trigger condition, not two abilities,
+    /// because the sentence is one and its 9.3.6g "first time each turn" has
+    /// to be spent by whichever of the two happens first.
+    ///
+    /// `matching_choice` is 9.10.3's back-reference: the played or installed
+    /// card must match the value the source is maintaining under that key,
+    /// exactly as [`crate::instr::TargetFilter::MatchesMaintainedChoice`]
+    /// reads it for a description. `None` is a sentence that names no such
+    /// value.
     CardPlayed {
         by: Option<Side>,
         of_types: Vec<CardType>,
         of_subtypes: Vec<&'static str>,
         other_than_source: bool,
+        also_installed: bool,
+        matching_choice: Option<&'static str>,
     },
     /// `of_types` is the sentence's card-type stipulation ("whenever you
     /// access an agenda", Film Critic); empty means no stipulation, exactly
@@ -402,6 +417,15 @@ pub enum TriggerRequirement {
     SourceNotInDiscard,
     /// "…if this program has a hosted Corp card" (Cupellation class).
     SourceHostsCorpCard,
+    /// CR 1.15.4: "…**if the exposed card** has the named card type"
+    /// (Falsified Credentials), "…add it to HQ **if it** has the named
+    /// subtype" (Wari). A question about a target this ability already
+    /// announced — `nth` is 0-based over the ability's announcements, the
+    /// same index [`crate::instr::TargetSpec::EarlierTarget`] uses — asked
+    /// with the shared filter vocabulary, so what is asked about it is
+    /// content (§12 rule 2). Never met when the ability announced no such
+    /// target (1.15.3).
+    EarlierTargetMatches { nth: usize, criteria: Vec<crate::instr::TargetFilter> },
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -1356,6 +1380,11 @@ pub fn trigger_matches(
     // stipulates (2.16) — read through the 9.12.1b pipeline, so a subtype an
     // active effect granted counts.
     has_subtype: impl Fn(ObjectId, &'static str) -> bool,
+    // CR 9.10.3: whether an object named by the change matches the value the
+    // SOURCE is maintaining under a key the condition stipulates — the same
+    // question `TargetFilter::MatchesMaintainedChoice` asks of a description,
+    // asked here of an occurrence.
+    matches_choice: impl Fn(ObjectId, &'static str) -> bool,
 ) -> bool {
     cite!("rule_trigger_condition_checked");
     match (cond, change) {
@@ -1395,16 +1424,37 @@ pub fn trigger_matches(
             cite!("rule_action_phase_duration");
             side == s
         }
+        // 8.6.1 / 8.5.1: the two ways a card is used out of a hand. A sentence
+        // naming only the first ("another current is played") matches only
+        // `CardPlayed`; one naming both ("plays or installs a copy of that
+        // card") matches either, through the same stipulations.
         (
-            TriggerCond::CardPlayed { by, of_types, of_subtypes, other_than_source },
-            GameChange::CardPlayed { obj, side },
+            TriggerCond::CardPlayed {
+                by,
+                of_types,
+                of_subtypes,
+                other_than_source,
+                also_installed,
+                matching_choice,
+            },
+            GameChange::CardPlayed { obj, side } | GameChange::CardInstalled { obj, side, .. },
         ) => {
             cite!("rule_play_ability");
+            if matches!(change, GameChange::CardInstalled { .. }) && !*also_installed {
+                return false;
+            }
+            if matches!(change, GameChange::CardInstalled { .. }) {
+                cite!("rule_installing");
+            }
             by.is_none_or(|b| b == *side)
                 && (of_types.is_empty()
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
                 && of_subtypes.iter().all(|s| has_subtype(*obj, s))
                 && (!*other_than_source || *obj != source.id)
+                // 9.10.3 / 2.1.4: "a copy of that card" — the card that was
+                // played or installed is compared against what the source is
+                // remembering.
+                && matching_choice.is_none_or(|k| matches_choice(*obj, k))
         }
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)

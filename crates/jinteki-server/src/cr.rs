@@ -1266,6 +1266,46 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, server_label(*s), DecisionAnswer::AttackedServer(*s));
             }
         }
+        // CR 1.15.1b: naming a card or a number. The kernel offers no
+        // candidate list — the namespace is open, and the only list it could
+        // build from its own state is the union of both decks, which §10.2
+        // does not entitle the naming player to see. Resolving a player's
+        // input to a real printed card is the DRIVER's job, so the list comes
+        // from the card layer's own registry of printed titles.
+        DecisionSpec::NameValue { of, excluding } => match of {
+            jinteki_cr::instr::NameSpace::CardName => {
+                p.msg = match excluding {
+                    Some(jinteki_cr::instr::NameExclusion::SourceName) => {
+                        "Name a card other than this one (1.15.1b).".into()
+                    }
+                    None => "Name a card (1.15.1b).".into(),
+                };
+                let mut names: Vec<&'static str> =
+                    jinteki_cards::all_cards().iter().map(|c| c.name()).collect();
+                names.sort_unstable();
+                names.dedup();
+                for n in names {
+                    push(
+                        &mut p,
+                        n.to_string(),
+                        DecisionAnswer::NamedValue(jinteki_cr::instr::NamedValue::CardName(n)),
+                    );
+                }
+            }
+            // 1.1.3: numbers in this game are integers. The prompt offers the
+            // span a printed rez cost, play cost or advancement requirement
+            // can actually take; the kernel accepts any integer.
+            jinteki_cr::instr::NameSpace::Number => {
+                p.msg = "Name a number (1.15.1b).".into();
+                for n in 0..=12i64 {
+                    push(
+                        &mut p,
+                        n.to_string(),
+                        DecisionAnswer::NamedValue(jinteki_cr::instr::NamedValue::Number(n)),
+                    );
+                }
+            }
+        },
         DecisionSpec::ChooseSubroutines { candidates, count, up_to } => {
             p.msg = format!(
                 "Announce {}{count} subroutine{} (1.15.1).",

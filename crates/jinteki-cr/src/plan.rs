@@ -100,6 +100,8 @@ pub enum Kind {
     CounterTargets,
     /// 8.5.16b: declaring the install destination.
     Destination,
+    /// 1.15.1b: naming a card or a number.
+    NameValue,
 }
 
 impl Kind {
@@ -135,6 +137,7 @@ impl Kind {
             DecisionSpec::LoopCount { .. } => Kind::LoopCount,
             DecisionSpec::ChooseCounters { .. } => Kind::CounterTargets,
             DecisionSpec::DeclareInstallDestination { .. } => Kind::Destination,
+            DecisionSpec::NameValue { .. } => Kind::NameValue,
         }
     }
 }
@@ -626,6 +629,11 @@ pub enum Reply {
     Destination(crate::instr::InstallDest),
     /// 6.9.1a: announce this attacked server.
     Server(ServerId),
+    /// 1.15.1b: name this card (2.1.1). The title is a `&'static str` because
+    /// that is what a printed card's name IS here — a plan names cards it has.
+    Name(&'static str),
+    /// 1.15.1b: name this number (1.1.3).
+    Number(i64),
     /// 8.3.1: put the arranged cards back in this order, topmost first.
     Arrange(Vec<ObjectId>),
     /// 10.1.6a: the loop resolves this many more times, then ends.
@@ -1137,6 +1145,8 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
         Reply::Destination(d) => DecisionAnswer::InstallDestination(*d),
         Reply::Server(s) => DecisionAnswer::AttackedServer(*s),
+        Reply::Name(n) => DecisionAnswer::NamedValue(crate::instr::NamedValue::CardName(n)),
+        Reply::Number(n) => DecisionAnswer::NamedValue(crate::instr::NamedValue::Number(*n)),
         Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
         Reply::Counters(v) => DecisionAnswer::Counters(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
@@ -1173,6 +1183,14 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         DecisionSpec::DeclareAttackedServer { options } => DecisionAnswer::AttackedServer(
             options.first().copied().expect("a server was offered"),
         ),
+        // 1.15.1b: naming has no decline, so the neutral policy names the
+        // value that does the least: the empty title, which 2.1.1 gives no
+        // printed card, and 1.1.3's zero. Both are legal answers that match
+        // nothing, which is this policy's meaning of "pass".
+        DecisionSpec::NameValue { of, .. } => DecisionAnswer::NamedValue(match of {
+            crate::instr::NameSpace::CardName => crate::instr::NamedValue::CardName(""),
+            crate::instr::NameSpace::Number => crate::instr::NamedValue::Number(0),
+        }),
         DecisionSpec::ReactionWindow { options, can_pass } => {
             cite!("rule_reaction_window_priority");
             if *can_pass {

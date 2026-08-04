@@ -1120,6 +1120,8 @@ pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
         of_types: vec![of],
         of_subtypes: Vec::new(),
         other_than_source: false,
+        also_installed: false,
+        matching_choice: None,
     }
 }
 /// "…you play a **run** event" (Ken Tenma class) — the same trigger with the
@@ -1131,6 +1133,8 @@ pub fn plays_a_subtyped(by: Side, of: CardType, subtype: &'static str) -> Trigge
         of_types: vec![of],
         of_subtypes: vec![subtype],
         other_than_source: false,
+        also_installed: false,
+        matching_choice: None,
     }
 }
 /// "…if you played an operation this turn" (Nebula class; history 1.12.6).
@@ -1439,6 +1443,8 @@ pub fn another_current_is_played() -> TriggerCond {
         of_types: vec![CardType::Operation, CardType::Event],
         of_subtypes: vec!["Current"],
         other_than_source: true,
+        also_installed: false,
+        matching_choice: None,
     }
 }
 /// "The <side>'s identity loses its printed abilities." (Employee Strike
@@ -1515,4 +1521,225 @@ pub fn per_credit_lost_by(side: Side) -> Quantity {
 /// say anything with it.
 pub fn cards_you_would_draw() -> Quantity {
     Quantity::ImminentValueOf(EffectClass::Draw)
+}
+
+// ---- naming (1.15.1b) ------------------------------------------------------
+//
+// "Name a card", "name a card type", "name **sentry**, **code gate** or
+// **barrier**", "name a number". CR 1.15.1b lists them all in one breath and
+// says the same thing about all of them: naming is NOT a target announcement,
+// so the value is not chosen until the instruction resolves. Each call below
+// is one printed "name …" sentence; the value is then remembered under a
+// `key` you pick, and the LATER sentences of the same card refer back to it
+// with [`the_named_card`] / [`named_by`].
+//
+// A key is just a word for "what this card is remembering" — write the
+// card's own words for it ("marketing target", "salem's name").
+
+/// "Name a card." (Ark Lockdown, Salem's Hospitality, Targeted Marketing —
+/// 2.1.1: a card's identifier is its name.) The name is remembered under
+/// `key` for as long as this card is active (9.10.3c).
+pub fn name_a_card(key: &'static str) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::Named {
+            of: jinteki_cr::instr::NameSpace::CardName,
+            excluding: None,
+        },
+        duration: WantedDuration::WhileSourceActive,
+    }
+}
+/// "Name a card other than <this card>." (Reclamation Order — 10.1.5 reads a
+/// card's own name as "this object", so the exclusion needs no name.)
+pub fn name_a_card_other_than_this_one(key: &'static str) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::Named {
+            of: jinteki_cr::instr::NameSpace::CardName,
+            excluding: Some(jinteki_cr::instr::NameExclusion::SourceName),
+        },
+        duration: WantedDuration::WhileSourceActive,
+    }
+}
+/// "…choose a card name." with a stated duration — Whistleblower's choice
+/// lasts the run and no longer, and its card is trashed to make it, so
+/// 9.10.3c's "until the source becomes inactive" would be no duration at all.
+pub fn name_a_card_for(key: &'static str, duration: WantedDuration) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::Named {
+            of: jinteki_cr::instr::NameSpace::CardName,
+            excluding: None,
+        },
+        duration,
+    }
+}
+/// "Name a number." (RNG Key — 1.1.3: numbers in this game are integers.)
+pub fn name_a_number(key: &'static str, duration: WantedDuration) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::Named {
+            of: jinteki_cr::instr::NameSpace::Number,
+            excluding: None,
+        },
+        duration,
+    }
+}
+
+/// "Name a card type." (Azmari EdTech, Falsified Credentials, Ibrahim
+/// Salem.) A card has exactly one type and 2.15.2 lists all ten of them, so
+/// this is 9.11.4g's choice between options — one branch per type, each
+/// remembering its own — and not an open namespace at all.
+pub fn name_a_card_type(key: &'static str) -> Instruction {
+    name_one_of_these_card_types(key, ALL_CARD_TYPES)
+}
+/// "Name **asset**, **ice**, **operation** or **upgrade**." (Embezzle.) The
+/// same sentence with the types the card lists.
+pub fn name_one_of_these_card_types(key: &'static str, types: &[CardType]) -> Instruction {
+    Instruction::ChooseOne {
+        options: types
+            .iter()
+            .map(|t| (card_type_word(*t), vec![name_the_card_type(key, *t)]))
+            .collect(),
+    }
+}
+/// "Name **sentry**, **code gate** or **barrier**." (Wari.) One branch per
+/// printed subtype, exactly as the card writes them.
+pub fn name_one_of_these_subtypes(key: &'static str, subtypes: &[&'static str]) -> Instruction {
+    Instruction::ChooseOne {
+        options: subtypes
+            .iter()
+            .map(|s| (*s, vec![name_the_subtype(key, s)]))
+            .collect(),
+    }
+}
+/// One branch of a "name a card type" choice: remember exactly this type.
+pub fn name_the_card_type(key: &'static str, t: CardType) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::CardType(t),
+        duration: WantedDuration::WhileSourceActive,
+    }
+}
+/// One branch of a "name a subtype" choice: remember exactly this subtype.
+pub fn name_the_subtype(key: &'static str, s: &'static str) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::Subtype(s),
+        duration: WantedDuration::WhileSourceActive,
+    }
+}
+/// The same, with a stated duration — for a card that is trashed to make the
+/// choice (Wari), so that 9.10.3c would otherwise leave nothing remembered.
+pub fn name_one_of_these_subtypes_for(
+    key: &'static str,
+    subtypes: &[&'static str],
+    duration: WantedDuration,
+) -> Instruction {
+    Instruction::ChooseOne {
+        options: subtypes
+            .iter()
+            .map(|s| {
+                (
+                    *s,
+                    vec![Instruction::MaintainChoice {
+                        key,
+                        of: jinteki_cr::instr::ChoiceSpec::Subtype(s),
+                        duration,
+                    }],
+                )
+            })
+            .collect(),
+    }
+}
+
+/// CR 2.15.2: the ten card types, in the order the rule lists them.
+pub const ALL_CARD_TYPES: &[CardType] = &[
+    CardType::Identity,
+    CardType::Agenda,
+    CardType::Asset,
+    CardType::Ice,
+    CardType::Operation,
+    CardType::Upgrade,
+    CardType::Event,
+    CardType::Hardware,
+    CardType::Program,
+    CardType::Resource,
+];
+
+/// The printed word for a card type, for the option label of a "name a card
+/// type" choice.
+fn card_type_word(t: CardType) -> &'static str {
+    match t {
+        CardType::Identity => "identity",
+        CardType::Agenda => "agenda",
+        CardType::Asset => "asset",
+        CardType::Ice => "ice",
+        CardType::Operation => "operation",
+        CardType::Upgrade => "upgrade",
+        CardType::Event => "event",
+        CardType::Hardware => "hardware",
+        CardType::Program => "program",
+        CardType::Resource => "resource",
+    }
+}
+
+/// "…a copy of **that card**" (2.1.4), "…all cards with **the chosen name**",
+/// "…1 card of **the named type**", "…if it has **the named subtype**" — a
+/// description of whatever this card named under `key`. Which characteristic
+/// is compared is decided by what was named, so one word says all four.
+pub fn named_by(key: &'static str) -> TargetFilter {
+    TargetFilter::MatchesMaintainedChoice(key)
+}
+/// "…all copies of that card in the heap", "…any number of copies of the
+/// named card from Archives" — every card in that discard pile matching what
+/// was named. "All" is written as a count equal to how many there are, which
+/// is 1.15.2e's "as many distinct targets as are available".
+pub fn all_named_cards_in_discard_of(side: Side, key: &'static str) -> TargetSpec {
+    let criteria = vec![TargetFilter::InDiscardOf(side), named_by(key)];
+    TargetSpec::Choose {
+        count: Quantity::Count(named_by(key)),
+        criteria,
+        up_to: false,
+    }
+}
+/// "…the Runner reveals the grip and trashes all cards with the chosen name"
+/// — every card in that hand matching what was named.
+pub fn all_named_cards_in_hand_of(side: Side, key: &'static str) -> TargetSpec {
+    TargetSpec::Choose {
+        count: Quantity::Count(named_by(key)),
+        criteria: vec![TargetFilter::CardsInHandOf(side), named_by(key)],
+        up_to: false,
+    }
+}
+/// "…if **the exposed card** has the named card type" (Falsified Credentials),
+/// "…add it to HQ **if it** has the named subtype" (Wari) — a question about
+/// a card this ability already chose. `nth` counts this ability's choices from
+/// 0, so the first card it chose is `0`.
+pub fn earlier_choice_matches(nth: usize, criteria: &[TargetFilter]) -> TriggerRequirement {
+    TriggerRequirement::EarlierTargetMatches { nth, criteria: criteria.to_vec() }
+}
+/// "…it", "…that card" — a card this ability already chose (1.15.4), acted on
+/// again without choosing it a second time.
+pub fn earlier_choice(nth: usize) -> TargetSpec {
+    TargetSpec::EarlierTarget { nth }
+}
+/// "Expose <a card>." (1.21.4 — revealing an installed, unrezzed card.)
+pub fn expose(cards: TargetSpec) -> Instruction {
+    Instruction::ExposeCards { cards }
+}
+/// "…whenever the Runner plays or installs a copy of that card" (Targeted
+/// Marketing), "…the Runner plays or installs a card that has the type you
+/// last named this way" (Azmari EdTech). ONE trigger condition: the sentence
+/// is one, and its "first time each turn" has to be spent by whichever of the
+/// two happens first.
+pub fn plays_or_installs_named_by(by: Side, key: &'static str) -> TriggerCond {
+    TriggerCond::CardPlayed {
+        by: Some(by),
+        of_types: Vec::new(),
+        of_subtypes: Vec::new(),
+        other_than_source: false,
+        also_installed: true,
+        matching_choice: Some(key),
+    }
 }

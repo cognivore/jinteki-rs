@@ -1628,6 +1628,8 @@ pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
                 of_types: vec![CardType::Operation, CardType::Event],
                 of_subtypes: vec!["Current"],
                 other_than_source: true,
+                also_installed: false,
+                matching_choice: None,
             },
             TriggerCond::RunnerStealsAgenda,
         ],

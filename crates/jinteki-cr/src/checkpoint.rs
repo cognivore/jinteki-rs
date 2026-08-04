@@ -267,6 +267,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         is_corp,
                         |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
                         |o, s| vm.has_subtype(o, s),
+                        |o, k| vm.object_matches_maintained_choice(o, obj_id, k),
                     ) && !persisted_server_override(vm, from_lingering, cond, c)
                     {
                         continue;
@@ -609,6 +610,7 @@ fn step_b_durations(vm: &mut Vm) {
                     |o| vm.st.objects.get(&o).is_some_and(|x| is_corp_card(x.printed.card_type)),
                     |o| vm.st.objects.get(&o).map(|x| x.printed.card_type),
                     |o, s| vm.has_subtype(o, s),
+                    |o, k| vm.object_matches_maintained_choice(o, card, k),
                 )
             })
         });

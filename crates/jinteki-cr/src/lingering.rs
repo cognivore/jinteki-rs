@@ -167,12 +167,20 @@ pub enum ReplacementTransform {
     SuppressAccessAndTrashOther(ObjectId),
 }
 
+/// CR 9.10.3: the value a maintained choice remembers. One variant per entry
+/// of CR 1.15.1b's list of things an instruction can direct a player to
+/// choose or name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChoiceValue {
     Server(ServerId),
     Object(ObjectId),
     /// CR 2.16: a chosen subtype (Pelangi class).
     Subtype(&'static str),
+    /// CR 2.15.2: a chosen card type (Azmari EdTech class).
+    CardType(crate::object::CardType),
+    /// CR 1.15.1b: a value NAMED from an open namespace — a card name (2.1.1)
+    /// or a number (1.1.3).
+    Named(crate::instr::NamedValue),
 }
 
 /// One lingering effect record (9.10.1): exists independently of its source.

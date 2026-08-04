@@ -224,6 +224,15 @@ pub enum DecisionCtx {
     /// not targets (`rule_searching_does_not_target`). Carries the searched
     /// zone so the 8.7.3 shuffle happens on the answer.
     SearchFind { zone: Zone },
+    /// CR 1.15.1b / 9.10.3: the naming player says a card name or a number,
+    /// and the source starts maintaining it. Asked at the instruction's
+    /// resolution, never as an announcement.
+    MaintainNamedChoice {
+        key: &'static str,
+        duration: crate::lingering::WantedDuration,
+        source: ObjectId,
+        excluding: Option<crate::instr::NameExclusion>,
+    },
 }
 
 /// CR 8.5.16: one installation in progress. Installing is a procedure, not
@@ -1924,6 +1933,85 @@ impl Vm {
             }
             _ => None,
         })
+    }
+
+    /// CR 9.10.3: remember `choice` for `source` under `key`, for `duration`.
+    ///
+    /// A source maintains ONE choice per key: a new one replaces the old,
+    /// which is 9.10.3b's "always look for the server chosen this turn" and
+    /// Azmari EdTech's "the type you **last** named this way". 9.10.4 binds
+    /// the duration to the structure in progress.
+    fn maintain_choice(
+        &mut self,
+        source: ObjectId,
+        key: &'static str,
+        choice: crate::lingering::ChoiceValue,
+        duration: crate::lingering::WantedDuration,
+    ) {
+        cite!("rule_lingering_effect_maintain_choice");
+        let dur = crate::lingering::bind_duration(
+            duration,
+            self.st.encounter.as_ref().map(|e| e.id),
+            self.current_run.map(|(r, _, _)| r),
+            self.st.turn_seq,
+        );
+        self.lingering.retain(|l| {
+            !matches!(&l.payload, Payload::MaintainedChoice { key: k, .. }
+                if *k == key && l.source == source)
+        });
+        let id = self.next_lingering;
+        self.next_lingering += 1;
+        self.lingering.push(LingeringEffect::new(
+            id,
+            source,
+            Payload::MaintainedChoice { key, choice },
+            dur,
+        ));
+    }
+
+    /// CR 9.10.3: does `obj` match the value `source` is maintaining under
+    /// `key`?
+    ///
+    /// The maintained value says WHICH characteristic the comparison is about
+    /// — that is the whole content of "a copy of that card" (2.1.4, a name),
+    /// "of the named type" (2.15.2), "has the named subtype" (2.16) — so one
+    /// question answers every card that matches against something it named.
+    /// A maintained server, object or number describes no card and matches
+    /// nothing; so does a key nothing is being maintained under.
+    ///
+    /// The subtype comparison goes through [`Vm::has_subtype`], so a subtype
+    /// an active effect granted counts (9.12.1b), while the name and the type
+    /// are read off the printed card — 2.15.3 keeps an inactive card's type,
+    /// and a name is never modified.
+    pub fn object_matches_maintained_choice(
+        &self,
+        obj: ObjectId,
+        source: ObjectId,
+        key: &str,
+    ) -> bool {
+        cite!("rule_lingering_effect_maintain_choice");
+        let Some(choice) = self.maintained_choice(source, key) else { return false };
+        let Some(o) = self.st.objects.get(&obj) else { return false };
+        match choice {
+            crate::lingering::ChoiceValue::Named(crate::instr::NamedValue::CardName(n)) => {
+                cite!("rule_copies_of");
+                cite!("rule_card_name_definition");
+                o.printed.name == n
+            }
+            crate::lingering::ChoiceValue::CardType(t) => {
+                cite!("rule_card_type_list");
+                cite!("rule_card_type_while_inactive");
+                o.printed.card_type == t
+            }
+            crate::lingering::ChoiceValue::Subtype(s) => {
+                cite!("rule_subtypes");
+                self.has_subtype(obj, s)
+            }
+            // A server, an object or a number is not a description of a card.
+            crate::lingering::ChoiceValue::Server(_)
+            | crate::lingering::ChoiceValue::Object(_)
+            | crate::lingering::ChoiceValue::Named(crate::instr::NamedValue::Number(_)) => false,
+        }
     }
 
     // ------------------------------------------------------------------
@@ -6002,6 +6090,13 @@ impl Vm {
     /// the zone separately.
     pub fn filter_matches(&self, o: &Object, f: TargetFilter, source: Option<ObjectId>) -> bool {
         match f {
+            // 9.10.3: "a copy of that card", "all cards with the chosen name",
+            // "1 card of the named type", "if it has the named subtype" — the
+            // card is compared against the value the ability's SOURCE is
+            // maintaining, and the value says which characteristic to compare.
+            TargetFilter::MatchesMaintainedChoice(key) => {
+                source.is_some_and(|src| self.object_matches_maintained_choice(o.id, src, key))
+            }
             TargetFilter::IceProtectingAttackedServer => {
                 matches!((o.zone, self.current_run), (Zone::Ice(a), Some((_, b, _))) if a == b)
             }
@@ -6856,6 +6951,23 @@ impl Vm {
             R::BoardHasMatching { criteria, at_least } => {
                 cite!("rule_targets_must_be_in_play_area");
                 self.candidates_matching(criteria, source).len() >= *at_least as usize
+            }
+            // 1.15.4: "…if THE EXPOSED CARD has the named card type" — a
+            // question about a target this ability already announced, asked
+            // through the same criteria vocabulary. 1.15.3: an announcement
+            // that never happened is nothing to ask about, so the requirement
+            // is simply not met.
+            R::EarlierTargetMatches { nth, criteria } => {
+                cite!("rule_target_beyond_move");
+                cite!("rule_targets_gone");
+                let target = self.frames.iter().rev().find_map(|f| match f {
+                    Frame::Ability(af) => Some(af.ability_targets.get(*nth).copied()),
+                    _ => None,
+                });
+                match target.flatten().and_then(|t| self.st.objects.get(&t)) {
+                    Some(o) => criteria.iter().all(|c| self.filter_matches(o, *c, source)),
+                    None => false,
+                }
             }
             // "…during their last turn": the most recently COMPLETED Runner
             // turn in the change log. During the Runner's own turn that is the
@@ -8173,34 +8285,35 @@ impl Vm {
                     crate::instr::ChoiceSpec::Subtype(t) => {
                         Some(crate::lingering::ChoiceValue::Subtype(t))
                     }
+                    crate::instr::ChoiceSpec::CardType(t) => {
+                        cite!("rule_card_type_list");
+                        Some(crate::lingering::ChoiceValue::CardType(*t))
+                    }
                     crate::instr::ChoiceSpec::Object(spec) => self
                         .resolve_targets(spec, Some(source.obj), &imm.targets)
                         .first()
                         .copied()
                         .map(crate::lingering::ChoiceValue::Object),
+                    // 1.15.1b: naming a card or a number is NOT a target
+                    // announcement — "that choice is not made until the
+                    // instruction resolves", which is here.
+                    crate::instr::ChoiceSpec::Named { of, excluding } => {
+                        cite!("rule_object_subroutine_targets");
+                        self.ask(
+                            controller,
+                            DecisionSpec::NameValue { of: *of, excluding: *excluding },
+                            DecisionCtx::MaintainNamedChoice {
+                                key,
+                                duration: *duration,
+                                source: source.obj,
+                                excluding: *excluding,
+                            },
+                        );
+                        return;
+                    }
                 };
                 let Some(choice) = value else { return };
-                let dur = crate::lingering::bind_duration(
-                    *duration,
-                    self.st.encounter.as_ref().map(|e| e.id),
-                    self.current_run.map(|(r, _, _)| r),
-                    self.st.turn_seq,
-                );
-                // A source maintains ONE choice per key: a new one replaces
-                // the old (9.10.3b's "always look for the server chosen this
-                // turn").
-                self.lingering.retain(|l| {
-                    !matches!(&l.payload, Payload::MaintainedChoice { key: k, .. }
-                        if *k == *key && l.source == source.obj)
-                });
-                let id = self.next_lingering;
-                self.next_lingering += 1;
-                self.lingering.push(LingeringEffect::new(
-                    id,
-                    source.obj,
-                    Payload::MaintainedChoice { key, choice },
-                    dur,
-                ));
+                self.maintain_choice(source.obj, key, choice, *duration);
             }
             Instruction::MustTrashAccessedCard { means } => {
                 // 9.12.3a/b: a requirement, not an effect — it is recorded
@@ -12540,6 +12653,36 @@ impl Vm {
                 // 10.1.6a: the loop resolves that many more times, and ends.
                 cite!("rule_mandatory_infinite_loop");
                 self.loop_budget = Some(n);
+            }
+            (
+                DecisionCtx::MaintainNamedChoice { key, duration, source, excluding },
+                DecisionAnswer::NamedValue(v),
+            ) => {
+                // 1.15.1b: the naming happened when the instruction resolved.
+                // 10.1.5: "name a card other than <this card>" excludes the
+                // source's own name, and an answer that says it is not a legal
+                // answer — the instruction then names nothing, which 1.15.3
+                // resolves as much of as possible (nothing).
+                cite!("rule_object_subroutine_targets");
+                let excluded = match (excluding, v) {
+                    (
+                        Some(crate::instr::NameExclusion::SourceName),
+                        crate::instr::NamedValue::CardName(n),
+                    ) => {
+                        cite!("sec_old_self_reference_rules");
+                        cite!("rule_self_reference");
+                        self.st.objects.get(&source).is_some_and(|o| o.printed.name == n)
+                    }
+                    _ => false,
+                };
+                if !excluded {
+                    self.maintain_choice(
+                        source,
+                        key,
+                        crate::lingering::ChoiceValue::Named(v),
+                        duration,
+                    );
+                }
             }
             (DecisionCtx::Arrange { to_top_of }, DecisionAnswer::Arrangement(order)) => {
                 // 8.3.3: the declared order is applied to the cards this
