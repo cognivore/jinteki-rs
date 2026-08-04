@@ -396,6 +396,9 @@ struct Pending {
     focus: Option<Focus>,
     /// Action-window affordances (the chips and hand glow).
     actions: Vec<Value>,
+    /// CR 8.3.3: the cards this decision arranges, in their current order.
+    /// The client renders them as draggable cards and answers with an order.
+    arrange: Option<Vec<ObjectId>>,
 }
 
 struct Select {
@@ -1103,6 +1106,23 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
         return Ok(answer_now(g, answer));
     }
 
+    // CR 8.3.3: the arranged order, answered wholesale. The client sends the
+    // cids in the order it wants them, topmost first; anything missing or
+    // foreign is rejected rather than silently reordered.
+    if cmd == "arrange" {
+        let want = p.arrange.clone().ok_or("nothing to arrange right now")?;
+        let got: Vec<ObjectId> = args["order"]
+            .as_array()
+            .ok_or("missing order")?
+            .iter()
+            .filter_map(|v| v.as_u64().map(|c| ObjectId(c as u32)))
+            .collect();
+        if got.len() != want.len() || !want.iter().all(|c| got.contains(c)) {
+            return Err("that is not an arrangement of these cards".into());
+        }
+        return Ok(answer_now(g, DecisionAnswer::Arrangement(got)));
+    }
+
     // 2. A card tap in select mode.
     if cmd == "select" {
         let id = cid().ok_or("missing card")?;
@@ -1200,6 +1220,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
         choices: Vec::new(),
         select: None,
         focus: None,
+        arrange: None,
         actions: Vec::new(),
     };
     let push = |p: &mut Pending, label: String, a: DecisionAnswer| {
@@ -1595,12 +1616,22 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             );
             push(&mut p, "Continue".into(), default_answer(spec));
         }
+        // CR 8.3.3: the player "secretly puts them in the order of their
+        // choice, and returns them to the top of that deck". The order is a
+        // DECLARATION, not a target announcement — nothing is chosen to be
+        // acted on — so it is answered wholesale by the arranged list rather
+        // than card by card.
         DecisionSpec::ArrangeCards { cards } => {
             p.msg = format!(
-                "Arrange {} card(s) — not yet expressible here; the engine's default (unchanged order) applies. (8.3.1)",
+                "Arrange {} card(s) — first is topmost. Drag to reorder (8.3.3).",
                 cards.len()
             );
-            push(&mut p, "Continue".into(), default_answer(spec));
+            p.arrange = Some(cards.clone());
+            // 8.3.1a: arranging 1 or fewer cards does nothing, so there is
+            // nothing to drag and the only sensible offer is to go on.
+            if cards.len() <= 1 {
+                push(&mut p, "Continue".into(), default_answer(spec));
+            }
         }
     }
     p
@@ -1950,6 +1981,14 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
         }).collect::<Vec<_>>(),
         "select": p.select.is_some(),
     });
+    // CR 8.3.3: the cards being arranged, in their current order, as CARDS —
+    // the player is choosing an order and cannot do that from titles alone.
+    if let (Some(ids), Some(m)) = (p.arrange.as_ref(), obj.as_object_mut()) {
+        m.insert(
+            "arrange".into(),
+            Value::Array(ids.iter().map(|c| card_json(&g.vm, view, *c, true)).collect()),
+        );
+    }
     if let (Some(f), Some(m)) = (p.focus.as_ref(), obj.as_object_mut()) {
         m.insert("card".into(), card_json(&g.vm, view, f.card, true));
         m.insert("focus".into(), json!(f.kind));

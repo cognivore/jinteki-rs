@@ -227,6 +227,28 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   background: var(--bg2); border-color: var(--gold); }
 .prompt-sheet.waiting { border-color: var(--line); opacity: .8; }
 
+/* CR 8.3.3 arrangement: drag the cards into an order. Leftmost is topmost,
+   and the ordinal is on the card so the answer is readable at a glance
+   rather than inferred from position. */
+.arrangerow { display: flex; gap: 10px; justify-content: center; flex-wrap: nowrap;
+  overflow-x: auto; padding: 6px 2px; touch-action: pan-y;
+  -webkit-overflow-scrolling: touch; max-width: min(88vw, 900px); }
+.arrangepick { flex: 0 0 auto; position: relative; cursor: grab; user-select: none;
+  transition: transform .1s ease; }
+.arrangepick.dragging { cursor: grabbing; transform: translateY(-8px) scale(1.05);
+  z-index: 5; filter: drop-shadow(0 6px 14px rgba(0,0,0,.6)); }
+.arrangeidx { position: absolute; top: -6px; left: -6px; z-index: 2;
+  background: var(--gold); color: #1a1200; font-weight: 700; font-size: 12px;
+  min-width: 20px; height: 20px; line-height: 20px; text-align: center;
+  border-radius: 10px; }
+@media (max-width: 560px) {
+  .arrangerow { gap: 6px; max-width: 94vw; }
+  .arrangepick .card { transform: scale(.82); transform-origin: center bottom; }
+}
+/* A pile row is a card in compact clothing — it previews like one (§5). */
+.pilerow { cursor: pointer; }
+.pilerow:hover { background: rgba(255,255,255,.06); }
+
 /* A prompt whose choices are cards shows the cards (UX.md THE LAW §1).
    Laid out, not fanned: a fan reads as "held in your hand", and these are a
    set being offered to you. Scrolls sideways rather than reflowing the sheet,

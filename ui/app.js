@@ -1040,6 +1040,7 @@ function renderPrompt() {
   // UX.md THE LAW §1: a decision about cards renders as CARDS. Two copies of
   // Bloo Moose are two buttons reading "Bloo Moose" and no way to tell them
   // apart; as cards they are simply two cards.
+  if (p.arrange && p.arrange.length > 1) { renderArrangePrompt(sheet, p); return; }
   if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
   const selectHint = isSelectMode() ? `<div class="pmsg" style="color:var(--gold)">Tap a highlighted card</div>` : "";
   sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>${selectHint}<div class="pbtns"></div>`;
@@ -1052,6 +1053,90 @@ function renderPrompt() {
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
+}
+
+/* CR 8.3.3: put these cards in an order. The order IS the answer, so the
+   cards are draggable and the answer is sent when the player is done.
+
+   Pointer events, so one implementation serves mouse and touch alike. Drag
+   reorders by midpoint: whichever gap the pointer is nearest is where the
+   held card goes, which is the behaviour every card game has trained players
+   to expect. Long-press preview still works — the drag only begins once the
+   pointer has actually moved, so a press that stays put is still a read. */
+let arrangeOrder = null;   // cids, topmost first
+let arrangeKey = null;
+
+function renderArrangePrompt(sheet, p) {
+  const cards = p.arrange || [];
+  const key = cards.map((c) => c.cid).join(",");
+  if (arrangeKey !== key) { arrangeKey = key; arrangeOrder = cards.map((c) => c.cid); }
+  const byCid = new Map(cards.map((c) => [c.cid, c]));
+
+  sheet.innerHTML = `<div class="pmsg">${sym(p.msg || "")}</div>
+    <div class="arrangerow"></div>
+    <div class="picker-hint">Leftmost is the top of the deck.</div>
+    <div class="pbtns"></div>`;
+  const row = sheet.querySelector(".arrangerow");
+  const btns = sheet.querySelector(".pbtns");
+
+  const paint = () => {
+    row.innerHTML = "";
+    arrangeOrder.forEach((cid, i) => {
+      const c = byCid.get(cid);
+      if (!c) return;
+      const wrap = el("div", "arrangepick");
+      wrap.dataset.cid = String(cid);
+      wrap.appendChild(el("div", "arrangeidx", String(i + 1)));
+      wrap.appendChild(cardEl(c, { side: mySide }));
+      makeDraggable(wrap, cid, paint);
+      row.appendChild(wrap);
+    });
+  };
+  paint();
+
+  const done = el("button", "chip go", "Put them back");
+  done.onclick = () => {
+    const order = arrangeOrder.slice();
+    arrangeKey = null; arrangeOrder = null;
+    act("arrange", { order });
+  };
+  btns.appendChild(done);
+}
+
+/* Reorder by dragging. The card follows the pointer; the slot it would take
+   is decided by which card centre the pointer has passed. */
+function makeDraggable(wrap, cid, repaint) {
+  let dragging = false, startX = 0;
+  wrap.addEventListener("pointerdown", (e) => {
+    startX = e.clientX; dragging = false;
+    wrap.setPointerCapture(e.pointerId);
+  });
+  wrap.addEventListener("pointermove", (e) => {
+    if (!wrap.hasPointerCapture || !wrap.hasPointerCapture(e.pointerId)) return;
+    // A press that has not moved is a READ, not a drag — long-press preview
+    // must still work, so the drag only starts past a real threshold.
+    if (!dragging && Math.abs(e.clientX - startX) < 8) return;
+    dragging = true;
+    wrap.classList.add("dragging");
+    const row = wrap.parentElement;
+    if (!row) return;
+    const sibs = [...row.children].filter((n) => n !== wrap);
+    const from = arrangeOrder.indexOf(cid);
+    let to = from;
+    sibs.forEach((n) => {
+      const r = n.getBoundingClientRect();
+      const mid = r.left + r.width / 2;
+      const j = arrangeOrder.indexOf(+n.dataset.cid);
+      if (e.clientX > mid && j > from) to = Math.max(to, j);
+      if (e.clientX < mid && j < from) to = Math.min(to, j);
+    });
+    if (to !== from) {
+      arrangeOrder.splice(to, 0, arrangeOrder.splice(from, 1)[0]);
+      repaint();
+    }
+  });
+  ["pointerup", "pointercancel"].forEach((ev) =>
+    wrap.addEventListener(ev, () => { dragging = false; wrap.classList.remove("dragging"); }));
 }
 
 /* A prompt whose choices ARE cards, drawn as cards (UX.md THE LAW).
@@ -1431,6 +1516,18 @@ function zoomPile(cards, title) {
     </div>`).join("");
   o.innerHTML = `<div class="zoom-card pile"><h3>${title}</h3>
     ${rows || "<div class='zline'>none yet</div>"}</div>`;
+  // UX.md THE LAW §5: every display mode previews. A pile row is a card in
+  // compact clothing, so it gets hover preview on a pointer device and
+  // long-press on touch, exactly like the card it stands for.
+  o.querySelectorAll(".pilerow").forEach((row) => {
+    const c = cards[+row.dataset.i];
+    if (!c || !c.title) return;
+    attachZoom(row, c);
+    if (hoverCapable) {
+      row.addEventListener("pointerenter", () => showHoverPreview(c));
+      row.addEventListener("pointerleave", hideHoverPreview);
+    }
+  });
   // Tap a row to read that card; tap anywhere else to close.
   o.onclick = (e) => {
     const row = e.target.closest(".pilerow");
