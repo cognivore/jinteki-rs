@@ -15,6 +15,68 @@
 
 use crate::edsl::*;
 
+/// DJ Fenris — Resource: Connection. Install 3. ◆
+/// "Host a g-mod identity that does not match the faction of your identity on
+///  DJ Fenris when he is installed. Remove hosted identity from the game if
+///  DJ Fenris is uninstalled.
+///  DJ Fenris gains the text of hosted identity.
+///  Limit 1 per deck."
+///
+/// The first half of the first sentence is expressed: "a g-mod identity that
+/// does not match the faction of your identity" is CR 1.5.4a's pile (1.5.4b
+/// makes that what naming an identity means), a subtype and a faction — three
+/// ordinary criteria, none of which this card had to invent — and 1.13.2a's
+/// host-without-installing is what "host … on DJ Fenris" does.
+///
+/// UNIMPLEMENTED: the other two sentences.
+///
+/// "Remove hosted identity from the game if DJ Fenris is uninstalled" is a
+/// destination override, and nothing can state it yet. 1.13.13 trashes a
+/// host's hosted objects "during the next checkpoint", by which time DJ
+/// Fenris is inactive, so neither a static declaration nor a conditional
+/// ability of his can still reach the identity. Left unstated, the identity
+/// goes where 1.5.4b sends any identity leaving the play area — back to the
+/// pile — which is a rule and not an approximation of this sentence.
+///
+/// "DJ Fenris gains the text of hosted identity" is 9.1.9's other direction.
+/// `Effective::ability_present` is a presence MASK over `printed.abilities`,
+/// so an ability can be taken away but not added, and `AbilityRef` indexes
+/// that same list — gaining abilities needs both to grow. Stating it wrongly
+/// would be a card that quietly does nothing while claiming to.
+///
+/// ("Limit 1 per deck" is a deckbuilding restriction, not a sentence a card
+/// does.)
+pub fn dj_fenris() -> Card {
+    card("DJ Fenris")
+        .runner()
+        .resource()
+        .faction("Neutral")
+        .subtypes(&["Connection"])
+        .cost(3)
+        .unique()
+        .text("Host a g-mod identity that does not match the faction of your identity on DJ Fenris when he is installed. Remove hosted identity from the game if DJ Fenris is uninstalled.")
+        .text("DJ Fenris gains the text of hosted identity.")
+        .text("Limit 1 per deck.")
+        .when(
+            installed(),
+            [host(
+                choose(
+                    1,
+                    &[
+                        in_identity_pile_of(Runner),
+                        with_subtype("G-mod"),
+                        faction_matching_identity_of(Runner, false),
+                    ],
+                ),
+                this_card(),
+            )],
+        )
+        .named("guest of the evening")
+        .unimplemented("Remove hosted identity from the game if DJ Fenris is uninstalled.")
+        .unimplemented("DJ Fenris gains the text of hosted identity.")
+        .build()
+}
+
 /// Chaos Theory: Wünderkind — Identity: G-mod. Link 0.
 /// "+1[mu]"
 ///
@@ -36,5 +98,5 @@ pub fn chaos_theory() -> Card {
 
 /// Every card here, in the order the file lists it.
 pub fn cards() -> Vec<Card> {
-    vec![chaos_theory()]
+    vec![dj_fenris(), chaos_theory()]
 }

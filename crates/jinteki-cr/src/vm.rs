@@ -11869,6 +11869,21 @@ impl Vm {
                 }
                 self.changes.record(GameChange::CardDerezzed { obj: id });
             }
+            // CR 1.5.4b: "if an identity card leaves the play area, it must
+            // be returned to the pile outside the game." An identity has no
+            // business in a discard pile, so the destination of the movement
+            // is the pile — for every way of leaving, which is why it is read
+            // here rather than written into any one ability. (8.2.2 keeps the
+            // trash a trash: only where it ends up changes, so a "when this
+            // card is trashed" condition is met either way.)
+            None if self.st.objects[&id].printed.card_type == CardType::Identity
+                && was.zone_class() == Zone::PlayArea(owner).zone_class() =>
+            {
+                cite!("rule_additional_identities_reference");
+                cite!("rule_additional_identities_pile");
+                self.move_card(id, Zone::OutsideGame(owner));
+                self.st.objects.get_mut(&id).unwrap().faceup = true;
+            }
             None => self.move_card(id, Zone::Discard(owner)),
         }
     }

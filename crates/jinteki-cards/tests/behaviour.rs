@@ -2484,3 +2484,110 @@ fn rebirth_with_no_legal_identity_leaves_the_one_in_play() {
     assert_eq!(vm.st.objects[&chaos].zone, Zone::OutsideGame(Side::Runner));
     assert_eq!(vm.st.objects[&rb].zone, Zone::RemovedFromGame, "{}", t.tail(12));
 }
+
+/// DJ Fenris: "Host a g-mod identity that does not match the faction of your
+/// identity on DJ Fenris when he is installed."
+///
+/// Three stipulations, all of them ordinary criteria: CR 1.5.4a's pile (which
+/// 1.5.4b makes what naming an identity means), a subtype (2.16.7a lists
+/// G-mod among the identity subtypes) and a faction that must NOT match
+/// (2.13). The Criminal in the same pile fails on both counts, so the
+/// candidate list is the whole proof.
+#[test]
+fn dj_fenris_hosts_a_g_mod_identity_of_another_faction() {
+    let mut vm = Vm::empty(5505);
+    tk::install_identity(&mut vm, card("Andromeda: Dispossessed Ristie"), Side::Runner);
+    let mut pile = |c: PrintedCard| {
+        let id = vm.new_object(c, Zone::OutsideGame(Side::Runner));
+        vm.st.objects.get_mut(&id).unwrap().faceup = true;
+        id
+    };
+    // Criminal AND not g-mod: fails both stipulations.
+    let ken = pile(card_partial("Ken \"Express\" Tenma: Disappeared Clone"));
+    let chaos = pile(card_partial("Chaos Theory: Wünderkind"));
+
+    let dj = vm.new_object(card_partial("DJ Fenris"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(dj);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(dj)))
+            .when(Match::destination().once(), Reply::Destination(jinteki_cr::instr::InstallDest::Rig))
+            .when(Match::reaction().once(), Reply::take("guest of the evening"))
+            .when(Match::targets().once(), Reply::target(chaos))
+            .stop_at_action(),
+    );
+    let announced = t.of_kind(Kind::Targets);
+    assert_eq!(announced.len(), 1, "one announcement: {}", t.tail(20));
+    assert!(
+        matches!(
+            &announced[0].spec,
+            jinteki_cr::decision::DecisionSpec::ChooseTargets { candidates, .. }
+                if candidates == &vec![chaos]
+        ),
+        "the Criminal non-g-mod in the same pile is not a candidate: {:?}",
+        announced[0].spec
+    );
+    // 1.13.1/1.13.12: hosted, and therefore in the host's zone.
+    assert_eq!(vm.st.objects[&chaos].host, Some(dj));
+    assert_eq!(vm.st.objects[&chaos].zone, Zone::Rig);
+    // 1.13.2a: hosted "without reference to installing it" — so not installed,
+    // and 3.1.1b would say so anyway.
+    assert!(vm.st.objects[&chaos].hosted_not_installed);
+    // 3.1.1: and it is still not the Runner's identity — that is the card in
+    // the play area, which is still Andromeda.
+    assert_eq!(
+        vm.st.objects[&vm.identity_of(Side::Runner).unwrap()].printed.name,
+        "Andromeda: Dispossessed Ristie",
+        "{}",
+        t.tail(20)
+    );
+    assert!(!vm.identity_pile(Side::Runner).contains(&chaos));
+    assert!(vm.identity_pile(Side::Runner).contains(&ken));
+}
+
+/// CR 1.5.4b: "if an identity card leaves the play area, it must be returned
+/// to the pile outside the game" — including when 1.13.13 trashes it because
+/// its host left. It does not go to the heap.
+#[test]
+fn an_identity_leaving_the_play_area_goes_back_to_the_pile() {
+    let mut vm = Vm::empty(5506);
+    tk::install_identity(&mut vm, card("Andromeda: Dispossessed Ristie"), Side::Runner);
+    let dj = tk::install_rig(&mut vm, card_partial("DJ Fenris"));
+    let chaos = vm.new_object(card_partial("Chaos Theory: Wünderkind"), Zone::OutsideGame(Side::Runner));
+    vm.st.objects.get_mut(&chaos).unwrap().faceup = true;
+    tk::host_on(&mut vm, chaos, dj);
+    // Setup state, not effect: the Runner is tagged, which is what 5.2.6g
+    // requires for the Corp's basic trash-resource action.
+    vm.st.runner.tags = 1;
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::TrashResource))
+            .when(Match::targets().once(), Reply::target(dj))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.objects[&dj].zone, Zone::Discard(Side::Runner), "{}", t.tail(16));
+    // 1.13.13 trashed the hosted identity when its host changed zones — and
+    // 1.5.4b decided where a trashed IDENTITY goes.
+    assert_eq!(
+        vm.st.objects[&chaos].zone,
+        Zone::OutsideGame(Side::Runner),
+        "the identity went back to the pile, not to the heap: {}",
+        t.tail(16)
+    );
+    assert!(vm.identity_pile(Side::Runner).contains(&chaos));
+}
