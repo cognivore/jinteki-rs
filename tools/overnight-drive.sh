@@ -38,42 +38,54 @@ past_deadline() {
   [[ "$(date +%H:%M)" > "$DEADLINE" ]]
 }
 
-BRIEF='You are continuing the jinteki-rs priority-deck card drive, unattended.
+BRIEF='You are continuing the jinteki-rs DECK QUEUE, unattended.
 
-Read FIRST: docs/vm/WAVES.md, then docs/cards/EDSL.md, then
-crates/jinteki-cards/src/decks/{andromeda,gauntlet}.rs.
+Read FIRST: docs/vm/DECK-QUEUE.md (the mandated deck order and the exact
+lists), then docs/vm/WAVES.md, then docs/cards/EDSL.md, then an existing deck
+module such as crates/jinteki-cards/src/decks/gauntlet.rs for house style.
 
-GOAL: raise the count in `cargo test -p jinteki-cards --test decks --
---nocapture` ("priority decks: N cards, M complete"). Finish ONE partial
-card this run, then stop.
+GOAL: finish the decks in DECK-QUEUE.md order. Deck 1 is done. Work the
+FIRST deck in that file that is not yet complete, and do ONE unit of work
+this run, then stop:
+
+  * If the deck has no module yet: create
+    crates/jinteki-cards/src/decks/<key>.rs with one function per DISTINCT
+    card in printed order, register it in decks/mod.rs, and add its DeckSpec
+    (list, copy counts, CR 1.5.4a pile) to crates/jinteki-server/src/cr.rs.
+    Cards already implemented for an earlier deck are REUSED, never copied.
+    Stub every not-yet-written card with its printed text from
+    crates/jinteki-core/carddata/cards.json plus .unimplemented(...) for each
+    printed sentence, so the odometer counts it honestly. Commit that.
+  * Otherwise: implement the next incomplete card of that deck, whole.
+    Commit that.
 
 METHOD:
-1. Pick the partial card needing the least new kernel vocabulary.
-2. Check whether its `UNIMPLEMENTED:` doc comment is STALE — the vocabulary
-   has repeatedly grown past what those comments claim. Several cards were
-   already sayable and nobody had revisited them.
-3. Implement it in the EMBEDDED DSL (typed Rust builders in
-   crates/jinteki-cards). This is NOT a text format and nothing is parsed.
-4. Add a behaviour test in crates/jinteki-cards/tests/behaviour.rs, driven
-   by a PLAN. Never add a *_for_test backdoor to the VM.
-5. Run BOTH gate halves:
-     nix develop --command cargo test --workspace
-     nix build .#default && rm -f result
-6. Commit with a message in the established style (see git log).
+1. Read the exact printed text from crates/jinteki-core/carddata/cards.json.
+   Never work from memory.
+2. VERIFY any UNIMPLEMENTED: doc comment before believing it — the kernel
+   vocabulary has repeatedly grown past what those comments claim, and stale
+   ones have already yielded several free cards.
+3. Write it in the EMBEDDED DSL: typed Rust builders in crates/jinteki-cards.
+   Nothing is parsed; .text(...) is data for the SYS-D-10 agreement test.
+4. Add a behaviour test in crates/jinteki-cards/tests/behaviour.rs driven by
+   a PLAN (plan::play / plan::Script). Never add a *_for_test backdoor to the
+   VM and never write a vm.step() loop.
+5. Run: nix develop --command cargo test --workspace  (must be fully green)
+6. Commit in the established style (see git log).
 
-HARD RULES (docs/vm/ARCHITECTURE.md §12):
-- No card names in kernel vocabulary. Thresholds, polarity, scope and
-  windows are CONTENT on one atom, never a new atom each.
-- A clause the vocabulary cannot express gets .unimplemented("<sentence>").
-  NEVER approximate or fake it.
-- Odometers never regress: DP-7a stays 243/243.
-- Any cite!("rule_...") id must exist in docs/rules/cr-index.json —
-  tests/traceability.rs enforces this.
-- Do NOT touch crates/jinteki-core (the legacy engine the server runs).
+HARD RULES (docs/vm/ARCHITECTURE.md section 12):
+- No card names in kernel vocabulary. Thresholds, polarity, scope, windows
+  and namespaces are CONTENT on one atom, never a new atom per card.
+- A clause the vocabulary genuinely cannot express keeps
+  .unimplemented("<exact printed sentence>"). NEVER approximate or fake it.
+- Odometers never regress: DP-7a stays 247/247.
+- Every cite!("rule_...") id must exist in docs/rules/cr-index.json.
+- Do NOT touch crates/jinteki-core (the legacy engine the live server uses).
+- Do NOT run nix build, do NOT push, and do NOT deploy. Commit locally only.
 
 If the workspace is red when you start, FIX THAT FIRST and commit nothing
-else. If you cannot finish a card cleanly, revert your changes and stop —
-leave the tree green.'
+else. If you cannot finish cleanly, revert your changes and stop, leaving
+the tree green.'
 
 log "drive starting; deadline ${DEADLINE}; repo ${REPO}"
 
