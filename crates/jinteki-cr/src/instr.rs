@@ -677,6 +677,20 @@ pub enum Instruction {
     /// 8.1.4/1.12.3 — entering the deck makes new objects, and the shuffle
     /// follows.) The targets are announced (1.15.2).
     ShuffleCardsIntoDeck { targets: TargetSpec, to: Side },
+    /// "Then, they shuffle their stack." (Chronos Protocol: Haas-Bioroid.)
+    ///
+    /// A shuffle with nothing moving into the deck — the other half of what
+    /// [`Instruction::ShuffleCardsIntoDeck`] does, said on its own because
+    /// this sentence says only that half. 4.2.3 is why it is an instruction
+    /// at all rather than bookkeeping: a deck's order "must be maintained
+    /// except when a player is explicitly directed to manipulate the cards in
+    /// a deck", and this is that direction. 8.7.3's post-search shuffle is a
+    /// different one — that one the search procedure performs, with no
+    /// sentence asking for it.
+    ///
+    /// `side` is whose deck the sentence names ("their stack"). Who does the
+    /// physical shuffling is not a game fact, so nothing here records it.
+    ShuffleDeck { side: Side },
     /// "Remove 1 card in the heap from the game." (Bloo Moose class; §4.9.)
     /// Distinct from RemoveSelfFromGame: the card is a TARGET.
     RemoveCardsFromGame { targets: TargetSpec },
@@ -1178,7 +1192,9 @@ impl Instruction {
             | Instruction::DeclareRunUnsuccessfulIfApplicable | Instruction::RunComplete | Instruction::BreachBegins
             | Instruction::FlipArchivesFaceup | Instruction::DetermineAccessLimit | Instruction::ChooseCandidate
             | Instruction::AccessChosenCandidate | Instruction::BreachComplete | Instruction::CardBecomesAccessed
-            | Instruction::MidAccessWindow | Instruction::StealIfAgenda | Instruction::AccessComplete => Vec::new(),
+            | Instruction::MidAccessWindow | Instruction::StealIfAgenda | Instruction::AccessComplete
+            // 4.2.3: the sentence names a DECK, not any card in it.
+            | Instruction::ShuffleDeck { .. } => Vec::new(),
         }
     }
 
@@ -1298,7 +1314,8 @@ impl Instruction {
             | Instruction::DeclareRunUnsuccessfulIfApplicable | Instruction::RunComplete | Instruction::BreachBegins
             | Instruction::FlipArchivesFaceup | Instruction::DetermineAccessLimit | Instruction::ChooseCandidate
             | Instruction::AccessChosenCandidate | Instruction::BreachComplete | Instruction::CardBecomesAccessed
-            | Instruction::MidAccessWindow | Instruction::StealIfAgenda | Instruction::AccessComplete => {
+            | Instruction::MidAccessWindow | Instruction::StealIfAgenda | Instruction::AccessComplete
+            | Instruction::ShuffleDeck { .. } => {
                 Contained::Nothing
             }
         }

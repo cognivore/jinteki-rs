@@ -513,6 +513,61 @@ pub fn haas_bioroid_stronger_together() -> Card {
         .build()
 }
 
+/// Chronos Protocol: Haas-Bioroid — Identity: Division.
+/// "Whenever the Runner trashes a card for brain damage, they remove all
+///  copies of that card from the game (installed, in the heap, stack, grip, or
+///  any other location). Then, they shuffle their stack."
+///
+/// COMPLETE. Two printed sentences, so two instructions of one conditional
+/// ability (9.11.3) — "then" says the order they were already in and splits
+/// nothing (9.11.4b-g are the splits, and none of them is a "then").
+///
+/// The condition is 10.4.2b's damage procedure, asked about with the printed
+/// sentence's own stipulation: the trash IS the procedure — "for each point of
+/// damage suffered, the player responsible for the damage trashes 1
+/// randomly-chosen card from the grip" — so "trashes a card for brain damage"
+/// and "suffers core damage" name ONE occurrence and not two, and what the
+/// sentence adds is that a card was actually trashed. (Nothing on a board can
+/// show that half: the only damage that trashes nothing is damage against an
+/// empty grip, and 1.7.2b flatlines the Runner for it. The stipulation is
+/// carried because the card carries it.) 10.4.2c is what makes "brain damage"
+/// core damage; the printed "the Runner trashes" is the older wording of
+/// 10.4.2b's responsible player, and since only the Runner's cards are ever
+/// trashed for damage the two describe the same thing.
+///
+/// "That card" is 1.15.4 read of the cards the occurrence named — the trashed
+/// ones. 10.4.3 trashes several simultaneously, so an occurrence can name
+/// more than one, and the sentence reaches a copy of any of them.
+///
+/// "(installed, in the heap, stack, grip, or any other location)" is 1.15.2c's
+/// other end: without a criterion naming a zone a description means the
+/// installed cards, and this parenthesis is the card saying it means every
+/// zone. The trashed card is itself among the copies removed — it is in the
+/// heap by now, which the parenthesis names first.
+pub fn chronos_protocol_haas_bioroid() -> Card {
+    card("Chronos Protocol: Haas-Bioroid")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Whenever the Runner trashes a card for brain damage, they remove all copies of that card from the game (installed, in the heap, stack, grip, or any other location). Then, they shuffle their stack.")
+        .when(
+            trashes_a_card_for_damage(DamageKind::Core),
+            [
+                performed_by(
+                    Runner,
+                    remove_from_game(all_matching(&[
+                        a_copy_of_the_triggering_card(),
+                        in_any_location(),
+                    ])),
+                ),
+                performed_by(Runner, shuffle_deck_of(Runner)),
+            ],
+        )
+        .named("every copy of the card core damage trashed")
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
@@ -520,6 +575,7 @@ pub fn identities() -> Vec<Card> {
         strategic_innovations(),
         asa_group(),
         cerebral_imaging(),
+        chronos_protocol_haas_bioroid(),
         custom_biotics(),
         cybernetics_division(),
         haas_bioroid_architects_of_tomorrow(),

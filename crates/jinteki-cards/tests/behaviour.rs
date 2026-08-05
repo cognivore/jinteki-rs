@@ -9,7 +9,7 @@
 use jinteki_cr::change::GameChange;
 
 use jinteki_cr::instr::Instruction;
-use jinteki_cr::object::{CardType, CounterKind, PrintedCard, ServerId, Side, Zone};
+use jinteki_cr::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
 use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply};
 use jinteki_cr::timing::StructKind;
 use jinteki_cr::testkit as tk;
@@ -31,6 +31,13 @@ fn card(name: &str) -> PrintedCard {
         "{name} still carries an `.unimplemented(…)` marker — it cannot be asserted as playable"
     );
     c.printed
+}
+
+/// A plain Runner program under a given name. Several objects sharing one
+/// name is what CR 2.1.4's "a copy of that card" is a question about, and
+/// nothing else about the card matters to the sentences that ask it.
+fn copy_card(name: &'static str) -> PrintedCard {
+    tk::vanilla_runner_card(name, CardType::Program)
 }
 
 /// A card that is still partial, for asserting the parts that ARE expressed.
@@ -7129,6 +7136,172 @@ fn cerebral_imaging_makes_the_hand_size_the_credit_pool() {
         "5.7.4 discarded down to the credit pool, not to the base of five: {}",
         t.tail(30)
     );
+}
+
+/// Chronos Protocol: Haas-Bioroid — "Whenever the Runner trashes a card for
+/// brain damage, they remove all copies of that card from the game (installed,
+/// in the heap, stack, grip, or any other location). Then, they shuffle their
+/// stack."
+///
+/// One core damage against a grip holding a single card, so the randomly
+/// trashed card is known. Four more copies of it sit in four different places
+/// — the rig, the stack, the heap, and the stack again — and the parenthesis
+/// is what reaches all of them: without it 1.15.2c would leave the description
+/// meaning the installed cards alone. The trashed card itself is removed too;
+/// it is in the heap by the time the ability resolves, which is the first
+/// location the parenthesis names.
+///
+/// The cards that are not copies stay in the stack, and their ORDER does not:
+/// the second sentence is a shuffle of its own, and the seed is what makes
+/// that assertable.
+#[test]
+fn chronos_protocol_hb_removes_every_copy_of_the_card_core_damage_trashed() {
+    const NAME: &str = "Doppelgänger";
+    let mut vm = Vm::empty(6149);
+    tk::install_identity(&mut vm, card("Chronos Protocol: Haas-Bioroid"), Side::Corp);
+    tk::install_root(&mut vm, tk::core_damage_button("Hurt", 1), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+
+    let copy = |vm: &mut Vm, zone: Zone| vm.new_object(copy_card(NAME), zone);
+    let in_grip = copy(&mut vm, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(in_grip);
+    let in_heap = copy(&mut vm, Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(in_heap);
+    let in_rig = tk::install_rig(&mut vm, copy_card(NAME));
+    // A stack of six unrelated cards with two copies buried in it.
+    let filler = tk::fill_deck(&mut vm, Side::Runner, 6);
+    let in_stack: Vec<ObjectId> = (0..2)
+        .map(|_| {
+            let id = copy(&mut vm, Zone::Deck(Side::Runner));
+            vm.st.deck.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        })
+        .collect();
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("do core damage")).stop_at_action(),
+        Plan::runner(),
+    );
+
+    for (label, id) in [
+        ("the trashed card itself, now in the heap", in_grip),
+        ("the copy already in the heap", in_heap),
+        ("the installed copy", in_rig),
+        ("the first copy in the stack", in_stack[0]),
+        ("the second copy in the stack", in_stack[1]),
+    ] {
+        assert_eq!(
+            vm.st.objects[&id].zone,
+            Zone::RemovedFromGame,
+            "§4.9: {label} was removed from the game: {}",
+            t.tail(40)
+        );
+    }
+    let stack = vm.st.deck[&Side::Runner].clone();
+    assert_eq!(
+        stack.len(),
+        6,
+        "and only the copies left: a card that is not one is not described: {}",
+        t.tail(40)
+    );
+    assert!(
+        filler.iter().all(|f| stack.contains(f)),
+        "every non-copy is still in the stack: {}",
+        t.tail(40)
+    );
+    assert_ne!(
+        stack, filler,
+        "4.2.3: and the second sentence shuffled them out of the order the removal \
+         left them in: {}",
+        t.tail(40)
+    );
+}
+
+/// The two halves of the same sentence that decide WHICH occurrence it is met
+/// by.
+///
+/// "Brain damage" is 10.4.2c's older name for core damage and names one of
+/// 10.4.2's three types, so a net damage that trashes exactly the same card
+/// removes no copies at all. And 10.4.3 trashes the cards of a multi-point
+/// damage SIMULTANEOUSLY — one occurrence naming both — so two core damage
+/// against a grip of two differently-named cards reaches the copies of BOTH,
+/// not just of the first.
+#[test]
+fn chronos_protocol_hb_reads_the_damage_kind_and_every_card_one_damage_trashed() {
+    const A: &str = "Doppelgänger";
+    const B: &str = "Zamboni";
+    for (label, core, points) in [("net", false, 1), ("core", true, 1), ("core pair", true, 2)] {
+        let mut vm = Vm::empty(6150);
+        tk::install_identity(&mut vm, card("Chronos Protocol: Haas-Bioroid"), Side::Corp);
+        let button = if core {
+            tk::core_damage_button("Hurt", points)
+        } else {
+            tk::net_damage_button("Hurt", points)
+        };
+        tk::install_root(&mut vm, button, ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+
+        // The grip holds one of each, so a 2-point damage trashes both and a
+        // 1-point damage trashes whichever the 10.4.3 randomiser picks.
+        let grip: Vec<ObjectId> = [A, B]
+            .into_iter()
+            .map(|n| {
+                let id = vm.new_object(copy_card(n), Zone::Hand(Side::Runner));
+                vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+                id
+            })
+            .collect();
+        let spares: Vec<ObjectId> =
+            [A, B].into_iter().map(|n| tk::install_rig(&mut vm, copy_card(n))).collect();
+        tk::fill_deck(&mut vm, Side::Runner, 3);
+        vm.start_turn(Side::Corp);
+
+        let take = if core { "do core damage" } else { "do net damage" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid().once(), Reply::take(take)).stop_at_action(),
+            Plan::runner(),
+        );
+
+        let removed: Vec<bool> =
+            spares.iter().map(|s| vm.st.objects[s].zone == Zone::RemovedFromGame).collect();
+        match label {
+            "net" => assert_eq!(
+                removed,
+                vec![false, false],
+                "10.4.2: the sentence names brain damage, so a net damage that trashes \
+                 the very same cards reaches nothing: {}",
+                t.tail(40)
+            ),
+            "core" => {
+                let trashed: Vec<bool> = grip
+                    .iter()
+                    .map(|g| vm.st.objects[g].zone == Zone::RemovedFromGame)
+                    .collect();
+                assert_eq!(
+                    removed, trashed,
+                    "one core damage trashed one of the two, and the copy removed is \
+                     the copy of THAT one: {}",
+                    t.tail(40)
+                );
+                assert_eq!(
+                    removed.iter().filter(|r| **r).count(),
+                    1,
+                    "exactly one of them: {}",
+                    t.tail(40)
+                );
+            }
+            _ => assert_eq!(
+                removed,
+                vec![true, true],
+                "10.4.3: two core damage trash their cards simultaneously, so ONE \
+                 occurrence names both and 1.15.4's \"that card\" is both: {}",
+                t.tail(40)
+            ),
+        }
+    }
 }
 
 /// Haas-Bioroid: Architects of Tomorrow: "The first time each turn the Runner

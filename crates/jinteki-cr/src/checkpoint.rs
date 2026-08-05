@@ -329,7 +329,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         _ => None,
                     })
                 });
-                let mut occurrences: Vec<(u64, Option<ObjectId>)> = Vec::new();
+                let mut occurrences: Vec<(u64, Vec<ObjectId>)> = Vec::new();
                 for (offset, (c, group)) in window.iter().enumerate() {
                     // 4.6.6i: "this server" in a trigger condition is read
                     // through `Vm::this_server`, so a condition met BY the
@@ -664,7 +664,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             }
                         }
                     }
-                    occurrences.push((*group, crate::change::card_named_by(c)));
+                    occurrences.push((*group, crate::change::cards_named_by(c)));
                 }
                 if occurrences.is_empty() {
                     continue;
@@ -692,10 +692,17 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 for k in 0..n {
                     let (group, named): (u64, Vec<ObjectId>) = if per_event {
                         let g = groups[k];
-                        (g, occurrences.iter().filter(|o| o.0 == g).filter_map(|o| o.1).collect())
+                        (
+                            g,
+                            occurrences
+                                .iter()
+                                .filter(|o| o.0 == g)
+                                .flat_map(|o| o.1.iter().copied())
+                                .collect(),
+                        )
                     } else {
-                        let o = occurrences[k];
-                        (o.0, o.1.into_iter().collect())
+                        let o = &occurrences[k];
+                        (o.0, o.1.clone())
                     };
                     cite!("rule_pending_instances");
                     let id = vm.next_instance_id();

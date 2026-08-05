@@ -853,7 +853,7 @@ pub fn predictive_like(name: &'static str) -> PrintedCard {
 pub fn sol_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerSuffersDamage { kind: None },
+        TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -5315,7 +5315,7 @@ pub fn chronos_protocol_like(name: &'static str) -> PrintedCard {
         }])
         .labeled("chronos: the Corp chooses the first card trashed"),
         AbilityDef::conditional(
-            TriggerCond::RunnerSuffersDamage { kind: None },
+            TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false },
             vec![Instruction::LookAtCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(1),

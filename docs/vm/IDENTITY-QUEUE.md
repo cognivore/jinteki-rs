@@ -75,16 +75,6 @@ kernel words, not card patches.
   to put one. *(NEXT Design: Guarding the Net; Cyber Bureau: Keeping the
   Peace; Jinteki Biotech: Life Imagined; Ayla "Bios" Rahim: Simulant
   Specialist.)*
-- **Nothing is met by trashing a card TO PAY for damage.**
-  `TriggerCond::SelfTrashedByDamage` is the trashed card's own view of
-  10.4.3, and `CardTrashed` describes a trash by who did it, what type it was
-  and whether it was being accessed — neither is "the Runner trashes a card
-  FOR brain damage", which is a question about what the trash was for and
-  hands the card's name to the next sentence. Nor can that sentence be
-  written: `all_named_cards_in_discard_of` reads a MAINTAINED name and one
-  zone, and "all copies of that card (installed, in the heap, stack, grip, or
-  any other location)" is the triggering card's name across every zone at
-  once. *(Chronos Protocol: Haas-Bioroid.)*
 - **No instruction TAKES an action.** `TriggerCond::DifferentActionsThisTurn`
   already counts 5.2.5's distinct actions, so MirrorMorph's condition is
   sayable — but "take another different action, paying [click] less" is an
@@ -215,7 +205,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **125 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **126 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -331,13 +321,13 @@ Module: `decks/identities/runner_sunny.rs`
 
 - [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (16/19)
+## Corp — Haas-Bioroid (17/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
 - [x] **Asa Group: Security Through Vigilance** — The first time each turn you install a card, you may install 1 non-agenda card from HQ in the root of or protecting the same server.
 - [x] **Cerebral Imaging: Infinite Frontiers** — Your maximum hand size is equal to the number of credits in your credit pool.
-- [ ] **Chronos Protocol: Haas-Bioroid** — Whenever the Runner trashes a card for brain damage, they remove all copies of that card from the game (installed, in the heap, stack, grip, or any other location). Then, they shuffle their stack.
+- [x] **Chronos Protocol: Haas-Bioroid** — Whenever the Runner trashes a card for brain damage, they remove all copies of that card from the game (installed, in the heap, stack, grip, or any other location). Then, they shuffle their stack.
 - [x] **Custom Biotics: Engineered for Success** — You cannot include Jinteki cards in this deck.
 - [x] **Cybernetics Division: Humanity Upgraded** — Each player's maximum hand size is reduced by 1.
 - [x] **Haas-Bioroid: Architects of Tomorrow** — The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.

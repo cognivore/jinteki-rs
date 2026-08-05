@@ -2003,11 +2003,21 @@ pub fn avoid_tags(n: u32) -> Instruction {
 /// sentence's stipulation, and [`suffers_any_damage`] is the sentence that
 /// makes none.
 pub fn suffers_damage(kind: DamageKind) -> TriggerCond {
-    TriggerCond::RunnerSuffersDamage { kind: Some(kind) }
+    TriggerCond::RunnerSuffersDamage { kind: Some(kind), trashed_a_card: false }
 }
 /// "Whenever the Runner suffers damage…" — any kind.
 pub fn suffers_any_damage() -> TriggerCond {
-    TriggerCond::RunnerSuffersDamage { kind: None }
+    TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false }
+}
+/// "Whenever the Runner **trashes a card for** <kind> damage…" (Chronos
+/// Protocol: Haas-Bioroid) — the same occurrence [`suffers_damage`] names,
+/// with the sentence's extra stipulation that the damage procedure actually
+/// trashed something. 10.4.2a/b make the trash the procedure itself, so this
+/// is one condition and not two; against an empty grip the damage is suffered
+/// and this sentence is not met. The cards trashed are what the sentence's
+/// "that card" means (1.15.4).
+pub fn trashes_a_card_for_damage(kind: DamageKind) -> TriggerCond {
+    TriggerCond::RunnerSuffersDamage { kind: Some(kind), trashed_a_card: true }
 }
 /// "…sabotage N." (10.16: the Corp trashes N cards of their choice from HQ
 /// and/or the top of R&D.)
@@ -2574,6 +2584,13 @@ pub fn turn_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
 /// "Remove <cards> from the game." (§4.9.)
 pub fn remove_from_game(targets: TargetSpec) -> Instruction {
     Instruction::RemoveCardsFromGame { targets }
+}
+/// "Then, they shuffle their stack." (Chronos Protocol: Haas-Bioroid.) A
+/// shuffle on its own, with no cards moving into the deck — CR 4.2.3's
+/// "explicitly directed to manipulate the cards in a deck". Not 8.7.3's
+/// post-search shuffle, which the search performs with no sentence asking.
+pub fn shuffle_deck_of(side: Side) -> Instruction {
+    Instruction::ShuffleDeck { side }
 }
 /// "Whenever the Runner breaks a printed subroutine on this ice, …"
 /// (Gold Farmer class — met once per subroutine broken, not once per

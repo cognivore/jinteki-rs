@@ -4705,6 +4705,7 @@ impl Vm {
             Instruction::ReplaceImminentDamageKind { .. }
             | Instruction::InitiateRun { .. }
             | Instruction::ShuffleCardsIntoDeck { .. }
+            | Instruction::ShuffleDeck { .. }
             | Instruction::RemoveCardsFromGame { .. }
             | Instruction::FlipIdentity(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
@@ -7173,18 +7174,27 @@ impl Vm {
                 .is_some_and(|t| t.printed.card_type == o.printed.card_type),
             // 1.15.4 + 2.1.4: "another copy of that ice" — the same NAME as
             // the card the condition named, asked the same way.
+            //
+            // Read of 1.15.4's PLURAL, because an occurrence can name more
+            // than one card and "that card" then means the ones it named:
+            // damage trashes its cards simultaneously (10.4.3), so "all
+            // copies of that card" reaches a copy of any of them. An
+            // occurrence naming one card leaves a one-element list, which is
+            // the same question The Foundry asks.
             TargetFilter::SameNameAsTriggeringCard => {
                 cite!("rule_card_name_definition");
                 self.frames
                     .iter()
                     .rev()
                     .find_map(|f| match f {
-                        Frame::Ability(af) => Some(af.triggering_card),
+                        Frame::Ability(af) => Some(&af.triggering_cards),
                         _ => None,
                     })
-                    .flatten()
-                    .and_then(|t| self.st.objects.get(&t))
-                    .is_some_and(|t| t.printed.name == o.printed.name)
+                    .is_some_and(|ts| {
+                        ts.iter()
+                            .filter_map(|t| self.st.objects.get(t))
+                            .any(|t| t.printed.name == o.printed.name)
+                    })
             }
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.this_server(s))
@@ -10744,6 +10754,13 @@ impl Vm {
                     self.move_card(t, Zone::Deck(to));
                 }
                 self.shuffle_deck(to);
+            }
+            Instruction::ShuffleDeck { side } => {
+                // 4.2.3: a deck's order is maintained "except when a player
+                // is explicitly directed to manipulate the cards in a deck" —
+                // and this sentence is that direction.
+                cite!("rule_deck_ordered");
+                self.shuffle_deck(*side);
             }
             Instruction::RemoveCardsFromGame { targets } => {
                 // §4.9: removed from the game.

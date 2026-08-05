@@ -312,13 +312,19 @@ impl ChangeBuffer {
     }
 }
 
-/// CR 1.15.4: the card an occurrence NAMES, if it names one — what a printed
-/// "it" or "that card" points at once the condition has been met. Listed
-/// rather than wildcarded on purpose: a change that names several cards
-/// (damage's trashed set) or a card only incidentally names none here, so a
-/// card that says "it" about such an occurrence will read `None` and act on
-/// nothing rather than on the wrong card.
-pub fn card_named_by(c: &GameChange) -> Option<ObjectId> {
+/// CR 1.15.4: the cards an occurrence NAMES — what a printed "it", "that
+/// card" or "those cards" points at once the condition has been met. Listed
+/// rather than wildcarded on purpose: a change that names a card only
+/// incidentally names none here, so a card that says "it" about such an
+/// occurrence acts on nothing rather than on the wrong card.
+///
+/// Most occurrences name exactly one card, and the singular readings
+/// (`AbilityInstance::triggering_card`) take the first of these. An
+/// occurrence that names SEVERAL is not a defect of that reading but 9.12.2c
+/// at work: damage trashes its cards simultaneously (10.4.3), so one
+/// occurrence names all of them, and "all copies of **that card**" (Chronos
+/// Protocol: Haas-Bioroid) reads over every card the occurrence named.
+pub fn cards_named_by(c: &GameChange) -> Vec<ObjectId> {
     match c {
         GameChange::CardInstalled { obj, .. }
         | GameChange::CardRezzed { obj, .. }
@@ -338,7 +344,12 @@ pub fn card_named_by(c: &GameChange) -> Option<ObjectId> {
         // 8.2.5: "the forfeited agenda" — the card is in the removed-from-game
         // zone by now, and 1.15.4 still names it, which is what lets a
         // sentence read its printed agenda point value afterwards.
-        | GameChange::AgendaForfeited { obj, .. } => Some(*obj),
-        _ => None,
+        | GameChange::AgendaForfeited { obj, .. } => vec![*obj],
+        // 10.4.2a/b + 10.4.3: the damage procedure's trashes, which this one
+        // change carries because they happen simultaneously. They are what
+        // "whenever the Runner trashes a card for brain damage" is met by, so
+        // they are what its sentence's "that card" means.
+        GameChange::DamageSuffered { cards, .. } => cards.clone(),
+        _ => Vec::new(),
     }
 }

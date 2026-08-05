@@ -167,7 +167,27 @@ pub enum TriggerCond {
     /// sentence naming none, exactly as [`TriggerCond::WouldDamage`] already
     /// carries it on the interrupt side. Content on one condition, not a
     /// condition per kind (§12 rule 1).
-    RunnerSuffersDamage { kind: Option<DamageKind> },
+    ///
+    /// `trashed_a_card` is the other stipulation the same occurrence can
+    /// carry: "whenever the Runner **trashes a card** for brain damage"
+    /// (Chronos Protocol: Haas-Bioroid). 10.4.2a/b make the trash the damage
+    /// procedure ITSELF — "for each point of damage suffered, the player
+    /// responsible for the damage trashes 1 randomly-chosen card from the
+    /// grip" — so the trash and the damage are one occurrence and not two,
+    /// which is why this is a stipulation about that occurrence rather than a
+    /// condition of its own. (The printed "the Runner trashes" is the older
+    /// wording of the same procedure; 10.4.2c says the same of "brain
+    /// damage". Only the Runner's cards are ever trashed for damage, so the
+    /// two sentences describe one thing.)
+    ///
+    /// The stipulation is what the sentence says, and it says something the
+    /// unqualified one does not: damage against an empty grip suffers the
+    /// damage and trashes nothing. No board can show the difference today —
+    /// 1.7.2b flatlines the Runner for exactly that damage — so the field
+    /// changes no game the kernel can currently play. It is written because
+    /// the card writes it, not because a case is waiting on it. 1.15.4's cards
+    /// are the trashed ones either way ([`crate::change::cards_named_by`]).
+    RunnerSuffersDamage { kind: Option<DamageKind>, trashed_a_card: bool },
     /// Interrupt trigger: "…would draw any number of cards" (Class Act).
     /// `by` is the sentence's stipulation about WHOSE draw — "the first time
     /// each turn YOU would draw" is the ability's controller, and `None` is a
@@ -2626,9 +2646,16 @@ fn trigger_matches_dyn(
         // 10.4.1: a sentence naming a kind of damage is met only by that kind;
         // one naming none is met by any.
         (
-            TriggerCond::RunnerSuffersDamage { kind },
-            GameChange::DamageSuffered { kind: k, .. },
-        ) => kind.is_none() || kind.as_ref() == Some(k),
+            TriggerCond::RunnerSuffersDamage { kind, trashed_a_card },
+            GameChange::DamageSuffered { kind: k, cards, .. },
+        ) => {
+            // 10.4.2a/b: the trash IS the damage procedure, so a sentence
+            // that speaks of the trash asks one more thing of the same
+            // occurrence — and an empty grip answers it no.
+            cite!("rule_meat_net_damage");
+            cite!("rule_brain_damage");
+            (kind.is_none() || kind.as_ref() == Some(k)) && (!*trashed_a_card || !cards.is_empty())
+        }
         (
             TriggerCond::UsesTrashAbility { side, basic },
             GameChange::TrashAbilityUsed { side: s, basic: b, .. },
