@@ -142,16 +142,17 @@ kernel words, not card patches.
   game with it this turn" is 9.3.6g's once-per-turn flag said about a static
   ability, which never resolves (9.4.1) and so never spends one.
   *(Skorpios Defense Systems: Persuasive Power.)*
-- **"The other card" cannot be said.** `TargetSpec::EarlierTargets` is 1.15.4's
-  plural and `EarlierTarget { nth }` is one by position; neither is "the ones
-  an earlier instruction chose, EXCEPT the one a later instruction chose",
-  which is what a sentence handing one card to each player needs.
-  *(Steve Cambridge: Master Grifter; AU Co.: The Gold Standard in Clones,
-  whose "trash 1 of those cards and add THE REST to HQ" is the same words
-  about the cards an earlier instruction looked at. Its "and" no longer
-  waits on anything: a `Combined` announces every half's choices before the
-  sentence resolves, and an `AddCardsToHand` half is applied at its own
-  place in printed order.)*
+- **Neither half of "whenever you do damage or trash 1 or more cards from HQ"
+  is a condition yet.** `GameChange::DamageSuffered` records the kind, the
+  amount and the cards it trashed but not who was RESPONSIBLE (10.4.1), so
+  "you do damage" has nothing to read; and the only batched trash condition
+  is `TriggerCond::RunnerTrashesAtLeastOneCorpCard` — 9.12.2a's one-event
+  reading of the RUNNER trashing — so the Corp's own "1 or more", with the
+  zone stipulated, is a condition that does not exist rather than a twin of
+  one. Both look like the field-on-a-record shape. *(AU Co.: The Gold
+  Standard in Clones — whose SECOND line now waits on nothing: "the rest" is
+  the looked-at description beside `TargetFilter::AmongEarlierTargets`
+  negated, the words Steve Cambridge landed.)*
 - **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
   trash-a-resource action pays its click and its 2[credit] and only THEN
   announces the resource, so an additional cost stated about *which* resource
@@ -185,20 +186,20 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **129 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **130 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
 Armand "Geist" Walker, Barry "Baz" Wong, Iain Stirling, Silhouette, Gabriel
 Santiago, Los, Liza Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable"
 Sintashta, Virtual Intelligence, P.I., Mercury, MuslihaT, Zahya Sadeghi,
-Az McCaffrey, Khan, Nero Severn, Boris "Syfr" Kovac. (Boris prints "Draft format only." and
+Az McCaffrey, Khan, Nero Severn, Steve Cambridge, Boris "Syfr" Kovac. (Boris prints "Draft format only." and
 Andromeda is not a draft deck; 1.4.2 settles a format restriction before the
 game begins and nothing reads it afterwards, so it changes no play — a pile
 that wanted to honour it would filter on that printed line.)
 
 
-## Runner — Criminal (21/22)
+## Runner — Criminal (22/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
@@ -221,7 +222,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Nero Severn: Information Broker** — Once per turn → When you encounter a sentry, you may jack out.
 - [x] **Nyusha "Sable" Sintashta: Symphonic Prodigy** — When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) The first time each turn you make a successful run on your mark, gain [click].
 - [x] **Silhouette: Stealth Operative** — The first time you make a successful run on HQ each turn, you may expose 1 card.
-- [ ] **Steve Cambridge: Master Grifter** — The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.
+- [x] **Steve Cambridge: Master Grifter** — The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 

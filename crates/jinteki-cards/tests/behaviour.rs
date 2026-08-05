@@ -6433,6 +6433,166 @@ fn zahya_sadeghi_ignores_a_run_on_a_remote_server() {
     assert_eq!(vm.st.runner.credits, 0, "so nothing was gained: {}", t.tail(30));
 }
 
+/// Steve Cambridge: "The first time each turn you make a successful run on
+/// HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of
+/// those cards from the game, then you add the other card to your grip."
+///
+/// One instruction (9.11.4c joins the choosing sentence to the one that
+/// follows; its "then" is not among 9.11.4b-g's splits), so every choice is
+/// announced before any of it resolves: the Runner's two heap cards, then
+/// the Corp's pick — whose candidates are exactly the two announced cards
+/// (1.15.4 as a description) and not the rest of the heap. The pick is
+/// removed, THE OTHER card lands in the grip, and the third heap card is
+/// untouched. A second HQ run the same turn is not offered (9.6.5c), and a
+/// decline moves nothing.
+#[test]
+fn steve_cambridge_hands_one_card_to_the_corp_and_takes_the_other() {
+    for accept in [true, false] {
+        let mut vm = Vm::empty(6146);
+        tk::install_identity(&mut vm, card("Steve Cambridge: Master Grifter"), Side::Runner);
+        let heap: Vec<ObjectId> = (0..3)
+            .map(|i| {
+                let dead = vm.new_object(
+                    tk::vanilla_runner_card(
+                        ["Dead One", "Dead Two", "Dead Three"][i],
+                        CardType::Event,
+                    ),
+                    Zone::Discard(Side::Runner),
+                );
+                vm.st.discard.get_mut(&Side::Runner).unwrap().push(dead);
+                dead
+            })
+            .collect();
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let (corp, runner) = if accept {
+            (
+                Plan::corp().when(Match::targets().once(), Reply::Targets(vec![heap[0]])),
+                Plan::runner()
+                    .when(Match::action().once(), Reply::run(ServerId::Hq))
+                    .when(Match::action().once(), Reply::run(ServerId::Hq))
+                    .when(
+                        Match::reaction().offering("master grifter"),
+                        Reply::take("master grifter"),
+                    )
+                    .when(Match::targets().once(), Reply::Targets(vec![heap[0], heap[1]]))
+                    .stop_at_action(),
+            )
+        } else {
+            // 9.6.9: declining is not taking the offered reaction at all.
+            (
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().once(), Reply::run(ServerId::Hq))
+                    .stop_at_action(),
+            )
+        };
+        let t = plan::play(&mut vm, corp, runner);
+
+        if accept {
+            let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+            assert_eq!(
+                announcements.len(),
+                2,
+                "two announcements — the Runner's pair and the Corp's pick — and no third \
+                 on the second HQ run of the turn (9.6.5c): {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                announcements[0].candidates().len(),
+                3,
+                "the whole heap is offered for the Runner's choice: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                announcements[1].candidates(),
+                [heap[0], heap[1]],
+                "1.15.4: the Corp picks among THOSE cards — the two announced ones, never \
+                 the third heap card: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                vm.st.objects[&heap[0]].zone,
+                Zone::RemovedFromGame,
+                "the Corp's pick is removed from the game: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                vm.st.objects[&heap[1]].zone,
+                Zone::Hand(Side::Runner),
+                "the OTHER card went to the grip: {}",
+                t.tail(40)
+            );
+            assert!(
+                !vm.changes.log.iter().any(|c| matches!(
+                    c,
+                    GameChange::CardMoved { obj, to: Zone::RemovedFromGame, .. } if *obj == heap[1]
+                )),
+                "and it went there directly — the removal acted on the Corp's pick alone, \
+                 never on the whole announced union: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                vm.st.objects[&heap[2]].zone,
+                Zone::Discard(Side::Runner),
+                "the card the Runner never chose stayed in the heap: {}",
+                t.tail(40)
+            );
+        } else {
+            assert!(
+                heap.iter().all(|c| vm.st.objects[c].zone == Zone::Discard(Side::Runner)),
+                "a decline moves nothing: {}",
+                t.tail(40)
+            );
+        }
+    }
+}
+
+/// Steve Cambridge with ONE card in the heap: 1.15.2e announces as many
+/// distinct targets as exist, so the choice names one card, the Corp removes
+/// it, and "the other card" describes nothing — the grip gains nothing
+/// (1.15.3), which is the printed ruling rather than an error.
+#[test]
+fn steve_cambridge_with_one_heap_card_gives_the_runner_nothing() {
+    let mut vm = Vm::empty(6147);
+    tk::install_identity(&mut vm, card("Steve Cambridge: Master Grifter"), Side::Runner);
+    let only = vm.new_object(
+        tk::vanilla_runner_card("Only One", CardType::Event),
+        Zone::Discard(Side::Runner),
+    );
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(only);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    let grip_before = vm.st.hand[&Side::Runner].len();
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::targets().once(), Reply::Targets(vec![only])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::reaction().offering("master grifter"), Reply::take("master grifter"))
+            .when(Match::targets().once(), Reply::Targets(vec![only]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&only].zone,
+        Zone::RemovedFromGame,
+        "the Corp still removes the one announced card: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        grip_before,
+        "and there is no OTHER card to add (1.15.3): {}",
+        t.tail(40)
+    );
+}
+
 /// Captain Padma Isbister: "The first time each turn a run on R&D begins, you
 /// may charge 1 of your installed cards. (Add 1 power counter to a card that
 /// already has one.)"

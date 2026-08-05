@@ -3312,6 +3312,32 @@ pub fn earlier_choice(nth: usize) -> TargetSpec {
 pub fn earlier_choices() -> TargetSpec {
     TargetSpec::EarlierTargets
 }
+/// "…you may **choose 2 cards in your heap**." (Steve Cambridge class) — a
+/// sentence that only chooses targets and does not act on the choice
+/// (9.11.4c). It forms one instruction with the sentence that follows it, so
+/// write it as the first half of that sentence's [`combined`]; the later
+/// halves act on the chosen cards through [`among_earlier_choices`] and
+/// [`the_other_card`]. Resolving it does nothing — the choice was the whole
+/// of it.
+pub fn choose_cards(n: i64, criteria: &[TargetFilter]) -> Instruction {
+    Instruction::ChooseCards { targets: choose(n, criteria) }
+}
+/// "…the Corp removes **1 of those cards** from the game" (Steve Cambridge
+/// class) — "those cards" being the ones this ability already CHOSE (1.15.4),
+/// as a description a later choice picks from. [`among_those_cards`] is the
+/// same words about the cards an OCCURRENCE named; this is about the cards an
+/// announcement did.
+pub fn among_earlier_choices() -> TargetFilter {
+    TargetFilter::AmongEarlierTargets
+}
+/// "…then you add **the other card** to your grip." (Steve Cambridge class) —
+/// of the cards this instruction chose earlier, the ones its latest choice
+/// did NOT name (1.15.4). With nothing left over — the heap held one card, so
+/// both choices named it — the position is empty and the rest of the sentence
+/// resolves without it (1.15.3).
+pub fn the_other_card() -> TargetSpec {
+    TargetSpec::EarlierTargetsExceptLatest
+}
 /// "Expose <a card>." (1.21.4 — revealing an installed, unrezzed card.)
 pub fn expose(cards: TargetSpec) -> Instruction {
     Instruction::ExposeCards { cards }

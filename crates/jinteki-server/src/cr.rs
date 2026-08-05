@@ -153,6 +153,7 @@ pub const ANDROMEDA_PILE: &[&str] = &[
     "Az McCaffrey: Mechanical Prodigy",
     "Khan: Savvy Skiptracer",
     "Nero Severn: Information Broker",
+    "Steve Cambridge: Master Grifter",
     // Complete, and enlisted for the same reason as the rest — with the one
     // caveat that its first printed line is "Draft format only." and Andromeda
     // is not a draft deck. Format legality is settled before the game begins

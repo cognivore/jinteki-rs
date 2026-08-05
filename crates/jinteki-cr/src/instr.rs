@@ -399,6 +399,17 @@ pub enum Instruction {
     /// the look is its own instruction and a checkpoint occurs before the
     /// next one announces its targets among them.
     LookAtCards { cards: TargetSpec, by: Side },
+    /// CR 9.11.4c: "**Choose 2 cards in your heap.**" — a sentence that only
+    /// directs a player to choose targets and "does not act on that choice or
+    /// describe any other effects". Usually such a sentence merges into the
+    /// next one as its 1.15.2 announcement (Tinkering, SSO Industries); it
+    /// stands on its own inside the single instruction 9.11.4c forms when the
+    /// following sentence's halves act on DIFFERENT subsets of the choice —
+    /// one removed by the Corp, "the other card" added to the grip (Steve
+    /// Cambridge class) — so no one half can own the announcement. Resolving
+    /// it does nothing at all: the announcement was the whole of it, and
+    /// 1.15.4 is how the later halves read what it chose.
+    ChooseCards { targets: TargetSpec },
     /// CR 1.21.4: "Expose <cards>." — the named cards are revealed, except
     /// that only INSTALLED, UNREZZED cards can be exposed. 1.21.5 keeps
     /// exposing distinct from looking, revealing and accessing, and 9.12.2
@@ -1140,7 +1151,10 @@ impl Instruction {
             | Instruction::AddToScoreArea { cards: spec, .. }
             | Instruction::MoveIce { ice: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. }
-            | Instruction::LoadCounters { target: spec, .. } => vec![spec],
+            | Instruction::LoadCounters { target: spec, .. }
+            // 9.11.4c: the choice IS the position — the sentence has no
+            // other content.
+            | Instruction::ChooseCards { targets: spec } => vec![spec],
             // 1.13.1: WHICH cards are hosted, then WHICH card hosts them —
             // two positions, announced in printed order.
             Instruction::HostCards { cards, host, .. } => vec![cards, host],
@@ -1292,7 +1306,8 @@ impl Instruction {
             | Instruction::EndTheRun | Instruction::JackOut | Instruction::AccessCards { .. }
             | Instruction::AdditionalAccesses(..)
             | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)
-            | Instruction::LookAtCards { .. } | Instruction::ExposeCards { .. } | Instruction::RevealCards { .. }
+            | Instruction::LookAtCards { .. } | Instruction::ChooseCards { .. } | Instruction::ExposeCards { .. }
+            | Instruction::RevealCards { .. }
             | Instruction::RevealRandomFromHand { .. }
             | Instruction::TakeHostedCredits { .. } | Instruction::RemoveCounters { .. } | Instruction::Derez { .. }
             | Instruction::MoveSetAsideCounters { .. } | Instruction::PreventDamage { .. }
@@ -1615,6 +1630,21 @@ pub enum TargetSpec {
     /// later instruction of the same ability acts on all of them — which
     /// `EarlierTarget` cannot say, since it names one.
     EarlierTargets,
+    /// CR 1.15.4: "…the Corp removes 1 of those cards from the game, then you
+    /// add **the other card** to your grip" (Steve Cambridge class) — the
+    /// objects the current instruction's EARLIER announcements chose, except
+    /// every object its LATEST announcement chose. Neither
+    /// [`TargetSpec::EarlierTargets`] (all of them, the removed one included)
+    /// nor [`TargetSpec::EarlierTarget`] (one, by a position that shifts when
+    /// 1.15.2e announces fewer than the sentence asked for) can say it.
+    ///
+    /// Read as a SET difference over the announcement record, not as a zone
+    /// question: 1.15.4 lets the sentence act on the card wherever the other
+    /// halves have moved it, so "the one not removed" cannot be "the one
+    /// still in the heap". With fewer than two announcements made — the heap
+    /// held one card, so the choice and the removal named the same object —
+    /// the difference is empty and 1.15.3 resolves the rest without it.
+    EarlierTargetsExceptLatest,
     /// CR 8.5.16f + 1.15.4: "…remove **it** from the game", said of the card
     /// this ability's own earlier instruction INSTALLED (Kabonesa Wu). The
     /// pointing twin of [`TargetFilter::InstalledByThisAbility`], and the
@@ -1646,6 +1676,7 @@ impl TargetSpec {
             | TargetSpec::FoundBySearch
             | TargetSpec::EarlierTarget { .. }
             | TargetSpec::EarlierTargets
+            | TargetSpec::EarlierTargetsExceptLatest
             | TargetSpec::InstalledByThisAbility => 0,
         }
     }
@@ -1905,6 +1936,21 @@ pub enum TargetFilter {
     /// default has nothing left to restrict: the cards an occurrence named are
     /// those cards wherever they now sit, which for a discard is the heap.
     AmongTriggeringCards,
+    /// CR 1.15.4: "…the Corp removes **1 of those cards** from the game"
+    /// (Steve Cambridge class), where "those cards" are the ones an EARLIER
+    /// ANNOUNCEMENT of this ability chose — a later announcement choosing
+    /// among the earlier one, which is the same sentence
+    /// [`TargetFilter::AmongTriggeringCards`] says about the cards an
+    /// occurrence named. The two records are different on purpose: a
+    /// condition's occurrence fills `triggering_cards` and 1.15.2's
+    /// announcements fill `ability_targets`, and a description has to say
+    /// which it is reading.
+    ///
+    /// Like the triggering-card family it fixes cards by IDENTITY, so
+    /// 1.15.2c's play-area default has nothing left to restrict — the cards
+    /// this ability chose are those cards wherever they now sit, which for
+    /// Steve Cambridge's choice is the heap.
+    AmongEarlierTargets,
     /// CR 1.13.2: "cards hosted on this card" — the source's hosted cards,
     /// installed or not (1.13.2a).
     HostedOnSource,
@@ -2094,6 +2140,9 @@ impl TargetFilter {
                 | TargetFilter::IsSource
                 | TargetFilter::IsTriggeringCard
                 | TargetFilter::AmongTriggeringCards
+                // 1.15.4: the same identity-fixing, said of the cards this
+                // ability's own earlier announcement chose.
+                | TargetFilter::AmongEarlierTargets
         ) || match self {
             // A disjunction specifies the zone only when EVERY alternative
             // does: 1.15.2c lifts for a description that says where to look,

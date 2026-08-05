@@ -4699,6 +4699,11 @@ impl Vm {
             Instruction::DeclineableChoice(inner) => {
                 self.expected_atoms(inner, controller, targets, source)
             }
+            // 9.11.4c: the sentence only chooses — the announcement was made
+            // where 1.15.2 puts every announcement, and nothing about the
+            // game state is expected to change when it resolves. No atom, so
+            // inside a `Combined` this half is applied as the nothing it is.
+            Instruction::ChooseCards { .. } => vec![],
             Instruction::Combined(list) => {
                 // 9.11.3: one sentence, one instruction — the merged set is
                 // every half's atoms in printed order, each stamped with its
@@ -6132,6 +6137,28 @@ impl Vm {
         own + contained + self.extra_announcements(instr)
     }
 
+    /// The 1.15.2 target announcements an instruction owes — the subset of
+    /// [`Vm::announcements_owed`] that fills `AbilityFrame::target_spans`.
+    /// The extra decisions ([`Vm::extra_announcements`]) consume announce
+    /// slots but record no span, so a walk that maps a `Combined`'s halves
+    /// onto the spans they filled has to count without them.
+    fn span_announcements_owed(&self, instr: &Instruction) -> usize {
+        let own: usize =
+            instr.target_positions().iter().map(|s| s.announcement_slots()).sum();
+        let contained: usize = match instr.contains() {
+            Contained::Nothing | Contained::Deferred(_) => 0,
+            Contained::Inline(list) => {
+                list.iter().map(|i| self.span_announcements_owed(i)).sum()
+            }
+            Contained::Branches(_) => self
+                .live_branch(instr)
+                .iter()
+                .map(|i| self.span_announcements_owed(i))
+                .sum(),
+        };
+        own + contained
+    }
+
     /// The decisions an instruction asks for at announce time that are NOT
     /// 1.15.2 target announcements, counted so that the slot walk in
     /// [`Vm::targets_needed_at`] lands on them. Kept beside
@@ -7206,6 +7233,23 @@ impl Vm {
                     })
                     .unwrap_or(false)
             }
+            // 1.15.4: "1 of THOSE cards" — a card this ability has already
+            // announced as a target. Read from the frame for the reason
+            // `LookedAtByThisAbility` is: 1.15.4's record belongs to the
+            // resolving ability, and the cards it chose are those cards
+            // wherever they now sit.
+            TargetFilter::AmongEarlierTargets => {
+                cite!("rule_target_beyond_move");
+                cite!("rule_multiple_targets");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|fr| match fr {
+                        Frame::Ability(af) => Some(af.ability_targets.contains(&o.id)),
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+            }
             // 8.5.16f: the cards this ability installed. Read from the frame
             // for the reason `LookedAtByThisAbility` is: the card carries no
             // record of WHOSE install it was, and 1.15.4's targets cannot hold
@@ -7671,7 +7715,17 @@ impl Vm {
         };
         cite!("rule_announce_targets");
         let mut candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
-        candidates.retain(|c| !af.targets.contains(c));
+        // 1.15.2e restricts repeats "for each announcement", not across the
+        // instruction; keeping already-announced targets out of LATER
+        // announcements is the conservative reading a "2 different pieces of
+        // ice" spec relies on. A description that points INTO the earlier
+        // announcements — "the Corp removes 1 of THOSE cards" — is 1.15.2b's
+        // own validity requirement choosing among them, so for it the
+        // restriction cannot stand: it would leave the printed sentence
+        // describing nothing.
+        if !criteria.contains(&TargetFilter::AmongEarlierTargets) {
+            candidates.retain(|c| !af.targets.contains(c));
+        }
         let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
         // 2.1.5: "…with different names" is a criterion of the description
         // and a property of the announcement.
@@ -9350,7 +9404,9 @@ impl Vm {
                 //    the half picks for itself when it resolves — a sabotage
                 //    puts the choice to the Corp at 10.12.2) is applied as
                 //    part of THIS instruction when its resolution asks no
-                //    Decision (`AddCardsToHand` — the `IfMet` shape), and
+                //    Decision (`AddCardsToHand`, `RemoveCardsFromGame` — the
+                //    `IfMet` shape, with 1.14.5's wrapper peeled since who
+                //    chooses does not change what resolving does), and
                 //    spliced otherwise: an instruction that suspends on a
                 //    Decision needs the frame machinery a spliced
                 //    instruction gets, and losing the rest of the sentence
@@ -9370,6 +9426,18 @@ impl Vm {
                     Merge,
                     Inline,
                     Skip,
+                }
+                /// The halves whose resolution arm never asks a Decision, so
+                /// applying them as part of THIS instruction cannot suspend
+                /// it. 1.14.5's wrapper is peeled: who chooses does not
+                /// change what resolving does.
+                fn applies_in_place(half: &Instruction) -> bool {
+                    match half {
+                        Instruction::PerformedBy { instr, .. } => applies_in_place(instr),
+                        Instruction::AddCardsToHand { .. }
+                        | Instruction::RemoveCardsFromGame { .. } => true,
+                        _ => false,
+                    }
                 }
                 let mut acts: Vec<HalfAct> = Vec::with_capacity(list.len());
                 let mut deferred: Vec<Instruction> = Vec::new();
@@ -9398,7 +9466,7 @@ impl Vm {
                     });
                     if rides_merge {
                         acts.push(HalfAct::Merge);
-                    } else if !splice_seen && matches!(half, Instruction::AddCardsToHand { .. }) {
+                    } else if !splice_seen && applies_in_place(half) {
                         acts.push(HalfAct::Inline);
                     } else {
                         deferred.push(half.clone());
@@ -9424,13 +9492,47 @@ impl Vm {
                                 .filter(|a| a.combined_half == Some(k))
                                 .cloned()
                                 .collect();
+                            // 1.15.2 scopes an announcement to the
+                            // instruction that required it, and inside a
+                            // Combined each half required its OWN: the wrap
+                            // the half is applied with carries the spans that
+                            // half's positions filled, so a half's `Choose`
+                            // reads its own choice rather than the union of
+                            // every half's. A 1.15.4 back-reference spec
+                            // announces nothing and reads the frame's record,
+                            // so the slice does not touch it.
+                            let spans_before: usize = list[..k]
+                                .iter()
+                                .map(|h| self.span_announcements_owed(h))
+                                .sum();
+                            let mine = self.span_announcements_owed(half);
+                            let skip: usize =
+                                imm.target_spans.iter().take(spans_before).sum();
+                            let take: usize = imm
+                                .target_spans
+                                .iter()
+                                .skip(spans_before)
+                                .take(mine)
+                                .sum();
                             let sub = ImminentWrap {
                                 counter_targets: Vec::new(),
                                 instr: half.clone(),
                                 atoms: half_atoms,
                                 controller,
-                                targets: imm.targets.clone(),
-                                target_spans: imm.target_spans.clone(),
+                                targets: imm
+                                    .targets
+                                    .iter()
+                                    .copied()
+                                    .skip(skip)
+                                    .take(take)
+                                    .collect(),
+                                target_spans: imm
+                                    .target_spans
+                                    .iter()
+                                    .copied()
+                                    .skip(spans_before)
+                                    .take(mine)
+                                    .collect(),
                                 sub_targets: imm.sub_targets.clone(),
                                 run_ordinal: imm.run_ordinal.clone(),
                                 turn_ordinal: imm.turn_ordinal.clone(),
@@ -10976,6 +11078,14 @@ impl Vm {
                     self.move_card(t, Zone::RemovedFromGame);
                 }
             }
+            Instruction::ChooseCards { .. } => {
+                // 9.11.4c: the sentence only directed a player to choose, and
+                // the choice was 1.15.2's announcement — made before this
+                // instruction became imminent. Resolving does nothing; the
+                // later halves of the same instruction read the choice back
+                // through 1.15.4.
+                cite!("rule_choose_instruction");
+            }
             Instruction::PurgeVirusCounters => {
                 // CR 10.1.2: remove ALL virus counters hosted on cards and
                 // return them to the bank. One occurrence, however many cards
@@ -11996,6 +12106,39 @@ impl Vm {
                 cite!("rule_target_beyond_move");
                 cite!("rule_multiple_targets");
                 self.ability_targets()
+            }
+            // 1.15.4: "the OTHER card" — the current instruction's earlier
+            // announcements, minus every object its latest announcement
+            // chose. A set difference over the announcement record, so the
+            // answer is the same wherever the other halves have moved the
+            // cards; with fewer than two announcements made (1.15.2e chose
+            // one card and the removal named the same one) it is empty, and
+            // 1.15.3 resolves the rest of the sentence without it.
+            TargetSpec::EarlierTargetsExceptLatest => {
+                cite!("rule_target_beyond_move");
+                cite!("rule_targets_gone");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(af),
+                        _ => None,
+                    })
+                    .map(|af| {
+                        let Some(last) = af.target_spans.last().copied() else {
+                            return Vec::new();
+                        };
+                        let cut = af.targets.len().saturating_sub(last);
+                        let (earlier, latest) = af.targets.split_at(cut);
+                        let mut out: Vec<ObjectId> = Vec::new();
+                        for t in earlier {
+                            if !latest.contains(t) && !out.contains(t) {
+                                out.push(*t);
+                            }
+                        }
+                        out
+                    })
+                    .unwrap_or_default()
             }
             TargetSpec::TopOfDeck { side, count } => {
                 let n = self.eval_quantity(count, source).max(0) as usize;

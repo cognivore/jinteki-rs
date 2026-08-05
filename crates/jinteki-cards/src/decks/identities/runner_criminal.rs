@@ -621,6 +621,48 @@ pub fn nero_severn() -> Card {
         .build()
 }
 
+/// Steve Cambridge: Master Grifter — Identity: G-mod. Link 0.
+/// "The first time each turn you make a successful run on HQ, you may choose
+///  2 cards in your heap. If you do, the Corp removes 1 of those cards from
+///  the game, then you add the other card to your grip."
+///
+/// COMPLETE. Gabriel Santiago's condition exactly, and everything after it is
+/// ONE instruction: the first sentence only chooses, so 9.11.4c forms a
+/// single instruction from it and the sentence that follows, and that
+/// sentence's "then" is not among 9.11.4b-g's splits — the removal and the
+/// add are a combined sentence, announced whole (1.15.2) and resolved behind
+/// one checkpoint.
+///
+/// The printed "you may" governs the choice (9.6.9), and "If you do" is what
+/// declining already means: no yes, no announcements, nothing resolves. "The
+/// Corp removes" is 1.14.5's wrapper handing the pick of WHICH of the two to
+/// the Corp, and "1 of those cards" is 1.15.4's plural read as a description
+/// — the Corp's candidates are exactly the announced cards, in the heap
+/// where the Runner's choice fixed them. "The other card" is the difference
+/// the same record answers: the earlier announcements minus the Corp's pick,
+/// read off the record rather than off the heap, since 1.15.4 lets the
+/// sentence act on the card wherever the earlier halves have moved things.
+/// With one card in the heap, 1.15.2e announces just it, the Corp removes
+/// it, and the difference is empty — the Runner adds nothing (1.15.3).
+pub fn steve_cambridge() -> Card {
+    card("Steve Cambridge: Master Grifter")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["G-mod"])
+        .text("The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.")
+        .may_when_first_each_turn(
+            makes_successful_run_on(&[ServerId::Hq]),
+            [combined([
+                choose_cards(2, &[in_heap()]),
+                performed_by(Corp, remove_from_game(choose(1, &[among_earlier_choices()]))),
+                add_to_hand(the_other_card()),
+            ])],
+        )
+        .named("master grifter")
+        .build()
+}
+
 /// Every Criminal identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -644,5 +686,6 @@ pub fn identities() -> Vec<Card> {
         mercury(),
         muslihat(),
         zahya_sadeghi(),
+        steve_cambridge(),
     ]
 }
