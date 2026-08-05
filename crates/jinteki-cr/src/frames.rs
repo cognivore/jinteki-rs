@@ -48,6 +48,10 @@ pub struct RunCtx {
     /// CR 6.7.4: the "If successful" ability the effect that initiated this
     /// run carried, with the 6.7.4a set of servers that effect allowed.
     pub if_successful: Option<crate::vm::IfSuccessful>,
+    /// CR 9.9.1: the "…would be declared successful" interrupt the effect
+    /// that initiated this run carried. Cleared when it becomes pending, so
+    /// the one declaration offers it once.
+    pub if_would_be_successful: Option<crate::vm::WouldBeSuccessful>,
     /// CR 6.1.3e: the Encounter Ice Phase the run has come DIRECTLY from,
     /// which is what makes a pass a pass "after an encounter" — `(ice, all
     /// its subroutines were broken during that encounter (6.1.3f/6.5.7), any

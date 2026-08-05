@@ -10617,3 +10617,145 @@ fn nuvem_pays_for_a_trash_from_rnd_only_during_a_corp_turn() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — CR 9.9's "would be declared successful"
+// ---------------------------------------------------------------------------
+
+/// Omar Keung: "Once per turn → [click]: Run Archives. If that run would be
+/// declared successful, change the attacked server to HQ or R&D for the
+/// remainder of that run."
+///
+/// The run is announced against Archives and succeeds against HQ. Three
+/// separate claims of the printed sentence, asserted together because only
+/// their conjunction distinguishes this card from a run on HQ:
+///
+/// - the declaration follows the change, so 6.9.5a records the success on HQ
+///   and never on Archives — an ability reacting AFTER the declaration would
+///   record it the other way round;
+/// - 6.9.5b breaches the server as it now stands, so the card accessed comes
+///   out of HQ;
+/// - 6.1.2d changes the attacked server WITHOUT moving the Runner, so the
+///   rezzed ice protecting HQ is never approached and never encountered.
+///
+/// The ice is the control that a plain `Reply::run(ServerId::Hq)` could not
+/// pass: it ends the run.
+#[test]
+fn omar_keung_succeeds_on_hq_without_ever_meeting_the_ice_protecting_it() {
+    let mut vm = Vm::empty(6220);
+    tk::install_identity(&mut vm, card("Omar Keung: Conspiracy Theorist"), Side::Runner);
+    let gate = tk::install_ice(&mut vm, tk::etr_ice("Gate", 0, 3), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            // No `.once()` on the action rule: taking it again would mean
+            // 9.3.6g's flag was never spent.
+            .when(Match::action(), Reply::take("run archives"))
+            .when(Match::interrupt(), Reply::take("Omar"))
+            .when(Match::options().once(), Reply::ChooseNamed("HQ"))
+            .stop_at_action(),
+    );
+
+    let declared: Vec<ServerId> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::RunDeclaredSuccessful { server } => Some(*server),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        declared,
+        vec![ServerId::Hq],
+        "6.9.5a read the attacked server the interrupt had already changed: {}",
+        t.tail(40)
+    );
+    let breached: Vec<ServerId> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::BreachBegan { server } => Some(*server),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(breached, vec![ServerId::Hq], "6.9.5b breached HQ: {}", t.tail(40));
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == gate)),
+        "6.1.2d: the attacked server changed without the Runner moving, so the ice \
+         protecting HQ was never met: {}",
+        t.tail(40)
+    );
+    let offers = t
+        .of_kind(Kind::Action)
+        .into_iter()
+        .filter(|e| Pick::Labeled("run archives").find_action(e.actions()).is_some())
+        .count();
+    assert_eq!(offers, 1, "9.3.6g: the ability is offered once a turn: {}", t.tail(40));
+}
+
+/// The same identity against a Crisium-class upgrade in the root of Archives:
+/// "runs on this server cannot be declared successful."
+///
+/// 9.9.2 is the whole test. The expected effects of an imminent instruction
+/// are what a static ability modifies, and a run that cannot be declared
+/// successful has no such effect to expect — so the interrupt is not relevant
+/// (9.9.3), is never offered, and the attacked server stays Archives. An
+/// implementation that read the prohibition only when the declaration
+/// RESOLVED would offer the choice, take the [click], and change the server
+/// for nothing.
+#[test]
+fn omar_keung_is_not_offered_when_the_run_cannot_be_declared_successful() {
+    let mut vm = Vm::empty(6221);
+    tk::install_identity(&mut vm, card("Omar Keung: Conspiracy Theorist"), Side::Runner);
+    tk::install_root(&mut vm, tk::crisium_like("Crisium-like"), ServerId::Archives, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::take("run archives"))
+            .when(Match::interrupt(), Reply::Forbid)
+            .when(Match::options(), Reply::Forbid)
+            .stop_at_action(),
+    );
+
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "the Crisium-class static held: {}",
+        t.tail(40)
+    );
+    let breached: Vec<ServerId> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::BreachBegan { server } => Some(*server),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        breached,
+        vec![ServerId::Archives],
+        "6.9.5b still breaches — the declaration is what the static forbids, not the \
+         breach — and the server it breaches is the one the run announced: {}",
+        t.tail(40)
+    );
+}

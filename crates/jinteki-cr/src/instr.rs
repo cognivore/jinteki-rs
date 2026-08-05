@@ -477,6 +477,18 @@ pub enum Instruction {
         /// wants the run already in progress; the instruction that creates
         /// the run is what carries it.
         if_successful: Vec<Instruction>,
+        /// CR 9.9.1: "If that run **would** be declared successful, …" — the
+        /// same clause one instruction earlier. It is an INTERRUPT (the word
+        /// "would" makes it one), relevant to the imminence of 6.9.5a's
+        /// declaration, and it rides here for exactly the reason
+        /// `if_successful` does: it belongs to the run this instruction
+        /// creates, and there is no printed conditional ability on any object
+        /// for 9.9.4b's scan to find.
+        ///
+        /// 6.7.4a's server tie is deliberately NOT applied to it. That rule
+        /// is stated about "If successful" abilities; this sentence names the
+        /// RUN ("that run"), and the run is what carries the clause.
+        if_would_be_successful: Vec<Instruction>,
     },
     /// "Trace [N] — if successful, …; if unsuccessful, …" (10.8). Expanded
     /// by the resolution loop into the 10.8.6 step sequence. The base is a
@@ -1041,6 +1053,7 @@ impl Instruction {
             server: Some(server),
             allowed: RunServerSet::Any,
             if_successful: Vec::new(),
+            if_would_be_successful: Vec::new(),
         }
     }
 
@@ -1051,6 +1064,7 @@ impl Instruction {
             server: None,
             allowed: RunServerSet::Any,
             if_successful,
+            if_would_be_successful: Vec::new(),
         }
     }
 
@@ -1219,8 +1233,10 @@ impl Instruction {
             }
             // 6.7.4/10.8/10.14: the conditional halves of a run, a trace and
             // a psi game resolve as their own ability chains later.
-            Instruction::InitiateRun { if_successful, .. } => {
-                Contained::Deferred(if_successful.iter().collect())
+            Instruction::InitiateRun { if_successful, if_would_be_successful, .. } => {
+                Contained::Deferred(
+                    if_successful.iter().chain(if_would_be_successful.iter()).collect(),
+                )
             }
             Instruction::Trace { if_successful, if_unsuccessful, determined_min, .. }
             | Instruction::TraceDetermine { if_successful, if_unsuccessful, determined_min, .. } => {

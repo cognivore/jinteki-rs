@@ -176,13 +176,6 @@ kernel words, not card patches.
   is over. The card is not the problem — the action is, and moving the
   announcement in front of the payment is a change to 5.2's shape rather than
   a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
-- **Nothing is met by a run that WOULD be declared successful.** 9.9.3's
-  interrupt relevance is computed from the `EffectAtom`s of the imminent
-  instruction, and `Instruction::DeclareRunSuccessful` carries only a
-  structural atom — so there is no expected effect for a "would" condition to
-  be relevant to, and the ability that changes the attacked server one step
-  before 6.9.5 has no moment to fire in. *(Omar Keung: Conspiracy
-  Theorist.)*
 - **A prohibition cannot name one card for a stated span, and none of them
   names a REZ.** `StaticDecl::CannotScoreMatching` describes the agendas that
   cannot be scored in the ordinary words — which is how Clot's "during the
@@ -222,7 +215,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **124 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **125 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -288,7 +281,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (14/19)
+## Runner — Anarch (15/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -301,7 +294,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.
 - [x] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
 - [x] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
-- [ ] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
+- [x] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
 - [x] **Quetzal: Free Spirit** — Once per turn → 0[credit]: Break 1 barrier subroutine.
 - [x] **Reina Roja: Freedom Fighter** — The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.
 - [x] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.

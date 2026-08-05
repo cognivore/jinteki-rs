@@ -409,6 +409,17 @@ pub enum TriggerCond {
     /// Interrupt trigger: "…would take tags during a run" (Jesminder class:
     /// `during_run` requires a run to be in progress).
     WouldTakeTags { during_run: bool },
+    /// Interrupt trigger: "…if that run **would** be declared successful, …"
+    /// — met by the expected effect of the Success Phase's own instruction
+    /// (6.9.5a), which is the last moment at which the attacked server can
+    /// still be changed and have the declaration follow it.
+    ///
+    /// It says nothing about WHICH run: an ability with this condition is
+    /// carried by the run it belongs to
+    /// ([`crate::instr::Instruction::InitiateRun::if_would_be_successful`]),
+    /// exactly as 6.7.4's "If successful" one is, so there is nothing left
+    /// for the condition itself to stipulate.
+    WouldDeclareRunSuccessful,
     /// "Whenever the Corp installs a card in the root of this server…"
     /// (Tranquility Home Grid class; the 9.6.5b activity gate is the point).
     CardInstalledInSourceServer,
@@ -1995,6 +2006,7 @@ impl AbilityDef {
             TriggerCond::WouldDamage { .. }
             | TriggerCond::WouldTakeTags { .. }
             | TriggerCond::WouldDraw { .. }
+            | TriggerCond::WouldDeclareRunSuccessful
             | TriggerCond::SelfWouldBeTrashed,
         )) = self.condition
         {

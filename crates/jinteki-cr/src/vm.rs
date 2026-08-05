@@ -476,6 +476,23 @@ pub struct IfSuccessful {
     pub effects: Vec<Instruction>,
 }
 
+/// CR 9.9.1: the "…**would** be declared successful" clause of an effect that
+/// initiates a run — 6.7.4's clause one instruction earlier, as an interrupt.
+/// It travels with the run for the same reason [`IfSuccessful`] does, and for
+/// one more: 9.9.4b's pending set is gathered by scanning the abilities
+/// PRINTED on objects, and this ability is printed on none of them — the
+/// instruction that created the run is what carries it.
+///
+/// 6.7.4a's server tie is absent by design: that rule is stated about "If
+/// successful" abilities. This sentence names "that run", and the run is what
+/// holds the clause, so there is nothing for a server to re-identify.
+#[derive(Debug, Clone)]
+pub struct WouldBeSuccessful {
+    pub source: AbilityRef,
+    pub controller: Side,
+    pub effects: Vec<Instruction>,
+}
+
 /// CR 1.16.1c: "if triggering an ability or resolving an effect is subject to
 /// both costs and other restrictions, the cost … cannot be paid in a way that
 /// would result in any restriction no longer being met." The restriction is
@@ -2633,6 +2650,78 @@ impl Vm {
         }
     }
 
+    /// CR 9.9.4b: the "…would be declared successful" interrupt the effect
+    /// that initiated this run carried becomes pending as the interrupt
+    /// window over 6.9.5a's instruction opens — which is the one imminence
+    /// its condition can be met by (9.9.3d), so the atoms decide.
+    ///
+    /// The condition rides on the constructed definition rather than being
+    /// checked here, because the window re-asks relevance of every pending
+    /// instance before offering it (9.9.4c) and would otherwise drop this one
+    /// on the floor.
+    fn pend_would_be_successful(&mut self, atoms: &[EffectAtom]) -> Option<u64> {
+        let c = self.run_ctx().and_then(|r| r.if_would_be_successful.clone())?;
+        if !atoms
+            .iter()
+            .any(|a| a.expected() && a.class == EffectClass::DeclareRunSuccessful)
+        {
+            return None;
+        }
+        cite!("rule_pending_status_for_interrupt_windows");
+        cite!("rule_interrupt_keywords");
+        let label = self
+            .st
+            .objects
+            .get(&c.source.obj)
+            .map(|o| o.printed.name)
+            .unwrap_or("if the run would be declared successful");
+        let def = AbilityDef {
+            kind: AbilityKind::Conditional,
+            flags: vec![AbilityFlag::Interrupt],
+            condition: Some(Condition::Trigger(TriggerCond::WouldDeclareRunSuccessful)),
+            cost: None,
+            instructions: c.effects.clone(),
+            statics: Vec::new(),
+            // 9.12.3: the printed sentence says what happens, not whether.
+            // A card printing "you may" says so with a declineable choice
+            // among its own instructions, the way every other clause does.
+            optional: false,
+            timing: None,
+            ordinal: None,
+            label,
+        };
+        let id = self.next_instance;
+        self.next_instance += 1;
+        let gen = self.generation(c.source.obj);
+        self.instances.insert(
+            id,
+            AbilityInstance {
+                id,
+                ability: c.source,
+                def,
+                controller: c.controller,
+                mandatory: true,
+                window: None,
+                hangover: false,
+                independent: false,
+                source_generation: gen,
+                occurrence_group: 0,
+                from_lingering: None,
+                run_id: self.current_run.map(|(r, _, _)| r),
+                triggering_card: None,
+                triggering_cards: Vec::new(),
+                bound_targets: Vec::new(),
+                bound_installs: Vec::new(),
+            },
+        );
+        // The clause belongs to the run, and the run is declared successful
+        // once — so it is offered once.
+        if let Some(r) = self.run_ctx_mut() {
+            r.if_would_be_successful = None;
+        }
+        Some(id)
+    }
+
     /// CR 4.6.8f: may the Corp create a new remote server right now? An
     /// active limit forbids it once the limit is reached. The declaration is
     /// a restriction (9.3.4), so it applies to the *destination declaration*
@@ -3559,6 +3648,7 @@ impl Vm {
                 declared_successful: false,
                 jump_to_run_ends: false,
                 if_successful: None,
+                if_would_be_successful: None,
                 last_encounter: None,
             }),
         }));
@@ -4619,6 +4709,24 @@ impl Vm {
             | Instruction::FlipIdentity(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
+            Instruction::DeclareRunSuccessful => {
+                // 6.9.5a as an expected effect, so that a "would be declared
+                // successful" interrupt has something to be relevant to
+                // (9.9.3). 9.9.2: a Crisium-class static says the run will
+                // NOT be declared successful, and the expected effects are
+                // where that has to show — with the atom gone there is no
+                // "would", exactly as a prohibited draw has none.
+                cite!("rule_successful_run");
+                let prohibited = self
+                    .run_ctx()
+                    .map(|r| self.run_success_prohibited(r.server))
+                    .unwrap_or(true);
+                if prohibited {
+                    vec![]
+                } else {
+                    vec![EffectAtom::new(EffectClass::DeclareRunSuccessful, 1, Side::Runner)]
+                }
+            }
             Instruction::BreachServer(_) => {
                 // 6.9.5b as an expected effect: the Security-Testing class
                 // replaces it (9.9.11a).
@@ -5040,6 +5148,14 @@ impl Vm {
             pending_ids.push(id);
         }
 
+        // The interrupt the effect that initiated this run carried. The scan
+        // above reaches abilities PRINTED on objects, and this one is printed
+        // on none — the run holds it, exactly as it holds 6.7.4's "If
+        // successful" clause.
+        if let Some(id) = self.pend_would_be_successful(&atoms_snapshot) {
+            pending_ids.push(id);
+        }
+
         // Paid interrupts participate openly (9.9.4d) — window opens if any
         // player has any relevant option now.
         let anyone = !pending_ids.is_empty()
@@ -5171,6 +5287,15 @@ impl Vm {
                         && atoms
                             .iter()
                             .any(|a| a.expected() && a.class == EffectClass::StealAgenda);
+                }
+                TriggerCond::WouldDeclareRunSuccessful => {
+                    // 9.9.3d: met by the imminent instruction's expected
+                    // effects, which is the whole of what this condition
+                    // says — the run it is about is the run carrying it.
+                    cite!("rule_would_relevant");
+                    return atoms
+                        .iter()
+                        .any(|a| a.expected() && a.class == EffectClass::DeclareRunSuccessful);
                 }
                 TriggerCond::WouldTakeTags { during_run } => {
                     let hit = atoms
@@ -9417,7 +9542,12 @@ impl Vm {
                     self.push_breach(*server);
                 }
             }
-            Instruction::InitiateRun { server, allowed, if_successful } => {
+            Instruction::InitiateRun {
+                server,
+                allowed,
+                if_successful,
+                if_would_be_successful,
+            } => {
                 cite!("rule_run_timing_structure");
                 // 6.9.1a: the attacked server has been announced by now — an
                 // effect that named one carried it, an effect that did not
@@ -9439,6 +9569,21 @@ impl Vm {
                     };
                     if let Some(r) = self.run_ctx_mut() {
                         r.if_successful = Some(clause);
+                    }
+                }
+                // CR 9.9.1: the "would be declared successful" clause belongs
+                // to the same effect and travels the same way — but as an
+                // interrupt, so what it waits for is the IMMINENCE of 6.9.5a
+                // rather than the declaration itself.
+                if !if_would_be_successful.is_empty() {
+                    cite!("rule_interrupt_keywords");
+                    let clause = WouldBeSuccessful {
+                        source,
+                        controller,
+                        effects: if_would_be_successful.clone(),
+                    };
+                    if let Some(r) = self.run_ctx_mut() {
+                        r.if_would_be_successful = Some(clause);
                     }
                 }
                 // The nested run frame is now on top; this ability resumes
@@ -15631,6 +15776,7 @@ fn class_key(c: EffectClass) -> u64 {
         EffectClass::Breach => 15,
         EffectClass::AccessCard => 16,
         EffectClass::PayCost => 17,
+        EffectClass::DeclareRunSuccessful => 18,
     }
 }
 

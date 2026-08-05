@@ -439,6 +439,56 @@ pub fn wyvern() -> Card {
         .build()
 }
 
+/// Omar Keung: Conspiracy Theorist — Identity: Natural. Link 0.
+/// "Once per turn → [click]: Run Archives. If that run would be declared
+///  successful, change the attacked server to HQ or R&D for the remainder of
+///  that run."
+///
+/// COMPLETE. Two printed sentences, so two instructions (9.11.3) — except
+/// that the second cannot BE the ability's second instruction: 6.1's run is a
+/// nested timing structure, and everything after the instruction that
+/// initiates one resolves once that run is over. The second sentence names
+/// "that run", so it belongs to the run, which is exactly where 6.7.4's "If
+/// successful" clause of an initiating effect goes. This one is the same
+/// clause a step earlier, and 9.9.1's "would" is what moves it: an interrupt,
+/// relevant to the imminence of 6.9.5a's declaration.
+///
+/// One instruction earlier is the whole point. The Success Phase's own step
+/// declares the run successful against the attacked server as it stands when
+/// it resolves, and 6.9.5b then breaches that same server — so an ability
+/// that changes it during the interrupt window over 6.9.5a changes what the
+/// run succeeded on and what is breached, while one reacting AFTER the
+/// declaration would change neither.
+///
+/// "HQ or R&D" is 9.11.4g's option choice inside that one instruction, and
+/// 6.1.2d is what makes each branch honest: the attacked server changes
+/// DIRECTLY, without the Runner moving, so nothing on the way into HQ or R&D
+/// is approached or encountered.
+///
+/// "For the remainder of that run" is not a duration to maintain. There is
+/// one attacked server and this instruction sets it; the run ending is what
+/// ends it, exactly as the run beginning is what set it in the first place.
+pub fn omar_keung() -> Card {
+    card("Omar Keung: Conspiracy Theorist")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.")
+        .paid_once_per_turn(
+            clicks(1),
+            [run_then_if_would_be_successful(
+                ServerId::Archives,
+                [choose_one([
+                    ("HQ", vec![change_attacked_server(ServerId::Hq)]),
+                    ("R&D", vec![change_attacked_server(ServerId::Rnd)]),
+                ])],
+            )],
+        )
+        .named("run archives")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -457,5 +507,6 @@ pub fn identities() -> Vec<Card> {
         valencia_estevez(),
         null_whistleblower(),
         ryo_phoenix_ono(),
+        omar_keung(),
     ]
 }

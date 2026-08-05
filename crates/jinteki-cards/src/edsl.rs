@@ -1004,6 +1004,7 @@ pub fn run_then_if_successful(
         server: Some(server),
         allowed: RunServerSet::These(vec![server]),
         if_successful: if_successful.into_iter().collect(),
+        if_would_be_successful: Vec::new(),
     }
 }
 /// "Run any server. If successful, …" — the effect names no server, so the
@@ -1011,6 +1012,34 @@ pub fn run_then_if_successful(
 /// allows (minus any server 6.3.2a forbids initiating a run on).
 pub fn run_any_server(if_successful: impl IntoIterator<Item = Instruction>) -> Instruction {
     Instruction::run_any_server(if_successful.into_iter().collect())
+}
+/// "Run <server>. If that run **would** be declared successful, …" (Omar
+/// Keung.) 9.9.1's "would" makes the second sentence an INTERRUPT, relevant
+/// to the imminence of 6.9.5a's declaration — the last moment at which the
+/// attacked server can still be changed and have the declaration follow it.
+///
+/// It rides on the run for the same reason [`run_then_if_successful`]'s
+/// clause does: the sentence says "that run", and the run this instruction
+/// creates is what identifies it. `allowed` is 6.7.4a's set all the same,
+/// because the FIRST sentence is what states it — but 6.7.4a's tie is stated
+/// about "If successful" abilities only, and this clause is not one, so
+/// nothing re-reads it.
+pub fn run_then_if_would_be_successful(
+    server: ServerId,
+    if_would_be_successful: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::InitiateRun {
+        server: Some(server),
+        allowed: RunServerSet::These(vec![server]),
+        if_successful: Vec::new(),
+        if_would_be_successful: if_would_be_successful.into_iter().collect(),
+    }
+}
+/// "The attacked server becomes <server>." (6.1.2d.) The run's timing step is
+/// untouched: the Runner does not move, and so approaches and encounters
+/// nothing on the way in.
+pub fn change_attacked_server(server: ServerId) -> Instruction {
+    Instruction::ChangeAttackedServer { server }
 }
 /// "Bypass the ice you are encountering." (6.5.8.)
 pub fn bypass_encountered_ice() -> Instruction {

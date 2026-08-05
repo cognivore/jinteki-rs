@@ -250,6 +250,7 @@ pub fn pinhole_threading() -> Card {
                 },
                 duration: WantedDuration::ThisRun,
             }],
+            if_would_be_successful: Vec::new(),
         }])
         .build()
 }

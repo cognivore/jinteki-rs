@@ -40,6 +40,18 @@ pub enum EffectClass {
     /// be paid, and an interrupt can modify it (Patchwork class) exactly as
     /// one can modify an imminent damage value.
     PayCost,
+    /// CR 6.9.5a: the run being DECLARED successful. It carries no modifiable
+    /// value — 6.7.1's declaration is not a number — and it exists for the
+    /// one thing 9.9.3 needs of an expected effect: something a "would"
+    /// trigger condition can be met by. Without it the Success Phase's own
+    /// step is indistinguishable from every other structural step, and an
+    /// ability that acts one instruction BEFORE the declaration has no
+    /// imminence to be relevant to.
+    ///
+    /// 9.9.2 removes it: a Crisium-class "runs on this server cannot be
+    /// declared successful" means the run would not be declared successful,
+    /// and the expected effects have to say so.
+    DeclareRunSuccessful,
     /// Structure-internal effects with no modifiable value.
     Structural,
 }
