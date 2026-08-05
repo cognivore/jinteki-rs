@@ -240,10 +240,88 @@ pub fn fringe_applications() -> Card {
         .build()
 }
 
+/// Jemison Astronautics: Sacrifice. Audacity. Success. — Identity: Corp.
+/// "Whenever you forfeit an agenda, place X advancement counters on 1
+///  installed card. X is equal to the agenda point value of the forfeited
+///  agenda plus 1."
+///
+/// COMPLETE. Two printed sentences, and only the first is an instruction: the
+/// second DEFINES X (9.12.2e), which is a calculated quantity and not
+/// something that happens. So one conditional ability with one instruction,
+/// and X written where the sentence puts it.
+///
+/// 8.2.5 has already moved the agenda to the removed-from-game zone by the
+/// time this resolves — a forfeit is a cost, and 1.16.10b records it during
+/// the payment. The value read is therefore the PRINTED one, which is what
+/// 1.15.4's "the forfeited agenda" still names after the card has left the
+/// score area. An agenda worth 0 still places 1 counter, because the printed
+/// "plus 1" is part of the definition and not a floor.
+///
+/// 1.18.2: the counters are PLACED, not advanced, so this never meets a
+/// "whenever you advance a card" condition — which is the whole difference
+/// between this identity and an advance-triggered one.
+///
+/// "1 installed card" makes no stipulation about whose, so 1.15.2c's default
+/// is every installed card and a Runner card is as valid a target as a Corp
+/// one — the same description Tennin Institute writes.
+pub fn jemison_astronautics() -> Card {
+    card("Jemison Astronautics: Sacrifice. Audacity. Success.")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.")
+        .when(
+            forfeits_agenda(Corp),
+            [place_on_q(
+                choose(1, &[]),
+                CounterKind::Advancement,
+                plus(agenda_points_of(&[the_triggering_card_matching()]), amount(1)),
+            )],
+        )
+        .named("sacrifice, audacity, success")
+        .build()
+}
+
+/// The Zwicky Group: Invisible Hands — Identity: Unsubstantiated.
+/// "The first time each turn you gain credits through an ability on an agenda
+///  or operation, you may draw 1 card."
+///
+/// COMPLETE. 9.1.4 is what makes the sentence sayable: an ability's SOURCE is
+/// the card it is on, so "through an ability on an agenda or operation" is a
+/// description of that card, asked in the ordinary words. A transaction
+/// operation's play ability qualifies, and so does a scored agenda's; the
+/// Corp's own basic credit action does not, because 5.2.6b is the PLAYER's
+/// action and comes through no card at all.
+///
+/// 9.12.2b: one instance per OCCURRENCE, so an ability gaining credits twice
+/// over meets this twice — which is exactly why the printed ordinal is there,
+/// and why it is 9.6.5c's stipulation about the occurrence rather than
+/// 9.3.6g's flag (the Pālanā Foods reading).
+pub fn the_zwicky_group() -> Card {
+    card("The Zwicky Group: Invisible Hands")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Unsubstantiated"])
+        .text("The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.")
+        .may_when_first_each_turn(
+            gains_credits_through(
+                Corp,
+                &[of_any_type(&[CardType::Agenda, CardType::Operation])],
+            ),
+            [draw(Corp, 1)],
+        )
+        .named("invisible hands")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
     vec![
+        jemison_astronautics(),
+        the_zwicky_group(),
         fringe_applications(),
         argus_security(),
         weyland_builder_of_nations(),

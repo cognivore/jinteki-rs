@@ -73,6 +73,24 @@ kernel words, not card patches.
   many are needed. *(Harmony Medtech: Biomedical Pioneer; Issuaq Adaptics:
   Sustaining Diversity.)*
 
+- **A sentence joined by "and" cannot refer to the card its own other half
+  chose.** 9.11.3 makes such a sentence ONE instruction, and `Combined` says
+  so by merging its halves' expected atoms — but a half that CHOOSES its own
+  targets cannot ride that merge, so it is spliced out to announce them where
+  1.15.2 puts them, which is AFTER the merged half has resolved. "Add 1
+  rezzed card to HQ and gain credits equal to its rez cost" therefore gains
+  the credits before the card has moved, and 1.15.4's "its" reads nothing at
+  all. Writing it as two instructions is the other wrong answer: it invents
+  the checkpoint 9.11.3 charges for. *(Blue Sun: Powering the Future.)*
+- **Nothing modifies the NUMBER of tags the Runner is considered to have.**
+  `Instruction::GainTags` and `RemoveTags` move the real count, and
+  `Quantity::RunnerTags` and `TriggerRequirement::RunnerTagsAtLeast` read it —
+  but "the Runner is considered to have 1 additional tag (even if they have
+  0)" is a DECLARATION about that number, which every reader of
+  `st.runner.tags` would have to go through. The scope is the other half:
+  "during encounters with the outermost piece of ice protecting any server"
+  wants both a description of the outermost ice and a window the declaration
+  holds in. *(Acme Consulting: The Truth You Need.)*
 - **Nothing happens BEFORE the first turn.** `PrintedCard::starting_hand_size`,
   `starting_credits` and `starting_bad_publicity` are 1.6's setup FACTS,
   settled while the game is built and never resolved by anything; "before
@@ -167,7 +185,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **92 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **100 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -307,7 +325,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (7/21)
+## Corp — Jinteki (10/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
@@ -316,13 +334,13 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
 - [ ] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.
 - [ ] **Harmony Medtech: Biomedical Pioneer** — Each player needs 1 fewer agenda point to win the game.
-- [ ] **Hyoubu Institute: Absolute Clarity** — The first time each turn you reveal a card, gain 1[credit]. [click]: Reveal 1 card from the grip at random or the top card of the stack.
-- [ ] **Industrial Genomics: Growing Solutions** — The trash cost of each card is increased by 1 for each facedown card in Archives.
+- [x] **Hyoubu Institute: Absolute Clarity** — The first time each turn you reveal a card, gain 1[credit]. [click]: Reveal 1 card from the grip at random or the top card of the stack.
+- [x] **Industrial Genomics: Growing Solutions** — The trash cost of each card is increased by 1 for each facedown card in Archives.
 - [ ] **Issuaq Adaptics: Sustaining Diversity** — Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity. For each hosted power counter, you need 1 less agenda point to win the game.
 - [ ] **Jinteki Biotech: Life Imagined** — Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech. [click][click][click]: Flip this identity.
 - [x] **Jinteki: Personal Evolution** — Whenever an agenda is scored or stolen, do 1 net damage.
 - [x] **Jinteki: Potential Unleashed** — Whenever the Runner takes at least 1 net damage, trash the top card of the stack.
-- [ ] **Jinteki: Replicating Perfection** — The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.
+- [x] **Jinteki: Replicating Perfection** — The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.
 - [x] **Jinteki: Restoring Humanity** — When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].
 - [ ] **Mti Mwekundu: Life Improved** — Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.
 - [ ] **Méliès U: Only the Brightest** — When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest. When the Runner makes a successful run on a central server, flip this identity. When the Runner’s action phase ends, gain 1[credit].
@@ -333,7 +351,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (9/19)
+## Corp — NBN (12/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -342,14 +360,14 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Editorial Division: Ad Nihilum** — The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.
 - [ ] **Epiphany Analytica: Nations Undivided** — The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity. [click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.
 - [ ] **GameNET: Where Dreams are Real** — Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].
-- [ ] **Haarpsichord Studios: Entertainment Unleashed** — The Runner cannot steal more than one agenda each turn.
-- [ ] **Harishchandra Ent.: Where You're the Star** — While the Runner is tagged, they play with the grip revealed.
+- [x] **Haarpsichord Studios: Entertainment Unleashed** — The Runner cannot steal more than one agenda each turn.
+- [x] **Harishchandra Ent.: Where You're the Star** — While the Runner is tagged, they play with the grip revealed.
 - [x] **Information Dynamics: All You Need To Know** — Draft format only. If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.
 - [ ] **NBN: Controlling the Message** — The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).
 - [ ] **NBN: Making News** — 2[recurring-credit] Use these credits during trace attempts.
 - [x] **NBN: Reality Plus** — The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.
 - [x] **NBN: The World is Yours*** — Your maximum hand size is increased by 1.
-- [ ] **Near-Earth Hub: Broadcast Center** — The first time each turn you create a remote server, draw 1 card.
+- [x] **Near-Earth Hub: Broadcast Center** — The first time each turn you create a remote server, draw 1 card.
 - [x] **Nebula Talent Management: Making Stars** — When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.
 - [x] **New Angeles Sol: Your News** — Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).
 - [x] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
@@ -357,7 +375,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (9/19)
+## Corp — Weyland Consortium (11/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -368,13 +386,13 @@ Module: `decks/identities/corp_weyland.rs`
 - [x] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.
 - [x] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
 - [x] **Gagarin Deep Space: Expanding the Horizon** — As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].
-- [ ] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.
+- [x] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.
 - [ ] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
 - [ ] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
 - [ ] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
 - [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
 - [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
-- [ ] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
+- [x] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
 - [x] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.
 - [ ] **Weyland Consortium: Because We Built It** — 1[recurring-credit] Use this credit to advance ice.
 - [x] **Weyland Consortium: Builder of Nations** — The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.

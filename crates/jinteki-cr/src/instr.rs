@@ -120,6 +120,19 @@ pub enum Quantity {
     /// there is no such value at all and this is 0 — the same treatment
     /// 1.16.2d gives an X outside the payment of its cost.
     ImminentValueOf(EffectClass),
+    /// CR 1.17.2: "the agenda point value of the forfeited agenda" (Jemison
+    /// Astronautics) — the agenda points printed on the cards a description
+    /// matches, summed. The description is the shared FILTER vocabulary, the
+    /// same one [`Quantity::Count`] counts with (§12 rule 5): a quantity
+    /// position is read, never announced, so it describes cards rather than
+    /// naming targets. A description matching nothing is 0 (9.12.2e), and so
+    /// is a card with no agenda points printed on it.
+    ///
+    /// The value is the card's PRINTED one, so it is still readable after the
+    /// agenda has left the score area — which is the only reason a sentence
+    /// about a forfeited agenda can be answered at all (8.2.5 has already
+    /// removed it from the game by the time the ability resolves).
+    AgendaPointsOf(Vec<TargetFilter>),
 }
 
 impl Default for Quantity {
@@ -362,6 +375,13 @@ pub enum Instruction {
     /// restricted to installed unrezzed cards — a card in hand, in a deck or
     /// set aside can be revealed.
     RevealCards { cards: TargetSpec },
+    /// CR 1.21.3 + 1.15.2: "reveal 1 card from the grip **at random**"
+    /// (Hyoubu Institute). A random pick is not an announcement — 1.15.2b
+    /// puts the choice to a player, and this sentence takes it away from
+    /// both — so the cards cannot be a [`TargetSpec`] and the instruction
+    /// says the hand and the number instead. The same shape
+    /// [`Instruction::TrashRandomFromHand`] takes for 10.4.3's damage.
+    RevealRandomFromHand { side: Side, count: Quantity },
     /// CR 1.10.3a: "Take N[credit] from this card." — hosted credits move from
     /// a card to a credit pool, which is a GAIN (they enter the pool from
     /// another location). With fewer hosted than asked for, the card gives
@@ -1085,6 +1105,8 @@ impl Instruction {
             | Instruction::PlayStepResolve | Instruction::PlayStepFinish | Instruction::RemoveSelfFromGame
             | Instruction::IfMet { .. } | Instruction::SetAsideTopOfDeck { .. } | Instruction::ArrangeSetAside { .. }
             | Instruction::CorpRearrangesRnd | Instruction::Search { .. } | Instruction::TrashRandomFromHand { .. }
+            // 1.15.2b: a card taken at random is not announced by anyone.
+            | Instruction::RevealRandomFromHand { .. }
             | Instruction::PerformedBy { .. } | Instruction::Sabotage { .. } | Instruction::RemoveCountersFromPlayer { .. }
             | Instruction::ReduceImminentCost { .. } | Instruction::ForEach { .. } | Instruction::IdentifyMark
             | Instruction::TakeBadPublicity { .. } | Instruction::GainAllottedClicks(..) | Instruction::RefillRecurring(..)
@@ -1178,6 +1200,7 @@ impl Instruction {
             | Instruction::EndTheRun | Instruction::AccessCards { .. } | Instruction::AdditionalAccesses(..)
             | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)
             | Instruction::LookAtCards { .. } | Instruction::ExposeCards { .. } | Instruction::RevealCards { .. }
+            | Instruction::RevealRandomFromHand { .. }
             | Instruction::TakeHostedCredits { .. } | Instruction::RemoveCounters { .. } | Instruction::Derez { .. }
             | Instruction::MoveSetAsideCounters { .. } | Instruction::PreventDamage { .. }
             | Instruction::PreventAllDamage { .. } | Instruction::AvoidTags(..) | Instruction::RemoveTags(..)
@@ -1711,6 +1734,19 @@ pub enum TargetFilter {
     /// "this card" as a criterion — the ability's own source, and only it.
     /// Self-referential language (10.1.4), the complement of `OtherThanSource`.
     IsSource,
+    /// CR 1.15.4: "**the forfeited agenda**", "**that card**" — the card the
+    /// ability's triggering occurrence named, as a DESCRIPTION rather than as
+    /// a back-reference. [`TargetSpec::TriggeringCard`] is the same card
+    /// pointed at; this is what a quantity's filter list says about it, and
+    /// it sits beside [`TargetFilter::SameNameAsTriggeringCard`] and
+    /// [`TargetFilter::SameCardTypeAsTriggeringCard`], which say something
+    /// weaker about the same occurrence.
+    ///
+    /// Like [`TargetFilter::IsSource`] it fixes ONE card by identity, so
+    /// 1.15.2c's play-area default has nothing left to restrict — the card
+    /// this describes is the card it describes wherever it now sits, which
+    /// for a forfeited agenda is the removed-from-game zone.
+    IsTriggeringCard,
     /// CR 1.13.2: "cards hosted on this card" — the source's hosted cards,
     /// installed or not (1.13.2a).
     HostedOnSource,
@@ -1862,6 +1898,11 @@ impl TargetFilter {
                 // 1.5.4a: the pile is a place, and naming it is the only way
                 // an ability can reach a card outside the game.
                 | TargetFilter::InIdentityPileOf(_)
+                // 1.15.4: the description fixes ONE card by identity, so
+                // there is no selection for 1.15.2c to restrict — the card an
+                // occurrence named is that card wherever it now is.
+                | TargetFilter::IsSource
+                | TargetFilter::IsTriggeringCard
         ) || match self {
             // A disjunction specifies the zone only when EVERY alternative
             // does: 1.15.2c lifts for a description that says where to look,

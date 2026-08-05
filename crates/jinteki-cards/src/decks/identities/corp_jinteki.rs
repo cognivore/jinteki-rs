@@ -229,10 +229,135 @@ pub fn pt_untaian() -> Card {
         .build()
 }
 
+/// Industrial Genomics: Growing Solutions — Identity: Division.
+/// "The trash cost of each card is increased by 1 for each facedown card in
+///  Archives."
+///
+/// COMPLETE. A permanent fact about every trash cost in the game, so it is a
+/// static declaration and not something that happens. The amount is a
+/// calculated quantity (9.12.2), re-read every time a cost is read — a card
+/// entering Archives raises every trash cost on the board at once, and one
+/// leaving lowers them again.
+///
+/// "Each card" stipulates nothing at all, so the description is empty: the
+/// Runner's own cards are covered by the sentence as written. What limits it
+/// is 7.1.5a from the other end — a card with no trash cost printed on it
+/// never gains one, because "if a card does not have a trash cost, the Runner
+/// cannot pay its trash cost" is about the CARD and not about the number.
+///
+/// "Facedown card in Archives" is the pair 10.3.1a makes meaningful: a card
+/// the Corp trashes enters Archives facedown and one the Runner trashes
+/// enters it faceup, so what raises these costs is the Corp's own discards.
+/// It is not "unrezzed", which 8.1.2 restricts to installed Corp cards.
+pub fn industrial_genomics() -> Card {
+    card("Industrial Genomics: Growing Solutions")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("The trash cost of each card is increased by 1 for each facedown card in Archives.")
+        .declares([trash_costs_increased_by(
+            &[],
+            times(1, per_card(any_of(&[&[in_archives(), facedown()]]))),
+        )])
+        .named("growing solutions")
+        .build()
+}
+
+/// Jinteki: Replicating Perfection — Identity: Megacorp.
+/// "The Runner cannot run on remote servers. Ignore this ability until the
+///  end of the turn whenever the Runner runs on a central server."
+///
+/// COMPLETE. Two printed sentences and neither of them happens: the first is
+/// a permanent prohibition, the second says when the first does not apply. So
+/// it is ONE static ability — the declaration, with 9.3.7a's stated condition
+/// saying while what holds it applies.
+///
+/// The second sentence is the first's condition read from the other side.
+/// "Ignore this ability until the end of the turn whenever the Runner runs on
+/// a central server" and "while the Runner has not run on a central server
+/// this turn" are the same span: the ability applies from the turn's
+/// beginning until the first such run, and not again until the next turn
+/// begins. 1.12.6's "this turn" is exactly "until the end of the turn"
+/// counted from the other end, and 10.2.1 makes the run history the open
+/// information the question is answered from.
+///
+/// 6.3.2a: what is prohibited is ANNOUNCING a remote as the attacked server,
+/// so the run action is simply not offered for one. It is not a prohibition
+/// on the run continuing — 6.1.2d's change of attacked server can still put a
+/// run in progress onto a remote, which is what an AgInfusion-class ability
+/// does.
+///
+/// "Runs on a central server" is the run being MADE, not one being
+/// successful: an unsuccessful run on HQ lifts this for the turn just as well.
+pub fn jinteki_replicating_perfection() -> Card {
+    card("Jinteki: Replicating Perfection")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Megacorp"])
+        .text("The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.")
+        .declares_while(
+            &[runner_made_no_run_this_turn_on(&[
+                ServerId::Hq,
+                ServerId::Rnd,
+                ServerId::Archives,
+            ])],
+            [cannot_initiate_runs_on_remote_servers()],
+        )
+        .named("replicating perfection")
+        .build()
+}
+
+/// Hyoubu Institute: Absolute Clarity — Identity: Division.
+/// "The first time each turn you reveal a card, gain 1[credit].
+///  [click]: Reveal 1 card from the grip at random or the top card of the
+///  stack."
+///
+/// COMPLETE. Two printed lines, two abilities: a conditional one and a paid
+/// one. The paid ability's own reveal meets the conditional one's condition,
+/// which is the card working as printed — the Corp spends a click, sees a
+/// card and is paid once a turn for the first look.
+///
+/// "You reveal" is 9.1.1a's controller and not the card's owner: both halves
+/// of the paid ability show a RUNNER card, and the Corp is the one revealing
+/// it. 1.21.5 keeps this apart from looking, exposing and accessing — none of
+/// those meets a reveal condition.
+///
+/// "At random" is what stops the grip half being a description: 1.15.2b puts
+/// a target announcement to a player, and this sentence takes the choice from
+/// both, so nothing is announced and an empty grip reveals nothing at all.
+/// The stack half names a zone and fixes the card by position, so it
+/// announces nothing either. The printed "or" between them is 9.11.4g's
+/// option choice, made by the Corp when the ability resolves.
+pub fn hyoubu_institute() -> Card {
+    card("Hyoubu Institute: Absolute Clarity")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("The first time each turn you reveal a card, gain 1[credit].")
+        .text("[click]: Reveal 1 card from the grip at random or the top card of the stack.")
+        .when_first_each_turn(reveals_a_card(Corp), [gain(Corp, 1)])
+        .named("absolute clarity")
+        .paid(
+            clicks(1),
+            [choose_one([
+                ("1 card from the grip at random", vec![reveal_at_random_from_hand_of(Runner, 1)]),
+                ("the top card of the stack", vec![reveal(top_of_stack(amount(1)))]),
+            ])],
+        )
+        .named("reveal a card")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        hyoubu_institute(),
+        industrial_genomics(),
+        jinteki_replicating_perfection(),
         synthetic_systems(),
         pt_untaian(),
         jinteki_personal_evolution(),

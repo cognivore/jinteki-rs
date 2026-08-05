@@ -1179,7 +1179,7 @@ fn example_rule_additonal_cost_simultaenous_1() {
     let dmg = log.iter().position(|c| matches!(c, GameChange::DamageSuffered { amount: 6, .. }))
         .expect("one aggregated damage payment");
     let gain = log.iter().position(
-        |c| matches!(c, GameChange::CreditsGained { side: Side::Runner, amount: 1 }),
+        |c| matches!(c, GameChange::CreditsGained { side: Side::Runner, amount: 1, .. }),
     )
     .expect("sol-class trigger resolved");
     let steal = log.iter().position(|c| matches!(c, GameChange::AgendaStolen { .. })).unwrap();
@@ -2270,7 +2270,7 @@ fn example_rule_delayed_conditional_ability_relevant_once_1() {
         .changes
         .log
         .iter()
-        .filter(|c| matches!(c, GameChange::CreditsGained { side: Side::Runner, amount: 1 }))
+        .filter(|c| matches!(c, GameChange::CreditsGained { side: Side::Runner, amount: 1, .. }))
         .count();
     // 4 clicks/turn × 2 turns of basic credits = 8 one-credit gains, plus
     // exactly ONE from the delayed conditional (9.6.13c).
@@ -2691,7 +2691,7 @@ fn example_rule_reveal_for_ability_limitations_1() {
     assert_eq!(vm.st.objects[&archer].zone, Zone::Ice(ServerId::Remote(1)));
     assert!(!vm.st.objects[&archer].faceup, "not rezzed after declining");
     assert_eq!(
-        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == archer)).count(),
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == archer)).count(),
         1,
         "8.5.13c/d: the hidden-provenance card is revealed exactly once"
     );
@@ -2733,7 +2733,7 @@ fn example_rule_reveal_for_install_and_rez_1() {
     assert!(matches!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(_))));
     assert!(!vm.st.objects[&agenda].faceup, "agendas cannot be rezzed (8.1.2c)");
     assert_eq!(
-        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == agenda)).count(),
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == agenda)).count(),
         1,
         "8.5.13d: the unrezzable install-and-rez target is revealed"
     );
@@ -4752,7 +4752,7 @@ fn example_rule_valid_search_target_install_play_3() {
         vm.changes
             .log
             .iter()
-            .filter(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == pharos))
+            .filter(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == pharos))
             .count(),
         1,
         "8.5.13d: the Corp must reveal the card it is unable to rez"
@@ -7766,7 +7766,7 @@ fn example_rule_swap_become_installed_1() {
         .changes
         .log
         .iter()
-        .position(|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 4 }))
+        .position(|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 4, .. }))
         .expect("gained 4");
     assert!(teia_at < gain_at, "the reaction resolved before the next instruction (9.1.2a)");
 }
@@ -7957,7 +7957,7 @@ fn example_rule_forced_encounter_1() {
         .expect("the accessed card forced an encounter with itself");
     let ended = pos(&|c| matches!(c, GameChange::EncounterEnded { ice, .. } if *ice == chrysalis))
         .expect("the forced encounter completed");
-    let gained = pos(&|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 2 }))
+    let gained = pos(&|c| matches!(c, GameChange::CreditsGained { side: Side::Corp, amount: 2, .. }))
         .expect("Shiro's second subroutine resolved");
     assert!(accessed < began && began < ended && ended < gained,
         "6.5.9a: encounter the accessed card, then return to resolving subroutines: {:?}", log);
@@ -9372,7 +9372,7 @@ fn example_rule_reveal_from_hidden_1() {
         &[op],
         "1.15.2c: the criteria name the zone, and only the operation matches"
     );
-    let revealed = change_at(&vm, |c| matches!(c, GameChange::CardRevealed { obj } if *obj == op));
+    let revealed = change_at(&vm, |c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == op));
     let moved = change_at(&vm, |c| {
         matches!(c, GameChange::CardMoved { obj, to: Zone::Hand(Side::Corp), .. } if *obj == op)
     });
@@ -11668,7 +11668,7 @@ fn example_rule_bluffing_1() {
         .changes
         .log
         .iter()
-        .any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == braintrust)));
+        .any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == braintrust)));
 }
 
 // ===========================================================================

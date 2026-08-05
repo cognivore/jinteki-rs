@@ -109,6 +109,7 @@ pub fn neural_emp() -> PrintedCard {
                 made: true,
                 successful_only: false,
                 scope: crate::ability::TurnScope::LastCompletedTurn,
+                on: Vec::new(),
             },
         ])])
         .labeled("neural emp: play only if the Runner made a run during their last turn"),

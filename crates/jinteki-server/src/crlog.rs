@@ -151,7 +151,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         }
 
         // ── credits, clicks, costs ─────────────────────────────────────
-        GameChange::CreditsGained { side, amount } => {
+        GameChange::CreditsGained { side, amount, .. } => {
             format!("{}: gains {amount}[c].", side_name(*side))
         }
         GameChange::CreditsLost { side, amount } => {
@@ -222,7 +222,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         GameChange::CardDerezzed { obj } => format!("Corp: derezzes {}.", card(*obj)),
         // CR 1.21.3: revealing shows the front face to ALL players, so both
         // logs name it — and 1.21.4's expose is a reveal with a restriction.
-        GameChange::CardRevealed { obj } => format!("{} is revealed.", card(*obj)),
+        GameChange::CardRevealed { obj, .. } => format!("{} is revealed.", card(*obj)),
         GameChange::CardExposed { obj } => format!("Runner: exposes {}.", card(*obj)),
         // CR 1.21.2: looking shows the front face to ONE player. Only that
         // player's line names it; the other's cannot, and does not.
@@ -386,6 +386,9 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         | GameChange::CardPlayResolved { .. }
         | GameChange::CardUninstalled { .. }
         | GameChange::CardEnteredRoot { .. }
+        // The install that created the server is already logged; the server
+        // coming into existence is bookkeeping around it and adds no line.
+        | GameChange::RemoteServerCreated { .. }
         | GameChange::CardAdvanced { .. }
         | GameChange::AbilityUsed { .. }
         | GameChange::TrashAbilityUsed { .. }
@@ -449,7 +452,7 @@ mod tests {
             | GameChange::CardTrashed { obj, .. }
             | GameChange::CardDiscarded { obj, .. }
             | GameChange::CardInstalled { obj, .. }
-            | GameChange::CardRevealed { obj }
+            | GameChange::CardRevealed { obj, .. }
             | GameChange::CardLookedAt { obj, .. }
             | GameChange::CardExposed { obj }
             | GameChange::CardPlayed { obj, .. }

@@ -5139,7 +5139,7 @@ pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
 pub fn nasx_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::PlayerGainsCredits(Side::Corp),
+        TriggerCond::PlayerGainsCredits { side: Side::Corp, criteria: Vec::new() },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,
             kind: CounterKind::Power,
@@ -5629,7 +5629,7 @@ pub fn abt_like(name: &'static str, n: u32) -> PrintedCard {
 pub fn shuffle_on_credit_asset(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::PlayerGainsCredits(Side::Corp),
+        TriggerCond::PlayerGainsCredits { side: Side::Corp, criteria: Vec::new() },
         vec![Instruction::CorpRearrangesRnd],
         false,
     )

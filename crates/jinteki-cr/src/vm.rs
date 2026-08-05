@@ -1811,6 +1811,14 @@ impl Vm {
                     cite!("rule_accessing");
                     return;
                 }
+                // Haarpsichord class: "the Runner cannot steal more than one
+                // agenda each turn". 1.2.2's "cannot" is absolute, so the
+                // steal simply does not happen and nothing is put to the
+                // Runner — the same shape the access restriction above takes.
+                if self.steal_limit_reached() {
+                    cite!("rule_cannot_precedence");
+                    return;
+                }
                 if self.st.objects[&card].printed.card_type == CardType::Agenda {
                     let total = self.steal_cost_of(card);
                     // 1.16.1b: a cost that cannot be paid is not a choice —
@@ -2149,10 +2157,13 @@ impl Vm {
         }
         match o.zone {
             // 4.3.2: "A player may look at the cards in their own hand, but
-            // not at any of the cards in their opponent's hands."
+            // not at any of the cards in their opponent's hands." — unless a
+            // declaration says that player plays with their hand revealed
+            // (Harishchandra class), which lifts the restriction for that
+            // hand and leaves every other one alone.
             Zone::Hand(s) => {
                 cite!("rule_hand_secret");
-                s == side
+                s == side || self.hand_revealed(s)
             }
             // 4.2.2: decks are kept hidden from BOTH players — the Corp may
             // not look at R&D any more than the Runner may.
@@ -2220,6 +2231,60 @@ impl Vm {
         } else {
             crate::view::CardView::Unseen
         }
+    }
+
+    /// CR 7.1.5a: the trash cost the Runner would have to pay for this card —
+    /// the one printed on it, as modified by active declarations (Industrial
+    /// Genomics class). `None` is a card with no trash cost printed on it,
+    /// which no modification can give one to: 7.1.5a's "if a card does not
+    /// have a trash cost, the Runner cannot pay its trash cost" is about the
+    /// card and not about the number.
+    pub fn effective_trash_cost(&self, card: ObjectId) -> Option<u32> {
+        cite!("rule_paying_trash_costs");
+        let base = self.st.objects.get(&card)?.printed.trash_cost?;
+        let mut cost = i64::from(base);
+        for (src, d) in self.active_statics() {
+            let StaticDecl::TrashCostMod { criteria, amount } = &d else { continue };
+            if !self.object_matches_criteria(card, criteria, Some(src)) {
+                continue;
+            }
+            cost += self.eval_quantity(amount, Some(src));
+        }
+        Some(cost.max(0) as u32)
+    }
+
+    /// CR 4.3.2 / 10.2.2: does an active declaration make this player's hand
+    /// open information (Harishchandra class)? Read wherever 4.3.2's default
+    /// secrecy would otherwise apply, so the change is one answer and not a
+    /// second copy of the zone.
+    pub fn hand_revealed(&self, whose: Side) -> bool {
+        cite!("rule_hand_secret");
+        self.active_statics()
+            .iter()
+            .any(|(_, d)| matches!(d, StaticDecl::HandRevealed { whose: w } if *w == whose))
+    }
+
+    /// CR 1.17.7: how many agendas the Runner has ALREADY stolen since the
+    /// current turn began (1.12.6, 10.2.1), and the smallest limit any active
+    /// declaration puts on that number. `None` is no limit at all.
+    fn steal_limit_reached(&self) -> bool {
+        cite!("rule_agenda_stolen");
+        let Some(limit) = self
+            .active_statics()
+            .iter()
+            .filter_map(|(_, d)| match d {
+                StaticDecl::StealsPerTurnAtMost(n) => Some(*n),
+                _ => None,
+            })
+            .min()
+        else {
+            return false;
+        };
+        let so_far = self.changes.log[self.st.turn_log_start..]
+            .iter()
+            .filter(|c| matches!(c, GameChange::AgendaStolen { .. }))
+            .count() as u32;
+        so_far >= limit
     }
 
     /// CR 4.8.7: the facedown set-aside groups in existence, in creation
@@ -2584,6 +2649,14 @@ impl Vm {
             StaticCond::SourceInScoreAreaOf(side) => {
                 cite!("sec_score_area");
                 self.st.objects.get(&obj).map(|o| o.zone == Zone::ScoreArea(*side)).unwrap_or(false)
+            }
+            // 9.3.7a: the declarations apply while the stated condition
+            // holds, and this one is a question about the game state — asked
+            // in the same vocabulary a trigger condition's 9.6.5c
+            // requirements are asked in.
+            StaticCond::StateRequirement(reqs) => {
+                cite!("rule_condition_requirements_part_of_effect");
+                reqs.iter().all(|r| self.state_requirement_holds_for(r, Some(obj)))
             }
         }
     }
@@ -3697,12 +3770,23 @@ impl Vm {
     /// already in progress can still be moved onto that server (6.1.2d).
     pub fn run_initiation_prohibited(&self, server: ServerId) -> bool {
         cite!("rule_cannot_run_abilities");
-        self.active_statics().iter().any(|(src, d)| {
-            matches!(d, StaticDecl::CannotInitiateRunOnSourceServer)
-                && self.st.objects.get(src).is_some_and(|o| match o.zone {
+        self.active_statics().iter().any(|(src, d)| match d {
+            StaticDecl::CannotInitiateRunOnSourceServer => {
+                self.st.objects.get(src).is_some_and(|o| match o.zone {
                     Zone::Root(s) | Zone::Ice(s) => s == server,
                     _ => false,
                 })
+            }
+            // The sentence names the servers itself, so the source's own
+            // location says nothing about which ones it reaches.
+            StaticDecl::CannotInitiateRunOn(set) => match set {
+                crate::instr::RunServerSet::Any => true,
+                crate::instr::RunServerSet::AnyRemote => {
+                    matches!(server, ServerId::Remote(_))
+                }
+                crate::instr::RunServerSet::These(list) => list.contains(&server),
+            },
+            _ => false,
         })
     }
 
@@ -4121,6 +4205,18 @@ impl Vm {
                     .and_then(|o| o.printed.cost)
                     .unwrap_or(0) as i64
             }
+            // 1.17.2: the agenda points PRINTED on the described cards. Read
+            // from the printed card so a forfeited agenda — already in the
+            // removed-from-game zone by 8.2.5 — still answers.
+            Q::AgendaPointsOf(criteria) => {
+                cite!("rule_agenda_points");
+                self.filter_candidates_from(criteria, source)
+                    .into_iter()
+                    .filter_map(|o| self.st.objects.get(&o))
+                    .filter_map(|o| o.printed.agenda_points)
+                    .map(i64::from)
+                    .sum()
+            }
             Q::Times(n, inner) => n * self.eval_quantity(inner, source),
             // 9.12.2a: "1 for every N" — the count of complete groups, so a
             // remainder buys nothing and there is never a negative count.
@@ -4340,6 +4436,7 @@ impl Vm {
             | Instruction::Derez { .. }
             | Instruction::ExposeCards { .. }
             | Instruction::LookAtCards { .. }
+            | Instruction::RevealRandomFromHand { .. }
             | Instruction::EndActionPhase(_)
             | Instruction::RezCard { .. }
             | Instruction::ResolveAbilityOf { .. }
@@ -4378,7 +4475,7 @@ impl Vm {
                     .access_card()
                     .and_then(|c| self.st.objects.get(&c))
                     .is_some_and(|o| o.printed.card_type == CardType::Agenda);
-                if is_agenda {
+                if is_agenda && !self.steal_limit_reached() {
                     vec![EffectAtom::new(EffectClass::StealAgenda, 1, Side::Runner)]
                 } else {
                     vec![]
@@ -4645,8 +4742,12 @@ impl Vm {
             crate::lingering::ReplacementTransform::SuppressAndGainCredits(n) => {
                 atom.removed = true;
                 self.st.player_mut(controller).credits += n;
-                self.changes
-                    .record(GameChange::CreditsGained { side: controller, amount: n });
+                self.changes.record(GameChange::CreditsGained {
+                    side: controller,
+                    amount: n,
+                    // 9.1.4: the replacement's own source made these credits.
+                    source: Some(src_obj),
+                });
             }
             crate::lingering::ReplacementTransform::BreachFromBottom => {
                 // The breach is replaced but STILL EXPECTED — a later
@@ -6819,6 +6920,21 @@ impl Vm {
             TargetFilter::OtherThanSource => source != Some(o.id),
             // 10.1.4: "this card" — the ability's own source, and only it.
             TargetFilter::IsSource => source == Some(o.id),
+            // 1.15.4: the card the ability's triggering occurrence named,
+            // read off the innermost ability frame exactly as
+            // `TargetSpec::TriggeringCard` reads it.
+            TargetFilter::IsTriggeringCard => {
+                cite!("rule_target_beyond_move");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(af.triggering_card),
+                        _ => None,
+                    })
+                    .flatten()
+                    == Some(o.id)
+            }
             // 1.13.2: hosted ON the source — a host relationship, which is
             // what "all hosted cards" names.
             TargetFilter::HostedOnSource => {
@@ -7845,7 +7961,7 @@ impl Vm {
                     .values()
                     .any(|o| o.host == Some(src) && o.printed.side == Side::Corp)
             }
-            R::RunnerMadeRun { made, successful_only, scope } => {
+            R::RunnerMadeRun { made, successful_only, scope, on } => {
                 cite!("rule_hidden_or_open_information");
                 let log = &self.changes.log;
                 // The window the sentence names. "This turn" is the current
@@ -7880,12 +7996,13 @@ impl Vm {
                         (start, end)
                     }
                 };
-                let any = log[start..end].iter().any(|c| {
-                    if *successful_only {
-                        matches!(c, GameChange::RunDeclaredSuccessful { .. })
-                    } else {
-                        matches!(c, GameChange::RunBegan { .. })
-                    }
+                // The server the sentence names, where it names one — the
+                // same reading `TriggerCond::RunBegins` gives its list.
+                let named = |s: &ServerId| on.is_empty() || on.contains(s);
+                let any = log[start..end].iter().any(|c| match c {
+                    GameChange::RunDeclaredSuccessful { server } => *successful_only && named(server),
+                    GameChange::RunBegan { server } => !*successful_only && named(server),
+                    _ => false,
                 });
                 any == *made
             }
@@ -8355,7 +8472,10 @@ impl Vm {
         // which is one of the game effects by which a player learns hidden
         // information.
         self.st.seen.show_all(card);
-        self.changes.record(GameChange::CardRevealed { obj: card });
+        // 8.5.13: the player INSTALLING reveals it, and only they can be
+        // installing a card of their own side.
+        let by = self.st.objects[&card].printed.side;
+        self.changes.record(GameChange::CardRevealed { obj: card, by });
     }
 
     /// Terminal 8.5.13c check: a hidden-provenance card that ends the
@@ -8368,7 +8488,8 @@ impl Vm {
         if p.was_hidden && p.reveal_check.is_some() && !self.st.objects[&p.card].faceup {
             cite!("rule_reveal_for_ability_limitations");
             self.st.seen.show_all(p.card);
-            self.changes.record(GameChange::CardRevealed { obj: p.card });
+            let by = self.st.objects[&p.card].printed.side;
+            self.changes.record(GameChange::CardRevealed { obj: p.card, by });
         }
     }
 
@@ -8434,7 +8555,11 @@ impl Vm {
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     let n = a.value.max(0) as u32;
                     self.st.player_mut(*side).credits += n;
-                    self.changes.record(GameChange::CreditsGained { side: *side, amount: n });
+                    self.changes.record(GameChange::CreditsGained {
+                        side: *side,
+                        amount: n,
+                        source: Some(source.obj),
+                    });
                 }
             }
             Instruction::LoseCredits(side, _) => {
@@ -8648,8 +8773,11 @@ impl Vm {
                         EffectClass::GainCredits => {
                             let n = a.value.max(0) as u32;
                             self.st.player_mut(a.side).credits += n;
-                            self.changes
-                                .record(GameChange::CreditsGained { side: a.side, amount: n });
+                            self.changes.record(GameChange::CreditsGained {
+                                side: a.side,
+                                amount: n,
+                                source: Some(source.obj),
+                            });
                         }
                         EffectClass::LoseCredits => {
                             let have = self.st.player(a.side).credits;
@@ -9576,7 +9704,28 @@ impl Vm {
                     if let Some(e) = self.st.encounter.as_mut() {
                         e.revealed.push(t);
                     }
-                    self.changes.record(GameChange::CardRevealed { obj: t });
+                    self.changes.record(GameChange::CardRevealed { obj: t, by: controller });
+                }
+            }
+            // 1.21.3 + 1.15.2b: the same reveal, with the card taken at
+            // random instead of chosen — so there is no announcement, and an
+            // empty hand simply reveals nothing.
+            Instruction::RevealRandomFromHand { side, count } => {
+                cite!("rule_reveal");
+                cite!("rule_reveal_not_turn_faceup");
+                let n = self.eval_quantity(count, Some(source.obj)).max(0) as usize;
+                let mut pool: Vec<ObjectId> = self.st.hand[side].clone();
+                for _ in 0..n {
+                    if pool.is_empty() {
+                        break;
+                    }
+                    // 1.15.2e's "as many distinct as possible", without the
+                    // announcement: the same card is never revealed twice by
+                    // one instruction, and a short hand reveals what it has.
+                    let i = self.rng.random_range(0..pool.len());
+                    let t = pool.remove(i);
+                    self.st.seen.show_all(t);
+                    self.changes.record(GameChange::CardRevealed { obj: t, by: controller });
                 }
             }
             // 1.10.3a: hosted credits entering a credit pool are GAINED.
@@ -9606,7 +9755,11 @@ impl Vm {
                         amount: n,
                     });
                     self.st.player_mut(*to).credits += n;
-                    self.changes.record(GameChange::CreditsGained { side: *to, amount: n });
+                    self.changes.record(GameChange::CreditsGained {
+                        side: *to,
+                        amount: n,
+                        source: Some(source.obj),
+                    });
                 }
             }
             // 1.9.2: counters removed from a card return to the bank. Not a
@@ -10276,7 +10429,24 @@ impl Vm {
                 if let (Zone::Ice(s), Some(pos)) = (zone, p.ice_position) {
                     self.pending_ice_position = Some((s, pos));
                 }
+                // 4.6.8d: a remote server exists while it has a card in its
+                // root or protecting it, so THIS move is what creates one
+                // when the destination is a remote that does not exist yet.
+                // Asked before the move for that reason.
+                let created = match zone {
+                    Zone::Root(s @ ServerId::Remote(_)) | Zone::Ice(s @ ServerId::Remote(_))
+                        if !self.remote_servers_inner().contains(&s) =>
+                    {
+                        Some(s)
+                    }
+                    _ => None,
+                };
                 self.move_card(c, zone);
+                if let Some(s) = created {
+                    cite!("rule_remote_server_existence");
+                    let by = self.st.objects[&c].printed.side;
+                    self.changes.record(GameChange::RemoteServerCreated { server: s, by });
+                }
                 if let crate::instr::InstallDest::HostedOn(h) = p.dest {
                     cite!("rule_host_via_install");
                     // 1.13.7a: hosted while being installed, so it keeps the
@@ -10811,7 +10981,7 @@ impl Vm {
                         cite!("rule_reveal_from_hidden");
                         cite!("rule_reveal");
                         self.st.seen.show_all(t);
-                        self.changes.record(GameChange::CardRevealed { obj: t });
+                        self.changes.record(GameChange::CardRevealed { obj: t, by: controller });
                     }
                     let owner = self.st.objects[&t].owner;
                     self.move_card(t, Zone::Hand(owner));
@@ -11824,7 +11994,7 @@ impl Vm {
         // 7.1.5: the basic trash ability — pay the trash cost, trash it.
         // 1.10.3c: what the Runner can pay it WITH includes hosted credits
         // their own cards let them spend (Scrubber class), not just the pool.
-        if let (false, Some(tc)) = (in_archives, o.printed.trash_cost) {
+        if let (false, Some(tc)) = (in_archives, self.effective_trash_cost(card)) {
             cite!("rule_basic_trash_ability");
             cite!("rule_spend_credits");
             // 1.10.3c: the credits a card allows to be spent on THIS payment
@@ -14308,7 +14478,8 @@ impl Vm {
                 self.spend_click(side);
                 self.changes.bump_group();
                 self.st.player_mut(side).credits += 1;
-                self.changes.record(GameChange::CreditsGained { side, amount: 1 });
+                // 5.2.6b: the basic action is the PLAYER's, not a card's.
+                self.changes.record(GameChange::CreditsGained { side, amount: 1, source: None });
             }
             ActionOption::BasicDraw => {
                 // CR 5.2.6c / 5.2.7c: "[click]: Draw 1 card." The action's

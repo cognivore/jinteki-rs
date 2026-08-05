@@ -228,10 +228,95 @@ pub fn new_angeles_sol() -> Card {
         .build()
 }
 
+/// Near-Earth Hub: Broadcast Center — Identity: Division.
+/// "The first time each turn you create a remote server, draw 1 card."
+///
+/// COMPLETE. CR 4.6.8d makes a remote server exist while a card is in its
+/// root or protecting it, so the sentence names step 8.5.16e of the
+/// installation that puts the FIRST card there — not the install itself. An
+/// install into a server that already exists creates nothing and draws
+/// nothing, which is the whole point of the card.
+///
+/// 4.6.5's central servers are never created: they exist for the whole game,
+/// so "a remote server" is the only thing the sentence could name and there
+/// is nothing further to stipulate.
+///
+/// The ordinal is 9.6.5c's stipulation about the occurrence (the Pālanā Foods
+/// reading), not 9.3.6g's flag: the ability is entirely mandatory and 9.1.6
+/// says a player never USES such an ability, so a flag would never be spent.
+pub fn near_earth_hub() -> Card {
+    card("Near-Earth Hub: Broadcast Center")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The first time each turn you create a remote server, draw 1 card.")
+        .when_first_each_turn(creates_a_remote_server(Corp), [draw(Corp, 1)])
+        .named("broadcast center")
+        .build()
+}
+
+/// Haarpsichord Studios: Entertainment Unleashed — Identity: Division.
+/// "The Runner cannot steal more than one agenda each turn."
+///
+/// COMPLETE. A permanent fact rather than something that happens, so it is a
+/// static declaration. 1.2.2 makes "cannot" absolute: once the Runner has
+/// stolen an agenda this turn, 7.2.3's steal step simply does nothing for the
+/// rest of the turn — the access still happens, the agenda is still accessed,
+/// and nothing is put to the Runner to decline.
+///
+/// It is a limit on STEALING (1.17.7) and not on scoring: an agenda the Corp
+/// scores is untouched, and so is one an ability ADDS to the Runner's score
+/// area, since 1.17.3e/f say a card added to a score area is not stolen.
+///
+/// "Each turn" is 1.12.6's window, counted from the game history (10.2.1) —
+/// so it resets on both players' turns, and the Corp's own turn is as much a
+/// turn as the Runner's for a steal made during a Corp-turn run.
+pub fn haarpsichord_studios() -> Card {
+    card("Haarpsichord Studios: Entertainment Unleashed")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The Runner cannot steal more than one agenda each turn.")
+        .declares([cannot_steal_more_than_each_turn(1)])
+        .named("entertainment unleashed")
+        .build()
+}
+
+/// Harishchandra Ent.: Where You're the Star — Identity: Division.
+/// "While the Runner is tagged, they play with the grip revealed."
+///
+/// COMPLETE. A permanent fact with a stated condition, so it is a static
+/// declaration under 9.3.7a's "while" — the declarations apply exactly while
+/// the condition holds, and the moment the Runner's last tag comes off the
+/// grip is hidden again.
+///
+/// What it changes is 4.3.2, which is the ONLY reason a hand is hidden at
+/// all: "a player may look at the cards in their own hand, but not at any of
+/// the cards in their opponent's hands". Lifting it for this hand makes those
+/// cards open information (10.2.3), and nothing else about the zone changes —
+/// the cards are not revealed one at a time, so no "whenever you reveal a
+/// card" condition is ever met by it.
+pub fn harishchandra_ent() -> Card {
+    card("Harishchandra Ent.: Where You're the Star")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("While the Runner is tagged, they play with the grip revealed.")
+        .declares_while(&[runner_is_tagged()], [hand_revealed(Runner)])
+        .named("where you're the star")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        near_earth_hub(),
+        haarpsichord_studios(),
+        harishchandra_ent(),
         new_angeles_sol(),
         information_dynamics(),
         editorial_division(),

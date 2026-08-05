@@ -43,7 +43,12 @@ pub enum ActionIdentity {
 /// triggers (Hostile Infrastructure class, 9.6.4b) see each one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GameChange {
-    CreditsGained { side: Side, amount: u32 },
+    /// CR 1.10.3a: credits entered a credit pool from the bank. `source` is
+    /// the ability's SOURCE where an ability did it (9.1.4), and `None` where
+    /// nothing on a card did — 5.2.6b's basic credit action, which no card
+    /// can be said to have caused. A sentence naming what the credits came
+    /// "through" (The Zwicky Group) is asked of this field.
+    CreditsGained { side: Side, amount: u32, source: Option<ObjectId> },
     CreditsLost { side: Side, amount: u32 },
     ClicksGained { side: Side, amount: u32 },
     ClickSpent { side: Side },
@@ -87,8 +92,12 @@ pub enum GameChange {
     /// "install a program from your heap" condition can see a searched
     /// install at all.
     CardInstalled { obj: ObjectId, side: Side, from: Zone },
-    /// CR 8.5.13c/d: a card was revealed to verify an installation.
-    CardRevealed { obj: ObjectId },
+    /// CR 1.21.3: a card was REVEALED — shown to all players, then returned
+    /// to its previous state. `by` is the player who revealed it, which is
+    /// the ability's controller and NOT the card's owner: a sentence reading
+    /// "the first time each turn YOU reveal a card" (Hyoubu Institute) is met
+    /// by the Corp revealing a card out of the Runner's grip.
+    CardRevealed { obj: ObjectId, by: Side },
     /// CR 1.21.2: a player LOOKED at a card — they may see its front face
     /// without showing it to the other player. 1.21.5 keeps it distinct from
     /// revealing, exposing and accessing.
@@ -169,6 +178,16 @@ pub enum GameChange {
     BreachBegan { server: ServerId },
     BreachEnded { server: ServerId },
     CardEnteredRoot { obj: ObjectId, server: ServerId },
+    /// CR 4.6.8d / 8.5.2a: a REMOTE server came into existence — step
+    /// 8.5.16e of an installation put the first card in its root or
+    /// protecting it. Only remotes are ever created: 4.6.5's central servers
+    /// exist for the whole game, so there is no record for them to make.
+    ///
+    /// `by` is the player whose installation created it, which is the Corp in
+    /// every case the rules allow — recorded anyway, because a sentence
+    /// saying "**you** create a remote server" names a player and the record
+    /// has to be able to answer it.
+    RemoteServerCreated { server: ServerId, by: Side },
     SubroutineResolved { ice: ObjectId, index: usize },
     /// CR 9.12.2d: "all subroutines broken" became satisfied for this
     /// encounter — including vacuously, for ice with zero subroutines, as
@@ -257,11 +276,15 @@ pub fn card_named_by(c: &GameChange) -> Option<ObjectId> {
         | GameChange::CardTrashed { obj, .. }
         | GameChange::CardAdvanced { obj }
         | GameChange::CardExposed { obj }
-        | GameChange::CardRevealed { obj }
+        | GameChange::CardRevealed { obj, .. }
         | GameChange::CardAccessed { obj }
         | GameChange::CardPlayed { obj, .. }
         | GameChange::AgendaScored { obj, .. }
-        | GameChange::AgendaStolen { obj, .. } => Some(*obj),
+        | GameChange::AgendaStolen { obj, .. }
+        // 8.2.5: "the forfeited agenda" — the card is in the removed-from-game
+        // zone by now, and 1.15.4 still names it, which is what lets a
+        // sentence read its printed agenda point value afterwards.
+        | GameChange::AgendaForfeited { obj, .. } => Some(*obj),
         _ => None,
     }
 }

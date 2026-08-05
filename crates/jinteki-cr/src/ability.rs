@@ -322,7 +322,14 @@ pub enum TriggerCond {
     /// CR 9.12.2b: "whenever you gain credits…" (NASX class). One instance
     /// per OCCURRENCE (9.6.4b): an unaggregated group of effects gains the
     /// credits several times over, and this condition sees each of them.
-    PlayerGainsCredits(Side),
+    /// `criteria` is what the sentence says about the SOURCE the credits
+    /// came through — "you gain credits through an ability on **an agenda or
+    /// operation**" (The Zwicky Group) — asked in the shared filter
+    /// vocabulary (§12 rule 5), exactly as [`TriggerCond::CardPlayed`] asks
+    /// about the card played. An empty list is a sentence making no such
+    /// stipulation ("whenever you gain credits", NASX), which the basic
+    /// credit action meets as well as any card does.
+    PlayerGainsCredits { side: Side, criteria: Vec<crate::instr::TargetFilter> },
     /// CR 10.11.5: "the first time each turn you make a successful run on
     /// your mark…" (Virtuoso class). 10.11.5: a condition checking a game
     /// property related to the mark only checks from the moment that server
@@ -532,6 +539,33 @@ pub enum TriggerCond {
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
     /// condition once however many "for each" terms the calculation had.
     PlayerPaysCredits(Side),
+    /// CR 8.2.5: "whenever you forfeit an agenda…" (Jemison Astronautics).
+    /// `by` is the sentence's stipulation about WHO forfeited — the printed
+    /// "you" — carried as content the way every other condition carries it.
+    ///
+    /// Met by the forfeit itself (1.16.10b records it during the payment), so
+    /// the agenda has already gone to the removed-from-game zone by the time
+    /// the ability resolves. 1.15.4 still names it, which is what lets the
+    /// next sentence read its printed agenda point value.
+    AgendaForfeited { by: Side },
+    /// CR 4.6.8d: "the first time each turn you create a remote server…"
+    /// (Near-Earth Hub). Met by step 8.5.16e of the installation that puts
+    /// the first card in a remote's root or protecting it — the moment the
+    /// server comes into existence, which is before the "when installed"
+    /// conditions of step (f).
+    ///
+    /// There is no central-server twin: 4.6.5's centrals exist for the whole
+    /// game and are never created, so "a remote server" is the only thing
+    /// this condition could name.
+    RemoteServerCreated { by: Side },
+    /// CR 1.21.3: "the first time each turn you reveal a card…" (Hyoubu
+    /// Institute). `by` is the sentence's "you" — the player who revealed it,
+    /// which 9.1.1a makes the ability's controller and not the card's owner,
+    /// so revealing a card out of the opponent's hand meets it.
+    ///
+    /// 1.21.5 keeps this distinct from looking, exposing and accessing: a
+    /// card LOOKED at is not revealed, and neither is one accessed.
+    CardRevealed { by: Side },
 }
 
 impl TriggerCond {
@@ -648,7 +682,18 @@ pub enum TriggerRequirement {
     /// rule 2): `made: false` is "…the Runner **did not initiate any runs**
     /// during their last turn" (Subliminal Messaging), the same question with
     /// the answer the sentence wants.
-    RunnerMadeRun { made: bool, successful_only: bool, scope: TurnScope },
+    ///
+    /// `on` is the SERVER stipulation — "…whenever the Runner runs on a
+    /// central server" (Jinteki: Replicating Perfection) — carried as content
+    /// exactly as [`TriggerCond::RunEnds`] and [`TriggerCond::RunBegins`]
+    /// carry theirs. An empty list is a sentence naming no server, which is
+    /// every run.
+    RunnerMadeRun {
+        made: bool,
+        successful_only: bool,
+        scope: TurnScope,
+        on: Vec<ServerId>,
+    },
     /// "…if you played an operation this turn" (Nebula class) — the game
     /// history since the current turn began (1.12.6, 10.2.1).
     PlayedOperationThisTurn(Side),
@@ -786,6 +831,13 @@ pub enum StaticCond {
     /// source is in a score area — 9.1.8a keeps such a card active in BOTH
     /// score areas, so the side is the whole content of the restriction.
     SourceInScoreAreaOf(Side),
+    /// CR 9.3.7a: "**While the Runner is tagged**, …" (Harishchandra Ent.) —
+    /// a stated condition that is a question about the GAME STATE rather than
+    /// about the source. The question is asked in the shared requirement
+    /// vocabulary (§12 rule 5), the same one 9.6.5c's `requires` uses on a
+    /// trigger condition, so a static ability and a conditional one say
+    /// "while the Runner is tagged" with the same words.
+    StateRequirement(Vec<TriggerRequirement>),
 }
 
 /// WHOSE the declaration speaks about, when a card can say either. "Your
@@ -1277,6 +1329,42 @@ pub enum StaticDecl {
     /// windows of the Corp's turn (9.2.7d). The described set is the shared
     /// criteria vocabulary (§12 rule 2).
     CannotScoreMatching { criteria: Vec<crate::instr::TargetFilter> },
+    /// CR 4.3.2 / 10.2.2: "they play with the grip revealed" (Harishchandra
+    /// Ent.) — the named player's HAND stops being hidden information, so
+    /// 4.3.2's "not at any of the cards in their opponent's hands" no longer
+    /// applies to it. Whose hand is content (§12 rule 2); nothing else about
+    /// the zone changes, and the cards are not revealed one at a time, so no
+    /// [`crate::change::GameChange::CardRevealed`] is ever recorded by it.
+    HandRevealed { whose: Side },
+    /// CR 1.17.7: "the Runner cannot steal more than one agenda each turn"
+    /// (Haarpsichord Studios). The count is taken from the turn's history
+    /// (1.12.6, 10.2.1) and the threshold is content (§12 rule 2), so a card
+    /// saying "more than two" is this same declaration.
+    ///
+    /// 1.2.2: "cannot" is absolute. Once the limit is reached the agenda is
+    /// simply not stolen — the access carries on and nothing is put to the
+    /// Runner, exactly as a Pinhole-class access restriction leaves it.
+    StealsPerTurnAtMost(u32),
+    /// CR 7.1.5a: "the trash cost of each card is increased by 1 for each
+    /// facedown card in Archives" (Industrial Genomics) — a modification of
+    /// the trash cost of the cards a description names.
+    ///
+    /// `criteria` is that description in the shared filter vocabulary (§12
+    /// rule 5); an empty list is the printed "each card", which stipulates
+    /// nothing. `amount` is a calculated quantity (9.12.2), so it is
+    /// re-evaluated every time the cost is read — a card entering Archives
+    /// raises every trash cost on the board at once.
+    TrashCostMod { criteria: Vec<crate::instr::TargetFilter>, amount: crate::instr::Quantity },
+    /// CR 6.3.2a: "the Runner cannot run on remote servers" (Jinteki:
+    /// Replicating Perfection) — a prohibition on ANNOUNCING one of the named
+    /// servers as the attacked server.
+    ///
+    /// The general form of [`StaticDecl::CannotInitiateRunOnSourceServer`]:
+    /// that one is an Off-the-Grid-class sentence about the source's own
+    /// server, this one is a sentence that names the servers itself. Like the
+    /// other, it reaches no further than the announcement — a run already in
+    /// progress can still be moved onto such a server (6.1.2d).
+    CannotInitiateRunOn(crate::instr::RunServerSet),
 }
 
 /// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional
@@ -2137,9 +2225,39 @@ pub fn trigger_matches(
             cite!("rule_active_exception_conditional_move_to_inactive_zone");
             *obj == source.id
         }
-        (TriggerCond::PlayerGainsCredits(side), GameChange::CreditsGained { side: s, .. }) => {
+        (
+            TriggerCond::PlayerGainsCredits { side, criteria },
+            GameChange::CreditsGained { side: s, source, .. },
+        ) => {
             cite!("rule_calculated_quantity");
-            side == s
+            if side != s {
+                return false;
+            }
+            // 9.1.4: what the credits came THROUGH. A sentence stipulating a
+            // source is not met by a gain that had none — the basic credit
+            // action came through no card at all.
+            criteria.is_empty()
+                || source.is_some_and(|src| matches_criteria(src, criteria))
+        }
+        // 8.2.5: the forfeit moved the agenda out of the score area. The
+        // sentence names who did it and nothing else.
+        (TriggerCond::AgendaForfeited { by }, GameChange::AgendaForfeited { by: s, .. }) => {
+            cite!("rule_forfeit_rfg");
+            by == s
+        }
+        // 1.21.3: shown to all players by the named player.
+        (TriggerCond::CardRevealed { by }, GameChange::CardRevealed { by: s, .. }) => {
+            cite!("rule_reveal");
+            by == s
+        }
+        // 4.6.8d: the server came into existence with the card that now sits
+        // in it. The sentence names who created it and nothing else.
+        (
+            TriggerCond::RemoteServerCreated { by },
+            GameChange::RemoteServerCreated { by: s, .. },
+        ) => {
+            cite!("rule_remote_server_existence");
+            by == s
         }
         // 10.11.5: the server must be the mark, and the "first time each
         // turn" ordinal is counted from the designation — both are state the

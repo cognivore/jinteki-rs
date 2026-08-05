@@ -3271,7 +3271,7 @@ fn subliminal_messaging_comes_back_from_archives_only_after_a_quiet_runner_turn(
             t.tail(14)
         );
         assert_eq!(
-            vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == sub)),
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == sub)),
             !runner_ran,
             "1.21.3: it is revealed exactly when it comes back: {}",
             t.tail(14)
@@ -6301,7 +6301,7 @@ fn muslihat_takes_an_icebreaker_or_a_run_event_and_nothing_else() {
             vm.changes
                 .log
                 .iter()
-                .any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == top)),
+                .any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == top)),
             kind != "neither",
             "…and the reveal happened with it (kind={kind}): {}",
             t.tail(30)
@@ -7288,7 +7288,7 @@ fn the_foundry_fetches_a_second_copy_of_the_ice_it_just_rezzed() {
         t.tail(50)
     );
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == copy)),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == copy)),
         "the reveal is its own instruction (9.11.4e) and it happened: {}",
         t.tail(50)
     );
@@ -7424,7 +7424,7 @@ fn editorial_division_fetches_a_gray_ops_card_when_bad_publicity_arrives() {
         t.tail(40)
     );
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == wanted)),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == wanted)),
         "the reveal is its own instruction (9.11.4e): {}",
         t.tail(40)
     );
@@ -7946,6 +7946,488 @@ fn new_angeles_sol_plays_a_current_out_of_hq_or_out_of_archives() {
             Zone::PlayArea(Side::Corp),
             "the current was played and 8.6.6c kept it there (from_archives={from_archives}): {}",
             t.tail(40)
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Weyland, Jinteki and NBN, the next batch
+// ---------------------------------------------------------------------------
+
+/// Jemison Astronautics: "Whenever you forfeit an agenda, place X advancement
+/// counters on 1 installed card. X is equal to the agenda point value of the
+/// forfeited agenda plus 1."
+///
+/// 24/7 News Cycle pays the forfeit as an additional play cost, so the agenda
+/// is in the removed-from-game zone before this ability ever resolves — and X
+/// is still its printed value, which is the whole reason the quantity reads
+/// the card and not the score area. Both a 2-point agenda (3 counters) and a
+/// 0-point one (1 counter) are driven, because "plus 1" is part of the
+/// definition and not a floor.
+#[test]
+fn jemison_places_the_forfeited_agendas_points_plus_one() {
+    for points in [0i32, 2i32] {
+        let mut vm = Vm::empty(6188);
+        tk::install_identity(
+            &mut vm,
+            card("Jemison Astronautics: Sacrifice. Audacity. Success."),
+            Side::Corp,
+        );
+        let spare = vm.new_object(
+            tk::vanilla_agenda("Spare Initiative", 3, points),
+            Zone::ScoreArea(Side::Corp),
+        );
+        // A second agenda so the operation has a "when scored" ability to
+        // resolve and the forfeit is a real choice between two cards.
+        let headline = vm.new_object(card("Tomorrow's Headline"), Zone::ScoreArea(Side::Corp));
+        vm.st.score_area.get_mut(&Side::Corp).unwrap().extend([spare, headline]);
+        let cycle = vm.new_object(card("24/7 News Cycle"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(cycle);
+        let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 0, 1), ServerId::Hq, false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(cycle))
+                .when(Match::payment_cards(), Reply::Targets(vec![spare]))
+                .when(
+                    Match::reaction().offering("sacrifice, audacity, success"),
+                    Reply::take("sacrifice, audacity, success"),
+                )
+                .when(Match::targets(), Reply::target(ice))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.objects[&spare].zone,
+            Zone::RemovedFromGame,
+            "8.2.5: the forfeit happened (points={points}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.objects[&ice].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+            (points + 1) as u32,
+            "X is the forfeited agenda's printed points plus 1 (points={points}): {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// Near-Earth Hub: "The first time each turn you create a remote server, draw
+/// 1 card."
+///
+/// The condition is 4.6.8d's server coming into existence, not the install.
+/// Three installs are driven: one into a remote that ALREADY exists, which
+/// creates nothing and draws nothing; one that makes a new remote and draws;
+/// and a third that makes another new remote, by which time the printed
+/// ordinal is spent.
+#[test]
+fn near_earth_hub_draws_only_when_a_remote_is_actually_created() {
+    let mut vm = Vm::empty(6189);
+    tk::install_identity(&mut vm, card("Near-Earth Hub: Broadcast Center"), Side::Corp);
+    // The remote that already exists, so the first install creates nothing.
+    tk::install_root(&mut vm, tk::vanilla_asset("Sitting Asset", 0, 2), ServerId::Remote(1), false);
+    let into_existing = vm.new_object(tk::vanilla_ice("Some Ice", 0, 1), Zone::Hand(Side::Corp));
+    let makes_one = vm.new_object(tk::vanilla_asset("Second Asset", 0, 2), Zone::Hand(Side::Corp));
+    let makes_another = vm.new_object(tk::vanilla_asset("Third Asset", 0, 2), Zone::Hand(Side::Corp));
+    for id in [into_existing, makes_one, makes_another] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(into_existing)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1))),
+            )
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(makes_one)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(makes_another)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&into_existing].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "the first install went into the remote that already existed: {}",
+        t.tail(50)
+    );
+    assert_ne!(
+        vm.st.objects[&makes_one].zone,
+        vm.st.objects[&makes_another].zone,
+        "and the other two each made a remote of their own: {}",
+        t.tail(50)
+    );
+    // The Corp's FIRST turn only: the play runs on into the next one, and
+    // "each turn" is what the ordinal is counted over.
+    let this_turn = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TurnEnded { side: Side::Corp }))
+        .unwrap_or(vm.changes.log.len());
+    let draws = vm.changes.log[..this_turn]
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardDrawn { side: Side::Corp, .. }))
+        .count();
+    assert_eq!(
+        draws,
+        // 5.6.1's mandatory draw, plus this identity's one and only one.
+        2,
+        "nothing for the install into an existing remote, one for the remote \
+         that was created, and the ordinal is spent before the second: {}",
+        t.tail(50)
+    );
+}
+
+/// Haarpsichord Studios: "The Runner cannot steal more than one agenda each
+/// turn."
+///
+/// Two agendas sit in two remotes. The Runner runs both, and 1.2.2's absolute
+/// "cannot" means the second one is accessed and simply not stolen — it stays
+/// where it is, and the access carries on. The control is the same board
+/// without the identity, where both are stolen.
+#[test]
+fn haarpsichord_lets_the_runner_steal_only_the_first_agenda_of_the_turn() {
+    for with_identity in [false, true] {
+        let mut vm = Vm::empty(6190);
+        if with_identity {
+            tk::install_identity(
+                &mut vm,
+                card("Haarpsichord Studios: Entertainment Unleashed"),
+                Side::Corp,
+            );
+        }
+        let one =
+            tk::install_root(&mut vm, tk::vanilla_agenda("First", 3, 2), ServerId::Remote(1), false);
+        let two = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Second", 3, 2),
+            ServerId::Remote(2),
+            false,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&one].zone,
+            Zone::ScoreArea(Side::Runner),
+            "the first agenda is always stolen (with_identity={with_identity}): {}",
+            t.tail(50)
+        );
+        let want =
+            if with_identity { Zone::Root(ServerId::Remote(2)) } else { Zone::ScoreArea(Side::Runner) };
+        assert_eq!(
+            vm.st.objects[&two].zone, want,
+            "and the second only without the identity (with_identity={with_identity}): {}",
+            t.tail(50)
+        );
+    }
+}
+
+/// Harishchandra Ent.: "While the Runner is tagged, they play with the grip
+/// revealed."
+///
+/// 4.3.2 is the only reason a grip is hidden, so lifting it for that hand is
+/// the whole effect — and 9.3.7a's "while" means it comes back the moment the
+/// tag does. Asserted through the Corp's VIEW, which is where information the
+/// Corp is entitled to lives, and the Runner's view of HQ is checked too: the
+/// declaration names one hand and reaches no other.
+#[test]
+fn harishchandra_opens_the_grip_exactly_while_the_runner_is_tagged() {
+    let mut vm = Vm::empty(6191);
+    tk::install_identity(&mut vm, card("Harishchandra Ent.: Where You're the Star"), Side::Corp);
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 2);
+    let hq = tk::fill_hand(&mut vm, Side::Corp, 2);
+
+    assert!(
+        !vm.view_of(Side::Corp).sees(grip[0]),
+        "4.3.2: with no tag the grip is hidden from the Corp"
+    );
+    vm.st.runner.tags = 1;
+    assert!(
+        vm.view_of(Side::Corp).sees(grip[0]) && vm.view_of(Side::Corp).sees(grip[1]),
+        "while the Runner is tagged the whole grip is open to the Corp"
+    );
+    assert!(
+        !vm.view_of(Side::Runner).sees(hq[0]),
+        "and HQ is untouched — the declaration names one hand"
+    );
+    vm.st.runner.tags = 0;
+    assert!(
+        !vm.view_of(Side::Corp).sees(grip[0]),
+        "9.3.7a: the declaration stops applying the moment the last tag goes"
+    );
+}
+
+/// Industrial Genomics: "The trash cost of each card is increased by 1 for
+/// each facedown card in Archives."
+///
+/// The quantity is calculated (9.12.2), so the same asset costs 2, 3 or 4 to
+/// trash depending on what is in Archives at the moment the cost is read —
+/// and only FACEDOWN cards count, which is 10.3.1a's distinction between a
+/// card the Corp trashed and one the Runner did.
+#[test]
+fn industrial_genomics_raises_the_trash_cost_once_per_facedown_archives_card() {
+    for facedown in [0usize, 2usize] {
+        let mut vm = Vm::empty(6192);
+        tk::install_identity(&mut vm, card("Industrial Genomics: Growing Solutions"), Side::Corp);
+        let asset =
+            tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 2), ServerId::Remote(1), true);
+        for i in 0..facedown {
+            let c = vm.new_object(
+                tk::vanilla_asset(if i == 0 { "Buried One" } else { "Buried Two" }, 0, 2),
+                Zone::Discard(Side::Corp),
+            );
+            vm.st.objects.get_mut(&c).unwrap().faceup = false;
+            vm.st.discard.get_mut(&Side::Corp).unwrap().push(c);
+        }
+        // A FACEUP card in Archives is not what the sentence describes.
+        let seen = vm.new_object(tk::vanilla_asset("Seen One", 0, 2), Zone::Discard(Side::Corp));
+        vm.st.objects.get_mut(&seen).unwrap().faceup = true;
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(seen);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        // Exactly the printed cost plus the facedown cards: enough to trash
+        // with the identity, and nothing spare.
+        vm.st.runner.credits = 2 + facedown as u32;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(Match::mid_access(), Reply::Take(Pick::BasicTrash))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&asset].zone,
+            Zone::Discard(Side::Corp),
+            "the Runner could still afford the raised cost (facedown={facedown}): {}",
+            t.tail(50)
+        );
+        assert_eq!(
+            vm.st.runner.credits, 0,
+            "and paid the printed 2 plus 1 for each facedown card in Archives \
+             (facedown={facedown}): {}",
+            t.tail(50)
+        );
+    }
+}
+
+/// Jinteki: Replicating Perfection: "The Runner cannot run on remote servers.
+/// Ignore this ability until the end of the turn whenever the Runner runs on
+/// a central server."
+///
+/// 6.3.2a puts the prohibition on ANNOUNCING the server, so what changes is
+/// which run actions are OFFERED — which the plan reads directly: "run the
+/// remote" applies exactly where that run is on offer, and falls through to
+/// "run Archives" where it is not. So the order of the two runs is the whole
+/// assertion. Without the identity the Runner takes the remote first; with
+/// it, the remote is closed until the central run has lifted the ability, and
+/// then open for the rest of the turn.
+#[test]
+fn replicating_perfection_closes_the_remotes_until_a_central_is_run() {
+    for with_identity in [false, true] {
+        let mut vm = Vm::empty(6193);
+        if with_identity {
+            tk::install_identity(&mut vm, card("Jinteki: Replicating Perfection"), Side::Corp);
+        }
+        tk::install_root(
+            &mut vm,
+            tk::vanilla_asset("Some Asset", 0, 2),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .stop_at_action(),
+        );
+        let order: Vec<ServerId> = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::RunBegan { server } => Some(*server),
+                _ => None,
+            })
+            .collect();
+        let want = if with_identity {
+            vec![ServerId::Archives, ServerId::Remote(1)]
+        } else {
+            vec![ServerId::Remote(1), ServerId::Archives]
+        };
+        assert_eq!(
+            order, want,
+            "the remote is closed until a central has been run \
+             (with_identity={with_identity}): {}",
+            t.tail(50)
+        );
+    }
+}
+
+/// The Zwicky Group: "The first time each turn you gain credits through an
+/// ability on an agenda or operation, you may draw 1 card."
+///
+/// 9.1.4 makes the description a question about the ability's SOURCE. Hedge
+/// Fund is an operation and pays; the Corp's own basic credit action came
+/// through no card at all and does not — which is the whole distinction the
+/// words "through an ability on" draw. The second Hedge Fund of the turn is
+/// the ordinal's other half.
+#[test]
+fn the_zwicky_group_draws_only_for_the_first_gain_off_a_card() {
+    let mut vm = Vm::empty(6194);
+    tk::install_identity(&mut vm, card("The Zwicky Group: Invisible Hands"), Side::Corp);
+    let first = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
+    let second = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
+    for id in [first, second] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 10;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // The basic credit action first: it gains a credit and must not
+            // spend the ordinal.
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::play_card(first))
+            .when(Match::action().once(), Reply::play_card(second))
+            .when(
+                Match::reaction().offering("invisible hands"),
+                Reply::take("invisible hands"),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let this_turn = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TurnEnded { side: Side::Corp }))
+        .unwrap_or(vm.changes.log.len());
+    let draws = vm.changes.log[..this_turn]
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardDrawn { side: Side::Corp, .. }))
+        .count();
+    assert_eq!(
+        draws,
+        // 5.6.1's mandatory draw, plus this identity's one and only one.
+        2,
+        "the basic credit action came through no card and the second operation \
+         is past the ordinal: {}",
+        t.tail(60)
+    );
+}
+
+/// Hyoubu Institute: "The first time each turn you reveal a card, gain
+/// 1[credit]. [click]: Reveal 1 card from the grip at random or the top card
+/// of the stack."
+///
+/// Both halves of the option choice are driven, and the paid ability feeds
+/// the conditional one — which is the card as printed. The reveal is the
+/// CORP's even though the card shown is the Runner's, so the credit arrives;
+/// and the second use of the same turn gets nothing, which is the ordinal.
+/// 1.21.3 also means the card the Corp saw stays visible to both players.
+#[test]
+fn hyoubu_institute_pays_for_the_first_reveal_of_the_turn_only() {
+    for from_stack in [false, true] {
+        let mut vm = Vm::empty(6195);
+        tk::install_identity(&mut vm, card("Hyoubu Institute: Absolute Clarity"), Side::Corp);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let option = if from_stack { "top card of the stack" } else { "grip at random" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                // 5.2.4: a [click] ability is an ACTION, so it is offered in
+                // the action window and not in a paid one.
+                .when(Match::action().times(2), Reply::take("reveal a card"))
+                .when(Match::options(), Reply::ChooseNamed(option))
+                .when(
+                    Match::reaction().offering("absolute clarity"),
+                    Reply::take("absolute clarity"),
+                )
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        let this_turn = vm
+            .changes
+            .log
+            .iter()
+            .position(|c| matches!(c, GameChange::TurnEnded { side: Side::Corp }))
+            .unwrap_or(vm.changes.log.len());
+        let reveals: Vec<jinteki_cr::object::ObjectId> = vm.changes.log[..this_turn]
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::CardRevealed { obj, by: Side::Corp } => Some(*obj),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            reveals.len(),
+            2,
+            "the ability was used twice and revealed a card each time \
+             (from_stack={from_stack}): {}",
+            t.tail(50)
+        );
+        let want_zone =
+            if from_stack { Zone::Deck(Side::Runner) } else { Zone::Hand(Side::Runner) };
+        assert_eq!(
+            vm.st.objects[&reveals[0]].zone, want_zone,
+            "and out of the half the Corp chose (from_stack={from_stack}): {}",
+            t.tail(50)
+        );
+        assert!(
+            vm.view_of(Side::Corp).sees(reveals[0]),
+            "1.21.3: a revealed card is shown to all players (from_stack={from_stack}): {}",
+            t.tail(50)
+        );
+        assert_eq!(
+            vm.st.corp.credits, 1,
+            "paid for the first reveal of the turn and no other \
+             (from_stack={from_stack}): {}",
+            t.tail(50)
         );
     }
 }

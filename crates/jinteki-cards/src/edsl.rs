@@ -669,6 +669,22 @@ impl CardBuilder {
         )
     }
 
+    /// "**While <state>**, …" (9.3.7a): declarations that apply only while a
+    /// stated condition about the GAME holds — "while the Runner is tagged,
+    /// they play with the grip revealed" (Harishchandra Ent.). The state is
+    /// asked in the same words a trigger condition's 9.6.5c requirements use.
+    pub fn declares_while(
+        self,
+        reqs: &[TriggerRequirement],
+        decls: impl IntoIterator<Item = StaticDecl>,
+    ) -> Self {
+        let mut def = AbilityDef::static_ability(decls.into_iter().collect());
+        def.condition = Some(Condition::Static(jinteki_cr::ability::StaticCond::StateRequirement(
+            reqs.to_vec(),
+        )));
+        self.ability(def)
+    }
+
     /// The escape hatch: attach an ability you built yourself. Everything
     /// above is a shorthand for this, so nothing is hidden — reach for it
     /// when a card wants a combination the shorthands do not name (a
@@ -949,6 +965,13 @@ pub fn place(kind: CounterKind, n: i64) -> Instruction {
 /// "Place N <kind> counters on <target>."
 pub fn place_on(target: TargetSpec, kind: CounterKind, n: i64) -> Instruction {
     Instruction::PlaceCounters { target, kind, amount: Quantity::c(n) }
+}
+/// "Place X <kind> counters on <target>." — the same sentence with a
+/// CALCULATED amount (9.12.2), for the cards that print an X instead of a
+/// number ("place X advancement counters on 1 installed card", Jemison
+/// Astronautics).
+pub fn place_on_q(target: TargetSpec, kind: CounterKind, amount: Quantity) -> Instruction {
+    Instruction::PlaceCounters { target, kind, amount }
 }
 /// "Take N[credit] from this card." (1.10.3a — hosted credits move into a
 /// credit pool, which is a GAIN. A card with fewer gives what it has.)
@@ -1442,6 +1465,7 @@ pub fn runner_made_no_runs_last_turn() -> TriggerRequirement {
         made: false,
         successful_only: false,
         scope: TurnScope::LastCompletedTurn,
+        on: Vec::new(),
     }
 }
 /// "When you score this agenda, …"
@@ -1832,6 +1856,7 @@ pub fn runner_made_no_successful_run_last_turn() -> TriggerRequirement {
         made: false,
         successful_only: true,
         scope: jinteki_cr::ability::TurnScope::LastCompletedTurn,
+        on: Vec::new(),
     }
 }
 /// "…an encounter **with an advanced piece of ice** ends" (Weyland
@@ -2120,6 +2145,7 @@ pub fn runner_made_a_run_last_turn() -> TriggerRequirement {
         made: true,
         successful_only: false,
         scope: TurnScope::LastCompletedTurn,
+        on: Vec::new(),
     }
 }
 /// "…the Runner made a successful run during their last turn."
@@ -2128,12 +2154,31 @@ pub fn runner_made_a_successful_run_last_turn() -> TriggerRequirement {
         made: true,
         successful_only: true,
         scope: TurnScope::LastCompletedTurn,
+        on: Vec::new(),
     }
 }
 /// "…you made a successful run this turn" (Mutual Favor class) — the same
 /// question asked of the CURRENT turn.
 pub fn made_a_successful_run_this_turn() -> TriggerRequirement {
-    TriggerRequirement::RunnerMadeRun { made: true, successful_only: true, scope: TurnScope::ThisTurn }
+    TriggerRequirement::RunnerMadeRun {
+        made: true,
+        successful_only: true,
+        scope: TurnScope::ThisTurn,
+        on: Vec::new(),
+    }
+}
+/// "…the Runner has not run on a central server this turn" — the same
+/// history question with the server stipulation the sentence names (4.6.5's
+/// three centrals) and the polarity it wants. Written for the "ignore this
+/// ability until the end of the turn whenever the Runner runs on a central
+/// server" clause, which is that sentence read from the other side.
+pub fn runner_made_no_run_this_turn_on(servers: &[ServerId]) -> TriggerRequirement {
+    TriggerRequirement::RunnerMadeRun {
+        made: false,
+        successful_only: false,
+        scope: TurnScope::ThisTurn,
+        on: servers.to_vec(),
+    }
 }
 /// "…you have at least N link" (1.20).
 pub fn link_at_least(n: u32) -> TriggerRequirement {
@@ -2315,6 +2360,28 @@ pub fn agendas_here_cost_less(n: i32) -> StaticDecl {
     StaticDecl::ScoreRequirementMod { scope: ReqScope::SourceServer, amount: -n }
 }
 /// "You can advance this card." (1.18.3.)
+/// "…they play with the grip revealed." (Harishchandra Ent.; CR 4.3.2 —
+/// the named player's hand stops being hidden from their opponent.)
+pub fn hand_revealed(whose: Side) -> StaticDecl {
+    StaticDecl::HandRevealed { whose }
+}
+/// "The Runner cannot steal more than N agendas each turn." (Haarpsichord
+/// Studios; CR 1.17.7 and 1.2.2's absolute "cannot".)
+pub fn cannot_steal_more_than_each_turn(n: u32) -> StaticDecl {
+    StaticDecl::StealsPerTurnAtMost(n)
+}
+/// "The trash cost of each card is increased by <an amount>." (Industrial
+/// Genomics; CR 7.1.5a.) The criteria are what the sentence says about the
+/// cards it reaches — empty is the printed "each card".
+pub fn trash_costs_increased_by(criteria: &[TargetFilter], amount: Quantity) -> StaticDecl {
+    StaticDecl::TrashCostMod { criteria: criteria.to_vec(), amount }
+}
+/// "The Runner cannot run on remote servers." (Jinteki: Replicating
+/// Perfection; CR 6.3.2a — the prohibition is on ANNOUNCING the server, so a
+/// run already in progress can still be moved onto one.)
+pub fn cannot_initiate_runs_on_remote_servers() -> StaticDecl {
+    StaticDecl::CannotInitiateRunOn(jinteki_cr::instr::RunServerSet::AnyRemote)
+}
 pub fn can_be_advanced() -> StaticDecl {
     StaticDecl::CanBeAdvancedSelf
 }
@@ -2805,6 +2872,49 @@ pub fn swap(a: TargetSpec, b: TargetSpec) -> Instruction {
 /// 4.8.3 reports where the card was before it was set aside).
 pub fn installs_a_from(side: Side, of: CardType, from: Zone) -> TriggerCond {
     TriggerCond::CardInstalledFrom { side, from, of_types: vec![of] }
+}
+/// "Whenever you forfeit an agenda, …" (Jemison Astronautics class; CR 8.2.5
+/// — the agenda leaves the score area for the removed-from-game zone, and
+/// 1.15.4 still names it afterwards).
+pub fn forfeits_agenda(by: Side) -> TriggerCond {
+    TriggerCond::AgendaForfeited { by }
+}
+/// "…you reveal a card" (Hyoubu Institute class; CR 1.21.3 — shown to all
+/// players. `side` is the sentence's "you", the player who reveals it, so a
+/// card revealed out of the OPPONENT's hand still meets it.)
+pub fn reveals_a_card(by: Side) -> TriggerCond {
+    TriggerCond::CardRevealed { by }
+}
+/// "Reveal N cards from <a hand> at random." (1.21.3 with 1.15.2b's choice
+/// taken away from both players — so this is not a description and nothing
+/// is announced.)
+pub fn reveal_at_random_from_hand_of(side: Side, n: i64) -> Instruction {
+    Instruction::RevealRandomFromHand { side, count: Quantity::c(n) }
+}
+/// "…you gain credits through an ability on <a description>" (The Zwicky
+/// Group class; CR 9.1.4 — the credits came through the ability's SOURCE, so
+/// the description is about that card). An empty criteria list is the plain
+/// "whenever you gain credits", which the basic credit action meets too.
+pub fn gains_credits_through(side: Side, criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::PlayerGainsCredits { side, criteria: criteria.to_vec() }
+}
+/// "…you create a remote server" (Near-Earth Hub class; CR 4.6.8d — a remote
+/// server exists while a card is in its root or protecting it, so the
+/// installation that puts the first card there is what creates it).
+pub fn creates_a_remote_server(by: Side) -> TriggerCond {
+    TriggerCond::RemoteServerCreated { by }
+}
+/// "…the agenda point value of <a description>" (1.17.2) — the points
+/// PRINTED on those cards, summed, so a card that has left the board still
+/// answers.
+pub fn agenda_points_of(criteria: &[TargetFilter]) -> Quantity {
+    Quantity::AgendaPointsOf(criteria.to_vec())
+}
+/// "…that card" / "…the forfeited agenda" (1.15.4) as a DESCRIPTION — the
+/// card the ability's triggering occurrence named, for the quantity and
+/// filter positions where [`the_triggering_card`] (a target) does not fit.
+pub fn the_triggering_card_matching() -> TargetFilter {
+    TargetFilter::IsTriggeringCard
 }
 /// "…your heap" (CR 4.3) — the Runner's discard pile, named as a ZONE, for
 /// the sentences that stipulate where a card came from rather than describing
