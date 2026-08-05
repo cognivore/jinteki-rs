@@ -256,6 +256,31 @@ conflict.
     nothing is ever trapped — Escape and tap-away advance, and the log keeps
     every line.
 
+13. **Every stat of each side fits, at every width** (the fan's elastic step,
+    applied to the seat rails). The rail's box is fixed — the board's inset
+    reserves it, so it can never reflow the board (THE LAW §2) — but its
+    content is not: a 43-card R&D, twelve credits, a tag, and an identity
+    name are wider than the box on a narrow screen, and the old answer was
+    clipping chips, folding "AP · TAG · MU" into ragged lines, and cutting
+    the name to "Nebula T…" at a fixed 70px — every one of which is a number
+    the player then plays without. Everything in the rail is now sized in em
+    off the bar's own font, and the font carries `--sscale`: `fitSideStats`
+    measures the stack against the stylesheet's own max-width/max-height
+    (the box IS the budget, read rather than duplicated), and writes the one
+    number that makes it all fit — the same measure-then-write-one-property
+    shape as the fan's `fit.step`, re-run on every state push (digit counts
+    change width) and on resize (the box is in vh). Down-scale only, floored
+    at 9px: below the floor the rail switches to `.cram` — the tightest
+    packing, chips keeping every stat, the identity name folding to two
+    lines before it may truncate at all — because a smear nobody can read
+    drops information exactly as surely as clipping it did. The floor holds
+    against the NAME (its two-line ellipsis is the deal the floor struck)
+    but yields, last of all, to the BOX: on a viewport too short even for
+    the cram at 9px, the scale keeps going, because a 8px stat is squinted
+    at and a clipped one is played without. The faction colours and the
+    dotted tap affordances ride through untouched; nothing is merged away,
+    nothing is dropped.
+
 ## Deliberate deviations
 
 - **No drag-to-play, and no drag-to-navigate.** HS drags cards; we

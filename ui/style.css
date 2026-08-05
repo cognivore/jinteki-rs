@@ -752,27 +752,61 @@ button.go.alt { background: var(--gold); color: #2a2005; }
       other on one rail is a collision waiting to happen — it happened the
       moment a fourth chip was added, and the seats drew on top of each
       other. A hard ceiling per seat makes that structurally impossible
-      however many chips a seat grows later. */
-.side-bar { flex-direction: column; align-items: flex-start; gap: 4px;
+      however many chips a seat grows later.
+
+      Everything inside the rail is sized in EM off the bar's own font, and
+      the font carries `--sscale` (UX.md lesson 13): `fitSideStats` measures
+      the stack against this max-width/max-height box — the box IS the
+      budget, the board's inset already reserves it, so nothing here can
+      reflow the board (THE LAW §2) — and writes the one number that makes
+      everything fit. Down-scale only; the floor and the `.cram` layout are
+      below. The px that remain px are deliberate: the box itself, and the
+      hairline borders. */
+.side-bar { flex-direction: column; align-items: flex-start; gap: .35em;
   left: 6px; right: auto; width: max-content; max-width: 118px;
-  max-height: calc(50vh - 60px); overflow: hidden; }
+  max-height: calc(50vh - 60px); overflow: hidden;
+  font-size: calc(11.5px * var(--sscale, 1)); }
 /* The three zone counts are one chip, not three: they are read together and
    they are what made the rail overflow. */
 .side-bar .stat.zones { flex-direction: column; align-items: flex-start; gap: 1px;
-  padding: 3px 8px; line-height: 1.35; }
+  padding: .26em .7em; line-height: 1.35; }
 .side-bar .stat.zones .tappable { cursor: pointer; text-decoration: underline;
   text-decoration-color: #3b4a6f; text-underline-offset: 2px; }
 .side-bar.top { top: calc(6px + env(safe-area-inset-top, 0)); }
 .side-bar.bottom { bottom: calc(120px + env(safe-area-inset-bottom, 0)); }
-.side-bar .stat { padding: 2px 8px; font-size: 11.5px; }
-.idchip { pointer-events: auto; display: flex; align-items: center; gap: 6px;
+/* NOWRAP is what makes the measurement honest: a chip that cannot wrap
+   states its whole width as scrollWidth, so a too-long "AP 2 · TAG 12 ·
+   MU 4/4" is met by scaling the rail, never by folding the chip into two
+   ragged lines that then collide with the next chip. */
+.side-bar .stat { padding: .17em .7em; font-size: inherit; gap: .5em;
+  white-space: nowrap; }
+/* No max-width here, deliberately: the chip states its whole width, so the
+   measurement sees the name's true need (the bar clips the excess only for
+   the frames the fit is being computed in). The cap appears in `.cram`,
+   where the name is meant to wrap against it. */
+.idchip { pointer-events: auto; display: flex; align-items: center; gap: .52em;
   cursor: pointer; background: rgba(20,28,46,.85); border: 1px solid var(--line);
-  border-radius: 8px; padding: 3px 8px 3px 3px; }
-.idthumb { width: 36px; height: 26px; border-radius: 4px; flex-shrink: 0;
+  border-radius: .7em; padding: .26em .7em .26em .26em; }
+.idthumb { width: 3.13em; height: 2.26em; border-radius: .35em; flex-shrink: 0;
   background: var(--bg2); background-size: cover; background-position: center 15%;
   border: 1px solid var(--line); }
-.side-bar .who { font-size: 11.5px; max-width: 70px; overflow: hidden;
-  white-space: nowrap; text-overflow: ellipsis; }
+/* The name is not ellipsized at a fixed width any more — "Nebula T…" told
+   nobody anything. It scales with the rail; the floor wraps it (below). */
+.side-bar .who { font-size: inherit; white-space: nowrap; }
+
+/* ── The FLOOR (UX.md lesson 13): 9px is where shrinking stops being
+      reading. `fitSideStats` never writes a scale below it — it switches
+      the rail to this tightest packing instead, and refits. Everything is
+      still shown: chips lose their air, the thumb shrinks, and the identity
+      name folds to two lines before it is allowed to truncate at all. */
+.side-bar.cram { gap: 1px; }
+.side-bar.cram .stat { padding: 1px .35em; gap: .3em; }
+.side-bar.cram .stat.zones { padding: 1px .4em; line-height: 1.22; }
+.side-bar.cram .idchip { padding: 1px .3em 1px 1px; gap: .3em; max-width: 100%; }
+.side-bar.cram .idthumb { width: 2.3em; height: 1.75em; }
+.side-bar.cram .who { white-space: normal; min-width: 0; line-height: 1.15;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  line-clamp: 2; overflow: hidden; text-overflow: ellipsis; }
 /* The right inset clears the turn dial, the bottom strip holds the hand and
    the action chips — so nothing floats over the board's own cards. */
 #board { inset: 4px 104px 124px 128px; }
@@ -796,11 +830,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   #mid-strip { height: 20px; }
   .phase-pill { font-size: 11px; padding: 2px 10px; }
   #board { inset: 2px 76px 92px 104px; }
-  .side-bar { max-width: 98px; gap: 3px; max-height: calc(50vh - 44px); }
-  .side-bar .stat { padding: 1px 6px; font-size: 10.5px; border-width: 1px; }
+  /* Only the BOX and the base font change here: everything inside is em,
+     so the one media override shrinks the whole rail coherently and
+     `--sscale` goes on scaling from the new base. */
+  .side-bar { max-width: 98px; max-height: calc(50vh - 44px);
+    font-size: calc(10.5px * var(--sscale, 1)); }
   .side-bar.bottom { bottom: calc(88px + env(safe-area-inset-bottom, 0)); }
-  .idthumb { width: 30px; height: 22px; }
-  .side-bar .who { font-size: 10px; max-width: 56px; }
   /* WIDTH is width-independent — the `50vw - 122px` budget does not shrink
      with the phone, so the step and the peeks do not either. HEIGHT is: a
      375px-tall landscape phone cannot spend 89px of it on a resting card and

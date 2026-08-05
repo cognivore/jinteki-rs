@@ -577,6 +577,10 @@ window.addEventListener("resize", () => {
   clearTimeout(relayoutTimer);
   relayoutTimer = setTimeout(() => {
     if (!S) return;
+    // Bars FIRST: the seat rail's box is in vh and its base font is a media
+    // query, so a rotation changes both — and the hand measures the band the
+    // rails leave it, so it must see the rail's new size, not last frame's.
+    section("bars", renderBars);
     section("hand", renderHand);
     section("the prompt", renderPrompt);
     section("preview", paintFanPreview);
@@ -609,10 +613,84 @@ function renderBars() {
     : (!S.winner && S["active-player"] === oSide && !myPrompt() ? `<span class="thinking">thinking…</span>` : "");
   top.innerHTML = barHtml(o, oSide, true) + thinking;
   bot.innerHTML = barHtml(m, mySide, false);
+  fitSideStats();
   const credEl = bot.querySelector(".cred");
   if (credEl) statBump("mycred", m.credit, credEl);
   const oc = top.querySelector(".cred");
   if (oc) statBump("oppcred", o.credit, oc);
+}
+
+/* ── every stat of each side FITS (UX.md lesson 13) ──────────────────────
+   The seat rail lives in a fixed strip the board's inset already reserves,
+   so its box is not negotiable — and neither is its content: a clipped
+   Archives count or an identity cut to "Nebula T…" is information a player
+   then plays without. Everything inside the rail is sized in em off the
+   bar's own font, so ONE number decides whether it all fits; this measures
+   the stack against the stylesheet's own max-width/max-height (the box IS
+   the budget — reading it here means the two can never disagree) and
+   writes that number back as `--sscale`. Down-scale only, floored at 9px:
+   below the floor the rail switches to `.cram` — tightest packing, the
+   name folding to two lines — and refits, because a smear nobody can read
+   drops information exactly as surely as clipping it did. The same shape
+   as the fan's `fit.step`: measure the room, write one custom property,
+   let the stylesheet place what the arithmetic sized. Runs on every state
+   push (digit counts change width) and on resize (the box is in vh). */
+const STATS_FLOOR_PX = 9;
+function fitSideStats() {
+  for (const id of ["opp-bar", "my-bar"]) {
+    const bar = document.getElementById(id);
+    if (!bar || !bar.firstElementChild) continue;
+    bar.classList.remove("cram");
+    bar.style.setProperty("--sscale", "1");
+    const cs = getComputedStyle(bar);
+    const boxW = parseFloat(cs.maxWidth) || bar.clientWidth || 1;
+    const boxH = parseFloat(cs.maxHeight) || Infinity;
+    const base = parseFloat(cs.fontSize) || 11.5;
+    const floor = Math.min(1, STATS_FLOOR_PX / base);
+    let scale = fitStatsScale(bar, boxW, boxH, 0);
+    if (scale < floor) {
+      // The floor is where shrinking stops being reading: switch to the
+      // tightest packing and fit THAT. In cram the name's clamp is chased
+      // only down to the floor — its two-line ellipsis is the deal the
+      // floor struck — but the BOX is chased wherever it leads, below the
+      // floor if it must be: a stat clipped by the box is dropped outright,
+      // and an 8px stat still beats an absent one. In practice the floor
+      // yields only on viewports far shorter than any phone held either way.
+      bar.classList.add("cram");
+      bar.style.setProperty("--sscale", "1");
+      scale = fitStatsScale(bar, boxW, boxH, floor);
+    }
+    bar.style.setProperty("--sscale", String(Math.round(scale * 1000) / 1000));
+  }
+}
+/* The content is em-sized, so its need shrinks about linearly with the
+   scale: a few passes of measure-and-ratio converge, and every pass reads
+   the layout the stylesheet actually produced rather than predicting it.
+   (`scrollWidth`/`scrollHeight` state the whole need even though the bar's
+   `overflow: hidden` is clipping the excess while we measure.)
+
+   The one need the bar cannot state is the clamped name's: `.cram`'s
+   two-line clamp swallows its own overflow, so the bar measures as fitting
+   while the name is quietly losing its tail. The element itself still
+   knows (`scrollHeight` past the clamp), so a clamped name counts as
+   overflow too — and since no ratio can be read off a clamp, the scale
+   steps down a notch at a time until the two lines hold the whole name, or
+   the floor is reached and the ellipsis is finally earned. */
+function fitStatsScale(bar, boxW, boxH, whoFloor) {
+  let scale = 1;
+  for (let i = 0; i < 8; i++) {
+    const boxOver = bar.scrollWidth > boxW + 1 || bar.scrollHeight > boxH + 1;
+    const who = bar.querySelector(".who");
+    const whoOver = !!who && who.scrollHeight > who.clientHeight + 1 && scale > whoFloor + 0.001;
+    if (!boxOver && !whoOver) break;
+    const byBox = Math.min(boxW / Math.max(1, bar.scrollWidth), boxH / Math.max(1, bar.scrollHeight));
+    // A box overflow states its own ratio; a clamped name states nothing
+    // (the clamp swallows the overflow), so it is chased a notch at a time.
+    scale = Math.max(0.1, scale * (boxOver && byBox < 0.999 ? byBox : 0.93));
+    if (!boxOver) scale = Math.max(scale, whoFloor);
+    bar.style.setProperty("--sscale", String(Math.round(scale * 1000) / 1000));
+  }
+  return scale;
 }
 
 function barHtml(st, side, isOpp) {
