@@ -2591,20 +2591,18 @@ fn rebirth_with_no_legal_identity_leaves_the_one_in_play() {
         Plan::corp(),
         Plan::runner()
             .when(Match::action().once(), Reply::play_card(rb))
-            .when(Match::targets().once(), Reply::Targets(Vec::new()))
             .stop_at_action(),
     );
     // 1.15.2b: the announcement is made with as many targets as there are,
     // and there are none — the Shaper is in the pile and is not a candidate.
-    let announced = t.of_kind(Kind::Targets);
+    // So the Runner is not asked. An announcement that could only ever be
+    // empty is not a choice, and putting it to the player produced a prompt
+    // with nothing to draw and nothing to press: on the live server, exactly
+    // this card and exactly this board stopped the game dead.
     assert!(
-        matches!(
-            &announced[0].spec,
-            jinteki_cr::decision::DecisionSpec::ChooseTargets { candidates, .. }
-                if candidates.is_empty()
-        ),
-        "no same-faction identity to name: {:?}",
-        announced[0].spec
+        t.of_kind(Kind::Targets).is_empty(),
+        "1.15.2b: nothing to name, so nothing was asked: {}",
+        t.tail(12)
     );
     assert_eq!(vm.identity_of(Side::Runner), Some(andromeda), "{}", t.tail(12));
     assert_eq!(vm.st.objects[&chaos].zone, Zone::OutsideGame(Side::Runner));
@@ -3607,6 +3605,57 @@ fn boomerang_breaks_only_its_chosen_ice_and_comes_back_from_the_heap() {
         Zone::Deck(Side::Runner),
         "9.6.13: the delayed conditional shuffled a copy back at the end of the run: {}",
         t.tail(24)
+    );
+}
+
+/// The same card with nothing to choose. CR 1.15.2b caps an announcement at
+/// the eligible targets that exist, so installing Boomerang onto a table with
+/// no ice on it announces NOTHING — and an announcement that could only ever
+/// be empty is not a choice the Runner makes. Asking for it stopped the game
+/// on the live server: "Choose 0 cards", no candidate to draw, no candidate
+/// to tap, and no button, because the one that ends a selection early was
+/// offered only for an explicit "up to".
+///
+/// The install itself still completes. 8.5 never depended on the choice, and
+/// the result is a piece of hardware that can never be used — no encounter
+/// can be with the ice it does not remember — which is the Runner's problem
+/// and not the rules engine's.
+#[test]
+fn boomerang_installed_with_no_ice_on_the_table_asks_nothing_and_stops_nothing() {
+    let mut vm = Vm::empty(606);
+    let boom = vm.new_object(card("Boomerang"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(boom);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(boom)))
+            .stop_at_action(),
+    );
+    assert!(
+        t.windows(Kind::Targets, Side::Runner).is_empty(),
+        "1.15.2b: no ice exists, so there was no announcement to make and the \
+         Runner was never asked to make one: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&boom].zone,
+        Zone::Rig,
+        "8.5: the install finished regardless: {}",
+        t.tail(16)
+    );
+    // The run is the proof that the game did not stop: the driver reached a
+    // later action window and spent it.
+    assert!(
+        t.windows(Kind::Action, Side::Runner).len() >= 2,
+        "the turn carried on to the next action: {}",
+        t.tail(16)
     );
 }
 

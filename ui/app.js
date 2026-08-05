@@ -2082,7 +2082,12 @@ function renderSelectPrompt(sheet, p, choices) {
     }
   }
   if (p["select-done"]) {
-    const done = el("button", "chip go", `Done (${picked.size} chosen)`);
+    // "Done (0 chosen)" is the wrong sentence for a question that never had
+    // an answer to choose — nothing was declined, there was simply nothing
+    // there. CR 1.15.2b clamped the announcement to the targets that exist,
+    // and acknowledging that is an OK, not a tally.
+    const empty = !(p["select-cards"] || []).length;
+    const done = el("button", "chip go", empty ? "OK" : `Done (${picked.size} chosen)`);
     done.onclick = () => act("select-done", {});
     btns.appendChild(done);
   }
