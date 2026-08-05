@@ -6,7 +6,7 @@
 //! Games ride one WebSocket per session (JSON text frames with a `type`
 //! field); auth and decks ride plain HTTP JSON under /api/*.
 
-use jinteki_server::{api, auth, bridge, db, decks, guard, lobby, local, mail, transcript};
+use jinteki_server::{api, auth, bridge, cr, db, decks, guard, lobby, local, mail, transcript};
 
 use axum::{
     extract::ws::WebSocketUpgrade,
@@ -92,6 +92,10 @@ async fn main() {
         auth::ensure_system_user(&conn).expect("system user");
         decks::seed_starter_decks(&conn).expect("seed starter decks");
     }
+
+    // The game timer: chess clocks and the rope tick server-side, here and
+    // nowhere else (`cr::timing_tick`). Untimed games are never touched.
+    cr::spawn_timing_ticker(db.clone());
 
     let http = reqwest::Client::new();
     let state = api::AppState {

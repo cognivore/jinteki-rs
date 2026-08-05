@@ -1250,6 +1250,72 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     --sheetw: min(max(260px, calc(var(--safew) - 372px)), 420px); }
 }
 
+/* ── The game timer (timed games only; untimed games render none of it) ──
+      Overlay, never a reflow (THE LAW §2): the seat rail's clock chip is a
+      chip like every other stat, and the bottom-right cluster is a fixed
+      strip in the corner the play rail's inventory already leaves free —
+      under the run controls in the portrait stack, beside nothing at all.
+      In the landscape phone layout the run controls become a row along the
+      very bottom-right, so the cluster sits a fixed step above them (fixed
+      by MEDIA QUERY, not by game state — nothing moves mid-game). ── */
+.side-bar .stat.clock { font-variant-numeric: tabular-nums; font-weight: 700;
+  color: var(--dim); }
+.side-bar .stat.clock.live, #time-cluster .tclock.live { color: #fff;
+  border-color: #5b6f9f; }
+.side-bar .stat.clock.low, #time-cluster .tclock.low { color: var(--danger);
+  border-color: var(--danger); }
+#time-cluster { position: fixed; right: calc(12px + var(--sar, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0)); z-index: 46;
+  display: flex; align-items: center; gap: 6px; pointer-events: none;
+  font-size: 12px; }
+#time-cluster .tclock { background: rgba(20,28,46,.85);
+  border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+  font-variant-numeric: tabular-nums; font-weight: 700; color: var(--dim); }
+@media (prefers-reduced-motion: no-preference) {
+  .stat.clock.live, #time-cluster .tclock.live { animation: clockbreathe 1.6s infinite; }
+}
+@keyframes clockbreathe { 50% { border-color: #8fa6d8; } }
+/* The rope: a thin fuse burning down. Subtle — dim gold at 4px — until its
+   last 3 seconds, when it turns red and pulses. */
+#time-cluster .tfuse { width: 64px; height: 4px; border-radius: 2px;
+  background: rgba(255,255,255,.14); overflow: hidden; }
+#time-cluster .tfuse i { display: block; height: 100%; width: 100%;
+  background: var(--gold); opacity: .65; }
+#time-cluster .tfuse.alarm i { background: var(--danger); opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  #time-cluster .tfuse.alarm i { animation: fuselast 0.4s infinite; }
+}
+@keyframes fuselast { 50% { opacity: .35; } }
+/* Banked timeouts: the typographic sand clock and YOUR count, nothing else. */
+#time-cluster .ttokens { color: var(--dim); font-weight: 700; font-size: 13px; }
+#time-cluster .ttokens.some { color: var(--gold); }
+/* YOUR rope, unmissable: a burn-down bar across the middle of the screen.
+   Overlay between the two board halves; the board never moves under it. */
+#rope-mid { position: fixed; left: 50%; top: 47%; transform: translate(-50%, -50%);
+  width: min(46vw, 420px); height: 6px; border-radius: 3px; z-index: 44;
+  pointer-events: none; background: rgba(255,255,255,.10); overflow: hidden;
+  box-shadow: 0 0 8px rgba(0,0,0,.5); }
+#rope-mid i { display: block; height: 100%; width: 100%; background: var(--gold);
+  opacity: .85; border-radius: 3px; }
+#rope-mid.alarm i { background: var(--danger); opacity: 1; }
+/* …and the rim of the screen stressing you out: a dark red vignette breathing
+   very gently while your fuse burns, harder in the last seconds. */
+#rope-vignette { position: fixed; inset: 0; z-index: 43; pointer-events: none;
+  box-shadow: inset 0 0 min(18vw, 150px) rgba(220, 30, 30, .65); opacity: .38; }
+#rope-vignette.alarm { box-shadow: inset 0 0 min(24vw, 200px) rgba(255, 30, 30, .8);
+  opacity: .65; }
+@media (prefers-reduced-motion: no-preference) {
+  #rope-vignette { animation: ropebreathe 2.6s ease-in-out infinite; }
+  #rope-vignette.alarm { animation: ropebreathehard 0.7s ease-in-out infinite; }
+  #rope-mid.alarm i { animation: fuselast 0.4s infinite; }
+}
+@keyframes ropebreathe { 50% { opacity: .16; } }
+@keyframes ropebreathehard { 50% { opacity: .35; } }
+@media (orientation: landscape) and (min-width: 640px) and (max-height: 640px) {
+  /* Clear of the run-controls row that owns the corner in this layout. */
+  #time-cluster { bottom: calc(52px + env(safe-area-inset-bottom, 0)); right: calc(8px + var(--sar, 0px)); }
+}
+
 /* ── Reduced motion ─────────────────────────────────────────────────────
    DECLARED LAST so it wins on equal specificity. Nothing here changes where
    anything ENDS UP — the focus still moves, the card is still dealt, the

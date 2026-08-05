@@ -64,6 +64,9 @@ function disarm() {
  * decide nothing had changed. */
 function repaintArmed() { if (S) render(); }
 let prev = { credits: {}, clicks: {}, logn: 0 };
+/* The last state push's timing snapshot: `{ at: performance.now(), d: state.timing }`.
+   Null in untimed games — every timing element hides off this. */
+let TIMING = null;
 // Jitter control: deal-in animation fires only for cards never seen before,
 // and each board section re-renders only when its slice of state changed.
 let seenCids = new Set();
@@ -157,6 +160,11 @@ function handle(m) {
     case "state":
       S = m.state;
       ACTIONS = m.actions || [];
+      // The clocks are the SERVER's (server-authoritative): every push
+      // carries the remaining times as of the moment it was sent, and the
+      // client only counts the local interval down from that snapshot —
+      // the 1s server sync corrects any drift.
+      TIMING = S.timing ? { at: performance.now(), d: S.timing } : null;
       if (m.mode === "bridge" && m.side && m.side !== "spect") mySide = m.side;
       show("screen-game");
       enterGameChrome();
@@ -280,6 +288,9 @@ $("btn-cr").onclick = () => {
       engine: "cr",
       side: crSide,
       seed: Number.isFinite(seed) ? seed : undefined,
+      // Dev/test hook: `?timing=dev` (or `main:…,action:…,…`) starts this
+      // game with clocks. Absent = untimed, as every game is today.
+      timing: timingFromQuery(),
     });
   });
 };
@@ -806,6 +817,7 @@ function render() {
   // `mouseleave` coming: reap it here, before anything rebuilds a subtree.
   section("hover", reapHoverPreview);
   section("bars", renderBars);
+  section("timing", renderTiming);
   section("servers", () => {
     if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority, armed])) renderServers();
   });
@@ -978,9 +990,16 @@ function barHtml(st, side, isOpp) {
   const glow = idt.cid != null ? glowClass(idt.cid) : "";
   const chip = ["idchip", hasPriority(side) ? "priority" : "", glow]
     .filter(Boolean).join(" ");
+  // The OPPONENT's main clock rides their seat rail (near their identity —
+  // your own lives in the bottom-right time cluster). Text and classes are
+  // written by `timingTick`, off the same snapshot as everything timed.
+  const clock = isOpp && S.timing && S.timing.main
+    ? `<span class="stat clock" data-clock="${side}">⏱ --:--</span>`
+    : "";
   // MTGA-style corner cluster: tappable identity art + compact stat chips.
   return `
     <span class="${chip}" data-side="${side}"><span class="idthumb"${art}></span><span class="who">${name}</span></span>
+    ${clock}
     <span class="stat cred" title="credits">⬡ ${st.credit ?? 0}</span>
     <span class="stat" title="clicks remaining">${clicks}</span>
     <span class="stat zones">
@@ -991,6 +1010,127 @@ function barHtml(st, side, isOpp) {
     </span>
     <span class="stat tappable" data-stat="ap" data-side="${side}"
       title="agenda points — tap to see the agendas">AP ${st["agenda-point"] ?? 0}${s.extra}</span>`;
+}
+
+/* ── the game timer (timed games only; untimed games show none of this) ──
+ *
+ * Server-authoritative: the server owns every deadline and pushes the
+ * remaining times with each state (plus a 1s sync while anything burns); the
+ * client only counts down LOCALLY from the last snapshot, so a hostile or
+ * confused client can change nothing — at worst it displays a lie to itself.
+ *
+ * Three displays, per the law of the overlay (UX.md THE LAW §2 — nothing
+ * reflows):
+ *   · the OPPONENT's main clock: a chip on their seat rail (near identity).
+ *   · your OWN cluster, bottom-right corner: tiny main clock, the rope's
+ *     fuse bar while a fuse of YOURS burns, and your banked ⌛ count.
+ *     Your own only — the opponent's ⌛ count is never shown (nor sent).
+ *   · the running clock is visually alive; red under a minute. The fuse is
+ *     subtle until its last 3 seconds. */
+function renderTiming() {
+  const cl = $("time-cluster");
+  const t = S && S.timing;
+  if (!t) { cl.style.display = "none"; return; }
+  cl.style.display = "flex";
+  if (!cl.firstChild) {
+    cl.innerHTML =
+      `<span class="ttokens" style="display:none">⌛0</span>` +
+      `<span class="tfuse" style="display:none"><i></i></span>` +
+      `<span class="stat clock tclock" style="display:none">⏱ --:--</span>`;
+  }
+  const clock = cl.querySelector(".tclock");
+  clock.style.display = t.main ? "" : "none";
+  clock.setAttribute("data-clock", mySide);
+  // Banked timeouts (⌛): rope games only; the count is already yours-only.
+  const tok = cl.querySelector(".ttokens");
+  if (t.timeouts != null) {
+    tok.style.display = "";
+    tok.textContent = `⌛${t.timeouts}`;
+    tok.classList.toggle("some", t.timeouts > 0);
+  } else {
+    tok.style.display = "none";
+  }
+  timingTick();
+}
+
+function fmtClock(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/* The local countdown between server snapshots. Writes text, width and
+   classes only — never layout (THE LAW §2). */
+function timingTick() {
+  if (!S || !S.timing || !TIMING) return;
+  const t = TIMING.d;
+  const dt = performance.now() - TIMING.at;
+  const over = !!S.winner;
+  if (t.main) {
+    for (const side of ["corp", "runner"]) {
+      let ms = t.main[side + "_ms"] ?? 0;
+      const running = !over && t.main.running === side;
+      if (running) ms = Math.max(0, ms - dt);
+      document.querySelectorAll(`[data-clock="${side}"]`).forEach((el) => {
+        el.textContent = `⏱ ${fmtClock(ms)}`;
+        el.classList.toggle("live", running);
+        el.classList.toggle("low", ms < 60_000);
+      });
+    }
+  }
+  // The fuse: your own prompt's rope, burning down — the cluster's small
+  // copy, the unmissable mid-screen bar, and the rim of the screen breathing
+  // dark red to hurry you. The opponent's fuse is their problem — every one
+  // of these shows YOURS only.
+  const fuse = document.querySelector("#time-cluster .tfuse");
+  const mid = $("rope-mid");
+  const rim = $("rope-vignette");
+  if (!fuse || !mid || !rim) return;
+  const mine = !over && t.rope && t.rope.side === mySide;
+  if (!mine) {
+    fuse.style.display = "none";
+    fuse.classList.remove("alarm");
+    mid.style.display = "none";
+    rim.style.display = "none";
+    return;
+  }
+  const ms = Math.max(0, t.rope.remaining_ms - dt);
+  const alarm = ms < 3000;
+  const pct = `${Math.max(0, Math.min(100, (ms / Math.max(1, t.rope.total_ms)) * 100))}%`;
+  fuse.style.display = "";
+  fuse.classList.toggle("alarm", alarm);
+  fuse.firstElementChild.style.width = pct;
+  mid.style.display = "";
+  mid.classList.toggle("alarm", alarm);
+  mid.firstElementChild.style.width = pct;
+  rim.style.display = "";
+  rim.classList.toggle("alarm", alarm);
+}
+setInterval(timingTick, 150);
+
+/* Dev/test door to a timed game (the lobby will own the real config UI):
+   `?timing=dev` on the URL, or `?timing=main:300,action:60,decision:10,fuse:30`
+   (any subset; naming any rope knob turns the rope on with defaults for the
+   rest). Absent = untimed, exactly today's behavior. */
+function timingFromQuery() {
+  const q = new URLSearchParams(location.search).get("timing");
+  if (!q) return undefined;
+  if (q === "dev") {
+    return { main_clock_secs: 300, rope: { action_secs: 15, decision_secs: 8, timeout_fuse_secs: 10 } };
+  }
+  const t = {};
+  const rope = {};
+  q.split(",").forEach((kv) => {
+    const [k, v] = kv.split(":");
+    const n = parseInt(v, 10);
+    if (!Number.isFinite(n)) return;
+    if (k === "main") t.main_clock_secs = n;
+    if (k === "action") rope.action_secs = n;
+    if (k === "decision") rope.decision_secs = n;
+    if (k === "fuse") rope.timeout_fuse_secs = n;
+    if (k === "rope" && n) rope.action_secs = rope.action_secs ?? 60;
+  });
+  if (Object.keys(rope).length) t.rope = rope;
+  return Object.keys(t).length ? t : undefined;
 }
 
 /* Netrunner names each zone once per side, and players use those names and

@@ -383,6 +383,18 @@
     <div id="log-lines" class="log-lines"></div>
   </div>
 
+  <!-- Timed games only (server sends state.timing; untimed games never show
+       this): the player's OWN timing cluster — tiny main clock, the rope's
+       fuse while it burns, banked ⌛ count — bottom-right corner. The
+       opponent's main clock rides their seat rail instead; their ⌛ count is
+       never shown (nor sent). Overlay, never a reflow (UX.md THE LAW §2). -->
+  <div id="time-cluster" style="display:none"></div>
+  <!-- YOUR fuse, unmissable: a burn-down bar mid-screen, and the rim of the
+       screen breathing dark red — gently, harder in the last seconds. Both
+       are pointer-events:none overlays; the board never moves (THE LAW §2). -->
+  <div id="rope-mid" style="display:none"><i></i></div>
+  <div id="rope-vignette" style="display:none"></div>
+
   <div id="zoom-overlay" class="zoom-overlay" style="display:none"></div>
   <div id="gameover-overlay" class="gameover-overlay" style="display:none"></div>
 </div>

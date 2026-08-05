@@ -27,6 +27,7 @@
 //! wire at all, not even a card id.
 
 use crate::db::Db;
+use crate::timing::{PopOutcome, TimingConfig, TimingParams, TimingState};
 use axum::extract::ws::{Message, WebSocket};
 use jinteki_cr::ability::AbilityRef;
 use jinteki_cr::decision::{ActionOption, WindowOption};
@@ -627,6 +628,17 @@ pub struct CrGame {
     transcript: crate::transcript::Transcript,
     result: Option<GameResult>,
     conceded: Option<Side>,
+    /// A loss ON TIME — a flag (main clock at zero) or a second consecutive
+    /// rope pop. `(loser, reason)`; the reason lands in the result row.
+    timed_out: Option<(Side, &'static str)>,
+    /// All clocks and fuses of this game (`crate::timing`). Untimed games
+    /// carry a disabled state and never tick. (`timing` above is the lobby's
+    /// RECORD of the chosen config; this is the live machinery built from it.)
+    clock: TimingState,
+    /// A first rope pop on `side`'s own action window plays the REST OF THAT
+    /// TURN as basic credit actions: `(side, turn_seq)` — cleared the moment
+    /// the VM leaves that turn.
+    auto_turn: Option<(Side, u64)>,
     last_seen: Instant,
     bot_delay: Duration,
     outcome_recorded: bool,
@@ -650,7 +662,44 @@ impl CrGame {
         self.seats[six(side)].connected = on;
     }
     fn over(&self) -> bool {
-        self.result.is_some() || self.conceded.is_some()
+        self.result.is_some() || self.conceded.is_some() || self.timed_out.is_some()
+    }
+    /// The printed name of this side's identity card — what "{IDENTITY} used
+    /// a timeout" announces. Read from the play area, so a Rebirth-swapped
+    /// identity is named by who they are NOW.
+    fn identity_name(&self, side: Side) -> String {
+        self.vm
+            .cards_in_zone(Zone::PlayArea(side))
+            .iter()
+            .filter_map(|id| self.vm.st.objects.get(id))
+            .find(|o| o.printed.card_type == CardType::Identity)
+            .map(|o| o.printed.name.to_string())
+            .unwrap_or_else(|| side_name(side).to_string())
+    }
+    /// Timing hook: a decision was just put to a person. Their main clock
+    /// starts; the rope lights a fuse sized by the prompt kind.
+    fn timing_arm(&mut self) {
+        if !self.clock.enabled() {
+            return;
+        }
+        if let Some(p) = self.pending.as_ref() {
+            let is_action = matches!(p.spec, DecisionSpec::TakeAction { .. });
+            self.clock.arm(p.side, is_action, Instant::now());
+        }
+    }
+    /// Timing hook: nobody owes a decision any more (it was answered or
+    /// auto-resolved, or the game ended).
+    fn timing_disarm(&mut self) {
+        if self.clock.enabled() {
+            self.clock.disarm(Instant::now());
+        }
+    }
+    /// Timing hook: watch for a turn boundary; a clean own-turn feeds the
+    /// ⌛-banking streak (`crate::timing::TimingState::note_turn`).
+    fn timing_note_turn(&mut self) {
+        if self.clock.enabled() {
+            self.clock.note_turn(self.vm.st.turn_seq, self.vm.st.turn_side);
+        }
     }
     /// A line both players may read (system notices, chat, the result).
     fn say(&mut self, text: impl Into<String>) {
@@ -830,7 +879,7 @@ fn new_game(
     setup: GameSetup,
     seats: [SeatState; 2],
     bot_delay_ms: u64,
-    timing: crate::timing::TimingConfig,
+    timing: TimingParams,
 ) -> CrGame {
     let seed = setup.seed;
     let key = new_token();
@@ -853,7 +902,9 @@ fn new_game(
         seats,
         key,
         seed,
-        timing,
+        // The lobby's RECORD is stamped by `create_two_human_session_with`;
+        // every other door (bot games, tests) is untimed on the record too.
+        timing: crate::timing::TimingConfig::none(),
         pending: None,
         picked: Vec::new(),
         asked: None,
@@ -864,6 +915,9 @@ fn new_game(
         transcript,
         result: None,
         conceded: None,
+        timed_out: None,
+        clock: TimingState::new(timing),
+        auto_turn: None,
         last_seen: Instant::now(),
         bot_delay: Duration::from_millis(bot_delay_ms),
         outcome_recorded: false,
@@ -889,13 +943,25 @@ async fn register(game: &Arc<Mutex<CrGame>>, seats: &[SeatState; 2]) {
 
 /// Create a session from an arbitrary setup. The eternal-deck path goes
 /// through [`eternal_setup`]; tests use this directly with small all-complete
-/// decks, which is the same code path minus the gate.
+/// decks, which is the same code path minus the gate. FULLY UNTIMED — exactly
+/// today's behavior; a timed game goes through [`create_session_with`].
 pub async fn create_session(setup: GameSetup, human: Side, bot_delay_ms: u64) -> String {
+    create_session_with(setup, human, bot_delay_ms, TimingParams::untimed()).await
+}
+
+/// [`create_session`], with clocks. Takes [`TimingParams`] rather than the
+/// lobby's [`TimingConfig`] so tests can run millisecond fuses; a config
+/// converts via `TimingParams::from(&config)`.
+pub async fn create_session_with(
+    setup: GameSetup,
+    human: Side,
+    bot_delay_ms: u64,
+    timing: TimingParams,
+) -> String {
     let token = new_token();
     let mut seats = [SeatState::bot(), SeatState::bot()];
     seats[six(human)] = SeatState::human("you", None).with_token(token.clone());
-    // A bot does not keep a clock: bot games are untimed, unroped.
-    let g = new_game(setup, seats.clone(), bot_delay_ms, crate::timing::TimingConfig::none());
+    let g = new_game(setup, seats.clone(), bot_delay_ms, timing);
     let game = Arc::new(Mutex::new(g));
     register(&game, &seats).await;
     token
@@ -912,6 +978,16 @@ pub async fn create_two_human_session(
     runner: SeatState,
     timing: crate::timing::TimingConfig,
 ) -> (Arc<Mutex<CrGame>>, [String; 2]) {
+    create_two_human_session_with(setup, corp, runner, timing).await
+}
+
+/// [`create_two_human_session`], with the lobby's timing config.
+pub async fn create_two_human_session_with(
+    setup: GameSetup,
+    corp: SeatState,
+    runner: SeatState,
+    timing: TimingConfig,
+) -> (Arc<Mutex<CrGame>>, [String; 2]) {
     let mut seats = [corp, runner];
     for s in seats.iter_mut() {
         if s.token.is_none() {
@@ -922,7 +998,11 @@ pub async fn create_two_human_session(
         seats[0].token.clone().unwrap_or_default(),
         seats[1].token.clone().unwrap_or_default(),
     ];
-    let game = Arc::new(Mutex::new(new_game(setup, seats.clone(), 0, timing)));
+    let game = {
+        let mut g = new_game(setup, seats.clone(), 0, TimingParams::from(&timing));
+        g.timing = timing;
+        Arc::new(Mutex::new(g))
+    };
     register(&game, &seats).await;
     (game, tokens)
 }
@@ -975,7 +1055,11 @@ pub async fn start(
             return None;
         }
     };
-    let token = create_session(setup, human, 300).await;
+    // The dev/test door to a timed game: `"timing": {…}` on the start
+    // message, the lobby's `TimingConfig` shape. Absent or malformed =
+    // fully untimed, exactly today's behavior.
+    let timing: TimingConfig = serde_json::from_value(v["timing"].clone()).unwrap_or_default();
+    let token = create_session_with(setup, human, 300, TimingParams::from(&timing)).await;
     let seat = lookup(&token).await?;
     if let Some(uid) = user {
         record_start(db, &token, uid, human, seed).await;
@@ -1062,6 +1146,20 @@ pub async fn action(ws: &mut WebSocket, db: &Db, seat: &Seat, v: &Value) -> bool
     }
 }
 
+/// One client-shaped command with no socket attached, and the machine run on
+/// to the next human decision: the same validation and the same path as
+/// [`action`] (`apply_command`), minus the interstitial frames. The timing
+/// tests answer prompts with this.
+pub async fn command_headless(g: &mut CrGame, side: Side, v: &Value) -> Result<bool, String> {
+    match apply_command(g, side, v) {
+        Ok(true) => {
+            drive_headless(g).await;
+            Ok(true)
+        }
+        r => r,
+    }
+}
+
 /// `{"type":"say","msg":…}` — a chat line, in both players' logs verbatim.
 /// Chat is the ONLY thing that crosses the per-side log boundary, and it
 /// carries no game information the sender did not choose to give away.
@@ -1116,6 +1214,19 @@ async fn record_outcome_if_over(db: &Db, g: &mut CrGame) {
 /// at the table nothing is auto-answered: the loop simply stops at whichever
 /// seat is asked, and that seat's socket is the one that finds a prompt.
 async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
+    drive_inner(g, Some((ws, viewer))).await
+}
+
+/// [`drive`] with no socket attached: the rope's auto-answers run from the
+/// timer task, where there may be nobody connected to watch — the bot's
+/// interstitial frames are skipped and every seat learns of the outcome from
+/// the nudge that follows. Public for the timing tests, which drive a game
+/// without a WebSocket.
+pub async fn drive_headless(g: &mut CrGame) {
+    drive_inner(g, None).await
+}
+
+async fn drive_inner(g: &mut CrGame, mut sink: Option<(&mut WebSocket, Side)>) {
     // Anything the last answer set in motion is said before anything else
     // happens, and before the early return below can swallow it.
     g.narrate();
@@ -1125,6 +1236,9 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
         return;
     }
     for _ in 0..20_000 {
+        // A turn boundary is a fact about the VM, noticed wherever the VM
+        // moved: the ⌛-banking streak reads it (`timing`).
+        g.timing_note_turn();
         match g.vm.step() {
             Yield::Progressed => {
                 // Every step, so a line is rendered in the state the record
@@ -1135,6 +1249,7 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
             Yield::GameOver(r) => {
                 g.narrate();
                 g.result = Some(r);
+                g.timing_disarm();
                 let (w, why) = outcome(g);
                 g.say(format!("Game over — {} wins ({}).", w, why));
                 g.transcript.note(&format!("game over: {w} wins ({why})"));
@@ -1143,6 +1258,12 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
             }
             Yield::Decision(side, spec) => {
                 g.narrate();
+                // Again here, not only at the loop top: the VM can push a new
+                // turn and yield that turn's first decision inside ONE step,
+                // and the streak bookkeeping must see the boundary BEFORE the
+                // fuse for that decision can burn anything (a fire that lands
+                // before the boundary would be un-dirtied by it).
+                g.timing_note_turn();
                 // PRIORITY, written once, where the engine actually hands it
                 // over. Everything the board says about whose decision it is
                 // reads off this — including the bot's, so a state pushed
@@ -1150,9 +1271,30 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
                 g.asked = Some(side);
                 g.transcript.decision(side, &spec);
                 if !g.seats[six(side)].bot {
+                    // A first rope pop on this side's action window turned
+                    // the rest of their turn over to the house: every
+                    // decision of theirs UNTIL THAT TURN ENDS is answered
+                    // with a basic credit where the window offers one, and
+                    // the neutral default everywhere else. The engine's own
+                    // flow is honoured — the turn ends the way any turn does.
+                    if let Some((aside, aseq)) = g.auto_turn {
+                        if g.vm.st.turn_side != aside || g.vm.st.turn_seq != aseq {
+                            g.auto_turn = None;
+                        } else if side == aside {
+                            let answer = auto_turn_answer(&spec);
+                            let noteworthy = describe_move(g, &spec, &answer, side);
+                            g.transcript.answer(side, "rope", &answer);
+                            g.vm.answer(answer);
+                            g.say_each(noteworthy);
+                            g.narrate();
+                            continue;
+                        }
+                    }
                     let p = present(&g.vm, side, &spec);
                     g.picked.clear();
                     g.pending = Some(p);
+                    // The clock starts when the question is PUT, which is here.
+                    g.timing_arm();
                     g.transcript.flush();
                     return;
                 }
@@ -1166,9 +1308,11 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
                 }
                 g.narrate();
                 if worth_a_frame {
-                    push_state(g, ws, viewer).await;
-                    if !g.bot_delay.is_zero() {
-                        tokio::time::sleep(g.bot_delay).await;
+                    if let Some((ws, viewer)) = sink.as_mut() {
+                        push_state(g, ws, *viewer).await;
+                        if !g.bot_delay.is_zero() {
+                            tokio::time::sleep(g.bot_delay).await;
+                        }
                     }
                 }
             }
@@ -1177,6 +1321,160 @@ async fn drive(g: &mut CrGame, ws: &mut WebSocket, viewer: Side) {
     g.say("The engine ran 20000 steps without asking anyone anything — stopping.");
     g.transcript.note("the engine ran 20000 steps without asking anyone anything");
     g.transcript.flush();
+}
+
+/// What the house plays on a roped player's behalf, inside their auto-played
+/// turn: the basic credit action wherever the action window offers it —
+/// "passes the turn by clicking credits" — and the plan driver's neutral
+/// default for every other prompt the turn passes through (a discard at turn
+/// end, a mid-action choice), which keeps the engine's own flow intact.
+fn auto_turn_answer(spec: &DecisionSpec) -> DecisionAnswer {
+    if let DecisionSpec::TakeAction { options } = spec {
+        if let Some(credit) = options.iter().find(|o| matches!(o, ActionOption::BasicCredit)) {
+            return DecisionAnswer::Action(credit.clone());
+        }
+    }
+    default_answer(spec)
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// The timer (server-authoritative: deadlines live in `timing`, are checked
+// here, and nothing about time is ever trusted from a client)
+// ───────────────────────────────────────────────────────────────────────────
+
+/// One timing inspection of one game: settle the chess clock, flag a side
+/// whose clock reached zero, resolve a burnt-out fuse. Returns whether
+/// anything happened (= the seats should be nudged and the outcome checked).
+/// Called by [`spawn_timing_ticker`]'s loop, and directly by the tests.
+pub async fn timing_tick(g: &mut CrGame) -> bool {
+    if g.over() || !g.clock.enabled() {
+        return false;
+    }
+    let now = Instant::now();
+    g.clock.settle(now);
+    // 1. The main clock: a flag is a loss, immediately.
+    if let Some(loser) = g.clock.flagged(now) {
+        g.timed_out = Some((loser, "out of time"));
+        g.pending = None;
+        g.picked.clear();
+        g.timing_disarm();
+        let (w, why) = outcome(g);
+        g.say(format!("{}: the clock has run out — loses on time.", side_name(loser)));
+        g.say(format!("Game over — {} wins ({}).", w, why));
+        g.transcript.note(&format!("game over: {w} wins ({why})"));
+        g.transcript.flush();
+        return true;
+    }
+    // 2. The rope.
+    if !g.clock.fuse_popped(now) {
+        return false;
+    }
+    if g.pending.is_none() {
+        // Cannot happen in the normal flow (the fuse lives and dies with
+        // `pending`), but a fuse with no question is only ever stale.
+        g.timing_disarm();
+        return false;
+    }
+    let Some((side, what)) = g.clock.pop(now) else { return false };
+    match what {
+        PopOutcome::TimeoutFired => {
+            // The banked ⌛ auto-fired: the fuse has restarted at the timeout
+            // length, the token is consumed, and the prompt stays on the
+            // table. Announced by identity name, in both logs.
+            let line = format!("{} used a timeout \u{231B}", g.identity_name(side));
+            g.say(line.clone());
+            g.transcript.note(&line);
+        }
+        PopOutcome::Loss => {
+            g.timed_out = Some((side, "roped out"));
+            g.pending = None;
+            g.picked.clear();
+            g.timing_disarm();
+            let (w, why) = outcome(g);
+            g.say(format!(
+                "{}: the rope burned out twice in a row — it's game.",
+                side_name(side)
+            ));
+            g.say(format!("Game over — {} wins ({}).", w, why));
+            g.transcript.note(&format!("game over: {w} wins ({why})"));
+            g.transcript.flush();
+        }
+        PopOutcome::AutoResolve => {
+            let p = g.pending.take().expect("checked above");
+            g.picked.clear();
+            g.timing_disarm();
+            let own_action_window = matches!(p.spec, DecisionSpec::TakeAction { .. });
+            let answer = if own_action_window {
+                // Their own action window: the house plays the rest of this
+                // turn as basic credit actions (`auto_turn` steers every
+                // further decision of theirs until the turn ends normally).
+                g.auto_turn = Some((side, g.vm.st.turn_seq));
+                g.say(format!(
+                    "{}: the rope burned out — the rest of the turn is spent on credits.",
+                    side_name(side)
+                ));
+                auto_turn_answer(&p.spec)
+            } else {
+                // Any other prompt: the plan driver's neutral pass/decline.
+                g.say(format!("{}: the rope burned out — passes.", side_name(side)));
+                default_answer(&p.spec)
+            };
+            let noteworthy = describe_move(g, &p.spec, &answer, side);
+            g.transcript.answer(side, "rope", &answer);
+            g.vm.answer(answer);
+            g.say_each(noteworthy);
+            drive_headless(g).await;
+        }
+    }
+    true
+}
+
+/// The server's one clock: a background task that sweeps every registered CR
+/// game, ticks the timed live ones, and nudges their seats — on any event,
+/// and once a second as a drift sync while a fuse or clock is burning.
+/// Spawned once from `main`; tests call [`timing_tick`] directly instead.
+pub fn spawn_timing_ticker(db: Arc<Db>) {
+    tokio::spawn(async move {
+        let mut n: u64 = 0;
+        loop {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            n += 1;
+            // Two tokens per game share one Arc: sweep distinct games.
+            let seats: Vec<Seat> = {
+                let reg = registry();
+                let map = reg.lock().await;
+                let mut seen: Vec<String> = Vec::new();
+                map.values()
+                    .filter(|s| {
+                        if seen.contains(&s.key) {
+                            false
+                        } else {
+                            seen.push(s.key.clone());
+                            true
+                        }
+                    })
+                    .cloned()
+                    .collect()
+            };
+            for seat in seats {
+                let mut g = seat.game.lock().await;
+                if !g.clock.enabled() || g.over() {
+                    continue;
+                }
+                let changed = timing_tick(&mut g).await;
+                if changed {
+                    record_outcome_if_over(&db, &mut g).await;
+                }
+                // The 1s sync keeps clients honest against drift while
+                // anything is burning; events push immediately.
+                let sync = n % 4 == 0 && (g.clock.fuse().is_some() || g.pending.is_some());
+                drop(g);
+                if changed || sync {
+                    crate::lobby::nudge(crate::lobby::Nudge::Game(seat.key.clone()));
+                }
+            }
+        }
+    });
 }
 
 /// What a player just did, rendered ONCE PER VIEWER from that viewer's own
@@ -1261,6 +1559,11 @@ fn outcome(g: &CrGame) -> (String, String) {
     if let Some(loser) = g.conceded {
         return (side_key(loser.other()).into(), "conceded".into());
     }
+    // A loss on time outranks nothing — it can only be set while the game had
+    // no result yet, so the two never compete.
+    if let Some((loser, why)) = g.timed_out {
+        return (side_key(loser.other()).into(), why.into());
+    }
     match g.result {
         Some(GameResult::AgendaPoints(s)) => {
             (side_key(s).into(), "7 agenda points".into())
@@ -1287,6 +1590,7 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
     if cmd == "concede" {
         g.conceded = Some(actor);
         g.pending = None;
+        g.timing_disarm();
         let who = side_name(actor);
         g.say(format!("{who}: concedes."));
         g.transcript.note(&format!("{who} conceded"));
@@ -1471,6 +1775,10 @@ fn answer_now(g: &mut CrGame, a: DecisionAnswer) -> bool {
     g.transcript.answer(side, "human", &a);
     g.pending = None;
     g.picked.clear();
+    // The player spoke for themselves: their clock stops, the fuse goes out,
+    // and a consecutive-pop chain (if one was open) is broken.
+    g.timing_disarm();
+    g.clock.answered(side);
     g.vm.answer(a);
     true
 }
@@ -2246,6 +2554,12 @@ pub fn state_json(g: &CrGame, viewer: Side) -> Value {
         },
     );
     root.insert("run".into(), run_json(vm));
+    // Clocks and the rope, absent entirely in an untimed game. Both main
+    // clocks and whose is running are open information; the ⌛ count is the
+    // viewer's OWN — the opponent's is never sent (`timing::TimingState::json`).
+    if let Some(t) = g.clock.json(viewer, Instant::now(), g.over()) {
+        root.insert("timing".into(), t);
+    }
     // CR 7.1.2: the cards the Runner has accessed, as cards. The Corp's copy
     // is deliberately empty — they are looking at their own board already,
     // and an R&D access is theirs to see no more than the deck was (4.2.2).
@@ -2854,7 +3168,12 @@ mod tests {
     /// asking "what would this prompt look like".
     fn dealt_game() -> CrGame {
         let setup = eternal_setup(7).expect("a complete pair of decks is a game");
-        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0, crate::timing::TimingConfig::none());
+        let mut g = new_game(
+            setup,
+            [SeatState::bot(), SeatState::human("tester", None)],
+            0,
+            TimingParams::untimed(),
+        );
         for _ in 0..20_000 {
             if g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len() >= 2 {
                 break;
@@ -3247,7 +3566,12 @@ mod tests {
     #[test]
     fn a_discard_is_staged_and_only_a_confirmation_throws_the_cards_away() {
         let setup = eternal_setup(7).expect("a complete pair of decks is a game");
-        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0, crate::timing::TimingConfig::none());
+        let mut g = new_game(
+            setup,
+            [SeatState::bot(), SeatState::human("tester", None)],
+            0,
+            TimingParams::untimed(),
+        );
         let mut hand = Vec::new();
         for _ in 0..200_000 {
             match g.vm.step() {
