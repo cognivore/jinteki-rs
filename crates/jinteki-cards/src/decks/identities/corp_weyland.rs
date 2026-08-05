@@ -170,11 +170,40 @@ pub fn weyland_built_to_last() -> Card {
         .build()
 }
 
+/// Weyland Consortium: Builder of Nations — Identity: Megacorp.
+/// "The first time each turn an encounter with an advanced piece of ice ends,
+///  do 1 meat damage."
+///
+/// COMPLETE. 6.5.10's end of an encounter with what the sentence says about
+/// the ice — "advanced" is 1.18.2 and nothing more: a card with at least one
+/// advancement counter on it. The stipulation is read when the condition
+/// would be met, so ice that lost its counters mid-encounter meets nothing.
+///
+/// 9.6.5c's ordinal is about the occurrence, so the SECOND advanced piece of
+/// ice passed in the same turn does no damage — and an encounter that ends
+/// with an unadvanced piece of ice leaves the ordinal unspent, because it
+/// never met the condition at all.
+pub fn weyland_builder_of_nations() -> Card {
+    card("Weyland Consortium: Builder of Nations")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Megacorp"])
+        .text("The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.")
+        .when_first_each_turn(
+            encounter_with_ice_matching_ends(&[advanced()]),
+            [meat_damage(Corp, 1)],
+        )
+        .named("builder of nations")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
     vec![
         argus_security(),
+        weyland_builder_of_nations(),
         gagarin_deep_space(),
         grndl(),
         the_outfit(),

@@ -71,6 +71,30 @@ kernel words, not card patches.
   many are needed. *(Harmony Medtech: Biomedical Pioneer; Issuaq Adaptics:
   Sustaining Diversity.)*
 
+- **Nothing happens BEFORE the first turn.** `PrintedCard::starting_hand_size`,
+  `starting_credits` and `starting_bad_publicity` are 1.6's setup FACTS,
+  settled while the game is built and never resolved by anything; "before
+  taking your first turn, you may install up to 3 pieces of ice" is an
+  ABILITY, and 1.7 is a window the kernel does not open, so there is nowhere
+  to put one. *(NEXT Design: Guarding the Net; Cyber Bureau: Keeping the
+  Peace; Jinteki Biotech: Life Imagined; Ayla "Bios" Rahim: Simulant
+  Specialist.)*
+- **Nothing is met by trashing a card TO PAY for damage.**
+  `TriggerCond::SelfTrashedByDamage` is the trashed card's own view of
+  10.4.3, and `CardTrashed` describes a trash by who did it, what type it was
+  and whether it was being accessed — neither is "the Runner trashes a card
+  FOR brain damage", which is a question about what the trash was for and
+  hands the card's name to the next sentence. Nor can that sentence be
+  written: `all_named_cards_in_discard_of` reads a MAINTAINED name and one
+  zone, and "all copies of that card (installed, in the heap, stack, grip, or
+  any other location)" is the triggering card's name across every zone at
+  once. *(Chronos Protocol: Haas-Bioroid.)*
+- **No instruction TAKES an action.** `TriggerCond::DifferentActionsThisTurn`
+  already counts 5.2.5's distinct actions, so MirrorMorph's condition is
+  sayable — but "take another different action, paying [click] less" is an
+  ability handing a player a basic action at a reduced cost, and 5.2 offers
+  actions only from the action phase's own step. *(MirrorMorph: Endless
+  Iteration.)*
 - **An ordinal cannot be SHARED between two conditions.**
   `AbilityDef::first_each_turn` belongs to one ability, and a sentence with
   two conditions is written as two abilities (Leela Patel class) — which is
@@ -91,10 +115,6 @@ kernel words, not card patches.
   pipeline `has_subtype` goes through — so "all **bioroid** ice has +1
   strength" needs the loop broken before it can be said.
   *(Haas-Bioroid: Stronger Together.)*
-- **A maximum hand size can be MOVED but not SET.**
-  `StaticDecl::MaxHandSizeMod` carries a printed amount; "your maximum hand
-  size is equal to the number of credits in your credit pool" is an absolute
-  whose value is a 9.12.2 quantity. *(Cerebral Imaging: Infinite Frontiers.)*
 - **Nothing names the card an ability INSTALLED.**
   `TargetFilter::{LookedAtByThisAbility, SetAsideByThisAbility, DrawnCards}`
   each name a set an ability made, and there is no "the card this ability
@@ -145,7 +165,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **76 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **84 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -258,29 +278,29 @@ Module: `decks/identities/runner_sunny.rs`
 
 - [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (8/19)
+## Corp — Haas-Bioroid (14/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
-- [ ] **Asa Group: Security Through Vigilance** — The first time each turn you install a card, you may install 1 non-agenda card from HQ in the root of or protecting the same server.
-- [ ] **Cerebral Imaging: Infinite Frontiers** — Your maximum hand size is equal to the number of credits in your credit pool.
+- [x] **Asa Group: Security Through Vigilance** — The first time each turn you install a card, you may install 1 non-agenda card from HQ in the root of or protecting the same server.
+- [x] **Cerebral Imaging: Infinite Frontiers** — Your maximum hand size is equal to the number of credits in your credit pool.
 - [ ] **Chronos Protocol: Haas-Bioroid** — Whenever the Runner trashes a card for brain damage, they remove all copies of that card from the game (installed, in the heap, stack, grip, or any other location). Then, they shuffle their stack.
 - [x] **Custom Biotics: Engineered for Success** — You cannot include Jinteki cards in this deck.
 - [x] **Cybernetics Division: Humanity Upgraded** — Each player's maximum hand size is reduced by 1.
-- [ ] **Haas-Bioroid: Architects of Tomorrow** — The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.
+- [x] **Haas-Bioroid: Architects of Tomorrow** — The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.
 - [x] **Haas-Bioroid: Engineering the Future** — The first time you install a card each turn, gain 1[credit].
 - [x] **Haas-Bioroid: Precision Design** — You get +1 maximum hand size. Whenever you score an agenda, you may add 1 card from Archives to HQ.
 - [ ] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
-- [ ] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
+- [x] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
 - [ ] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
 - [ ] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.
 - [x] **Poétrï Luxury Brands: All the Rage** — Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them. Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.
 - [x] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.
 - [x] **Sportsmetal: Go Big or Go Home** — Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.
 - [ ] **Strategic Innovations: Future Forward** — Draft format only. If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.
-- [ ] **The Foundry: Refining the Process** — The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.
+- [x] **The Foundry: Refining the Process** — The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
-- [ ] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
+- [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
 ## Corp — Jinteki (5/21)
 
@@ -308,13 +328,13 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (6/19)
+## Corp — NBN (7/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
 - [ ] **Acme Consulting: The Truth You Need** — The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.
 - [x] **Azmari EdTech: Shaping the Future** — When your turn ends, you may name a card type. Gain 2[credit] the first time each turn the Runner plays or installs a card that has the type you last named this way.
-- [ ] **Editorial Division: Ad Nihilum** — The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.
+- [x] **Editorial Division: Ad Nihilum** — The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.
 - [ ] **Epiphany Analytica: Nations Undivided** — The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity. [click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.
 - [ ] **GameNET: Where Dreams are Real** — Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].
 - [ ] **Haarpsichord Studios: Entertainment Unleashed** — The Runner cannot steal more than one agenda each turn.
@@ -332,7 +352,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (7/19)
+## Corp — Weyland Consortium (8/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -352,7 +372,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [ ] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
 - [x] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.
 - [ ] **Weyland Consortium: Because We Built It** — 1[recurring-credit] Use this credit to advance ice.
-- [ ] **Weyland Consortium: Builder of Nations** — The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.
+- [x] **Weyland Consortium: Builder of Nations** — The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.
 - [x] **Weyland Consortium: Building a Better World** — Whenever you play a transaction operation, gain 1[credit].
 - [x] **Weyland Consortium: Built to Last** — Whenever you advance a card, gain 2[credit] if it had no advancement counters.
 

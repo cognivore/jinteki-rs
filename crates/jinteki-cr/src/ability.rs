@@ -211,7 +211,18 @@ pub enum TriggerCond {
     /// subtypes, so the types are "any of these" and the subtypes "all of
     /// these", and either list empty is a sentence making no such
     /// stipulation.
-    CorpRezzesCard { of_types: Vec<CardType>, of_subtypes: Vec<&'static str> },
+    ///
+    /// `criteria` is what the sentence says about the card in the shared
+    /// description vocabulary, for the stipulations the two lists cannot
+    /// reach — "a piece of **AP** OR **destroyer** ice" (Thunderbolt
+    /// Armaments) is a disjunction, and `of_subtypes` is a conjunction.
+    /// `requires` is 9.6.5c's state stipulation ("…**during a run**").
+    CorpRezzesCard {
+        of_types: Vec<CardType>,
+        of_subtypes: Vec<&'static str>,
+        criteria: Vec<crate::instr::TargetFilter>,
+        requires: Vec<TriggerRequirement>,
+    },
     /// CR 10.1.2: "When the Corp purges virus counters…" (Clot class). The
     /// condition is met by the PURGE, not by any counter coming off, so it is
     /// met even when there was nothing to remove.
@@ -364,7 +375,12 @@ pub enum TriggerCond {
     /// (Tranquility Home Grid class; the 9.6.5b activity gate is the point).
     CardInstalledInSourceServer,
     /// "When that encounter ends…" (Chum-class delayed conditionals).
-    EncounterEnds,
+    ///
+    /// `criteria` is what the sentence says about the ice the encounter was
+    /// with — "an encounter with an **advanced** piece of ice" (Weyland
+    /// Consortium: Builder of Nations) — asked in the shared description
+    /// vocabulary. An empty list is a sentence making no such stipulation.
+    EncounterEnds { criteria: Vec<crate::instr::TargetFilter> },
     /// "…if all of its subroutines were broken during that encounter"
     /// (Forked class). 9.12.2d vacuous truth: ice with ZERO subroutines
     /// satisfies this as soon as step 6.9.3b of the encounter begins.
@@ -444,7 +460,18 @@ pub enum TriggerCond {
     /// The two encounter-scoped stipulations each require the pass to follow
     /// an encounter at all; a pass with no encounter before it (a bypass)
     /// meets neither, and meets the plain sentence.
-    IcePassed { this_ice: bool, fully_broken: bool, subs_resolved: bool },
+    ///
+    /// `criteria` is what the sentence says about the ice itself — "a
+    /// **rezzed** piece of **bioroid** ice" (Haas-Bioroid: Architects of
+    /// Tomorrow) — asked in the shared description vocabulary, the way
+    /// [`TriggerCond::CardPlayed`] asks about the card played. An empty list
+    /// is a sentence making no such stipulation.
+    IcePassed {
+        this_ice: bool,
+        fully_broken: bool,
+        subs_resolved: bool,
+        criteria: Vec<crate::instr::TargetFilter>,
+    },
     /// "After you resolve this operation/event…" (Oppo Research class). CR
     /// 8.6.7h: conditions related to finishing resolving a played card are
     /// met at that step, after the card has been trashed (8.6.7g) — which is
@@ -1012,6 +1039,16 @@ pub enum StaticDecl {
     /// against the source's controller, so a Runner card saying it means the
     /// Runner's.
     MaxHandSizeMod { whose: DeclSubject, amount: i32 },
+    /// CR 9.12.1a: "your maximum hand size **is equal to** the number of
+    /// credits in your credit pool" (Cerebral Imaging) — the effect that SETS
+    /// the value, applied before every effect that increases or lowers it.
+    /// It carries a 9.12.2 quantity rather than a printed number, which is
+    /// the whole reason it is not [`StaticDecl::MaxHandSizeMod`] with a
+    /// different sign, and `whose` is the same scope word.
+    ///
+    /// Two of these at once is 9.12.1a's own case: both are applied, so the
+    /// last one read wins and neither is a modification of the other.
+    MaxHandSizeIs { whose: DeclSubject, to: crate::instr::Quantity },
     /// "+N to the amount of <kind> damage done by <responsible>."
     /// (The Cleaners class — modifies imminent damage values via statics.)
     DamageBonus { kind: DamageKind, responsible: Side, amount: i64 },
@@ -1950,7 +1987,7 @@ pub fn trigger_matches(
             side == s && *credits > 0
         }
         (
-            TriggerCond::IcePassed { this_ice, fully_broken, subs_resolved },
+            TriggerCond::IcePassed { this_ice, fully_broken, subs_resolved, criteria },
             GameChange::IcePassed {
                 ice,
                 after_encounter,
@@ -1965,6 +2002,9 @@ pub fn trigger_matches(
             (!*this_ice || *ice == source.id)
                 && (!*fully_broken || (*after_encounter && *fb))
                 && (!*subs_resolved || (*after_encounter && *sr))
+                // §12 rule 5: what the sentence says about the ice, asked in
+                // the shared description vocabulary.
+                && matches_criteria(*ice, criteria)
         }
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
             server_of_source == Some(*server)
@@ -1988,12 +2028,15 @@ pub fn trigger_matches(
             side == s
         }
         (
-            TriggerCond::CorpRezzesCard { of_types, of_subtypes },
+            TriggerCond::CorpRezzesCard { of_types, of_subtypes, criteria, .. },
             GameChange::CardRezzed { obj, card_type },
         ) => {
             cite!("rule_rez_in_paw");
             (of_types.is_empty() || of_types.contains(card_type))
                 && of_subtypes.iter().all(|s| has_subtype(*obj, s))
+                // §12 rule 5: the rest of what the sentence says about the
+                // card, asked the way a description asks it.
+                && matches_criteria(*obj, criteria)
         }
         (TriggerCond::CorpPurgesVirusCounters, GameChange::VirusCountersPurged) => {
             cite!("rule_purge");
@@ -2128,7 +2171,12 @@ pub fn trigger_matches(
             cite!("rule_meat_net_damage");
             cards.contains(&source.id)
         }
-        (TriggerCond::EncounterEnds, GameChange::EncounterEnded { .. }) => true,
+        (TriggerCond::EncounterEnds { criteria }, GameChange::EncounterEnded { ice, .. }) => {
+            cite!("step_encounter_complete");
+            // §12 rule 5: what the sentence says about the ice, asked the way
+            // a description asks it.
+            matches_criteria(*ice, criteria)
+        }
         (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
             cite!("rule_vacuous_truth");
             true
@@ -2250,6 +2298,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::MakesSuccessfulRun { requires, .. }
         | TriggerCond::TurnBegins { requires, .. }
         | TriggerCond::EncounterBegins { requires, .. }
+        | TriggerCond::CorpRezzesCard { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
         _ => &[],
     }

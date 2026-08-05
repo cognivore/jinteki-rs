@@ -7027,3 +7027,446 @@ fn nasir_meidan_trades_the_pool_for_the_rez_cost_of_ice_rezzed_on_approach() {
         t.tail(50)
     );
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — Haas-Bioroid
+// ---------------------------------------------------------------------------
+
+/// Asa Group: "The first time each turn you install a card, you may install 1
+/// non-agenda card from HQ in the root of or protecting the same server."
+///
+/// "The same server" is the one the card the occurrence named is in, and
+/// 4.6.6b's two halves of it are what the Corp still declares. The proof is
+/// that the destination taken by DEFAULT — the first the game offers — is a
+/// position protecting the new remote and not one protecting HQ, which is
+/// what the offer would start with if the server were the installer's to
+/// pick. The agenda in HQ is never a candidate.
+#[test]
+fn asa_group_installs_a_second_card_into_the_same_server_and_no_other() {
+    let mut vm = Vm::empty(6152);
+    tk::install_identity(&mut vm, card("Asa Group: Security Through Vigilance"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("First Card", 0, 2), Zone::Hand(Side::Corp));
+    let ice = vm.new_object(tk::vanilla_ice("Second Card", 0, 1), Zone::Hand(Side::Corp));
+    let decoy = vm.new_object(tk::vanilla_agenda("Not Installable", 3, 2), Zone::Hand(Side::Corp));
+    for id in [asset, ice, decoy] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::reaction().offering("vigilance"), Reply::take("vigilance"))
+            .when(Match::targets().once(), Reply::Targets(vec![ice]))
+            .when(Match::of(Kind::Destination).once(), Reply::Default)
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let Zone::Root(remote) = vm.st.objects[&asset].zone else {
+        panic!("the first card made a remote: {}", t.tail(40))
+    };
+    assert!(matches!(remote, ServerId::Remote(_)), "and it is a remote one: {}", t.tail(40));
+    assert_eq!(
+        vm.st.objects[&ice].zone,
+        Zone::Ice(remote),
+        "the second card went to the SAME server, taking the only destination \
+         the effect offered — the default would be a position protecting HQ if \
+         the server were the installer's to pick: {}",
+        t.tail(40)
+    );
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "one card was chosen: {}", t.tail(40));
+    assert!(
+        !announcements[0].candidates().contains(&decoy),
+        "'non-agenda' keeps the agenda in HQ out of the candidates: {}",
+        t.tail(40)
+    );
+}
+
+/// Cerebral Imaging: "Your maximum hand size is equal to the number of
+/// credits in your credit pool."
+///
+/// The declaration SETS the value rather than moving it (CR 9.12.1a), and it
+/// is read continuously: the same board answers differently as the pool
+/// changes. The discard phase is the proof that the limit is the credits and
+/// not the base of five — three credits leave three cards in HQ.
+#[test]
+fn cerebral_imaging_makes_the_hand_size_the_credit_pool() {
+    let mut vm = Vm::empty(6147);
+    tk::install_identity(&mut vm, card("Cerebral Imaging: Infinite Frontiers"), Side::Corp);
+    vm.st.corp.credits = 9;
+    assert_eq!(vm.max_hand_size(Side::Corp), 9, "nine credits, nine cards — not 5 + 9");
+    assert_eq!(vm.max_hand_size(Side::Runner), 5, "'your' is the Corp's, and only the Corp's");
+    vm.st.corp.credits = 2;
+    assert_eq!(vm.max_hand_size(Side::Corp), 2, "read continuously as the pool changes");
+
+    tk::fill_hand(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::credit()),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(vm.st.turn_side, Side::Runner, "the Corp's turn finished: {}", t.tail(30));
+    assert_eq!(
+        vm.st.corp.credits, 5,
+        "2 credits plus three basic actions of 1: the pool the limit is read from"
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Corp].len(),
+        5,
+        "5.7.4 discarded down to the credit pool, not to the base of five: {}",
+        t.tail(30)
+    );
+}
+
+/// Haas-Bioroid: Architects of Tomorrow: "The first time each turn the Runner
+/// passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying
+/// 4[credit] less."
+///
+/// Two pieces of ice on the way in. The outer one is passed unrezzed and is
+/// not a bioroid either, so the condition's description of the ice keeps it
+/// out; the inner one is a rezzed bioroid, and passing it offers the rez. The
+/// bioroid asset costs 5 and the Corp holds 1, so the install happening at
+/// all is the reduction: without it there is nothing to pay with.
+#[test]
+fn architects_of_tomorrow_rezzes_a_bioroid_for_four_less_on_a_bioroid_pass() {
+    let mut vm = Vm::empty(6148);
+    tk::install_identity(&mut vm, card("Haas-Bioroid: Architects of Tomorrow"), Side::Corp);
+    // Innermost first: the rezzed bioroid, which the run reaches second.
+    tk::install_ice(
+        &mut vm,
+        tk::subtyped_ice("Inner Bioroid", vec!["Bioroid"], 0, 1),
+        ServerId::Archives,
+        true,
+    );
+    tk::install_ice(&mut vm, tk::vanilla_ice("Outer Plain", 0, 1), ServerId::Archives, false);
+    let asset = {
+        let mut c = tk::vanilla_asset("Bioroid Asset", 5, 2);
+        c.subtypes = vec!["Bioroid"];
+        tk::install_root(&mut vm, c, ServerId::Remote(1), false)
+    };
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 1;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::reaction().offering("architects"), Reply::take("architects"))
+            .when(Match::targets().once(), Reply::Targets(vec![asset])),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives)).stop_at_action(),
+    );
+    assert!(
+        vm.st.objects[&asset].faceup,
+        "the bioroid card was rezzed off the pass of the rezzed bioroid ice: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 0,
+        "1 credit paid a printed rez cost of 5: the ability lowered it by 4: {}",
+        t.tail(50)
+    );
+    let offers = t.of_kind(Kind::Reaction).len();
+    assert_eq!(
+        offers, 1,
+        "one offer, on the bioroid pass — the plain unrezzed ice passed first met nothing: {}",
+        t.tail(50)
+    );
+}
+
+/// LEO Construction: "Once per turn → Trash 1 rezzed bioroid card in the root
+/// of or protecting the attacked server: End the run."
+///
+/// 4.6.6b puts the root and the ice protecting it both *in* the server, so
+/// the card in the root of the attacked remote is payable — and the identical
+/// bioroid asset in the OTHER remote is not, which is the whole of "the
+/// attacked server". Paying ends the run.
+#[test]
+fn leo_construction_ends_the_run_for_a_bioroid_in_the_attacked_server_only() {
+    let mut vm = Vm::empty(6149);
+    tk::install_identity(&mut vm, card("LEO Construction: Labor Solutions"), Side::Corp);
+    let bioroid = |vm: &mut Vm, name: &'static str, server| {
+        let mut c = tk::vanilla_asset(name, 0, 2);
+        c.subtypes = vec!["Bioroid"];
+        tk::install_root(vm, c, server, true)
+    };
+    let attacked = bioroid(&mut vm, "In The Attacked Server", ServerId::Remote(1));
+    let elsewhere = bioroid(&mut vm, "In The Other Server", ServerId::Remote(2));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().offering("labor solutions"), Reply::take("labor solutions")),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Remote(1))).stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&attacked].zone,
+        Zone::Discard(Side::Corp),
+        "the card in the root of the attacked server paid the cost: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.objects[&elsewhere].zone,
+        Zone::Root(ServerId::Remote(2)),
+        "and the identical card in another server was never a candidate: {}",
+        t.tail(50)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "the run ended: {}",
+        t.tail(50)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+        "and it ended before the breach: {}",
+        t.tail(50)
+    );
+}
+
+/// The Foundry: "The first time you rez a piece of ice each turn, you may
+/// search R&D for another copy of that ice, reveal it, and add it to HQ.
+/// Shuffle R&D."
+///
+/// "Another copy of that ice" is a question about the NAME (2.1.4) asked of
+/// the card the condition named (1.15.4): the copy in R&D is found and the
+/// differently-named piece of ice beside it is not a candidate. 8.7.3 shuffles
+/// R&D as part of the search, which is what the printed "Shuffle R&D" says.
+#[test]
+fn the_foundry_fetches_a_second_copy_of_the_ice_it_just_rezzed() {
+    let mut vm = Vm::empty(6150);
+    tk::install_identity(&mut vm, card("The Foundry: Refining the Process"), Side::Corp);
+    let rezzed = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 1, 1), ServerId::Archives, false);
+    let copy = vm.new_object(tk::vanilla_ice("Some Ice", 1, 1), Zone::Deck(Side::Corp));
+    let other = vm.new_object(tk::vanilla_ice("Other Ice", 1, 1), Zone::Deck(Side::Corp));
+    for id in [copy, other] {
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 4);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::reaction().offering("refining"), Reply::take("refining"))
+            .when(Match::targets().once(), Reply::Targets(vec![copy])),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives)).stop_at_action(),
+    );
+    assert!(vm.st.objects[&rezzed].faceup, "the ice was rezzed: {}", t.tail(50));
+    let finds: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(finds.len(), 1, "one search find was put to the Corp: {}", t.tail(50));
+    assert!(finds[0].candidates().contains(&copy), "the copy is a candidate: {}", t.tail(50));
+    assert!(
+        !finds[0].candidates().contains(&other),
+        "'another copy of that ice' keeps the differently-named ice out: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.objects[&copy].zone,
+        Zone::Hand(Side::Corp),
+        "and the copy was revealed and added to HQ: {}",
+        t.tail(50)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == copy)),
+        "the reveal is its own instruction (9.11.4e) and it happened: {}",
+        t.tail(50)
+    );
+}
+
+/// Thunderbolt Armaments: "Whenever you rez a piece of AP or destroyer ice
+/// during a run, that ice gets +1 strength and gains “[subroutine] End the
+/// run unless the Runner trashes 1 of their installed cards.” after its other
+/// subroutines for the remainder of that run."
+///
+/// One sentence, so one instruction: the strength and the subroutine arrive
+/// together. The printed "or" between the two subtypes is a disjunction, so a
+/// destroyer that is no AP still meets it; the granted subroutine sits after
+/// the printed one and takes the Runner's installed card.
+#[test]
+fn thunderbolt_armaments_pumps_and_arms_a_destroyer_rezzed_during_a_run() {
+    let mut vm = Vm::empty(6151);
+    tk::install_identity(&mut vm, card("Thunderbolt Armaments: Peace Through Power"), Side::Corp);
+    let ice = tk::install_ice(
+        &mut vm,
+        tk::subtyped_ice("Some Destroyer", vec!["Destroyer"], 1, 2),
+        ServerId::Archives,
+        false,
+    );
+    let rig = tk::install_rig(&mut vm, tk::vanilla_runner_card("Some Program", CardType::Program));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // "For the remainder of that run" lapses when the run ends, so the
+    // strength has to be read from INSIDE one: halt at 6.9.4c's jack-out
+    // decision, which follows passing the ice.
+    let mut script = plan::Script::new(
+        Plan::corp().when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::payment_cards().once(), Reply::Targets(vec![rig]))
+            .when(Match::of(Kind::JackOut).once(), Reply::Halt)
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+    assert!(vm.st.objects[&ice].faceup, "the destroyer was rezzed during the run: {}", t.tail(60));
+    assert_eq!(
+        vm.effective_strength(ice),
+        Some(3),
+        "printed 2, plus the 1 the same sentence gave it: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&rig].zone,
+        Zone::Discard(Side::Runner),
+        "the granted subroutine took an installed card rather than ending the run: {}",
+        t.tail(60)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "and the run is still on, which is what 'the remainder of that run' is read inside: {}",
+        t.tail(60)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — NBN and Weyland Consortium
+// ---------------------------------------------------------------------------
+
+/// Editorial Division: "The first time each turn you take bad publicity, you
+/// may search R&D for 1 non-agenda black ops, gray ops, or liability card and
+/// reveal it. (Shuffle R&D after searching it.) Add that card to HQ."
+///
+/// The printed "or" between the three subtypes is a disjunction, so a gray
+/// ops card is found even though it is no black ops; the agenda carrying the
+/// same subtype is kept out by "non-agenda", and the plain card by the
+/// subtypes. 9.11.4e makes the reveal its own instruction, which is why it is
+/// recorded before the move to HQ.
+#[test]
+fn editorial_division_fetches_a_gray_ops_card_when_bad_publicity_arrives() {
+    let mut vm = Vm::empty(6153);
+    tk::install_identity(&mut vm, card("Editorial Division: Ad Nihilum"), Side::Corp);
+    tk::install_root(&mut vm, tk::take_bad_pub_button("Bad Press", 1), ServerId::Remote(1), true);
+    let wanted = {
+        let mut c = tk::vanilla_asset("Gray Ops Card", 0, 2);
+        c.subtypes = vec!["Gray Ops"];
+        vm.new_object(c, Zone::Deck(Side::Corp))
+    };
+    let agenda = {
+        let mut c = tk::vanilla_agenda("Gray Ops Agenda", 3, 2);
+        c.subtypes = vec!["Gray Ops"];
+        vm.new_object(c, Zone::Deck(Side::Corp))
+    };
+    let plain = vm.new_object(tk::vanilla_asset("Plain Card", 0, 2), Zone::Deck(Side::Corp));
+    for id in [wanted, agenda, plain] {
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 4);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(
+                Match::paid().offering_pick(Pick::Labeled("take bad publicity")).once(),
+                Reply::take("take bad publicity"),
+            )
+            .when(Match::reaction().offering("ad nihilum"), Reply::take("ad nihilum"))
+            .when(Match::targets().once(), Reply::Targets(vec![wanted]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.corp.bad_publicity, 1, "the Corp took bad publicity: {}", t.tail(40));
+    let finds: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(finds.len(), 1, "one search find was put to the Corp: {}", t.tail(40));
+    assert!(finds[0].candidates().contains(&wanted), "the gray ops card is a candidate: {}", t.tail(40));
+    assert!(
+        !finds[0].candidates().contains(&agenda),
+        "'non-agenda' keeps the gray ops AGENDA out: {}",
+        t.tail(40)
+    );
+    assert!(
+        !finds[0].candidates().contains(&plain),
+        "and the card with none of the three subtypes was never one: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&wanted].zone,
+        Zone::Hand(Side::Corp),
+        "the found card was revealed and added to HQ: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == wanted)),
+        "the reveal is its own instruction (9.11.4e): {}",
+        t.tail(40)
+    );
+}
+
+/// Weyland Consortium: Builder of Nations: "The first time each turn an
+/// encounter with an advanced piece of ice ends, do 1 meat damage."
+///
+/// Two pieces of ice on the way in, both encountered. The outer one carries
+/// no advancement counter and so meets nothing — which also leaves the
+/// ordinal unspent — and the inner, advanced one does the damage. One card
+/// leaves the grip, not two.
+#[test]
+fn builder_of_nations_damages_only_after_an_advanced_ice_encounter() {
+    let mut vm = Vm::empty(6154);
+    tk::install_identity(&mut vm, card("Weyland Consortium: Builder of Nations"), Side::Corp);
+    // Innermost first: the advanced one, which the run reaches second.
+    let advanced_ice = tk::install_ice(&mut vm, tk::vanilla_ice("Advanced Ice", 0, 1), ServerId::Archives, true);
+    tk::place_counters(&mut vm, advanced_ice, CounterKind::Advancement, 1);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Plain Ice", 0, 1), ServerId::Archives, true);
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        grip.len() - 1,
+        "one meat damage, from the advanced ice's encounter and no other: {}",
+        t.tail(50)
+    );
+    let meat = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::DamageSuffered { kind, .. } if *kind == jinteki_cr::effects::DamageKind::Meat))
+        .count();
+    assert_eq!(meat, 1, "exactly one — the plain ice's encounter met nothing: {}", t.tail(50));
+}

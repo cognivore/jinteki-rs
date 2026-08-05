@@ -331,7 +331,13 @@ pub enum Instruction {
     /// the Corp to rez cards outside the paid ability windows of 8.1.2a;
     /// 8.1.2d: the rez cost is paid first unless the ability states that it
     /// is ignored (1.16.5c), which is what `ignore_costs` says.
-    RezCard { target: TargetSpec, ignore_costs: bool },
+    ///
+    /// `reduce` is 1.16.6's cost reduction — "rez 1 **bioroid** card, paying
+    /// 4[credit] less" (Haas-Bioroid: Architects of Tomorrow). It is the same
+    /// content [`Instruction::InstallCard`] carries on the install cost, said
+    /// about the other inherent cost: 1.16.6b floors the payment at zero, so
+    /// a reduction larger than the cost is not a gain.
+    RezCard { target: TargetSpec, ignore_costs: bool, reduce: Quantity },
     /// CR 5.6.2b: "Your action phase ends." (Oppo Research class.) The action
     /// phase loop takes an action only while the player has unspent [click],
     /// so ending the phase early is losing the ones they have left.
@@ -1531,6 +1537,13 @@ pub enum TargetFilter {
     /// class). Empty when no run is in progress, which is what makes the
     /// modification it feeds lapse the moment the run ends.
     IceProtectingAttackedServer,
+    /// CR 4.6.6b + 6.1.2: "…a card **in the root of or protecting the
+    /// attacked server**" (LEO Construction). 4.6.6b puts both the root and
+    /// the ice protecting it *in* the server, so this is the whole server
+    /// rather than [`TargetFilter::IceProtectingAttackedServer`]'s half of
+    /// it. Empty when no run is in progress, which is what keeps an ability
+    /// costing one of these cards unusable outside a run.
+    InAttackedServer,
     /// Cards in a player's hand (Ashigaru-class counting).
     CardsInHandOf(Side),
     // ---- card-characteristic atoms (§2), location-agnostic --------------
@@ -1569,6 +1582,15 @@ pub enum TargetFilter {
     /// ability resolving for another reason) nothing matches, which is the
     /// same "reaches nothing" a stranded self-reference gets under 9.1.4.
     SameCardTypeAsTriggeringCard,
+    /// CR 1.15.4 + 2.1.4: "…**another copy of that ice**" (The Foundry) — a
+    /// card whose name is the name of the card the OCCURRENCE that met this
+    /// ability's condition named. 2.1.4 is what makes "a copy of" a question
+    /// about the NAME and nothing else, and 10.1.5 does not apply: the
+    /// sentence never writes a name, so there is no self-reference to read.
+    ///
+    /// With no such card nothing matches, the same way
+    /// [`TargetFilter::SameCardTypeAsTriggeringCard`] reaches nothing.
+    SameNameAsTriggeringCard,
     /// CR 2.15: "…1 resource **or** piece of hardware" (Barry "Baz" Wong) —
     /// a card has exactly one type, so several `CardTypeIs` criteria together
     /// would mean ALL of them and describe nothing. The type LIST is content
@@ -1809,6 +1831,9 @@ impl TargetFilter {
                 | TargetFilter::Unrezzed
                 | TargetFilter::IceProtectingSourceServer
                 | TargetFilter::IceProtectingAttackedServer
+                // 4.6.6: a server is a place, and only installed cards are in
+                // one — root and ice alike.
+                | TargetFilter::InAttackedServer
                 | TargetFilter::CardsInHandOf(_)
                 | TargetFilter::InScoreAreaOf(_)
                 | TargetFilter::InDiscardOf(_)
@@ -1911,6 +1936,15 @@ pub enum InstallDest {
     /// player picks the server; `Vm::install_destinations_for` computes the
     /// list and the answer replaces this variant with the declared one.
     DeclaredByInstaller,
+    /// CR 8.5.16b + 1.15.4: "…in the root of or protecting **the same
+    /// server**" (Asa Group). The installer still declares which of 4.6.6b's
+    /// two halves of the server the card goes to — that is what "the root of
+    /// or protecting" leaves open — but the server itself is not theirs to
+    /// pick: it is the one the card the OCCURRENCE named is in.
+    ///
+    /// With no such card, or with one in no server at all, no destination can
+    /// be identified and 8.5.14 stops the install.
+    DeclaredByInstallerInServerOfTriggeringCard,
     /// Runner installs with no stated destination: the rig (8.5.4). Named
     /// for the 1.13.6a choice every install offers — a card whose ability
     /// describes what it can host is an eligible destination, so the

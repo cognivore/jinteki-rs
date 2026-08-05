@@ -230,17 +230,232 @@ pub fn seidr_laboratories() -> Card {
         .build()
 }
 
+/// Asa Group: Security Through Vigilance — Identity: Division.
+/// "The first time each turn you install a card, you may install 1 non-agenda
+///  card from HQ in the root of or protecting the same server."
+///
+/// COMPLETE. 8.5's install with no stipulation about what was installed, and
+/// 9.6.5c's ordinal about that occurrence — the same condition Haas-Bioroid:
+/// Engineering the Future reads, since neither sentence says which type.
+///
+/// "The same server" is 1.15.4's back-reference applied to a place: the
+/// server the card the occurrence named is in. "In the root of OR protecting"
+/// is 4.6.6b's two halves of that one server, and the Corp still declares
+/// which — so the destination fixes the server and leaves the half open,
+/// which is exactly what 8.5.16b's declaration is for.
+///
+/// An install that created no server position to speak of — the first card
+/// going into a brand-new remote still names that remote once it exists — is
+/// covered by the same reading; an install with no server at all leaves no
+/// destination to identify, and 8.5.14 stops there.
+pub fn asa_group() -> Card {
+    card("Asa Group: Security Through Vigilance")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("The first time each turn you install a card, you may install 1 non-agenda card from HQ in the root of or protecting the same server.")
+        .may_when_first_each_turn(
+            installs_a_card(Corp),
+            [install(
+                choose(1, &[in_hand_of(Corp), non(of_type(CardType::Agenda))]),
+                InstallDest::DeclaredByInstallerInServerOfTriggeringCard,
+            )],
+        )
+        .named("security through vigilance")
+        .build()
+}
+
+/// Cerebral Imaging: Infinite Frontiers — Identity: Division.
+/// "Your maximum hand size is equal to the number of credits in your credit
+///  pool."
+///
+/// COMPLETE. Permanently true, so a static declaration — but not the one NBN:
+/// The World is Yours* and Cybernetics Division make. Those MOVE the value
+/// and this one SETS it, and CR 9.12.1a keeps the two apart in so many words:
+/// "first applying any effect that sets it to a specific value, then applying
+/// each effect that increases the value, and finally applying each effect
+/// that lowers the value". Written as a modifier it would be five plus the
+/// credits rather than the credits.
+///
+/// The value is a 9.12.2 quantity, read continuously — the hand size falls as
+/// the Corp spends and rises as they gain, which is why nothing is recorded
+/// when the declaration begins.
+pub fn cerebral_imaging() -> Card {
+    card("Cerebral Imaging: Infinite Frontiers")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Your maximum hand size is equal to the number of credits in your credit pool.")
+        .declares([max_hand_size_is(credits_in_pool_of(Corp))])
+        .named("infinite frontiers")
+        .build()
+}
+
+/// Haas-Bioroid: Architects of Tomorrow — Identity: Megacorp.
+/// "The first time each turn the Runner passes a rezzed piece of bioroid ice,
+///  you may rez 1 bioroid card, paying 4[credit] less."
+///
+/// COMPLETE. 6.9.4a's pass with a whole description of the ice — "a **rezzed**
+/// piece of **bioroid** ice" — which is the ordinary filter vocabulary asked
+/// of the occurrence rather than of a target, and 9.6.5c's ordinal about that
+/// occurrence.
+///
+/// "Paying 4[credit] less" is 1.16.2a's reduction of the rez cost, floored at
+/// zero by the same rule: the payment still happens, so a Corp who cannot
+/// afford the remainder still cannot rez.
+///
+/// The description "1 **bioroid** card" names no zone, so 1.15.2c's play-area
+/// default applies — and 8.1.2's "unrezzed" is 1.15.2b's validity for a rez
+/// rather than a word the card adds: a card already faceup is not something a
+/// rez can be applied to.
+pub fn haas_bioroid_architects_of_tomorrow() -> Card {
+    card("Haas-Bioroid: Architects of Tomorrow")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Megacorp"])
+        .text("The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.")
+        .may_when_first_each_turn(
+            passes_ice_matching(&[rezzed(), with_subtype("Bioroid"), of_type(CardType::Ice)]),
+            [rez_paying_less(choose(1, &[with_subtype("Bioroid"), unrezzed()]), 4)],
+        )
+        .named("architects of tomorrow")
+        .build()
+}
+
+/// LEO Construction: Labor Solutions — Identity: Division.
+/// "Once per turn → Trash 1 rezzed bioroid card in the root of or protecting
+///  the attacked server: End the run."
+///
+/// COMPLETE. Everything before the colon is the cost (1.16.10's trigger cost),
+/// and it describes the cards the ordinary way: 4.6.6b puts the root AND the
+/// ice protecting it *in* a server, so "in the root of or protecting" is one
+/// location word and not two, and 6.1.2 says which server that is.
+///
+/// The card states no timing restriction and needs none: outside a run there
+/// is no attacked server, so the description reaches nothing, the cost cannot
+/// be paid, and 9.5.2 never offers the ability. That is the card's own
+/// wording doing the work rather than a restriction read into it.
+///
+/// "Once per turn →" is 9.3.6g's flag, spent by USING the ability — which a
+/// paid ability always is (9.1.6).
+pub fn leo_construction() -> Card {
+    card("LEO Construction: Labor Solutions")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.")
+        .paid_once_per_turn(
+            trash_cards_matching(
+                1,
+                &[rezzed(), with_subtype("Bioroid"), in_the_attacked_server()],
+            ),
+            [end_the_run()],
+        )
+        .named("labor solutions")
+        .build()
+}
+
+/// The Foundry: Refining the Process — Identity: Division.
+/// "The first time you rez a piece of ice each turn, you may search R&D for
+///  another copy of that ice, reveal it, and add it to HQ. Shuffle R&D."
+///
+/// COMPLETE. One printed line, and 9.11.4 splits it three ways: (d) a search
+/// is its own instruction, (e) a reveal ends one, and what is left is the
+/// move to HQ. The splits are the rule's, not a reading of the "and"s.
+///
+/// "Another copy of that ice" is 2.1.4's question about the NAME, asked of the
+/// card the condition named (1.15.4). "Another" needs no word of its own: the
+/// ice that was rezzed is installed, and this search looks in R&D.
+///
+/// "Shuffle R&D" is 8.7.3 restated on the card — searching a deck shuffles it,
+/// whether or not anything was found — so it is part of the search
+/// instruction rather than a fourth one.
+pub fn the_foundry() -> Card {
+    card("The Foundry: Refining the Process")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.")
+        .may_when_first_each_turn(
+            corp_rezzes_a(CardType::Ice),
+            [
+                search_rnd(&[a_copy_of_the_triggering_card()], 1),
+                reveal(found_by_search()),
+                add_to_hand(found_by_search()),
+            ],
+        )
+        .named("refining the process")
+        .build()
+}
+
+/// Thunderbolt Armaments: Peace Through Power — Identity: Division.
+/// "Whenever you rez a piece of AP or destroyer ice during a run, that ice
+///  gets +1 strength and gains “[subroutine] End the run unless the Runner
+///  trashes 1 of their installed cards.” after its other subroutines for the
+///  remainder of that run."
+///
+/// COMPLETE. The condition carries two stipulations of different kinds: what
+/// the card IS ("a piece of **AP** or **destroyer** ice" — a printed "or"
+/// between subtypes, so the disjunction word) and what the STATE is ("during
+/// a run", 9.6.5c).
+///
+/// One sentence, so one instruction (9.11.3): the strength and the subroutine
+/// arrive together, and splitting them would invent a checkpoint and a second
+/// interrupt window the card does not have. 9.8.2's ordering is stated
+/// outright — "after its other subroutines" — and "for the remainder of that
+/// run" is one duration governing both halves.
+pub fn thunderbolt_armaments() -> Card {
+    card("Thunderbolt Armaments: Peace Through Power")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.")
+        .when(
+            corp_rezzes_matching(
+                &[of_type(CardType::Ice), with_any_subtype(&["AP", "Destroyer"])],
+                &[during_a_run()],
+            ),
+            [combined([
+                modify_strength_of(the_triggering_card(), 1, WantedDuration::ThisRun),
+                gains_subroutine(
+                    the_triggering_card(),
+                    false,
+                    WantedDuration::ThisRun,
+                    [unless_pays(
+                        Runner,
+                        trash_cards_matching(1, &[installed_runner_card()]),
+                        end_the_run(),
+                    )],
+                ),
+            ])],
+        )
+        .named("peace through power")
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
     vec![
+        asa_group(),
+        cerebral_imaging(),
         custom_biotics(),
         cybernetics_division(),
+        haas_bioroid_architects_of_tomorrow(),
         haas_bioroid_engineering_the_future(),
         haas_bioroid_precision_design(),
+        leo_construction(),
         poetri_luxury_brands(),
         seidr_laboratories(),
         sportsmetal(),
+        the_foundry(),
         thule_subsea(),
+        thunderbolt_armaments(),
     ]
 }

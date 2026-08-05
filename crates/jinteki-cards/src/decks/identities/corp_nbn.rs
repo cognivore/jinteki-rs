@@ -113,10 +113,53 @@ pub fn spark_agency() -> Card {
         .build()
 }
 
+/// Editorial Division: Ad Nihilum — Identity: Division.
+/// "The first time each turn you take bad publicity, you may search R&D for 1
+///  non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle
+///  R&D after searching it.) Add that card to HQ."
+///
+/// COMPLETE. 10.6.1's taking of bad publicity with 9.6.5c's ordinal on the
+/// occurrence — the sentence says "1 or more" nowhere, so a card that gives
+/// two at once is still one taking and spends the ordinal once.
+///
+/// The printed line splits where 9.11.4 says it does: (d) a search is its own
+/// instruction, (e) a reveal ends one, and the move to HQ is what is left.
+/// The parenthetical is 8.7.3 restated — searching a deck shuffles it — so it
+/// is part of the search instruction rather than a fourth one.
+///
+/// "**Black ops**, **gray ops**, or **liability**" is a printed "or" between
+/// subtypes, which is the disjunction word; "non-agenda" is the ordinary
+/// description vocabulary negated, and R&D is the zone the search names.
+pub fn editorial_division() -> Card {
+    card("Editorial Division: Ad Nihilum")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.")
+        .may_when_first_each_turn(
+            takes_bad_publicity(Corp),
+            [
+                search_rnd(
+                    &[
+                        non(of_type(CardType::Agenda)),
+                        with_any_subtype(&["Black Ops", "Gray Ops", "Liability"]),
+                    ],
+                    1,
+                ),
+                reveal(found_by_search()),
+                add_to_hand(found_by_search()),
+            ],
+        )
+        .named("ad nihilum")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        editorial_division(),
         nbn_reality_plus(),
         nbn_the_world_is_yours(),
         pravdivost_consulting(),

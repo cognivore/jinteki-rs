@@ -49,6 +49,20 @@ pub fn vanilla_ice(name: &'static str, rez: u32, strength: i32) -> PrintedCard {
     c
 }
 
+/// A piece of ice with SUBTYPES and no subroutines — for the cards that
+/// describe ice by subtype (bioroid, AP, destroyer) and whose test must let
+/// the run reach the other side of it.
+pub fn subtyped_ice(
+    name: &'static str,
+    subtypes: Vec<&'static str>,
+    rez: u32,
+    strength: i32,
+) -> PrintedCard {
+    let mut c = vanilla_ice(name, rez, strength);
+    c.subtypes = subtypes;
+    c
+}
+
 pub fn vanilla_runner_card(name: &'static str, ty: CardType) -> PrintedCard {
     PrintedCard::vanilla(name, Side::Runner, ty)
 }
@@ -1976,7 +1990,7 @@ pub fn chum_like(name: &'static str) -> PrintedCard {
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::EncounterEnds,
+                    TriggerCond::EncounterEnds { criteria: Vec::new() },
                     vec![Instruction::Damage {
                         kind: DamageKind::Net,
                         amount: Quantity::c(3),
@@ -3522,7 +3536,7 @@ pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
         Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::EncounterEnds,
+                    TriggerCond::EncounterEnds { criteria: Vec::new() },
                     vec![Instruction::TrashCards(TargetSpec::EarlierTarget { nth: 0 })],
                     false,
                 )
@@ -3895,7 +3909,12 @@ pub fn metamorph_like(name: &'static str) -> PrintedCard {
 pub fn tatu_bola_like(name: &'static str, from_hq: ObjectId) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 1);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::IcePassed { this_ice: true, fully_broken: false, subs_resolved: false },
+        TriggerCond::IcePassed {
+            this_ice: true,
+            fully_broken: false,
+            subs_resolved: false,
+            criteria: Vec::new(),
+        },
         vec![
             Instruction::SwapCards {
                 a: TargetSpec::SelfSource,
@@ -4133,7 +4152,12 @@ pub fn twins_ice(name: &'static str, strength: i32) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, strength);
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::IcePassed { this_ice: true, fully_broken: false, subs_resolved: false },
+            TriggerCond::IcePassed {
+            this_ice: true,
+            fully_broken: false,
+            subs_resolved: false,
+            criteria: Vec::new(),
+        },
             vec![Instruction::ForceEncounter { ice: TargetSpec::SelfSource }],
             false,
         )
@@ -4388,6 +4412,7 @@ pub fn nanisivik_like(name: &'static str) -> PrintedCard {
                     count: Quantity::c(1),
                     criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)], up_to: false },
                 ignore_costs: true,
+                reduce: Quantity::c(0),
             },
             Instruction::ResolveAbilityOf {
                 source: TargetSpec::EarlierTarget { nth: 0 },
@@ -5766,7 +5791,11 @@ pub fn formicary_like(name: &'static str, to: ServerId) -> PrintedCard {
         AbilityDef::conditional(
             TriggerCond::ServerApproached,
             vec![
-                Instruction::RezCard { target: TargetSpec::SelfSource, ignore_costs: false },
+                Instruction::RezCard {
+                    target: TargetSpec::SelfSource,
+                    ignore_costs: false,
+                    reduce: Quantity::c(0),
+                },
                 Instruction::MoveIce {
                     ice: TargetSpec::SelfSource,
                     dest: crate::instr::InstallDest::Protecting(to),
@@ -5904,7 +5933,12 @@ pub fn persephone_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::IcePassed { this_ice: false, fully_broken: false, subs_resolved: true },
+        TriggerCond::IcePassed {
+            this_ice: false,
+            fully_broken: false,
+            subs_resolved: true,
+            criteria: Vec::new(),
+        },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
         false,
     )
@@ -5919,7 +5953,12 @@ pub fn inversificator_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::IcePassed { this_ice: false, fully_broken: true, subs_resolved: false },
+        TriggerCond::IcePassed {
+            this_ice: false,
+            fully_broken: true,
+            subs_resolved: false,
+            criteria: Vec::new(),
+        },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -5944,7 +5983,7 @@ pub fn miraju_like(name: &'static str) -> PrintedCard {
     .labeled("[sub] miraju: gain 1")];
     c.abilities.push(
         AbilityDef::conditional(
-            TriggerCond::EncounterEnds,
+            TriggerCond::EncounterEnds { criteria: Vec::new() },
             vec![Instruction::MoveRunnerToIce {
                 ice: TargetSpec::Choose {
                     count: Quantity::c(1),

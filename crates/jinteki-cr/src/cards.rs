@@ -404,6 +404,8 @@ pub fn lt_todachine() -> PrintedCard {
         TriggerCond::CorpRezzesCard {
             of_types: vec![CardType::Ice],
             of_subtypes: Vec::new(),
+            criteria: Vec::new(),
+            requires: Vec::new(),
         },
         vec![Instruction::GainTags(1)],
         false,

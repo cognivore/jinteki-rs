@@ -805,8 +805,18 @@ pub fn look_at(cards: TargetSpec, by: Side) -> Instruction {
 /// "Search your stack for up to N <description>." (8.7.) 8.7.2e lets the
 /// search fail to find.
 pub fn search_stack(criteria: &[TargetFilter], count: i64) -> Instruction {
+    search_deck_of(Runner, criteria, count)
+}
+/// "Search R&D for <criteria>." (Editorial Division, The Foundry.) The same
+/// 8.7 search, of the other player's deck — which is why the zone is content
+/// on one instruction rather than two words.
+pub fn search_rnd(criteria: &[TargetFilter], count: i64) -> Instruction {
+    search_deck_of(Corp, criteria, count)
+}
+/// "Search <a player>'s deck for <criteria>." (8.7; 8.7.2e lets it fail.)
+pub fn search_deck_of(side: Side, criteria: &[TargetFilter], count: i64) -> Instruction {
     Instruction::Search {
-        zone: jinteki_cr::object::Zone::Deck(Side::Runner),
+        zone: jinteki_cr::object::Zone::Deck(side),
         criteria: criteria.to_vec(),
         count: Quantity::c(count),
         may_fail: true,
@@ -1046,7 +1056,14 @@ pub fn play_cards_from_hand(count: u32, from_hand_of: Side) -> Instruction {
 }
 /// "Rez <a card>." (8.1.2.)
 pub fn rez(target: TargetSpec) -> Instruction {
-    Instruction::RezCard { target, ignore_costs: false }
+    Instruction::RezCard { target, ignore_costs: false, reduce: Quantity::c(0) }
+}
+/// "Rez <a card>, **paying N[credit] less**." (Haas-Bioroid: Architects of
+/// Tomorrow; CR 1.16.2a.) The same rez, with one effect lowering its cost —
+/// which is why it is content on the instruction and not an instruction of
+/// its own. 1.16.2a floors the payment at zero.
+pub fn rez_paying_less(target: TargetSpec, less: i64) -> Instruction {
+    Instruction::RezCard { target, ignore_costs: false, reduce: Quantity::c(less) }
 }
 /// "Resolve the \"when scored\" ability of <an agenda>." (9.6.14c/d.)
 pub fn resolve_when_scored_ability_of(source: TargetSpec) -> Instruction {
@@ -1444,13 +1461,34 @@ pub fn accessed() -> TriggerCond {
 }
 /// "When the Runner passes this ice, …"
 pub fn passed() -> TriggerCond {
-    TriggerCond::IcePassed { this_ice: true, fully_broken: false, subs_resolved: false }
+    TriggerCond::IcePassed {
+        this_ice: true,
+        fully_broken: false,
+        subs_resolved: false,
+        criteria: Vec::new(),
+    }
+}
+/// "…the Runner passes a **rezzed** piece of **bioroid** ice…" (Haas-Bioroid:
+/// Architects of Tomorrow) — 6.9.4a's pass with what the sentence says about
+/// the ice, written in the ordinary description words.
+pub fn passes_ice_matching(criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::IcePassed {
+        this_ice: false,
+        fully_broken: false,
+        subs_resolved: false,
+        criteria: criteria.to_vec(),
+    }
 }
 /// "…you pass a piece of ice…" — the pass with no stipulation at all: not
 /// this card's, not one fully broken, not one whose subroutines resolved
 /// (Khan). 6.9.4a's step and nothing else.
 pub fn passes_any_ice() -> TriggerCond {
-    TriggerCond::IcePassed { this_ice: false, fully_broken: false, subs_resolved: false }
+    TriggerCond::IcePassed {
+        this_ice: false,
+        fully_broken: false,
+        subs_resolved: false,
+        criteria: Vec::new(),
+    }
 }
 /// "When this run ends, …"
 pub fn run_ends() -> TriggerCond {
@@ -1509,7 +1547,12 @@ pub fn makes_successful_run_on_your_mark(first_each_turn: bool) -> TriggerCond {
 /// [`CardBuilder::when_first_each_turn`] for the printed "the first time each
 /// turn".
 pub fn corp_rezzes_a(of: CardType) -> TriggerCond {
-    TriggerCond::CorpRezzesCard { of_types: vec![of], of_subtypes: Vec::new() }
+    TriggerCond::CorpRezzesCard {
+        of_types: vec![of],
+        of_subtypes: Vec::new(),
+        criteria: Vec::new(),
+        requires: Vec::new(),
+    }
 }
 /// "When your action phase ends, if <requirements>…" (Nebula class; 5.6.2.)
 pub fn action_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
@@ -1756,6 +1799,17 @@ pub fn runner_made_no_successful_run_last_turn() -> TriggerRequirement {
         scope: jinteki_cr::ability::TurnScope::LastCompletedTurn,
     }
 }
+/// "…an encounter **with an advanced piece of ice** ends" (Weyland
+/// Consortium: Builder of Nations) — the encounter's end (6.5.10) with what
+/// the sentence says about the ice, in the ordinary description words.
+pub fn encounter_with_ice_matching_ends(criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::EncounterEnds { criteria: criteria.to_vec() }
+}
+/// "…an **advanced** card" (1.18.2) — a card with at least one advancement
+/// counter on it, which is all "advanced" means.
+pub fn advanced() -> TargetFilter {
+    with_counters(CounterKind::Advancement, 1)
+}
 /// "Whenever you take 1 or more bad publicity…" (10.6.1.)
 pub fn takes_bad_publicity(side: Side) -> TriggerCond {
     TriggerCond::PlayerTakesBadPublicity(side)
@@ -1780,10 +1834,37 @@ pub fn max_hand_size_mod(n: i32) -> StaticDecl {
 pub fn each_players_max_hand_size_mod(n: i32) -> StaticDecl {
     StaticDecl::MaxHandSizeMod { whose: jinteki_cr::ability::DeclSubject::EachPlayer, amount: n }
 }
+/// "Your maximum hand size **is equal to** <amount>." (Cerebral Imaging.) CR
+/// 9.12.1a applies an effect that SETS a value before every effect that
+/// moves it, which is why this is a different declaration from
+/// [`max_hand_size_mod`] and not the same one with a bigger number.
+pub fn max_hand_size_is(q: Quantity) -> StaticDecl {
+    StaticDecl::MaxHandSizeIs { whose: jinteki_cr::ability::DeclSubject::Controller, to: q }
+}
 /// "…another card **of the same type**" (Hayley Kaplan) — the same type as
 /// the card the occurrence that met this ability's condition named (1.15.4).
 pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
     TargetFilter::SameCardTypeAsTriggeringCard
+}
+/// "…**another copy of that ice**" (The Foundry) — a card with the same NAME
+/// as the one the occurrence that met this ability's condition named (1.15.4
+/// + 2.1.4). It names no zone of its own, so whatever the sentence says about
+/// where to look ("search R&D") is what says it.
+pub fn a_copy_of_the_triggering_card() -> TargetFilter {
+    TargetFilter::SameNameAsTriggeringCard
+}
+/// "…a card **in the root of or protecting the attacked server**" (LEO
+/// Construction) — 4.6.6b puts both halves of a server *in* it, and 6.1.2 is
+/// which server is under attack. It reaches nothing outside a run, which is
+/// what keeps a cost naming one of these cards unpayable then.
+pub fn in_the_attacked_server() -> TargetFilter {
+    TargetFilter::InAttackedServer
+}
+/// "**Trash 1 rezzed bioroid card in the root of or protecting the attacked
+/// server:**" — trashing described cards as a trigger cost (1.16.10). The
+/// cards are the payer's to choose, and the description says where they are.
+pub fn trash_cards_matching(n: u32, criteria: &[TargetFilter]) -> Cost {
+    Cost::trash_matching(n, criteria.to_vec())
 }
 /// "…a **non**-agenda card", "…a **non**-virus program" — any description
 /// word, negated. It names no zone of its own, so 1.15.2c's play-area default
@@ -1837,7 +1918,28 @@ pub fn facedown() -> TargetFilter {
 /// "Whenever you rez an <subtype>…" (Spark Agency class) — 8.1.2's rez with
 /// 2.16's subtype stipulation and no stipulation about the card's type.
 pub fn corp_rezzes_a_subtyped(subtype: &'static str) -> TriggerCond {
-    TriggerCond::CorpRezzesCard { of_types: Vec::new(), of_subtypes: vec![subtype] }
+    TriggerCond::CorpRezzesCard {
+        of_types: Vec::new(),
+        of_subtypes: vec![subtype],
+        criteria: Vec::new(),
+        requires: Vec::new(),
+    }
+}
+/// "Whenever you rez a piece of **AP** or **destroyer** ice **during a run**…"
+/// (Thunderbolt Armaments) — 8.1.2's rez with a whole description of the card
+/// rezzed and 9.6.5c's state stipulation. The description is the ordinary
+/// filter vocabulary, so a printed "or" between subtypes is
+/// [`with_any_subtype`] here exactly as it is in a target announcement.
+pub fn corp_rezzes_matching(
+    criteria: &[TargetFilter],
+    reqs: &[TriggerRequirement],
+) -> TriggerCond {
+    TriggerCond::CorpRezzesCard {
+        of_types: Vec::new(),
+        of_subtypes: Vec::new(),
+        criteria: criteria.to_vec(),
+        requires: reqs.to_vec(),
+    }
 }
 /// "Whenever <side> loses or spends [click] during a run…" (Seidr class;
 /// 5.2.1 keeps a click SPENT and a click LOST apart, and this sentence names
@@ -2602,6 +2704,28 @@ pub fn gains_subtypes(
         target,
         add: add.to_vec(),
         remove: Vec::new(),
+        duration,
+    }
+}
+/// "…gains \"[subroutine] …\" **after its other subroutines** for the
+/// remainder of <duration>." (Thunderbolt Armaments; CR 9.8.2a puts a granted
+/// subroutine after the printed ones unless the card says otherwise, and this
+/// card says exactly that.) `before` is the other polarity of the same
+/// position, so both are content on one instruction.
+pub fn gains_subroutine(
+    target: TargetSpec,
+    before: bool,
+    duration: WantedDuration,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::GrantSubroutines {
+        to: target,
+        grant: jinteki_cr::instr::SubroutineGrant::Stated {
+            count: 1,
+            sub: Box::new(AbilityDef::subroutine(instrs.into_iter().collect())),
+        },
+        before,
+        any_order: false,
         duration,
     }
 }

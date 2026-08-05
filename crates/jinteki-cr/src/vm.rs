@@ -1934,6 +1934,20 @@ impl Vm {
         }
     }
 
+    /// CR 4.6.6b: which EXISTING server a declared destination is in — the
+    /// root and the ice protecting it are both in the same one. A destination
+    /// that would create a server, or that is not in one at all, is in no
+    /// existing server and answers `None`.
+    fn dest_server(d: crate::instr::InstallDest) -> Option<ServerId> {
+        cite!("rule_server_root");
+        match d {
+            crate::instr::InstallDest::Root(s) | crate::instr::InstallDest::Protecting(s) => {
+                Some(s)
+            }
+            _ => None,
+        }
+    }
+
     /// A **citation anchor**: the rule below is realised structurally — by the
     /// shape of the types and the records, not at one call site — so this is
     /// where the traceability registry records it.
@@ -5684,7 +5698,11 @@ impl Vm {
             // nothing (Career Fair: the click and the choice were spent and
             // the resource stayed in the grip).
             Instruction::InstallCard { card, dest, .. } => match dest {
-                crate::instr::InstallDest::DeclaredByInstaller => 1,
+                crate::instr::InstallDest::DeclaredByInstaller
+                // 8.5.16b: the server is fixed but the half of it is not, so
+                // the declaration is still the installer's and still its own
+                // slot.
+                | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard => 1,
                 _ => usize::from(card.announcement_slots() == 0),
             },
             _ => 0,
@@ -6058,7 +6076,9 @@ impl Vm {
             // legally occupy, "including any host relationships".
             Instruction::InstallCard {
                 card,
-                dest: crate::instr::InstallDest::DeclaredByInstaller,
+                dest:
+                    dest @ (crate::instr::InstallDest::DeclaredByInstaller
+                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard),
                 ..
             } => {
                 cite!("rule_steps_installing_destination");
@@ -6066,8 +6086,19 @@ impl Vm {
                     .resolve_targets(card, Some(af.source.obj), &af.targets)
                     .first()
                     .copied();
-                let options =
+                let mut options =
                     c.map(|c| self.install_destinations_for(c, af.controller)).unwrap_or_default();
+                // 1.15.4: "the same server" — the one the card the occurrence
+                // named is in, so every destination naming another server is
+                // not one this effect offers at all.
+                if matches!(
+                    dest,
+                    crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
+                ) {
+                    cite!("rule_server_root");
+                    let same = af.triggering_card.and_then(|t| self.server_of(t));
+                    options.retain(|d| same.is_some() && Self::dest_server(*d) == same);
+                }
                 if options.is_empty() {
                     None
                 } else {
@@ -6546,6 +6577,16 @@ impl Vm {
             TargetFilter::IceProtectingAttackedServer => {
                 matches!((o.zone, self.current_run), (Zone::Ice(a), Some((_, b, _))) if a == b)
             }
+            // 4.6.6b: the root AND the ice protecting it are both "in" the
+            // server; 6.1.2 is which server that is while a run is on.
+            TargetFilter::InAttackedServer => {
+                cite!("rule_server_root");
+                cite!("rule_attacked_server");
+                matches!(
+                    (o.zone, self.current_run),
+                    (Zone::Ice(a) | Zone::Root(a), Some((_, b, _))) if a == b
+                ) && self.is_installed(o)
+            }
             // 6.2.3: "the same position" is the same number of positions
             // inward, counted in each ice's own server.
             TargetFilter::IceInSamePositionAs(r) => {
@@ -6672,6 +6713,21 @@ impl Vm {
                 .flatten()
                 .and_then(|t| self.st.objects.get(&t))
                 .is_some_and(|t| t.printed.card_type == o.printed.card_type),
+            // 1.15.4 + 2.1.4: "another copy of that ice" — the same NAME as
+            // the card the condition named, asked the same way.
+            TargetFilter::SameNameAsTriggeringCard => {
+                cite!("rule_card_name_definition");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(af.triggering_card),
+                        _ => None,
+                    })
+                    .flatten()
+                    .and_then(|t| self.st.objects.get(&t))
+                    .is_some_and(|t| t.printed.name == o.printed.name)
+            }
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.this_server(s))
                 .map(|sv| self.ice_at(sv).contains(&o.id))
@@ -9328,12 +9384,16 @@ impl Vm {
                     ));
                 }
             }
-            Instruction::RezCard { target, ignore_costs } => {
+            Instruction::RezCard { target, ignore_costs, reduce } => {
                 // CR 8.1.2b: an ability directs the Corp to rez a card. The
                 // rez cost is paid first (8.1.2d) unless the ability states
                 // that it is ignored (1.16.5c).
                 cite!("rule_rez_by_ability");
                 cite!("rule_inherent_rez_cost");
+                // 1.16.6: "paying N[credit] less" is a reduction of the
+                // inherent cost, read where the ability resolves so a
+                // calculated one counts what is true then.
+                let less = self.eval_quantity(reduce, Some(source.obj)).max(0) as u32;
                 let targets = self.resolve_targets(target, Some(source.obj), &imm.targets);
                 for t in targets {
                     let Some(o) = self.st.objects.get(&t) else { continue };
@@ -9352,7 +9412,8 @@ impl Vm {
                         cite!("rule_ignoring_costs");
                         self.rez_card_free(t);
                     } else {
-                        self.rez_card(t);
+                        cite!("rule_cost_calculation");
+                        self.rez_card_paying_less(t, less);
                     }
                 }
             }
@@ -10059,7 +10120,8 @@ impl Vm {
                             Some((Zone::Ice(s), None))
                         }
                     }
-                    crate::instr::InstallDest::DeclaredByInstaller => {
+                    crate::instr::InstallDest::DeclaredByInstaller
+                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard => {
                         // 8.5.16b replaced this with the declared destination
                         // before the instruction became imminent; reaching it
                         // here means no destination could be identified.
@@ -13177,17 +13239,26 @@ impl Vm {
 
     /// Rez: pay cost (checkpoint per 8.1.2e), turn faceup, active stamp.
     pub fn rez_card(&mut self, id: ObjectId) {
-        self.rez_card_inner(id, false)
+        self.rez_card_inner(id, false, 0)
+    }
+
+    /// CR 1.16.2a: "rez 1 card, **paying N[credit] less**" — the rez cost with
+    /// one effect lowering it, floored at zero by the same rule. It is the rez
+    /// procedure and nothing else: 8.1.2d's payment still happens, still takes
+    /// Decisions, and still meets a "whenever you pay credits" condition for
+    /// whatever is left of the cost.
+    pub fn rez_card_paying_less(&mut self, id: ObjectId, less: u32) {
+        self.rez_card_inner(id, false, less)
     }
 
     /// CR 1.16.5c / 8.1.2d: rez a card whose rez cost the rezzing ability
     /// states is ignored — the payment (and its 10.3.4 checkpoint) is simply
     /// not part of the procedure.
     pub fn rez_card_free(&mut self, id: ObjectId) {
-        self.rez_card_inner(id, true)
+        self.rez_card_inner(id, true, 0)
     }
 
-    fn rez_card_inner(&mut self, id: ObjectId, ignore_costs: bool) {
+    fn rez_card_inner(&mut self, id: ObjectId, ignore_costs: bool, less: u32) {
         // 8.1.2: to rez an unrezzed card is to turn it faceup. 8.1.2a: some
         // paid ability windows allow it (the (R) class, and ice at 6.9.2b);
         // 8.1.4f: Runner cards are never rezzed or unrezzed, which is why
@@ -13197,7 +13268,10 @@ impl Vm {
         cite!("rule_runner_cards_neither_rezzed_nor_unrezzed");
         cite!("rule_rez_procedure");
         if !ignore_costs {
-            let cost = Cost::credits(self.rez_cost_credits(id));
+            // 1.16.2a: the default value, then the increases, then the
+            // reductions, and never below zero.
+            cite!("rule_cost_calculation");
+            let cost = Cost::credits(self.rez_cost_credits(id).saturating_sub(less));
             // The rez cost may take Decisions to pay (1.16.2e/1.10.3c), so the
             // rest of the procedure is the payment's continuation.
             self.begin_payment(Side::Corp, id, &cost, PaymentCont::Rez(id), None);
@@ -13246,19 +13320,31 @@ impl Vm {
 
     pub fn max_hand_size(&self, side: Side) -> i32 {
         cite!("rule_max_hand_size");
+        // 9.1.1a: "your" is the controller of the card that says it; "each
+        // player's" reaches both without asking.
+        let applies = |src: ObjectId, whose: &crate::ability::DeclSubject| match whose {
+            crate::ability::DeclSubject::EachPlayer => true,
+            crate::ability::DeclSubject::Controller => {
+                self.st.objects.get(&src).is_some_and(|o| o.controller == side)
+            }
+        };
+        let statics = self.active_statics();
+        // 9.12.1a: the effects that SET the value first, then the ones that
+        // change it — so Cerebral Imaging and Cybernetics Division together
+        // are "credits, minus one" and never "five, minus one".
+        cite!("rule_modify_value");
         let mut n = self.st.player(side).max_hand_size_base;
-        for (src, d) in self.active_statics() {
+        for (src, d) in &statics {
+            if let StaticDecl::MaxHandSizeIs { whose, to } = d {
+                if applies(*src, whose) {
+                    n = self.eval_quantity(to, Some(*src)) as i32;
+                }
+            }
+        }
+        for (src, d) in &statics {
             if let StaticDecl::MaxHandSizeMod { whose, amount } = d {
-                // 9.1.1a: "your" is the controller of the card that says it;
-                // "each player's" reaches both without asking.
-                let applies = match whose {
-                    crate::ability::DeclSubject::EachPlayer => true,
-                    crate::ability::DeclSubject::Controller => {
-                        self.st.objects.get(&src).is_some_and(|o| o.controller == side)
-                    }
-                };
-                if applies {
-                    n += amount;
+                if applies(*src, whose) {
+                    n += *amount;
                 }
             }
         }
