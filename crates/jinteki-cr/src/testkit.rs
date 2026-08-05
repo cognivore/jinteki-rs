@@ -6140,3 +6140,41 @@ pub fn trick_of_light_like(name: &'static str, n: u32) -> PrintedCard {
     .labeled("trick-of-light: move advancement counters")];
     c
 }
+
+/// A considered-tag probe (10.5.2): a rezzed asset whose "whenever an
+/// encounter begins" conditional carries 9.6.5c's requirement that the
+/// Runner have at least `at_least` tags, and whose effect gains the Corp
+/// 1[credit] per tag a `Quantity::RunnerTags` reader sees at that moment.
+/// One card exercises both MODIFIED-count readers at once: whether the
+/// ability fires is `TriggerRequirement::RunnerTagsAtLeast`, and how much it
+/// pays is `Quantity::RunnerTags` — so an Acme-class declaration shows up as
+/// a firing that pays the considered number, and a non-qualifying encounter
+/// as no firing at all.
+pub fn considered_tag_probe(name: &'static str, at_least: u32) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::EncounterBegins {
+            of_subtypes: Vec::new(),
+            requires: vec![TriggerRequirement::RunnerTagsAtLeast(at_least)],
+        },
+        vec![Instruction::GainCredits(Side::Corp, Quantity::RunnerTags)],
+        false,
+    )
+    .labeled("tag probe: the Corp gains 1 credit per tag the Runner is considered to have")];
+    c
+}
+
+/// A tag shedder (1.16.2 / 10.5.5): a resource whose paid ability costs
+/// "remove 1 tag" and gains the Runner 1[credit]. The cost is paid from the
+/// REAL tag count — a tag the Runner is merely CONSIDERED to have (10.5.2,
+/// the Acme class) cannot be removed, so this is the probe for the other
+/// side of the reader split.
+pub fn tag_shedder(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::remove_tags(1),
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
+    )
+    .labeled("tag shedder: remove a tag to gain 1 credit")];
+    c
+}

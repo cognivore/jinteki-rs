@@ -537,5 +537,42 @@ pub fn identities() -> Vec<Card> {
         nbn_the_world_is_yours(),
         pravdivost_consulting(),
         spark_agency(),
+        acme_consulting(),
     ]
+}
+
+/// Acme Consulting: The Truth You Need — Identity: Division.
+/// "The Runner is considered to have 1 additional tag (even if they have 0)
+///  during encounters with the outermost piece of ice protecting any server."
+///
+/// COMPLETE. A declaration about the NUMBER of tags the Runner is considered
+/// to have (10.5.2), not a tag: no counter is taken, nothing is recorded, and
+/// the moment the encounter ends the number is what it was. Which readers see
+/// the modified number is settled on `StaticDecl::ConsideredTagsMod`:
+/// `Quantity::RunnerTags`, "the Runner is tagged" in every 9.6.5c requirement
+/// (so Harishchandra Ent. opens the grip during such an encounter) and
+/// 5.2.6g's trash-a-resource gate read it; 5.2.6e's remove-tag action and
+/// every cost that removes a tag read the real count, because "(even if they
+/// have 0)" means there may be nothing to remove.
+///
+/// "During encounters with…" is 9.3.7a's stated condition — the declaration
+/// applies exactly while an encounter with a described ice is in progress —
+/// and the description is two criteria about one card: the piece of ice being
+/// encountered (6.5.1), which is also the outermost piece of ice protecting
+/// its server (6.2.2's install position, read from the positions as they
+/// stand). "Any server" is why the second criterion measures the ice against
+/// its OWN server rather than a named one.
+pub fn acme_consulting() -> Card {
+    card("Acme Consulting: The Truth You Need")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.")
+        .declares_while(
+            &[board_has(&[the_encountered_ice(), outermost_ice_of_its_server()], 1)],
+            [considered_additional_tags(1)],
+        )
+        .named("the truth you need")
+        .build()
 }

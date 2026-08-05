@@ -1723,6 +1723,26 @@ pub enum TargetFilter {
     /// it. Empty when no run is in progress, which is what keeps an ability
     /// costing one of these cards unusable outside a run.
     InAttackedServer,
+    /// CR 6.5.1: "the piece of ice being encountered" — the ice the
+    /// encounter in progress is with, and nothing while there is none.
+    /// [`TargetSpec::EncounteredIce`] already names it as a target; this is
+    /// the same card as a DESCRIPTION, so a static ability's 9.3.7a stated
+    /// condition ("during encounters with…", Acme Consulting) can ask a
+    /// `BoardHasMatching` about it. The encounter fixes the card by identity,
+    /// so there is no selection left for 1.15.2c to restrict — and 6.1.4's
+    /// encounter with an uninstalled card is still an encounter, which is why
+    /// this reads the encounter record rather than any position.
+    IsEncounteredIce,
+    /// CR 6.2.1/6.2.2: "the outermost piece of ice protecting its server" —
+    /// the ice in ITS OWN server's outermost occupied position (positions are
+    /// innermost first, so it is the last ice in the sequence). Read against
+    /// whatever server the candidate protects, so one atom serves "…the
+    /// outermost piece of ice protecting **any** server" (Acme Consulting:
+    /// conjoined with [`TargetFilter::IsEncounteredIce`]) and "…the outermost
+    /// piece of ice protecting **that** server" (AgInfusion: conjoined with a
+    /// server-naming criterion). Hosted ice occupies no position (6.2.1a) and
+    /// is never this.
+    OutermostIceOfItsServer,
     /// Cards in a player's hand (Ashigaru-class counting).
     CardsInHandOf(Side),
     // ---- card-characteristic atoms (§2), location-agnostic --------------
@@ -2114,6 +2134,13 @@ impl TargetFilter {
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.
                 | TargetFilter::IceInSamePositionAs(_)
+                // 6.1.4: the encounter fixes its ice by identity — and an
+                // encounter with an UNINSTALLED card is still an encounter,
+                // so the description must reach outside the play area.
+                | TargetFilter::IsEncounteredIce
+                // 6.2.1: only ice PROTECTING a server occupies a position, so
+                // this criterion already names the play area.
+                | TargetFilter::OutermostIceOfItsServer
                 // 1.18.3: only an INSTALLED card can be advanced, so this
                 // criterion already names the play area.
                 | TargetFilter::CanBeAdvanced

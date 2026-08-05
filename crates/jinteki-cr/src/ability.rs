@@ -1798,6 +1798,22 @@ pub enum StaticDecl {
     /// other, it reaches no further than the announcement — a run already in
     /// progress can still be moved onto such a server (6.1.2d).
     CannotInitiateRunOn(crate::instr::RunServerSet),
+    /// CR 10.5.2/10.5.3: "The Runner is **considered to have** 1 additional
+    /// tag (even if they have 0)…" (Acme Consulting) — a declaration about
+    /// the NUMBER of tags the Runner is considered to have, not about the
+    /// tag counters themselves. `Instruction::GainTags` and `RemoveTags`
+    /// still move the real count; this modifies what a reader of that number
+    /// SEES, and which readers those are is settled:
+    /// [`crate::instr::Quantity::RunnerTags`],
+    /// [`TriggerRequirement::RunnerTagsAtLeast`] (so 10.5.2's "tagged" — the
+    /// Harishchandra class — and every 9.6.5c "if the Runner is tagged"
+    /// requirement) and 5.2.6g's "take this action only if the Runner is
+    /// tagged" gate read the modified number through
+    /// [`crate::vm::Vm::considered_runner_tags`]; 5.2.6e's remove-tag action
+    /// and every place a cost takes tags away read the real one, because a
+    /// tag nobody has cannot be removed. "(Even if they have 0)" is why the
+    /// sum floors at 0 only after every delta is in.
+    ConsideredTagsMod { delta: i64 },
 }
 
 /// A **citation anchor**: CR §1.16's cost taxonomy and §9.6's conditional

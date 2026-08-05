@@ -35,29 +35,7 @@ through — `git log` is where the history lives.
 Still wanted by identities other than the ones named, in every case: these are
 kernel words, not card patches.
 
-- **Nothing modifies the NUMBER of tags the Runner is considered to have.**
-  `Instruction::GainTags` and `RemoveTags` move the real count, and
-  `Quantity::RunnerTags` and `TriggerRequirement::RunnerTagsAtLeast` read it —
-  but "the Runner is considered to have 1 additional tag (even if they have
-  0)" is a DECLARATION about that number, which every reader of
-  `st.runner.tags` would have to go through. Which readers, exactly, is
-  settled: `Quantity::RunnerTags`, `TriggerRequirement::RunnerTagsAtLeast` and
-  5.2.6g's "take this action only if the Runner is tagged" read the modified
-  number; 5.2.6e's remove-tag action and the two places a cost takes tags away
-  read the real one, since a tag nobody has cannot be removed. What is missing
-  is the break: gathering the declaration means asking every active static
-  ability's 9.3.7a stated condition, and Harishchandra Ent.'s condition IS
-  `RunnerTagsAtLeast` — so a considered-tag reader inside that evaluation
-  re-enters the gather. It is deviation 2b's loop in the tag pipeline instead
-  of the characteristics one, and it wants the same kind of answer
-  (`filter_matches_shallow` is the shape).
-  The scope is the other half, and it is nearly sayable: 9.3.7a's
-  `StaticCond::StateRequirement` is the window, and
-  `TriggerRequirement::BoardHasMatching` would ask it, given two filters that
-  do not exist — "the piece of ice being encountered" (`TargetSpec` has it,
-  `TargetFilter` does not) and "the outermost piece of ice protecting its
-  server". *(Acme Consulting: The Truth You Need. AgInfusion wants the
-  outermost-ice description too.)*
+
 - **Nothing happens BEFORE the first turn.** `PrintedCard::starting_hand_size`,
   `starting_credits` and `starting_bad_publicity` are 1.6's setup FACTS,
   settled while the game is built and never resolved by anything; "before
@@ -170,9 +148,9 @@ Earth Station: SEA Headquarters was completed from exactly this data.
 ## Progress
 
 <<<<<<< HEAD
-- Implemented: **134 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **135 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 =======
-- Implemented: **134 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **135 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 >>>>>>> c442d78 (feat(carddata+cards): the back faces arrive from the source, and Earth Station flips)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
@@ -343,7 +321,7 @@ Module: `decks/identities/corp_jinteki.rs`
 
 Module: `decks/identities/corp_nbn.rs`
 
-- [ ] **Acme Consulting: The Truth You Need** — The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.
+- [x] **Acme Consulting: The Truth You Need** — The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.
 - [x] **Azmari EdTech: Shaping the Future** — When your turn ends, you may name a card type. Gain 2[credit] the first time each turn the Runner plays or installs a card that has the type you last named this way.
 - [x] **Editorial Division: Ad Nihilum** — The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.
 - [x] **Epiphany Analytica: Nations Undivided** — The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity. [click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.

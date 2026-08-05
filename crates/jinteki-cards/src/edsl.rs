@@ -1539,6 +1539,20 @@ pub fn advanced_this_turn(yes: bool) -> TargetFilter {
 pub fn advanceable() -> TargetFilter {
     TargetFilter::CanBeAdvanced
 }
+/// "…the piece of ice being encountered" (6.5.1) — the ice the encounter in
+/// progress is with, and nothing outside an encounter. The description half
+/// of [`TargetSpec::EncounteredIce`].
+pub fn the_encountered_ice() -> TargetFilter {
+    TargetFilter::IsEncounteredIce
+}
+/// "…the outermost piece of ice protecting its server" (6.2.1/6.2.2) — the
+/// last ice in its own server's innermost-first sequence, whichever server
+/// that is. "…protecting **any** server" (Acme Consulting) is this atom
+/// alone; "…protecting **that** server" (AgInfusion) is this atom conjoined
+/// with a criterion naming the server.
+pub fn outermost_ice_of_its_server() -> TargetFilter {
+    TargetFilter::OutermostIceOfItsServer
+}
 
 // ---- what an ability costs (1.16) -----------------------------------------
 
@@ -2921,6 +2935,14 @@ pub fn discard_pile_is_ordered(whose: Side) -> StaticDecl {
 /// Studios; CR 1.17.7 and 1.2.2's absolute "cannot".)
 pub fn cannot_steal_more_than_each_turn(n: u32) -> StaticDecl {
     StaticDecl::StealsPerTurnAtMost(n)
+}
+/// "The Runner is considered to have N additional tags (even if they have
+/// 0)…" (Acme Consulting; CR 10.5.2.) A declaration about the NUMBER a tag
+/// reader sees, not about the tag counters: "tagged", `Quantity::RunnerTags`
+/// and 5.2.6g's gate read it, while removing a tag still finds only the real
+/// ones.
+pub fn considered_additional_tags(n: i64) -> StaticDecl {
+    StaticDecl::ConsideredTagsMod { delta: n }
 }
 /// "The trash cost of each card is increased by <an amount>." (Industrial
 /// Genomics; CR 7.1.5a.) The criteria are what the sentence says about the

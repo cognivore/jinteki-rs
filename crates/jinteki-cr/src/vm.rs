@@ -436,6 +436,16 @@ pub struct Vm {
     pub payment: Option<Payment>,
     /// Trace of resolutions for tests: labels of resolved ability frames.
     pub resolution_log: Vec<String>,
+    /// Deviation 77's re-entry latch: true while
+    /// [`Vm::considered_runner_tags`] is gathering its declarations. A tag
+    /// reader reached from INSIDE that gather (a 9.3.7a stated condition
+    /// that is `RunnerTagsAtLeast`, Harishchandra Ent.; a `SelfStrength`
+    /// quantity that is `Quantity::RunnerTags`, Resistor — both sit under
+    /// the gather's own `abilities_of`) answers with the REAL count instead
+    /// of re-entering. Atomic only because the gather is a `&self` read and
+    /// `Vm` crosses threads whole — the latch itself is single-threaded
+    /// recursion state, never contended.
+    considered_tags_gathering: std::sync::atomic::AtomicBool,
 }
 
 /// CR 1.16.1: paying a cost is a PROCEDURE, not a single act. Everything the
@@ -768,6 +778,7 @@ impl Vm {
             pending_ice_position: None,
             current_run: None,
             resolution_log: Vec::new(),
+            considered_tags_gathering: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -3096,6 +3107,13 @@ impl Vm {
                     return;
                 }
                 if let Some(Condition::Static(sc)) = &a.condition {
+                    // A tag reader here (a stated condition that is
+                    // RunnerTagsAtLeast, or a SelfStrength quantity below
+                    // that is Quantity::RunnerTags — Resistor) reads the
+                    // considered count, whose gather runs `abilities_of`,
+                    // which is this pipeline: deviation 77's latch is what
+                    // keeps that from recursing, by answering the REAL
+                    // count when reached from inside the gather.
                     if !self.static_cond_holds(o.id, sc) {
                         return;
                     }
@@ -4494,8 +4512,11 @@ impl Vm {
                     .unwrap_or(0) as i64
             }
             Q::RunnerTags => {
+                // 10.5.2: a quantity reader sees the number of tags the
+                // Runner is CONSIDERED to have (Acme Consulting's "even if
+                // they have 0"), not the count of tag counters.
                 cite!("rule_tag");
-                self.st.runner.tags as i64
+                self.considered_runner_tags() as i64
             }
             Q::Plus(a, b) => self.eval_quantity(a, source) + self.eval_quantity(b, source),
             Q::Minus(a, b) => self.eval_quantity(a, source) - self.eval_quantity(b, source),
@@ -7474,6 +7495,22 @@ impl Vm {
                     (Zone::Ice(a) | Zone::Root(a), Some((_, b, _))) if a == b
                 ) && self.is_installed(o)
             }
+            // 6.5.1: the ice the encounter in progress is with — fixed by
+            // the encounter record, so it reaches 6.1.4's uninstalled
+            // encountered card too, and nothing at all outside an encounter.
+            TargetFilter::IsEncounteredIce => {
+                cite!("rule_encounter_ice_phase");
+                self.st.encounter.as_ref().is_some_and(|e| e.ice == o.id)
+            }
+            // 6.2.1/6.2.2: the last ice in ITS OWN server's innermost-first
+            // sequence. Hosted ice occupies no position (6.2.1a), so it is
+            // never this.
+            TargetFilter::OutermostIceOfItsServer => {
+                cite!("rule_count_positions");
+                cite!("rule_hosted_ice_has_no_position");
+                self.position_of_ice(o.id)
+                    .is_some_and(|(server, _)| self.ice_at(server).last() == Some(&o.id))
+            }
             // 6.2.3: "the same position" is the same number of positions
             // inward, counted in each ice's own server.
             TargetFilter::IceInSamePositionAs(r) => {
@@ -8659,8 +8696,11 @@ impl Vm {
                     .any(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == src))
             }
             R::RunnerTagsAtLeast(n) => {
+                // 10.5.2: "tagged" is a question about the number of tags
+                // the Runner is CONSIDERED to have — Acme Consulting's
+                // declaration reaches every requirement reader through it.
                 cite!("rule_tagged");
-                self.st.runner.tags >= *n
+                self.considered_runner_tags() >= *n
             }
             // 1.12.6: "this run" — the change log from where the run began,
             // which 10.2.1 makes open information — counting 6.9.2's
@@ -12843,11 +12883,13 @@ impl Vm {
                 }
             }
             // 5.2.6g / 10.5.3: "Trash 1 resource. Take this action only if
-            // the Runner is tagged." 10.5.2: tagged is one or more tags.
+            // the Runner is tagged." 10.5.2: tagged is one or more tags —
+            // the number the Runner is CONSIDERED to have, so an Acme
+            // Consulting declaration opens this gate with 0 real tags.
             cite!("corp_basic_action_trash_resource");
             cite!("rule_tagged_trash_resource");
             cite!("rule_tagged");
-            if self.st.runner.tags > 0
+            if self.considered_runner_tags() > 0
                 && self.st.corp.credits >= 2
                 && self.st.objects.values().any(|o| {
                     o.zone == Zone::Rig
@@ -15092,6 +15134,77 @@ impl Vm {
             }
         }
         m
+    }
+
+    /// CR 10.5.2: **the number of tags the Runner is considered to have** —
+    /// the real count plus every active [`StaticDecl::ConsideredTagsMod`]
+    /// ("the Runner is considered to have 1 additional tag (even if they
+    /// have 0)", Acme Consulting), floored at 0 after every delta is in.
+    ///
+    /// This is what the three MODIFIED-count readers read:
+    /// `Quantity::RunnerTags`, `TriggerRequirement::RunnerTagsAtLeast`
+    /// (10.5.2's "tagged" included) and 5.2.6g's "take this action only if
+    /// the Runner is tagged" gate. 5.2.6e's remove-tag action and every cost
+    /// that takes tags away keep reading `st.runner.tags`, because a tag
+    /// nobody has cannot be removed.
+    ///
+    /// Deviation 2b's loop in the tag pipeline, and `filter_matches_shallow`'s
+    /// answer to it, held dynamically: gathering these declarations asks
+    /// every carrying static ability's 9.3.7a stated condition, and a tag
+    /// reader sits on the gather's own path twice over — a stated condition
+    /// can BE `RunnerTagsAtLeast` (Harishchandra Ent.), and the
+    /// `abilities_of` walk runs the 9.12.1 characteristics pipeline, whose
+    /// gather evaluates a `SelfStrength` quantity that can be
+    /// `Quantity::RunnerTags` (Resistor). So the GATHER PASS evaluates
+    /// everything it asks against the REAL tag count: while the latch is
+    /// held, any reader that would re-enter answers `st.runner.tags`
+    /// (deviation 77's reading), and every reader OUTSIDE the gather gets
+    /// the modified number.
+    pub fn considered_runner_tags(&self) -> u32 {
+        use std::sync::atomic::Ordering;
+        cite!("rule_tagged");
+        if self.considered_tags_gathering.swap(true, Ordering::Relaxed) {
+            // Re-entered from inside the gather: the REAL count, the same
+            // one-level break `filter_matches_shallow` makes for subtypes.
+            return self.st.runner.tags;
+        }
+        let mut n = self.st.runner.tags as i64;
+        let threat = self.threat_level();
+        for o in self.st.objects.values() {
+            for (_i, a) in self.abilities_of(o.id) {
+                if a.kind != AbilityKind::Static {
+                    continue;
+                }
+                if !a
+                    .statics
+                    .iter()
+                    .any(|d| matches!(d, StaticDecl::ConsideredTagsMod { .. }))
+                {
+                    continue;
+                }
+                if let Some(Condition::Static(sc)) = &a.condition {
+                    if !self.static_cond_holds(o.id, sc) {
+                        continue;
+                    }
+                }
+                if !ability_active(
+                    o,
+                    &a,
+                    self.st.encounter.as_ref().map(|e| e.ice),
+                    self.st.accessed,
+                    threat,
+                ) {
+                    continue;
+                }
+                for d in &a.statics {
+                    if let StaticDecl::ConsideredTagsMod { delta } = d {
+                        n += delta;
+                    }
+                }
+            }
+        }
+        self.considered_tags_gathering.store(false, Ordering::Relaxed);
+        n.max(0) as u32
     }
 
     // ------------------------------------------------------------------

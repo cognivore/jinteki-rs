@@ -13066,3 +13066,168 @@ fn bangun_faceup_agenda_is_still_stolen_after_the_damage_and_tag() {
         t.tail(30)
     );
 }
+
+/// Acme Consulting: "The Runner is considered to have 1 additional tag (even
+/// if they have 0) during encounters with the outermost piece of ice
+/// protecting any server."
+///
+/// The qualifying half: with 0 real tags, an encounter with the OUTERMOST of
+/// a two-ice server makes every modified-count reader see 1. The probe asset
+/// is both readers at once — its "whenever an encounter begins" condition
+/// requires the Runner be tagged (`RunnerTagsAtLeast`), and its effect pays
+/// the Corp 1[credit] per `Quantity::RunnerTags` — so the outer encounter
+/// pays exactly 1 and the inner encounter of the SAME run pays nothing. The
+/// real count never moves: no tag was taken, so 5.2.6e's remove-tag action
+/// (which reads the real count — a tag nobody has cannot be removed) never
+/// has anything to remove. That action's availability gate is private to the
+/// VM, so the assertion is on what it reads: the real count, still 0.
+#[test]
+fn acme_counts_one_considered_tag_during_the_outermost_encounter_only() {
+    let mut vm = Vm::empty(6227);
+    tk::install_identity(&mut vm, card("Acme Consulting: The Truth You Need"), Side::Corp);
+    let _probe =
+        tk::install_root(&mut vm, tk::considered_tag_probe("Probe", 1), ServerId::Remote(2), true);
+    let _inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 0), ServerId::Remote(1), true);
+    let _outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 0), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    let corp0 = vm.st.corp.credits;
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        corp0 + 1,
+        "the outer encounter fired the tagged-gated probe for exactly 1 (the considered \
+         count), and the inner encounter of the same run for nothing: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.runner.tags, 0,
+        "no tag was ever taken — the declaration modifies the NUMBER a reader sees, so \
+         5.2.6e's remove-tag action (a real-count reader) never had anything to remove: {}",
+        t.tail(50)
+    );
+}
+
+/// Acme Consulting, the inner half: an encounter with a piece of ice that is
+/// NOT the outermost of its server counts nothing. The outer ice stays
+/// unrezzed — an unrezzed piece of ice still occupies the outermost position
+/// (6.2.1 positions do not care about rez status), so the encountered inner
+/// ice is not "the outermost piece of ice protecting its server" and the
+/// probe's tagged requirement reads 0.
+#[test]
+fn acme_counts_nothing_during_an_inner_encounter() {
+    let mut vm = Vm::empty(6228);
+    tk::install_identity(&mut vm, card("Acme Consulting: The Truth You Need"), Side::Corp);
+    let _probe =
+        tk::install_root(&mut vm, tk::considered_tag_probe("Probe", 1), ServerId::Remote(2), true);
+    let _inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 0), ServerId::Remote(1), true);
+    let _outer =
+        tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 0), ServerId::Remote(1), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    let corp0 = vm.st.corp.credits;
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.corp.credits, corp0,
+        "the only encounter was with the inner ice, which is not the outermost of its \
+         server, so no reader ever saw a tag: {}",
+        t.tail(50)
+    );
+    assert_eq!(vm.st.runner.tags, 0, "and the real count never moved: {}", t.tail(50));
+}
+
+/// Acme Consulting, outside any encounter: the declaration's 9.3.7a stated
+/// condition ("during encounters with…") does not hold, so the considered
+/// count IS the real count — 0 with no tags, and exactly the real number
+/// with some, because the modification lapses rather than lingers.
+#[test]
+fn acme_counts_nothing_outside_an_encounter() {
+    let mut vm = Vm::empty(6229);
+    tk::install_identity(&mut vm, card("Acme Consulting: The Truth You Need"), Side::Corp);
+    let _outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 0), ServerId::Remote(1), true);
+
+    assert_eq!(
+        vm.considered_runner_tags(),
+        0,
+        "outermost ice exists, but no encounter is in progress, so the stated condition \
+         does not hold and nothing is added"
+    );
+    vm.st.runner.tags = 2;
+    assert_eq!(
+        vm.considered_runner_tags(),
+        2,
+        "with real tags and no encounter the considered count is exactly the real one"
+    );
+}
+
+/// Acme Consulting on top of a real tag: during the qualifying encounter the
+/// modified-count readers see 2 (the probe requires at least 2 and pays
+/// `Quantity::RunnerTags`, so it fires for exactly 2[credit]) — and removing
+/// a tag as a COST still works on the real one: the shedder's "remove 1 tag"
+/// takes the real tag, leaving 0, while the considered count during the rest
+/// of the encounter is still 1. A cost can never take the considered tag:
+/// "(even if they have 0)" is the printed way of saying it is not there.
+#[test]
+fn acme_stacks_on_a_real_tag_and_a_cost_still_removes_only_the_real_one() {
+    let mut vm = Vm::empty(6230);
+    tk::install_identity(&mut vm, card("Acme Consulting: The Truth You Need"), Side::Corp);
+    let _probe =
+        tk::install_root(&mut vm, tk::considered_tag_probe("Probe", 2), ServerId::Remote(2), true);
+    let _inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 0), ServerId::Remote(1), true);
+    let _outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 0), ServerId::Remote(1), true);
+    let _shed = tk::install_rig(&mut vm, tk::tag_shedder("Shed"));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.start_turn(Side::Runner);
+    let corp0 = vm.st.corp.credits;
+    let runner0 = vm.st.runner.credits;
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(
+                Match::paid().during(StructKind::Encounter).once(),
+                Reply::take("tag shedder"),
+            )
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        corp0 + 2,
+        "during the outer encounter the readers saw 1 real + 1 considered = 2 — the probe's \
+         at-least-2 requirement was met and Quantity::RunnerTags paid 2: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.runner.tags, 0,
+        "the shedder's remove-a-tag cost took the REAL tag — the considered one cannot be \
+         removed, so nothing is left: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        runner0 + 1,
+        "and the shedder's effect paid out, proving the cost was payable with 1 real tag \
+         even though no reader of the considered count is involved in paying it: {}",
+        t.tail(50)
+    );
+}
