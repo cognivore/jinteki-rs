@@ -283,7 +283,15 @@
     <span id="crlobby-status">Find a Game</span>
     <button class="chip" id="crlobby-refresh">Refresh</button>
   </div>
-  <button class="big go" id="crlobby-anyone">Play anyone</button>
+  <!-- One big verb and two small ones. "Play anyone" is the whole lobby for
+       most visits: the server's autopair takes the oldest ROPED seat either
+       side, and when nothing is open a seat opens on a coin flip. The
+       side-chips stay for the player who came to play one side; the deck
+       and timing selectors below apply to whichever verb creates. -->
+  <div class="lobby-create">
+    <button class="chip go" id="crlobby-play">Play anyone</button>
+    <button class="chip" id="crlobby-create-runner">as Andromeda</button>
+    <button class="chip" id="crlobby-create-corp">as Gauntlet</button>
   <div class="lobby-decks">
     <label>Runner deck<select id="crlobby-deck-runner"></select></label>
     <label>Corp deck<select id="crlobby-deck-corp"></select></label>
@@ -314,9 +322,6 @@
     </details>
   </div>
   <div class="lobby-create">
-    <input id="crlobby-title" type="text" placeholder="game title (optional)">
-    <button class="chip" id="crlobby-create-runner">Create as Runner</button>
-    <button class="chip" id="crlobby-create-corp">Create as Corp</button>
     <button class="chip danger" id="crlobby-cancel" style="display:none">Cancel my game</button>
   </div>
   <div id="crlobby-mine"></div>

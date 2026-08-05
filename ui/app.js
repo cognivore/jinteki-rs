@@ -156,7 +156,7 @@ function handle(m) {
       // game now.
       crWaitToken = null;
       crWaitId = null;
-      $("crlobby-cancel").style.display = "none";
+      crLobbySeated(false);
       $("crlobby-mine").textContent = "";
       crPairingClear();
       break;
@@ -358,6 +358,7 @@ function showCrGap() {
 let crWaitToken = null;
 let crWaitId = null;
 let crPairing = null;      // the ready-check table this client sits at
+let CR_LOBBIES = [];   // the open games as last listed — what "Play anyone" joins
 
 /* The lobby deck picker: GET /api/decks (contract {"decks":[{key,name,
    builtin,legal,side…}]}) filtered per side. Until that catalog exists —
@@ -444,34 +445,54 @@ $("btn-cr-lobby").onclick = openFindGame;
 
 $("crlobby-back").onclick = () => { if (ws) ws.close(); show("screen-home"); };
 $("crlobby-refresh").onclick = () => send({ type: "lobby-list" });
-$("crlobby-create-runner").onclick = () => crCreate("runner");
-$("crlobby-create-corp").onclick = () => crCreate("corp");
-$("crlobby-anyone").onclick = () => {
+// "Play anyone": the one-button lobby. An open seat is a person already
+// waiting — take it, whichever side it is (the joiner was always given the
+// leftover side; this only stops making them read the list first). Nothing
+// to join means nobody is waiting, so BE the person waiting, on a coin flip
+// — 50/50 corp or runner, so two strangers both pressing the button meet in
+// the middle instead of both hosting the same side.
+// "Play anyone": the one-button lobby, through the SERVER's autopair — it
+// seats you at ROPED tables only (the user's rule), takes the oldest
+// compatible seat whichever side it is, and when nobody is waiting it opens
+// a seat on a 50/50 coin flip so two strangers pressing the button meet in
+// the middle instead of both hosting the same side.
+$("crlobby-play").onclick = () => {
+  if (crWaitToken) return; // already seated and waiting — cancel is the verb now
   $("crlobby-status").textContent = "finding an opponent…";
   send({
     type: "lobby-anyone",
     decks: { runner: crDeck("runner") || null, corp: crDeck("corp") || null },
-    // Used only if nobody is waiting and a seat gets opened. NOTE: autopair
-    // itself seats you at ROPED tables only (the server's rule).
+    side: Math.random() < 0.5 ? "runner" : "corp",
     timing: crTiming(),
   });
 };
+$("crlobby-create-runner").onclick = () => crCreate("runner");
+$("crlobby-create-corp").onclick = () => crCreate("corp");
 $("crlobby-cancel").onclick = () => {
   crWaitToken = null;
   crWaitId = null;
   localStorage.removeItem("jinteki_local");
   send({ type: "lobby-cancel" });
   $("crlobby-mine").textContent = "";
-  $("crlobby-cancel").style.display = "none";
+  crLobbySeated(false);
   $("crlobby-status").textContent = "open games";
 };
+
+/* While you are seated and waiting, the create verbs make no sense — the
+   only verb is Cancel. One function owns the swap so the two states cannot
+   drift. */
+function crLobbySeated(seated) {
+  $("crlobby-cancel").style.display = seated ? "" : "none";
+  $("crlobby-play").style.display = seated ? "none" : "";
+  $("crlobby-create-runner").style.display = seated ? "none" : "";
+  $("crlobby-create-corp").style.display = seated ? "none" : "";
+}
 
 function crCreate(side) {
   const seed = parseInt($("cr-seed").value, 10);
   send({
     type: "lobby-create",
     side,
-    title: $("crlobby-title").value,
     seed: Number.isFinite(seed) ? seed : undefined,
     deck: crDeck(side),
     timing: crTiming(),
@@ -493,7 +514,7 @@ function crWaiting(m) {
   show("screen-cr-lobby");
   const g = m.lobby || {};
   $("crlobby-status").textContent = "waiting for an opponent…";
-  $("crlobby-cancel").style.display = "";
+  crLobbySeated(true);
   const box = $("crlobby-mine");
   box.textContent = "";
   const row = el("div", "lobby-row");
@@ -620,6 +641,9 @@ function renderCrLobbies(list) {
   box.textContent = "";
   // Your own seat is shown above, not offered back to you as a join.
   list = list.filter((g) => g.gameid !== crWaitId);
+  // What "Play anyone" reaches for: the same list the rows are drawn from,
+  // so the button and the screen can never disagree about what is open.
+  CR_LOBBIES = list;
   if (!crWaitToken && !crPairing) $("crlobby-status").textContent =
     list.length ? `${list.length} open game${list.length === 1 ? "" : "s"}` : "open games";
   list.forEach((g) => {
@@ -2142,6 +2166,16 @@ function cardEl(c, opts) {
     img.onload = () => {
       el.style.backgroundImage = `url(${cardImgUrl(code)})`;
       el.classList.add("art");
+    };
+    // A cold CDN, a flaky hop, a rate-limited burst: one miss used to leave
+    // the text scaffold up until the next state push happened to redraw this
+    // card, which read as "pictures not picturing". One quiet retry covers
+    // the transient; a second miss keeps the scaffold — by design, the text
+    // card IS the card (UX.md deviations: no card art required).
+    img.onerror = () => {
+      if (img.__retried) return;
+      img.__retried = true;
+      setTimeout(() => { if (el.isConnected) img.src = cardImgUrl(code); }, 800);
     };
     img.src = cardImgUrl(code);
   }
