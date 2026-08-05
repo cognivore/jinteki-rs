@@ -9770,3 +9770,96 @@ fn apexs_facedown_install_still_cannot_take_a_non_virtual_resource() {
     assert_eq!(vm.st.objects[&virt].zone, Zone::Rig, "it went in facedown: {}", t.tail(30));
     assert!(!vm.st.objects[&virt].faceup, "facedown: {}", t.tail(30));
 }
+
+/// Magdalene Keino-Chemutai: "Whenever you discard cards to reach your
+/// maximum hand size, you may install 1 program or piece of hardware from
+/// among those cards."
+///
+/// The discard step moves every card at once, so it is ONE occurrence naming
+/// all of them — which is what "those cards" needs. The program here is the
+/// SECOND card discarded and the first is an event, so a reading that kept
+/// only the card the occurrence named first would offer nothing at all.
+///
+/// The printed "you may" is the other half: declining leaves the program
+/// where the discard put it.
+#[test]
+fn magdalene_installs_a_program_from_anywhere_among_the_cards_she_just_discarded() {
+    for take in [true, false] {
+        let mut vm = Vm::empty(6191);
+        tk::install_identity(
+            &mut vm,
+            card("Magdalene Keino-Chemutai: Cryptarchitect"),
+            Side::Runner,
+        );
+        let mut mk = |name: &'static str, ty: CardType, cost: u32| {
+            let mut c = tk::vanilla_runner_card(name, ty);
+            c.cost = Some(cost);
+            if ty == CardType::Program {
+                c.memory_cost = Some(1);
+            }
+            let id = vm.new_object(c, Zone::Hand(Side::Runner));
+            vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        };
+        let event = mk("Some Event", CardType::Event, 0);
+        let program = mk("Some Program", CardType::Program, 2);
+        // Five fillers beside them: a grip of seven against a maximum hand
+        // size of five is 5.7.4's two-card discard.
+        tk::fill_hand(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let mut runner = Plan::runner()
+            .when(Match::action(), Reply::credit())
+            .when(Match::discard(), Reply::Discard(vec![event, program]));
+        if take {
+            runner = runner
+                .when(Match::reaction().offering("cryptarchitect"), Reply::take("cryptarchitect"));
+        }
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action(), Reply::Halt),
+            runner,
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Runner's turn finished: {}", t.tail(40));
+        assert_eq!(
+            vm.st.objects[&event].zone,
+            Zone::Discard(Side::Runner),
+            "take={take}: the event was discarded and stays discarded: {}",
+            t.tail(40)
+        );
+        if take {
+            let announced = t.of_kind(Kind::Targets);
+            assert_eq!(announced.len(), 1, "the identity announced its card: {}", t.tail(40));
+            assert_eq!(
+                announced[0].candidates(),
+                [program],
+                "only the discarded PROGRAM is described — not the event beside it, \
+                 and not a card the discard never touched: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                vm.st.objects[&program].zone,
+                Zone::Rig,
+                "and it was really installed out of the heap: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                vm.st.runner.credits,
+                5 + 4 - 2,
+                "8.5.11: the install paid its own cost: {}",
+                t.tail(40)
+            );
+        } else {
+            assert_eq!(
+                vm.st.objects[&program].zone,
+                Zone::Discard(Side::Runner),
+                "declined: the program stays in the heap: {}",
+                t.tail(40)
+            );
+            assert_eq!(vm.st.runner.credits, 5 + 4, "and nothing was paid: {}", t.tail(40));
+        }
+    }
+}

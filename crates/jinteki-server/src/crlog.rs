@@ -189,7 +189,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
             card(*obj),
             zone_label(*was_zone)
         ),
-        GameChange::CardDiscarded { obj, side } => {
+        GameChange::CardDiscarded { obj, side, .. } => {
             format!("{}: discards {}.", side_name(*side), card(*obj))
         }
         // Every other move is already reported by the record that caused it

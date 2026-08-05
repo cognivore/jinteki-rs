@@ -640,17 +640,34 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                 if occurrences.is_empty() {
                     continue;
                 }
-                let n = if trigger_per_event(cond) {
-                    cite!("rule_act_on_multiple_cards");
+                // 9.6.4b vs 9.12.2a: one instance per matching change, or one
+                // per occurrence GROUP for a condition whose sentence speaks
+                // of the cards of one event together. Either way an instance
+                // stands for a set of occurrences: the per-event one for every
+                // occurrence sharing its group, the per-occurrence one for
+                // itself alone. `named` is 1.15.4's plural over that set.
+                let per_event = trigger_per_event(cond);
+                let groups: Vec<u64> = {
                     let mut gs: Vec<u64> = occurrences.iter().map(|o| o.0).collect();
                     gs.sort_unstable();
                     gs.dedup();
-                    gs.len()
+                    gs
+                };
+                let n = if per_event {
+                    cite!("rule_act_on_multiple_cards");
+                    groups.len()
                 } else {
                     cite!("rule_condition_met_multiple_times");
                     occurrences.len()
                 };
                 for k in 0..n {
+                    let (group, named): (u64, Vec<ObjectId>) = if per_event {
+                        let g = groups[k];
+                        (g, occurrences.iter().filter(|o| o.0 == g).filter_map(|o| o.1).collect())
+                    } else {
+                        let o = occurrences[k];
+                        (o.0, o.1.into_iter().collect())
+                    };
                     cite!("rule_pending_instances");
                     let id = vm.next_instance_id();
                     let hangover = hangover_eligible;
@@ -667,13 +684,16 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             hangover,
                             independent: false,
                             source_generation: vm.generation(obj_id),
-                            occurrence_group: occurrences.get(k).map(|o| o.0).unwrap_or(0),
+                            occurrence_group: group,
                             from_lingering,
                             run_id: vm.current_run.map(|(r, _, _)| r),
                             // 1.15.4: the card the OCCURRENCE named, so a
                             // later sentence of the same ability can say
                             // "it" without announcing anything.
-                            triggering_card: occurrences.get(k).and_then(|o| o.1),
+                            triggering_card: named.first().copied(),
+                            // 1.15.4's plural: "those cards", every one the
+                            // occurrence named.
+                            triggering_cards: named,
                             // 1.15.4 + 9.6.13: the targets the ability that
                             // created this delayed one had announced.
                             bound_targets: bound_targets.clone(),
@@ -737,6 +757,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         from_lingering,
                         run_id: vm.current_run.map(|(r, _, _)| r),
                         triggering_card: None,
+                        triggering_cards: Vec::new(),
                         bound_targets: bound_targets.clone(),
                     },
                 );

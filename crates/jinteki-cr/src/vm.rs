@@ -2512,6 +2512,7 @@ impl Vm {
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
                     triggering_card: None,
+                    triggering_cards: Vec::new(),
                     bound_targets: Vec::new(),
                 },
             );
@@ -2569,6 +2570,7 @@ impl Vm {
                 from_lingering: None,
                 run_id: self.current_run.map(|(r, _, _)| r),
                 triggering_card: None,
+                triggering_cards: Vec::new(),
                 bound_targets: Vec::new(),
             },
         );
@@ -4978,6 +4980,7 @@ impl Vm {
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
                     triggering_card: None,
+                    triggering_cards: Vec::new(),
                     bound_targets: Vec::new(),
                 },
             );
@@ -5416,6 +5419,11 @@ impl Vm {
             triggering_card: instance
                 .and_then(|i| self.instances.get(&i))
                 .and_then(|i| i.triggering_card),
+            // 1.15.4's plural: "those cards", carried over the same way.
+            triggering_cards: instance
+                .and_then(|i| self.instances.get(&i))
+                .map(|i| i.triggering_cards.clone())
+                .unwrap_or_default(),
             // CR 9.1.4 via 1.12.3: the ability's source is an OBJECT, i.e. an
             // (id, generation) pair. A conditional instance remembers the
             // generation it came into being with (9.6.2), and the frame
@@ -7091,6 +7099,19 @@ impl Vm {
                     })
                     .flatten()
                     == Some(o.id)
+            }
+            // 1.15.4's plural: one of the cards the occurrence named, read off
+            // the same frame the singular is.
+            TargetFilter::AmongTriggeringCards => {
+                cite!("rule_target_beyond_move");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(af.triggering_cards.contains(&o.id)),
+                        _ => None,
+                    })
+                    .unwrap_or(false)
             }
             // 1.13.2: hosted ON the source — a host relationship, which is
             // what "all hosted cards" names.
@@ -9436,7 +9457,14 @@ impl Vm {
                     self.st.hand[&Side::Corp].iter().take(n).copied().collect();
                 for c in cards {
                     self.move_card(c, Zone::Discard(Side::Corp));
-                    self.changes.record(GameChange::CardDiscarded { obj: c, side: Side::Corp });
+                    // Not 5.7.4's discard: a card ability made the Corp
+                    // discard, and the maximum hand size has nothing to do
+                    // with it.
+                    self.changes.record(GameChange::CardDiscarded {
+                        obj: c,
+                        side: Side::Corp,
+                        to_hand_size: false,
+                    });
                 }
             }
             Instruction::RestrictAccessToSelf => {
@@ -14094,7 +14122,14 @@ impl Vm {
                 self.changes.bump_group();
                 for c in cards {
                     self.move_card(c, Zone::Discard(s));
-                    self.changes.record(GameChange::CardDiscarded { obj: c, side: s });
+                    // 5.7.4: this is the discard step's own discard — the
+                    // cards a player discards "to reach their maximum hand
+                    // size", which is the occurrence a condition can name.
+                    self.changes.record(GameChange::CardDiscarded {
+                        obj: c,
+                        side: s,
+                        to_hand_size: true,
+                    });
                 }
                 self.set_structure_phase(StepPhase::Checkpoint);
             }

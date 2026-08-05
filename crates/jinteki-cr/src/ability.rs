@@ -251,6 +251,26 @@ pub enum TriggerCond {
     /// print both wordings, which is the whole reason the stipulation is a
     /// field rather than two conditions.
     DiscardPhaseEnds { side: Option<Side>, requires: Vec<TriggerRequirement> },
+    /// CR 5.7.4 / 5.6.4: "Whenever you **discard cards to reach your maximum
+    /// hand size**…" (Magdalene Keino-Chemutai). The DISCARD, not the phase
+    /// around it: [`TriggerCond::DiscardPhaseEnds`] is 5.1.4b's formal end of
+    /// the turn, which happens whether or not a single card was discarded and
+    /// names none of them, while this condition is met by the discard itself
+    /// and NAMES the cards it moved — which is what lets the sentence after it
+    /// say "from among those cards" (1.15.4, read through
+    /// [`crate::instr::TargetFilter::AmongTriggeringCards`]).
+    ///
+    /// `side` is the sentence's stipulation about WHOSE discard, exactly as it
+    /// is on [`TriggerCond::PlayerDrawsCards`]. `to_hand_size` is the other
+    /// stipulation, as content (§12 rule 2): `true` is the printed "to reach
+    /// your maximum hand size", which is 5.7.4's step and nothing else, and
+    /// `false` is a sentence naming any discard — a card ability's
+    /// ([`crate::instr::Instruction::CorpDiscards`]) as much as the step's.
+    ///
+    /// Per-EVENT (9.12.2a via [`trigger_per_event`]): the printed noun is
+    /// plural and the discard moves every card at once, so a player discarding
+    /// three cards meets this once and the ability sees all three.
+    PlayerDiscardsCards { side: Side, to_hand_size: bool },
     /// "Whenever you use a [trash] ability." (Geist-adjacent test class)
     /// "Whenever you use a [trash] ability…" (Geist class). `basic` is the
     /// sentence's stipulation about WHICH trash ability: `Some(false)` is the
@@ -1952,6 +1972,19 @@ pub struct AbilityInstance {
     /// card (a turn beginning, a tag taken) and for an instance created by
     /// something other than the checkpoint scan.
     pub triggering_card: Option<ObjectId>,
+    /// CR 1.15.4 in the PLURAL: every card the occurrence that met this
+    /// condition named — what a printed "…from among **those cards**"
+    /// (Magdalene Keino-Chemutai) points at.
+    ///
+    /// A per-occurrence condition (9.6.4b) names at most one card, so this
+    /// holds the same card [`AbilityInstance::triggering_card`] does or
+    /// nothing at all. It is a per-EVENT condition ([`trigger_per_event`])
+    /// that makes the difference: one instance stands for the whole occurrence
+    /// GROUP — every card of one draw (8.4.2), every card of one discard
+    /// (5.7.4) — and the sentence after such a condition speaks of all of
+    /// them. `triggering_card` stays the FIRST of them, so a singular
+    /// back-reference reads the same thing it always did.
+    pub triggering_cards: Vec<ObjectId>,
     /// CR 1.15.4 + 9.6.13: the targets the ability that CREATED this delayed
     /// conditional had already announced — "install 1 program … **when that
     /// run ends, trash that program**" (Arissana Rocha Nahu), "…**trash that
@@ -2457,6 +2490,16 @@ fn trigger_matches_dyn(
             // A sentence naming no player is met by EITHER discard phase.
             side.is_none() || side.as_ref() == Some(s)
         }
+        // 5.7.4: the discard step's own discard. `to_hand_size` on the record
+        // is what the step wrote there; a sentence naming any discard is met
+        // by either kind, one naming the step's is met only by it.
+        (
+            TriggerCond::PlayerDiscardsCards { side, to_hand_size },
+            GameChange::CardDiscarded { side: s, to_hand_size: t, .. },
+        ) => {
+            cite!("rule_discard_step");
+            side == s && (!*to_hand_size || *t)
+        }
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
         // 10.5.1: the tag counter went back to the bank. One record per tag,
         // so a sentence about "a tag" is met once for each of them.
@@ -2779,9 +2822,14 @@ pub fn trigger_per_event(cond: &TriggerCond) -> bool {
     cite!("rule_act_on_multiple_cards");
     // 8.4.2: the cards of one draw are set aside — and so considered drawn —
     // together, so "whenever you draw 1 or more cards" is met ONCE per draw.
+    // 5.7.4's discard is the same shape: one instruction moves every card a
+    // player discards, and "whenever you discard cardS" is one occurrence
+    // naming all of them.
     matches!(
         cond,
-        TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. } | TriggerCond::PlayerDrawsCards(_)
+        TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. }
+            | TriggerCond::PlayerDrawsCards(_)
+            | TriggerCond::PlayerDiscardsCards { .. }
     )
 }
 

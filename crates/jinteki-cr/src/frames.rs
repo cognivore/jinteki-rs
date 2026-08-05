@@ -250,6 +250,10 @@ pub struct AbilityFrame {
     /// the instance stops being pending as soon as it starts resolving. This
     /// is what a printed "it" or "that card" reads.
     pub triggering_card: Option<ObjectId>,
+    /// CR 1.15.4 in the plural: every card that occurrence named, inherited
+    /// from the instance the same way and for the same reason. What a printed
+    /// "those cards" reads; see [`crate::ability::AbilityInstance::triggering_cards`].
+    pub triggering_cards: Vec<ObjectId>,
     /// CR 9.1.4: source zone-move stamp at independence; if the source moved
     /// since, self-referencing effects are stranded.
     pub source_generation: u32,

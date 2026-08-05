@@ -1805,6 +1805,21 @@ pub enum TargetFilter {
     /// this describes is the card it describes wherever it now sits, which
     /// for a forfeited agenda is the removed-from-game zone.
     IsTriggeringCard,
+    /// CR 1.15.4 in the PLURAL: "…1 program or piece of hardware from among
+    /// **those cards**" (Magdalene Keino-Chemutai) — one of the cards the
+    /// occurrence that met this ability's condition named.
+    ///
+    /// [`TargetFilter::IsTriggeringCard`] is the same description said of one
+    /// card, and is what this reduces to after a per-occurrence condition
+    /// (9.6.4b), which never names more. The difference is a per-EVENT
+    /// condition — every card of one draw (8.4.2), every card of one discard
+    /// (5.7.4) — where the sentence speaks of the whole set and the singular
+    /// would silently reach only the first of them.
+    ///
+    /// Like its singular it fixes cards by IDENTITY, so 1.15.2c's play-area
+    /// default has nothing left to restrict: the cards an occurrence named are
+    /// those cards wherever they now sit, which for a discard is the heap.
+    AmongTriggeringCards,
     /// CR 1.13.2: "cards hosted on this card" — the source's hosted cards,
     /// installed or not (1.13.2a).
     HostedOnSource,
@@ -1989,6 +2004,7 @@ impl TargetFilter {
                 // occurrence named is that card wherever it now is.
                 | TargetFilter::IsSource
                 | TargetFilter::IsTriggeringCard
+                | TargetFilter::AmongTriggeringCards
         ) || match self {
             // A disjunction specifies the zone only when EVERY alternative
             // does: 1.15.2c lifts for a description that says where to look,

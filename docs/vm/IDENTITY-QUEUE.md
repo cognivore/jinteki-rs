@@ -35,12 +35,6 @@ through — `git log` is where the history lives.
 Still wanted by identities other than the ones named, in every case: these are
 kernel words, not card patches.
 
-- **No condition for discarding down to maximum hand size.**
-  `Instruction::DiscardToHandSize` is 5.7.4's step and
-  `TriggerCond::DiscardPhaseEnds` is the phase around it; neither is "whenever
-  you discard cards to reach your maximum hand size", which names the discard
-  itself and hands the cards discarded to the next sentence.
-  *(Magdalene Keino-Chemutai: Cryptarchitect.)*
 - **A sentence joined by "and" cannot refer to the card its own other half
   chose.** 9.11.3 makes such a sentence ONE instruction, and `Combined` says
   so by merging its halves' expected atoms — but a half that CHOOSES its own
@@ -270,7 +264,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **118 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **119 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -310,7 +304,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (17/21)
+## Runner — Shaper (18/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -329,7 +323,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
 - [x] **Kate "Mac" McCaffrey: Digital Tinker** — Lower the install cost of the first program or piece of hardware you install each turn by 1.
 - [x] **Lat: Ethical Freelancer** — When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.
-- [ ] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.
+- [x] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.
 - [x] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
 - [x] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
 - [x] **The Collective: Williams, Wu, et al.** — The first time you perform the same action three times in a row each turn, gain [click].

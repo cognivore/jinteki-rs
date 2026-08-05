@@ -131,6 +131,24 @@
 //! let _ = host_faceup(found_by_search(), this_card());
 //! let _ = if_met(&[board_has_at_most(&[hosted_on_this_card()], 0)], [trash_self()]);
 //! ```
+//!
+//! CR 1.15.4's back-reference to what a condition's occurrence named — one
+//! card, and the whole set of them when the occurrence named more than one:
+//!
+//! ```
+//! use jinteki_cards::edsl::*;
+//! // "…another card of the same type" / "…another copy of that ice"
+//! let _ = choose(1, &[in_hand_of(Runner), of_the_same_type_as_the_triggering_card()]);
+//! let _ = choose(1, &[a_copy_of_the_triggering_card()]);
+//! let _ = add_to_hand(the_triggering_card());
+//! // "Whenever you discard cards to reach your maximum hand size, you may
+//! //  install 1 program or piece of hardware from among those cards."
+//! let _ = discards_cards_to_reach_maximum_hand_size(Runner);
+//! let _ = install(
+//!     choose(1, &[among_those_cards(), of_any_type(&[CardType::Program, CardType::Hardware])]),
+//!     InstallDest::RunnerChoiceHostOrRig,
+//! );
+//! ```
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
 pub use jinteki_cr::effects::{DamageKind, EffectClass};
@@ -1811,6 +1829,15 @@ pub fn discard_phase_ends_if(reqs: &[TriggerRequirement]) -> TriggerCond {
 pub fn your_discard_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
     TriggerCond::DiscardPhaseEnds { side: Some(side), requires: reqs.to_vec() }
 }
+/// "Whenever you **discard cards to reach your maximum hand size**…"
+/// (Magdalene Keino-Chemutai) — 5.7.4's discard itself, met once however many
+/// cards it moved, and naming every one of them for
+/// [`among_those_cards`]. Not [`your_discard_phase_ends_if`], which is the
+/// formal end of the turn around it (5.1.4b) and happens whether or not a
+/// card was discarded.
+pub fn discards_cards_to_reach_maximum_hand_size(side: Side) -> TriggerCond {
+    TriggerCond::PlayerDiscardsCards { side, to_hand_size: true }
+}
 /// "…you would draw any number of cards" (9.9.5a) — an [interrupt] trigger on
 /// a draw of `by`'s. Naming the player is what keeps a Runner card off the
 /// Corp's draws. The printed "the first time each turn" is the ability's
@@ -2114,6 +2141,15 @@ pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
 /// where to look ("search R&D") is what says it.
 pub fn a_copy_of_the_triggering_card() -> TargetFilter {
     TargetFilter::SameNameAsTriggeringCard
+}
+/// "…from among **those cards**" (Magdalene Keino-Chemutai) — one of the
+/// cards the occurrence that met this ability's condition named (1.15.4 in
+/// the plural). [`the_triggering_card`] is the same reference to one card;
+/// this is what a condition met by a whole event — one draw, one discard —
+/// leaves behind. It fixes the cards by identity, so it says where they are
+/// without naming a zone.
+pub fn among_those_cards() -> TargetFilter {
+    TargetFilter::AmongTriggeringCards
 }
 /// "…a card **in the root of or protecting the attacked server**" (LEO
 /// Construction) — 4.6.6b puts both halves of a server *in* it, and 6.1.2 is

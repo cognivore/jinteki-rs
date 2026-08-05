@@ -570,6 +570,57 @@ pub fn arissana_rocha_nahu() -> Card {
         .build()
 }
 
+/// Magdalene Keino-Chemutai: Cryptarchitect — Identity: Cyborg. Link 0.
+/// "Whenever you discard cards to reach your maximum hand size, you may
+///  install 1 program or piece of hardware from among those cards."
+///
+/// COMPLETE. The condition is CR 5.7.4's DISCARD — the step where a player
+/// with more cards in hand than their maximum hand size discards down to it —
+/// and deliberately not 5.1.4b's discard phase ending, which is what Lat
+/// reads. They are different occurrences: the phase ends whether or not a
+/// single card moved and names none of them, while the discard names every
+/// card it moved, which is the whole reason this sentence can go on to speak
+/// of them.
+///
+/// "CardS", plural, is one occurrence and not one per card (9.12.2a): the
+/// step moves everything the Runner chose at once, so a Runner discarding
+/// three cards is asked once and may install any one of the three, rather
+/// than being asked three times.
+///
+/// "From among those cards" is 1.15.4's back-reference in the plural. The
+/// cards are in the heap by the time the ability resolves — the discard is
+/// finished before the checkpoint that pends this — and the description fixes
+/// them by identity, so 1.15.2c's installed-cards default has nothing to
+/// restrict and no zone has to be named beside it.
+///
+/// "Program or piece of hardware" is 2.15's type alone, twice, so it is the
+/// "or" between single words of one kind. The install pays its own cost:
+/// 8.5.11 says so unless the sentence says otherwise, and this one does not.
+/// The printed "you may" is 9.6.9's declinable conditional.
+pub fn magdalene_keino_chemutai() -> Card {
+    card("Magdalene Keino-Chemutai: Cryptarchitect")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Cyborg"])
+        .text("Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.")
+        .may_when(
+            discards_cards_to_reach_maximum_hand_size(Runner),
+            [install(
+                choose(
+                    1,
+                    &[
+                        among_those_cards(),
+                        of_any_type(&[CardType::Program, CardType::Hardware]),
+                    ],
+                ),
+                InstallDest::RunnerChoiceHostOrRig,
+            )],
+        )
+        .named("cryptarchitect")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -590,5 +641,6 @@ pub fn identities() -> Vec<Card> {
         captain_padma_isbister(),
         hiram_svensson(),
         the_collective(),
+        magdalene_keino_chemutai(),
     ]
 }

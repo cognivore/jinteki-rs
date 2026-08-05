@@ -90,7 +90,16 @@ pub enum GameChange {
     /// the access they happened inside is long over by the time the count is
     /// taken.
     CardTrashed { obj: ObjectId, by: Side, was_zone: Zone, while_accessed: bool },
-    CardDiscarded { obj: ObjectId, side: Side },
+    /// A card was DISCARDED — moved to its owner's discard pile by a player
+    /// rather than by a trash.
+    ///
+    /// `to_hand_size` is CR 5.7.4's stipulation: this discard was the discard
+    /// step's, the one a player makes "to reach their maximum hand size". It
+    /// is recorded here rather than asked of the state afterwards for the same
+    /// reason [`GameChange::CardTrashed::while_accessed`] is — it is a fact
+    /// about the MOMENT of the discard, and the step is over by the time any
+    /// condition is scanned.
+    CardDiscarded { obj: ObjectId, side: Side, to_hand_size: bool },
     /// CR 8.5.16f. `from` is the zone the card is treated as having been
     /// installed FROM — 4.8.3 substitutes the pre-set-aside location for a
     /// card installed out of the set-aside zone, which is the only way an
@@ -299,6 +308,10 @@ pub fn card_named_by(c: &GameChange) -> Option<ObjectId> {
         | GameChange::CardRezzed { obj, .. }
         | GameChange::CardDerezzed { obj }
         | GameChange::CardTrashed { obj, .. }
+        // 5.7.4: "…install 1 program or piece of hardware from among THOSE
+        // CARDS" — a discard names the card it moved, which is what lets the
+        // sentence that follows the condition act on it.
+        | GameChange::CardDiscarded { obj, .. }
         | GameChange::CardAdvanced { obj }
         | GameChange::CardExposed { obj }
         | GameChange::CardRevealed { obj, .. }
