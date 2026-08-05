@@ -14,13 +14,49 @@
 </head>
 <body>
 
-<!-- ── Home screen ─────────────────────────────────────────────────────── -->
+<!-- ── Home screen: the two aspects ────────────────────────────────────── -->
 <div id="screen-home" class="screen active">
   <div class="home-wrap">
     <button id="account-chip" class="chip account-chip">…</button>
     <h1 class="logo">jinteki<span>-rs</span></h1>
     <p class="tagline">netrunner, faster</p>
 
+    <div class="aspect-row">
+      <button class="aspect" id="aspect-decks">
+        <span class="a-glyph decks" aria-hidden="true"><i></i><i></i><i></i></span>
+        <h2>My Decks</h2>
+        <p>Build, tune and keep your decks — identities, influence, the lot.</p>
+      </button>
+      <button class="aspect" id="aspect-findgame">
+        <span class="a-glyph game" aria-hidden="true"><i></i><i></i></span>
+        <h2>Find a Game</h2>
+        <p>Jack in — against the bot or another human.</p>
+      </button>
+    </div>
+
+    <div class="home-nav">
+      <!-- legacy row-based deck screens stay reachable for the code that still
+           links to them (import/library); the aspect above is the front door -->
+      <button class="chip" id="nav-decks" style="display:none">Decks</button>
+      <button class="chip" id="nav-library">Library</button>
+    </div>
+    <p class="hint">Landscape recommended. Long-press any card to read it. · build <code id="build">…</code></p>
+  </div>
+</div>
+
+<!-- ── Find a Game: the lobby shell ────────────────────────────────────────
+     The lobby screen itself is built separately and mounts here: it calls
+     window.jrsRegisterLobby(mountFn) and the shell hands it #findgame-mount
+     (see "Find a Game shell" in app.js). Until then the placeholder below
+     carries the existing quick-start cards, unchanged ids and wiring. -->
+<div id="screen-findgame" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="findgame-back">← Home</button>
+    <span>Find a Game</span><span></span>
+  </div>
+  <div id="findgame-mount"></div>
+  <div id="findgame-placeholder" class="findgame-body">
+    <p class="hint">The full lobby lands here separately — quick-start in the meantime:</p>
     <div class="home-cards">
       <div class="home-card primary" id="card-eternal">
         <h2>Eternal: Andromeda vs Gauntlet</h2>
@@ -58,12 +94,57 @@
         <button class="big go alt" id="btn-bridge">Connect</button>
       </div>
     </div>
-    <div class="home-nav">
-      <button class="chip" id="nav-decks">Decks</button>
-      <button class="chip" id="nav-library">Library</button>
-    </div>
-    <p class="hint">Landscape recommended. Long-press any card to read it. · build <code id="build">…</code></p>
   </div>
+</div>
+
+<!-- ── My Decks (deck-builder contract: /api/decks, /api/catalog) ──────── -->
+<div id="screen-mydecks" class="screen">
+  <div class="lobby-bar">
+    <button class="chip" id="mydecks-back">← Home</button>
+    <span>My Decks</span>
+    <button class="chip go" id="mydecks-new">New Deck</button>
+  </div>
+  <div id="mydecks-list" class="deck-rows"></div>
+</div>
+
+<!-- ── Deck builder (THE LAW: cards render as cards) ───────────────────── -->
+<div id="screen-builder" class="screen">
+  <div class="lobby-bar builder-bar">
+    <button class="chip" id="builder-back">← My Decks</button>
+    <input id="builder-name" type="text" placeholder="deck name" maxlength="120" autocapitalize="off">
+    <span class="row">
+      <button class="chip" id="builder-saveas">Save As</button>
+      <button class="chip go" id="builder-save">Save</button>
+    </span>
+  </div>
+  <div id="builder-meters" class="builder-meters"></div>
+  <div class="builder-body">
+    <div class="builder-deck">
+      <div id="builder-idslot"></div>
+      <div id="builder-decklist"></div>
+    </div>
+    <div class="builder-pool">
+      <div class="builder-filters">
+        <input id="builder-search" type="text" placeholder="search by title" autocapitalize="off">
+        <div id="builder-facs" class="filter-row"></div>
+        <div id="builder-types" class="filter-row"></div>
+      </div>
+      <div id="builder-grid" class="builder-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Identity picker overlay (side toggle + identities as cards) ─────── -->
+<div id="idpicker" class="idpicker" style="display:none">
+  <div class="lobby-bar">
+    <button class="chip" id="idpicker-close">← Back</button>
+    <span>Choose an identity</span>
+    <span class="row">
+      <button class="chip seg" data-pickside="corp" id="idpick-corp">Corp</button>
+      <button class="chip seg" data-pickside="runner" id="idpick-runner">Runner</button>
+    </span>
+  </div>
+  <div id="idpicker-grid" class="builder-grid"></div>
 </div>
 
 <!-- ── Deck-picker bottom sheet (Play vs Bot) ──────────────────────────── -->

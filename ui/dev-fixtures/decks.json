@@ -1,0 +1,20 @@
+{
+ "decks": [
+  {
+   "key": "mezzies-andromeda",
+   "name": "Mezzie's Andromeda",
+   "builtin": true,
+   "legal": true,
+   "identity": "02083",
+   "side": "runner"
+  },
+  {
+   "key": "mezzies-making-stars",
+   "name": "Mezzie's Making Stars",
+   "builtin": true,
+   "legal": true,
+   "identity": "35057",
+   "side": "corp"
+  }
+ ]
+}

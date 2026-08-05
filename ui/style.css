@@ -1226,3 +1226,153 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .card.deal { animation: none; }
   .prompt-sheet, .action-sheet, .zoom-card, .phase-pill, .focus-panel { animation: none; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   The two-aspect home, the Find a Game shell, My Decks and the deck
+   builder (deck-builder contract; UX.md THE LAW: cards render as cards).
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Home: two aspects ─────────────────────────────────────────────────── */
+.aspect-row { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+.aspect { width: 300px; min-height: 190px; text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+  padding: 20px; display: flex; flex-direction: column; gap: 8px;
+  color: var(--text); font: inherit; transition: border-color .15s, box-shadow .15s; }
+.aspect h2 { margin: 0; font-size: 22px; }
+.aspect p { margin: 0; color: var(--dim); font-size: 13px; }
+.aspect:hover, .aspect:focus-visible { border-color: var(--legal);
+  box-shadow: 0 0 0 1px rgba(53,208,186,.25), 0 8px 30px rgba(53,208,186,.10); }
+#aspect-findgame:hover, #aspect-findgame:focus-visible { border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(232,185,63,.25), 0 8px 30px rgba(232,185,63,.10); }
+/* Pure-CSS glyphs: a spread of three cards, and two seats facing off. */
+.a-glyph { display: block; position: relative; width: 64px; height: 44px; }
+.a-glyph.decks i { position: absolute; width: 26px; height: 36px; border-radius: 4px;
+  background: var(--bg2); border: 1.5px solid var(--legal); bottom: 0; }
+.a-glyph.decks i:nth-child(1) { left: 0; transform: rotate(-9deg); opacity: .5; }
+.a-glyph.decks i:nth-child(2) { left: 14px; transform: rotate(-1deg); opacity: .75; }
+.a-glyph.decks i:nth-child(3) { left: 28px; transform: rotate(8deg); }
+.a-glyph.game i { position: absolute; width: 34px; height: 18px; border-radius: 4px;
+  background: var(--bg2); }
+.a-glyph.game i:nth-child(1) { top: 0; left: 0; border: 1.5px solid var(--corp); }
+.a-glyph.game i:nth-child(2) { bottom: 0; right: 0; border: 1.5px solid var(--runner); }
+
+/* ── Find a Game shell ─────────────────────────────────────────────────── */
+#screen-findgame.active { display: flex; flex-direction: column; padding: 10px; gap: 10px; }
+#findgame-mount:empty { display: none; }
+#findgame-mount { flex: 1; min-height: 0; }
+.findgame-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+  align-items: center; gap: 12px; padding: 6px 0 calc(16px + var(--sab)); }
+
+/* ── My Decks ──────────────────────────────────────────────────────────── */
+#screen-mydecks.active { display: flex; flex-direction: column; padding: 10px; gap: 10px; }
+#mydecks-list { flex: 1; min-height: 0; padding: 0 0 calc(16px + var(--sab)); }
+.badge-builtin { display: inline-block; margin-left: 8px; padding: 1px 7px;
+  border-radius: 9px; font-size: 11px; border: 1px solid var(--corp); color: var(--corp); }
+.deck-row .chip.danger { min-height: 36px; padding: 6px 12px; }
+
+/* ── Deck builder ──────────────────────────────────────────────────────── */
+#screen-builder.active { display: flex; flex-direction: column; gap: 8px;
+  padding: 8px 10px calc(8px + var(--sab)); }
+.builder-bar input { flex: 1; min-width: 80px; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 8px; color: var(--text);
+  padding: 10px 12px; font-size: 15px; }
+/* The running totals: ALWAYS visible, green when satisfied, red when not.
+   These are the live client mirrors; the server's verdict arrives on save. */
+.builder-meters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.meter { padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; background: var(--bg2);
+  border: 1px solid var(--ok); color: var(--ok); }
+.meter.bad { border-color: var(--danger); color: var(--danger); }
+.meter.na { border-color: var(--line); color: var(--dim); font-weight: 400; }
+/* Server problems, verbatim, next to the meters they belong to. */
+.builder-problems { display: flex; flex-direction: column; gap: 4px; }
+.builder-problems .problem { color: var(--danger); font-size: 13px;
+  border: 1px solid var(--danger); border-radius: 8px; padding: 6px 10px;
+  background: rgba(255,92,92,.07); }
+.builder-body { flex: 1; min-height: 0; display: flex; gap: 12px; }
+.builder-deck { flex: 0 0 340px; min-width: 0; overflow-y: auto; display: flex;
+  flex-direction: column; gap: 6px; padding-right: 2px;
+  border-right: 1px solid var(--line); }
+.builder-pool { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.builder-filters { display: flex; flex-direction: column; gap: 6px; }
+.builder-filters input { background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 15px; }
+.filter-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.filter-row .chip { min-height: 32px; padding: 5px 12px; font-size: 12.5px; }
+.filter-row .chip.on { border-color: var(--gold); color: var(--gold); }
+
+/* The pool: every card IS a card (THE LAW §1) — the game's .card box at a
+   readable size, in a grid that scrolls. Tap adds a copy; long-press reads. */
+.builder-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px;
+  padding: 4px 2px calc(16px + var(--sab)); align-content: start; }
+.builder-grid .card { width: 100%; height: auto; aspect-ratio: 64 / 89;
+  font-size: 11px; cursor: pointer; }
+.builder-grid .card:hover { border-color: var(--legal); }
+.builder-grid .card .ctype { font-size: 10px; }
+/* Faction stripe down the left edge — same anatomy at every size. */
+.card .fstripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 1; }
+.fac-criminal { background: #4f74d8; } .fac-shaper { background: #57c46b; }
+.fac-anarch { background: #e07b39; } .fac-nbn { background: #e8b93f; }
+.fac-hb { background: #9b6dd6; } .fac-jinteki { background: #d64d4d; }
+.fac-weyland { background: #4c9a82; } .fac-neutral { background: #6c7891; }
+/* Influence pips, drawn inside the box (THE LAW §11), bottom-right. */
+.card .binf { position: absolute; right: 3px; bottom: 3px; z-index: 2;
+  font-size: 8px; letter-spacing: 1px; color: var(--corp);
+  text-shadow: 0 0 3px rgba(4,7,14,.9); }
+/* Eternal points badge — only when points > 0. */
+.card .bpts { position: absolute; left: 1px; bottom: 1px; z-index: 2;
+  background: var(--gold); color: #241c04; font-weight: 800; font-size: .95em;
+  border-radius: 999px; padding: .1em .45em; }
+.card.hasbpts .ctype { text-indent: 2.6em; }
+/* Copies already in the deck: a count disc in the top-right corner. */
+.card .bqty { position: absolute; top: 1px; right: 1px; z-index: 2;
+  min-width: 1.9em; height: 1.9em; border-radius: 999px; background: var(--legal);
+  color: #05221d; font-weight: 800; font-size: 1.05em; display: flex;
+  align-items: center; justify-content: center; padding: 0 .3em; }
+/* Agenda points disc, bottom-left like the strength disc. */
+.card .bap { position: absolute; bottom: 1px; left: 1px; width: 1.9em; height: 1.9em;
+  border-radius: 50%; background: var(--gold); color: #241c04; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; font-size: 1.05em; z-index: 2; }
+
+/* The deck panel: identity as a card, then compact rows — each row is still
+   a card (long-press / hover reads it, THE LAW §5). */
+#builder-idslot { display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
+#builder-idslot .card { width: 92px; height: auto; aspect-ratio: 64 / 89;
+  font-size: 10.5px; cursor: pointer; flex-shrink: 0; }
+#builder-idslot .idmeta { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+#builder-idslot .idmeta small { color: var(--dim); }
+.btype-head { color: var(--dim); font-size: 12px; font-weight: 700;
+  letter-spacing: .5px; margin-top: 6px; padding: 0 2px; }
+.brow { display: flex; align-items: center; gap: 6px; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px;
+  min-height: 40px; }
+.brow.problem { border-color: var(--danger); }
+.brow .bthumb { width: 30px; height: 22px; border-radius: 3px; flex-shrink: 0;
+  background: var(--panel) center 15% / cover; border: 1px solid var(--line); }
+.brow .bq { font-weight: 800; font-variant-numeric: tabular-nums; flex-shrink: 0;
+  min-width: 22px; text-align: right; }
+.brow .bt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 13px; }
+.brow .bpips { color: var(--corp); letter-spacing: 1px; font-size: 9px; flex-shrink: 0; }
+.brow .chip { min-height: 32px; min-width: 36px; padding: 2px 10px; font-size: 15px;
+  font-weight: 700; flex-shrink: 0; }
+.brow-problem-msg { color: var(--danger); font-size: 12px; padding: 0 4px 2px; }
+
+/* ── Identity picker: a full-screen reader-style overlay ───────────────── */
+.idpicker { position: fixed; inset: 0; z-index: 250; background: var(--bg);
+  display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+.idpicker .chip.seg.on[data-pickside="corp"] { border-color: var(--corp); color: var(--corp); }
+.idpicker .chip.seg.on[data-pickside="runner"] { border-color: var(--runner); color: var(--runner); }
+#idpicker-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+#idpicker-grid .idlabel { font-size: 11px; color: var(--dim); text-align: center;
+  padding-top: 3px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Phone portrait: the two panes stack; the meters stay pinned above both. */
+@media (max-width: 700px) {
+  .builder-body { flex-direction: column; }
+  .builder-deck { flex: 0 0 38%; border-right: none;
+    border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .builder-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+  .aspect { width: min(300px, 86vw); min-height: 0; }
+}

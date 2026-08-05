@@ -3767,3 +3767,663 @@ $("account-logout").onclick = async () => {
   show("screen-home");
   toast("Logged out");
 };
+
+/* ════════════════════════════════════════════════════════════════════════
+   The two-aspect home, the Find a Game shell, My Decks and the DECK
+   BUILDER — coded against the deck-builder backend contract:
+
+     GET  /api/catalog?format=eternal
+          → {format, point_limit, identities:[CatalogCard], cards:[CatalogCard]}
+       CatalogCard = {id, title, side, faction, type, influence_cost,
+                      deck_limit, agenda_points, points, banned, draft_only,
+                      min_deck_size, influence_limit}   (nullable → null)
+     GET  /api/decks           → {decks:[{key, name, builtin, legal, …}]}
+     GET  /api/decks/<key>     → {key, name, identity, cards:{id:count},
+                                  legal, problems:[{code, message, card}]}
+     POST /api/decks {name, identity, cards} / PUT /api/decks/<key>
+                               → {key, legal, problems}
+     DELETE /api/decks/<key>   (403 on builtins)
+
+   Until those routes land, everything below falls back to a static stub:
+   the fixtures in ui/dev-fixtures/ (list/get) plus a localStorage store for
+   writes. The probe is GET /api/catalog — it exists only in the new
+   contract, so the moment the real backend lands the stub steps aside.
+   UX.md THE LAW applies throughout: cards render as CARDS.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const DBS = {
+  live: null,              // null = not probed; true = real API; false = fixtures
+  catalog: null,           // {format, point_limit, identities, cards} (filtered)
+  byId: {},                // id → CatalogCard (identities included)
+  deck: null,              // {key, name, identity, cards:{id:n}, builtin}
+  problems: [],            // last SERVER verdict, verbatim
+  dirty: false,
+  filters: { q: "", fac: "", type: "" },
+  pickSide: "runner",
+};
+const DEV_DECKS_KEY = "jrs_dev_decks";
+
+/* ── backend probe + fixture fallback ─────────────────────────────────── */
+async function dbProbe() {
+  if (DBS.live !== null) return DBS.live;
+  try {
+    const c = await api("/api/catalog?format=eternal");
+    if (c && c.format === "eternal" && Array.isArray(c.identities)) {
+      DBS.live = true;
+      dbSetCatalog(c);
+      return true;
+    }
+  } catch (e) { /* not there yet */ }
+  DBS.live = false;
+  const c = await api("/dev-fixtures/catalog-eternal.json");
+  dbSetCatalog(c);
+  return false;
+}
+
+/* The API contract excludes banned and draft-only cards; assert that
+   defensively anyway — a banned card in the pool is a deck refused later. */
+function dbSetCatalog(c) {
+  const keep = (x) => !x.banned && !x.draft_only;
+  const droppedN = c.identities.length + c.cards.length
+    - c.identities.filter(keep).length - c.cards.filter(keep).length;
+  if (droppedN) console.warn(`catalog sent ${droppedN} banned/draft-only cards; dropped client-side`);
+  DBS.catalog = {
+    format: c.format,
+    point_limit: c.point_limit != null ? c.point_limit : 7,
+    identities: c.identities.filter(keep),
+    cards: c.cards.filter(keep),
+  };
+  DBS.byId = {};
+  DBS.catalog.identities.concat(DBS.catalog.cards).forEach((x) => { DBS.byId[x.id] = x; });
+}
+
+function devDecks() {
+  try { return JSON.parse(localStorage.getItem(DEV_DECKS_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function devDecksWrite(m) { localStorage.setItem(DEV_DECKS_KEY, JSON.stringify(m)); }
+
+async function dbListDecks() {
+  if (await dbProbe()) {
+    const r = await api("/api/decks");
+    return r.decks || [];
+  }
+  const fix = await api("/dev-fixtures/decks.json");
+  const mine = Object.values(devDecks()).map((d) => ({
+    key: d.key, name: d.name, builtin: false, legal: d.legal,
+    identity: d.identity, side: (DBS.byId[d.identity] || {}).side,
+  }));
+  return (fix.decks || []).concat(mine);
+}
+
+async function dbGetDeck(key) {
+  if (await dbProbe()) return api(`/api/decks/${encodeURIComponent(key)}`);
+  const mine = devDecks();
+  if (mine[key]) return mine[key];
+  return api(`/dev-fixtures/decks/${encodeURIComponent(key)}.json`);
+}
+
+async function dbSaveDeck(deck) {
+  const body = { name: deck.name, identity: deck.identity, cards: deck.cards };
+  if (await dbProbe()) {
+    return deck.key
+      ? api(`/api/decks/${encodeURIComponent(deck.key)}`, { method: "PUT", body })
+      : api("/api/decks", { method: "POST", body });
+  }
+  // Dev stub: same shape back. The "server" verdict here is the mirror below,
+  // which is exactly what makes the problems-rendering path testable offline.
+  const key = deck.key ||
+    (deck.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "deck")
+    + "-" + Math.random().toString(36).slice(2, 7);
+  const problems = deckMirrorProblems(deck.identity, deck.cards);
+  const stored = { key, name: deck.name, builtin: false, identity: deck.identity,
+    cards: Object.assign({}, deck.cards), legal: !problems.length, problems };
+  const mine = devDecks();
+  mine[key] = stored;
+  devDecksWrite(mine);
+  return { key, legal: stored.legal, problems };
+}
+
+async function dbDeleteDeck(key, builtin) {
+  if (await dbProbe()) return api(`/api/decks/${encodeURIComponent(key)}`, { method: "DELETE" });
+  if (builtin) throw new Error("built-in decks cannot be deleted (403)");
+  const mine = devDecks();
+  delete mine[key];
+  devDecksWrite(mine);
+}
+
+/* ── client-side legality mirrors ─────────────────────────────────────────
+   For LIVE METERS ONLY — the server's verdict (the `problems` array a save
+   returns) is the truth, and is rendered verbatim wherever it lands. These
+   formulas exist so the meters can go green/red between keystrokes:
+
+     influence used  = Σ printed influence_cost × copies, over cards whose
+                       faction differs from the identity's faction
+                       (limit: identity influence_limit; null = unlimited)
+     deck size       ≥ identity min_deck_size
+     agenda points   (Corp) CR 1.4.6: a deck of size S needs LO..HI where
+                       n  = floor((max(S, min_deck_size, 40) − 40) / 5)
+                       LO = 18 + 2n,  HI = 19 + 2n
+                       (40–44 → 18/19, 45–49 → 20/21, 50–54 → 22/23, then
+                        +2 per full 5 cards over 50 — same arithmetic)
+     eternal points  = Σ points × copies ≤ point_limit (7)
+     deck limit      copies of a card ≤ its printed deck_limit             */
+function apWindow(size, minSize) {
+  const n = Math.max(0, Math.floor((Math.max(size, minSize || 40, 40) - 40) / 5));
+  return [18 + 2 * n, 19 + 2 * n];
+}
+function deckTotals(identityId, cards) {
+  const idc = identityId != null ? DBS.byId[identityId] : null;
+  const t = { size: 0, inf: 0, ap: 0, pts: 0,
+    minSize: idc ? (idc.min_deck_size || 0) : 0,
+    infLimit: idc ? idc.influence_limit : null,
+    side: idc ? idc.side : null, apLo: 0, apHi: 0 };
+  for (const [id, n] of Object.entries(cards)) {
+    const c = DBS.byId[id];
+    if (!c || !n) continue;
+    t.size += n;
+    if (idc && c.faction !== idc.faction) t.inf += (c.influence_cost || 0) * n;
+    t.ap += (c.agenda_points || 0) * n;
+    t.pts += (c.points || 0) * n;
+  }
+  const w = apWindow(t.size, t.minSize);
+  t.apLo = w[0]; t.apHi = w[1];
+  return t;
+}
+function deckMirrorProblems(identityId, cards) {
+  const out = [];
+  const idc = identityId != null ? DBS.byId[identityId] : null;
+  if (!idc) {
+    out.push({ code: "identity", message: "the deck has no identity", card: null });
+    return out;
+  }
+  const t = deckTotals(identityId, cards);
+  if (t.size < t.minSize) out.push({ code: "deck_size",
+    message: `deck has ${t.size} cards; the identity requires at least ${t.minSize}`, card: null });
+  if (t.infLimit != null && t.inf > t.infLimit) out.push({ code: "influence",
+    message: `${t.inf} influence used; the identity allows ${t.infLimit}`, card: null });
+  if (t.side === "corp" && !(t.ap >= t.apLo && t.ap <= t.apHi)) out.push({ code: "agenda_points",
+    message: `${t.ap} agenda points; a ${t.size}-card deck requires ${t.apLo} or ${t.apHi}`, card: null });
+  if (t.pts > DBS.catalog.point_limit) out.push({ code: "points",
+    message: `${t.pts} eternal points used; the limit is ${DBS.catalog.point_limit}`, card: null });
+  for (const [id, n] of Object.entries(cards)) {
+    const c = DBS.byId[id];
+    if (!c || !n) continue;
+    if (c.side !== idc.side) out.push({ code: "side",
+      message: `${c.title} is a ${c.side} card in a ${idc.side} deck`, card: id });
+    if (c.deck_limit != null && n > c.deck_limit) out.push({ code: "deck_limit",
+      message: `${n} copies of ${c.title}; the printed limit is ${c.deck_limit}`, card: id });
+  }
+  return out;
+}
+
+/* ── Find a Game shell ────────────────────────────────────────────────────
+   MOUNT HOOK for the lobby screen (built separately): at load time it calls
+
+       window.jrsRegisterLobby(function mount(hostEl) { … });
+
+   and the shell hands it #findgame-mount, hides the quick-start placeholder,
+   and the lobby owns that subtree from then on. Idempotent; registration
+   before or after the screen is first opened both work. */
+let lobbyMountFn = null;
+let lobbyMounted = false;
+window.jrsRegisterLobby = function (mountFn) {
+  lobbyMountFn = mountFn;
+  maybeMountLobby();
+};
+function maybeMountLobby() {
+  if (!lobbyMountFn || lobbyMounted) return;
+  lobbyMounted = true;
+  $("findgame-placeholder").style.display = "none";
+  try { lobbyMountFn($("findgame-mount")); }
+  catch (e) {
+    console.error("lobby mount failed", e);
+    lobbyMounted = false;
+    $("findgame-placeholder").style.display = "";
+  }
+}
+$("aspect-findgame").onclick = () => { show("screen-findgame"); maybeMountLobby(); };
+$("findgame-back").onclick = () => show("screen-home");
+
+/* ── My Decks ─────────────────────────────────────────────────────────── */
+$("aspect-decks").onclick = () => openMyDecks();
+$("mydecks-back").onclick = () => show("screen-home");
+$("mydecks-new").onclick = () => newDeckFlow();
+
+async function openMyDecks() {
+  show("screen-mydecks");
+  const box = $("mydecks-list");
+  box.textContent = "loading…";
+  let list;
+  try { list = await dbListDecks(); }
+  catch (e) { box.textContent = e.message; return; }
+  box.textContent = "";
+  // Builtins first — the API sends them first; keep it true regardless.
+  list.sort((a, b) => (b.builtin === true) - (a.builtin === true));
+  if (!list.length) {
+    const empty = el("div", "deck-row");
+    empty.appendChild(el("div", "t", "No decks yet — New Deck starts one."));
+    box.appendChild(empty);
+    return;
+  }
+  list.forEach((d) => box.appendChild(myDeckRow(d)));
+}
+
+function myDeckRow(d) {
+  const row = el("div", "deck-row");
+  const t = el("div", "t");
+  const line1 = el("div", "", d.name);
+  if (d.builtin) line1.appendChild(el("span", "badge-builtin", "built-in"));
+  line1.appendChild(legalBadge(d.legal !== false));
+  t.appendChild(line1);
+  const idc = d.identity != null ? DBS.byId[d.identity] : null;
+  const sideName = (idc && idc.side) || d.side;
+  if (idc || sideName) {
+    t.appendChild(el("small", "",
+      `${sideName === "corp" ? "⬢ Corp" : sideName === "runner" ? "⬡ Runner" : ""}` +
+      (idc ? ` · ${idc.title}` : "")));
+  }
+  row.appendChild(t);
+  if (!d.builtin) {
+    const del = el("button", "chip danger", "Delete");
+    del.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
+      try { await dbDeleteDeck(d.key, d.builtin); } catch (err) { toast(err.message); return; }
+      openMyDecks();
+    };
+    row.appendChild(del);
+  }
+  const open = el("button", "chip go", "Open");
+  open.onclick = () => openBuilder(d.key);
+  row.appendChild(open);
+  return row;
+}
+
+/* ── deck builder ─────────────────────────────────────────────────────── */
+$("builder-back").onclick = () => {
+  if (DBS.dirty && !confirm("Discard unsaved changes?")) return;
+  DBS.dirty = false;
+  openMyDecks();
+};
+$("builder-name").oninput = () => {
+  if (!DBS.deck) return;
+  DBS.deck.name = $("builder-name").value;
+  DBS.dirty = true;
+};
+
+async function newDeckFlow() {
+  try { await dbProbe(); } catch (e) { toast(e.message); return; }
+  DBS.deck = { key: null, name: "", identity: null, cards: {}, builtin: false };
+  DBS.problems = [];
+  DBS.dirty = false;
+  DBS.filters = { q: "", fac: "", type: "" };
+  openIdPicker(true);
+}
+
+async function openBuilder(key) {
+  let d;
+  try { await dbProbe(); d = await dbGetDeck(key); }
+  catch (e) { toast(e.message); return; }
+  DBS.deck = { key: d.key, name: d.name || "", identity: d.identity || null,
+    cards: Object.assign({}, d.cards || {}), builtin: d.builtin === true };
+  DBS.problems = d.problems || [];
+  DBS.dirty = false;
+  DBS.filters = { q: "", fac: "", type: "" };
+  enterBuilder();
+}
+
+function enterBuilder() {
+  show("screen-builder");
+  $("builder-name").value = DBS.deck.name;
+  $("builder-search").value = DBS.filters.q;
+  // Built-in decks are read-only originals: Save As forks them into yours.
+  $("builder-save").disabled = DBS.deck.builtin;
+  $("builder-save").title = DBS.deck.builtin ? "Built-in — use Save As to make it yours" : "";
+  renderBuilder();
+}
+
+function renderBuilder() {
+  renderMeters();
+  renderIdSlot();
+  renderDeckList();
+  renderFilters();
+  renderPool();
+}
+
+/* Meters: ALWAYS visible, computed live from the client mirror; the server
+   problems from the last save are rendered verbatim right under them. */
+function renderMeters() {
+  const box = $("builder-meters");
+  box.textContent = "";
+  const d = DBS.deck;
+  const idc = d.identity != null ? DBS.byId[d.identity] : null;
+  const t = deckTotals(d.identity, d.cards);
+  const meter = (label, ok) => el("span", "meter" + (ok === null ? " na" : ok ? "" : " bad"), label);
+  if (!idc) {
+    box.appendChild(meter("no identity", null));
+  } else {
+    box.appendChild(meter(`${t.size}/${t.minSize}+ cards`, t.size >= t.minSize));
+    if (idc.side === "corp") {
+      box.appendChild(meter(`AP ${t.ap} (need ${t.apLo}–${t.apHi})`, t.ap >= t.apLo && t.ap <= t.apHi));
+    }
+    box.appendChild(meter(
+      `influence ${t.inf}/${t.infLimit == null ? "∞" : t.infLimit}`,
+      t.infLimit == null || t.inf <= t.infLimit));
+    box.appendChild(meter(`points ${t.pts}/${DBS.catalog.point_limit}`,
+      t.pts <= DBS.catalog.point_limit));
+  }
+  if (DBS.deck.builtin) box.appendChild(el("span", "badge-builtin", "built-in"));
+  // The server's word, verbatim. Problems that name a card also mark its row.
+  const general = DBS.problems.filter((p) => !p.card);
+  if (general.length) {
+    const strip = el("div", "builder-problems");
+    general.forEach((p) => strip.appendChild(el("div", "problem", p.message)));
+    box.appendChild(strip);
+  }
+}
+
+function factionClass(f) {
+  const k = String(f || "neutral").toLowerCase();
+  if (k.includes("crim")) return "fac-criminal";
+  if (k.includes("shaper")) return "fac-shaper";
+  if (k.includes("anarch")) return "fac-anarch";
+  if (k.includes("nbn")) return "fac-nbn";
+  if (k.includes("haas") || k === "hb") return "fac-hb";
+  if (k.includes("jinteki")) return "fac-jinteki";
+  if (k.includes("weyland")) return "fac-weyland";
+  return "fac-neutral";
+}
+
+/* A catalog card drawn as a CARD (THE LAW §1): the game's .card box with the
+   builder's own anatomy — faction stripe, influence pips, eternal points
+   badge, copies-in-deck disc. Art if the id resolves on the CDN; the text
+   scaffold is the real rendering, exactly like the board. */
+function builderCardEl(cc, opts) {
+  opts = opts || {};
+  const d = document.createElement("div");
+  const qty = opts.qty || 0;
+  d.className = "card " + (cc.side === "corp" ? "corp-card" : "runner-card") +
+    (cc.type === "Identity" ? " identity" : "") +
+    (cc.points > 0 ? " hasbpts" : "");
+  const pips = cc.influence_cost > 0 ? "●".repeat(cc.influence_cost) : "";
+  d.innerHTML = `
+    <span class="fstripe ${factionClass(cc.faction)}"></span>
+    <div class="cname">${esc(cc.title)}</div>
+    <div class="ctype">${esc(cc.type)}</div>
+    ${cc.agenda_points != null ? `<div class="bap">${cc.agenda_points}</div>` : ""}
+    ${cc.points > 0 ? `<div class="bpts">${cc.points} pt${cc.points > 1 ? "s" : ""}</div>` : ""}
+    ${pips ? `<div class="binf">${pips}</div>` : ""}
+    ${qty ? `<div class="bqty">×${qty}</div>` : ""}`;
+  const img = new Image();
+  img.onload = () => { d.style.backgroundImage = `url(${cardImgUrl(cc.id)})`; d.classList.add("art"); };
+  img.src = cardImgUrl(cc.id);
+  builderRead(d, cc);
+  return d;
+}
+
+/* Long-press (and hover, on a pointer device) reads the card — THE LAW §5.
+   The catalog carries construction fields, not rules text; the reader shows
+   what it has and the art carries the words. */
+function builderRead(elm, cc) {
+  let t = null;
+  let long = false;
+  elm.addEventListener("pointerdown", () => {
+    long = false;
+    clearTimeout(t);
+    t = setTimeout(() => { long = true; if (elm.isConnected) builderZoom(cc); }, 420);
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) =>
+    elm.addEventListener(ev, () => clearTimeout(t)));
+  elm.addEventListener("contextmenu", (e) => e.preventDefault());
+  elm.__wasLongPress = () => long;
+}
+function builderZoom(cc) {
+  const o = $("zoom-overlay");
+  if (o.parentElement !== document.body) document.body.appendChild(o); // it lives in screen-game
+  o.style.display = "flex";
+  const lines = [];
+  lines.push(`${esc(cc.type)} · ${esc(cc.faction || "Neutral")}`);
+  if (cc.influence_cost != null) lines.push(`Influence ${cc.influence_cost}`);
+  if (cc.agenda_points != null) lines.push(`Agenda points ${cc.agenda_points}`);
+  if (cc.points > 0) lines.push(`Eternal points ${cc.points}`);
+  if (cc.deck_limit != null) lines.push(`Deck limit ${cc.deck_limit}`);
+  if (cc.min_deck_size != null) lines.push(`Minimum deck size ${cc.min_deck_size}`);
+  if (cc.influence_limit != null) lines.push(`Influence limit ${cc.influence_limit}`);
+  o.innerHTML = `<div class="zoom-card">
+      <img class="zart" src="${cardImgUrl(cc.id)}" alt="" onerror="this.remove()">
+      <h3>${esc(cc.title)}</h3>
+      <div class="zline">${lines.join("<br>")}</div>
+    </div>
+    <div class="tapaway">tap anywhere to close</div>`;
+  dismissOnTapAway(o, null);
+}
+
+function renderIdSlot() {
+  const box = $("builder-idslot");
+  box.textContent = "";
+  const idc = DBS.deck.identity != null ? DBS.byId[DBS.deck.identity] : null;
+  if (idc) {
+    const c = builderCardEl(idc);
+    c.onclick = () => { if (!c.__wasLongPress()) openIdPicker(false); };
+    box.appendChild(c);
+    const meta = el("div", "idmeta");
+    meta.appendChild(el("div", "", idc.title));
+    meta.appendChild(el("small", "",
+      `${idc.side === "corp" ? "⬢ Corp" : "⬡ Runner"} · ${idc.faction || ""}` +
+      ` · min ${idc.min_deck_size == null ? "—" : idc.min_deck_size}` +
+      ` · inf ${idc.influence_limit == null ? "∞" : idc.influence_limit}`));
+    const ch = el("button", "chip", "Change identity");
+    ch.onclick = () => openIdPicker(false);
+    meta.appendChild(ch);
+    box.appendChild(meta);
+  } else {
+    const pick = el("button", "chip go", "Pick an identity");
+    pick.onclick = () => openIdPicker(false);
+    box.appendChild(pick);
+  }
+}
+
+const TYPE_ORDER = ["Agenda", "Asset", "Operation", "Upgrade", "Ice",
+  "Event", "Hardware", "Program", "Resource"];
+function typeRank(t) { const i = TYPE_ORDER.indexOf(t); return i < 0 ? 99 : i; }
+
+function renderDeckList() {
+  const box = $("builder-decklist");
+  box.textContent = "";
+  const d = DBS.deck;
+  const idc = d.identity != null ? DBS.byId[d.identity] : null;
+  const byCard = DBS.problems.filter((p) => p.card);
+  const entries = Object.entries(d.cards).filter(([, n]) => n > 0)
+    .map(([id, n]) => ({ cc: DBS.byId[id] || { id, title: id, type: "?", side: "" }, n }))
+    .sort((a, b) => typeRank(a.cc.type) - typeRank(b.cc.type) ||
+      String(a.cc.title).localeCompare(b.cc.title));
+  let lastType = null;
+  entries.forEach(({ cc, n }) => {
+    if (cc.type !== lastType) {
+      lastType = cc.type;
+      const count = entries.filter((e) => e.cc.type === cc.type)
+        .reduce((s, e) => s + e.n, 0);
+      box.appendChild(el("div", "btype-head", `${cc.type} (${count})`));
+    }
+    const probs = byCard.filter((p) => p.card === cc.id);
+    const row = el("div", "brow" + (probs.length ? " problem" : ""));
+    const thumb = el("span", "bthumb");
+    thumb.style.backgroundImage = `url(${cardImgUrl(cc.id)})`;
+    row.appendChild(thumb);
+    row.appendChild(el("span", "bq", `${n}×`));
+    const bt = el("span", "bt", cc.title);
+    row.appendChild(bt);
+    const offFaction = idc && cc.faction !== idc.faction && cc.influence_cost > 0;
+    if (offFaction) row.appendChild(el("span", "bpips", "●".repeat(cc.influence_cost * n)));
+    if (cc.points > 0) row.appendChild(el("span", "bpips", `${cc.points * n}pt`));
+    const minus = el("button", "chip", "−");
+    minus.onclick = () => bumpCard(cc.id, -1);
+    const plus = el("button", "chip", "+");
+    plus.onclick = () => bumpCard(cc.id, +1);
+    row.appendChild(minus);
+    row.appendChild(plus);
+    builderRead(row, cc);
+    if (hoverCapable) {
+      row.addEventListener("mouseenter", () => showHoverPreview({ title: cc.title, type: cc.type, code: cc.id }, row));
+      row.addEventListener("mouseleave", hideHoverPreview);
+    }
+    box.appendChild(row);
+    // The server's per-card problems, verbatim, next to the card they name.
+    probs.forEach((p) => box.appendChild(el("div", "brow-problem-msg", p.message)));
+  });
+  if (!entries.length) box.appendChild(el("div", "hint", "No cards yet — tap cards in the pool to add them."));
+}
+
+function bumpCard(id, delta) {
+  const d = DBS.deck;
+  const cc = DBS.byId[id];
+  const cur = d.cards[id] || 0;
+  let next = cur + delta;
+  if (next < 0) next = 0;
+  if (delta > 0 && cc && cc.deck_limit != null && next > cc.deck_limit) {
+    toast(`Deck limit: ${cc.deck_limit}× ${cc.title}`);
+    return;
+  }
+  if (next === 0) delete d.cards[id];
+  else d.cards[id] = next;
+  DBS.dirty = true;
+  renderMeters();
+  renderDeckList();
+  renderPool();
+}
+
+/* ── the pool: search + faction/type filters over the identity's side ──── */
+let builderSearchTimer = null;
+$("builder-search").oninput = () => {
+  clearTimeout(builderSearchTimer);
+  builderSearchTimer = setTimeout(() => {
+    DBS.filters.q = $("builder-search").value.trim().toLowerCase();
+    renderPool();
+  }, 150);
+};
+
+function poolCards() {
+  const idc = DBS.deck && DBS.deck.identity != null ? DBS.byId[DBS.deck.identity] : null;
+  if (!idc) return [];
+  const f = DBS.filters;
+  return DBS.catalog.cards.filter((c) =>
+    c.side === idc.side &&
+    (!f.fac || (c.faction || "Neutral") === f.fac) &&
+    (!f.type || c.type === f.type) &&
+    (!f.q || c.title.toLowerCase().includes(f.q)));
+}
+
+function renderFilters() {
+  const idc = DBS.deck && DBS.deck.identity != null ? DBS.byId[DBS.deck.identity] : null;
+  const pool = idc ? DBS.catalog.cards.filter((c) => c.side === idc.side) : [];
+  const facs = [...new Set(pool.map((c) => c.faction || "Neutral"))].sort();
+  const types = [...new Set(pool.map((c) => c.type))].sort((a, b) => typeRank(a) - typeRank(b));
+  const mk = (host, values, cur, set) => {
+    host.textContent = "";
+    values.forEach((v) => {
+      const b = el("button", "chip" + (cur === v ? " on" : ""), v);
+      b.onclick = () => { set(cur === v ? "" : v); renderFilters(); renderPool(); };
+      host.appendChild(b);
+    });
+  };
+  mk($("builder-facs"), facs, DBS.filters.fac, (v) => { DBS.filters.fac = v; });
+  mk($("builder-types"), types, DBS.filters.type, (v) => { DBS.filters.type = v; });
+}
+
+function renderPool() {
+  const grid = $("builder-grid");
+  grid.textContent = "";
+  const cards = poolCards()
+    .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.title.localeCompare(b.title));
+  cards.forEach((cc) => {
+    const c = builderCardEl(cc, { qty: DBS.deck.cards[cc.id] || 0 });
+    c.onclick = () => { if (!c.__wasLongPress()) bumpCard(cc.id, +1); };
+    if (hoverCapable) {
+      c.addEventListener("mouseenter", () => showHoverPreview({ title: cc.title, type: cc.type, code: cc.id }, c));
+      c.addEventListener("mouseleave", hideHoverPreview);
+    }
+    grid.appendChild(c);
+  });
+  if (!cards.length) grid.appendChild(el("div", "hint",
+    DBS.deck && DBS.deck.identity != null ? "No cards match." : "Pick an identity first."));
+}
+
+/* ── identity picker: side toggle, identities as cards ────────────────── */
+let idPickerIsNew = false;
+function openIdPicker(isNew) {
+  idPickerIsNew = isNew;
+  const idc = DBS.deck && DBS.deck.identity != null ? DBS.byId[DBS.deck.identity] : null;
+  if (idc) DBS.pickSide = idc.side;
+  $("idpicker").style.display = "";
+  if (isNew) show("screen-builder");
+  renderIdPicker();
+}
+$("idpicker-close").onclick = () => {
+  $("idpicker").style.display = "none";
+  if (idPickerIsNew && DBS.deck && DBS.deck.identity == null) openMyDecks();
+  else renderBuilder();
+};
+$("idpick-corp").onclick = () => { DBS.pickSide = "corp"; renderIdPicker(); };
+$("idpick-runner").onclick = () => { DBS.pickSide = "runner"; renderIdPicker(); };
+
+function renderIdPicker() {
+  document.querySelectorAll("#idpicker [data-pickside]").forEach((b) =>
+    b.classList.toggle("on", b.dataset.pickside === DBS.pickSide));
+  const grid = $("idpicker-grid");
+  grid.textContent = "";
+  // draft_only identities never appear — the API already excludes them and
+  // dbSetCatalog filtered defensively; this is the last line.
+  DBS.catalog.identities
+    .filter((c) => c.side === DBS.pickSide && !c.draft_only && !c.banned)
+    .forEach((cc) => {
+      const slot = el("div", "");
+      const c = builderCardEl(cc);
+      c.onclick = () => { if (!c.__wasLongPress()) pickIdentity(cc); };
+      slot.appendChild(c);
+      slot.appendChild(el("div", "idlabel", cc.title));
+      grid.appendChild(slot);
+    });
+}
+
+function pickIdentity(cc) {
+  const d = DBS.deck;
+  const prev = d.identity != null ? DBS.byId[d.identity] : null;
+  if (prev && prev.side !== cc.side && Object.keys(d.cards).length) {
+    if (!confirm("Switching sides empties the deck. Continue?")) return;
+    d.cards = {};
+  }
+  d.identity = cc.id;
+  if (!d.name) d.name = `${cc.title.split(":")[0]} deck`;
+  DBS.dirty = true;
+  $("idpicker").style.display = "none";
+  enterBuilder();
+}
+
+/* ── save / save as ───────────────────────────────────────────────────────
+   Illegal decks save fine (the API allows it) — they come back badged, and
+   the problems land verbatim next to their cards and meters. */
+async function builderSave(asNew) {
+  const d = DBS.deck;
+  if (!d) return;
+  if (d.identity == null) { toast("Pick an identity first"); return; }
+  d.name = $("builder-name").value.trim() || "unnamed deck";
+  let payload = d;
+  if (asNew) {
+    const name = prompt("Save as:", d.name + (d.builtin ? "" : " copy"));
+    if (name == null) return;
+    payload = { key: null, name: name.trim() || "unnamed deck",
+      identity: d.identity, cards: d.cards, builtin: false };
+  }
+  let res;
+  try { res = await dbSaveDeck(payload); }
+  catch (e) { toast(e.message); return; }
+  DBS.deck = { key: res.key, name: payload.name, identity: payload.identity,
+    cards: Object.assign({}, payload.cards), builtin: false };
+  DBS.problems = res.problems || [];
+  DBS.dirty = false;
+  toast(res.legal ? "Saved — legal" : "Saved — the deck is not legal yet");
+  enterBuilder();
+}
+$("builder-save").onclick = () => builderSave(false);
+$("builder-saveas").onclick = () => builderSave(true);
