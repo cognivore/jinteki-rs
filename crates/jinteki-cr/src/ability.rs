@@ -174,8 +174,14 @@ pub enum TriggerCond {
     /// follows it is not one a phase BEGINNING opened, which is what 6.8.2c
     /// is about.)
     ServerApproached,
-    /// "Whenever the Runner takes a tag." (Mr. Stone class)
-    RunnerTakesTag,
+    /// "Whenever the Runner takes a tag." (Mr. Stone class.) Met per TAKING,
+    /// not per tag, so "whenever you take 1 or more tags" is the same
+    /// condition. `had_no_tags` is the printed "if you had no tags"
+    /// (Sebastião Souza Pessoa) — a 9.6.6a "had"-requirement about the
+    /// moment BEFORE the occurrence, read off the occurrence's record
+    /// ([`crate::change::GameChange::TagsTaken::had`]) rather than off
+    /// current state, which by scan time already counts the tags taken.
+    RunnerTakesTag { had_no_tags: bool },
     /// "Whenever the Runner suffers damage." (per damage occurrence)
     ///
     /// `kind` is the sentence's stipulation about WHICH damage — "whenever the
@@ -1677,6 +1683,25 @@ pub enum StaticDecl {
     /// to offer (its KERNEL APPROXIMATION note), and this declaration keeps
     /// to that precedent: the reduction applies of its own accord.
     BasicActionCostMod { action: crate::change::BasicAction, amount: i32 },
+    /// CR 1.16.10: an ADDITIONAL cost to take a basic action, stated about
+    /// WHICH card the action acts on — "as an additional cost to trash a
+    /// **connection** resource with the basic action, the Corp must trash 1
+    /// card from HQ" (Sebastião Souza Pessoa). `target_criteria` is the
+    /// sentence's stipulation about the acted-on card, matched against the
+    /// action's 1.15.2 announced target; `cost` is paid by the action's
+    /// taker, combined with the regular cost into one payment (1.16.10's
+    /// "along with any regular costs"). 1.16.1b: a target whose combined
+    /// cost is unpayable is not a candidate for the action at all —
+    /// announcing it would announce a cost that cannot be paid.
+    ///
+    /// This declaration is the reason the trash-resource action announces
+    /// its resource BEFORE paying (see `Vm::take_action`): stated about the
+    /// target, it has nothing to bind to until the target is known.
+    AdditionalBasicActionCost {
+        action: crate::change::BasicAction,
+        target_criteria: Vec<crate::instr::TargetFilter>,
+        cost: Cost,
+    },
     /// CR 9.12.3a/e: "You must make a run with your first [click] each turn."
     /// (Always Be Running class.) A requirement on the action window, not an
     /// effect: while it holds, the only actions offered are runs. 9.12.3e:
@@ -2977,7 +3002,13 @@ fn trigger_matches_dyn(
             cite!("rule_discard_step");
             side == s && (!*to_hand_size || *t)
         }
-        (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
+        // 9.6.6a: "if you had no tags" is about the moment before the taking,
+        // and the record carries that moment — current state already counts
+        // these very tags, so it could never answer "none".
+        (TriggerCond::RunnerTakesTag { had_no_tags }, GameChange::TagsTaken { had, .. }) => {
+            cite!("rule_instruction_requirements_past_state");
+            !*had_no_tags || *had == 0
+        }
         // 10.5.1: the tag counter went back to the bank. One record per tag,
         // so a sentence about "a tag" is met once for each of them.
         (TriggerCond::TagRemoved, GameChange::TagRemoved) => {

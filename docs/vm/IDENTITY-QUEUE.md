@@ -57,13 +57,7 @@ kernel words, not card patches.
 
 
 
-- **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
-  trash-a-resource action pays its click and its 2[credit] and only THEN
-  announces the resource, so an additional cost stated about *which* resource
-  (1.16.10) has nowhere to be paid: by the time the card is known the payment
-  is over. The card is not the problem — the action is, and moving the
-  announcement in front of the payment is a change to 5.2's shape rather than
-  a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
+
 
 
 
@@ -106,7 +100,7 @@ the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **145 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **146 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -190,7 +184,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **Reina Roja: Freedom Fighter** — The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.
 - [x] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.
 - [x] **Ryō "Phoenix" Ōno: Out of the Ashes** — The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.
-- [ ] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
+- [x] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
 - [x] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
 - [x] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.
 - [x] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.

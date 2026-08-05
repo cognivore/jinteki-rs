@@ -271,7 +271,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
             card(*by),
             damage_word(*kind)
         ),
-        GameChange::TagsTaken { amount } => {
+        GameChange::TagsTaken { amount, .. } => {
             format!("Runner: takes {amount} {}.", plural(*amount, "tag", "tags"))
         }
         GameChange::TagRemoved => "Runner: removes 1 tag.".to_string(),

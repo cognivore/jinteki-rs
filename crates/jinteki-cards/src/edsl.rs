@@ -2585,7 +2585,14 @@ pub fn takes_bad_publicity(side: Side) -> TriggerCond {
 }
 /// "Whenever the Runner takes a tag…" (Mr. Stone class.)
 pub fn runner_takes_a_tag() -> TriggerCond {
-    TriggerCond::RunnerTakesTag
+    TriggerCond::RunnerTakesTag { had_no_tags: false }
+}
+/// "Whenever you take 1 or more tags, if you had no tags…" (Sebastião Souza
+/// Pessoa.) The same occurrence — met per TAKING, not per tag — with 9.6.6a's
+/// "had"-requirement about the moment before it, read off the occurrence's
+/// record rather than off a pool that already counts these very tags.
+pub fn runner_takes_tags_having_had_none() -> TriggerCond {
+    TriggerCond::RunnerTakesTag { had_no_tags: true }
 }
 /// "Whenever you advance a card…" — 1.18.2's advance and nothing else, so a
 /// counter merely PLACED never meets it. `had_no_advancement` is the printed
@@ -2710,6 +2717,23 @@ pub fn trash_resource_basic_action_costs_less(n: i32) -> StaticDecl {
     StaticDecl::BasicActionCostMod {
         action: jinteki_cr::change::BasicAction::TrashResource,
         amount: -n,
+    }
+}
+/// "As an additional cost to trash a <matching> resource with the basic
+/// action, … must <cost>." (Sebastião Souza Pessoa; 1.16.10 / 5.2.6g.) The
+/// criteria describe the resource the action ANNOUNCES — which is why that
+/// action announces before paying — and the cost is combined with the
+/// regular 2[credit] into one payment by the action's taker, the Corp.
+/// 1.16.1b: a resource whose combined cost is unpayable cannot be announced
+/// at all.
+pub fn additional_cost_to_basic_trash_matching(
+    criteria: &[TargetFilter],
+    c: Cost,
+) -> StaticDecl {
+    StaticDecl::AdditionalBasicActionCost {
+        action: jinteki_cr::change::BasicAction::TrashResource,
+        target_criteria: criteria.to_vec(),
+        cost: c,
     }
 }
 /// "…1 resource **or** piece of hardware" (2.15) — the type LIST as one

@@ -84,7 +84,13 @@ pub enum GameChange {
     /// because nothing later could answer it — the source's printed wording
     /// decided it at the moment the damage resolved.
     DamageSuffered { kind: DamageKind, amount: u32, cards: Vec<ObjectId>, responsible: Side },
-    TagsTaken { amount: u32 },
+    /// `had` is the number of tags the Runner had BEFORE this taking — a fact
+    /// about the occurrence, recorded because a condition's "if you had no
+    /// tags" (Sebastião Souza Pessoa) is read at the checkpoint scan, by
+    /// which time the pool already counts the tags this very record added.
+    /// Reading current state there would make the requirement false at every
+    /// occurrence that met it.
+    TagsTaken { amount: u32, had: u32 },
     TagRemoved,
     /// CR 9.9.5-adjacent: the Runner AVOIDED receiving tags (Thunder Art
     /// Gallery class conditions).

@@ -658,6 +658,62 @@ pub fn hoshiko_shiro_mahou_shoujo() -> Card {
         .build()
 }
 
+/// Sebastião Souza Pessoa: Activist Organizer — Identity: G-mod. Link 0.
+/// "Whenever you take 1 or more tags, if you had no tags, you may install 1
+///  connection resource from your grip, paying 2[credit] less.
+///  As an additional cost to trash a connection resource with the basic
+///  action, the Corp must trash 1 card from HQ."
+///
+/// COMPLETE. The first sentence's condition is the tag-taking OCCURRENCE
+/// (met per taking, not per tag — "1 or more" says so) with 9.6.6a's
+/// "had"-requirement about the moment before it, read off the occurrence's
+/// record (`GameChange::TagsTaken::had`) because by the time the checkpoint
+/// scans, the pool already counts these very tags. "You may" is 9.6.9c's
+/// declineable choice; the install is 1.16.6's reduction of the install cost
+/// alone, the same word Topan uses, over the grip's connection resources.
+///
+/// The second sentence is `StaticDecl::AdditionalBasicActionCost`: a 1.16.10
+/// additional cost on 5.2.6g's basic trash-resource action, stated about
+/// WHICH resource the action announces — which is why that action announces
+/// its target before paying (1.15.2 puts announcement ahead of payment; the
+/// combined cost cannot even be stated until the card is known). The cost is
+/// the Corp's to pay and the trashed card the Corp's to choose (1.14.5),
+/// which `trash_cards_from_hand_of` already says for Null: Whistleblower —
+/// and with an empty HQ the combined cost is unpayable (1.16.1b), so a
+/// connection resource simply cannot be announced while its neighbours
+/// still can.
+pub fn sebastiao_souza_pessoa() -> Card {
+    card("Sebastião Souza Pessoa: Activist Organizer")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["G-mod"])
+        .text("Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less.")
+        .text("As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.")
+        .when(
+            runner_takes_tags_having_had_none(),
+            [may(install_paying_less(
+                choose(
+                    1,
+                    &[
+                        in_hand_of(Runner),
+                        of_type(CardType::Resource),
+                        with_subtype("Connection"),
+                    ],
+                ),
+                InstallDest::RunnerChoiceHostOrRig,
+                2,
+            ))],
+        )
+        .named("sebastião: organize while clean")
+        .declares([additional_cost_to_basic_trash_matching(
+            &[with_subtype("Connection")],
+            trash_cards_from_hand_of(Corp, 1),
+        )])
+        .named("sebastião: the connections cost HQ")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -680,5 +736,6 @@ pub fn identities() -> Vec<Card> {
         topan(),
         freedom_khumalo(),
         hoshiko_shiro(),
+        sebastiao_souza_pessoa(),
     ]
 }

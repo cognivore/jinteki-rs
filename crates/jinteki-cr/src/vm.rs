@@ -225,6 +225,12 @@ pub enum DecisionCtx {
     SecretFaceChoice(Side),
     /// 10.3.1j: the Runner declares candidacy of a mid-breach root entry.
     BreachCandidacy(ObjectId),
+    /// CR 5.2.6g as 1.15.2 shapes it: the announcement of WHICH resource the
+    /// basic trash-resource action acts on, made after the action is
+    /// initiated and before its costs are paid — a 1.16.10 additional cost
+    /// stated about the announced card (Sebastião Souza Pessoa) is combined
+    /// with the regular cost, so the card must be known before the payment.
+    BasicTrashTarget,
     /// 8.5.13d/1.16.4c: pay or decline the additional rez cost during an
     /// "install and rez" effect.
     RezAdditionalCost,
@@ -641,6 +647,12 @@ pub enum PaymentCont {
     /// advanced. The click was spent as the action was taken (5.2.2), which is
     /// why only the credit half of the cost travels with the payment.
     BasicAdvance { card: ObjectId },
+    /// 5.2.6g: the basic trash-resource action's costs were paid — the
+    /// modified 2[credit] plus any 1.16.10 additional cost the ANNOUNCED
+    /// resource brought in — so that resource is trashed. The announcement
+    /// preceded the payment (1.15.2; see `DecisionCtx::BasicTrashTarget`),
+    /// which is how the card travels with the payment at all.
+    BasicTrashResourceAction { card: ObjectId },
     /// CR 9.5.7b: a paid ability's TRIGGER cost. Nothing follows it — the
     /// ability frame carries on by itself — but the payment's announced X
     /// (1.16.2c) belongs to this use of the ability and is kept on the frame.
@@ -10235,8 +10247,12 @@ impl Vm {
             Instruction::GainTags { .. } => {
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     let n = a.value as u32;
+                    // 9.6.6a: the count BEFORE the taking rides the record —
+                    // "if you had no tags" is about this moment, and current
+                    // state stops holding it the instant the tags land.
+                    let had = self.st.runner.tags;
                     self.st.runner.tags += n;
-                    self.changes.record(GameChange::TagsTaken { amount: n });
+                    self.changes.record(GameChange::TagsTaken { amount: n, had });
                 }
             }
             Instruction::TrashCards(_) | Instruction::TrashSelf => {
@@ -10458,8 +10474,12 @@ impl Vm {
                                     }
                                     EffectClass::TakeTags => {
                                         let n = a.value as u32;
+                                        // 9.6.6a: the prior count rides the
+                                        // record (see the GainTags arm).
+                                        let had = self.st.runner.tags;
                                         self.st.runner.tags += n;
-                                        self.changes.record(GameChange::TagsTaken { amount: n });
+                                        self.changes
+                                            .record(GameChange::TagsTaken { amount: n, had });
                                     }
                                     EffectClass::GainCredits => {
                                         let n = a.value.max(0) as u32;
@@ -13574,15 +13594,11 @@ impl Vm {
             // "pay 2[credit] fewer … (not through a card ability)", which
             // names this action and no ability; 1.16.2a floors at 0) — and
             // the tag gate reads the CONSIDERED count (Acme, 9.3.7a).
-            let trash_cost =
-                self.basic_action_credits(crate::change::BasicAction::TrashResource, 2);
+            // 1.16.1b per CANDIDATE: each resource's whole cost includes any
+            // 1.16.10 additional cost stated about it (Sebastião), so the
+            // action is offered while SOME resource's total is payable.
             if self.considered_runner_tags() > 0
-                && self.st.corp.credits >= trash_cost
-                && self.st.objects.values().any(|o| {
-                    o.zone == Zone::Rig
-                        && o.printed.card_type == CardType::Resource
-                        && !o.hosted_not_installed
-                })
+                && !self.basic_trash_resource_candidates().is_empty()
             {
                 out.push(ActionOption::BasicTrashResource);
             }
@@ -14518,6 +14534,10 @@ impl Vm {
     fn purpose_of(p: &Payment) -> CreditPurpose {
         match p.cont {
             PaymentCont::BasicTrash { card, .. } => CreditPurpose::Trashing(card),
+            // 5.2.6g: the action's credits are paid to trash the announced
+            // resource, which is the card a sentence naming what may be
+            // trashed describes.
+            PaymentCont::BasicTrashResourceAction { card } => CreditPurpose::Trashing(card),
             // 1.18.1: the basic advance action's credit is paid to place an
             // advancement counter on this card, which is the card a sentence
             // naming what may be advanced describes.
@@ -14544,7 +14564,9 @@ impl Vm {
     fn cause_of(p: &Payment) -> Option<ObjectId> {
         cite!("rule_source");
         match p.cont {
-            PaymentCont::BasicTrash { .. } | PaymentCont::BasicAdvance { .. } => None,
+            PaymentCont::BasicTrash { .. }
+            | PaymentCont::BasicAdvance { .. }
+            | PaymentCont::BasicTrashResourceAction { .. } => None,
             _ => Some(p.source),
         }
     }
@@ -15205,6 +15227,21 @@ impl Vm {
                         basic: true,
                     });
             }
+            // 5.2.6g: the costs are paid (the 1.16.3 checkpoint ran inside
+            // `pay_cost_committed`), so the action's effect follows — the
+            // trash of the resource announced BEFORE the payment, in a rules
+            // ability frame, the shape the basic advance action uses.
+            PaymentCont::BasicTrashResourceAction { card } => {
+                cite!("corp_basic_action_trash_resource");
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
+                    Side::Corp,
+                    vec![Instruction::TrashCards(TargetSpec::Objects(vec![card]))],
+                    None,
+                    None,
+                );
+            }
         }
     }
 
@@ -15356,8 +15393,10 @@ impl Vm {
         // so conditions can meet AFTER payment (1.16.10b).
         cite!("rule_cost_no_interrupt");
         if cost.tags > 0 {
+            // 9.6.6a: the prior count rides the record (see the GainTags arm).
+            let had = self.st.runner.tags;
             self.st.runner.tags += cost.tags;
-            self.changes.record(GameChange::TagsTaken { amount: cost.tags });
+            self.changes.record(GameChange::TagsTaken { amount: cost.tags, had });
         }
         // 10.5.1: the tags go back to the bank, one record each, so a
         // "whenever a tag is removed" condition sees this payment exactly as
@@ -16215,6 +16254,61 @@ impl Vm {
         n.max(0) as u32
     }
 
+    /// CR 5.2.6g / 1.16.10: the trash-resource action's WHOLE cost against
+    /// this resource — the modified 2[credit], combined (`Cost::plus`,
+    /// 1.16.10b's one payment) with every active additional-cost declaration
+    /// whose target criteria the announced card matches ("as an additional
+    /// cost to trash a **connection** resource with the basic action…",
+    /// Sebastião Souza Pessoa).
+    fn basic_trash_resource_cost(&self, target: ObjectId) -> Cost {
+        cite!("rule_additional_cost");
+        let base = self.basic_action_credits(crate::change::BasicAction::TrashResource, 2);
+        let mut cost = Cost::credits(base);
+        for (src, d) in self.active_statics() {
+            if let StaticDecl::AdditionalBasicActionCost { action, target_criteria, cost: add } =
+                d
+            {
+                if action == crate::change::BasicAction::TrashResource
+                    && self.object_matches_criteria(target, &target_criteria, Some(src))
+                {
+                    cost = cost.plus(&add);
+                }
+            }
+        }
+        cost
+    }
+
+    /// CR 5.2.6g / 1.16.1: the installed resources the trash-resource action
+    /// could announce — those whose whole cost (1.16.10 additional costs
+    /// included) the Corp can pay. 1.16.1b keeps an unpayable one out: with
+    /// an empty HQ a connection resource under Sebastião's declaration is not
+    /// a candidate, while its non-connection neighbours still are — and the
+    /// ACTION exists while some candidate does.
+    pub fn basic_trash_resource_candidates(&self) -> Vec<ObjectId> {
+        cite!("corp_basic_action_trash_resource");
+        cite!("rule_cost");
+        self.st
+            .objects
+            .values()
+            .filter(|o| {
+                o.zone == Zone::Rig
+                    && o.printed.card_type == CardType::Resource
+                    && !o.hosted_not_installed
+            })
+            .map(|o| o.id)
+            .filter(|&id| {
+                let cost = self.basic_trash_resource_cost(id);
+                self.cost_payable_for(
+                    Side::Corp,
+                    id,
+                    &cost,
+                    None,
+                    CreditPurpose::Trashing(id),
+                )
+            })
+            .collect()
+    }
+
     pub fn memory_limit(&self) -> i32 {
         cite!("rule_memory_limit");
         let mut m = self.st.runner.memory_limit_base;
@@ -16393,6 +16487,26 @@ impl Vm {
             }
             (DecisionCtx::Window(_), DecisionAnswer::Action(opt)) => {
                 self.take_action(side, opt);
+            }
+            // CR 5.2.6g / 5.2.2 / 1.16.3: the resource is announced, so the
+            // action's costs are paid — the click, the modified 2[credit],
+            // and any 1.16.10 additional cost the announced card's criteria
+            // brought in, combined into one payment. The checkpoint and the
+            // trash follow the payment (`PaymentCont::BasicTrashResourceAction`).
+            (DecisionCtx::BasicTrashTarget, DecisionAnswer::Targets(ts)) => {
+                cite!("corp_basic_action_trash_resource");
+                cite!("rule_initiate_action");
+                cite!("rule_additional_cost");
+                let card = ts[0];
+                let cost = self.basic_trash_resource_cost(card);
+                self.spend_click(side);
+                self.begin_payment(
+                    side,
+                    card,
+                    &cost,
+                    PaymentCont::BasicTrashResourceAction { card },
+                    None,
+                );
             }
             (DecisionCtx::Window(wid), DecisionAnswer::Take(opt)) => {
                 self.take_window_option(side, wid, opt);
@@ -17444,46 +17558,23 @@ impl Vm {
                 );
             }
             ActionOption::BasicTrashResource => {
-                // CR 5.2.6g / 10.5.3: the resource is chosen while the action
-                // resolves — a 1.15.2 target announcement over the installed
-                // resources, which is exactly what the criteria say.
+                // CR 5.2.6g / 10.5.3: the resource is a 1.15.2 target
+                // announcement over the installed resources — and 1.15.2
+                // puts the announcement BEFORE the payment (1.16.3 follows
+                // it), because a 1.16.10 additional cost stated about WHICH
+                // resource (Sebastião Souza Pessoa) is combined with the
+                // regular cost, so the card must be known first. The click
+                // and credits are paid on the answer
+                // (`DecisionCtx::BasicTrashTarget`).
                 cite!("corp_basic_action_trash_resource");
                 cite!("rule_tagged_trash_resource");
-                // 5.2.6g's 2[credit] as modified (SYNC back's "pay 2[credit]
-                // fewer … not through a card ability" names this action;
-                // 1.16.2a floors at 0, and 0 credits move none and record no
-                // loss — the cost payment itself still happened).
-                cite!("rule_modified_costs");
-                let cost =
-                    self.basic_action_credits(crate::change::BasicAction::TrashResource, 2);
-                self.spend_click(side);
-                if cost > 0 {
-                    self.st.player_mut(side).credits -= cost;
-                    self.changes.record(GameChange::CreditsLost {
-                        side,
-                        amount: cost,
-                        source: None,
-                    });
-                }
-                self.changes.record(GameChange::CostPaid {
-                    side,
-                    credits: cost,
-                    clicks: 0,
-                    trashed: Vec::new(),
-                    source: None,
-                });
-                cite!("rule_checkpoint_after_paying_cost");
-                self.checkpoint_and_react(None);
-                self.push_ability_frame(
-                    ResolutionKind::Paid,
-                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
-                    side,
-                    vec![Instruction::TrashCards(TargetSpec::Choose {
-                        count: crate::instr::Quantity::Const(1),
-                        criteria: vec![TargetFilter::InstalledResource], up_to: false })],
-                    None,
-                    None,
-                );
+                cite!("rule_announce_targets");
+                // 1.16.1b filtered the candidates when the action was
+                // offered: each one's WHOLE cost — additional costs included
+                // — is payable.
+                let candidates = self.basic_trash_resource_candidates();
+                let spec = self.announcement(candidates, 1);
+                self.ask(side, spec, DecisionCtx::BasicTrashTarget);
             }
             ActionOption::BasicPurge => {
                 // CR 5.2.6h: three clicks, paid one at a time — each is a cost

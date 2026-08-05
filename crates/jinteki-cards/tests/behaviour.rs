@@ -1893,7 +1893,7 @@ fn breaking_news_tags_blow_over_at_end_of_turn() {
     // The tags were given on scoring AND removed at the discard phase's end —
     // by the Runner, per the printed text.
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::TagsTaken { amount: 2 })),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::TagsTaken { amount: 2, .. })),
         "2 tags on scoring: {}",
         t.tail(14)
     );
@@ -15342,4 +15342,333 @@ fn adam_starts_the_game_with_three_directives_installed_and_active() {
     // And the game plays on normally from there.
     let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
     assert!(vm.game_over.is_none(), "{}", t.tail(10));
+}
+
+// ---------------------------------------------------------------------------
+// Sebastião Souza Pessoa: Activist Organizer (`identities/runner_anarch.rs`)
+// ---------------------------------------------------------------------------
+
+/// Sebastião, first sentence: "Whenever you take 1 or more tags, if you had
+/// no tags, you may install 1 connection resource from your grip, paying
+/// 2[credit] less." At 0 tags the taking meets the condition — the
+/// "had"-requirement reads the occurrence's record, not the pool that
+/// already counts the new tag — and the install arrives at −2.
+#[test]
+fn sebastiao_installs_a_connection_at_a_discount_when_the_first_tags_land() {
+    let mut vm = Vm::empty(6430);
+    tk::install_identity(
+        &mut vm,
+        card("Sebastião Souza Pessoa: Activist Organizer"),
+        Side::Runner,
+    );
+    let conn = {
+        let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
+        c.subtypes = vec!["Connection"];
+        c.cost = Some(3);
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    tk::install_rig(&mut vm, tk::take_tag_button("TagMe"));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("take 1 tag"))
+            .when(Match::reaction().once(), Reply::take("organize while clean"))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::targets().once(), Reply::target(conn))
+            .when(
+                Match::destination(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Rig),
+            )
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "the button landed the tag: {}", t.tail(20));
+    assert_eq!(
+        vm.st.objects[&conn].zone,
+        Zone::Rig,
+        "the connection came out of the grip: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        2,
+        "1[credit] paid a 3[credit] install — 1.16.6 lowered it by 2: {}",
+        t.tail(20)
+    );
+}
+
+/// Sebastião, first sentence's requirement: a Runner who already HAD a tag
+/// takes another — the occurrence's record says `had: 1`, so the ability is
+/// never offered at all.
+#[test]
+fn sebastiao_stays_quiet_when_the_runner_already_had_a_tag() {
+    let mut vm = Vm::empty(6434);
+    tk::install_identity(
+        &mut vm,
+        card("Sebastião Souza Pessoa: Activist Organizer"),
+        Side::Runner,
+    );
+    let conn = {
+        let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
+        c.subtypes = vec!["Connection"];
+        c.cost = Some(3);
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    tk::install_rig(&mut vm, tk::take_tag_button("TagMe"));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 3;
+    // Setup state, not effect: the Runner is already tagged, so the coming
+    // taking is not one they had no tags before.
+    vm.st.runner.tags = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("take 1 tag"))
+            .when(
+                Match::reaction().offering("organize while clean"),
+                Reply::Forbid,
+            )
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.tags, 2, "the button landed the second tag: {}", t.tail(20));
+    assert_eq!(
+        vm.st.objects[&conn].zone,
+        Zone::Hand(Side::Runner),
+        "no install was ever offered — the requirement read `had: 1`: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.runner.credits, 3, "nothing was paid: {}", t.tail(20));
+}
+
+/// CR 5.2.6g reshaped by 1.15.2: the basic trash-resource action announces
+/// WHICH resource before any of its costs are paid. Halted at the
+/// announcement, the click and the credits are untouched; resumed, the costs
+/// land and the announced resource is trashed — no Sebastião anywhere, so
+/// this is the plain action's own order.
+#[test]
+fn the_trash_resource_action_announces_its_target_before_any_cost_is_paid() {
+    let mut vm = Vm::empty(6431);
+    let res = tk::install_rig(
+        &mut vm,
+        tk::vanilla_runner_card("Doomed Resource", CardType::Resource),
+    );
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::TrashResource))
+            .when(Match::action().once(), Reply::Halt)
+            .when(Match::targets().nth(1), Reply::Halt)
+            .when(Match::targets().once(), Reply::target(res)),
+        Plan::runner(),
+    );
+    g.run(&mut vm);
+    // Halted AT the target announcement: the action is initiated, and
+    // 1.15.2 has put the announcement in front of the payment — so neither
+    // the click nor the 2[credit] has moved yet.
+    assert_eq!(
+        g.transcript().entries.last().map(|e| e.kind()),
+        Some(Kind::Targets),
+        "halted at the announcement: {}",
+        g.transcript().tail(8)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        5,
+        "no credit paid before the announcement: {}",
+        g.transcript().tail(8)
+    );
+    assert_eq!(
+        vm.st.corp.clicks,
+        3,
+        "no click spent before the announcement: {}",
+        g.transcript().tail(8)
+    );
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&res].zone,
+        Zone::Discard(Side::Runner),
+        "the announced resource was trashed: {}",
+        g.transcript().tail(12)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        3,
+        "the 2[credit] were paid after the announcement, as before it moved: {}",
+        g.transcript().tail(12)
+    );
+    assert_eq!(vm.st.corp.clicks, 2, "…and the click: {}", g.transcript().tail(12));
+}
+
+/// Sebastião, second sentence: trashing a CONNECTION with the basic action
+/// carries the 1.16.10 additional cost — after announcing the connection,
+/// the Corp must also trash 1 card from HQ, and which card is the Corp's
+/// choice (1.14.5).
+#[test]
+fn sebastiaos_connection_tax_makes_the_corp_trash_a_chosen_card_from_hq() {
+    let mut vm = Vm::empty(6432);
+    tk::install_identity(
+        &mut vm,
+        card("Sebastião Souza Pessoa: Activist Organizer"),
+        Side::Runner,
+    );
+    let conn = {
+        let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
+        c.subtypes = vec!["Connection"];
+        tk::install_rig(&mut vm, c)
+    };
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+    // The turn's mandatory draw made HQ four cards; the Corp will choose
+    // this one to pay Sebastião's tax with.
+    let hq_pick = vm.st.hand[&Side::Corp][0];
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::TrashResource))
+            .when(Match::targets().once(), Reply::target(conn))
+            .when(Match::payment_cards().once(), Reply::target(hq_pick))
+            .when(Match::action().once(), Reply::Halt),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&conn].zone,
+        Zone::Discard(Side::Runner),
+        "the connection was trashed: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&hq_pick].zone,
+        Zone::Discard(Side::Corp),
+        "the Corp's CHOSEN card paid the additional cost into Archives: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Corp].len(),
+        3,
+        "HQ is one card down (four after the mandatory draw): {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        3,
+        "the regular 2[credit] was still paid alongside: {}",
+        t.tail(16)
+    );
+}
+
+/// Sebastião, second sentence under 1.16.1b: with an empty HQ the combined
+/// cost of trashing a connection cannot be paid, so a connection cannot even
+/// be announced — the action is not offered while the connection is the only
+/// resource, and once a plain resource exists the action returns with the
+/// connection missing from its candidates.
+#[test]
+fn an_empty_hq_shields_connections_from_the_basic_trash_action() {
+    let mut vm = Vm::empty(6433);
+    tk::install_identity(
+        &mut vm,
+        card("Sebastião Souza Pessoa: Activist Organizer"),
+        Side::Runner,
+    );
+    let conn = {
+        let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
+        c.subtypes = vec!["Connection"];
+        tk::install_rig(&mut vm, c)
+    };
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+    // The card the mandatory draw is about to put in HQ: the Corp's first
+    // action plays it away, and HQ is empty when the second window opens.
+    let drawn = vm.st.deck[&Side::Corp][0];
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp()
+            .when(Match::action().nth(1), Reply::Take(Pick::PlayCard(drawn)))
+            .when(Match::action().nth(1), Reply::Halt)
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::Take(Pick::TrashResource))
+            // The plain resource does not exist when this plan is written;
+            // the default answer takes the first (and only) candidate.
+            .when(Match::targets().once(), Reply::Default),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    g.run(&mut vm);
+    // HQ is empty and the connection is the only resource; its combined
+    // cost is unpayable, so the ACTION is not offered at all (1.16.1b).
+    let offer = g
+        .transcript()
+        .entries
+        .iter()
+        .rev()
+        .find(|e| e.kind() == Kind::Action)
+        .expect("an action window was reached");
+    let jinteki_cr::decision::DecisionSpec::TakeAction { options } = &offer.spec else {
+        panic!("not an action window: {:?}", offer.spec)
+    };
+    assert!(
+        !options.contains(&jinteki_cr::decision::ActionOption::BasicTrashResource),
+        "no resource's whole cost is payable, so there is no action: {options:?}"
+    );
+    assert!(vm.st.hand[&Side::Corp].is_empty(), "HQ really is empty: {}", g.transcript().tail(8));
+
+    // A plain resource arrives; the action returns — offered for IT, with
+    // the connection still not a candidate. (The halted window is stale, so
+    // the plan spends it on a credit and trashes from the next one.)
+    let plain = tk::install_rig(
+        &mut vm,
+        tk::vanilla_runner_card("Plain Resource", CardType::Resource),
+    );
+    g.run(&mut vm);
+    let announce = g
+        .transcript()
+        .entries
+        .iter()
+        .find(|e| e.kind() == Kind::Targets)
+        .expect("the action announced a target");
+    assert_eq!(
+        announce.candidates(),
+        &[plain],
+        "the connection is not among the candidates — announcing it would \
+         announce a cost that cannot be paid: {}",
+        g.transcript().tail(12)
+    );
+    assert_eq!(
+        vm.st.objects[&plain].zone,
+        Zone::Discard(Side::Runner),
+        "the plain resource was still trashable: {}",
+        g.transcript().tail(12)
+    );
+    assert_eq!(
+        vm.st.objects[&conn].zone,
+        Zone::Rig,
+        "the connection survives behind its unpayable tax: {}",
+        g.transcript().tail(12)
+    );
 }

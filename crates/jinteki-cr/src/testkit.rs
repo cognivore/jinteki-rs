@@ -372,7 +372,7 @@ pub fn cleaners_like(name: &'static str) -> PrintedCard {
 pub fn mr_stone_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerTakesTag,
+        TriggerCond::RunnerTakesTag { had_no_tags: false },
         vec![Instruction::Damage { kind: DamageKind::Meat, amount: Quantity::c(1), responsible: Side::Corp }],
         false,
     )
@@ -1319,7 +1319,7 @@ pub fn groove_button(name: &'static str) -> PrintedCard {
         Cost::free(),
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(AbilityDef::conditional(
-                TriggerCond::RunnerTakesTag,
+                TriggerCond::RunnerTakesTag { had_no_tags: false },
                 vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
                 false,
             )
