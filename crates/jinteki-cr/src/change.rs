@@ -181,8 +181,10 @@ pub enum GameChange {
     /// CR 1.16.3: a cost was paid (zero costs are real, 1.16.1d).
     ///
     /// `source` is what the payment was FOR — the source of the ability whose
-    /// cost this was (9.1.4), and `None` for a basic action's own cost, which
-    /// no card can be said to have caused. It is the same field
+    /// cost this was (9.1.3), and `None` for a basic action's own cost, which
+    /// no card can be said to have caused (`Vm::cause_of` is where that is
+    /// decided, since 9.1.1 counts the basic actions and the basic trash
+    /// ability among the abilities). It is the same field
     /// [`GameChange::CreditsGained`] and [`GameChange::CreditsLost`] carry,
     /// and a sentence asking what made a player SPEND credits (GameNET) is
     /// asked of it.

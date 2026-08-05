@@ -493,6 +493,10 @@ pub enum CreditPurpose {
     /// steps. The purpose names no object because the sentence naming it
     /// ("during trace attempts") names none either.
     TraceAttempt,
+    /// CR 1.18.1 / 5.2.6f: a payment made to ADVANCE this card. The object is
+    /// the card the advancement counter is going on, which is what a sentence
+    /// naming a class of card to advance ("to advance ice") describes.
+    Advancing(ObjectId),
 }
 
 /// What a completed payment goes on to do. Every payment has one, because a
@@ -509,6 +513,10 @@ pub enum PaymentCont {
     Access(ObjectId),
     /// 7.1.5: the basic trash ability's cost was paid.
     BasicTrash { card: ObjectId, window: u64 },
+    /// 5.2.6f: the basic advance action's 1[credit] was paid, so the card is
+    /// advanced. The click was spent as the action was taken (5.2.2), which is
+    /// why only the credit half of the cost travels with the payment.
+    BasicAdvance { card: ObjectId },
     /// CR 9.5.7b: a paid ability's TRIGGER cost. Nothing follows it — the
     /// ability frame carries on by itself — but the payment's announced X
     /// (1.16.2c) belongs to this use of the ability and is kept on the frame.
@@ -12015,9 +12023,16 @@ impl Vm {
             // says which installed cards those are; a card that cannot be
             // advanced is not an option, and with no credit there is no
             // action at all (1.16.1b).
+            //
+            // 1.10.3c: what the credit can come FROM includes hosted credits
+            // the Corp's own cards allow to be spent, and a card naming one
+            // class of payment ("use this credit to advance ice") answers for
+            // the card being advanced rather than in general — so the question
+            // is asked once per candidate, not once for the action.
             cite!("corp_basic_action_advance");
-            if self.st.corp.credits >= 1 {
-                for id in self.advanceable_cards() {
+            cite!("rule_spend_credits");
+            for id in self.advanceable_cards() {
+                if self.spendable_credits_for(Side::Corp, CreditPurpose::Advancing(id)) >= 1 {
                     out.push(ActionOption::BasicAdvance { card: id });
                 }
             }
@@ -12811,6 +12826,14 @@ impl Vm {
             (Some(crate::instr::CreditUse::UsingAbilitiesOf(_)), _) => false,
             (Some(crate::instr::CreditUse::TraceAttempts), CreditPurpose::TraceAttempt) => true,
             (Some(crate::instr::CreditUse::TraceAttempts), _) => false,
+            (
+                Some(crate::instr::CreditUse::AdvancingCards(criteria)),
+                CreditPurpose::Advancing(c),
+            ) => {
+                cite!("rule_advance");
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::AdvancingCards(_)), _) => false,
         }
     }
 
@@ -12830,10 +12853,34 @@ impl Vm {
     fn purpose_of(p: &Payment) -> CreditPurpose {
         match p.cont {
             PaymentCont::BasicTrash { card, .. } => CreditPurpose::Trashing(card),
+            // 1.18.1: the basic advance action's credit is paid to place an
+            // advancement counter on this card, which is the card a sentence
+            // naming what may be advanced describes.
+            PaymentCont::BasicAdvance { card } => CreditPurpose::Advancing(card),
             // 9.1.6a: paying a paid ability's trigger cost IS using the card
             // the ability is on, and `Payment::source` is that card.
             PaymentCont::TriggerCost => CreditPurpose::UsingAbilityOf(p.source),
             _ => CreditPurpose::Unspecified,
+        }
+    }
+
+    /// CR 9.1.3: the card that can be said to have CAUSED this payment, which
+    /// is what [`GameChange::CostPaid::source`] records and what a sentence
+    /// asking what made a player spend credits (GameNET) is asked of.
+    ///
+    /// "The source of an ability is the card, counter, **or game rule** that
+    /// originated it", and 9.1.1 counts a basic action and the basic trash
+    /// ability among the abilities — so those two have no card source at all.
+    /// `Payment::source` is a card either way, because for a basic action it
+    /// is the card the action ACTS ON, kept there so the payment's own
+    /// machinery (1.16.2e's alternate payments, 1.9.2's counter cost) has
+    /// something to be about; reading it as the CAUSE would say that an
+    /// accessed card's own ability made the Runner pay its trash cost.
+    fn cause_of(p: &Payment) -> Option<ObjectId> {
+        cite!("rule_source");
+        match p.cont {
+            PaymentCont::BasicTrash { .. } | PaymentCont::BasicAdvance { .. } => None,
+            _ => Some(p.source),
         }
     }
 
@@ -13372,6 +13419,20 @@ impl Vm {
             PaymentCont::None | PaymentCont::TriggerCost => {}
             PaymentCont::Rez(id) => self.rez_card_finish(id),
             PaymentCont::Access(card) => self.push_access(card),
+            // 5.2.6f: the cost is paid, so the action's effect follows — the
+            // ordinary 1.18.1 advance, in a rules ability frame, exactly as
+            // the basic install and play actions put their procedure in one.
+            PaymentCont::BasicAdvance { card } => {
+                cite!("corp_basic_action_advance");
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: card, index: usize::MAX },
+                    Side::Corp,
+                    vec![Instruction::AdvanceCard { target: TargetSpec::Objects(vec![card]) }],
+                    None,
+                    None,
+                );
+            }
             PaymentCont::BasicTrash { card, window } => {
                 self.trash_card(card, Side::Runner);
                 if let Some(Frame::Window(w)) = self.frames.last_mut() {
@@ -13527,10 +13588,11 @@ impl Vm {
             credits: want_credits,
             clicks: cost.clicks,
             trashed,
-            // 9.1.4: what the payment was FOR — the source of the ability
+            // 9.1.3: what the payment was FOR — the source of the ability
             // whose cost this is, which is what a sentence asking what CAUSED
-            // a player to spend credits reads.
-            source: Some(source),
+            // a player to spend credits reads. A basic action's source is a
+            // game rule, so it names no card.
+            source: Vm::cause_of(p),
         });
         self.checkpoint_and_react(None);
     }
@@ -15141,25 +15203,22 @@ impl Vm {
                 // CR 5.2.6f: "[click], 1[credit]: Advance 1 installed card."
                 // The credit is part of the action's cost, so it is paid as
                 // the action is initiated (5.2.2) — before the advance.
+                //
+                // It is paid as a PAYMENT and not taken out of the pool:
+                // 1.10.3c divides a payment among the locations the payer may
+                // spend from, and a card whose ability allows its hosted
+                // credits to be spent on advancing (Because We Built It) is
+                // one of them. What the payment is FOR travels with it, so
+                // the same question is asked when the division is offered and
+                // when the credits are spent.
                 cite!("corp_basic_action_advance");
+                cite!("rule_spend_credits");
                 self.spend_click(side);
-                self.st.player_mut(side).credits -= 1;
-                self.changes.record(GameChange::CreditsLost { side, amount: 1, source: None });
-                self.changes.record(GameChange::CostPaid {
+                self.begin_payment(
                     side,
-                    credits: 1,
-                    clicks: 0,
-                    trashed: Vec::new(),
-                    source: None,
-                });
-                cite!("rule_checkpoint_after_paying_cost");
-                self.checkpoint_and_react(None);
-                self.push_ability_frame(
-                    ResolutionKind::Paid,
-                    AbilityRef { obj: card, index: usize::MAX },
-                    side,
-                    vec![Instruction::AdvanceCard { target: TargetSpec::Objects(vec![card]) }],
-                    None,
+                    card,
+                    &Cost::credits(1),
+                    PaymentCont::BasicAdvance { card },
                     None,
                 );
             }

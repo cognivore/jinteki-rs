@@ -362,6 +362,15 @@ impl CardBuilder {
         self.printed.hosted_credits_spendable = Some(jinteki_cr::instr::CreditUse::TraceAttempts);
         self
     }
+    /// "Use this credit **to advance ice**." (Weyland Consortium: Because We
+    /// Built It; CR 1.10.3c + 1.18.1.) The cards that may be advanced with the
+    /// credits are described with the ordinary filter words, so 1.15.2c's
+    /// default applies and "ice" reaches the installed pieces of ice.
+    pub fn credits_only_for_advancing(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::AdvancingCards(criteria.to_vec()));
+        self
+    }
 
     // ---- the printed text ------------------------------------------------
     /// One printed line of the card's text box, copied exactly. Call it once

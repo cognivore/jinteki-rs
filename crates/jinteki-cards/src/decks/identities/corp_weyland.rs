@@ -369,6 +369,38 @@ pub fn sso_industries() -> Card {
         .build()
 }
 
+/// Weyland Consortium: Because We Built It — Identity: Megacorp.
+/// "1[recurring-credit]
+///  Use this credit to advance ice."
+///
+/// COMPLETE. The first line is 1.10.5's shorthand — one credit on the identity
+/// from the moment it is active, which for an identity is 1.6, and refilled at
+/// step 5.6.1c of every Corp turn (1.10.5d).
+///
+/// The second is 1.10.3c, and it names a CARD rather than a moment: the credit
+/// pays for advancing, and 1.18.1 makes advancing "placing an advancement
+/// counter on a card by paying for it", so the card being described is the one
+/// the counter is going on. The description is the ordinary vocabulary, and
+/// 1.15.2c's default is what makes the printed "ice" reach the installed
+/// pieces of ice with nothing else written beside it.
+///
+/// The payment it is allowed for is 5.2.6f's basic action, the only one that
+/// pays to advance. A card ability that advances is paid for under 9.1.6a —
+/// the payment is for USING that card, not for advancing — so this credit is
+/// not offered there, which is what keeps the sentence to what it says.
+pub fn weyland_because_we_built_it() -> Card {
+    card("Weyland Consortium: Because We Built It")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Megacorp"])
+        .text("1[recurring-credit]")
+        .text("Use this credit to advance ice.")
+        .recurring_credits(1)
+        .credits_only_for_advancing(&[of_type(CardType::Ice)])
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
@@ -385,5 +417,6 @@ pub fn identities() -> Vec<Card> {
         titan_transnational(),
         weyland_building_a_better_world(),
         weyland_built_to_last(),
+        weyland_because_we_built_it(),
     ]
 }

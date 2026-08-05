@@ -10192,3 +10192,115 @@ fn mti_mwekundu_lets_the_runner_jack_out_of_the_ice_it_installed() {
         t.tail(60)
     );
 }
+
+
+/// Weyland Consortium: Because We Built It — "1[recurring-credit] / Use this
+/// credit to advance ice."
+///
+/// Four plays over two variables: whether the card being advanced is a piece
+/// of ice, and whether the Corp has a credit of their own. Both cards carry the
+/// same "you can advance this card" declaration and are rezzed, so 1.18.3
+/// offers both to 5.2.6f — what differs is only whether the identity's credit
+/// may pay for the action.
+///
+/// With an empty pool the action exists only against the ice: 1.16.1b withholds
+/// an action whose cost cannot be paid, and 1.10.3c allows this credit for
+/// nothing else. Give the Corp a credit of their own and the asset can be
+/// advanced after all, out of the pool, with the identity's credit untouched —
+/// which is what says the first half was about the PAYMENT and not about which
+/// cards may be advanced. The fourth play is 1.10.3c's division itself: with
+/// both locations allowed and only one credit owed, the Corp is asked which to
+/// spend, and spends the identity's.
+#[test]
+fn because_we_built_it_pays_to_advance_ice_and_nothing_else() {
+    for (is_ice, pool) in [(true, 0), (false, 0), (false, 1), (true, 1)] {
+        let mut vm = Vm::empty(6206);
+        let bwbi = tk::install_identity(
+            &mut vm,
+            card("Weyland Consortium: Because We Built It"),
+            Side::Corp,
+        );
+        // 1.18.3: a card can be advanced if it is an agenda or if an active
+        // ability says so — the same declaration on both, so the only thing
+        // that differs between the halves is the card's TYPE.
+        let advanceable = |name: &'static str, ty: CardType| {
+            let mut c = PrintedCard::vanilla(name, Side::Corp, ty);
+            c.abilities = vec![jinteki_cr::ability::AbilityDef::static_ability(vec![
+                jinteki_cr::ability::StaticDecl::CanBeAdvancedSelf,
+            ])
+            .labeled("you can advance this card")];
+            c
+        };
+        let target = if is_ice {
+            tk::install_ice(
+                &mut vm,
+                advanceable("Advanceable Ice", CardType::Ice),
+                ServerId::Hq,
+                true,
+            )
+        } else {
+            tk::install_root(
+                &mut vm,
+                advanceable("Advanceable Asset", CardType::Asset),
+                ServerId::Remote(0),
+                true,
+            )
+        };
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = pool;
+        vm.start_turn(Side::Corp);
+
+        let takeable = is_ice || pool > 0;
+        let mut corp = Plan::corp();
+        if takeable {
+            corp = corp
+                .when(Match::action().once(), Reply::Take(Pick::Advance(target)))
+                // 1.10.3c: spend the identity's credit and keep the pool's,
+                // which is only ever asked when both are allowed.
+                .when(Match::division().once(), Reply::Division(vec![0, 1]));
+        }
+        let t = plan::play(&mut vm, corp.stop_at_action(), Plan::runner());
+
+        let offered = t.entries.iter().any(|e| {
+            e.actions().iter().any(|a| matches!(
+                a,
+                jinteki_cr::decision::ActionOption::BasicAdvance { card } if *card == target
+            ))
+        });
+        assert_eq!(
+            offered, takeable,
+            "is_ice={is_ice} pool={pool}: 1.10.3c allows the credit only for advancing \
+             ice, and 1.16.1b withholds an action nothing can pay for: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&target].counter(CounterKind::Advancement),
+            u32::from(takeable),
+            "is_ice={is_ice} pool={pool}: the counter is on the card exactly when the \
+             action was takeable: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&bwbi].counter(CounterKind::Credit),
+            u32::from(!is_ice),
+            "is_ice={is_ice} pool={pool}: 1.10.3a — the credit left the identity only \
+             for the payment it was allowed to make: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if is_ice { pool } else { 0 },
+            "is_ice={is_ice} pool={pool}: and the pool paid only where the identity \
+             could not: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            !t.of_kind(Kind::Division).is_empty(),
+            is_ice && pool > 0,
+            "is_ice={is_ice} pool={pool}: 1.10.3c's division is a real choice only \
+             when more than one location is allowed and not all of it is owed: {}",
+            t.tail(30)
+        );
+    }
+}

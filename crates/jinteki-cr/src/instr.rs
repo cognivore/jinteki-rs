@@ -2089,6 +2089,17 @@ pub enum CreditUse {
     /// this names, and it names no card at all — the restriction is on the
     /// MOMENT, not on what is being paid for.
     TraceAttempts,
+    /// "Use this credit **to advance ice**." (Weyland Consortium: Because We
+    /// Built It.) CR 1.18.1: advancing is placing an advancement counter by
+    /// paying for it, and 5.2.6f's basic action is the payment that does it —
+    /// so this names the card the counter is going ON, described with the
+    /// ordinary filter vocabulary (§12 rule 5) exactly as the other two
+    /// card-naming restrictions are.
+    ///
+    /// It is not [`CreditUse::UsingAbilitiesOf`] wearing another name: 5.2.6f
+    /// is a basic action and has no card whose ability is being used, which is
+    /// why 9.1.4 leaves the payment with no cause at all.
+    AdvancingCards(Vec<TargetFilter>),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

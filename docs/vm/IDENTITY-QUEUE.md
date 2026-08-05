@@ -91,17 +91,6 @@ kernel words, not card patches.
   ability handing a player a basic action at a reduced cost, and 5.2 offers
   actions only from the action phase's own step. *(MirrorMorph: Endless
   Iteration.)*
-- **The basic ADVANCE action does not pay through a payment, so nothing about
-  it can carry a purpose.** `CreditPurpose` now says what a payment is for —
-  trashing a card, using a card's abilities (9.1.6a), a trace attempt's spend
-  steps — but 5.2.6f's 1[credit] is taken straight out of the Corp's pool by
-  `Vm::take_action`, so there is no `PaymentCont` to read a purpose from and
-  no 1.10.3c division for the payer to make. Routing it through
-  `Vm::begin_payment` is not a new word but a change to 5.2's shape, and it
-  would also make `GameChange::CostPaid` name the advanced card as the source
-  that caused the payment (9.1.4) — which a basic action has none of, so a
-  "whenever a Corp card ability causes…" condition would start meeting it.
-  *(Weyland Consortium: Because We Built It.)*
 - **A condition cannot be met by an earlier instruction of its OWN ability.**
   "Install 1 card from your grip, paying 2[credit] less. **When you install
   that card**, suffer 1 meat damage." — the second sentence is a conditional
@@ -252,7 +241,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **121 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **122 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -442,7 +431,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [x] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (12/19)
+## Corp — Weyland Consortium (13/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -461,7 +450,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
 - [x] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
 - [x] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.
-- [ ] **Weyland Consortium: Because We Built It** — 1[recurring-credit] Use this credit to advance ice.
+- [x] **Weyland Consortium: Because We Built It** — 1[recurring-credit] Use this credit to advance ice.
 - [x] **Weyland Consortium: Builder of Nations** — The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.
 - [x] **Weyland Consortium: Building a Better World** — Whenever you play a transaction operation, gain 1[credit].
 - [x] **Weyland Consortium: Built to Last** — Whenever you advance a card, gain 2[credit] if it had no advancement counters.
