@@ -7113,6 +7113,43 @@ fn null_whistleblower_takes_nothing_off_the_ice_when_the_cost_is_declined() {
     );
 }
 
+/// The printed "Once per turn →" flag is SPENT by paying: the second
+/// encounter of the same turn gets no offer at all. 9.1.6b — a conditional
+/// ability is used once its optional component is carried out, and paying
+/// the nested cost IS carrying it out, whether or not the ability's own
+/// trigger was optional — and 9.3.6g is what that use spends. (Audit
+/// 2026-08-05 finding 2: the may_pay path never spent the flag, so Null
+/// could weaken every ice it met, every turn.)
+#[test]
+fn null_whistleblower_once_per_turn_is_spent_by_paying() {
+    let mut vm = Vm::empty(6152);
+    tk::install_identity(&mut vm, card("Null: Whistleblower"), Side::Runner);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 4), ServerId::Hq, true);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 4), ServerId::Hq, true);
+    let hand = tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::nested_cost(), Reply::PayCost(true))
+            .when(Match::payment_cards(), Reply::Targets(vec![hand[0]]))
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        t.of_kind(Kind::NestedCost).len(),
+        1,
+        "9.3.6g: the flag was spent at the first encounter — the second offers nothing: {}",
+        t.tail(40)
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "one card paid, once: {}", t.tail(40));
+}
+
 /// Ryō "Phoenix" Ōno: "The first time each turn a run becomes successful
 /// after a subroutine resolved during that run, gain 1[credit] and the Corp
 /// trashes 1 card from HQ."
@@ -10599,18 +10636,14 @@ fn apex_cannot_install_a_resource_that_is_not_virtual() {
     );
 }
 
-/// Where Apex's two sentences meet: the prohibition still bites on the
-/// facedown install.
-///
-/// 8.1.4a blanks a facedown Runner card that is INSTALLED, and 8.5.16a says
-/// the card it has just placed facedown "is not yet installed or active" — so
-/// at the 1.15.2 announcement the card is still a non-virtual resource, and
-/// 1.2.2 gives the "cannot" precedence over the install the identity's own
-/// second sentence directs. The virtual resource beside it is offered, which
-/// is what keeps this an assertion about the description and not about the
-/// facedown install refusing resources.
+/// Where Apex's two sentences meet: the facedown install takes ANY card.
+/// What it produces is 8.1.4a's blank object — no name, no type, no
+/// subtypes — so "you cannot install non-virtual resources" has nothing to
+/// read there (1.15.3), while 5.2.7d's faceup basic action still refuses
+/// the same resource. `Vm::install_prohibited` asks with the declared face
+/// in hand.
 #[test]
-fn apexs_facedown_install_still_cannot_take_a_non_virtual_resource() {
+fn apexs_facedown_install_takes_a_non_virtual_resource() {
     let mut vm = Vm::empty(6190);
     tk::install_identity(&mut vm, card("Apex: Invasive Predator"), Side::Runner);
     let mut plain = tk::vanilla_runner_card("Some Resource", CardType::Resource);
@@ -10630,24 +10663,20 @@ fn apexs_facedown_install_still_cannot_take_a_non_virtual_resource() {
         Plan::corp(),
         Plan::runner()
             .when(Match::reaction().offering("invasive predator"), Reply::take("invasive predator"))
-            .when(Match::targets().once(), Reply::target(virt))
+            .when(Match::targets().once(), Reply::target(plain))
             .stop_at_action(),
     );
     let announced = t.of_kind(Kind::Targets);
     assert_eq!(announced.len(), 1, "the identity announced its card: {}", t.tail(30));
     let candidates = announced[0].candidates();
     assert!(
-        !candidates.contains(&plain),
-        "the card is still a non-virtual resource while it is being chosen: {}",
+        candidates.contains(&plain),
+        "8.1.4a: what a facedown install produces has no type for the 'cannot' to read: {}",
         t.tail(30)
     );
-    assert!(
-        candidates.contains(&virt),
-        "and a virtual one, which the sentence does not describe, is offered: {}",
-        t.tail(30)
-    );
-    assert_eq!(vm.st.objects[&virt].zone, Zone::Rig, "it went in facedown: {}", t.tail(30));
-    assert!(!vm.st.objects[&virt].faceup, "facedown: {}", t.tail(30));
+    assert!(candidates.contains(&virt), "the virtual one too, as before: {}", t.tail(30));
+    assert_eq!(vm.st.objects[&plain].zone, Zone::Rig, "installed: {}", t.tail(30));
+    assert!(!vm.st.objects[&plain].faceup, "facedown: {}", t.tail(30));
 }
 
 /// Magdalene Keino-Chemutai: "Whenever you discard cards to reach your

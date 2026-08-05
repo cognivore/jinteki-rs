@@ -33,15 +33,16 @@ use crate::edsl::*;
 /// agendas and upgrades among the cards that have no install cost.
 ///
 /// THE READING WHERE THE TWO SENTENCES MEET, stated because it decides a
-/// case: the first sentence still forbids the second one a non-virtual
-/// resource. 8.1.4a blanks a facedown Runner card that is INSTALLED, and
-/// 8.5.16a says in as many words that the card it has just placed facedown
-/// "is not yet installed or active" — so at every moment the prohibition
-/// could be asked about (the ability being offered, 1.15.2's announcement,
-/// step 8.5.16a itself) the card is still a non-virtual resource, and 1.2.2
-/// gives the "cannot" precedence over the install this identity's own second
-/// sentence directs. The card stops being a resource only once it is
-/// installed, which is after the install it would have to survive.
+/// case: the first sentence does NOT forbid the second one a non-virtual
+/// resource. What a facedown install produces is 8.1.4a's blank object — no
+/// name, no card type, no subtypes — so the thing this identity's second
+/// sentence installs is never a "non-virtual resource" for the first
+/// sentence to describe: the prohibition has nothing to read (1.15.3), and
+/// it reads the card's printed face only for FACEUP installs, where the
+/// installed object keeps those characteristics. The kernel asks the
+/// question with the declared face in hand (`Vm::install_prohibited`'s
+/// facedown arm), which is why every card in the grip is a candidate here
+/// while 5.2.7d's faceup basic action still refuses the same resource.
 pub fn apex() -> Card {
     card("Apex: Invasive Predator")
         .runner()

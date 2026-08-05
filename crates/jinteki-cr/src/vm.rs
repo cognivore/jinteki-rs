@@ -1202,7 +1202,23 @@ impl Vm {
                 }
                 // …and followed by a checkpoint (9.11.2).
                 cite!("rule_checkpoint_after_instruction_resolution");
-                self.checkpoint_and_react(None);
+                // 6.8.2b: a reaction window closes with a timing structure
+                // only when it was opened "due to a phase beginning" — the
+                // closing checkpoint of the ENCOUNTER's first step, where its
+                // formal-begin conditions were met. Every later checkpoint
+                // inside the encounter opens an ordinary window, which
+                // 6.8.2c completes normally when a run ends. The binding id
+                // is the STATE encounter's — the space `tick_window` and
+                // `end_the_run` compare against — not the frame counter's.
+                let begin_of = match self.frames.last() {
+                    Some(Frame::Structure(sf))
+                        if cursor == 0 && matches!(sf.ctx, StructCtx::Encounter(_)) =>
+                    {
+                        self.st.encounter.as_ref().map(|e| e.id)
+                    }
+                    _ => None,
+                };
+                self.checkpoint_and_react(begin_of);
                 // CR 9.6.7d: a timing structure step completed — clear the
                 // static-condition no-effect throttle.
                 cite!("rule_conditional_ability_static_condition_no_effect");
@@ -5136,6 +5152,31 @@ impl Vm {
     /// Apply replacements one at a time; when several could apply, the order
     /// is a Decision (9.9.11: the base effect's controller chooses).
     /// Returns `true` if a Decision was asked.
+    /// CR 9.9.11: who ORDERS competing replacement effects. Applying to "an
+    /// effect acting on a targeted card", the choice is that card's
+    /// controller; applying to "any other effect", it is the affected
+    /// effect's controller. "Targeted" is 1.15.2's announcement, so the
+    /// question is asked of the imminent instruction's announced card
+    /// targets: announced cards of exactly one controller — that side;
+    /// none announced (access candidates are chosen at 7.5.4, never
+    /// announced) — the effect's controller. Announced cards of BOTH
+    /// controllers at once is a corner the CR does not order; the kernel
+    /// keeps the effect's controller there rather than inventing a tiebreak.
+    fn replacement_order_chooser(&self) -> Side {
+        cite!("rule_order_of_replacement_effects");
+        let Some(imm) = self.imminents.last() else { return Side::Runner };
+        let owners: Vec<Side> = imm
+            .targets
+            .iter()
+            .filter_map(|t| self.st.objects.get(t))
+            .map(|o| o.controller)
+            .collect();
+        match owners.first() {
+            Some(side) if owners.iter().all(|s| s == side) => *side,
+            _ => imm.controller,
+        }
+    }
+
     fn resolve_replacements_or_ask(&mut self) -> bool {
         loop {
             let appl = self.applicable_replacements();
@@ -5184,8 +5225,7 @@ impl Vm {
                                 .unwrap_or("replacement")
                         })
                         .collect();
-                    let chooser =
-                        self.imminents.last().map(|i| i.controller).unwrap_or(Side::Runner);
+                    let chooser = self.replacement_order_chooser();
                     self.ask(
                         chooser,
                         DecisionSpec::ChooseOption { options: labels },
@@ -6446,8 +6486,9 @@ impl Vm {
                 // the INSTRUCTION and not to the card's printed description,
                 // exactly as 1.21.4's "only unrezzed cards can be exposed"
                 // does one arm above.
-                if matches!(instr, Instruction::InstallCard { .. }) {
-                    candidates.retain(|c| !self.install_prohibited(*c));
+                if let Instruction::InstallCard { facedown, .. } = &instr {
+                    let fd = *facedown;
+                    candidates.retain(|c| !self.install_prohibited(*c, fd));
                 }
                 // 8.5.1/8.5.3: events, operations and identities are never
                 // installed, so a description saying only "1 card" (Topan)
@@ -6781,7 +6822,7 @@ impl Vm {
                 let destination_ok = self.install_destination_available(*id);
                 // 1.2.2: and a card a "cannot install" declaration describes
                 // cannot be chosen at all.
-                let permitted = !self.install_prohibited(*id);
+                let permitted = !self.install_prohibited(*id, false);
                 class_ok && rez_ok && afford && destination_ok && permitted
             })
             .collect()
@@ -7168,9 +7209,23 @@ impl Vm {
     /// "cannot" is not a cost that fails: the install is never available at
     /// all, so a card it forbids is not a candidate, not an action option and
     /// not a legal find.
-    pub fn install_prohibited(&self, card: ObjectId) -> bool {
+    pub fn install_prohibited(&self, card: ObjectId, to_facedown: bool) -> bool {
         cite!("rule_cannot_precedence");
         let Some(o) = self.st.objects.get(&card) else { return false };
+        // 8.1.4a: an installed facedown Runner card has no characteristics
+        // at all — so a Runner card being installed FACEDOWN is about to
+        // become an object no characteristic-describing prohibition can
+        // read, and the "cannot" has nothing to match (1.15.3). Apex's two
+        // printed sentences meet exactly here: "you cannot install
+        // non-virtual resources" never reaches the card its own facedown
+        // install places, because the thing that ends up installed is not a
+        // resource. (A facedown CORP install is hidden, not blank — 8.1.2 —
+        // so it keeps its characteristics and the declaration still reads
+        // them.)
+        if to_facedown && o.printed.side == Side::Runner {
+            cite!("rule_facedown_runner_cards_are_blank");
+            return false;
+        }
         self.active_statics().iter().any(|(src, d)| match d {
             StaticDecl::CannotInstallMatching { criteria } => {
                 self.st.objects.get(src).is_some_and(|s| s.controller == o.printed.side)
@@ -8941,7 +8996,7 @@ impl Vm {
         // 1.2.2: a "cannot" takes precedence over the ability directing the
         // install, so a card a declaration forbids installing is not one this
         // search could find either.
-        if self.install_prohibited(card) {
+        if self.install_prohibited(card, facedown) {
             return false;
         }
         // 1.13.6c: no valid host means the card cannot be installed at all.
@@ -11188,6 +11243,7 @@ impl Vm {
                     return;
                 }
                 let c = p.card;
+                let fd = p.facedown;
                 // 1.2.2: a "cannot install" declaration takes precedence over
                 // whatever directed this install, so no installation takes
                 // place — the card never even moves. Announce-time candidacy
@@ -11195,7 +11251,7 @@ impl Vm {
                 // backstop for an install whose card was fixed rather than
                 // announced, and for one the declaration only reached after
                 // the announcement.
-                if self.install_prohibited(c) {
+                if self.install_prohibited(c, fd) {
                     cite!("rule_cannot_precedence");
                     if let Some(p) = self.installs.last_mut() {
                         p.aborted = true;
@@ -12651,7 +12707,7 @@ impl Vm {
             // 1.2.2: the basic action directs an install, and a "cannot
             // install" declaration takes precedence over it — so the action
             // is not offered for a card the declaration describes at all.
-            if self.install_prohibited(c) {
+            if self.install_prohibited(c, false) {
                 cite!("rule_cannot_precedence");
                 continue;
             }
@@ -14963,8 +15019,7 @@ impl Vm {
             // window opened by the checkpoint that FOLLOWS an encounter's
             // end belongs to no encounter, so an ability triggered by that
             // end (Howler class, 1.15.4) is not dropped with it.
-            let orig = originating_structure
-                .or_else(|| self.st.encounter.as_ref().map(|e| e.id));
+            let orig = originating_structure;
             self.open_reaction_window(newly, orig);
         }
     }
@@ -15258,6 +15313,29 @@ impl Vm {
                             // before the payment for the same reason.
                             if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                                 af.instructions.insert(idx + 1, (*effect).clone());
+                            }
+                            // 9.1.6b + 9.3.6g: paying the optional component
+                            // of a conditional ability IS carrying it out —
+                            // the ability is used, and a printed once-per-turn
+                            // restriction is spent HERE, whether or not the
+                            // ability's own trigger was optional. A mandatory
+                            // conditional whose whole body is "you may pay …"
+                            // (Null: Whistleblower's shape) has no other
+                            // moment that could ever spend it: the
+                            // DeclineableChoice path never runs for it, and
+                            // the frame-pop path asks `d.optional`.
+                            if let Some(Frame::Ability(af)) = self.frames.last() {
+                                let flagged = self
+                                    .ability_at(af.source.obj, af.source.index)
+                                    .is_some_and(|d| {
+                                        d.has_flag(crate::ability::AbilityFlag::OncePerTurn)
+                                    });
+                                if matches!(af.kind, ResolutionKind::Conditional) && flagged {
+                                    cite!("rule_conditional_ability_used_condition");
+                                    cite!("rule_once_per_turn_flag");
+                                    self.once_per_turn_used
+                                        .insert((af.source, af.source_generation));
+                                }
                             }
                             self.pay_cost(payer, source.obj, &cost);
                             self.changes.record(GameChange::AbilityUsed { source: source.obj });
