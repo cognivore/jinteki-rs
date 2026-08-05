@@ -2006,6 +2006,266 @@ fn citadel_sanctuary_burns_everything_to_stop_the_meat() {
 }
 
 // ---------------------------------------------------------------------------
+// Trickster Taka, and the 5.7.2d clock it shares with Citadel Sanctuary
+// ---------------------------------------------------------------------------
+
+/// Trickster Taka's first sentence is ONE condition met by either occurrence
+/// (9.6.4b): the turn beginning pockets a credit, and so does the steal —
+/// two hosted credits by the time the run comes home.
+#[test]
+fn trickster_taka_pockets_a_credit_either_way() {
+    let mut vm = Vm::empty(4710);
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::vanilla_agenda("Loose Agenda", 3, 1),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&agenda].zone, Zone::ScoreArea(Side::Runner), "{}", t.tail(12));
+    assert_eq!(
+        vm.st.objects[&taka].counters.get(&CounterKind::Credit).copied().unwrap_or(0),
+        2,
+        "one for the turn beginning, one for the steal: {}",
+        t.tail(12)
+    );
+}
+
+/// "During runs" is half the restriction (6.1.1): outside one, three hosted
+/// credits buy nothing at all — the affordability question already says no.
+#[test]
+fn trickster_taka_credits_are_no_good_outside_a_run() {
+    let mut vm = Vm::empty(4711);
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    let breaker = tk::install_rig(&mut vm, tk::pump_breaker("Breaker", 1));
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    vm.st.runner.credits = 0;
+    assert_eq!(
+        vm.spendable_credits_for(
+            Side::Runner,
+            jinteki_cr::vm::CreditPurpose::UsingAbilityOf(breaker)
+        ),
+        0,
+        "1.10.3c: the moment is not now, so the description is never reached"
+    );
+}
+
+/// The other half holds during one: a broke Runner pumps an icebreaker on
+/// Taka's credits mid-encounter, and the credit comes off the card.
+#[test]
+fn trickster_taka_credits_pump_a_breaker_during_a_run() {
+    let mut vm = Vm::empty(4712);
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    tk::install_rig(&mut vm, tk::pump_breaker("Breaker", 1));
+    tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 0, 3), ServerId::Hq, true);
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    tk::fill_hand(&mut vm, Side::Corp, 1);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("pump"))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&taka].counters.get(&CounterKind::Credit).copied().unwrap_or(0),
+        3,
+        "3 placed + 1 at turn begin − the pump's 1[credit]: {}",
+        t.tail(14)
+    );
+    assert_eq!(vm.st.runner.credits, 0, "and the pool was never touched: {}", t.tail(14));
+}
+
+/// The bill: 3 or more hosted credits when the turn ends, and the choice
+/// between harms is the Runner's — declining both is not on the menu.
+#[test]
+fn trickster_taka_the_bill_comes_due_as_a_tag() {
+    let mut vm = Vm::empty(4713);
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner().when(Match::options(), Reply::ChooseNamed("take 1 tag")),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "{}", t.tail(12));
+    assert_eq!(vm.st.objects[&taka].zone, Zone::Rig, "still installed: {}", t.tail(12));
+}
+
+/// …or the resource goes instead, and no tag lands.
+#[test]
+fn trickster_taka_the_bill_comes_due_as_the_resource() {
+    let mut vm = Vm::empty(4714);
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner().when(Match::options(), Reply::ChooseNamed("trash this resource")),
+    );
+    assert_eq!(vm.st.runner.tags, 0, "{}", t.tail(12));
+    assert_ne!(vm.st.objects[&taka].zone, Zone::Rig, "the resource was the price: {}", t.tail(12));
+}
+
+/// 5.1.4b: the end of the turn and the end of the discard phase are the SAME
+/// moment, so Citadel Sanctuary's "while you are tagged" is read at 5.7.2d —
+/// when nobody is tagged — and the tag Taka hands out during that window's
+/// resolution arrives too late to ever feed a trace.
+#[test]
+fn taka_tag_arrives_too_late_for_citadel_sanctuary() {
+    let mut vm = Vm::empty(4715);
+    tk::install_rig(&mut vm, card("Citadel Sanctuary"));
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner().when(Match::options(), Reply::ChooseNamed("take 1 tag")),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "{}", t.tail(14));
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::TraceInitiated { .. })),
+        "9.6.5c: the stipulation was read at 5.7.2d, when nobody was tagged: {}",
+        t.tail(14)
+    );
+    let ended = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TurnEnded { side: Side::Runner }))
+        .expect("the turn ended");
+    let tagged = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagsTaken { .. }))
+        .expect("the tag was taken");
+    assert!(tagged > ended, "the tag lands after the shared moment: {}", t.tail(14));
+}
+
+/// A tag already there at 5.7.2d puts BOTH abilities in one reaction window
+/// (9.6.4b — same occurrence, two conditions, the Privileged Access shape),
+/// ordered by their controller. Citadel first: the trace fails, the old tag
+/// comes off, and the bill still comes due after.
+#[test]
+fn citadel_and_taka_share_the_clock_citadel_first() {
+    let mut vm = Vm::empty(4716);
+    tk::install_rig(&mut vm, card("Citadel Sanctuary"));
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 3;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::trace_spend(), Reply::Spend(0)).stop_at_action(),
+        Plan::runner()
+            .when(
+                Match::reaction().offering("the corp must trace"),
+                Reply::take("the corp must trace"),
+            )
+            .when(Match::trace_spend(), Reply::Spend(2))
+            .when(
+                Match::reaction().offering("the bill comes due"),
+                Reply::take("the bill comes due"),
+            )
+            .when(Match::options(), Reply::ChooseNamed("take 1 tag")),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "1 − 1 + 1: {}", t.tail(16));
+    let removed = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagRemoved))
+        .expect("the unsuccessful trace removed a tag");
+    let taken = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagsTaken { .. }))
+        .expect("the bill was paid in tags");
+    assert!(removed < taken, "Citadel resolved before the bill: {}", t.tail(16));
+}
+
+/// The same window, the other order: the bill first raises the tag count to
+/// 2, and Citadel's trace — read as pending at the same 5.7.2d moment —
+/// still resolves after, taking one back off.
+#[test]
+fn citadel_and_taka_share_the_clock_taka_first() {
+    let mut vm = Vm::empty(4717);
+    tk::install_rig(&mut vm, card("Citadel Sanctuary"));
+    let taka = tk::install_rig(&mut vm, card("Trickster Taka"));
+    tk::place_counters(&mut vm, taka, CounterKind::Credit, 3);
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 3;
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::trace_spend(), Reply::Spend(0)).stop_at_action(),
+        Plan::runner()
+            .when(
+                Match::reaction().offering("the bill comes due"),
+                Reply::take("the bill comes due"),
+            )
+            .when(Match::options(), Reply::ChooseNamed("take 1 tag"))
+            .when(
+                Match::reaction().offering("the corp must trace"),
+                Reply::take("the corp must trace"),
+            )
+            .when(Match::trace_spend(), Reply::Spend(2)),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "1 + 1 − 1: {}", t.tail(16));
+    let taken = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagsTaken { .. }))
+        .expect("the bill was paid in tags");
+    let removed = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagRemoved))
+        .expect("the trace then took one back off");
+    assert!(taken < removed, "the bill resolved before Citadel: {}", t.tail(16));
+}
+
+// ---------------------------------------------------------------------------
 // Wave 3: the access pack
 // ---------------------------------------------------------------------------
 

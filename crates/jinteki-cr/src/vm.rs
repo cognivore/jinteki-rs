@@ -13502,6 +13502,20 @@ impl Vm {
                 self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
             }
             (Some(crate::instr::CreditUse::UsingAbilitiesOf(_)), _) => false,
+            (
+                Some(crate::instr::CreditUse::UsingAbilitiesDuringRuns(criteria)),
+                CreditPurpose::UsingAbilityOf(c),
+            ) => {
+                // 6.1.1: "during a run" is a run being in progress — which
+                // server and how it ends are not the sentence's business.
+                // Outside one, the restriction answers no before it ever
+                // reads the description.
+                cite!("rule_paid_ability_used_condition");
+                cite!("rule_abilities_during_a_run");
+                self.current_run.is_some()
+                    && self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::UsingAbilitiesDuringRuns(_)), _) => false,
             (Some(crate::instr::CreditUse::TraceAttempts), CreditPurpose::TraceAttempt) => true,
             (Some(crate::instr::CreditUse::TraceAttempts), _) => false,
             (

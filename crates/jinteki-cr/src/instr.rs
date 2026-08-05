@@ -2208,6 +2208,13 @@ pub enum CreditUse {
     /// is a basic action and has no card whose ability is being used, which is
     /// why 9.1.4 leaves the payment with no cause at all.
     AdvancingCards(Vec<TargetFilter>),
+    /// "You can spend hosted credits **to use programs during runs**."
+    /// (Trickster Taka.) The payment [`CreditUse::UsingAbilitiesOf`] names —
+    /// 9.1.6a's trigger-cost payment for a described card's ability —
+    /// restricted further to a MOMENT the way [`CreditUse::TraceAttempts`]
+    /// restricts to one: 6.1.1's run in progress. Both halves must hold at
+    /// once; neither is the other's paraphrase.
+    UsingAbilitiesDuringRuns(Vec<TargetFilter>),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

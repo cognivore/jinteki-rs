@@ -585,6 +585,62 @@ pub fn asmund_pudlat() -> Card {
         .build()
 }
 
+/// Trickster Taka — Resource: Companion - Stealth - Virtual. Install 1. ◆
+/// "When your turn begins and whenever you steal an agenda, place 1[credit]
+///  on this resource.
+///  You can spend hosted credits to use programs during runs.
+///  When your turn ends, if there are 3 or more hosted credits, you must
+///  take 1 tag or trash this resource."
+///
+/// COMPLETE. The first sentence is ONE condition met by either occurrence
+/// (`either_of`, the Epiphany Analytica shape): no ordinal in front of it, so
+/// two abilities would also be a correct reading (Leela Patel's), but the
+/// printed sentence is one and §12 rule 2 keeps the sentence's shape.
+///
+/// The second sentence is 1.10.3c's restriction stated about BOTH a
+/// description (9.1.6a's payment for using a described card — the Smoke
+/// shape) and a moment (6.1.1's run in progress — the Making News shape);
+/// `CreditUse::UsingAbilitiesDuringRuns` is the word that holds the two
+/// halves together, and it landed with this card.
+///
+/// "You must take 1 tag or trash this resource" is 9.11.4g's option choice,
+/// put to this card's controller (9.1.1a) with no "may" anywhere: the
+/// obligation is the choice BETWEEN harms, never permission to decline both.
+/// "If there are 3 or more hosted credits" is 9.6.5c's requirement on the
+/// turn-ends condition, read at the occurrence — 5.7.2d — which 5.1.4b makes
+/// the SAME moment Citadel Sanctuary's "when your discard phase ends" clock
+/// reads. The behaviour tests pin that shared clock from both sides: a tag
+/// Taka gives resolves after the moment Citadel's stipulation was read at,
+/// so it never feeds a same-turn trace; a tag already there puts both
+/// abilities in one reaction window, in whichever order the Runner likes.
+pub fn trickster_taka() -> Card {
+    card("Trickster Taka")
+        .runner()
+        .resource()
+        .faction("Anarch")
+        .subtypes(&["Companion", "Stealth", "Virtual"])
+        .cost(1)
+        .unique()
+        .text("When your turn begins and whenever you steal an agenda, place 1[credit] on this resource.")
+        .text("You can spend hosted credits to use programs during runs.")
+        .text("When your turn ends, if there are 3 or more hosted credits, you must take 1 tag or trash this resource.")
+        .when(
+            either_of(&[turn_begins(Runner), runner_steals_agenda()]),
+            [place(CounterKind::Credit, 1)],
+        )
+        .named("a credit either way")
+        .credits_only_for_using_during_runs(&[of_type(CardType::Program)])
+        .when(
+            turn_ends_if(Runner, &[hosted_counters_at_least(CounterKind::Credit, 3)]),
+            [choose_one([
+                ("take 1 tag", vec![give_tags(1)]),
+                ("trash this resource", vec![trash_self()]),
+            ])],
+        )
+        .named("the bill comes due")
+        .build()
+}
+
 /// Every card here, in the order the file lists it.
 pub fn cards() -> Vec<Card> {
     vec![
@@ -603,5 +659,6 @@ pub fn cards() -> Vec<Card> {
         embezzle(),
         harmony_ar_therapy(),
         asmund_pudlat(),
+        trickster_taka(),
     ]
 }

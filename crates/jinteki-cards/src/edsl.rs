@@ -362,6 +362,18 @@ impl CardBuilder {
         self.printed.hosted_credits_spendable = Some(jinteki_cr::instr::CreditUse::TraceAttempts);
         self
     }
+    /// "You can spend hosted credits **to use programs during runs**."
+    /// (Trickster Taka; CR 1.10.3c + 9.1.6a + 6.1.1.) A description AND a
+    /// moment at once: the cards whose use the credits pay for are the
+    /// ordinary filter words, and "during runs" further restricts WHEN —
+    /// [`Self::credits_only_for_using`] and
+    /// [`Self::credits_only_during_trace_attempts`] each state one half, and
+    /// this sentence states both.
+    pub fn credits_only_for_using_during_runs(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::UsingAbilitiesDuringRuns(criteria.to_vec()));
+        self
+    }
     /// "Use this credit **to advance ice**." (Weyland Consortium: Because We
     /// Built It; CR 1.10.3c + 1.18.1.) The cards that may be advanced with the
     /// credits are described with the ordinary filter words, so 1.15.2c's
@@ -1914,6 +1926,16 @@ pub fn loses_credits(side: Side, amount: Quantity) -> Instruction {
 /// IS "tagged").
 pub fn runner_tags_at_least(n: u32) -> TriggerRequirement {
     TriggerRequirement::RunnerTagsAtLeast(n)
+}
+/// "…if there are N or more <kind> counters hosted on this card" (Trickster
+/// Taka's hosted credits): 9.12.2's calculated amount — the count
+/// [`per_hosted_counter`] reads — compared against a printed threshold, as a
+/// 9.6.5c requirement on the condition it rides.
+pub fn hosted_counters_at_least(kind: CounterKind, n: i64) -> TriggerRequirement {
+    TriggerRequirement::QuantityAtLeast {
+        amount: Quantity::CountersOnSource(kind),
+        at_least: n,
+    }
 }
 /// "When a discard phase ends, if <requirements>…" (5.5.4 / Breaking News,
 /// The Class Act.) The sentence names no player, so EITHER discard phase
