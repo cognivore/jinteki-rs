@@ -803,6 +803,18 @@ pub enum TriggerRequirement {
         scope: TurnScope,
         on: Vec<ServerId>,
     },
+    /// "…if this is **not the first time** they have approached ice this run"
+    /// (Mti Mwekundu). 1.12.6's "during this run" read the way `RunnerMadeRun`
+    /// reads a turn's history — the change log from where the run began, which
+    /// 10.2.1 makes open information — and counting 6.9.2's approaches, which
+    /// [`crate::change::GameChange::IceApproached`] already records.
+    ///
+    /// The threshold is content (§12 rule 2): 1 is "they have approached ice
+    /// this run already", which is what "not the first time" says about the
+    /// approach an ability is about to cause, since the run's own step has not
+    /// reached it yet. Outside a run nothing has been approached and the count
+    /// is 0 — which is also 6.1.5b's case, a server with no ice protecting it.
+    IceApproachesThisRunAtLeast(u32),
     /// "…if you played an operation this turn" (Nebula class) — the game
     /// history since the current turn began (1.12.6, 10.2.1).
     PlayedOperationThisTurn(Side),

@@ -7987,6 +7987,29 @@ impl Vm {
                 cite!("rule_tagged");
                 self.st.runner.tags >= *n
             }
+            // 1.12.6: "this run" — the change log from where the run began,
+            // which 10.2.1 makes open information — counting 6.9.2's
+            // approaches. Nothing has been approached outside a run, and
+            // nothing has been approached on a server with no ice protecting
+            // it (6.1.5b), so both answer with 0.
+            R::IceApproachesThisRunAtLeast(n) => {
+                cite!("rule_previous_object");
+                cite!("rule_open_information");
+                cite!("step_approach_begins");
+                if self.current_run.is_none() {
+                    return *n == 0;
+                }
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::RunBegan { .. }))
+                    .unwrap_or(0);
+                let approaches = log[start..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::IceApproached { .. }))
+                    .count();
+                approaches >= *n as usize
+            }
             // 6.9.2b: the ice being encountered was rezzed during the
             // approach this encounter directly follows. Read from the log:
             // find where that ice was last approached, and ask whether it was
@@ -8273,6 +8296,11 @@ impl Vm {
                     (Some(Zone::Ice(s)), _) => Some(s),
                     (_, crate::instr::InstallDest::Protecting(s)) => Some(s),
                     (_, crate::instr::InstallDest::InwardFromSource) => None,
+                    // 6.1.2: the destination names the attacked server, so
+                    // 8.5.11a counts the ice already protecting THAT one.
+                    (_, crate::instr::InstallDest::InnermostProtectingAttackedServer) => {
+                        self.run_ctx().map(|r| r.server)
+                    }
                     _ => None,
                 };
                 server.map(|s| self.ice_at(s).len() as u32).unwrap_or(0)
@@ -10205,11 +10233,20 @@ impl Vm {
                             Some((*s, self.create_position(*s, at)))
                         }
                         crate::instr::InstallDest::InwardFromSource => {
-                            cite!("rule_create_position_innermost");
+                            cite!("rule_create_position_directly_inward");
                             self.position_of_ice(source.obj).and_then(|(s, p)| {
                                 self.positions_inward_of(s, p)
                                     .map(|i| (s, self.create_position(s, i)))
                             })
+                        }
+                        crate::instr::InstallDest::InnermostProtectingAttackedServer => {
+                            // 6.2.2b, from the other end of the sequence; the
+                            // server is the attacked one (6.1.2), so outside a
+                            // run this names no position and nothing moves.
+                            cite!("rule_create_position_innermost");
+                            self.run_ctx()
+                                .map(|r| r.server)
+                                .map(|s| (s, self.create_position(s, 0)))
                         }
                         // Nothing else names a position protecting a server.
                         _ => None,
@@ -10612,6 +10649,15 @@ impl Vm {
                         self.position_of_ice(source.obj).and_then(|(s, pos)| {
                             self.positions_inward_of(s, pos).map(|i| (Zone::Ice(s), Some(i)))
                         })
+                    }
+                    crate::instr::InstallDest::InnermostProtectingAttackedServer => {
+                        // 6.2.2b: inward from the innermost already-existing
+                        // position — index 0 of the server's sequence, which
+                        // is also the right answer for a server with none.
+                        // 6.1.2: outside a run there is no attacked server,
+                        // so no destination can be identified (8.5.14).
+                        cite!("rule_create_position_innermost");
+                        self.run_ctx().map(|r| (Zone::Ice(r.server), Some(0)))
                     }
                     crate::instr::InstallDest::Rig
                     | crate::instr::InstallDest::RunnerChoiceHostOrRig => {

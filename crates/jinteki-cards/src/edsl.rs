@@ -973,6 +973,13 @@ pub fn end_the_run() -> Instruction {
 pub fn jack_out() -> Instruction {
     Instruction::JackOut
 }
+/// "The Runner **moves to that ice and approaches it**." (Mti Mwekundu;
+/// 6.2.8a.) The Runner's position becomes that ice's, the server it protects
+/// becomes the attacked server, and the run's timing step becomes the Approach
+/// Ice Phase. With no such ice — nothing was installed — nothing happens.
+pub fn move_runner_to_ice(ice: TargetSpec) -> Instruction {
+    Instruction::MoveRunnerToIce { ice, encounter: false }
+}
 /// "Run <server>."
 pub fn run(server: ServerId) -> Instruction {
     Instruction::run(server)
@@ -1690,6 +1697,12 @@ pub fn passes_any_ice() -> TriggerCond {
         subs_resolved: false,
         criteria: Vec::new(),
     }
+}
+/// "When the Runner **approaches a server**, …" (Mti Mwekundu; 6.9.4g's step,
+/// reached once every piece of ice protecting the attacked server has been
+/// passed — or straight away when none is).
+pub fn runner_approaches_a_server() -> TriggerCond {
+    TriggerCond::ServerApproached
 }
 /// "When this run ends, …"
 pub fn run_ends() -> TriggerCond {
@@ -2498,6 +2511,13 @@ pub fn board_has(criteria: &[TargetFilter], n: u32) -> TriggerRequirement {
 /// threshold at the other end (Asmund Pudlat; `n = 0` is "none").
 pub fn board_has_at_most(criteria: &[TargetFilter], n: u32) -> TriggerRequirement {
     TriggerRequirement::BoardHasAtMostMatching { criteria: criteria.to_vec(), at_most: n }
+}
+/// "…if this is **not the first time** they have approached ice this run"
+/// (Mti Mwekundu) — said the way the run's own history answers it: they have
+/// approached ice this run already. 6.1.5b is the case that answers no, a
+/// server with no ice protecting it.
+pub fn approached_ice_this_run_already() -> TriggerRequirement {
+    TriggerRequirement::IceApproachesThisRunAtLeast(1)
 }
 /// "If <state>, <effect>." (9.6.5d — the requirement is in the instructions.)
 pub fn if_met(

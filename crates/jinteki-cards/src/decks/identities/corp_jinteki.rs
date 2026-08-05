@@ -460,6 +460,74 @@ pub fn nisei_division() -> Card {
         .build()
 }
 
+/// Mti Mwekundu: Life Improved — Identity: Division.
+/// "Once per turn → When the Runner approaches a server, you may install 1
+///  piece of ice from HQ in the innermost position protecting that server,
+///  ignoring all costs. The Runner moves to that ice and approaches it. If
+///  this is not the first time they have approached ice this run, they may
+///  jack out."
+///
+/// COMPLETE. One conditional ability with 9.3.6g's once-per-turn flag, met at
+/// 6.9.4g's step — the moment every piece of ice protecting the attacked
+/// server has been passed, or the run's first moment when none is.
+///
+/// The printed "you may" is in the first sentence, and 9.6.9 reads it as the
+/// ability's: "if a conditional ability gives its controller a choice of
+/// whether to apply its effects, such that the ability could potentially have
+/// no effects at all, it is considered an optional conditional ability". Both
+/// later sentences are stated about what the first did — "that ice", and the
+/// approach "this" names — so declining the install is declining all of it.
+///
+/// "The innermost position protecting that server" is 6.2.2b, which the CR
+/// states as its own rule beside 6.2.2a's outermost — the default 8.5.2d
+/// installs to and the one "unless otherwise indicated" is written for. "That
+/// server" is the attacked one (6.1.2), because 6.9.4g approaches the attacked
+/// server; it cannot be named when the card is written, since 4.6.8's remotes
+/// are created during play. "Ignoring all costs" is 1.16.5c, which includes
+/// 8.5.11a's 1[credit] per piece of ice already protecting the server — every
+/// one of which this ice is going inside of.
+///
+/// "The Runner moves to that ice and approaches it" is 6.2.8a pointed at the
+/// card this ability installed (8.5.16f), so it announces nothing; an ability
+/// that installed nothing moves nobody.
+///
+/// The third sentence is 6.1.5a from the other end. The opportunity to jack
+/// out belongs to a Runner who has PASSED a piece of ice, and this ability
+/// puts them back in front of one without a pass — so the sentence hands back
+/// what the run's structure would have given them, and withholds it in exactly
+/// 6.1.5b's case, a server they approached with no ice protecting it. The
+/// count is of approaches already made: the run's own Approach Ice Phase has
+/// not been reached when this instruction resolves, so "not the first time"
+/// is "they have approached ice this run already". "They may" names the
+/// Runner, so the Runner is who the choice is put to (1.14.5).
+pub fn mti_mwekundu() -> Card {
+    card("Mti Mwekundu: Life Improved")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.")
+        .may_when_once_per_turn(
+            runner_approaches_a_server(),
+            [
+                install_ignoring_all_costs(
+                    choose(1, &[in_hand_of(Corp), of_type(CardType::Ice)]),
+                    InstallDest::InnermostProtectingAttackedServer,
+                ),
+                move_runner_to_ice(the_card_this_ability_installed()),
+                if_met(
+                    &[
+                        approached_ice_this_run_already(),
+                        board_has(&[installed_by_this_ability()], 1),
+                    ],
+                    [performed_by(Runner, may(jack_out()))],
+                ),
+            ],
+        )
+        .named("life improved")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -477,5 +545,6 @@ pub fn identities() -> Vec<Card> {
         jinteki_restoring_humanity(),
         palana_foods(),
         tennin_institute(),
+        mti_mwekundu(),
     ]
 }

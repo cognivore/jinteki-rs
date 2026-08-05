@@ -2107,6 +2107,25 @@ pub enum InstallDest {
     /// source is not protecting a server, the destination cannot be
     /// identified and no installation takes place (8.5.14).
     InwardFromSource,
+    /// CR 6.2.2b: the **innermost** position protecting a server — the new
+    /// position is created inward from the innermost already-existing one.
+    /// This is the other end of 6.2.2's sequence from `Protecting`, which is
+    /// 6.2.2a; the CR states it as its own rule rather than as a variation on
+    /// the default, and `InwardFromSource` is the third (6.2.2c). "Unless
+    /// otherwise indicated" (8.5.2d) is the sentence a destination naming this
+    /// end is the indication for.
+    ///
+    /// The server is the ATTACKED one — 6.1.2 — because that is what "that
+    /// server" means to an ability met by the Runner approaching one (6.9.4g
+    /// approaches the attacked server), and because 4.6.8's remote servers are
+    /// created during play, so a card written before the game cannot name one.
+    /// It is the same server [`TargetFilter::InAttackedServer`] describes, and
+    /// it is read from the run the way [`InstallDest::BreachedServerRoot`]
+    /// reads the breach.
+    ///
+    /// Outside a run there is no attacked server, so no destination can be
+    /// identified and no installation takes place (8.5.14).
+    InnermostProtectingAttackedServer,
     /// Runner: the rig (8.5.4).
     Rig,
     /// Hosted on a specific card (8.5.1a). The card is installed into the

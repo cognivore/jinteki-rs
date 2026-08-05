@@ -10008,3 +10008,187 @@ fn kabonesa_wu_removes_nothing_when_her_search_installed_nothing() {
         t.tail(50)
     );
 }
+
+/// Mti Mwekundu: "Once per turn → When the Runner approaches a server, you may
+/// install 1 piece of ice from HQ in the innermost position protecting that
+/// server, ignoring all costs. The Runner moves to that ice and approaches it.
+/// If this is not the first time they have approached ice this run, they may
+/// jack out."
+///
+/// The main line: a server with one piece of ice protecting it. The Runner
+/// passes it, reaches 6.9.4g, and the identity puts a second piece of ice
+/// INSIDE the first — 6.2.2b's end of the sequence, not 8.5.2d's — and sends
+/// them back to approach it. Having already approached ice this run, they are
+/// offered the jack-out 6.1.5a would have given them for the pass they never
+/// made.
+#[test]
+fn mti_mwekundu_installs_ice_innermost_and_sends_the_runner_back_to_approach_it() {
+    let mut vm = Vm::empty(6203);
+    tk::install_identity(&mut vm, card("Mti Mwekundu: Life Improved"), Side::Corp);
+    let printed = tk::install_ice(&mut vm, tk::vanilla_ice("Outer Ice", 0, 1), ServerId::Hq, false);
+    let ambush = vm.new_object(tk::vanilla_ice("Ambush Ice", 3, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ambush);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::reaction().offering("life improved"), Reply::take("life improved"))
+            .when(Match::targets().once(), Reply::Targets(vec![ambush])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            // 6.9.4c, after passing the printed ice: the run's own offer.
+            .when(Match::of(Kind::JackOut).once(), Reply::JackOut(false))
+            // The identity's third sentence — halt on it, so the board is
+            // read from inside the ability that made it.
+            .when(Match::optional().once(), Reply::Halt)
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+
+    let (server, pos) = vm
+        .position_of_ice(ambush)
+        .unwrap_or_else(|| panic!("the ice from HQ is protecting a server: {}", t.tail(60)));
+    assert_eq!(server, ServerId::Hq, "the attacked server, not one the Corp picked: {}", t.tail(60));
+    assert_eq!(
+        vm.positions_inward_of(ServerId::Hq, pos),
+        Some(0),
+        "6.2.2b: the INNERMOST position, inward of the ice already there: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.positions_inward_of(ServerId::Hq, vm.position_of_ice(printed).unwrap().1),
+        Some(1),
+        "and the printed ice is now the outer of the two: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 5,
+        "1.16.5c: ignoring all costs pays neither the install cost nor 8.5.11a's \
+         1[credit] for the ice already protecting HQ: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.run_ctx().and_then(|r| r.position),
+        Some(pos),
+        "6.2.8a: the Runner moved to that ice: {}",
+        t.tail(60)
+    );
+    let offer = t.last().expect("the plan halted on a decision");
+    assert_eq!(offer.side, Side::Runner, "'they may jack out' is put to the RUNNER: {}", t.tail(60));
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::IceApproached { ice } if *ice == ambush)),
+        "and it is offered BEFORE the approach the move sent them to, which is why \
+         'not the first time' counts only the approaches already made: {}",
+        t.tail(60)
+    );
+}
+
+/// The other half of Mti Mwekundu's third sentence: 6.1.5b's case.
+///
+/// A server with no ice protecting it is approached at once, so the ice this
+/// identity installs is the FIRST the Runner approaches this run — and the
+/// sentence withholds the jack-out exactly there. The run still offers its
+/// own, 6.1.5b's, before the approach and 6.9.4c's after the pass; what must
+/// not appear is the ability's optional one in between.
+#[test]
+fn mti_mwekundu_offers_no_jack_out_when_the_server_had_no_ice() {
+    let mut vm = Vm::empty(6204);
+    tk::install_identity(&mut vm, card("Mti Mwekundu: Life Improved"), Side::Corp);
+    let ambush = vm.new_object(tk::vanilla_ice("Ambush Ice", 3, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ambush);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(Match::reaction().offering("life improved"), Reply::take("life improved"))
+            .when(Match::targets().once(), Reply::Targets(vec![ambush])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+
+    assert_eq!(
+        vm.position_of_ice(ambush).map(|(s, _)| s),
+        Some(ServerId::Hq),
+        "the ice went in, on a server that had none: {}",
+        t.tail(60)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::IceApproached { ice } if *ice == ambush)),
+        "and the Runner was sent back to approach it: {}",
+        t.tail(60)
+    );
+    assert!(
+        t.of_kind(Kind::Optional).is_empty(),
+        "but the identity offered them nothing to decline — this ice IS the first \
+         they have approached this run, which is 6.1.5b's case: {}",
+        t.tail(60)
+    );
+}
+
+/// And what the offer is FOR: a Runner who takes it ends the run there, on the
+/// inside of a piece of ice they never chose to face. 6.1.5 says jacking out
+/// "follows the usual process for ending the run", so the run ends before the
+/// Success Phase and HQ is never breached.
+#[test]
+fn mti_mwekundu_lets_the_runner_jack_out_of_the_ice_it_installed() {
+    let mut vm = Vm::empty(6205);
+    tk::install_identity(&mut vm, card("Mti Mwekundu: Life Improved"), Side::Corp);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Outer Ice", 0, 1), ServerId::Hq, false);
+    let ambush = vm.new_object(tk::vanilla_ice("Ambush Ice", 3, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(ambush);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::reaction().offering("life improved"), Reply::take("life improved"))
+            .when(Match::targets().once(), Reply::Targets(vec![ambush])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::of(Kind::JackOut).once(), Reply::JackOut(false))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::action(), Reply::credit()),
+    );
+
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+        "the run ended: {}",
+        t.tail(60)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+        "and it ended before the Success Phase, so HQ was never breached: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.position_of_ice(ambush).map(|(s, _)| s),
+        Some(ServerId::Hq),
+        "while the ice the identity installed is still protecting HQ, innermost, \
+         for the next run to find: {}",
+        t.tail(60)
+    );
+}
