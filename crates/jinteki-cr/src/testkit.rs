@@ -4604,6 +4604,8 @@ pub fn trash_counter_like(name: &'static str, of: Side) -> PrintedCard {
             of_types: vec![CardType::Program, CardType::Hardware],
             installed_only: true,
             while_accessed: false,
+            from_zone: None,
+            requires: Vec::new(),
         },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,
@@ -5439,6 +5441,8 @@ pub fn trash_reaction_asset(name: &'static str) -> PrintedCard {
             of_types: Vec::new(),
             installed_only: true,
             while_accessed: false,
+            from_zone: None,
+            requires: Vec::new(),
         },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,

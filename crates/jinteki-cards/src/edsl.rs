@@ -2031,6 +2031,43 @@ pub fn installs_a(side: Side, of: CardType) -> TriggerCond {
         requires: Vec::new(),
     }
 }
+/// "…you trash a card **from R&D**…" (Nuvem SA) — 8.2's trash, naming who did
+/// it (1.14.5) and the ONE zone the card left, with 9.6.5c's state
+/// stipulation beside it. Nothing is said about the card, so an agenda counts
+/// as readily as an operation.
+pub fn trashes_a_card_from(by: Side, zone: Zone, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: None,
+        by: Some(by),
+        of_types: Vec::new(),
+        installed_only: false,
+        while_accessed: false,
+        from_zone: Some(zone),
+        requires: reqs.to_vec(),
+    }
+}
+/// "Whenever **you finish resolving an operation**…" (Nuvem SA) — CR 8.6.7h's
+/// step, said by a card OTHER than the one being played: it names the player
+/// who played it (8.6.2) and describes the card in the ordinary words. Step
+/// 8.6.7g has already trashed the card by then, which is why the player is
+/// read off the occurrence and not off the card.
+pub fn finishes_resolving_a_played_card(by: Side, criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::CardPlayResolved { by, criteria: criteria.to_vec() }
+}
+/// "…you finish resolving **an action on an expendable card**" (Nuvem SA) —
+/// CR 5.2.2d's moment, which 5.2.2a puts at the end of the action step that
+/// ran the action. The description is about the CARD the action was an
+/// ability of (5.2.4); a basic action is the game's and not any card's
+/// (9.1.3), so no description reaches one.
+pub fn finishes_an_action_on(side: Side, criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::ActionCompleted { side, criteria: criteria.to_vec() }
+}
+/// "…during each of **your** turns" (Nuvem SA) — CR 9.2.1's active player.
+/// A printed ordinal counts inside whichever turn is being played, so a
+/// sentence whose span is one player's turns says this as well.
+pub fn during_the_turn_of(side: Side) -> TriggerRequirement {
+    TriggerRequirement::ActiveTurnIs(side)
+}
 /// "Whenever you trash a piece of hardware **(from any location)**…" — 8.2's
 /// trash, naming the player who does it (1.14.5) and the type of card, and
 /// deliberately NOT naming where it was trashed from.
@@ -2041,6 +2078,8 @@ pub fn trashes_a_from_anywhere(by: Side, of: CardType) -> TriggerCond {
         of_types: vec![of],
         installed_only: false,
         while_accessed: false,
+        from_zone: None,
+        requires: Vec::new(),
     }
 }
 /// "…the Runner trashes an **installed** Corp card…" (NBN: Controlling the
@@ -2054,6 +2093,8 @@ pub fn runner_trashes_an_installed_corp_card() -> TriggerCond {
         of_types: Vec::new(),
         installed_only: true,
         while_accessed: false,
+        from_zone: None,
+        requires: Vec::new(),
     }
 }
 /// "Whenever a <side> card ability causes <the other player> to spend or lose
@@ -2089,6 +2130,8 @@ pub fn trashes_the_card_being_accessed(by: Side) -> TriggerCond {
         of_types: Vec::new(),
         installed_only: false,
         while_accessed: true,
+        from_zone: None,
+        requires: Vec::new(),
     }
 }
 /// "…the Runner … trashes a Corp card" (Epiphany Analytica) — 8.2's trash,

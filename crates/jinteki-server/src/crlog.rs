@@ -459,7 +459,7 @@ mod tests {
             | GameChange::CardLookedAt { obj, .. }
             | GameChange::CardExposed { obj }
             | GameChange::CardPlayed { obj, .. }
-            | GameChange::CardPlayResolved { obj }
+            | GameChange::CardPlayResolved { obj, .. }
             | GameChange::CardUninstalled { obj, .. }
             | GameChange::CardRezzed { obj, .. }
             | GameChange::CardDerezzed { obj }

@@ -9316,7 +9316,7 @@ fn example_rule_play_ability_1() {
     assert!(t.took("play-op"), "the operation was played: {}", t.tail(10));
     let gained = change_at(&vm, |c| matches!(c, GameChange::CreditsGained { side: Side::Corp, .. }));
     let tagged = change_at(&vm, |c| matches!(c, GameChange::TagsTaken { .. }));
-    let resolved = change_at(&vm, |c| matches!(c, GameChange::CardPlayResolved { obj } if *obj == oppo));
+    let resolved = change_at(&vm, |c| matches!(c, GameChange::CardPlayResolved { obj, .. } if *obj == oppo));
     assert!(gained < tagged, "the two play abilities resolved in sequence");
     assert!(
         tagged < resolved,

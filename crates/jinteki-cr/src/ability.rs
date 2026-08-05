@@ -536,6 +536,35 @@ pub enum TriggerCond {
     /// met at that step, after the card has been trashed (8.6.7g) — which is
     /// why 9.1.8g keeps the ability active long enough to resolve.
     SelfPlayResolved,
+    /// "Whenever **you** finish resolving **an operation**…" (Nuvem SA) — the
+    /// same 8.6.7h moment [`TriggerCond::SelfPlayResolved`] reads, said by a
+    /// card OTHER than the one being played. The self-view fixes the card by
+    /// identity (1.15.4) and can say nothing else about it; this one names the
+    /// player and DESCRIBES the card, which is why it is a second atom rather
+    /// than content on the first.
+    ///
+    /// `by` is the player who played the card (8.6.2), read off the record
+    /// rather than off the card: step (g) has already trashed the operation by
+    /// the time this condition is scanned, and 1.14.1's owner is a different
+    /// question. `criteria` is what the sentence says about the card, in the
+    /// shared filter vocabulary (§12 rule 5); an empty list is a sentence
+    /// making no such stipulation.
+    CardPlayResolved { by: Side, criteria: Vec<crate::instr::TargetFilter> },
+    /// "Whenever you finish resolving **an action on an expendable card**…"
+    /// (Nuvem SA) — CR 5.2.2d's moment, when "conditions related to an action
+    /// finishing" are met, which 5.2.2a puts at the end of the action step
+    /// that ran the action.
+    ///
+    /// Deliberately NOT `GameChange::AbilityUsed`: 9.1.6 records that an
+    /// ability was USED, which happens as the action is taken and its optional
+    /// effects are carried out, and the sentence names the other end of it.
+    ///
+    /// `criteria` describes the CARD the action was an ability of — 5.2.4's
+    /// "an ability that is an action" is a card ability, so the card is what a
+    /// description can reach — asked in the shared filter vocabulary (§12
+    /// rule 5). 5.2.6/5.2.7's basic actions are the game's and not any card's
+    /// (9.1.3), so they match an empty list and nothing else.
+    ActionCompleted { side: Side, criteria: Vec<crate::instr::TargetFilter> },
     /// "Whenever this card prevents 1 or more damage…" (Guru Davinder class,
     /// 9.9.7f). Met only when the imminent damage value was greater than 0
     /// before the interrupt from the SAME source decreased or removed it.
@@ -565,12 +594,24 @@ pub enum TriggerCond {
     ///   the ACCESS it was being trashed inside of. `installed_only` is
     ///   therefore left `false` beside it, or the sentence would quietly say
     ///   something narrower than it prints.
+    /// - `from_zone` — the ONE zone the sentence names ("a card **from R&D**",
+    ///   Nuvem SA), read from the zone the card left. It is not a narrowing of
+    ///   `installed_only`: 8.1's play area is many zones and a sentence saying
+    ///   "installed" names all of them, while this one names a single zone and
+    ///   says nothing about whether it is in play.
+    /// - `requires` — 9.6.5c's state stipulation, which for this condition is
+    ///   how a printed span narrower than the turn is said ("the first time
+    ///   you trash a card from R&D during each of **your** turns"): the
+    ///   ordinal counts within whatever turn is being played, so the sentence
+    ///   also has to say whose turn it is.
     CardTrashed {
         owner: Option<Side>,
         by: Option<Side>,
         of_types: Vec<CardType>,
         installed_only: bool,
         while_accessed: bool,
+        from_zone: Option<Zone>,
+        requires: Vec<TriggerRequirement>,
     },
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
@@ -818,6 +859,17 @@ pub enum TriggerRequirement {
     /// "…if you played an operation this turn" (Nebula class) — the game
     /// history since the current turn began (1.12.6, 10.2.1).
     PlayedOperationThisTurn(Side),
+    /// "…during each of **your** turns" (Nuvem SA) — CR 9.2.1: the named
+    /// player is the ACTIVE player, the one whose turn is being played.
+    ///
+    /// A question about the present state and not about the history, which is
+    /// what separates it from `PlayedOperationThisTurn` and every other
+    /// "…this turn" requirement: those ask what happened inside the turn, this
+    /// one asks whose turn it is. It is how a printed span narrower than
+    /// [`OrdinalScope::Turn`] is said — the ordinal counts within whichever
+    /// turn is being played, so a sentence scoped to one player's turns has to
+    /// state that separately.
+    ActiveTurnIs(Side),
     /// "…if you scored this agenda this turn" (Breaking News class) — the
     /// SOURCE was scored since the turn began (1.12.6 history).
     SelfScoredThisTurn,
@@ -2675,9 +2727,39 @@ fn trigger_matches_dyn(
             // access); this arm only matches the change class.
             true
         }
-        (TriggerCond::SelfPlayResolved, GameChange::CardPlayResolved { obj }) => {
+        (TriggerCond::SelfPlayResolved, GameChange::CardPlayResolved { obj, .. }) => {
             cite!("rule_steps_playing_after_resolve_condition");
             *obj == source.id
+        }
+        (
+            TriggerCond::CardPlayResolved { by, criteria },
+            GameChange::CardPlayResolved { obj, by: player },
+        ) => {
+            cite!("rule_steps_playing_after_resolve_condition");
+            // 8.6.2's player, and §12 rule 5 for what the sentence says about
+            // the card — asked here even though step (g) has already trashed
+            // it, because the description reads the card's own
+            // characteristics and those travel with it.
+            *player == *by && matches_criteria(*obj, criteria)
+        }
+        (
+            TriggerCond::ActionCompleted { side, criteria },
+            GameChange::ActionCompleted { side: s, action },
+        ) => {
+            cite!("rule_action_completion");
+            cite!("rule_finish_action_trigger_condition");
+            *s == *side
+                && match action {
+                    // 5.2.4: an ability that is an action — the card it is on
+                    // is what a description can reach.
+                    crate::change::ActionIdentity::CardAbility(a) => {
+                        matches_criteria(a.obj, criteria)
+                    }
+                    // 9.1.3: a basic action's source is a game rule, so there
+                    // is no card for a description to be about, and only a
+                    // sentence describing none reaches it.
+                    crate::change::ActionIdentity::Basic(_) => criteria.is_empty(),
+                }
         }
         (TriggerCond::SourcePreventedDamage, GameChange::DamagePrevented { by, .. }) => {
             cite!("rule_prevent_as_trigger_condition");
@@ -2688,7 +2770,14 @@ fn trigger_matches_dyn(
             true
         }
         (
-            TriggerCond::CardTrashed { owner, by, installed_only, while_accessed, .. },
+            TriggerCond::CardTrashed {
+                owner,
+                by,
+                installed_only,
+                while_accessed,
+                from_zone,
+                ..
+            },
             GameChange::CardTrashed { obj, was_zone, by: trasher, while_accessed: wa },
         ) => {
             // 8.2.2a: only a trash that actually happened records this change.
@@ -2696,6 +2785,9 @@ fn trigger_matches_dyn(
             // which can read the trashed card's type.
             cite!("rule_cancelled_movement");
             (!*installed_only || was_zone.is_installed())
+                // The one zone the sentence names, which is the zone the card
+                // left — the same field `installed_only` reads more broadly.
+                && from_zone.is_none_or(|z| *was_zone == z)
                 // 7.1.2: the card was the one being accessed at the time.
                 && (!*while_accessed || *wa)
                 // 1.14.1: whose card it was.
@@ -2850,6 +2942,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::CorpScoresAgenda { requires, .. }
         | TriggerCond::CardInstalledBy { requires, .. }
         | TriggerCond::RunnerTrashesCorpCard { requires }
+        | TriggerCond::CardTrashed { requires, .. }
         | TriggerCond::PlayerPaysCredits { requires, .. } => requires,
         // The disjunction's requirements are the whole condition's. An
         // alternative carrying its own would be silently dropped — a

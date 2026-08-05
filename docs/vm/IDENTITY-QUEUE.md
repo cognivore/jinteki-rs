@@ -183,16 +183,6 @@ kernel words, not card patches.
   be relevant to, and the ability that changes the attacked server one step
   before 6.9.5 has no moment to fire in. *(Omar Keung: Conspiracy
   Theorist.)*
-- **Nothing is met by an ability FINISHING.** `TriggerCond::SelfPlayResolved`
-  is 8.6.7h read about the card being played — the source's own view, which is
-  why `GameChange::CardPlayResolved` names one object and no player — and
-  there is no twin for a card OTHER than the source. The other half of the
-  same sentence has no occurrence at all: "an action on an **expendable**
-  card" is a card ability that is an action (5.2.4) reaching the end of its
-  resolution, and `GameChange::AbilityUsed` records that one was USED (9.1.6),
-  which is a different moment. One printed "or" joining them makes it one
-  condition, so both halves have to be sayable before either is.
-  *(Nuvem SA: Law of the Land.)*
 - **A prohibition cannot name one card for a stated span, and none of them
   names a REZ.** `StaticDecl::CannotScoreMatching` describes the agendas that
   cannot be scored in the ordinary words — which is how Clot's "during the
@@ -232,7 +222,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **123 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **124 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -422,7 +412,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [x] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (13/19)
+## Corp — Weyland Consortium (14/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -434,7 +424,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [x] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
 - [x] **Gagarin Deep Space: Expanding the Horizon** — As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].
 - [x] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.
-- [ ] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
+- [x] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
 - [ ] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
 - [x] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
 - [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.

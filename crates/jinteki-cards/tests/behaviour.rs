@@ -10417,3 +10417,203 @@ fn chronos_protocol_ignores_meat_damage_and_names_no_grip_when_it_is_declined() 
         );
     }
 }
+
+/// Trashes the Corp made out of R&D — the occurrence Nuvem SA's second line
+/// names. Counted from the log rather than off the deck's length, which
+/// 5.6.1's mandatory draw also moves.
+fn corp_trashes_from_rnd(vm: &Vm) -> usize {
+    vm.changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardTrashed { by, was_zone, .. }
+                             if *by == Side::Corp && *was_zone == Zone::Deck(Side::Corp)))
+        .count()
+}
+
+/// Nuvem SA: Law of the Land — "Whenever you finish resolving an operation or
+/// an action on an expendable card, look at the top card of R&D. You may trash
+/// that card. / The first time you trash a card from R&D during each of your
+/// turns, gain 2[credit]."
+///
+/// The play half of the first line and the whole of the second, in one Corp
+/// turn spent on three operations. Every one of them reaches 8.6.7h and every
+/// one of them is looked at for — the looking is not what the printed "you
+/// may" governs — but only the FIRST trash is paid for, and the third is
+/// declined and takes no card at all.
+///
+/// The look count is the other assertion: playing an operation with 5.2.6e's
+/// basic action also completes an ACTION, and the sentence's second half
+/// describes a card the action is an ability of. 9.1.3 gives a basic action no
+/// card, so three operations are three looks and not six.
+#[test]
+fn nuvem_looks_at_rnd_for_each_operation_and_pays_for_the_first_trash() {
+    let mut vm = Vm::empty(6208);
+    tk::install_identity(&mut vm, card("Nuvem SA: Law of the Land"), Side::Corp);
+    let ops: Vec<_> = ["Op One", "Op Two", "Op Three"]
+        .into_iter()
+        .map(|n| {
+            let id = vm.new_object(tk::operation(n, 0, vec![]), Zone::Hand(Side::Corp));
+            vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+            id
+        })
+        .collect();
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::PlayCard(ops[0])))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::action().once(), Reply::Take(Pick::PlayCard(ops[1])))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::action().once(), Reply::Take(Pick::PlayCard(ops[2])))
+            .when(Match::optional().once(), Reply::Optional(false))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    let looks = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardLookedAt { by, .. } if *by == Side::Corp))
+        .count();
+    assert_eq!(
+        looks, 3,
+        "8.6.7h once per operation, and 5.2.2d's basic action is no card's ability: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        corp_trashes_from_rnd(&vm),
+        2,
+        "two of the three looked-at cards were trashed and the third was declined: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 2,
+        "only the FIRST trash from R&D this turn paid — the second is not 'the first time': {}",
+        t.tail(60)
+    );
+}
+
+/// Nuvem SA: Law of the Land, the action half — "…or an action on an
+/// expendable card".
+///
+/// The same [click] ability on the same asset, twice, with only the printed
+/// subtype differing: 5.2.2d's moment is reached either way and the sentence
+/// reaches only the described card. The basic credit action taken afterwards
+/// is the control on the other side — it completes an action too, and 9.1.3
+/// leaves no card for the description to be about.
+#[test]
+fn nuvem_reads_an_action_only_on_a_card_the_sentence_describes() {
+    for expendable in [true, false] {
+        let mut vm = Vm::empty(6209);
+        tk::install_identity(&mut vm, card("Nuvem SA: Law of the Land"), Side::Corp);
+        let mut button = PrintedCard::vanilla("Paper Shredder", Side::Corp, CardType::Asset);
+        button.subtypes = if expendable { vec!["Expendable"] } else { Vec::new() };
+        button.abilities = vec![jinteki_cr::ability::AbilityDef::paid(
+            jinteki_cr::ability::Cost {
+                clicks: 1,
+                ..jinteki_cr::ability::Cost::default()
+            },
+            vec![Instruction::GainCredits(Side::Corp, jinteki_cr::instr::Quantity::c(1))],
+        )
+        .labeled("shredder: [click] gain 1")];
+        tk::install_root(&mut vm, button, ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::Take(Pick::Labeled("shredder")))
+                .when(Match::optional().once(), Reply::Optional(true))
+                .when(Match::action().once(), Reply::credit())
+                .stop_at_action(),
+            Plan::runner(),
+        );
+
+        let looks = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardLookedAt { by, .. } if *by == Side::Corp))
+            .count();
+        assert_eq!(
+            looks,
+            usize::from(expendable),
+            "expendable={expendable}: 5.2.4's action is an ability OF a card, and only \
+             the described one is named — and never a basic action: {}",
+            t.tail(50)
+        );
+        assert_eq!(
+            corp_trashes_from_rnd(&vm),
+            usize::from(expendable),
+            "expendable={expendable}: R&D lost a card exactly when the ability reached it: {}",
+            t.tail(50)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if expendable { 4 } else { 2 },
+            "expendable={expendable}: the ability's 1 and the basic action's 1, plus the \
+             identity's 2 for the first trash from R&D: {}",
+            t.tail(50)
+        );
+    }
+}
+
+/// Nuvem SA: Law of the Land, the second line's span — "during each of **your**
+/// turns".
+///
+/// The same Corp card trashes the same top card of R&D, once when the Corp's
+/// turn begins and once when the Runner's does. 9.2.1's active player is the
+/// whole difference: the ordinal counts inside whichever turn is being played,
+/// so without the stipulation the Runner's turn would carry a "first time"
+/// of its own and pay for it.
+#[test]
+fn nuvem_pays_for_a_trash_from_rnd_only_during_a_corp_turn() {
+    for corp_turn in [true, false] {
+        let mut vm = Vm::empty(6210);
+        tk::install_identity(&mut vm, card("Nuvem SA: Law of the Land"), Side::Corp);
+        let whose = if corp_turn { Side::Corp } else { Side::Runner };
+        let mut miller = PrintedCard::vanilla("Auto Miller", Side::Corp, CardType::Asset);
+        miller.abilities = vec![jinteki_cr::ability::AbilityDef::conditional(
+            jinteki_cr::ability::TriggerCond::turn_begins(whose),
+            vec![Instruction::TrashCards(jinteki_cr::instr::TargetSpec::TopOfDeck {
+                side: Side::Corp,
+                count: jinteki_cr::instr::Quantity::c(1),
+            })],
+            false,
+        )
+        .labeled("auto miller: trash the top card of R&D")];
+        tk::install_root(&mut vm, miller, ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(whose);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().stop_at_action(),
+            Plan::runner().stop_at_action(),
+        );
+
+        assert_eq!(
+            corp_trashes_from_rnd(&vm),
+            1,
+            "corp_turn={corp_turn}: the card left R&D either way — the trash is the same: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if corp_turn { 2 } else { 0 },
+            "corp_turn={corp_turn}: 9.2.1 — the sentence is about the Corp's own turns: {}",
+            t.tail(40)
+        );
+    }
+}

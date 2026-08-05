@@ -401,6 +401,69 @@ pub fn weyland_because_we_built_it() -> Card {
         .build()
 }
 
+/// Nuvem SA: Law of the Land — Identity: Megacorp.
+/// "Whenever you finish resolving an operation or an action on an expendable
+///  card, look at the top card of R&D. You may trash that card.
+///  The first time you trash a card from R&D during each of your turns, gain
+///  2[credit]."
+///
+/// COMPLETE. Two printed lines, two abilities, and the first is what most
+/// often meets the second.
+///
+/// The first line's "or" joins two OCCURRENCES, so it is one condition with
+/// two alternatives (9.6.1a gives an ability one primary condition) rather
+/// than two abilities — the same reading Epiphany Analytica's "steals or
+/// trashes" gets. The halves are genuinely different moments and neither is
+/// the other: 8.6.7h is the step where "conditions related to finishing
+/// resolving" a played card are met, and 5.2.2d is where an ACTION finishing
+/// is, which 5.2.2a puts at the end of the action step that ran it. Playing
+/// an operation with 5.2.6e's basic action meets the first half only — the
+/// description on the second half is about a card, and 9.1.3 makes a basic
+/// action's source a game rule.
+///
+/// "An operation" is a description of the card played, asked of the card even
+/// though step (g) has already trashed it: a description reads the card's own
+/// characteristics and those travel with it to Archives. "You" is 8.6.2's
+/// player, read off the occurrence, because 1.14.1's owner is a different
+/// question and the card is no longer anywhere that would answer it.
+///
+/// "That card" in the second sentence is the card the first looked at (1.21.2)
+/// — named by description, so the ability offers no choice at all, there being
+/// exactly one. The printed "you may" is 9.6.9's, governing the trash alone:
+/// the looking is not optional.
+///
+/// The second line's ordinal is 9.6.5c's, and "during each of **your** turns"
+/// is the other half of it: the ordinal counts inside whichever turn is being
+/// played, so the sentence states whose turn it must be (9.2.1) as well. The
+/// zone is the one the card left, which for a card the first ability trashed
+/// off the top of R&D is R&D — so the two lines feed each other, once a turn.
+pub fn nuvem_sa() -> Card {
+    card("Nuvem SA: Law of the Land")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card.")
+        .text("The first time you trash a card from R&D during each of your turns, gain 2[credit].")
+        .when(
+            either_of(&[
+                finishes_resolving_a_played_card(Corp, &[of_type(CardType::Operation)]),
+                finishes_an_action_on(Corp, &[with_subtype("Expendable")]),
+            ]),
+            [
+                look_at(top_of_rnd(amount(1)), Corp),
+                may(trash(all_matching(&[looked_at_by_this_ability()]))),
+            ],
+        )
+        .named("law of the land")
+        .when_first_each_turn(
+            trashes_a_card_from(Corp, Zone::Deck(Corp), &[during_the_turn_of(Corp)]),
+            [gain(Corp, 2)],
+        )
+        .named("the first time you trash a card from R&D")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
@@ -418,5 +481,6 @@ pub fn identities() -> Vec<Card> {
         weyland_building_a_better_world(),
         weyland_built_to_last(),
         weyland_because_we_built_it(),
+        nuvem_sa(),
     ]
 }

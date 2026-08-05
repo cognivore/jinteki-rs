@@ -1109,11 +1109,39 @@ impl Vm {
                         self.frames.last(),
                         Some(Frame::Structure(sf)) if sf.pending_jump.is_some()
                     );
-                    if !jumped {
+                    // 5.2.2a: an action is completed ONCE. This phase is
+                    // re-entered every time the checkpoint below suspends it
+                    // — a reaction window pushes a frame, the phase is not
+                    // advanced, and the arm runs again when the window
+                    // closes — so the record has to say whether the action
+                    // has already finished. 5.2.2a is also what makes the
+                    // answer readable off the log (10.2.1): an action must be
+                    // completed before another can be initiated, so
+                    // `ActionTaken` and `ActionCompleted` alternate, and the
+                    // later of the two is which of them this action is at.
+                    // Nothing before this was met by an action finishing, so
+                    // the duplicate records were only ever counted by
+                    // `ActionsFinishedThisTurn`, whose threshold could not
+                    // tell one from two.
+                    let unfinished = self.changes.log.iter().rev().find_map(|c| match c {
+                        GameChange::ActionCompleted { .. } => Some(false),
+                        GameChange::ActionTaken { .. } => Some(true),
+                        _ => None,
+                    });
+                    if !jumped && unfinished == Some(true) {
                         cite!("rule_action_completion");
                         cite!("rule_finish_action_trigger_condition");
-                        self.changes
-                            .record(GameChange::ActionCompleted { side: self.st.turn_side });
+                        // WHICH action finished. `current_action` is set as
+                        // the action is initiated (5.2.5a/b's identity) and
+                        // cleared only when a turn begins, so while the log
+                        // says an action is unfinished it is that action.
+                        cite!("rule_same_actions");
+                        if let Some((action, _)) = self.st.current_action {
+                            self.changes.record(GameChange::ActionCompleted {
+                                side: self.st.turn_side,
+                                action,
+                            });
+                        }
                     }
                 }
                 // …and followed by a checkpoint (9.11.2).
@@ -8154,6 +8182,14 @@ impl Vm {
                         && self.st.objects.get(obj).is_some_and(|o| o.printed.card_type == CardType::Operation))
                 })
             }
+            // 9.2.1: whose turn is being played. A question about the present
+            // state, not about the turn's history — which is what lets a
+            // sentence scope itself to one player's turns while the ordinal
+            // goes on counting inside whichever turn that is.
+            R::ActiveTurnIs(side) => {
+                cite!("rule_active_player");
+                self.st.turn_side == *side
+            }
             R::SourceInDeck => {
                 cite!("rule_condition_requirements_part_of_condition");
                 source.and_then(|c| self.st.objects.get(&c)).is_some_and(|o| {
@@ -8180,7 +8216,7 @@ impl Vm {
                     .unwrap_or(0);
                 let n = log[start..]
                     .iter()
-                    .filter(|c| matches!(c, GameChange::ActionCompleted { side: s } if s == side))
+                    .filter(|c| matches!(c, GameChange::ActionCompleted { side: s, .. } if s == side))
                     .count();
                 n <= *at_most as usize
             }
@@ -11079,6 +11115,9 @@ impl Vm {
                 cite!("rule_steps_playing_complete");
                 let Some(p) = self.plays.pop() else { return };
                 let c = p.card;
+                // 8.6.2: the player playing the card, read before step (g)
+                // can move it — the same player step (d) recorded.
+                let played_by = self.st.objects[&c].printed.side;
                 let in_play_area = matches!(self.st.objects[&c].zone, Zone::PlayArea(_));
                 if in_play_area {
                     // 8.6.6c: a "not trashed until <effect>" ability keeps
@@ -11160,7 +11199,7 @@ impl Vm {
                 // (h) conditions related to finishing resolution are met —
                 // including 8.6.6d's nested conditional, created above, which
                 // this change is what meets.
-                self.changes.record(GameChange::CardPlayResolved { obj: c });
+                self.changes.record(GameChange::CardPlayResolved { obj: c, by: played_by });
             }
             Instruction::RemoveSelfFromGame => {
                 cite!("rule_play_no_trash_left_play_area");

@@ -65,7 +65,14 @@ pub enum GameChange {
     /// makes the moment an "action finishing" condition is met. Distinct
     /// from `ActionTaken`, which is 5.2.2's INITIATION: everything an action
     /// does happens between the two.
-    ActionCompleted { side: Side },
+    ///
+    /// `action` is the same 5.2.5a/b identity `ActionTaken` records, carried
+    /// here as well because a sentence naming the action that finished ("an
+    /// action on an **expendable** card", Nuvem SA) is answered at the
+    /// checkpoint scan, by which time 5.2.2a's action step is over and the
+    /// state no longer says which action ran in it. It is the same reason
+    /// [`GameChange::CardRezzed`] carries the card type.
+    ActionCompleted { side: Side, action: ActionIdentity },
     ClicksLost { side: Side, amount: u32 },
     CardDrawn { side: Side, obj: ObjectId },
     /// One record per point batch: `cards` are the simultaneous random trashes.
@@ -122,7 +129,14 @@ pub enum GameChange {
     /// CR 8.6.7d: conditions related to playing an event/operation are met.
     CardPlayed { obj: ObjectId, side: Side },
     /// CR 8.6.7h: conditions related to finishing resolving it are met.
-    CardPlayResolved { obj: ObjectId },
+    ///
+    /// `by` is the player who played the card — 8.6.2's "the player playing
+    /// the card", which is the same player [`GameChange::CardPlayed`] names at
+    /// step (d). It is recorded because a sentence saying "whenever **you**
+    /// finish resolving an operation" names one, and the card itself cannot
+    /// answer it: 8.6.7g has already trashed the operation by the time this
+    /// step is reached, and a card's OWNER (1.14.1) is not who played it.
+    CardPlayResolved { obj: ObjectId, by: Side },
     CardUninstalled { obj: ObjectId, was_zone: Zone },
     /// CR 8.1.2: a card was rezzed. The card TYPE travels with the record
     /// because "whenever you rez a piece of ice" is answered at the
