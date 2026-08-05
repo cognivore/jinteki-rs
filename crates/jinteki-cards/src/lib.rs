@@ -21,7 +21,7 @@
 pub mod decks;
 pub mod edsl;
 
-pub use decks::{all_cards, priority_decks, SOURCES};
+pub use decks::{all_cards, mezzie_decks, priority_decks, SOURCES};
 pub use edsl::{card, Card, CardBuilder};
 
 /// One deck, by name — what a deck list will ask for at cutover.
@@ -29,6 +29,11 @@ pub fn deck_named(name: &str) -> Option<Vec<Card>> {
     match name {
         "andromeda" => Some(decks::andromeda::deck()),
         "gauntlet" => Some(decks::gauntlet::deck()),
+        // Mid-queue (docs/vm/MEZZIE-QUEUE.md). Named here so a deck list can
+        // ask for them; SYS-D-12 is what keeps an unfinished one off a table,
+        // and `cr::readiness()` is where that gate lives.
+        "mezzie_asa" => Some(decks::mezzie_asa::deck()),
+        "mezzie_valencia" => Some(decks::mezzie_valencia::deck()),
         _ => None,
     }
 }

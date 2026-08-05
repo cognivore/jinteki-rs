@@ -8,6 +8,8 @@ use crate::edsl::Card;
 pub mod andromeda;
 pub mod gauntlet;
 pub mod identities;
+pub mod mezzie_asa;
+pub mod mezzie_valencia;
 pub mod unlisted;
 
 /// Every card of both decks — the deck proper, plus CR 1.5.4a's pile of
@@ -26,6 +28,8 @@ pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
     match deck {
         "andromeda" => Some(andromeda::additional_identities()),
         "gauntlet" => Some(gauntlet::additional_identities()),
+        "mezzie_asa" => Some(mezzie_asa::additional_identities()),
+        "mezzie_valencia" => Some(mezzie_valencia::additional_identities()),
         _ => None,
     }
 }
@@ -42,10 +46,32 @@ pub fn off_list_cards() -> Vec<Card> {
     vec![gauntlet::hedge_fund()]
 }
 
+/// Mezzie's two decks, as far as they are written (`docs/vm/MEZZIE-QUEUE.md`).
+///
+/// Deliberately NOT part of [`priority_decks`]: that pair is the odometer the
+/// campaign ratchets to zero partial cards, and these two are mid-queue. They
+/// are still real cards — [`all_cards`] carries them and [`crate::find`]
+/// finds them — and a card either deck shares with a finished one is the
+/// finished one, listed here and defined there.
+pub fn mezzie_decks() -> Vec<Card> {
+    let mut out = mezzie_asa::deck();
+    out.extend(mezzie_asa::additional_identities());
+    out.extend(mezzie_valencia::deck());
+    out.extend(mezzie_valencia::additional_identities());
+    out
+}
+
 /// Every card this crate carries, priority decks and all — what
 /// [`crate::find`] searches.
 pub fn all_cards() -> Vec<Card> {
     let mut out = priority_decks();
+    // Mezzie's decks reuse cards the priority decks already define, so a
+    // second copy is never carried.
+    for c in mezzie_decks() {
+        if !out.iter().any(|x| x.name() == c.name()) {
+            out.push(c);
+        }
+    }
     out.extend(unlisted::cards());
     // Definitions the deck lists decline (Hedge Fund) still exist.
     for c in off_list_cards() {
@@ -69,6 +95,8 @@ pub fn all_cards() -> Vec<Card> {
 pub const SOURCES: &[(&str, &str)] = &[
     ("andromeda.rs", include_str!("andromeda.rs")),
     ("gauntlet.rs", include_str!("gauntlet.rs")),
+    ("mezzie_asa.rs", include_str!("mezzie_asa.rs")),
+    ("mezzie_valencia.rs", include_str!("mezzie_valencia.rs")),
     ("unlisted.rs", include_str!("unlisted.rs")),
     (
         "identities/runner_criminal.rs",

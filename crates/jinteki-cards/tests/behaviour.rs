@@ -16933,3 +16933,446 @@ fn detectives_bureau_click_gains_3_or_draws_3() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Mezzie's Asa — the ice
+// ---------------------------------------------------------------------------
+
+/// Vanilla: "[subroutine] End the run."
+#[test]
+fn vanilla_ends_the_run() {
+    let mut vm = Vm::empty(9101);
+    tk::install_ice(&mut vm, card("Vanilla"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "the one printed subroutine ended the run: {}",
+        t.tail(12)
+    );
+}
+
+/// Tour Guide: "This ice gains \"[subroutine] End the run.\" for each rezzed
+/// asset."
+///
+/// The count is a 9.12.2b calculated quantity inside a STATIC ability, so it
+/// is not a number the ice was given once: 9.12.1d–e recompute effective
+/// characteristics from printed ones every time they are read. Here that is
+/// asserted directly against a real board — an unrezzed asset and a rezzed
+/// UPGRADE are both on the table and neither counts.
+#[test]
+fn tour_guide_has_one_end_the_run_per_rezzed_asset() {
+    let mut vm = Vm::empty(9102);
+    let tg = tk::install_ice(&mut vm, card("Tour Guide"), ServerId::Hq, true);
+    assert_eq!(
+        vm.current_subs(tg).len(),
+        0,
+        "no rezzed asset, no subroutines — the printed card has none of its own"
+    );
+
+    tk::install_root(&mut vm, tk::vanilla_asset("First Asset", 1, 2), ServerId::Remote(1), true);
+    assert_eq!(vm.current_subs(tg).len(), 1, "9.8.3d: one rezzed asset, one gained subroutine");
+
+    tk::install_root(&mut vm, tk::vanilla_asset("Second Asset", 1, 2), ServerId::Remote(2), true);
+    assert_eq!(vm.current_subs(tg).len(), 2, "two rezzed assets, two gained subroutines");
+
+    // Neither of these is "a rezzed asset": one is an asset that is not
+    // rezzed, the other is rezzed but is not an asset.
+    tk::install_root(&mut vm, tk::vanilla_asset("Hidden Asset", 1, 2), ServerId::Remote(3), false);
+    tk::install_root(&mut vm, tk::vanilla_upgrade("Some Upgrade", 1), ServerId::Hq, true);
+    assert_eq!(
+        vm.current_subs(tg).len(),
+        2,
+        "still two: an unrezzed asset and a rezzed upgrade are neither of them a rezzed asset"
+    );
+}
+
+/// Tour Guide, on a board: with no rezzed asset the Runner walks past it, and
+/// with one the run ends.
+///
+/// The rez happens INSIDE the run — in the paid ability window 6.9.2b opens
+/// while the ice is approached — so the ice had nothing at all when the run
+/// began, and the subroutine the Runner faces at 6.9.3c exists only because
+/// the count was read again after the board changed. A lingering effect
+/// created at rez time could not do this: 9.10.1 would have fixed the number
+/// then and there.
+#[test]
+fn tour_guide_re_reads_the_count_during_the_run() {
+    for rez_mid_run in [false, true] {
+        let mut vm = Vm::empty(9103);
+        let tg = tk::install_ice(&mut vm, card("Tour Guide"), ServerId::Hq, true);
+        let asset =
+            tk::install_root(&mut vm, tk::vanilla_asset("Gift Shop", 1, 2), ServerId::Remote(1), false);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Runner);
+        assert_eq!(
+            vm.current_subs(tg).len(),
+            0,
+            "the ice starts the run with nothing to resolve (rez_mid_run={rez_mid_run})"
+        );
+
+        let mut corp = Plan::corp();
+        if rez_mid_run {
+            corp = corp.when(Match::paid().approaching_ice().once(), Reply::Take(Pick::Rez(asset)));
+        }
+        let t = plan::play(
+            &mut vm,
+            corp,
+            Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&asset].faceup, rez_mid_run,
+            "the asset was rezzed exactly when the plan rezzed it (rez_mid_run={rez_mid_run}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.current_subs(tg).len(),
+            usize::from(rez_mid_run),
+            "the subroutine list is re-read, not remembered (rez_mid_run={rez_mid_run}): {}",
+            t.tail(20)
+        );
+        let ended =
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. }));
+        assert_eq!(
+            ended, rez_mid_run,
+            "the run ends exactly when the rez gave the ice a subroutine to resolve \
+             (rez_mid_run={rez_mid_run}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Tour Guide, the other direction: the count SHRINKS when a rezzed asset
+/// leaves the board, and 9.8.3d takes the last-gained subroutine back first.
+///
+/// The asset is trashed the way the Runner really trashes one — accessed on a
+/// run and paid for (7.1.5) — so nothing about the board is manufactured, and
+/// the very next run walks through the ice that stopped them a moment ago.
+#[test]
+fn tour_guide_loses_a_subroutine_when_the_asset_is_trashed() {
+    let mut vm = Vm::empty(9110);
+    let tg = tk::install_ice(&mut vm, card("Tour Guide"), ServerId::Hq, true);
+    tk::install_root(&mut vm, tk::vanilla_asset("Gift Shop", 1, 2), ServerId::Remote(1), true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+    assert_eq!(vm.current_subs(tg).len(), 1, "one rezzed asset, one gained subroutine");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access(), Reply::trash_accessed())
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.current_subs(tg).len(),
+        0,
+        "the asset is gone, so the subroutine it was paying for is gone: {}",
+        t.tail(24)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "and the run on HQ that followed met no subroutine at all: {}",
+        t.tail(24)
+    );
+}
+
+/// Drafter: "[subroutine] You may add 1 card from Archives to HQ."
+/// "[subroutine] You may install 1 card from Archives or HQ, ignoring all
+/// costs."
+///
+/// The install is the interesting half: 8.5.11a charges the Corp 1[credit]
+/// for each piece of ice already protecting the destination server, and the
+/// Corp here has nothing at all — so a card that lands anyway is 1.16.5c's
+/// "ignoring all costs" observed rather than assumed.
+#[test]
+fn drafter_recovers_from_archives_and_installs_ignoring_all_costs() {
+    let mut vm = Vm::empty(9104);
+    tk::install_ice(&mut vm, card("Drafter"), ServerId::Rnd, true);
+    // A remote already protected by two pieces of ice: installing a third
+    // there normally costs 2[credit].
+    tk::install_ice(&mut vm, tk::vanilla_ice("Outer Guard", 1, 1), ServerId::Remote(1), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Inner Guard", 1, 1), ServerId::Remote(1), false);
+    let recovered = vm.new_object(tk::corp_filler("Recovered Card"), Zone::Discard(Side::Corp));
+    let buried_ice = vm.new_object(tk::vanilla_ice("Buried Ice", 4, 4), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().extend([recovered, buried_ice]);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // Both subroutines print "you may", which is 9.6.9d's optional
+            // part inside the instruction: the Corp says yes twice.
+            .when(Match::optional(), Reply::Optional(true))
+            .when(Match::targets().once(), Reply::target(recovered))
+            .when(Match::targets().once(), Reply::target(buried_ice))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1))),
+            ),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Rnd)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&recovered].zone,
+        Zone::Hand(Side::Corp),
+        "the first subroutine moved a card from Archives to HQ: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&buried_ice].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "the second subroutine installed a card out of Archives: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 0,
+        "1.16.5c: 8.5.11a's 2[credit] for the two pieces of ice already there was ignored: {}",
+        t.tail(24)
+    );
+}
+
+/// Vertigo: "[subroutine] The Runner loses [click]."
+///
+/// PARTIAL — the "when passed" sentence is unsayable (see the card's doc
+/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
+/// the marker cannot quietly disappear.
+#[test]
+fn vertigo_subroutine_takes_a_click_off_the_runner() {
+    let vertigo = jinteki_cards::find("Vertigo").expect("Vertigo is in the card layer");
+    assert_eq!(
+        vertigo.unimplemented,
+        vec!["When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9105);
+    tk::install_ice(&mut vm, card_partial("Vertigo"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    let allotted = vm.st.runner.allotted_clicks;
+    assert!(allotted >= 2, "5.6.1: the Runner's turn allots clicks to lose");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.runner.clicks,
+        allotted - 2,
+        "1.11.3b: one click spent on the run action, one LOST to the subroutine: {}",
+        t.tail(14)
+    );
+}
+
+/// Fairchild 3.0: "[subroutine] The Runner must pay 3[credit] or trash 1 of
+/// their installed cards." — printed twice.
+///
+/// CR 9.12.3c is the whole of it: the Runner must choose an option that can
+/// be **fully resolved**. A Runner with credits and an empty rig has exactly
+/// one such option and pays; a Runner who cannot afford 3 has exactly one and
+/// trashes.
+///
+/// PARTIAL — the bioroid break ability is unsayable (see the card's doc
+/// comment and MEZZIE-QUEUE.md's Blockers).
+#[test]
+fn fairchild_3_0_subroutines_are_a_mandatory_choice() {
+    let fairchild = jinteki_cards::find("Fairchild 3.0").expect("Fairchild 3.0 is in the card layer");
+    assert_eq!(
+        fairchild.unimplemented,
+        vec!["<strong>Lose [click][click][click]:</strong> Break up to 3 subroutines on this ice. Only the Runner can use this ability."],
+        "exactly one printed line is still unsayable"
+    );
+
+    // Rich, empty rig: only "pay 3[credit]" is fully resolvable, twice.
+    let mut vm = Vm::empty(9106);
+    tk::install_ice(&mut vm, card_partial("Fairchild 3.0"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::options(), Reply::ChooseNamed("end the run")),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.runner.credits, 1,
+        "7 − 3 − 3: nothing installed, so 9.12.3c left only the payment: {}",
+        t.tail(24)
+    );
+
+    // Poor, one installed card: only the trash is fully resolvable, and the
+    // SECOND subroutine then has no resolvable option at all — 9.12.3c says
+    // such an ability does nothing, so the 2[credit] survives.
+    let mut vm = Vm::empty(9107);
+    tk::install_ice(&mut vm, card_partial("Fairchild 3.0"), ServerId::Hq, true);
+    let prog = tk::install_rig(&mut vm, tk::vanilla_runner_card("Sacrifice", CardType::Program));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::options(), Reply::ChooseNamed("end the run")),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&prog].zone,
+        Zone::Discard(Side::Runner),
+        "2[credit] cannot pay 3, so the only fully resolvable option was the trash: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 2,
+        "9.12.3c: with nothing left to trash and 3[credit] unaffordable, the second \
+         subroutine did nothing at all: {}",
+        t.tail(24)
+    );
+}
+
+/// Fairchild 3.0: "[subroutine] Do 1 core damage or end the run."
+///
+/// The sentence names no player, so 1.14.4 leaves the choice with the
+/// ability's controller — the Corp — which is the whole difference from the
+/// two subroutines above.
+#[test]
+fn fairchild_3_0_lets_the_corp_pick_damage_or_the_end_of_the_run() {
+    for corp_ends_it in [false, true] {
+        let mut vm = Vm::empty(9108);
+        tk::install_ice(&mut vm, card_partial("Fairchild 3.0"), ServerId::Hq, true);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        // Nothing installed and nothing to spend: 9.12.3c empties the first
+        // two subroutines, leaving the third the only one that speaks.
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let option = if corp_ends_it { "end the run" } else { "do 1 core damage" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::options(), Reply::ChooseNamed(option)),
+            Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+        );
+        let ended =
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. }));
+        assert_eq!(
+            ended, corp_ends_it,
+            "the run ends exactly when the Corp chose that branch (corp_ends_it={corp_ends_it}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.runner.core_damage,
+            u32::from(!corp_ends_it),
+            "the core damage lands exactly when the Corp chose that branch \
+             (corp_ends_it={corp_ends_it}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Tatu-Bola: "When the Runner passes this ice, you may swap it with a piece
+/// of ice from HQ. If you do, gain 4[credit]. (The new ice is installed
+/// unrezzed. You do not pay an install cost.)"
+///
+/// The Runner has to actually pass it, which means breaking the printed
+/// subroutine first — an unrezzed piece of ice has no active abilities at all
+/// (9.1.7), so there is no shortcut. 8.8.4a/b is the parenthetical: the card
+/// that arrives from HQ takes the vacated position without the 8.5.16 install
+/// procedure and enters the play area the way a Corp card enters it, unrezzed.
+///
+/// "If you do" is asked as well as told: with no ice in HQ there is nothing to
+/// swap with, and the 4[credit] must not arrive.
+#[test]
+fn tatu_bola_trades_places_with_hq_and_only_then_gains_four() {
+    for ice_in_hq in [true, false] {
+        let mut vm = Vm::empty(9109);
+        let tatu = tk::install_ice(&mut vm, card("Tatu-Bola"), ServerId::Hq, true);
+        tk::install_rig(&mut vm, tk::break_button("Breaker"));
+        let understudy = ice_in_hq.then(|| {
+            let o = vm.new_object(tk::vanilla_ice("Understudy", 3, 3), Zone::Hand(Side::Corp));
+            vm.st.hand.get_mut(&Side::Corp).unwrap().push(o);
+            o
+        });
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        // 9.6.9c: the printed "you may" is the Corp's, offered as a reaction
+        // window option once the Runner has passed the ice.
+        let mut corp = Plan::corp()
+            .when(Match::reaction().offering("trade places"), Reply::take("trade places"))
+            .when(Match::optional(), Reply::Optional(true));
+        if let Some(u) = understudy {
+            corp = corp.when(Match::targets().once(), Reply::target(u));
+        }
+        let t = plan::play(
+            &mut vm,
+            corp,
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Hq))
+                .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("break"))
+                .when(Match::sub_targets().once(), Reply::SubroutineNamed("[sub]"))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if ice_in_hq { 4 } else { 0 },
+            "the gain follows the swap and nothing else (ice_in_hq={ice_in_hq}): {}",
+            t.tail(28)
+        );
+        if let Some(u) = understudy {
+            assert_eq!(
+                vm.st.objects[&tatu].zone,
+                Zone::Hand(Side::Corp),
+                "Tatu-Bola went to HQ: {}",
+                t.tail(28)
+            );
+            assert_eq!(
+                vm.st.objects[&u].zone,
+                Zone::Ice(ServerId::Hq),
+                "and the piece of ice from HQ took its position: {}",
+                t.tail(28)
+            );
+            assert!(
+                !vm.st.objects[&u].faceup,
+                "8.8.4a: the new ice is installed unrezzed: {}",
+                t.tail(28)
+            );
+        } else {
+            assert_eq!(
+                vm.st.objects[&tatu].zone,
+                Zone::Ice(ServerId::Hq),
+                "with nothing in HQ to swap with, Tatu-Bola stayed put: {}",
+                t.tail(28)
+            );
+        }
+    }
+}

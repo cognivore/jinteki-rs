@@ -1,6 +1,6 @@
 # Mezzie's two decks — the card queue
 
-User-mandated, after the 150-identity campaign. Two decks, 99 cards, **41 distinct
+User-mandated, after the 150-identity campaign. Two decks, 99 cards, **37 distinct
 cards left to write**. Both identities are already complete (they came out of
 the identity queue), so this is cards only.
 
@@ -66,17 +66,17 @@ Identity is COMPLETE. Printed text below is from
       "Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run."
 - [ ] **Manegarm Skunkworks** ×1 — upgrade · cost 2, trash 3
       "Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."
-- [ ] **Tatu-Bola** ×1 — ice · Barrier · cost 2, str 1
+- [x] **Tatu-Bola** ×1 — ice · Barrier · cost 2, str 1
       "When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. <em>(The new ice is installed unrezzed. You do not pay an install cost.)</em> / [subroutine] End the run."
-- [ ] **Vanilla** ×3 — ice · Barrier · cost 0, str 0
+- [x] **Vanilla** ×3 — ice · Barrier · cost 0, str 0
       "[subroutine] End the run."
 - [ ] **Fairchild 3.0** ×2 — ice · Code Gate - Bioroid - AP · cost 6, str 5
       "Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] Do 1 core damage or end the run."
 - [ ] **Vertigo** ×1 — ice · Code Gate · cost 1, str 1
       "When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run. / [subroutine] The Runner loses [click]."
-- [ ] **Drafter** ×2 — ice · Sentry · cost 3, str 3
+- [x] **Drafter** ×2 — ice · Sentry · cost 3, str 3
       "[subroutine] You may add 1 card from Archives to HQ. / [subroutine] You may install 1 card from Archives or HQ, ignoring all costs."
-- [ ] **Tour Guide** ×3 — ice · Sentry · cost 2, str 0
+- [x] **Tour Guide** ×3 — ice · Sentry · cost 2, str 0
       "This ice gains "[subroutine] End the run." for each rezzed asset."
 
 ---
@@ -139,4 +139,70 @@ Identity is COMPLETE.
 Never approximated. A card that needs one of these is left unticked with the
 word it wants named here, exactly as the identity queue did it.
 
-(none recorded yet)
+Each entry is a GENERAL capability (ARCHITECTURE §12): thresholds, polarity,
+scope and windows are content on one atom, never a new atom per card. The
+"wants it" line names the cards that ran into it, for whoever picks it up.
+
+### An ability that names its controller (CR 1.14.4)
+
+1.14.4 says the controller of an ability is "**by default**" the controller of
+its source, and that a player can only use abilities they control. The kernel
+has no way to depart from that default: `Vm::paid_window_options` offers a
+card's paid abilities to its controller and to nobody else, so a Corp card
+whose ability says "Only the Runner can use this ability" would hand the
+Runner's ability to the Corp.
+
+Wanted: the ability itself carrying WHICH player controls it, as one optional
+field on `AbilityDef` (an absent value being 1.14.4's default). That is one
+position with the player as content, and it covers the whole bioroid class in
+both directions at once — including any future card that hands the Corp an
+ability printed on a Runner card.
+
+Wants it: **Fairchild 3.0** (the "Lose [click][click][click]: Break up to 3
+subroutines on this ice" ability; the three subroutines are done).
+
+### A "cannot" that names an act other than scoring or rezzing (CR 9.10.1 / 1.2.2)
+
+`LingeringSpec::Prohibit` takes a list of acts, but `ProhibitedAction` has two
+variants — `Score` and `Rez`. A sentence forbidding anything else has nothing
+to say "cannot" about, and 1.2.2 gives a "cannot" precedence over every
+permission, so getting it wrong is not a small error.
+
+Wanted: the same one atom with the rest of the acts a card can forbid as
+content — stealing (7.5), trashing (7.1.5 / 1.19.4), advancing, installing,
+drawing, running — added as variants of `ProhibitedAction` rather than as new
+prohibition atoms.
+
+Wants it: **Vertigo** ("they cannot steal or trash Corp cards for the
+remainder of this run").
+
+### A quantity that reads a player's click pool (CR 1.11)
+
+The `Quantity` selector language has no term for the clicks in a player's
+click pool, so a requirement about how many a player has left cannot be
+stated — neither "if they have no [click] remaining" nor any threshold on the
+other side of it.
+
+Wanted: one selector for the pool, read the way `CreditsInPoolOf(Side)` reads
+the credit pool, with the side as content; the existing `at_least`/`at_most`
+supply the threshold and the polarity.
+
+Wants it: **Vertigo** (same sentence as above — it needs both this and the
+prohibition).
+
+### A swap whose two sides are described SEPARATELY (CR 8.8.1 / 8.8.2 / 1.15.4)
+
+NOT blocking any card, but wanted, and found here. `Instruction::SwapCards`
+takes a target spec per side, but its 8.8.2 candidate filter ("only cards each
+of which may occupy the other's location") looks for the partner inside the
+*same* description — so it can express "swap 2 installed pieces of ice" and
+cannot express "swap **it** with a piece of ice from HQ", where one side is
+fixed by 1.15.4 and the other is chosen from a different zone. Written the
+short way the swap finds no partner and silently does nothing.
+
+Wanted: the 8.8.2 filter reading a side that announces nothing from the
+position itself, so fixed/chosen and fixed/fixed swaps work like
+chosen/chosen. Until then the sentence is written long-hand as one instruction
+that announces the partner and then exchanges it with this card — same
+instruction, same announcement, same windows — and **Tatu-Bola** is ticked and
+tested on that shape, annotated in its doc comment.

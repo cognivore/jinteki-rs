@@ -2231,6 +2231,14 @@ pub fn played_operation_this_turn(side: Side) -> TriggerRequirement {
 pub fn gain_clicks(side: Side, n: u32) -> Instruction {
     Instruction::GainClicks(side, Quantity::c(n as i64))
 }
+/// "The Runner loses [click]." (1.11.3b — losing clicks is not SPENDING
+/// them, and a player with none left simply stays at zero: the instruction
+/// still resolves.) The polarity is the whole difference from
+/// [`gain_clicks`], so the two are one word said twice and not one atom
+/// each.
+pub fn lose_clicks(side: Side, n: u32) -> Instruction {
+    Instruction::LoseClicks(side, Quantity::c(n as i64))
+}
 /// "Identify your mark." (CR 10.11.2.) The parenthetical every card printing
 /// this sentence carries — "if you don't have a mark, a random central server
 /// becomes your mark for this turn" — is 1.4's reminder text: it restates
@@ -3512,6 +3520,13 @@ pub fn per_hosted_counter(kind: CounterKind) -> Quantity {
 pub fn per_card(f: TargetFilter) -> Quantity {
     Quantity::Count(vec![f])
 }
+/// "for each **rezzed asset**" — the same count when the description takes
+/// more than one word. The criteria stack the way they do everywhere else:
+/// written beside each other they mean *all* of them, so this is the plural
+/// of [`per_card`] and not a second kind of amount.
+pub fn per_card_matching(criteria: &[TargetFilter]) -> Quantity {
+    Quantity::Count(criteria.to_vec())
+}
 /// "N for each …" — scale a quantity.
 pub fn times(n: i64, q: Quantity) -> Quantity {
     Quantity::Times(n, Box::new(q))
@@ -4098,6 +4113,27 @@ pub fn gains_subroutine(
         before,
         any_order: false,
         duration,
+    }
+}
+/// "This ice gains \"[subroutine] …\" for each <amount>." (Ashigaru class;
+/// CR 9.8.3d.) A STATIC declaration, not an instruction: nothing resolves and
+/// nothing lingers, so the count is re-read continuously through the 9.12.1
+/// characteristics pipeline and the ice has exactly as many of these
+/// subroutines as the amount says AT THE MOMENT IT IS ASKED — which is what
+/// makes an asset rezzed or trashed mid-encounter change the list the Runner
+/// still has to face (9.8.4b: newly gained subroutines arrive unbroken).
+///
+/// 9.8.3d also fixes where they sit and which one goes first when the count
+/// shrinks: after the printed subroutines, in the order they were gained,
+/// losing the last one first. The card states no order, so no 9.8.2c
+/// declaration is asked for.
+pub fn gains_subroutines(
+    count: Quantity,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> StaticDecl {
+    StaticDecl::GainSubroutines {
+        sub: Box::new(AbilityDef::subroutine(instrs.into_iter().collect())),
+        count,
     }
 }
 /// "Swap 2 installed pieces of ice." (Tāo Salonga class; 8.8.1/8.8.2.) Each
