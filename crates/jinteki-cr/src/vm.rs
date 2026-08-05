@@ -4432,6 +4432,18 @@ impl Vm {
                     .and_then(|o| o.printed.cost)
                     .unwrap_or(0) as i64
             }
+            // 1.16.4a + 1.15.4: the printed rez cost of a card this ability
+            // announced — same inherent number as the arm above, read off
+            // the back-reference instead of the encounter.
+            Q::RezCostOfEarlierTarget { nth } => {
+                cite!("rule_inherent_rez_cost");
+                cite!("rule_target_beyond_move");
+                self.ability_targets()
+                    .get(*nth)
+                    .and_then(|t| self.st.objects.get(t))
+                    .and_then(|o| o.printed.cost)
+                    .unwrap_or(0) as i64
+            }
             // 1.17.2: the agenda points PRINTED on the described cards. Read
             // from the printed card so a forfeited agenda — already in the
             // removed-from-game zone by 8.2.5 — still answers.
@@ -4649,9 +4661,17 @@ impl Vm {
                 self.expected_atoms(inner, controller, targets, source)
             }
             Instruction::Combined(list) => {
+                // 9.11.3: one sentence, one instruction — the merged set is
+                // every half's atoms in printed order, each stamped with its
+                // half so resolution can apply them at the half's own place
+                // in that order.
                 let mut out = Vec::new();
-                for i in list {
-                    out.extend(self.expected_atoms(i, controller, targets, source));
+                for (k, i) in list.iter().enumerate() {
+                    let mut atoms = self.expected_atoms(i, controller, targets, source);
+                    for a in &mut atoms {
+                        a.combined_half = Some(k);
+                    }
+                    out.extend(atoms);
                 }
                 out
             }
@@ -9266,7 +9286,12 @@ impl Vm {
                 // `Combined` is how the card layer says so (Snare!'s "do 3
                 // net damage and give the Runner 1 tag" is one instruction,
                 // so one interrupt window sees both). It works by merging the
-                // sub-instructions' expected atoms into one imminent set.
+                // sub-instructions' expected atoms into one imminent set,
+                // each atom stamped with the half that expected it; the
+                // halves' choices were made when THIS instruction announced
+                // (1.15.2 — `Instruction::contains` classifies them inline),
+                // which is what lets a half's back-reference read a card its
+                // other half chose (Blue Sun's "its rez cost").
                 //
                 // 9.11.4's exceptions (a-g) are plays/installs/accesses,
                 // choose-then-act, nested costs, searches, look/reveal and
@@ -9275,104 +9300,159 @@ impl Vm {
                 // 9.11.4a for that and it does not say it (9.11.4a is about
                 // sentences that are not instructions at all).
                 //
-                // That merge can only carry a sub-instruction whose effect IS
-                // a value: a STRUCTURAL atom carries none, so the merged set
-                // has nothing to resolve from and the sub-instruction used to
-                // be silently dropped (Earthrise Hotel's "remove 1 hosted
-                // power counter and draw 2 cards" removed nothing). Those
-                // sub-instructions cannot ride the merge, so they are
-                // spliced in after this one rather than dropped.
+                // Each half is applied at its own place in printed order:
+                //  - a half whose atoms carry a VALUE or TARGETS is applied
+                //    from those atoms directly;
+                //  - a §9.2.2e procedure half is spliced in after this
+                //    instruction, because 9.11.4b makes it an instruction of
+                //    its own and it announces from inside its step expansion;
+                //  - a half whose atoms carry neither (a structural atom has
+                //    no value; a trash atom with no targets describes cards
+                //    the half picks for itself when it resolves — a sabotage
+                //    puts the choice to the Corp at 10.12.2) is applied as
+                //    part of THIS instruction when its resolution asks no
+                //    Decision (`AddCardsToHand` — the `IfMet` shape), and
+                //    spliced otherwise: an instruction that suspends on a
+                //    Decision needs the frame machinery a spliced
+                //    instruction gets, and losing the rest of the sentence
+                //    to its suspension would be worse than the splice.
                 //
-                // DEVIATION: a spliced sub-instruction resolves AFTER every
-                // merged one, so printed order is not preserved between the
-                // two kinds. Nothing in the corpus distinguishes them; a card
-                // that did would want its sentence written as two
-                // instructions deliberately.
-                //
-                // A sub-instruction that CHOOSES its own targets is spliced
-                // for the same reason: the merge carries the targets this
-                // instruction announced, and a `TargetSpec::Choose` position
-                // inside a merged sub has none of its own, so it would
-                // resolve to nothing at all (the defect class of W14b's
-                // `MoveToDeck`). Spliced, it is 9.11.3's own instruction and
-                // announces its targets where 1.15.2 puts them.
+                // DEVIATION (narrowed): a SPLICED half resolves after every
+                // directly-applied one and behind an instruction boundary
+                // 9.11.3 does not print, so printed order and the single
+                // checkpoint are preserved only for the halves applied here.
+                // Its announcements are no longer deferred with it. Once a
+                // spliced half is present, the halves after it are spliced
+                // too, so order among the halves the splice reaches is kept
+                // (Multifarious Marketeer reveals BEFORE adding to the grip).
                 cite!("rule_instructions_in_ability_text");
                 cite!("rule_instruction_sentence_exceptions");
-                let deferred: Vec<Instruction> = list
-                    .iter()
-                    .filter(|i| {
-                        if i.chooses_targets() {
-                            return true;
-                        }
-                        let atoms =
-                            self.expected_atoms(i, controller, &imm.targets, Some(source.obj));
-                        // The merge applies an atom from its VALUE and its
-                        // TARGETS and nothing else. An atom carrying neither
-                        // has nothing for the merge to carry: a structural
-                        // atom has no value, and a trash atom with no targets
-                        // describes cards the sub-instruction picks for
-                        // itself when it resolves — a sabotage puts the
-                        // choice to the Corp (10.12.2), "trash this card"
-                        // means its own source (9.1.4). Both used to be
-                        // silently dropped, which is the same defect class
-                        // the paragraph above records for Earthrise Hotel.
-                        !atoms.is_empty()
-                            && atoms.iter().all(|a| {
-                                a.class == EffectClass::Structural
-                                    || (a.class == EffectClass::TrashCards && a.targets.is_empty())
-                            })
-                    })
-                    .cloned()
-                    .collect();
+                enum HalfAct {
+                    Merge,
+                    Inline,
+                    Skip,
+                }
+                let mut acts: Vec<HalfAct> = Vec::with_capacity(list.len());
+                let mut deferred: Vec<Instruction> = Vec::new();
+                let mut splice_seen = false;
+                for (k, half) in list.iter().enumerate() {
+                    if half.expands_into_steps() {
+                        deferred.push(half.clone());
+                        splice_seen = true;
+                        acts.push(HalfAct::Skip);
+                        continue;
+                    }
+                    let mut live = imm
+                        .atoms
+                        .iter()
+                        .filter(|a| a.combined_half == Some(k) && a.occurs_at_resolution())
+                        .peekable();
+                    if live.peek().is_none() {
+                        // 9.9.2 removed its expected effects, or prevention
+                        // emptied them: this half does nothing.
+                        acts.push(HalfAct::Skip);
+                        continue;
+                    }
+                    let rides_merge = live.any(|a| {
+                        !(a.class == EffectClass::Structural
+                            || (a.class == EffectClass::TrashCards && a.targets.is_empty()))
+                    });
+                    if rides_merge {
+                        acts.push(HalfAct::Merge);
+                    } else if !splice_seen && matches!(half, Instruction::AddCardsToHand { .. }) {
+                        acts.push(HalfAct::Inline);
+                    } else {
+                        deferred.push(half.clone());
+                        splice_seen = true;
+                        acts.push(HalfAct::Skip);
+                    }
+                }
                 if !deferred.is_empty() {
                     if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                         let at = af.idx + 1;
-                        for (k, ins) in deferred.into_iter().enumerate() {
-                            af.instructions.insert(at + k, ins);
+                        for (j, ins) in deferred.into_iter().enumerate() {
+                            af.instructions.insert(at + j, ins);
                         }
                     }
                 }
-                // Combined instructions carry heterogeneous atoms; apply each.
-                for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
-                    match a.class {
-                        EffectClass::Damage(kind) => {
-                            self.do_damage(kind, a.value as u32, controller)
+                for (k, half) in list.iter().enumerate() {
+                    match acts[k] {
+                        HalfAct::Skip => {}
+                        HalfAct::Inline => {
+                            let half_atoms: Vec<EffectAtom> = imm
+                                .atoms
+                                .iter()
+                                .filter(|a| a.combined_half == Some(k))
+                                .cloned()
+                                .collect();
+                            let sub = ImminentWrap {
+                                counter_targets: Vec::new(),
+                                instr: half.clone(),
+                                atoms: half_atoms,
+                                controller,
+                                targets: imm.targets.clone(),
+                                target_spans: imm.target_spans.clone(),
+                                sub_targets: imm.sub_targets.clone(),
+                                run_ordinal: imm.run_ordinal.clone(),
+                                turn_ordinal: imm.turn_ordinal.clone(),
+                                seq: imm.seq,
+                            };
+                            self.apply_imminent(sub, controller, source, source_moved);
                         }
-                        EffectClass::TakeTags => {
-                            let n = a.value as u32;
-                            self.st.runner.tags += n;
-                            self.changes.record(GameChange::TagsTaken { amount: n });
-                        }
-                        EffectClass::GainCredits => {
-                            let n = a.value.max(0) as u32;
-                            self.st.player_mut(a.side).credits += n;
-                            self.changes.record(GameChange::CreditsGained {
-                                side: a.side,
-                                amount: n,
-                                source: Some(source.obj),
-                            });
-                        }
-                        EffectClass::LoseCredits => {
-                            let have = self.st.player(a.side).credits;
-                            let n = (a.value.max(0) as u32).min(have);
-                            self.st.player_mut(a.side).credits -= n;
-                            self.changes.record(GameChange::CreditsLost {
-                                side: a.side,
-                                amount: n,
-                                source: Some(source.obj),
-                            });
-                        }
-                        EffectClass::Draw => self.draw_cards(a.side, a.value.max(0) as u32, false),
-                        EffectClass::TrashCards => {
-                            for t in a.targets.clone() {
-                                self.trash_card(t, controller);
+                        HalfAct::Merge => {
+                            let half_atoms: Vec<EffectAtom> = imm
+                                .atoms
+                                .iter()
+                                .filter(|a| {
+                                    a.combined_half == Some(k) && a.occurs_at_resolution()
+                                })
+                                .cloned()
+                                .collect();
+                            for a in &half_atoms {
+                                match a.class {
+                                    EffectClass::Damage(kind) => {
+                                        self.do_damage(kind, a.value as u32, controller)
+                                    }
+                                    EffectClass::TakeTags => {
+                                        let n = a.value as u32;
+                                        self.st.runner.tags += n;
+                                        self.changes.record(GameChange::TagsTaken { amount: n });
+                                    }
+                                    EffectClass::GainCredits => {
+                                        let n = a.value.max(0) as u32;
+                                        self.st.player_mut(a.side).credits += n;
+                                        self.changes.record(GameChange::CreditsGained {
+                                            side: a.side,
+                                            amount: n,
+                                            source: Some(source.obj),
+                                        });
+                                    }
+                                    EffectClass::LoseCredits => {
+                                        let have = self.st.player(a.side).credits;
+                                        let n = (a.value.max(0) as u32).min(have);
+                                        self.st.player_mut(a.side).credits -= n;
+                                        self.changes.record(GameChange::CreditsLost {
+                                            side: a.side,
+                                            amount: n,
+                                            source: Some(source.obj),
+                                        });
+                                    }
+                                    EffectClass::Draw => {
+                                        self.draw_cards(a.side, a.value.max(0) as u32, false)
+                                    }
+                                    EffectClass::TrashCards => {
+                                        for t in a.targets.clone() {
+                                            self.trash_card(t, controller);
+                                        }
+                                    }
+                                    EffectClass::EndTheRun => {
+                                        self.end_the_run();
+                                        return;
+                                    }
+                                    _ => {}
+                                }
                             }
                         }
-                        EffectClass::EndTheRun => {
-                            self.end_the_run();
-                            return;
-                        }
-                        _ => {}
                     }
                 }
             }

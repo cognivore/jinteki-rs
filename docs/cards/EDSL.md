@@ -509,7 +509,12 @@ look/reveal (e), and option choices (g). Effects being of *different classes*
 is not one of them — Snare!'s "give the Runner 1 tag and do 3 net damage" is
 tag + damage in one instruction, and that is the case `Combined` exists for.
 
-`combined(…)` handles a structural half correctly: it cannot ride the atom
-merge, so it is spliced in after (annotated deviation — the spliced half
-resolves after the merged one, so printed order is not preserved between the
-two kinds).
+`combined(…)` announces every half's choices before any of the sentence
+resolves (1.15.2), so a later half's back-reference — "add 1 rezzed card to HQ
+and gain credits equal to **its** rez cost" — reads the card an earlier half
+chose. A half the atom merge cannot carry is applied at its own place in
+printed order when its resolution asks no decision of a player; one that does
+ask (a sabotage's division, an install's step sequence) is spliced in after
+the sentence instead, along with the halves printed after it (annotated
+deviation, narrowed — the splice now defers only resolution order, never an
+announcement).

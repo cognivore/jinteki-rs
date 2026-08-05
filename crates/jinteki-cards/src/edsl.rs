@@ -1278,14 +1278,18 @@ pub fn resolve_when_scored_ability_of(source: TargetSpec) -> Instruction {
 // ---- the sentences built out of other sentences ---------------------------
 
 /// Several effects in ONE printed sentence: "Gain 4[credit] **and** draw 3
-/// cards." (9.11.4a.)
+/// cards." (9.11.3/9.11.4a.)
 ///
-/// Use this only where the effects would AGGREGATE (9.12.2c) — same class,
-/// one occurrence. Effects of different classes in one sentence are two
-/// instructions resolved in order: pass them as two list items instead. The
-/// kernel resolves a `Combined` by walking its effect ATOMS, and an effect
-/// with no value-carrying atom (removing counters, say) is dropped silently
-/// if it is put here.
+/// One sentence is one instruction whatever the classes of its effects —
+/// Snare!'s "do 3 net damage and give the Runner 1 tag" is the case this
+/// exists for — so writing an "X and Y" sentence as two list items invents a
+/// checkpoint, a reaction window and an interrupt window the card does not
+/// print (see `docs/cards/EDSL.md`). A half that chooses its own targets
+/// announces them with the sentence's other choices, before any of it
+/// resolves (1.15.2), so a later half's back-reference ("its rez cost") reads
+/// the card an earlier half chose. A §9.2.2e procedure half (an install, a
+/// play, a trace) is 9.11.4b's own instruction and resolves after the merged
+/// ones, as do the halves printed after it.
 pub fn combined(instrs: impl IntoIterator<Item = Instruction>) -> Instruction {
     Instruction::Combined(instrs.into_iter().collect())
 }
@@ -3363,6 +3367,13 @@ pub fn encounters_ice_rezzed_on_its_approach() -> TriggerCond {
 /// of the encounter in progress.
 pub fn rez_cost_of_the_encountered_ice() -> Quantity {
     Quantity::RezCostOfEncounteredIce
+}
+/// "…gain credits equal to **its** rez cost." (Blue Sun) — the printed cost
+/// of a card this ability chose, [`earlier_choice`] asked for a number. `nth`
+/// is 0-based over the ability's announcements in order, so a sentence whose
+/// other half chose one card reads it at 0.
+pub fn rez_cost_of_earlier_choice(nth: usize) -> Quantity {
+    Quantity::RezCostOfEarlierTarget { nth }
 }
 /// "…it gains **code gate** for the remainder of this run." (Rielle "Kit"
 /// Peddler class; 2.16.5 counts instances, so a granted subtype coexists with

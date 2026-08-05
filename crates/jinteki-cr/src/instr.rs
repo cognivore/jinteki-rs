@@ -107,6 +107,15 @@ pub enum Quantity {
     /// ability still has one, and the sentence still names it. Outside an
     /// encounter there is no ice to read and the quantity is 0 (9.12.2e).
     RezCostOfEncounteredIce,
+    /// CR 1.16.4a + 1.15.4: "…gain credits equal to **its** rez cost" (Blue
+    /// Sun) — [`TargetSpec::EarlierTarget`] asked for a number instead of a
+    /// card, exactly as [`Quantity::RezCostOfEncounteredIce`] is
+    /// [`TargetSpec::EncounteredIce`] asked for one. `nth` is 0-based over
+    /// the ability's announcements in order, and the announcement 1.15.2
+    /// puts before imminence is what makes the number readable while the
+    /// same sentence's other half has yet to move the card. Printed cost,
+    /// as ever; no such target reads 0 (9.12.2e).
+    RezCostOfEarlierTarget { nth: usize },
     /// CR 9.9.6: "the number of cards you would draw" (The Class Act) — the
     /// modifiable value the IMMINENT instruction currently expects for
     /// effects of this class, read by an ability resolving in the interrupt
@@ -1210,12 +1219,19 @@ impl Instruction {
     pub fn contains(&self) -> Contained<'_> {
         match self {
             // 9.11.4a: several effects in ONE instruction (Snare!'s "do 3 net
-            // damage and give the Runner 1 tag"). Their VALUES merge into
-            // this instruction's expected effects, so they carry the targets
-            // it announced and choose nothing themselves; a sub-instruction
-            // that does choose its own targets is 9.11.3's separate
-            // instruction and is spliced out to announce them.
-            Instruction::Combined(list) => Contained::Deferred(list.iter().collect()),
+            // damage and give the Runner 1 tag"). The halves resolve as part
+            // of THIS instruction, so 1.15.2 puts their announcements here —
+            // which is what lets a half's back-reference ("gain credits equal
+            // to **its** rez cost", Blue Sun) read a card its other half
+            // chose: the choice is made before the sentence becomes imminent,
+            // not after part of it has resolved. The exception is a §9.2.2e
+            // procedure half (9.11.4b splits several plays/installs into
+            // instructions of their own), which expands into its own step
+            // sequence and announces from inside it, exactly as
+            // `DeclineableChoice` defers one below.
+            Instruction::Combined(list) => {
+                Contained::Inline(list.iter().filter(|i| !i.expands_into_steps()).collect())
+            }
             // 1.14.5: the wrapper only names who chooses; the choices are the
             // wrapped instruction's, made here.
             Instruction::PerformedBy { instr, .. } => Contained::Inline(vec![instr]),

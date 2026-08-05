@@ -92,6 +92,12 @@ pub struct EffectAtom {
     /// CR 9.9.7b: "prevent all X" removes the atom entirely; we keep a
     /// tombstone so nothing remains to modify.
     pub removed: bool,
+    /// CR 9.11.3: which half of a `Combined` sentence expected this atom.
+    /// The merged set carries every half's atoms in printed order; the index
+    /// is what lets resolution apply each half's own atoms at the half's own
+    /// place in that order, instead of walking the set blind. `None` outside
+    /// a `Combined`.
+    pub combined_half: Option<usize>,
 }
 
 impl EffectAtom {
@@ -107,6 +113,7 @@ impl EffectAtom {
             side,
             targets: Vec::new(),
             removed: false,
+            combined_half: None,
         }
     }
 

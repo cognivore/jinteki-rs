@@ -10792,6 +10792,98 @@ fn nuvem_pays_for_a_trash_from_rnd_only_during_a_corp_turn() {
 }
 
 // ---------------------------------------------------------------------------
+// The identity queue — CR 9.11.3's one sentence, with a back-reference
+// across its "and"
+// ---------------------------------------------------------------------------
+
+/// Blue Sun: "When your turn begins, you may add 1 rezzed card to HQ and
+/// gain credits equal to its rez cost."
+///
+/// One sentence, one instruction (9.11.3): the card is announced before any
+/// of the sentence resolves (1.15.2), which is what lets the second half's
+/// "its" (1.15.4) read the card the first half chose. Two rezzed cards with
+/// different printed rez costs are the assertion that the gain reads the
+/// CHOSEN one; the unrezzed asset is the assertion that "rezzed" (8.1.2)
+/// bites at the announcement; and the printed number is 1.16.4a's inherent
+/// cost, not a record of a payment — the ice was rezzed by the testkit for
+/// nothing and its cost is still what the sentence pays. Declining moves
+/// nothing and gains nothing.
+#[test]
+fn blue_sun_adds_a_rezzed_card_to_hq_and_gains_its_printed_rez_cost() {
+    for accept in [true, false] {
+        let mut vm = Vm::empty(25123);
+        tk::install_identity(&mut vm, card("Blue Sun: Powering the Future"), Side::Corp);
+        let cheap =
+            tk::install_root(&mut vm, tk::vanilla_asset("Cheap Asset", 2, 2), ServerId::Remote(1), true);
+        let dear = tk::install_ice(&mut vm, tk::etr_ice("Dear Wall", 5, 1), ServerId::Hq, true);
+        let hidden =
+            tk::install_root(&mut vm, tk::vanilla_asset("Hidden Asset", 3, 2), ServerId::Remote(2), false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let corp = if accept {
+            Plan::corp()
+                .when(
+                    Match::reaction().offering("powering the future"),
+                    Reply::take("powering the future"),
+                )
+                .when(Match::targets().once(), Reply::Targets(vec![dear]))
+                .stop_at_action()
+        } else {
+            // 9.6.9: declining is not taking the offered reaction at all.
+            Plan::corp().stop_at_action()
+        };
+        let t = plan::play(&mut vm, corp, Plan::runner());
+
+        if accept {
+            let announce = t
+                .entries
+                .iter()
+                .find(|e| e.kind() == Kind::Targets)
+                .unwrap_or_else(|| panic!("no target announcement: {}", t.tail(16)));
+            assert!(
+                announce.candidates().contains(&cheap) && announce.candidates().contains(&dear),
+                "both rezzed cards are candidates: {:?}",
+                announce.candidates()
+            );
+            assert!(
+                !announce.candidates().contains(&hidden),
+                "8.1.2: an unrezzed card is not a rezzed one: {:?}",
+                announce.candidates()
+            );
+            assert_eq!(
+                vm.st.objects[&dear].zone,
+                Zone::Hand(Side::Corp),
+                "the chosen card was added to HQ: {}",
+                t.tail(16)
+            );
+            assert_eq!(
+                vm.st.objects[&cheap].zone,
+                Zone::Root(ServerId::Remote(1)),
+                "the card the Corp did not choose stayed where it was: {}",
+                t.tail(16)
+            );
+            assert_eq!(
+                vm.st.corp.credits,
+                5,
+                "1.15.4/1.16.4a: the gain is the CHOSEN card's printed rez cost: {}",
+                t.tail(16)
+            );
+        } else {
+            assert_eq!(
+                vm.st.objects[&dear].zone,
+                Zone::Ice(ServerId::Hq),
+                "nothing moved on a decline: {}",
+                t.tail(16)
+            );
+            assert_eq!(vm.st.corp.credits, 0, "and nothing was gained: {}", t.tail(16));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The identity queue — CR 9.9's "would be declared successful"
 // ---------------------------------------------------------------------------
 

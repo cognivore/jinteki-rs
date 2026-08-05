@@ -464,6 +464,46 @@ pub fn nuvem_sa() -> Card {
         .build()
 }
 
+/// Blue Sun: Powering the Future — Identity: Corp.
+/// "When your turn begins, you may add 1 rezzed card to HQ and gain credits
+///  equal to its rez cost."
+///
+/// COMPLETE. One sentence, so one instruction (9.11.3): the "and" is
+/// `combined`, and splitting it would invent a checkpoint, a reaction window
+/// and an interrupt window the card does not print. The "you may" governs the
+/// whole of it (9.6.9), which is `may_when`.
+///
+/// "1 rezzed card" is 8.1.2's installed faceup Corp card — the identity
+/// itself is never installed — and it is a TARGET: chosen by the Corp and
+/// announced where 1.15.2 puts every announcement, before the sentence
+/// resolves. That is what makes "its" readable at all: 1.15.4's
+/// back-reference asked for a number (`rez_cost_of_earlier_choice`, the
+/// pointing twin of Nasir's encountered-ice quantity) reads the announced
+/// card while the sentence's first half has yet to move it.
+///
+/// The rez cost is the card's printed, inherent cost (1.16.4a) — not a record
+/// of what the Corp once paid for the rez, and not 0 because the card will be
+/// unrezzed by the time it sits in HQ: the number is read off the announced
+/// card, and printed numbers travel with it. "Add" is 8.2.1a's non-movement,
+/// an ordinary move to HQ.
+pub fn blue_sun() -> Card {
+    card("Blue Sun: Powering the Future")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.")
+        .may_when(
+            turn_begins(Corp),
+            [combined([
+                add_to_hand(choose(1, &[rezzed()])),
+                gain_q(Corp, rez_cost_of_earlier_choice(0)),
+            ])],
+        )
+        .named("powering the future")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
@@ -482,5 +522,6 @@ pub fn identities() -> Vec<Card> {
         weyland_built_to_last(),
         weyland_because_we_built_it(),
         nuvem_sa(),
+        blue_sun(),
     ]
 }

@@ -35,15 +35,6 @@ through — `git log` is where the history lives.
 Still wanted by identities other than the ones named, in every case: these are
 kernel words, not card patches.
 
-- **A sentence joined by "and" cannot refer to the card its own other half
-  chose.** 9.11.3 makes such a sentence ONE instruction, and `Combined` says
-  so by merging its halves' expected atoms — but a half that CHOOSES its own
-  targets cannot ride that merge, so it is spliced out to announce them where
-  1.15.2 puts them, which is AFTER the merged half has resolved. "Add 1
-  rezzed card to HQ and gain credits equal to its rez cost" therefore gains
-  the credits before the card has moved, and 1.15.4's "its" reads nothing at
-  all. Writing it as two instructions is the other wrong answer: it invents
-  the checkpoint 9.11.3 charges for. *(Blue Sun: Powering the Future.)*
 - **Nothing modifies the NUMBER of tags the Runner is considered to have.**
   `Instruction::GainTags` and `RemoveTags` move the real count, and
   `Quantity::RunnerTags` and `TriggerRequirement::RunnerTagsAtLeast` read it —
@@ -157,8 +148,10 @@ kernel words, not card patches.
   which is what a sentence handing one card to each player needs.
   *(Steve Cambridge: Master Grifter; AU Co.: The Gold Standard in Clones,
   whose "trash 1 of those cards and add THE REST to HQ" is the same words
-  about the cards an earlier instruction looked at — and, being one sentence
-  joined by "and", it wants the Blue Sun entry above settled as well.)*
+  about the cards an earlier instruction looked at. Its "and" no longer
+  waits on anything: a `Combined` announces every half's choices before the
+  sentence resolves, and an `AddCardsToHand` half is applied at its own
+  place in printed order.)*
 - **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
   trash-a-resource action pays its click and its 2[credit] and only THEN
   announces the resource, so an additional cost stated about *which* resource
@@ -192,7 +185,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **128 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **129 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -382,13 +375,13 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [x] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (14/19)
+## Corp — Weyland Consortium (15/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
 - [x] **Argus Security: Protection Guaranteed** — Whenever the Runner steals an agenda, they must take 1 tag or suffer 2 meat damage.
 - [ ] **BANGUN: When Disaster Strikes** — You may install agendas faceup. (This does not make their abilities active.) Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.
-- [ ] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
+- [x] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
 - [ ] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
 - [x] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.
 - [x] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
