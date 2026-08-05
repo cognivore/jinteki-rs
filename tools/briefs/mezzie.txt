@@ -1,0 +1,109 @@
+You are implementing cards for Mezzie's two decks, in the EMBEDDED DSL.
+
+WORK IN: /Users/sweater/Github/jinteki/jinteki-rs-mezzie
+That is a git worktree on branch `cards/mezzie-decks`.
+
+=== READ THIS TWICE: YOU ARE NOT ALONE IN THIS REPOSITORY ===
+
+There are TWENTY-PLUS other worktrees on this repo right now, several of them
+LOCKED, every one of them with a live agent doing work that is not yours:
+game timing, card-database consolidation, UX, a dozen Corp identities. Their
+work is not committed yet. If you destroy it, it is gone — there is no copy.
+
+FORBIDDEN. Not "discouraged" — forbidden, and none of them is ever necessary
+to write a card:
+
+  * `git stash` in ANY form. The stash is REPO-GLOBAL, shared by every
+    worktree. `git stash` hides someone else's uncommitted work; `git stash
+    pop` applies someone else's work into your tree. There is already a stash
+    entry that predates you and must be left exactly where it is. If your
+    tree is dirty and you need it clean, COMMIT — you are on your own branch
+    and commits are free.
+  * `git worktree remove`, `git worktree prune`, `git branch -d`/`-D`,
+    `git gc`, `git reflog expire`. Every one of these can take another
+    agent's branch or worktree with it.
+  * `git checkout` / `git switch` to any branch that is not
+    `cards/mezzie-decks`, and `-f` on anything.
+  * `git reset --hard`, `git clean -fd` anywhere except on files YOU created
+    in THIS worktree in THIS run.
+  * `git push` — landing this branch is the coordinator's job, not yours.
+  * `pkill`, `kill`, or anything that stops a process you did not start.
+  * Editing, reading-then-writing, or `cd`-ing to write in ANY path outside
+    /Users/sweater/Github/jinteki/jinteki-rs-mezzie. In particular
+    /Users/sweater/Github/jinteki/jinteki-rs (the main checkout) and
+    .claude/worktrees/* are OFF LIMITS for writes.
+
+Reading other paths is fine — the card database and the CR live outside this
+worktree and you are expected to read them.
+
+THE BASE WILL MOVE UNDER YOU. Other agents land on `main` while you work,
+and a consolidation of the card database into the Rust crates is expected.
+If your wave started before that lands, do not fight it: finish your cards,
+commit, and SAY SO in your report. Rebasing onto the new base is the
+coordinator's job. Never merge `main` into this branch yourself, and never
+resolve a conflict in a file you did not edit.
+
+READ FIRST, in this order:
+  1. docs/vm/MEZZIE-QUEUE.md   — the queue, with printed text and checkboxes
+  2. docs/cards/EDSL.md        — the vocabulary you are allowed to use
+  3. docs/vm/ARCHITECTURE.md §12 — the rules you cannot break
+  4. crates/jinteki-cards/src/decks/andromeda.rs and gauntlet.rs — the pattern
+
+SOURCES OF TRUTH.
+  - Card text: ~/Github/jinteki/netrunner-cards-json  (NOT your memory)
+    READ it; never write to it, and never hard-code a path to it in Rust.
+    A consolidation of card data into the crates is expected to land while
+    this campaign runs, and code that reaches outside the workspace for card
+    text would break the moment it does. Printed text belongs in the card
+    function as `.text(...)` — a literal you copied — and nowhere else.
+  - Rules:     docs/rules/cr-index.json (CR v26.03, indexed and greppable),
+               and ~/Downloads/Netrunner Comprehensive Rules (v26.03).html
+    ALWAYS CONSULT THE RULES. Cite them with cite!("rule_...") where the
+    kernel needs a citation, and name them in doc comments and test messages.
+
+THE BAR — a card is DONE when all three hold:
+  1. The function exists in the right module, built from the PUBLIC DSL
+     vocabulary, carrying `.text(...)` for every printed sentence.
+  2. It carries NO `.unimplemented(...)`.
+  3. It has a behaviour test in crates/jinteki-cards/tests/behaviour.rs that
+     drives the card in a real VM and asserts what the PRINTED SENTENCE says
+     happens. Not that it parses. Not that a field is set. What the sentence
+     promises, observed on a board.
+
+NON-NEGOTIABLE (ARCHITECTURE §12):
+  - No card names in the kernel vocabulary. Ever. If a card needs a new
+    kernel word, the word is GENERAL — thresholds, polarity, scope and
+    windows are CONTENT on one atom, not new atoms per card.
+  - A sentence the vocabulary cannot say yet is NOT approximated. Leave the
+    card unticked, keep `.unimplemented(<the exact sentence>)`, and add the
+    kernel word it wants to the Blockers section of MEZZIE-QUEUE.md, stated
+    as a general capability and not as "make card X work".
+  - CR 9.11.3: ONE SENTENCE IS ONE INSTRUCTION. "Do X and Y" is a single
+    instruction with two effects, NOT two instructions. 9.11.4a-g are the
+    only exceptions. This mistake has been made twice in this repo and there
+    is a guard test (`an_and_sentence_is_one_instruction_not_two`) pinning it.
+  - Every assertion carries a message a human can read. `tools/assess-drift.sh`
+    ratchets the count of message-less assertions and it must never grow.
+
+MODULES:
+  crates/jinteki-cards/src/decks/mezzie_asa.rs        (Corp — Asa Group)
+  crates/jinteki-cards/src/decks/mezzie_valencia.rs   (Runner — Valencia)
+Create them if absent, register in decks/mod.rs, and add each card to the
+module's `deck()` in printed order as you write it. A card already
+implemented by an earlier deck is REUSED — never write a second copy of a
+card that already exists (`jinteki_cards::find` will show you).
+
+YOUR RUN — do ONLY the cards named in the wave instruction you were given.
+Not more. When they are done:
+  1. `nix develop --command cargo test --workspace`
+     Capture the exit code DIRECTLY. Never `| tail`, never `| grep` — a pipe
+     returns the LAST command's status and will hide a failing build. Write
+     to a log and read the log.
+  2. Tick those cards' boxes in docs/vm/MEZZIE-QUEUE.md.
+  3. Commit, on the branch, with a message that says which CR rules decided
+     the hard calls. One commit for the wave.
+  4. Stop. Do not start the next wave.
+
+If a card turns out to be blocked, say so plainly in your final message and
+in the Blockers section — a blocked card reported honestly is worth more
+than a card that looks done and lies.
