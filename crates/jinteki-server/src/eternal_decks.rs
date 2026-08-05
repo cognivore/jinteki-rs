@@ -19,6 +19,7 @@ use crate::carddata;
 use crate::cr::{self, DeckSpec};
 use crate::db::new_token;
 use crate::eternal;
+use jinteki_cr::object::{PrintedCard, Side};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -82,10 +83,10 @@ pub fn is_builtin_key(key: &str) -> bool {
     builtin_spec(key).is_some()
 }
 
-fn side_key(side: jinteki_cr::object::Side) -> &'static str {
+fn side_key(side: Side) -> &'static str {
     match side {
-        jinteki_cr::object::Side::Corp => "corp",
-        jinteki_cr::object::Side::Runner => "runner",
+        Side::Corp => "corp",
+        Side::Runner => "runner",
     }
 }
 
@@ -299,6 +300,206 @@ pub fn delete(conn: &Connection, key: &str, owner_id: &str) -> WriteOutcome {
     }
 }
 
+// ── the deck→table seam ────────────────────────────────────────────────────
+//
+// A lobby seat stores a deck KEY; a game needs printed cards. The resolver
+// is the only place a key becomes a deck, and CR 1.4.2 stands at its door:
+// "Each deck must meet all requirements in this section to be legal for
+// play" — an illegal user deck is refused a table, with the same problems
+// the builder shows. Built-in keys resolve through `cr::expand`, the exact
+// expansion the stock setup has always used, so the defaults' behaviour is
+// unchanged by construction. `cr::setup_from(corp, runner, seed)` then turns
+// two resolved decks into the VM's `GameSetup`.
+
+/// A deck key resolved to what a table seats: printed cards, one per copy.
+#[derive(Debug)]
+pub struct TableDeck {
+    pub key: String,
+    /// Display name (built-ins: the Mezzie names; user decks: their own).
+    pub name: String,
+    pub side: Side,
+    pub identity: PrintedCard,
+    pub cards: Vec<PrintedCard>,
+    /// CR 1.5.4a additional identities. Runner decks bring the eternal-
+    /// filtered pile (built-ins their spec's, user decks the generalised
+    /// one); Corp decks bring none — 1.5.4a's pile is the Runner's.
+    pub pile: Vec<PrintedCard>,
+}
+
+/// Why a key did not become a deck. `to_json()` is the wire shape the lobby
+/// turns into its ws error frame.
+#[derive(Debug)]
+pub enum DeckRefusal {
+    /// No such deck for this account (or a key shaped like nothing).
+    NotFound { key: String },
+    /// Saved but not legal — CR 1.4.2 refuses it a table. The problems are
+    /// the validator's, exactly as the deck builder shows them.
+    Illegal { key: String, problems: Vec<eternal::Problem> },
+    /// A card the engine cannot seat (defensive: the validator already
+    /// reports these as `unsupported` problems, so this fires only on
+    /// drift between the catalog and the card layer).
+    Unbuildable { key: String, missing: Vec<String> },
+    /// The deck's side is not the seat's side.
+    WrongSide {
+        key: String,
+        want: &'static str,
+        got: &'static str,
+    },
+}
+
+impl DeckRefusal {
+    /// `{"error":"deck-refused","reason":…,"key":…,"message":…}` with
+    /// `problems` attached when the reason is `illegal` — the payload a
+    /// lobby error frame carries so the seat can say WHY, not just no.
+    pub fn to_json(&self) -> Value {
+        match self {
+            DeckRefusal::NotFound { key } => json!({
+                "error": "deck-refused",
+                "reason": "not-found",
+                "key": key,
+                "message": format!("no deck under the key {key:?} for this account"),
+            }),
+            DeckRefusal::Illegal { key, problems } => json!({
+                "error": "deck-refused",
+                "reason": "illegal",
+                "key": key,
+                "message": "this deck is not legal for play (CR 1.4.2) — fix the listed problems first",
+                "problems": problems,
+            }),
+            DeckRefusal::Unbuildable { key, missing } => json!({
+                "error": "deck-refused",
+                "reason": "unbuildable",
+                "key": key,
+                "message": format!("the engine cannot seat: {}", missing.join(", ")),
+            }),
+            DeckRefusal::WrongSide { key, want, got } => json!({
+                "error": "deck-refused",
+                "reason": "wrong-side",
+                "key": key,
+                "message": format!("this seat plays {want} and the deck {key:?} is a {got} deck"),
+            }),
+        }
+    }
+}
+
+/// A built-in key as a table deck — `cr::expand`, today's stock expansion,
+/// wrapped in the resolver's shape. Refuses only on side mismatch or on an
+/// incomplete card layer (the same condition the SYS-D-12 readiness gate
+/// reports with its richer payload; this is the backstop for callers that
+/// reach the resolver directly).
+pub fn resolve_builtin(key: &str, want: Side) -> Result<TableDeck, DeckRefusal> {
+    let Some(spec) = builtin_spec(key) else {
+        return Err(DeckRefusal::NotFound { key: key.into() });
+    };
+    if spec.side != want {
+        return Err(DeckRefusal::WrongSide {
+            key: key.into(),
+            want: side_key(want),
+            got: side_key(spec.side),
+        });
+    }
+    let missing: Vec<String> = jinteki_cards::deck_named(spec.key)
+        .unwrap_or_default()
+        .iter()
+        .filter(|c| !c.is_complete())
+        .map(|c| c.name().to_string())
+        .collect();
+    if !missing.is_empty() {
+        return Err(DeckRefusal::Unbuildable { key: key.into(), missing });
+    }
+    let (cards, identity, pile) = cr::expand(spec);
+    let Some(identity) = identity else {
+        return Err(DeckRefusal::Unbuildable {
+            key: key.into(),
+            missing: vec!["its identity card".into()],
+        });
+    };
+    Ok(TableDeck {
+        key: spec.key.into(),
+        name: spec.display_name.into(),
+        side: spec.side,
+        identity,
+        cards,
+        pile,
+    })
+}
+
+/// THE seam: a seat's chosen deck key, resolved for its table. Built-in
+/// keys are everyone's; a `user-<id>` key must belong to `owner_id`. A user
+/// deck is validated here and an illegal one refused (CR 1.4.2) with the
+/// builder's own problems, so the lobby can surface exactly what the deck
+/// screen shows. Every seated card is engine-complete by construction: the
+/// validator's `unsupported` check ran, and the build step double-checks.
+pub fn resolve_for_table(
+    conn: &Connection,
+    key: &str,
+    owner_id: &str,
+    want: Side,
+) -> Result<TableDeck, DeckRefusal> {
+    if is_builtin_key(key) {
+        return resolve_builtin(key, want);
+    }
+    let row = row_id_of(key)
+        .and_then(|row_id| get_owned(conn, row_id, owner_id))
+        .ok_or_else(|| DeckRefusal::NotFound { key: key.into() })?;
+    let verdict = eternal::validate(&row.identity, &row.cards);
+    if !verdict.legal {
+        return Err(DeckRefusal::Illegal { key: key.into(), problems: verdict.problems });
+    }
+    // Legal ⇒ the identity resolves, every card resolves and is supported;
+    // anything else below is catalog/card-layer drift, reported not paniced.
+    let mut missing: Vec<String> = Vec::new();
+    let mut seat = |id: &str| -> Option<PrintedCard> {
+        let title = match carddata::by_nsg_id(id) {
+            Some(c) => c.title.as_str(),
+            None => {
+                missing.push(id.to_string());
+                return None;
+            }
+        };
+        match jinteki_cards::find(title).filter(|c| c.is_complete()) {
+            Some(c) => Some(c.printed),
+            None => {
+                missing.push(title.to_string());
+                None
+            }
+        }
+    };
+    let identity = seat(&row.identity);
+    let mut cards: Vec<PrintedCard> = Vec::new();
+    for (id, qty) in &row.cards {
+        if let Some(printed) = seat(id) {
+            for _ in 0..*qty {
+                cards.push(printed.clone());
+            }
+        }
+    }
+    if !missing.is_empty() {
+        return Err(DeckRefusal::Unbuildable { key: key.into(), missing });
+    }
+    let identity = identity.expect("missing is empty, so the identity seated");
+    if identity.side != want {
+        return Err(DeckRefusal::WrongSide {
+            key: key.into(),
+            want: side_key(want),
+            got: side_key(identity.side),
+        });
+    }
+    let pile = match want {
+        // CR 1.5.4a: the pile is the Runner's, generalised for user decks.
+        Side::Runner => eternal::runner_identity_pile(identity.name),
+        Side::Corp => Vec::new(),
+    };
+    Ok(TableDeck {
+        key: key.into(),
+        name: row.name,
+        side: want,
+        identity,
+        cards,
+        pile,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,5 +599,124 @@ mod tests {
             cards: BTreeMap::new(),
         };
         assert!(matches!(update(&conn, "andromeda", &user, &draft), WriteOutcome::Builtin));
+    }
+
+    // ── the deck→table seam ────────────────────────────────────────────────
+
+    /// Built-in keys resolve to exactly the stock expansion — same counts,
+    /// same identity, same eternal-filtered pile (no Boris) — and refuse
+    /// the wrong seat.
+    #[test]
+    fn builtin_keys_resolve_unchanged() {
+        let runner = resolve_builtin("andromeda", Side::Runner).expect("stock deck resolves");
+        assert_eq!(runner.name, "Mezzie's Andromeda");
+        assert_eq!(runner.identity.name, "Andromeda: Dispossessed Ristie");
+        assert_eq!(runner.cards.len(), 45, "the printed list, by copies");
+        assert!(!runner.pile.is_empty());
+        assert!(
+            !runner.pile.iter().any(|c| c.name.starts_with("Boris")),
+            "the eternal pile filter holds through the resolver"
+        );
+        let corp = resolve_builtin("gauntlet", Side::Corp).expect("stock deck resolves");
+        assert_eq!(corp.cards.len(), 49);
+        assert!(corp.pile.is_empty(), "CR 1.5.4a: the pile is the Runner's");
+        assert!(matches!(
+            resolve_builtin("andromeda", Side::Corp),
+            Err(DeckRefusal::WrongSide { .. })
+        ));
+        let setup = cr::setup_from(corp, runner, 11);
+        assert_eq!(setup.corp_deck.len(), 49);
+        assert_eq!(setup.runner_deck.len(), 45);
+        assert!(setup.corp_identity.is_some() && setup.runner_identity.is_some());
+    }
+
+    /// A saved LEGAL user deck starts: the table's cards match the stored
+    /// map (counts and identity), and a Runner deck brings the generalised
+    /// CR 1.5.4a pile — cross-faction, eternally filtered, never itself.
+    #[test]
+    fn a_saved_legal_user_deck_reaches_the_table() {
+        let (db, user) = setup();
+        let conn = db.blocking_lock();
+
+        // Corp: a saved copy of the (legal) Gauntlet list.
+        let (identity, cards) = builtin_cards(&cr::GAUNTLET);
+        let draft = EternalDraft { name: "my stars".into(), identity, cards: cards.clone() }
+            .checked()
+            .unwrap();
+        let key = create(&conn, &user, &draft).unwrap()["key"].as_str().unwrap().to_string();
+        let table = resolve_for_table(&conn, &key, &user, Side::Corp).expect("legal deck seats");
+        assert_eq!(table.name, "my stars");
+        assert_eq!(table.identity.name, "Nebula Talent Management: Making Stars");
+        assert_eq!(table.cards.len() as u32, cards.values().sum::<u32>());
+        for (id, qty) in &cards {
+            let title = carddata::by_nsg_id(id).unwrap().title.as_str();
+            let seated = table.cards.iter().filter(|c| c.name == title).count();
+            assert_eq!(seated as u32, *qty, "{title} arrives in its stored count");
+        }
+        assert!(table.pile.is_empty(), "a Corp deck brings no 1.5.4a pile");
+
+        // Runner: a saved copy of the Andromeda list gets the pile.
+        let (identity, cards) = builtin_cards(&cr::ANDROMEDA);
+        let draft = EternalDraft { name: "my ristie".into(), identity, cards }
+            .checked()
+            .unwrap();
+        let rkey = create(&conn, &user, &draft).unwrap()["key"].as_str().unwrap().to_string();
+        let rtable = resolve_for_table(&conn, &rkey, &user, Side::Runner).expect("legal deck seats");
+        assert_eq!(rtable.cards.len(), 45);
+        assert!(!rtable.pile.is_empty());
+        assert!(!rtable.pile.iter().any(|c| c.name.starts_with("Boris")), "no Rebirth into Boris");
+        assert!(
+            !rtable.pile.iter().any(|c| c.name == rtable.identity.name),
+            "1.5.4: identities OTHER than the selected one"
+        );
+        assert!(
+            rtable.pile.iter().any(|c| c.name == "Chaos Theory: W\u{fc}nderkind"),
+            "the user-deck pile crosses factions (Rebirth narrows it itself)"
+        );
+
+        // The pair assembles into a playable setup.
+        let setup = cr::setup_from(table, rtable, 5);
+        assert_eq!(setup.corp_deck.len(), 49);
+        assert_eq!(setup.runner_deck.len(), 45);
+    }
+
+    /// CR 1.4.2 at the table door: an illegal deck is refused with the
+    /// builder's own problems, in the wire shape the lobby renders.
+    #[test]
+    fn an_illegal_user_deck_is_refused_with_its_problems() {
+        let (db, user) = setup();
+        let conn = db.blocking_lock();
+        let draft = EternalDraft {
+            name: "wip".into(),
+            identity: "andromeda_dispossessed_ristie".into(),
+            cards: [("sure_gamble".to_string(), 3u32)].into_iter().collect(),
+        }
+        .checked()
+        .unwrap();
+        let key = create(&conn, &user, &draft).unwrap()["key"].as_str().unwrap().to_string();
+        let refusal = match resolve_for_table(&conn, &key, &user, Side::Runner) {
+            Err(r @ DeckRefusal::Illegal { .. }) => r,
+            other => panic!("an illegal deck must be refused, got {other:?}"),
+        };
+        let wire = refusal.to_json();
+        assert_eq!(wire["error"], "deck-refused");
+        assert_eq!(wire["reason"], "illegal");
+        assert_eq!(wire["key"], key.as_str());
+        assert!(wire["problems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["code"] == "deck_size"));
+
+        // Ownership and side are seat conditions too.
+        let other = auth::mint_anon(&conn).unwrap().user_id;
+        assert!(matches!(
+            resolve_for_table(&conn, &key, &other, Side::Runner),
+            Err(DeckRefusal::NotFound { .. })
+        ));
+        assert!(matches!(
+            resolve_for_table(&conn, "user-nonesuch", &user, Side::Runner),
+            Err(DeckRefusal::NotFound { .. })
+        ));
     }
 }

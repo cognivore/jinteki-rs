@@ -142,6 +142,31 @@ pub fn identity_playable(title: &str) -> bool {
     carddata::by_title(title).is_some_and(|c| eternal().in_pool(c) && !text_draft_only(c))
 }
 
+/// The CR 1.5.4a pile a user-built Runner deck brings to an eternal table:
+/// every complete, eternal-playable Runner identity the engine carries,
+/// except the deck's own (1.5.4 is about identities OTHER than the selected
+/// one) and the starter-pack pair (CR 1.4.1a). "Any number of additional
+/// Runner identity cards" is the printed allowance; the cards that consume
+/// the pile narrow it themselves at resolution (Rebirth to the same faction
+/// per 1.5.4b, DJ Fenris to g-mods), so the pile's job is only to make those
+/// choices possible — the same reasoning `cr::ANDROMEDA_PILE` documents for
+/// the stock deck, generalised across factions because a user deck's Rebirth
+/// may be any faction's.
+pub fn runner_identity_pile(except_title: &str) -> Vec<jinteki_cr::object::PrintedCard> {
+    jinteki_cards::all_cards()
+        .into_iter()
+        .filter(|c| {
+            c.printed.card_type == jinteki_cr::object::CardType::Identity
+                && c.printed.side == jinteki_cr::object::Side::Runner
+                && c.is_complete()
+                && c.name() != except_title
+                && identity_playable(c.name())
+                && carddata::by_title(c.name()).is_some_and(|cd| !starter_pack_only(cd))
+        })
+        .map(|c| c.printed)
+        .collect()
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Engine support
 // ───────────────────────────────────────────────────────────────────────────

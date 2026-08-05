@@ -374,7 +374,9 @@ pub fn eternal_pile(spec: &DeckSpec) -> Vec<&'static str> {
 /// CR 1.5.4a's pile of additional identities (filtered for the eternal
 /// format — the only format this table serves).
 /// Refuses (via the caller's gate) rather than dropping anything.
-fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>, Vec<PrintedCard>) {
+/// Crate-visible so the deck resolver (`eternal_decks::resolve_builtin`)
+/// seats built-in keys from EXACTLY the same expansion the stock setup uses.
+pub(crate) fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>, Vec<PrintedCard>) {
     let mut deck = Vec::new();
     let mut identity = None;
     let cards = jinteki_cards::deck_named(spec.key).unwrap_or_default();
@@ -407,22 +409,39 @@ pub fn eternal_setup(seed: u64) -> Result<GameSetup, Readiness> {
     if !r.ready {
         return Err(r);
     }
-    let (runner_deck, runner_identity, runner_pile) = expand(&ANDROMEDA);
-    let (corp_deck, corp_identity, corp_pile) = expand(&GAUNTLET);
-    Ok(GameSetup {
-        corp_deck,
-        runner_deck,
-        corp_identity,
-        runner_identity,
-        additional_identities: [(Side::Corp, corp_pile), (Side::Runner, runner_pile)]
+    // The gate just held every card of both decks (and the pile) complete,
+    // so resolution cannot refuse; the stock table is the resolver's
+    // built-in path with the default keys, not a second construction.
+    let corp = crate::eternal_decks::resolve_builtin(GAUNTLET.key, Side::Corp)
+        .expect("readiness gate held: the Gauntlet resolves");
+    let runner = crate::eternal_decks::resolve_builtin(ANDROMEDA.key, Side::Runner)
+        .expect("readiness gate held: the Andromeda resolves");
+    Ok(setup_from(corp, runner, seed))
+}
+
+/// Two resolved table decks as a VM setup — the one assembly every game
+/// start goes through, whichever keys the seats chose
+/// (`eternal_decks::resolve_for_table` is where a key becomes a deck).
+pub fn setup_from(
+    corp: crate::eternal_decks::TableDeck,
+    runner: crate::eternal_decks::TableDeck,
+    seed: u64,
+) -> GameSetup {
+    GameSetup {
+        corp_deck: corp.cards,
+        runner_deck: runner.cards,
+        corp_identity: Some(corp.identity),
+        runner_identity: Some(runner.identity),
+        additional_identities: [(Side::Corp, corp.pile), (Side::Runner, runner.pile)]
             .into_iter()
             .collect(),
-        // CR 1.5.1: neither eternal deck's identity requires cards from
-        // outside the deck (Adam's directives are the case that would).
+        // CR 1.5.1: no catalog identity requires cards from outside the deck
+        // (Adam's directives are the case that would, and Adam is not yet
+        // complete, so no deck the resolver seats can name him).
         extra_cards: Default::default(),
         seed,
         shuffle: true,
-    })
+    }
 }
 
 /// Oracle text by title, from the card layer (SYS-D-10: the text a card was
