@@ -275,7 +275,7 @@ fn every_definition_is_reachable_from_all_cards() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 228, "one reachability check per card definition");
+    assert_eq!(checked, 239, "one reachability check per card definition");
 }
 
 /// What `cards_in` reports for a card that declared `.no_printed_text()` —
