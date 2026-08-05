@@ -480,6 +480,39 @@ pub fn strategic_innovations() -> Card {
         .build()
 }
 
+/// Haas-Bioroid: Stronger Together — Identity: Megacorp.
+/// "All bioroid ice has +1 strength."
+///
+/// COMPLETE. A permanent fact, so a declaration: 9.4.1 says a static ability
+/// never resolves, and 2.5's strength is read through the 9.12.1a pipeline
+/// every time anyone asks, so an ice that stops being described stops being
+/// modified without anything happening.
+///
+/// The sentence describes its cards rather than naming one, which is the
+/// whole difference from the Hush-class modification printed on a card about
+/// its own host: the description is the shared filter vocabulary, so "all
+/// bioroid ice" is the two words the card prints and nothing else. It is not
+/// scoped to the INSTALLED ones, because the sentence does not scope it —
+/// a bioroid in HQ is bioroid ice, and nothing reads the strength of a card
+/// there.
+///
+/// DEVIATION (deviation 47's class, and the reason this sentence waited):
+/// "bioroid" is read as a PRINTED subtype. The declaration is gathered while
+/// the characteristics pipeline is being built, and asking that pipeline for
+/// an effective subtype from inside its own input would not terminate — so a
+/// piece of ice that GAINED bioroid from a third card is not described here,
+/// while one that prints it is.
+pub fn haas_bioroid_stronger_together() -> Card {
+    card("Haas-Bioroid: Stronger Together")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Megacorp"])
+        .text("All bioroid ice has +1 strength.")
+        .declares([strength_mod_of(&[of_type(CardType::Ice), with_subtype("Bioroid")], 1)])
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
@@ -492,6 +525,7 @@ pub fn identities() -> Vec<Card> {
         haas_bioroid_architects_of_tomorrow(),
         haas_bioroid_engineering_the_future(),
         haas_bioroid_precision_design(),
+        haas_bioroid_stronger_together(),
         leo_construction(),
         poetri_luxury_brands(),
         seidr_laboratories(),

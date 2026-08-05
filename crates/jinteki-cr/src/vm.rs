@@ -2871,6 +2871,33 @@ impl Vm {
                                 });
                             }
                         }
+                        // 2.5 through the 9.12.1a pipeline: the strength
+                        // modification `StrengthMod` states about one related
+                        // card, stated about every card a DESCRIPTION reaches
+                        // ("all bioroid ice has +1 strength"). Gathered here
+                        // rather than announced, because a static ability
+                        // never resolves (9.4.1) and the set it describes is
+                        // re-read every time the pipeline runs — an ice that
+                        // stops being described stops being modified.
+                        StaticDecl::StrengthModMatching { criteria, delta } => {
+                            cite!("rule_modify_value");
+                            for other in self.st.objects.values() {
+                                if criteria
+                                    .iter()
+                                    .all(|f| self.filter_matches_shallow(other, *f, Some(o.id)))
+                                {
+                                    out.push(CharEffect {
+                                        source: o.id,
+                                        target: other.id,
+                                        op: if *delta >= 0 {
+                                            CharOp::IncreaseStrength(*delta)
+                                        } else {
+                                            CharOp::DecreaseStrength(-*delta)
+                                        },
+                                    });
+                                }
+                            }
+                        }
                         StaticDecl::SubtypeModSelf { add, remove } => {
                             cite!("rule_add_remove_subtypes");
                             for t in add {
@@ -7092,6 +7119,11 @@ impl Vm {
     /// input (`char_effects`), where a subtype atom would recurse forever:
     /// there, `HasSubtype` reads the printed subtypes (2.16) instead of the
     /// effective ones. Every other atom is unchanged.
+    ///
+    /// `HasAnySubtype` is the same atom in the plural (2.15's printed "or"),
+    /// and asking it deeply recursed just as surely — it was simply out of
+    /// reach until a declaration described its cards by more than one
+    /// subtype. Both are shallow here, for the one reason.
     fn filter_matches_shallow(
         &self,
         o: &Object,
@@ -7100,6 +7132,9 @@ impl Vm {
     ) -> bool {
         match f {
             TargetFilter::HasSubtype(s) => o.printed.subtypes.contains(&s),
+            TargetFilter::HasAnySubtype(list) => {
+                list.iter().any(|s| o.printed.subtypes.contains(s))
+            }
             other => self.filter_matches(o, other, source),
         }
     }

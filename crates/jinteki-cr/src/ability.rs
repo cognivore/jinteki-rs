@@ -1185,6 +1185,20 @@ pub enum StaticDecl {
     ReplaceSubroutineResolution { instead: Vec<crate::instr::Instruction> },
     /// Characteristic modification of the source's host (Hush class) or self.
     StrengthMod { target_self: bool, delta: i32 },
+    /// CR 2.5 through the 9.12.1a pipeline: "**all <description>** has +N
+    /// strength." (Stronger Together class.) The same characteristic
+    /// modification `StrengthMod` states about one card the source is related
+    /// to, stated instead about the cards a DESCRIPTION reaches — so the
+    /// description is the content (§12 rule 2) and the whole class is one
+    /// declaration, the way `RemoveAbilitiesOfMatching` is one beside
+    /// `RemoveAbilitiesOf`.
+    ///
+    /// The criteria are read shallowly (deviation 47's class): this
+    /// declaration is gathered inside `char_effects`, which is the pipeline a
+    /// deep `HasSubtype` would ask, so a subtype criterion here reads PRINTED
+    /// subtypes and a piece of ice that merely gained "bioroid" is not
+    /// described by it.
+    StrengthModMatching { criteria: Vec<crate::instr::TargetFilter>, delta: i32 },
     /// CR 9.1.9a: "<the related card> loses all of its abilities." The
     /// relation is the content (§12 rule 2), so both directions of §1.13's
     /// hosting relation are one declaration: the Hush class removes its

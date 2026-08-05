@@ -55,10 +55,24 @@ kernel words, not card patches.
   `Quantity::RunnerTags` and `TriggerRequirement::RunnerTagsAtLeast` read it —
   but "the Runner is considered to have 1 additional tag (even if they have
   0)" is a DECLARATION about that number, which every reader of
-  `st.runner.tags` would have to go through. The scope is the other half:
-  "during encounters with the outermost piece of ice protecting any server"
-  wants both a description of the outermost ice and a window the declaration
-  holds in. *(Acme Consulting: The Truth You Need.)*
+  `st.runner.tags` would have to go through. Which readers, exactly, is
+  settled: `Quantity::RunnerTags`, `TriggerRequirement::RunnerTagsAtLeast` and
+  5.2.6g's "take this action only if the Runner is tagged" read the modified
+  number; 5.2.6e's remove-tag action and the two places a cost takes tags away
+  read the real one, since a tag nobody has cannot be removed. What is missing
+  is the break: gathering the declaration means asking every active static
+  ability's 9.3.7a stated condition, and Harishchandra Ent.'s condition IS
+  `RunnerTagsAtLeast` — so a considered-tag reader inside that evaluation
+  re-enters the gather. It is deviation 2b's loop in the tag pipeline instead
+  of the characteristics one, and it wants the same kind of answer
+  (`filter_matches_shallow` is the shape).
+  The scope is the other half, and it is nearly sayable: 9.3.7a's
+  `StaticCond::StateRequirement` is the window, and
+  `TriggerRequirement::BoardHasMatching` would ask it, given two filters that
+  do not exist — "the piece of ice being encountered" (`TargetSpec` has it,
+  `TargetFilter` does not) and "the outermost piece of ice protecting its
+  server". *(Acme Consulting: The Truth You Need. AgInfusion wants the
+  outermost-ice description too.)*
 - **Nothing happens BEFORE the first turn.** `PrintedCard::starting_hand_size`,
   `starting_credits` and `starting_bad_publicity` are 1.6's setup FACTS,
   settled while the game is built and never resolved by anything; "before
@@ -94,12 +108,6 @@ kernel words, not card patches.
   that caused the payment (9.1.4) — which a basic action has none of, so a
   "whenever a Corp card ability causes…" condition would start meeting it.
   *(Weyland Consortium: Because We Built It.)*
-- **A declaration cannot modify the strength of cards it DESCRIBES.**
-  `StaticDecl::StrengthMod` reaches the source or its host, and the
-  characteristic pipeline that would read a criteria-scoped one is the same
-  pipeline `has_subtype` goes through — so "all **bioroid** ice has +1
-  strength" needs the loop broken before it can be said.
-  *(Haas-Bioroid: Stronger Together.)*
 - **Nothing names the card an ability installed when the install ANNOUNCED
   no target.** A 9.6.13 delayed conditional now carries the targets the
   ability that created it announced (`AbilityInstance::bound_targets`), so
@@ -262,7 +270,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **117 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **118 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -378,7 +386,7 @@ Module: `decks/identities/runner_sunny.rs`
 
 - [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (15/19)
+## Corp — Haas-Bioroid (16/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
@@ -390,7 +398,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Haas-Bioroid: Architects of Tomorrow** — The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.
 - [x] **Haas-Bioroid: Engineering the Future** — The first time you install a card each turn, gain 1[credit].
 - [x] **Haas-Bioroid: Precision Design** — You get +1 maximum hand size. Whenever you score an agenda, you may add 1 card from Archives to HQ.
-- [ ] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
+- [x] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
 - [x] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
 - [ ] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
 - [ ] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.

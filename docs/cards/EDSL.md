@@ -344,6 +344,8 @@ Some sentences are permanently true rather than things that happen. They go in
 let _ = plus_memory(1);                             // "+1[mu]"
 let _ = plus_link(1);                               // "+1 link"
 let _ = strength_mod(-2);                           // "This program gets −2 strength."
+let _ = strength_mod_of(&[of_type(CardType::Ice), with_subtype("Bioroid")], 1);
+                                                    // "All bioroid ice has +1 strength."
 let _ = strength_is(per_runner_tag());              // "…+1 strength for each tag"
 let _ = can_host(&[of_type(CardType::Agenda)], Some(1));
 let _ = runs_not_declared_successful();

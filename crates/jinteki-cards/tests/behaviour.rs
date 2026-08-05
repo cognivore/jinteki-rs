@@ -7355,6 +7355,75 @@ fn thunderbolt_armaments_pumps_and_arms_a_destroyer_rezzed_during_a_run() {
     );
 }
 
+/// Haas-Bioroid: Stronger Together — "All bioroid ice has +1 strength."
+///
+/// A declaration about the cards a DESCRIPTION reaches, so the test is the
+/// description biting: two code gates with the SAME printed strength of 3,
+/// one of them bioroid, and one Shibboleth of strength 3 run at each in turn.
+/// 9.3.6c offers the interface ability against the plain gate and the
+/// subroutine is broken; against the bioroid one the same breaker at the same
+/// strength is one short, the ability is never offered, and the subroutine
+/// ends the run.
+#[test]
+fn stronger_together_puts_bioroid_ice_out_of_a_breakers_reach() {
+    let mut vm = Vm::empty(6152);
+    tk::install_identity(&mut vm, card("Haas-Bioroid: Stronger Together"), Side::Corp);
+    let mut plain_card = tk::etr_ice("Plain Gate", 0, 3);
+    plain_card.subtypes = vec!["Code Gate"];
+    let plain = tk::install_ice(&mut vm, plain_card, ServerId::Rnd, true);
+    let mut bioroid_card = tk::etr_ice("Bioroid Gate", 0, 3);
+    bioroid_card.subtypes = vec!["Code Gate", "Bioroid"];
+    let bioroid = tk::install_ice(&mut vm, bioroid_card, ServerId::Hq, true);
+    tk::install_rig(&mut vm, card("Shibboleth"));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    // Two credits: enough for the 1[credit] break at EITHER gate, so what
+    // decides which run gets through is the strength and nothing else. (The
+    // printed pump costs 2 and the plan never reaches for it.)
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    assert_eq!(
+        vm.effective_strength(bioroid),
+        Some(4),
+        "printed 3, plus the 1 the identity declares about every bioroid piece of ice"
+    );
+    assert_eq!(
+        vm.effective_strength(plain),
+        Some(3),
+        "the same printed 3, and the description does not reach it"
+    );
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("interface: break").once(),
+                Reply::take("interface: break"),
+            )
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("End the run"))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(
+            |c| matches!(c, GameChange::RunDeclaredUnsuccessful { server } if *server == ServerId::Hq)
+        ),
+        "the bioroid gate was 1 out of reach, so its subroutine ended the HQ run: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(
+            |c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Rnd)
+        ),
+        "and the same breaker, at the same strength, broke the plain gate on R&D: {}",
+        t.tail(40)
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The identity queue — NBN and Weyland Consortium
 // ---------------------------------------------------------------------------

@@ -2512,6 +2512,14 @@ pub fn strength_mod(n: i32) -> StaticDecl {
 pub fn strength_is(q: Quantity) -> StaticDecl {
     StaticDecl::SelfStrength(q)
 }
+/// "All **bioroid** ice has +1 strength." The same modification
+/// [`strength_mod`] states about the card it is printed on, stated instead
+/// about every card the description reaches. A subtype in the description is
+/// read as PRINTED here (2.16), because the answer is gathered while the
+/// characteristics pipeline is being built.
+pub fn strength_mod_of(criteria: &[TargetFilter], n: i32) -> StaticDecl {
+    StaticDecl::StrengthModMatching { criteria: criteria.to_vec(), delta: n }
+}
 /// "This card can host <criteria>, up to N." (1.13.5.)
 pub fn can_host(criteria: &[TargetFilter], capacity: Option<i64>) -> StaticDecl {
     StaticDecl::CanHost {
