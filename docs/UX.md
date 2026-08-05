@@ -66,10 +66,22 @@ conflict.
    device and long-press preview on touch. Collapsing for space must never
    cost the ability to read what a card says.
 
-6. **An empty answer is stated, never implied.** "Search your stack for an
-   icebreaker" with no icebreaker left says so — a prompt that silently does
-   not appear is indistinguishable from a bug, and players reported exactly
-   that about Mutual Favor.
+6. **An empty answer is stated, never implied — and it is always GIVABLE.**
+   "Search your stack for an icebreaker" with no icebreaker left says so — a
+   prompt that silently does not appear is indistinguishable from a bug, and
+   players reported exactly that about Mutual Favor. The second half was
+   learned the hard way: installing Boomerang with no ice on the table drew
+   "Choose 0 cards. No card qualifies — there is nothing to choose", with no
+   card to tap and no button to press. Stating the empty answer and then
+   offering no way to give it is worse than not asking, because the game
+   stops. **Every prompt carries at least one thing the player can do.** A
+   sheet that renders no cards and no buttons is a bug in itself, whatever
+   the server sent.
+
+   The kernel's half of this is the stronger guarantee: a decision with
+   exactly one legal answer is never asked at all (`Vm::forced_answer`, CR
+   1.15.2b). The UI rule stands anyway — the client must not depend on the
+   server never making a mistake.
 
 7. **An irreversible choice is staged, then confirmed.** MTG Arena's
    discard, and for MTG Arena's reason: 5.5.4c cannot be taken back, and it
