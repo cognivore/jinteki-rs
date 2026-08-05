@@ -281,6 +281,36 @@ conflict.
     dotted tap affordances ride through untouched; nothing is merged away,
     nothing is dropped.
 
+14. **What the engine offers, the board draws — even out of Archives.**
+    THE LAW §3's "where the board itself can answer, ask it there" has a
+    quiet precondition: the board must be DRAWING the card the answer lives
+    on. An ability can act from a zone the board draws only as a count —
+    "[click]: Play this operation from Archives" (Petty Cash, CR 9.3.3c)
+    put a legal action on a card whose only pixels were "Archives 1", so
+    the glow had nowhere to land and the play existed only for a player who
+    thought to open the pile reader. Now any card the engine offers an
+    action on that is drawn nowhere joins the top-right play rail
+    (`renderPlayRail`), tagged with the zone it acts from ("archives",
+    "heap", "scored"), wearing the same glow ladder and answering the same
+    tap as every other card — one dispatch path, so the rail's copy can
+    never do less than the hand's would. The drawn-set the client checks
+    mirrors the server's `on_screen`: piles and score areas are counts you
+    tap to open, so a card in one is nowhere an outline could land.
+
+15. **A row wider than the screen scrolls, and says so.** More remotes than
+    the viewport is not a layout problem to solve by reflowing (THE LAW §2)
+    — it is a window the player's own hand moves over a board that stands
+    still. `overflow-x: auto` was already true and already insufficient:
+    touch and trackpads could pan the server row, but nothing SAID so — no
+    scrollbar until mid-scroll, no cue at the cut edge — and a mouse had no
+    way in at all. The clipped edge now carries a chevron (the fan rail's
+    own chip, floating over the row's end, gone the moment the row fits),
+    tap for a viewport-width of servers; a mouse wheel over the row scrolls
+    the only axis the row has; shift-wheel, trackpads and touch keep their
+    native pan. An affordance that appears only when there is somewhere to
+    go — the same rule as the fan's rail (§8), for the same reason: a
+    control for a journey of zero servers is a lie.
+
 ## Deliberate deviations
 
 - **No drag-to-play, and no drag-to-navigate.** HS drags cards; we

@@ -120,7 +120,19 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 #board.flipped { flex-direction: column-reverse; }
 #board.flipped .server { flex-direction: column-reverse; }
 #board.flipped .servers { align-items: flex-end; }
-.zone-half { flex: 1; overflow: hidden; }
+.zone-half { flex: 1; overflow: hidden; position: relative; }
+/* The clipped edge of the server row says there is more, and is the way
+   there for a mouse: the same chip the fan's rail uses, floating over the
+   row's end, gone when the row fits. An overlay, never a reflow (THE LAW
+   §2) — and translucent, because it stands over a card's edge. */
+.srvchev { position: absolute; top: 50%; transform: translateY(-50%); z-index: 6;
+  min-width: 34px; min-height: 44px; font-size: 20px; line-height: 1;
+  background: rgba(10,14,22,.82); color: var(--legal);
+  border: 1px solid var(--line); border-radius: 999px; font-weight: 700;
+  pointer-events: auto; cursor: pointer; }
+.srvchev.left { left: 2px; }
+.srvchev.right { right: 2px; }
+.srvchev:active { background: rgba(53,208,186,.25); }
 #mid-strip { height: 26px; display: flex; align-items: center; justify-content: center; position: relative; }
 .phase-pill { background: var(--gold); color: #241c04; font-weight: 700; padding: 4px 14px;
   border-radius: 999px; font-size: 13px; z-index: 5; animation: pop .25s; }

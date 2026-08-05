@@ -863,7 +863,7 @@ function renderServers() {
       let t = null, fired = false;
       // A tap answers where there is something to answer; otherwise it reads.
       const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
-      sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; zoomCard(c); }, 380); });
+      sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; if (sliver.isConnected) zoomCard(c); }, 380); });
       sliver.addEventListener("pointerup", () => {
         clearTimeout(t);
         if (fired) return;
@@ -890,6 +890,65 @@ function renderServers() {
     wrap.appendChild(col);
   });
   wrap.scrollLeft = scroll;
+  wireServerScroll(wrap);
+  updateServerChevrons(wrap);
+}
+
+/* ── the server row SCROLLS, and says so ─────────────────────────────────
+   More remotes than the viewport is a row wider than the screen, and
+   `overflow-x: auto` alone was the whole story: touch could pan it and a
+   trackpad could too, but nothing SAID so — no scrollbar until mid-scroll,
+   no edge cue — and a mouse had no way in at all. So the clipped edge now
+   carries a chevron (tap: one viewport-width of servers, smoothly), shown
+   only while there is something past that edge, and a mouse wheel over the
+   row scrolls it the only axis it has. This is the player's hand moving a
+   window over the board, not the board moving (THE LAW §2): no card
+   changes place, and at small server counts nothing appears at all. */
+function wireServerScroll(wrap) {
+  if (wrap.__scrollwired) return;
+  wrap.__scrollwired = true;
+  wrap.addEventListener("scroll", () => updateServerChevrons(wrap), { passive: true });
+  wrap.addEventListener("wheel", (e) => {
+    // A vertical wheel over a row that only scrolls sideways: give it the
+    // axis. Shift+wheel and trackpads already pan natively and keep doing
+    // so (their deltaX dominates, so this leaves them alone).
+    if (wrap.scrollWidth <= wrap.clientWidth + 1) return;
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    wrap.scrollLeft += e.deltaY;
+    e.preventDefault();
+    // Belt over the scroll listener's braces: every path that MOVES the
+    // row also refreshes the cue, so a platform that throttles or drops
+    // scroll events (embedded views were seen doing exactly that) still
+    // shows the truth after the move and the snap settle.
+    setTimeout(() => updateServerChevrons(wrap), 200);
+  }, { passive: false });
+}
+function updateServerChevrons(wrap) {
+  const host = wrap.parentElement;
+  if (!host) return;
+  let L = host.querySelector(".srvchev.left"), R = host.querySelector(".srvchev.right");
+  if (!L) {
+    const mk = (cls, glyph, dir) => {
+      const b = el("button", "srvchev " + cls, glyph);
+      b.onclick = () => {
+        // "auto", not "smooth": embedded/zoomed webviews were seen dropping
+        // smooth programmatic scrolls outright (the row simply did not
+        // move), and an instant jump that always happens beats an animation
+        // that sometimes does not. The snap rule still settles the landing.
+        wrap.scrollBy({ left: dir * Math.max(120, wrap.clientWidth - 80), behavior: "auto" });
+        // Refresh after the proximity snap settles — see the wheel
+        // handler's note on dropped scroll events.
+        setTimeout(() => updateServerChevrons(wrap), 250);
+      };
+      host.appendChild(b);
+      return b;
+    };
+    L = mk("left", "‹", -1);
+    R = mk("right", "›", 1);
+  }
+  const max = wrap.scrollWidth - wrap.clientWidth;
+  L.style.display = wrap.scrollLeft > 4 ? "" : "none";
+  R.style.display = wrap.scrollLeft < max - 4 ? "" : "none";
 }
 
 /* Focused decision panel: when a run reaches ice, show exactly what the
@@ -1487,7 +1546,10 @@ function cardEl(c, opts) {
   el.addEventListener("pointerdown", (e) => {
     longFired = false; pressed = true;
     pressX = e.clientX; pressY = e.clientY;
-    pressTimer = setTimeout(() => { longFired = true; zoomCard(c); }, 420);
+    // `isConnected`: a re-render that replaces this card mid-press strands
+    // the timer (the replacement never hears the pointerup), and a stranded
+    // timer opening a reader nobody asked for is the double-spawn race.
+    pressTimer = setTimeout(() => { longFired = true; if (el.isConnected) zoomCard(c); }, 420);
   });
   // A press that WANDERS is still a press — a thumb is not a mouse, and at
   // 8px the read gesture was being cancelled by the hand holding the phone.
@@ -1921,20 +1983,80 @@ function ensureAnswerable(sheet, p) {
 function renderPlayRail() {
   const rail = $("play-rail");
   if (!rail) return;
-  const cards = [...((S.corp || {})["play-area"] || []).map((c) => ["corp", c]),
-                 ...((S.runner || {})["play-area"] || []).map((c) => ["runner", c])];
+  const cards = [...((S.corp || {})["play-area"] || []).map((c) => ["corp", c, null]),
+                 ...((S.runner || {})["play-area"] || []).map((c) => ["runner", c, null])];
+  // THE LAW §3: where the board itself can answer, ask it there — which
+  // requires the board to be DRAWING the card the answer lives on. An
+  // ability can act from a zone the board draws only as a count: "[click]:
+  // Play this operation from Archives" (Petty Cash, CR 9.3.3c) puts a legal
+  // action on a card whose only pixels were "Archives 1", so the affordance
+  // had nowhere to land and the play existed only for a player who thought
+  // to open the pile reader. Any card the engine is offering an action on
+  // that is drawn nowhere joins this rail, tagged with the zone it is
+  // acting from, wearing the same glow ladder and answering the same tap
+  // as every other card. (Prompt choices need no copy here: a choice's card
+  // is already drawn in the sheet, THE LAW §1.)
+  const drawn = drawnCids();
+  const offered = [];
+  ACTIONS.forEach((a) => {
+    if (a.cid != null && !drawn.has(a.cid) && !offered.includes(a.cid)) offered.push(a.cid);
+  });
+  offered.forEach((cid) => {
+    const found = findUndrawnCard(cid);
+    if (found) cards.push(found);
+  });
   if (!cards.length) { rail.style.display = "none"; rail.innerHTML = ""; return; }
   rail.style.display = "flex";
   rail.innerHTML = "";
-  cards.forEach(([side, c]) => {
+  cards.forEach(([side, c, tag]) => {
     const wrap = el("div", "playslot");
     wrap.appendChild(cardEl(c, { side }));
     const sub = (c.subtypes || []).map(String);
     if (sub.some((x) => x.toLowerCase() === "current")) {
       wrap.appendChild(el("div", "playtag", "current"));
+    } else if (tag) {
+      wrap.appendChild(el("div", "playtag", tag));
     }
     rail.appendChild(wrap);
   });
+}
+
+/* Every cid the board is drawing AS A CARD somewhere a glow could land:
+   server contents and ice, the rig, both play areas, the viewer's own hand,
+   both identities. The same zones `on_screen` counts on the server — a
+   discard pile, a deck and a score area are counts you tap to open, so a
+   card in one of those is nowhere an outline could land. */
+function drawnCids() {
+  const out = new Set();
+  const add = (c) => { if (c && c.cid != null) out.add(c.cid); };
+  const corp = S.corp || {}, runner = S.runner || {};
+  Object.values(corp.servers || {}).forEach((srv) => {
+    (srv.content || []).forEach(add);
+    (srv.ices || []).forEach(add);
+  });
+  const rig = runner.rig || {};
+  ["program", "hardware", "resource"].forEach((k) => (rig[k] || []).forEach(add));
+  (corp["play-area"] || []).forEach(add);
+  (runner["play-area"] || []).forEach(add);
+  (me().hand || []).forEach(add);
+  add(corp.identity);
+  add(runner.identity);
+  return out;
+}
+
+/* The undrawn zones a viewer can still see into: both discard piles (public,
+   CR 4.4.2) and both score areas. Returns [side, card, zone-tag] for the
+   rail, or null for a cid the state has no face for. */
+function findUndrawnCard(cid) {
+  const corp = S.corp || {}, runner = S.runner || {};
+  const hit = (list, side, tag) => {
+    const c = (list || []).find((x) => x && x.cid === cid && x.title);
+    return c ? [side, c, tag] : null;
+  };
+  return hit(corp.discard, "corp", "archives")
+    || hit(runner.discard, "runner", "heap")
+    || hit(corp.scored, "corp", "scored")
+    || hit(runner.scored, "runner", "scored");
 }
 
 /* CR 8.3.3: put these cards in an order. The order IS the answer, so the
@@ -2732,9 +2854,18 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+/* Opening a reader is IDEMPOTENT: one press, one preview. Asking for the
+   card the reader is already showing must not tear it down and pop it in
+   again — that replay is what a stranded press timer looked like, and even
+   with the timers guarded, two paths asking for one card is one animation
+   too many. Re-asking is a no-op; anything else replaces the content. */
+let zoomShowing = null;
 function zoomCard(c) {
   hideHoverPreview();
   const o = $("zoom-overlay");
+  const key = c.cid != null ? "c" + c.cid : "t" + (c.title || "");
+  if (o.style.display === "flex" && zoomShowing === key) return;
+  zoomShowing = key;
   o.style.display = "flex";
   o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>
     <div class="tapaway">tap anywhere to close</div>`;
@@ -2743,6 +2874,7 @@ function zoomCard(c) {
 
 function zoomPile(cards, title) {
   const o = $("zoom-overlay");
+  zoomShowing = null;
   o.style.display = "flex";
   const rows = cards.map((c, i) => `
     <div class="pilerow" data-i="${i}">
@@ -3052,7 +3184,16 @@ function renderEditor() {
    press was asking for. */
 function attachZoom(elm, c) {
   let t = null;
-  elm.addEventListener("pointerdown", () => { t = setTimeout(() => zoomCard(c), 420); });
+  // The guard is `isConnected`: a press whose element is replaced mid-hold
+  // (a tap on a pile row opens the reader ON the down and rebuilds the
+  // overlay under the finger) loses its pointerup forever, so the timer
+  // outlives its element and fired a SECOND reader over the first — the
+  // "spawns, races itself, and pops again" a player reported. An element
+  // that has left the DOM has no press to honour.
+  elm.addEventListener("pointerdown", () => {
+    clearTimeout(t);
+    t = setTimeout(() => { if (elm.isConnected) zoomCard(c); }, 420);
+  });
   ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => elm.addEventListener(ev, () => clearTimeout(t)));
   elm.addEventListener("contextmenu", (e) => e.preventDefault());
 }
