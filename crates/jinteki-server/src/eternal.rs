@@ -123,12 +123,15 @@ pub fn draft_only(card: &Card) -> bool {
 /// CR 1.4.1a (`rule_gateway_identities`): the two System Gateway Starter
 /// Pack identities are "intended for use only with the decks included in
 /// that pack" and are "not legal for play under the full deck construction
-/// rules". The rule names the two cards outright, so this names them the
-/// same way rather than inventing a characteristic they do not print.
+/// rules". The rule names the two cards outright; this matches them by
+/// their NSG v2 ids — the one vocabulary the whole eternal surface speaks —
+/// rather than by display title, which drifts with subtitle punctuation and
+/// printings. They stay implemented and preset-playable; the constructed
+/// catalog never offers them.
 pub fn starter_pack_only(card: &Card) -> bool {
     matches!(
-        card.title.as_str(),
-        "The Catalyst: Convention Breaker" | "The Syndicate: Profit over Principle"
+        card.nsg_id.as_deref(),
+        Some("the_catalyst_convention_breaker" | "the_syndicate_profit_over_principle")
     )
 }
 
@@ -235,11 +238,16 @@ pub fn catalog_json() -> Value {
             if draft_only(c) {
                 continue;
             }
+<<<<<<< HEAD
             // CR 1.4.1a: The Catalyst and The Syndicate "are not legal for
             // play under the full deck construction rules" — starter-pack
             // identities, in the pool for the STARTER decks only, so the
             // constructed-deck catalog never offers them. They remain
             // implemented and playable through any preset that carries them.
+=======
+            // CR 1.4.1a: the starter-pack identities are not legal for
+            // constructed play; the builder never offers them.
+>>>>>>> 6803dce (fix(cards+server): the catalog reaches every definition, and CR 1.4.1a holds by id)
             if starter_pack_only(c) {
                 continue;
             }
@@ -571,6 +579,68 @@ mod tests {
         if let Some(siphon) = cards.iter().find(|c| c["id"] == "account_siphon") {
             assert_eq!(siphon["points"], 3);
         }
+    }
+
+    /// CR 1.4.1a: neither System Gateway Starter Pack identity is offered
+    /// for constructed play — matched by v2 id, so a subtitle respelling
+    /// cannot quietly re-admit them. Nova Initiumia stays: "Catalyst" in a
+    /// title is not the starter Catalyst, which is why the match is on ids.
+    #[test]
+    fn starter_pack_identities_never_reach_the_catalog() {
+        let catalyst = carddata::by_title("The Catalyst: Convention Breaker").unwrap();
+        let syndicate = carddata::by_title("The Syndicate: Profit over Principle").unwrap();
+        assert!(starter_pack_only(catalyst));
+        assert!(starter_pack_only(syndicate));
+        let cat = catalog_json();
+        let identities = cat["identities"].as_array().unwrap();
+        for banned in ["the_catalyst_convention_breaker", "the_syndicate_profit_over_principle"] {
+            assert!(
+                !identities.iter().any(|c| c["id"] == banned),
+                "{banned} is starter-pack-only (CR 1.4.1a) and must not be offered"
+            );
+        }
+        assert!(
+            identities.iter().any(|c| c["id"] == "nova_initiumia_catalyst_impetus"),
+            "Nova Initiumia is a constructed-legal identity and stays listed"
+        );
+        // The cards remain implemented for the preset decks that carry them.
+        assert!(is_supported("The Catalyst: Convention Breaker"));
+    }
+
+    /// The Hedge Fund class: a definition no deck list carries must still be
+    /// engine-supported and catalog-visible (`off_list_cards` feeds
+    /// `all_cards`). The floor pins the catalog's magnitude so a silently
+    /// shrunken completeness join screams instead of shipping.
+    #[test]
+    fn off_list_cards_reach_the_catalog_and_the_floor_holds() {
+        assert!(is_supported("Hedge Fund"), "Hedge Fund is implemented and complete");
+        let cat = catalog_json();
+        let cards = cat["cards"].as_array().unwrap();
+        let hedge = cards
+            .iter()
+            .find(|c| c["id"] == "hedge_fund")
+            .expect("Hedge Fund is in the eternal catalog");
+        assert_eq!(hedge["banned"], false);
+        assert_eq!(hedge["points"], 0);
+        // Validation agrees: three copies in a corp deck raise no
+        // `unsupported` problem for it.
+        let v = validate(
+            "nebula_talent_management_making_stars",
+            &deck(&[("hedge_fund", 3)]),
+        );
+        assert!(
+            !v.problems
+                .iter()
+                .any(|p| p.code == "unsupported" && p.card.as_deref() == Some("hedge_fund")),
+            "{:?}",
+            v.problems
+        );
+        // Magnitude floors: both priority decks' non-identity cards plus the
+        // complete half of unlisted.rs plus Hedge Fund clear 60; the
+        // identity queue clears 130.
+        assert!(cards.len() >= 60, "catalog cards collapsed to {}", cards.len());
+        let identities = cat["identities"].as_array().unwrap();
+        assert!(identities.len() >= 130, "catalog identities collapsed to {}", identities.len());
     }
 
     /// A fully legal 45-card corp deck from catalog cards (the Gauntlet

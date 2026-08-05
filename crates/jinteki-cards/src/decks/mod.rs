@@ -30,11 +30,29 @@ pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
     }
 }
 
+/// Card definitions no deck list carries: implemented and complete, but
+/// absent from [`deck_named`] because the printed list (the deck photo) is
+/// the authority on what a DECK contains. Hedge Fund is the class — defined,
+/// exercised by tests, left off the Gauntlet list on the photo's authority.
+/// Everything that asks "what does the engine support?" (`all_cards`,
+/// `find`, the eternal catalog's completeness join) must still see them;
+/// a definition reachable only through a deck list is invisible the moment
+/// the list declines it, which is how Hedge Fund fell out of the catalog.
+pub fn off_list_cards() -> Vec<Card> {
+    vec![gauntlet::hedge_fund()]
+}
+
 /// Every card this crate carries, priority decks and all — what
 /// [`crate::find`] searches.
 pub fn all_cards() -> Vec<Card> {
     let mut out = priority_decks();
     out.extend(unlisted::cards());
+    // Definitions the deck lists decline (Hedge Fund) still exist.
+    for c in off_list_cards() {
+        if !out.iter().any(|x| x.name() == c.name()) {
+            out.push(c);
+        }
+    }
     // The identity queue. An identity already enlisted in a deck's 1.5.4a
     // pile arrived with the deck above, so it is not carried twice.
     for c in identities::cards() {

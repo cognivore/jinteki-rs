@@ -173,6 +173,56 @@ fn normalise(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+// ---------------------------------------------------------------------------
+// Every definition is reachable
+// ---------------------------------------------------------------------------
+
+/// Every `card("Title")` a module opens, by scanning the same SOURCES the
+/// manifest test reads. The builder call sits alone on its line in every
+/// module, and escaped quotes (Boris "Syfr" Kovac) are part of the title.
+fn defined_titles(src: &str) -> Vec<String> {
+    src.lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            let rest = t.strip_prefix("card(\"")?;
+            let end = rest.rfind("\")")?;
+            Some(rest[..end].replace("\\\"", "\""))
+        })
+        .collect()
+}
+
+/// A definition no runtime surface reaches is a bug of the Hedge Fund class:
+/// implemented, complete, and invisible to everything that asks "what does
+/// the engine support?" — `find`, and the eternal catalog's completeness
+/// join, which is how Hedge Fund silently fell out of the deck builder.
+/// Every definition must be reachable through `all_cards()`, either as a
+/// card of its own (a deck list, `unlisted.rs`, the identity queue, or
+/// `off_list_cards()`) or as a flip face of one (Gemilang Arena is Nebula's
+/// back, Ascending to Orbit is Earth Station's).
+#[test]
+fn every_definition_is_reachable_from_all_cards() {
+    let all = jinteki_cards::all_cards();
+    let mut reachable: std::collections::HashSet<String> =
+        all.iter().map(|c| c.name().to_string()).collect();
+    for c in &all {
+        for f in &c.printed.flip_faces {
+            reachable.insert(f.name.to_string());
+        }
+    }
+    let mut checked = 0;
+    for (file, src) in SOURCES {
+        for title in defined_titles(src) {
+            assert!(
+                reachable.contains(&title),
+                "{file}: card({title:?}) is defined but no surface reaches it — list it in \
+                 a deck, unlisted.rs, the identity queue, or off_list_cards()"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 228, "one reachability check per card definition");
+}
+
 /// What `cards_in` reports for a card that declared `.no_printed_text()` —
 /// distinguishable from a card that merely forgot to copy its text in.
 const BLANK_TEXT_BOX: &str = "\u{0}blank text box";

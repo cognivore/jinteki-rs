@@ -97,7 +97,12 @@ async fn eternal_catalog_and_deck_contract() {
     assert!(identities.iter().all(|i| i["draft_only"] == false));
     assert!(!identities.iter().any(|i| i["id"] == "boris_syfr_kovac_crafty_veteran"),
         "draft-only identities never appear for Eternal");
+    assert!(!identities.iter().any(|i| i["id"] == "the_catalyst_convention_breaker"
+        || i["id"] == "the_syndicate_profit_over_principle"),
+        "CR 1.4.1a: the starter-pack identities are never offered");
     assert!(cat["cards"].as_array().unwrap().iter().any(|x| x["id"] == "sure_gamble"));
+    assert!(cat["cards"].as_array().unwrap().iter().any(|x| x["id"] == "hedge_fund"),
+        "off-list definitions (Hedge Fund) are engine-supported and listed");
     let unknown = c.get(format!("{base}/api/catalog?format=startup")).send().await.unwrap();
     assert_eq!(unknown.status(), 400);
 
