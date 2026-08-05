@@ -14217,7 +14217,7 @@ fn freedom_khumalo_pays_x_across_two_cards_and_the_asset_falls() {
     });
     let (total, kind, locations) = asked.expect("the counter division was put to the Runner");
     assert_eq!(total, 2, "X is the accessed card's printed rez cost");
-    assert_eq!(kind, CounterKind::Virus);
+    assert_eq!(kind, CounterKind::Virus, "the cost names virus counters and no other kind");
     assert_eq!(
         locations,
         vec![(host_a, 2), (host_b, 2)],
@@ -16849,7 +16849,7 @@ fn detectives_bureau_tolls_only_the_first_run_each_turn() {
         })
         .collect();
     assert_eq!(gains, vec![3], "…and the Corp was paid it once: {}", t.tail(40));
-    assert_eq!(vm.st.corp.credits, 3);
+    assert_eq!(vm.st.corp.credits, 3, "the Corp pool holds exactly the toll it was paid");
 }
 
 /// The toll against a pool of 1: CR 1.10.3b — a forced loss takes as many
@@ -16891,7 +16891,7 @@ fn detectives_bureau_toll_is_capped_by_the_runners_pool() {
         "the gain reads the recorded loss, not the computed 3: {}",
         t.tail(40)
     );
-    assert_eq!(vm.st.corp.credits, 1);
+    assert_eq!(vm.st.corp.credits, 1, "the Corp gained only the 1 credit that really moved");
 }
 
 /// "[click]: Gain 3[credit] or draw 3 cards." — both halves of 9.11.4g's
@@ -16926,7 +16926,7 @@ fn detectives_bureau_click_gains_3_or_draws_3() {
                 "the 5.3 mandatory draw, then 3 more (draw_branch): {}",
                 t.tail(20)
             );
-            assert_eq!(vm.st.corp.credits, 0);
+            assert_eq!(vm.st.corp.credits, 0, "the draw branch pays no credits (draw_branch)");
         } else {
             assert_eq!(vm.st.corp.credits, 3, "gained 3 (gain branch): {}", t.tail(20));
             assert_eq!(vm.st.hand[&Side::Corp].len(), 1, "only the mandatory draw");
