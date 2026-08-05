@@ -311,6 +311,25 @@ conflict.
     go — the same rule as the fan's rail (§8), for the same reason: a
     control for a journey of zero servers is a lie.
 
+16. **A facedown card is a card back for everyone — its owner included.**
+    CR 1.21.1 orients a facedown card so its face is not visible, as a fact
+    of the table and not of the viewer; CR 4.6.6f will not even let a
+    remote's root give away what kind of card sits in it. An unrezzed
+    agenda that renders faceup to the Corp is therefore wrong twice: it
+    breaks the table (the owner's board and the opponent's board disagree
+    about what the table looks like), and it wastes the one signal a back
+    carries — "this is hidden, and hover is how you look". The owner IS
+    entitled to the face: CR 1.21.2a lets a player look at facedown cards
+    they control at any time, for both players symmetrically — and that
+    look is the READER (hover, long-press, the prompt fan), never the
+    board. The wire enforces the other half: CR 4.6.3 makes a facedown
+    card in the play area secret information, so the opponent's state
+    never carries its face at all (`card_json` sends presence and
+    orientation only — no title, no text, no art id), and no amount of
+    devtools spelunking can read what was never sent. Counters, outlines
+    and the armed ring still overlay the back: WHERE a counter sits is
+    open information (§11), and a back the game is waiting on still glows.
+
 ## Deliberate deviations
 
 - **No drag-to-play, and no drag-to-navigate.** HS drags cards; we

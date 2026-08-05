@@ -3025,7 +3025,21 @@ fn card_json(vm: &Vm, view: &View, id: ObjectId, visible: bool) -> Value {
     m.insert("subtypes".into(), json!(p.subtypes));
     m.insert("cost".into(), json!(p.cost));
     m.insert("rezzed".into(), json!(o.faceup));
-    m.insert("facedown".into(), json!(false));
+    // CR 1.21.1 (rule_faceup_facedown): a facedown card in the play area is
+    // "oriented so that the face containing the card's information is not
+    // visible" — a fact of the TABLE, not of the viewer, so it travels even
+    // when the face does. The controller still gets the face fields above,
+    // because 1.21.2a (rule_look_at_controlled_facedown) lets them look at
+    // facedown cards they control at any time — but their board must draw
+    // the same back the opponent's does, and only the reader shows the face.
+    // Used to be hardcoded `false` on this branch, which told the owner's
+    // client their unrezzed agenda was faceup on the table.
+    let tabled_facedown = !o.faceup
+        && matches!(
+            o.zone,
+            Zone::Root(_) | Zone::Ice(_) | Zone::Rig | Zone::PlayArea(_)
+        );
+    m.insert("facedown".into(), json!(tabled_facedown));
     m.insert("advance-counter".into(), json!(adv));
     let mut counters = Map::new();
     for (k, n) in &o.counters {
@@ -3682,6 +3696,89 @@ mod tests {
                     "{spec:?}: a choice that names a card must carry it: {ch:#?}"
                 );
             }
+        }
+    }
+
+    /// A FACEDOWN INSTALLED CARD, ON THE WIRE, from both seats.
+    ///
+    /// CR 4.6.3: a facedown card in the play area is secret information,
+    /// examinable only by its controller — so the opponent's serialized
+    /// state must carry NO face data for it, not a title, not a text, not an
+    /// art code. CR 1.21.2a: the controller may look at facedown cards they
+    /// control at any time — so their copy keeps the face for the reader.
+    /// And CR 1.21.1: the card is facedown ON THE TABLE, a fact independent
+    /// of who is looking — so the controller's copy says `facedown: true`
+    /// too, which is what lets their board draw the same back the
+    /// opponent's board draws. (This last bit regressed: the visible branch
+    /// of `card_json` hardcoded `facedown: false`, and the owner's client
+    /// drew a just-installed agenda faceup on the board.)
+    #[test]
+    fn a_facedown_install_is_faceless_to_the_opponent_and_a_back_to_its_owner() {
+        let mut g = dealt_game();
+
+        // The Corp installs a card in the root of a remote, unrezzed.
+        let corp_card = g.vm.cards_in_zone(Zone::Hand(Side::Corp))[0];
+        let corp_name = g.vm.st.objects[&corp_card].printed.name;
+        g.vm.move_card(corp_card, Zone::Root(ServerId::Remote(1)));
+        g.vm.st.objects.get_mut(&corp_card).expect("a card").faceup = false;
+        // The Runner has a facedown installed card too (8.1.4 — the rule is
+        // symmetric: 1.21.2a says "a player", not "the Corp").
+        let runner_card = g.vm.cards_in_zone(Zone::Hand(Side::Runner))[0];
+        let runner_name = g.vm.st.objects[&runner_card].printed.name;
+        g.vm.move_card(runner_card, Zone::Rig);
+        g.vm.st.objects.get_mut(&runner_card).expect("a card").faceup = false;
+
+        let find_rig = |st: &Value, cid: u32| -> Value {
+            ["program", "hardware", "resource"]
+                .iter()
+                .flat_map(|k| {
+                    st["runner"]["rig"][k].as_array().cloned().unwrap_or_default()
+                })
+                .find(|c| c["cid"] == json!(cid))
+                .expect("the rig draws the card")
+        };
+
+        // THE OPPONENT'S WIRE: presence and orientation, and nothing else.
+        let to_runner = state_json(&g, Side::Runner);
+        let seen = &to_runner["corp"]["servers"]["remote1"]["content"][0];
+        assert_eq!(seen["cid"], json!(corp_card.0), "presence is open (4.6.2)");
+        assert_eq!(seen["facedown"], json!(true));
+        assert!(seen.get("title").is_none(), "no name for the Runner");
+        assert!(seen.get("text").is_none(), "no rules text for the Runner");
+        assert!(seen.get("code").is_none(), "no art id for the Runner");
+        assert!(
+            !to_runner.to_string().contains(corp_name),
+            "the Corp card's name appears NOWHERE in the Runner's state"
+        );
+        let to_corp = state_json(&g, Side::Corp);
+        let seen = find_rig(&to_corp, runner_card.0);
+        assert_eq!(seen["facedown"], json!(true));
+        assert!(seen.get("title").is_none(), "no name for the Corp");
+        assert!(
+            !to_corp.to_string().contains(runner_name),
+            "the Runner card's name appears NOWHERE in the Corp's state"
+        );
+
+        // THE OWNER'S WIRE: the back AND the face — facedown says how the
+        // board draws it, the face is the 1.21.2a look the reader serves.
+        let own = state_json(&g, Side::Corp);
+        let mine = &own["corp"]["servers"]["remote1"]["content"][0];
+        assert_eq!(mine["facedown"], json!(true), "a back on the owner's board too");
+        assert_eq!(mine["rezzed"], json!(false));
+        assert_eq!(mine["title"], json!(corp_name), "the reader gets the face");
+        let own = state_json(&g, Side::Runner);
+        let mine = find_rig(&own, runner_card.0);
+        assert_eq!(mine["facedown"], json!(true), "a back on the owner's board too");
+        assert_eq!(mine["title"], json!(runner_name), "the reader gets the face");
+
+        // Rezzed, it is faceup for both (1.21.1: faceup cards are freely
+        // visible to all players).
+        g.vm.st.objects.get_mut(&corp_card).expect("a card").faceup = true;
+        for viewer in [Side::Corp, Side::Runner] {
+            let st = state_json(&g, viewer);
+            let c = &st["corp"]["servers"]["remote1"]["content"][0];
+            assert_eq!(c["facedown"], json!(false), "{viewer:?} sees it faceup");
+            assert_eq!(c["title"], json!(corp_name));
         }
     }
 }

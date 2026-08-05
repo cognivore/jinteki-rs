@@ -313,7 +313,6 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .card.facedown .cname, .card.facedown .ctype { visibility: hidden; }
 .card.corp-card { border-color: #2c4a77; }
 .card.runner-card { border-color: #6e3231; }
-.card.unrezzed { opacity: .85; }
 .card.ice { width: 88px; height: 56px; }
 .card.ice.current-ice { border-color: var(--danger); box-shadow: 0 0 14px rgba(255,92,92,.6);
   animation: runpulse 1.2s infinite; }

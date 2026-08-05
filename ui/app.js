@@ -1950,7 +1950,24 @@ function renderHand() {
 function cardEl(c, opts) {
   opts = opts || {};
   const el = document.createElement("div");
-  const facedown = c.facedown && !c.title;
+  // A FACEDOWN CARD IS A CARD BACK FOR EVERYONE — its owner included.
+  // CR 1.21.1: a facedown card is "oriented so that the face containing the
+  // card's information is not visible"; CR 4.6.6f even forbids the root of a
+  // remote giving away what type of card sits in it. The owner IS entitled
+  // to the face — CR 1.21.2a, "a player may look at facedown cards they
+  // control at any time" (both players; the rule is symmetric) — but that
+  // look is the reader (hover / long-press), never the board. `c.facedown`
+  // is the table orientation from the server (it now travels with the face
+  // for the controller); `rezzed === false` is the same fact as the bridge
+  // (jnet) shape spells it for installed Corp cards, so the back survives a
+  // server that only sent the older shape. `opts.reveal` is the reader-like
+  // surfaces (prompt fans, the play rail) where a look is the point — and it
+  // can never over-reveal, because a face the viewer is not entitled to
+  // never arrives (CR 4.6.3: facedown cards are secret information).
+  const facedown =
+    (!!c.facedown ||
+      (c.rezzed === false && opts.side === "corp" && !opts.hand && !opts.identity)) &&
+    !(opts.reveal && c.title);
   const isNew = !seenCids.has(c.cid);
   if (isNew) seenCids.add(c.cid);
   const showCost = opts.hand && c.cost != null;
@@ -1958,7 +1975,6 @@ function cardEl(c, opts) {
   el.className = "card" + (isNew ? " deal" : "") + (opts.ice ? " ice" : "") + (facedown ? " facedown" : "") +
     (opts.side === "corp" ? " corp-card" : " runner-card") +
     (opts.identity ? " identity" : "") +
-    (c.rezzed === false && opts.side === "corp" && !opts.hand && !facedown ? " unrezzed" : "") +
     (opts.current ? " current-ice" : "") +
     // The corner discs live INSIDE the box now, so the text has to make room
     // for the ones that are actually there — and only for those.
@@ -2174,6 +2190,10 @@ function cardInfoHtml(c, face) {
   if (c.advancementcost != null) lines.push(`Adv req ${c.advancementcost} · ${c.agendapoints} pts`);
   if (c["trash-cost"] != null) lines.push("Trash cost " + c["trash-cost"]);
   for (const [, hint, text] of counterItems(c)) lines.push(`${hint}: ${text}`);
+  // The reader is where the owner's CR 1.21.2a look happens: the board draws
+  // this card as a back for everyone, so when a face arrives with the
+  // facedown flag, say who is seeing it — the opponent sees only the back.
+  if (c.facedown && c.title) lines.push("Facedown — only you can see this face");
   if (c.implementation) lines.push("⚠ " + c.implementation);
   // The art is the front face's; a back face is text-rendered, like the
   // card pool itself (UX.md: no art is a rendering, not a gap).
@@ -2532,7 +2552,11 @@ function renderPlayRail() {
   rail.innerHTML = "";
   cards.forEach(([side, c, tag]) => {
     const wrap = el("div", "playslot");
-    wrap.appendChild(cardEl(c, { side }));
+    // The rail exists to show a card an action lives on (a facedown card in
+    // Archives the Corp may play out, say) — a read surface for a card the
+    // viewer is entitled to: `findUndrawnCard` only returns faces the state
+    // carries, and the state only carries faces the viewer may see.
+    wrap.appendChild(cardEl(c, { side, reveal: true }));
     const sub = (c.subtypes || []).map(String);
     if (sub.some((x) => x.toLowerCase() === "current")) {
       wrap.appendChild(el("div", "playtag", "current"));
@@ -2613,7 +2637,9 @@ function renderArrangePrompt(sheet, p) {
       const wrap = el("div", "arrangepick");
       wrap.dataset.cid = String(cid);
       wrap.appendChild(el("div", "arrangeidx", String(i + 1)));
-      wrap.appendChild(cardEl(c, { side: mySide }));
+      // Arranging is a look the resolving ability granted (CR 8.3.3): the
+      // order IS the answer, so the faces show — `reveal`, as in the prompts.
+      wrap.appendChild(cardEl(c, { side: mySide, reveal: true }));
       makeDraggable(wrap, cid, paint);
       row.appendChild(wrap);
     });
@@ -2711,7 +2737,12 @@ function renderCardPrompt(sheet, p, choices) {
     key: "prompt",
     rail: sheet.querySelector(".fanrail"),
     repaint: () => renderCardPrompt(sheet, p, choices),
-    cardOpts: { side: mySide },
+    // A prompt is a decision about cards and renders them as cards (THE LAW
+    // §1) — a READ surface, so the viewer's own facedown cards show the face
+    // the CR entitles them to look at (1.21.2a). A face they may not see
+    // never arrived (the slot is captioned "blind" below), so `reveal`
+    // cannot leak anything.
+    cardOpts: { side: mySide, reveal: true },
     cardOf: (ch) => ch.card,
     // Decoration only. The tap is the CARD's own (`cardEl` wires it, with the
     // fan's index): one handler, so a long-press to read can never also commit
@@ -2844,7 +2875,9 @@ function renderSelectPrompt(sheet, p, choices) {
     key: "prompt",
     rail: sheet.querySelector(".fanrail"),
     repaint: () => renderSelectPrompt(sheet, p, choices),
-    cardOpts: { side: mySide },
+    // Same read surface as renderCardPrompt: the viewer's own facedown
+    // cards show the face 1.21.2a entitles them to; unseen ones stay blind.
+    cardOpts: { side: mySide, reveal: true },
     // The glow and the ✓ are `cardEl`'s, from the one ladder in `glowClass` —
     // gold for a candidate, WHITE for one you have staged — so the sheet's
     // copy and the board's copy of the same card can never disagree. Nothing
