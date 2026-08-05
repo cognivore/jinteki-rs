@@ -351,10 +351,122 @@ pub fn hyoubu_institute() -> Card {
         .build()
 }
 
+/// Harmony Medtech: Biomedical Pioneer — Identity: Division.
+/// "Each player needs 1 fewer agenda point to win the game."
+///
+/// COMPLETE. A permanent fact about the game rather than about any card, so it
+/// is a static declaration and nothing that happens.
+///
+/// CR 1.17.2 states winning as a comparison — "if at any time a player's score
+/// is greater than or equal to 7, they win the game at the next checkpoint" —
+/// and this sentence modifies the number on the far side of it. It does not
+/// touch a score: a player who needs six has gained no agenda point, so
+/// 1.17.1a's threat level, an "agenda points at least" requirement and every
+/// other reader of a score go on reading the real one. The only place the
+/// declaration is read is 10.3.1c, which is the only place the comparison is
+/// made.
+///
+/// "Each player" reaches both without asking whose card it is — the Runner
+/// wins on six against a Jinteki Corp who printed this, which is the whole
+/// bargain of the card.
+pub fn harmony_medtech() -> Card {
+    card("Harmony Medtech: Biomedical Pioneer")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Each player needs 1 fewer agenda point to win the game.")
+        .declares([each_player_needs_fewer_agenda_points_to_win(1)])
+        .named("biomedical pioneer")
+        .build()
+}
+
+/// Issuaq Adaptics: Sustaining Diversity — Identity: Division.
+/// "Whenever you score an agenda that you did not install or advance this
+///  turn, place 1 power counter on this identity.
+///  For each hosted power counter, you need 1 less agenda point to win the
+///  game."
+///
+/// COMPLETE. Two printed lines: a conditional ability and a static
+/// declaration, with the counters the first places being what the second
+/// counts.
+///
+/// "An agenda that you did not install or advance this turn" is what the
+/// sentence says about the AGENDA, so it rides on the condition as a
+/// description and not as a requirement about the game state: the question is
+/// asked of the card the occurrence names. Both halves are 1.12.6's game
+/// history, which 10.2.1 makes open information — and De Morgan is why the
+/// two are written beside each other: "did not install OR advance" is "was not
+/// installed this turn" and "was not advanced this turn" together.
+///
+/// 1.18.2 is what keeps the second half honest. Placing an advancement counter
+/// is not advancing, so an agenda a Tennin-class ability loaded still qualifies
+/// — and an agenda advanced this turn whose counters were then removed does
+/// not.
+///
+/// The second line is a declaration about 1.17.2's comparison, exactly as
+/// Harmony Medtech's is, with a calculated amount instead of a printed one —
+/// re-read every time the comparison is made, so the counter that arrives with
+/// a score lowers the requirement before the checkpoint that reads it.
+pub fn issuaq_adaptics() -> Card {
+    card("Issuaq Adaptics: Sustaining Diversity")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity.")
+        .text("For each hosted power counter, you need 1 less agenda point to win the game.")
+        .when(
+            corp_scores_an_agenda_matching(&[
+                installed_this_turn(false),
+                advanced_this_turn(false),
+            ]),
+            [place(CounterKind::Power, 1)],
+        )
+        .named("sustaining diversity")
+        .declares([you_need_fewer_agenda_points_to_win(times(
+            1,
+            per_hosted_counter(CounterKind::Power),
+        ))])
+        .named("for each hosted power counter")
+        .build()
+}
+
+/// Nisei Division: The Next Generation — Identity: Division.
+/// "Whenever you and the Runner reveal secretly spent credits, gain
+///  1[credit]."
+///
+/// COMPLETE. CR 10.14.6 builds the psi construction as ONE instruction — both
+/// players secretly spend, the spent credits are revealed, they are spent
+/// immediately, and the outcome branches — and 10.14.6c is the reveal step in
+/// the middle of it. That step is what this condition names, and it is one
+/// moment for both players: the sentence says "you and the Runner", the reveal
+/// happens to both at once, so a psi game meets it once however the bids came
+/// out.
+///
+/// Not the spending. 10.14.4a puts the spend immediately AFTER the reveal, and
+/// a Corp who bid nothing has spent nothing — this identity is paid all the
+/// same, which is the difference between naming the reveal and naming the
+/// credits.
+pub fn nisei_division() -> Card {
+    card("Nisei Division: The Next Generation")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Whenever you and the Runner reveal secretly spent credits, gain 1[credit].")
+        .when(secretly_spent_credits_are_revealed(), [gain(Corp, 1)])
+        .named("the next generation")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        harmony_medtech(),
+        issuaq_adaptics(),
+        nisei_division(),
         hyoubu_institute(),
         industrial_genomics(),
         jinteki_replicating_perfection(),

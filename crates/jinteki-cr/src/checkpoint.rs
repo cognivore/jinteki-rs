@@ -145,7 +145,10 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
 
     // Enumerate condition sources: printed conditional abilities + delayed
     // conditionals maintained by lingering effects (9.6.13) + granted ones.
-    let mut sources: Vec<(ObjectId, usize, AbilityDef, Side, Option<u64>)> = Vec::new();
+    // The last element is CR 1.15.4's bound targets, which only a delayed
+    // conditional carries (the ability that created it announced them).
+    let mut sources: Vec<(ObjectId, usize, AbilityDef, Side, Option<u64>, Vec<ObjectId>)> =
+        Vec::new();
     // 9.1.9b: the abilities an object HAS — printed ones it did not lose, and
     // ones it gained (DJ Fenris class), which are conditional abilities of the
     // gaining object like any other.
@@ -168,7 +171,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
             if a.is_interrupt() {
                 continue;
             }
-            sources.push((o.id, i, a.clone(), o.controller, None));
+            sources.push((o.id, i, a.clone(), o.controller, None, Vec::new()));
         }
     }
     for l in &vm.lingering {
@@ -187,11 +190,11 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     .unwrap_or(Side::Corp);
                 // Encode the run binding by filtering at match time below via
                 // the persisted marker: usize::MAX index + stored run.
-                sources.push((l.source, usize::MAX - 1, def.clone(), controller, Some(l.id)));
+                sources.push((l.source, usize::MAX - 1, def.clone(), controller, Some(l.id), Vec::new()));
                 let _ = run_id;
             }
         }
-        if let Payload::DelayedConditional { def } = &l.payload {
+        if let Payload::DelayedConditional { def, bound_targets } = &l.payload {
             if def.kind == AbilityKind::Conditional && !def.is_interrupt() {
                 let controller = vm
                     .st
@@ -199,7 +202,14 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     .get(&l.source)
                     .map(|o| o.controller)
                     .unwrap_or(Side::Corp);
-                sources.push((l.source, usize::MAX, def.clone(), controller, Some(l.id)));
+                sources.push((
+                    l.source,
+                    usize::MAX,
+                    def.clone(),
+                    controller,
+                    Some(l.id),
+                    bound_targets.clone(),
+                ));
             }
         }
         if let Payload::GrantedAbility { to, def } = &l.payload {
@@ -210,13 +220,13 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     .get(to)
                     .map(|o| o.controller)
                     .unwrap_or(Side::Corp);
-                sources.push((*to, usize::MAX, def.clone(), controller, Some(l.id)));
+                sources.push((*to, usize::MAX, def.clone(), controller, Some(l.id), Vec::new()));
             }
         }
     }
 
     let mut newly: Vec<u64> = Vec::new();
-    for (obj_id, index, def, controller, from_lingering) in sources {
+    for (obj_id, index, def, controller, from_lingering, bound_targets) in sources {
         // CR 9.1.9: an ability the card no longer HAS cannot meet a condition.
         // (`usize::MAX` indices are abilities carried by a lingering effect,
         // not printed on the card, so 9.1.9's gains/losses do not address
@@ -664,6 +674,9 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             // later sentence of the same ability can say
                             // "it" without announcing anything.
                             triggering_card: occurrences.get(k).and_then(|o| o.1),
+                            // 1.15.4 + 9.6.13: the targets the ability that
+                            // created this delayed one had announced.
+                            bound_targets: bound_targets.clone(),
                         },
                     );
                     newly.push(id);
@@ -724,6 +737,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         from_lingering,
                         run_id: vm.current_run.map(|(r, _, _)| r),
                         triggering_card: None,
+                        bound_targets: bound_targets.clone(),
                     },
                 );
                 newly.push(id);
@@ -889,11 +903,13 @@ fn step_b_durations(vm: &mut Vm) {
     });
 }
 
-/// 10.3.1c: 7+ agenda points wins; simultaneous → draw.
+/// 10.3.1c: 7+ agenda points wins; simultaneous → draw. The 7 is what
+/// `Vm::agenda_points_to_win` derives, so a Harmony-Medtech-class declaration
+/// is read here and nowhere else — the scores themselves are untouched.
 fn step_c_agenda_points(vm: &mut Vm) {
     cite!("step_checkpoint_agenda_points");
-    let corp = vm.score(Side::Corp) >= 7;
-    let runner = vm.score(Side::Runner) >= 7;
+    let corp = vm.score(Side::Corp) >= vm.agenda_points_to_win(Side::Corp);
+    let runner = vm.score(Side::Runner) >= vm.agenda_points_to_win(Side::Runner);
     cite!("rule_game_win");
     match (corp, runner) {
         (true, true) => vm.game_over = Some(GameResult::Draw),

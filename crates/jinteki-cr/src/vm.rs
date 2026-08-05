@@ -2508,6 +2508,7 @@ impl Vm {
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
                     triggering_card: None,
+                    bound_targets: Vec::new(),
                 },
             );
             out.push(id);
@@ -2564,6 +2565,7 @@ impl Vm {
                 from_lingering: None,
                 run_id: self.current_run.map(|(r, _, _)| r),
                 triggering_card: None,
+                bound_targets: Vec::new(),
             },
         );
         self.pending_from_effect.push(id);
@@ -4945,6 +4947,7 @@ impl Vm {
                     from_lingering: None,
                     run_id: self.current_run.map(|(r, _, _)| r),
                     triggering_card: None,
+                    bound_targets: Vec::new(),
                 },
             );
             pending_ids.push(id);
@@ -5368,7 +5371,13 @@ impl Vm {
             sub_targets: Vec::new(),
             counter_targets: Vec::new(),
             announce_slot: 0,
-            ability_targets: Vec::new(),
+            // 1.15.4 + 9.6.13: a delayed conditional starts with the targets
+            // the ability that created it announced, so "that program" reads
+            // the same card here as it did there.
+            ability_targets: instance
+                .and_then(|i| self.instances.get(&i))
+                .map(|i| i.bound_targets.clone())
+                .unwrap_or_default(),
             imminent_index: None,
             instance,
             // 1.15.4: the card the condition's occurrence named, carried
@@ -6820,6 +6829,17 @@ impl Vm {
                     matches!(c, GameChange::CardInstalled { obj, .. } if *obj == o.id)
                 });
                 installed == want
+            }
+            // 1.18.1: the same history question about an advance. 1.18.2's
+            // bare placement of an advancement counter is not one, so it is
+            // the change the ADVANCE records that is looked for.
+            TargetFilter::AdvancedThisTurn(want) => {
+                cite!("rule_previous_object");
+                cite!("rule_open_information");
+                let advanced = self.changes.log[self.st.turn_log_start..]
+                    .iter()
+                    .any(|c| matches!(c, GameChange::CardAdvanced { obj } if *obj == o.id));
+                advanced == want
             }
             // 1.18.3: the same permission the basic advance action reads, so
             // a criterion and the action can never disagree about it.
@@ -9128,7 +9148,7 @@ impl Vm {
                     self.lingering.push(LingeringEffect::new(
                         id,
                         source.obj,
-                        Payload::DelayedConditional { def },
+                        Payload::DelayedConditional { def, bound_targets: Vec::new() },
                         // 9.6.13c: no stated duration — until it resolves.
                         crate::lingering::Duration::UntilResolved,
                     ));
@@ -9333,17 +9353,14 @@ impl Vm {
                 // CR 1.15.4: an ability created by this instruction can
                 // refer to a target the SAME ability already announced —
                 // Howler's delayed conditional acts on the card its install
-                // instruction chose. The reference is bound HERE, when the
-                // delayed ability is created, so the later ability "can find
-                // and act on the card" without re-announcing it.
-                let def = {
-                    let announced = self.ability_targets();
-                    let mut d = (**def).clone();
-                    d.instructions =
-                        d.instructions.into_iter().map(|i| bind_targets(i, &announced)).collect();
-                    Box::new(d)
-                };
-                let def = &def;
+                // instruction chose, and Arissana's asks whether that card is
+                // a trojan before trashing it. The reference is bound HERE,
+                // when the delayed ability is created, so the later ability
+                // "can find and act on the card" without re-announcing it;
+                // the frame it resolves in starts with these as its own
+                // announced targets, so every word that reads one says the
+                // same thing inside the delay as outside it.
+                let bound_targets = self.ability_targets();
                 // 9.6.13d: "when this run ends" with no run in progress —
                 // the lingering effect is not created.
                 if matches!(
@@ -9365,7 +9382,12 @@ impl Vm {
                     );
                     let id = self.next_lingering;
                     self.next_lingering += 1;
-                    self.lingering.push(LingeringEffect::new(id, source.obj, Payload::DelayedConditional { def: (**def).clone() }, dur));
+                    self.lingering.push(LingeringEffect::new(
+                        id,
+                        source.obj,
+                        Payload::DelayedConditional { def: (**def).clone(), bound_targets },
+                        dur,
+                    ));
                 }
             }
             Instruction::CreateLingeringEffect { payload, duration } => {
@@ -10830,6 +10852,7 @@ impl Vm {
                                     false,
                                 )
                                 .labeled("after it resolves, remove it from the game"),
+                                bound_targets: Vec::new(),
                             },
                             Duration::UntilResolved,
                         ));
@@ -11956,6 +11979,14 @@ impl Vm {
                     // Archives").
                     Some(crate::ability::TimingRestriction::SourceInZone(_)) => {
                         if !self.use_restriction_ok(o, a) {
+                            continue;
+                        }
+                    }
+                    // 6.1.1: a run is in progress from its initiation until
+                    // the Run Ends Phase completes.
+                    Some(crate::ability::TimingRestriction::RunOnly) => {
+                        cite!("rule_run_timing_structure");
+                        if self.current_run.is_none() {
                             continue;
                         }
                     }
@@ -13766,6 +13797,43 @@ impl Vm {
         crate::object::compute_effective(&self.st.objects, &effects, obj).agenda_points
     }
 
+    /// CR 1.7.2a / 1.17.2: how many agenda points this player needs in their
+    /// score area to win — the printed 7, as the active declarations leave it.
+    ///
+    /// 1.17.2 states the win as a comparison against a number, and
+    /// [`StaticDecl::AgendaPointsToWinMod`] is a sentence about that number
+    /// rather than about the score: a Harmony Medtech Corp still HAS the score
+    /// they have, and every ability that reads one (1.17.1a's threat level, an
+    /// "agenda points at least" requirement) reads it unchanged.
+    ///
+    /// Nothing floors the result. A requirement of zero or less would be met
+    /// by an empty score area, which is what a card taking it there would be
+    /// saying; the two that exist take it to 6 and no further than the
+    /// counters a Corp has actually earned.
+    pub fn agenda_points_to_win(&self, side: Side) -> i32 {
+        cite!("rule_win_agenda_points");
+        cite!("rule_game_win");
+        // 9.1.1a: "you" is the controller of the card that says it; "each
+        // player" reaches both without asking — the same scope word
+        // `max_hand_size` reads.
+        let applies = |src: ObjectId, whose: &crate::ability::DeclSubject| match whose {
+            crate::ability::DeclSubject::EachPlayer => true,
+            crate::ability::DeclSubject::Controller => {
+                self.st.objects.get(&src).is_some_and(|o| o.controller == side)
+            }
+        };
+        cite!("rule_modify_value");
+        let mut n = 7;
+        for (src, d) in &self.active_statics() {
+            if let StaticDecl::AgendaPointsToWinMod { whose, amount } = d {
+                if applies(*src, whose) {
+                    n += self.eval_quantity(amount, Some(*src)) as i32;
+                }
+            }
+        }
+        n
+    }
+
     /// CR 1.17.1a: the threat level is the greatest score of any player.
     /// It is what the "threat N" ability flag reads (9.3.6f).
     pub fn threat_level(&self) -> i32 {
@@ -14585,6 +14653,15 @@ impl Vm {
                         cite!("rule_bid_is_cost");
                         let corp_bid = self.psi_first_bid.take().unwrap_or(0);
                         let runner_bid = n;
+                        // 10.14.6c: the reveal is a step of the construction,
+                        // and an occurrence of its own — "whenever you and the
+                        // Runner reveal secretly spent credits" (Nisei
+                        // Division) has nothing else to be met by. Recorded
+                        // BEFORE the spends, in the order 10.14.6c states.
+                        self.changes.record(GameChange::SecretlySpentCreditsRevealed {
+                            corp: corp_bid,
+                            runner: runner_bid,
+                        });
                         self.spend_flexible(Side::Corp, corp_bid, CreditPurpose::Unspecified);
                         self.spend_flexible(Side::Runner, runner_bid, CreditPurpose::Unspecified);
                         let cause = self.current_source();
@@ -15158,54 +15235,3 @@ fn wrap_all(instrs: Vec<Instruction>, by: Option<Side>) -> Vec<Instruction> {
     }
 }
 
-/// CR 1.15.2b/e: turn an answered target announcement into the announced
-/// set. Targets outside the candidate list are not valid for the instruction
-/// and are dropped; a target repeated in the answer is chosen once; the set
-/// is capped at what the instruction asks for and completed from the
-/// candidates when the answer is short of the floor ("chooses as many
-/// distinct targets as possible").
-
-
-/// CR 1.15.4: rewrite `TargetSpec::EarlierTarget` references into the
-/// objects the ability actually announced. Used where an instruction creates
-/// ANOTHER ability that refers to one of this ability's targets — the
-/// reference has to be resolved at creation time, because the created
-/// ability announces nothing of its own.
-fn bind_targets(instr: Instruction, announced: &[ObjectId]) -> Instruction {
-    fn bind_spec(s: TargetSpec, announced: &[ObjectId]) -> TargetSpec {
-        match s {
-            TargetSpec::EarlierTarget { nth } => match announced.get(nth) {
-                Some(id) => TargetSpec::Objects(vec![*id]),
-                // 1.15.3: an unannounced target is simply not acted on.
-                None => TargetSpec::Objects(Vec::new()),
-            },
-            TargetSpec::Each(v) => {
-                TargetSpec::Each(v.into_iter().map(|s| bind_spec(s, announced)).collect())
-            }
-            other => other,
-        }
-    }
-    match instr {
-        Instruction::TrashCards(s) => Instruction::TrashCards(bind_spec(s, announced)),
-        Instruction::ShuffleCardsIntoDeck { targets, to } => {
-            Instruction::ShuffleCardsIntoDeck { targets: bind_spec(targets, announced), to }
-        }
-        Instruction::RemoveCardsFromGame { targets } => {
-            Instruction::RemoveCardsFromGame { targets: bind_spec(targets, announced) }
-        }
-        Instruction::PlaceCounters { target, kind, amount } => {
-            Instruction::PlaceCounters { target: bind_spec(target, announced), kind, amount }
-        }
-        Instruction::ModifyStrength { target, amount, duration } => {
-            Instruction::ModifyStrength { target: bind_spec(target, announced), amount, duration }
-        }
-        Instruction::Combined(v) => {
-            Instruction::Combined(v.into_iter().map(|i| bind_targets(i, announced)).collect())
-        }
-        Instruction::PerformedBy { side, instr } => Instruction::PerformedBy {
-            side,
-            instr: Box::new(bind_targets(*instr, announced)),
-        },
-        other => other,
-    }
-}

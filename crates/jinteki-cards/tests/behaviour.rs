@@ -9118,3 +9118,390 @@ fn wyvern_shuffles_the_top_of_the_heap_back_only_while_anarch_leads() {
         );
     }
 }
+
+/// Harmony Medtech: "Each player needs 1 fewer agenda point to win the game."
+///
+/// The comparison 1.17.2 makes, and nothing else. The same six agenda points
+/// on the same board win the game with this identity out and do not without
+/// it — and the SCORE is six either way, which is the point of modifying the
+/// requirement rather than the total: every ability that reads a score goes on
+/// reading the real one.
+#[test]
+fn harmony_medtech_wins_the_game_at_six_agenda_points() {
+    for with_identity in [false, true] {
+        let mut vm = Vm::empty(6180);
+        if with_identity {
+            tk::install_identity(
+                &mut vm,
+                card("Harmony Medtech: Biomedical Pioneer"),
+                Side::Corp,
+            );
+        }
+        tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Banked A", 3, 2), Side::Corp);
+        tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Banked B", 3, 2), Side::Corp);
+        let third = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Third Agenda", 3, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        vm.st.objects.get_mut(&third).unwrap().counters.insert(CounterKind::Advancement, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid(), Reply::score(third)).stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.score(Side::Corp),
+            6,
+            "with_identity={with_identity}: the score itself is untouched: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.game_over.is_some(),
+            with_identity,
+            "with_identity={with_identity}: 10.3.1c compares against the number this \
+             declaration moved: {}",
+            t.tail(30)
+        );
+        // "Each player": the Corp's own card lowers the Runner's requirement too.
+        assert_eq!(
+            vm.agenda_points_to_win(Side::Runner),
+            if with_identity { 6 } else { 7 },
+            "with_identity={with_identity}: the sentence names both players"
+        );
+    }
+}
+
+/// Issuaq Adaptics: "Whenever you score an agenda that you did not install or
+/// advance this turn, place 1 power counter on this identity. / For each
+/// hosted power counter, you need 1 less agenda point to win the game."
+///
+/// The description on the condition is what the two games differ by: the same
+/// 1/1 agenda scored out of the same remote, once with the counter already on
+/// it from an earlier turn and once advanced with 5.2.6f's basic action this
+/// turn. Only the first places a counter, and only the first lowers what the
+/// Corp needs.
+#[test]
+fn issuaq_adaptics_counts_agendas_it_neither_installed_nor_advanced_this_turn() {
+    for advanced_this_turn in [false, true] {
+        let mut vm = Vm::empty(6181);
+        let ident =
+            tk::install_identity(&mut vm, card("Issuaq Adaptics: Sustaining Diversity"), Side::Corp);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Quiet Agenda", 1, 1),
+            ServerId::Remote(1),
+            false,
+        );
+        if !advanced_this_turn {
+            // Placed rather than advanced, and before the turn began — so the
+            // history the condition reads holds neither an install nor an
+            // advance of this card.
+            vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 1);
+        }
+        vm.st.corp.credits = 5;
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let mut corp = Plan::corp();
+        if advanced_this_turn {
+            corp = corp.when(Match::action().once(), Reply::Take(Pick::Advance(agenda)));
+        }
+        let t = plan::play(
+            &mut vm,
+            corp.when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.objects[&agenda].zone,
+            Zone::ScoreArea(Side::Corp),
+            "advanced={advanced_this_turn}: the agenda was scored either way: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.objects[&ident].counters.get(&CounterKind::Power).copied().unwrap_or(0),
+            u32::from(!advanced_this_turn),
+            "advanced={advanced_this_turn}: only the agenda the Corp neither installed \
+             nor advanced this turn places a counter: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.agenda_points_to_win(Side::Corp),
+            if advanced_this_turn { 7 } else { 6 },
+            "advanced={advanced_this_turn}: and the requirement follows the counters"
+        );
+    }
+}
+
+/// Nisei Division: "Whenever you and the Runner reveal secretly spent credits,
+/// gain 1[credit]."
+///
+/// The psi game comes from the other side of the table — Akiko Nisei's breach
+/// of R&D — which is what makes the assertion about the REVEAL rather than
+/// about anything this identity did. The Corp is paid whatever the bids were,
+/// including the game where it bid nothing at all: 10.14.6c reveals before
+/// 10.14.4a spends, and it is the reveal the sentence names.
+#[test]
+fn nisei_division_is_paid_for_the_reveal_whatever_the_bids_were() {
+    for corp_bid in [0, 2] {
+        let mut vm = Vm::empty(6182);
+        tk::install_identity(&mut vm, card("Nisei Division: The Next Generation"), Side::Corp);
+        tk::install_identity(&mut vm, card("Akiko Nisei: Head Case"), Side::Runner);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 3;
+        vm.st.runner.credits = 3;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::psi_bid(), Reply::Bid(corp_bid)),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Rnd))
+                .when(Match::psi_bid(), Reply::Bid(1))
+                .stop_at_action(),
+        );
+        assert!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::SecretlySpentCreditsRevealed { .. })),
+            "corp_bid={corp_bid}: 10.14.6c's reveal happened: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            3 - corp_bid + 1,
+            "corp_bid={corp_bid}: the bid was spent and the identity paid 1 for the \
+             reveal: {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Epiphany Analytica: "The first time each turn the Runner steals or trashes
+/// a Corp card, place 1 power counter on this identity. / [click], hosted
+/// power counter: Look at the top 3 cards of R&D. You may install 1 of those
+/// cards."
+///
+/// The ordinal is shared, which is the whole reason the printed "or" is one
+/// condition. The Runner trashes an asset AND steals an agenda in the same
+/// turn, and exactly one counter arrives — two abilities, each with their own
+/// "first time each turn", would have placed two.
+#[test]
+fn epiphany_analytica_places_one_counter_for_the_first_steal_or_trash_of_the_turn() {
+    let mut vm = Vm::empty(6183);
+    let ident =
+        tk::install_identity(&mut vm, card("Epiphany Analytica: Nations Undivided"), Side::Corp);
+    let asset =
+        tk::install_root(&mut vm, tk::vanilla_asset("Trashable", 0, 1), ServerId::Remote(1), true);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::vanilla_agenda("Stealable", 3, 2),
+        ServerId::Remote(2),
+        false,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::of(Kind::MidAccess).once(), Reply::Take(Pick::BasicTrash))
+            .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&asset].zone,
+        Zone::Discard(Side::Corp),
+        "the Runner trashed a Corp card: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Runner),
+        "and stole an agenda in the same turn: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&ident].counters.get(&CounterKind::Power).copied().unwrap_or(0),
+        1,
+        "one ordinal for the whole condition, so one counter: {}",
+        t.tail(60)
+    );
+}
+
+/// Epiphany Analytica's second line: "[click], hosted power counter: Look at
+/// the top 3 cards of R&D. You may install 1 of those cards."
+///
+/// 1.9.2's cost comes off the source, so an EMPTY identity cannot use the
+/// ability at all — 5.2.4 offers a [click] ability as an action, and an action
+/// whose cost is unpayable is not among them. With a counter on it the Corp
+/// spends the counter and installs one of the three cards it looked at.
+#[test]
+fn epiphany_analytica_spends_a_counter_to_install_off_the_top_of_rnd() {
+    for stocked in [false, true] {
+        let mut vm = Vm::empty(6184);
+        let ident = tk::install_identity(
+            &mut vm,
+            card("Epiphany Analytica: Nations Undivided"),
+            Side::Corp,
+        );
+        if stocked {
+            vm.st.objects.get_mut(&ident).unwrap().counters.insert(CounterKind::Power, 1);
+        }
+        // The top of R&D is installable Corp cards; the mandatory draw takes
+        // the topmost, so three of these are what the ability looks at.
+        let deck: Vec<_> = (0..5)
+            .map(|_| vm.new_object(tk::vanilla_asset("Deck Asset", 0, 1), Zone::Deck(Side::Corp)))
+            .collect();
+        vm.st.deck.get_mut(&Side::Corp).unwrap().extend(deck.iter().copied());
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::take("top 3 cards"))
+                .when(Match::optional(), Reply::Optional(true))
+                .when(
+                    Match::destination(),
+                    Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+                )
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        let offered = t
+            .of_kind(Kind::Action)
+            .into_iter()
+            .filter(|e| {
+                plan::action_options(&e.spec).iter().any(|o| {
+                    matches!(o, jinteki_cr::decision::ActionOption::CardAction { label, .. }
+                        if label.contains("top 3 cards"))
+                })
+            })
+            .count();
+        assert_eq!(
+            offered > 0,
+            stocked,
+            "stocked={stocked}: 1.9.2's counter cost is what makes the empty identity \
+             unusable rather than free: {}",
+            t.tail(40)
+        );
+        let installed =
+            deck.iter().filter(|c| matches!(vm.st.objects[c].zone, Zone::Root(_))).count();
+        assert_eq!(
+            installed,
+            usize::from(stocked),
+            "stocked={stocked}: one of the three cards it looked at was installed: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.objects[&ident].counters.get(&CounterKind::Power).copied().unwrap_or(0),
+            0,
+            "stocked={stocked}: the counter was spent: {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// Arissana Rocha Nahu: "Once per turn → 0[credit]: Install 1 program from
+/// your grip (paying its install cost). Use this ability only during a run.
+/// When that run ends, trash that program if it is not a trojan."
+///
+/// Two games with the same program install, one where the program is a trojan
+/// and one where it is not. The delayed conditional 9.6.13 creates is what
+/// finds the card again when the run ends — "that program" is the target the
+/// same ability announced, bound when the delayed ability was created, since
+/// the frame that announced it is long gone by then.
+#[test]
+fn arissana_trashes_the_program_she_installed_unless_it_is_a_trojan() {
+    for trojan in [false, true] {
+        let mut vm = Vm::empty(6185);
+        tk::install_identity(&mut vm, card("Arissana Rocha Nahu: Street Artist"), Side::Runner);
+        let mut prog = tk::vanilla_runner_card("Some Program", CardType::Program);
+        prog.cost = Some(1);
+        if trojan {
+            prog.subtypes = vec!["Trojan"];
+        }
+        let program = vm.new_object(prog, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(program);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .when(Match::paid().offering("street artist"), Reply::take("street artist"))
+                .when(Match::targets().once(), Reply::target(program))
+                .stop_at_action(),
+        );
+        assert!(
+            vm.changes.log.iter().any(|c| matches!(
+                c,
+                GameChange::CardInstalled { obj, .. } if *obj == program
+            )),
+            "trojan={trojan}: the program was installed during the run: {}",
+            t.tail(50)
+        );
+        assert_eq!(
+            vm.st.objects[&program].zone,
+            if trojan { Zone::Rig } else { Zone::Discard(Side::Runner) },
+            "trojan={trojan}: the run ending trashes the program it is not a trojan: {}",
+            t.tail(50)
+        );
+    }
+}
+
+/// Arissana's middle sentence: "Use this ability only during a run."
+///
+/// 9.3.3c's limit on WHEN, asked where it bites — the action phase's own paid
+/// windows, before any run has begun. The ability is simply not among the
+/// options there, which is what keeps the delayed conditional from ever being
+/// created outside a run (9.6.13d).
+#[test]
+fn arissana_is_not_offered_outside_a_run() {
+    let mut vm = Vm::empty(6186);
+    tk::install_identity(&mut vm, card("Arissana Rocha Nahu: Street Artist"), Side::Runner);
+    let mut prog = tk::vanilla_runner_card("Some Program", CardType::Program);
+    prog.cost = Some(1);
+    let program = vm.new_object(prog, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(program);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::credit()).stop_at_action(),
+    );
+    let offers = t
+        .of_kind(Kind::Paid)
+        .into_iter()
+        .filter(|e| plan::count_labelled(plan::window_options(&e.spec), "street artist") > 0)
+        .count();
+    assert_eq!(offers, 0, "no run in progress, so the ability is never offered: {}", t.tail(40));
+    assert_eq!(
+        vm.st.objects[&program].zone,
+        Zone::Hand(Side::Runner),
+        "and the program stayed in the grip: {}",
+        t.tail(40)
+    );
+}

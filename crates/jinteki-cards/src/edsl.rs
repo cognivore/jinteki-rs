@@ -473,6 +473,22 @@ impl CardBuilder {
                 }),
         )
     }
+    /// "Once per turn → 0[credit]: … **Use this ability only during a run.**"
+    /// (Arissana Rocha Nahu.) The once-per-turn flag (9.3.6g) and 9.3.3c's
+    /// limit on WHEN, which names the run structure itself and not one of its
+    /// phases — so the ability is offered in every paid window from the run's
+    /// initiation to the end of its Run Ends Phase (6.1.1).
+    pub fn paid_once_per_turn_during_a_run(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_flag(AbilityFlag::OncePerTurn)
+                .with_timing(TimingRestriction::RunOnly),
+        )
+    }
     /// "Interface → 1[credit]: …" — a paid ability gated by strength (9.3.6c)
     /// and usable only during an encounter (9.5.6a). Naming a subtype makes
     /// it usable only against ice of that kind (9.5.6c), which is exactly
@@ -1395,6 +1411,14 @@ pub fn hosted_on_this_card() -> TargetFilter {
 pub fn installed_this_turn(yes: bool) -> TargetFilter {
     TargetFilter::InstalledThisTurn(yes)
 }
+/// "an agenda that you did not **advance** this turn" (Issuaq Adaptics) —
+/// 1.18.1's advance, asked of the same open game history
+/// [`installed_this_turn`] reads. Pass `true` for the other polarity.
+/// 1.18.2's bare placement of an advancement counter is not an advance, so a
+/// card a Tennin-class ability put a counter on was never advanced.
+pub fn advanced_this_turn(yes: bool) -> TargetFilter {
+    TargetFilter::AdvancedThisTurn(yes)
+}
 /// "a card you can advance" (1.18.3) — the PERMISSION as a criterion, read
 /// from the same place the basic advance action reads it, so a card the
 /// action would refuse cannot be described here either. (The declaration
@@ -1984,6 +2008,13 @@ pub fn trashes_the_card_being_accessed(by: Side) -> TriggerCond {
         while_accessed: true,
     }
 }
+/// "…the Runner … trashes a Corp card" (Epiphany Analytica) — 8.2's trash,
+/// naming whose card it was (1.14.1) and who did the trashing (1.14.5) and
+/// nothing else, so a card trashed on access counts as readily as an installed
+/// one.
+pub fn runner_trashes_a_corp_card() -> TriggerCond {
+    TriggerCond::RunnerTrashesCorpCard { requires: Vec::new() }
+}
 /// "Whenever you trash a Corp card, if <requirements>…" (Wyvern) — one
 /// occurrence per card trashed (9.6.4b), with 9.6.5c's requirements listed
 /// inside the condition, so they are asked when the trash happens.
@@ -2260,13 +2291,31 @@ pub fn credits_in_pool_of(side: Side) -> Quantity {
 }
 /// "Whenever the Corp scores an agenda…" (1.17.6.)
 pub fn corp_scores_agenda() -> TriggerCond {
-    TriggerCond::CorpScoresAgenda { requires: Vec::new() }
+    TriggerCond::CorpScoresAgenda { requires: Vec::new(), criteria: Vec::new() }
+}
+/// "Whenever you score an agenda **that you did not install or advance this
+///  turn**…" (Issuaq Adaptics) — the same condition with what the sentence
+/// says about the AGENDA, in the ordinary description words.
+pub fn corp_scores_an_agenda_matching(criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::CorpScoresAgenda { requires: Vec::new(), criteria: criteria.to_vec() }
 }
 /// "If you have more [nbn] cards rezzed than any other faction, whenever an
 ///  agenda is scored…" (Information Dynamics) — the same condition carrying
 /// 9.6.5c's additional requirement.
 pub fn corp_scores_agenda_if(reqs: &[TriggerRequirement]) -> TriggerCond {
-    TriggerCond::CorpScoresAgenda { requires: reqs.to_vec() }
+    TriggerCond::CorpScoresAgenda { requires: reqs.to_vec(), criteria: Vec::new() }
+}
+/// "…the Runner **steals or trashes** a Corp card" (Epiphany Analytica) — ONE
+/// condition met by either occurrence, so a printed ordinal in front of it is
+/// spent once and not once per half. Two abilities is the wrong shape for that
+/// sentence, however right it is for a sentence with no ordinal (Leela Patel).
+pub fn either_of(alternatives: &[TriggerCond]) -> TriggerCond {
+    TriggerCond::AnyOf { alternatives: alternatives.to_vec(), requires: Vec::new() }
+}
+/// "Whenever you and the Runner **reveal secretly spent credits**, …" (Nisei
+/// Division) — 10.14.6c's reveal step, one occurrence for both players.
+pub fn secretly_spent_credits_are_revealed() -> TriggerCond {
+    TriggerCond::SecretlySpentCreditsRevealed
 }
 /// "Whenever the Runner steals an agenda…" (1.17.7.)
 pub fn runner_steals_agenda() -> TriggerCond {
@@ -2407,6 +2456,26 @@ pub fn if_met_else(
 
 // ---- what is permanently true (9.4) ---------------------------------------
 
+/// "**Each player** needs 1 fewer agenda point to win the game." (Harmony
+/// Medtech.) 1.17.2 states the win as a comparison against a number, and this
+/// modifies that number — not anyone's score, which every other ability goes
+/// on reading unchanged.
+pub fn each_player_needs_fewer_agenda_points_to_win(n: i64) -> StaticDecl {
+    StaticDecl::AgendaPointsToWinMod {
+        whose: jinteki_cr::ability::DeclSubject::EachPlayer,
+        amount: Quantity::c(-n),
+    }
+}
+/// "For each hosted power counter, **you** need 1 less agenda point to win the
+/// game." (Issuaq Adaptics.) The same declaration about the controller alone,
+/// with a calculated amount — re-read every time the comparison is made, so a
+/// counter arriving lowers the requirement at once.
+pub fn you_need_fewer_agenda_points_to_win(amount: Quantity) -> StaticDecl {
+    StaticDecl::AgendaPointsToWinMod {
+        whose: jinteki_cr::ability::DeclSubject::Controller,
+        amount: Quantity::Minus(Box::new(Quantity::c(0)), Box::new(amount)),
+    }
+}
 /// "+N[mu]" (1.19.)
 pub fn plus_memory(n: i32) -> StaticDecl {
     StaticDecl::MemoryLimitMod(n)

@@ -230,6 +230,13 @@ pub enum GameChange {
     TraceInitiated { base: i64 },
     /// 10.8.6e: the trace was determined.
     TraceDetermined { success: bool, trace_strength: i64, link_strength: i64 },
+    /// CR 10.14.6c: both players' secretly spent credits were REVEALED. The
+    /// reveal is a step inside the one instruction 10.14.6 constructs, so it
+    /// records nothing about who spent what beyond the two amounts — the
+    /// spends themselves are already `CreditsLost` records of their own, and
+    /// a condition asking about the reveal (Nisei Division) is asking about
+    /// this moment and not about them.
+    SecretlySpentCreditsRevealed { corp: u32, runner: u32 },
     GameBegan,
 }
 

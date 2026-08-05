@@ -62,7 +62,12 @@ pub enum Payload {
     /// same source read.
     MaintainedChoice { key: &'static str, choice: ChoiceValue },
     /// CR 9.6.13: a delayed conditional ability maintained by this effect.
-    DelayedConditional { def: AbilityDef },
+    /// `bound_targets` is CR 1.15.4 crossing the gap the delay makes: the
+    /// targets the ability that created this one had already announced, kept
+    /// here because the frame that announced them is gone by the time this
+    /// ability resolves. Empty for a delayed conditional the rules themselves
+    /// create (7.3.8's postponed breach, 8.6.6's removal after play).
+    DelayedConditional { def: AbilityDef, bound_targets: Vec<ObjectId> },
     /// CR 9.12.5: a persistent ability persisting after its source was
     /// trashed during an access; applicable only to the bound run (9.12.5d).
     PersistedAbility { def: AbilityDef, run_id: u64 },

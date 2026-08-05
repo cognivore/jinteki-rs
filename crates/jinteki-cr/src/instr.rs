@@ -1799,6 +1799,18 @@ pub enum TargetFilter {
     /// which 10.2.1 makes open information to both players. The polarity is
     /// content (§12 rule 2), so one atom says both sentences.
     InstalledThisTurn(bool),
+    /// CR 1.12.6 / 1.18.1: "an agenda that you did not **advance** this turn"
+    /// (Issuaq Adaptics). The same GAME HISTORY query
+    /// [`TargetFilter::InstalledThisTurn`] makes, asked about the other
+    /// movement the same sentence names — the change log since the turn began,
+    /// which 10.2.1 makes open information to both players. The polarity is
+    /// content (§12 rule 2).
+    ///
+    /// It is the ADVANCE that is asked about and not the counters: 1.18.2's
+    /// "place 1 advancement counter" is not advancing, so a card that gained
+    /// counters from a Tennin-class ability was never advanced, and a card
+    /// advanced this turn whose counters were then removed still was.
+    AdvancedThisTurn(bool),
     /// CR 1.18.3: "a card you can advance" (AstroScript Pilot Program, Slot
     /// Machine). The PERMISSION side of advancing — an agenda always, and any
     /// other installed card while an active ability says so — read through

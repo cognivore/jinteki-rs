@@ -41,12 +41,6 @@ kernel words, not card patches.
   you discard cards to reach your maximum hand size", which names the discard
   itself and hands the cards discarded to the next sentence.
   *(Magdalene Keino-Chemutai: Cryptarchitect.)*
-- **No ability sees the score areas' agenda-point totals as a WIN
-  condition.** The kernel ends a game on a flatline or an empty R&D
-  (`GameResult`); nothing anywhere counts agenda points towards 7 or asks how
-  many are needed. *(Harmony Medtech: Biomedical Pioneer; Issuaq Adaptics:
-  Sustaining Diversity.)*
-
 - **A sentence joined by "and" cannot refer to the card its own other half
   chose.** 9.11.3 makes such a sentence ONE instruction, and `Combined` says
   so by merging its halves' expected atoms — but a half that CHOOSES its own
@@ -89,12 +83,6 @@ kernel words, not card patches.
   ability handing a player a basic action at a reduced cost, and 5.2 offers
   actions only from the action phase's own step. *(MirrorMorph: Endless
   Iteration.)*
-- **An ordinal cannot be SHARED between two conditions.**
-  `AbilityDef::ordinal` belongs to one ability, and a sentence with two
-  conditions is written as two abilities (Leela Patel class) — which is right
-  until the sentence also says "the first time each turn", because then each
-  ability spends its own ordinal and the pair fires twice.
-  *(Epiphany Analytica: Nations Undivided.)*
 - **The basic ADVANCE action does not pay through a payment, so nothing about
   it can carry a purpose.** `CreditPurpose` now says what a payment is for —
   trashing a card, using a card's abilities (9.1.6a), a trace attempt's spend
@@ -112,17 +100,31 @@ kernel words, not card patches.
   pipeline `has_subtype` goes through — so "all **bioroid** ice has +1
   strength" needs the loop broken before it can be said.
   *(Haas-Bioroid: Stronger Together.)*
-- **Nothing names the card an ability INSTALLED.**
-  `TargetFilter::{LookedAtByThisAbility, SetAsideByThisAbility, DrawnCards}`
-  each name a set an ability made, and there is no "the card this ability
-  installed" beside them — and a 9.6.13 delayed conditional cannot read the
-  targets of the ability that created it either, so "when that run ends, trash
-  THAT PROGRAM" has nothing to point at. *(Arissana Rocha Nahu: Street Artist;
-  Kabonesa Wu: Netspace Thrillseeker; Topan: Ormas Leader; Mti Mwekundu: Life
-  Improved, whose "the Runner moves to THAT ICE and approaches it" is the same
-  words about the piece its own first sentence installed — `MoveRunnerToIce`
-  is 6.2.8a and would carry it, and the description of the ice is what is
-  missing.)*
+- **Nothing names the card an ability installed when the install ANNOUNCED
+  no target.** A 9.6.13 delayed conditional now carries the targets the
+  ability that created it announced (`AbilityInstance::bound_targets`), so
+  "install 1 program from your grip … when that run ends, trash THAT PROGRAM"
+  reads the same card in both halves — but an install whose card came from a
+  SEARCH announces nothing at all (8.7.4's find is not 1.15.2's announcement),
+  and `TargetFilter::{LookedAtByThisAbility, SetAsideByThisAbility,
+  DrawnCards}` have no "the card this ability installed" beside them to
+  describe it with. *(Kabonesa Wu: Netspace Thrillseeker, whose "if THAT
+  PROGRAM is still installed when your turn ends" is about the card her search
+  found; Mti Mwekundu: Life Improved, whose "the Runner moves to THAT ICE and
+  approaches it" is the same words about the piece its own first sentence
+  installed from HQ — `MoveRunnerToIce` is 6.2.8a and would carry it, and the
+  description of the ice is what is missing.)*
+- **A condition cannot be met by an earlier instruction of its OWN ability.**
+  "Install 1 card from your grip, paying 2[credit] less. **When you install
+  that card**, suffer 1 meat damage." — the second sentence is a conditional
+  whose occurrence happens while the FIRST is resolving, so there is nowhere
+  to put it: `Instruction::CreateDelayedConditional` resolves after the
+  install and 9.6.13 would have it wait for the next one, and a printed
+  conditional ability of the identity would be met by every install rather
+  than by the one this ability performed. What is missing is a trigger
+  condition that describes the occurrence as "an install THIS ability made",
+  which is the same want as the entry above said from the other end.
+  *(Topan: Ormas Leader.)*
 - **A choice between SERVERS cannot be written when the servers do not exist
   yet.** 1.15.1b lists a server among the things a player can be told to
   choose, and `ChoiceSpec::Server` names one — the choice BETWEEN them being
@@ -188,10 +190,6 @@ kernel words, not card patches.
   whose "trash 1 of those cards and add THE REST to HQ" is the same words
   about the cards an earlier instruction looked at — and, being one sentence
   joined by "and", it wants the Blue Sun entry above settled as well.)*
-- **Nothing records a psi game's reveal.** `Instruction::PsiGame` resolves
-  10.14.6's construction whole and writes no change for 10.14.6c's reveal, so
-  "whenever you and the Runner reveal secretly spent credits" has no
-  occurrence to be met by. *(Nisei Division: The Next Generation.)*
 - **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
   trash-a-resource action pays its click and its 2[credit] and only THEN
   announces the resource, so an additional cost stated about *which* resource
@@ -228,7 +226,8 @@ kernel words, not card patches.
   same turn they installed that agenda" is said — but "you cannot score or rez
   THAT card until your next turn begins" needs three things it has none of:
   a description of the one card an earlier instruction of the same ability
-  installed (the entry above), a declaration about rezzing beside the one
+  installed (the install-target entry above), a declaration about rezzing
+  beside the one
   about scoring, and a span — `WantedDuration` stops at `ThisTurn`, and the
   rez half bites during the OPPONENT's turn, which is past the end of it.
   *(Saraswati Mnemonics: Endless Exploration; A Teia: IP Recovery, whose "you
@@ -268,7 +267,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **111 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **116 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -308,12 +307,12 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (16/21)
+## Runner — Shaper (17/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
 - [x] **Akiko Nisei: Head Case** — Whenever you breach R&D, you and the Corp secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Corp spent the same number of credits, access 1 additional card.
-- [ ] **Arissana Rocha Nahu: Street Artist** — Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.
+- [x] **Arissana Rocha Nahu: Street Artist** — Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.
 - [ ] **Ayla "Bios" Rahim: Simulant Specialist** — Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack. [click]: Add 1 card set aside with this identity to your grip.
 - [x] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
 - [x] **Chaos Theory: Wünderkind** — +1[mu]
@@ -408,7 +407,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (10/21)
+## Corp — Jinteki (13/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
@@ -416,10 +415,10 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **AU Co.: The Gold Standard in Clones** — Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity. When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.
 - [ ] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
 - [ ] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.
-- [ ] **Harmony Medtech: Biomedical Pioneer** — Each player needs 1 fewer agenda point to win the game.
+- [x] **Harmony Medtech: Biomedical Pioneer** — Each player needs 1 fewer agenda point to win the game.
 - [x] **Hyoubu Institute: Absolute Clarity** — The first time each turn you reveal a card, gain 1[credit]. [click]: Reveal 1 card from the grip at random or the top card of the stack.
 - [x] **Industrial Genomics: Growing Solutions** — The trash cost of each card is increased by 1 for each facedown card in Archives.
-- [ ] **Issuaq Adaptics: Sustaining Diversity** — Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity. For each hosted power counter, you need 1 less agenda point to win the game.
+- [x] **Issuaq Adaptics: Sustaining Diversity** — Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity. For each hosted power counter, you need 1 less agenda point to win the game.
 - [ ] **Jinteki Biotech: Life Imagined** — Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech. [click][click][click]: Flip this identity.
 - [x] **Jinteki: Personal Evolution** — Whenever an agenda is scored or stolen, do 1 net damage.
 - [x] **Jinteki: Potential Unleashed** — Whenever the Runner takes at least 1 net damage, trash the top card of the stack.
@@ -427,21 +426,21 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Jinteki: Restoring Humanity** — When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].
 - [ ] **Mti Mwekundu: Life Improved** — Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.
 - [ ] **Méliès U: Only the Brightest** — When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest. When the Runner makes a successful run on a central server, flip this identity. When the Runner’s action phase ends, gain 1[credit].
-- [ ] **Nisei Division: The Next Generation** — Whenever you and the Runner reveal secretly spent credits, gain 1[credit].
+- [x] **Nisei Division: The Next Generation** — Whenever you and the Runner reveal secretly spent credits, gain 1[credit].
 - [x] **PT Untaian: Life's Building Blocks** — When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)
 - [x] **Pālanā Foods: Sustainable Growth** — The first time each turn the Runner draws a card, gain 1[credit].
 - [ ] **Saraswati Mnemonics: Endless Exploration** — [click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.
 - [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (16/19)
+## Corp — NBN (17/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
 - [ ] **Acme Consulting: The Truth You Need** — The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.
 - [x] **Azmari EdTech: Shaping the Future** — When your turn ends, you may name a card type. Gain 2[credit] the first time each turn the Runner plays or installs a card that has the type you last named this way.
 - [x] **Editorial Division: Ad Nihilum** — The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.
-- [ ] **Epiphany Analytica: Nations Undivided** — The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity. [click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.
+- [x] **Epiphany Analytica: Nations Undivided** — The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity. [click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.
 - [x] **GameNET: Where Dreams are Real** — Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].
 - [x] **Haarpsichord Studios: Entertainment Unleashed** — The Runner cannot steal more than one agenda each turn.
 - [x] **Harishchandra Ent.: Where You're the Star** — While the Runner is tagged, they play with the grip revealed.

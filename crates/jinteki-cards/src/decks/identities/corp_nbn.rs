@@ -462,10 +462,67 @@ pub fn nbn_making_news() -> Card {
         .build()
 }
 
+/// Epiphany Analytica: Nations Undivided — Identity: Division.
+/// "The first time each turn the Runner steals or trashes a Corp card, place 1
+///  power counter on this identity.
+///  [click], hosted power counter: Look at the top 3 cards of R&D. You may
+///  install 1 of those cards."
+///
+/// COMPLETE. Two printed lines, two abilities: a conditional one and a paid
+/// one, with the counters the first places being what the second spends.
+///
+/// "Steals **or** trashes" is ONE condition and not two abilities. 9.6.1a
+/// gives an ability one primary condition, and a sentence stating two is
+/// ordinarily written as two abilities — which is right for Leela Patel, whose
+/// sentence prints no ordinal, and wrong here: `AbilityDef::ordinal` belongs
+/// to one ability, so a pair would each spend their own "first time each turn"
+/// and a Runner who stole an agenda and trashed an asset in the same turn
+/// would pay twice. One condition describing two kinds of occurrence, met by
+/// either, is what the printed "or" says.
+///
+/// The trash half stipulates nothing but whose card it was and who trashed it,
+/// so a card trashed on access counts as readily as an installed one; the
+/// steal half is 1.17.7's steal. An agenda the Runner steals meets only the
+/// steal half — 1.17.7 moves it to the score area and does not trash it — so
+/// the two halves cannot both fire on one card.
+///
+/// "Hosted power counter" is 1.9.2's cost spent off the source, which is what
+/// makes the paid ability unusable while the identity is empty rather than
+/// free. "1 of those cards" names the cards the ability is looking at, which
+/// is a zone specification (1.15.2c lifts for it), and stipulates nothing else
+/// — an agenda among the three may be installed like anything else.
+pub fn epiphany_analytica() -> Card {
+    card("Epiphany Analytica: Nations Undivided")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity.")
+        .text("[click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.")
+        .when_first_each_turn(
+            either_of(&[runner_steals_agenda(), runner_trashes_a_corp_card()]),
+            [place(CounterKind::Power, 1)],
+        )
+        .named("nations undivided")
+        .paid(
+            clicks(1).plus_cost(hosted_counters(CounterKind::Power, 1)),
+            [
+                look_at(top_of_rnd(amount(3)), Corp),
+                may(install(
+                    choose(1, &[looked_at_by_this_ability()]),
+                    InstallDest::DeclaredByInstaller,
+                )),
+            ],
+        )
+        .named("look at the top 3 cards of R&D")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        epiphany_analytica(),
         nbn_controlling_the_message(),
         nbn_making_news(),
         gamenet(),

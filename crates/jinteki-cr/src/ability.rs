@@ -426,7 +426,16 @@ pub enum TriggerCond {
     /// 1.17.3e/f: a card ADDED to a score area is not scored, so it cannot
     /// meet this. `requires` is 9.6.5c's additional stipulation, exactly as
     /// on the steal twin.
-    CorpScoresAgenda { requires: Vec<TriggerRequirement> },
+    ///
+    /// `criteria` is what the sentence says about the AGENDA — "an agenda
+    /// **that you did not install or advance this turn**" (Issuaq Adaptics) —
+    /// in the shared filter vocabulary (§12 rule 5), asked of the card the
+    /// occurrence names. That is a different question from `requires`, which
+    /// asks about the game state and knows nothing of which agenda it was.
+    CorpScoresAgenda {
+        requires: Vec<TriggerRequirement>,
+        criteria: Vec<crate::instr::TargetFilter>,
+    },
     /// "Whenever the Runner avoids receiving a tag…" (Thunder Art Gallery
     /// class — the 9.9.4c/d chain-reaction examples).
     RunnerAvoidsTag,
@@ -605,6 +614,36 @@ pub enum TriggerCond {
     /// them. It is the counterpart of [`TriggerCond::RunnerTakesTag`], which
     /// says the same thing about the tag arriving.
     TagRemoved,
+    /// CR 10.14.6c: "Whenever you and the Runner **reveal secretly spent
+    /// credits**, …" (Nisei Division). The reveal step of the construction
+    /// 10.14.6 builds, which is one moment for both players — the sentence
+    /// names them both and the reveal happens to both at once, so the
+    /// condition is met once per psi game and says nothing about the amounts.
+    ///
+    /// Not the spending: 10.14.4a spends the credits immediately AFTER the
+    /// reveal, and those are `CreditsLost` occurrences a
+    /// [`TriggerCond::PlayerPaysCredits`] would read instead.
+    SecretlySpentCreditsRevealed,
+    /// CR 9.6.1a + 9.6.5c: "the first time each turn the Runner **steals or
+    /// trashes** a Corp card" (Epiphany Analytica) — ONE condition describing
+    /// two kinds of occurrence, met by either.
+    ///
+    /// The printed "or" between whole occurrences has no other way to be said.
+    /// 9.6.1a gives an ability ONE primary condition, so a sentence with two
+    /// of them is ordinarily written as two abilities (Leela Patel class) —
+    /// which is right until the sentence also prints an ordinal, because
+    /// [`AbilityDef::ordinal`] belongs to one ability and the pair would each
+    /// spend their own and fire twice. One condition, one ordinal, one
+    /// ability; the alternatives are content on it (§12 rule 2), exactly as
+    /// [`crate::instr::TargetFilter::AnyOf`] is for a description.
+    ///
+    /// `requires` is 9.6.5c's additional stipulation about the game state,
+    /// stated about the WHOLE condition because that is where a printed "if"
+    /// clause sits. An alternative that carries requirements of its own is not
+    /// readable here — a requirement is checked once, against the state, and
+    /// there is nowhere to say which alternative it came with — so the
+    /// alternatives are asserted to carry none.
+    AnyOf { alternatives: Vec<TriggerCond>, requires: Vec<TriggerRequirement> },
 }
 
 impl TriggerCond {
@@ -1102,6 +1141,15 @@ pub enum TimingRestriction {
     /// its source is inactive, and this is what stops the same ability being
     /// used from a hand.
     SourceInZone(Zone),
+    /// CR 9.3.3c + 6.1: "**Use this ability only during a run.**" (Arissana
+    /// Rocha Nahu.) A limit on WHEN, stated about the run structure itself
+    /// rather than about one of its phases — the sibling of
+    /// [`TimingRestriction::EncounterOnly`] and
+    /// [`TimingRestriction::ApproachOnly`], which name a phase inside the run
+    /// and are therefore narrower than this. 6.1.1: a run is in progress from
+    /// its initiation until the Run Ends Phase completes, so the whole of that
+    /// span qualifies and nothing outside it does.
+    RunOnly,
 }
 
 /// CR 1.13: which side of a hosting relationship a declaration reaches.
@@ -1387,6 +1435,25 @@ pub enum StaticDecl {
     /// flat "1 more", and "1 fewer" is a negative quantity
     /// (`Quantity::Minus`).
     SelfAgendaPointsMod(crate::instr::Quantity),
+    /// CR 1.7.2a / 1.17.2: "Each player needs 1 fewer agenda point to win the
+    /// game." (Harmony Medtech.) "For each hosted power counter, you need 1
+    /// less agenda point to win the game." (Issuaq Adaptics.)
+    ///
+    /// 1.17.2 states the win as a comparison — "if at any time a player's
+    /// score is greater than or equal to 7, they win the game at the next
+    /// checkpoint" — and this declaration modifies the number on the other
+    /// side of it. Not the score: a player who needs 6 has not gained a point,
+    /// and every ability that reads a score (1.17.1a's threat level, an
+    /// "agenda points at least" requirement) still reads the real one.
+    ///
+    /// `whose` is the same scope word [`StaticDecl::MaxHandSizeMod`] carries —
+    /// "each player" against "you" — and `amount` is a quantity position (§12
+    /// rule 6) carrying the polarity, so "1 fewer" is a flat negative and "1
+    /// less for each hosted power counter" is the same declaration with a
+    /// calculated one. Nothing floors the result: the requirement is the
+    /// printed 7 as these declarations leave it, and a card that took it to
+    /// zero would say exactly that.
+    AgendaPointsToWinMod { whose: DeclSubject, amount: crate::instr::Quantity },
     /// CR 1.17.3 / 9.12.4: "The Corp cannot score <the described agendas>."
     /// (Clot's first sentence, scoped by "during the same turn they installed
     /// that agenda".) A prohibition on the (S) OPTION rather than on an
@@ -1859,6 +1926,20 @@ pub struct AbilityInstance {
     /// card (a turn beginning, a tag taken) and for an instance created by
     /// something other than the checkpoint scan.
     pub triggering_card: Option<ObjectId>,
+    /// CR 1.15.4 + 9.6.13: the targets the ability that CREATED this delayed
+    /// conditional had already announced — "install 1 program … **when that
+    /// run ends, trash that program**" (Arissana Rocha Nahu), "…**trash that
+    /// program**" (Howler). The delayed ability resolves long after the frame
+    /// that made it has gone, so the reference is bound when the ability is
+    /// created and travels with it; the frame it eventually resolves in
+    /// starts with these as its own announced targets, which is what lets
+    /// every "the target this ability already announced" word — the
+    /// [`crate::instr::TargetSpec::EarlierTarget`] a later instruction reads,
+    /// the [`TriggerRequirement::EarlierTargetMatches`] a conditional one
+    /// asks — say the same thing inside a delayed ability as outside one.
+    ///
+    /// Empty for every instance not created that way.
+    pub bound_targets: Vec<ObjectId>,
 }
 
 /// CR 9.1.7 + 9.1.8: whether an ability is active. `encounter_ice` is the
@@ -2067,7 +2148,53 @@ pub fn trigger_matches(
     // copy of <name>").
     matches_criteria: impl Fn(ObjectId, &[crate::instr::TargetFilter]) -> bool,
 ) -> bool {
+    trigger_matches_dyn(
+        cond,
+        change,
+        source,
+        server_of_source,
+        &trashed_is_corp,
+        &card_type_of,
+        &has_subtype,
+        &matches_choice,
+        &matches_criteria,
+    )
+}
+
+/// The body of [`trigger_matches`], with the five state readers taken as trait
+/// OBJECTS. A disjunctive condition (9.6.5) asks the same question of each
+/// alternative, so the function is recursive — and a recursion that passed the
+/// readers by generic reference would instantiate a new copy of it per level.
+fn trigger_matches_dyn(
+    cond: &TriggerCond,
+    change: &GameChange,
+    source: &Object,
+    server_of_source: Option<ServerId>,
+    trashed_is_corp: &dyn Fn(ObjectId) -> bool,
+    card_type_of: &dyn Fn(ObjectId) -> Option<crate::object::CardType>,
+    has_subtype: &dyn Fn(ObjectId, &'static str) -> bool,
+    matches_choice: &dyn Fn(ObjectId, &'static str) -> bool,
+    matches_criteria: &dyn Fn(ObjectId, &[crate::instr::TargetFilter]) -> bool,
+) -> bool {
     cite!("rule_trigger_condition_checked");
+    // 9.6.5: one condition describing several kinds of occurrence is met by
+    // any of them. Asked before the pairwise table, since the alternatives are
+    // what the table then sees.
+    if let TriggerCond::AnyOf { alternatives, .. } = cond {
+        return alternatives.iter().any(|alt| {
+            trigger_matches_dyn(
+                alt,
+                change,
+                source,
+                server_of_source,
+                trashed_is_corp,
+                card_type_of,
+                has_subtype,
+                matches_choice,
+                matches_criteria,
+            )
+        });
+    }
     match (cond, change) {
         // 9.6.5c: the requirements riding on the condition are checked by the
         // checkpoint scan (it has the state access); this arm matches the
@@ -2484,11 +2611,20 @@ pub fn trigger_matches(
             *ice == source.id && (!*printed_only || *printed)
         }
         (TriggerCond::RunnerStealsAgenda { .. }, GameChange::AgendaStolen { .. }) => true,
-        (TriggerCond::CorpScoresAgenda { .. }, GameChange::AgendaScored { .. }) => {
+        (TriggerCond::CorpScoresAgenda { criteria, .. }, GameChange::AgendaScored { obj, .. }) => {
             cite!("rule_agenda_scored");
-            true
+            // §12 rule 5: what the sentence says about the agenda, asked the
+            // way a description asks it.
+            matches_criteria(*obj, criteria)
         }
         (TriggerCond::RunnerAvoidsTag, GameChange::TagsAvoided { .. }) => true,
+        (
+            TriggerCond::SecretlySpentCreditsRevealed,
+            GameChange::SecretlySpentCreditsRevealed { .. },
+        ) => {
+            cite!("rule_psi_bid_reveal");
+            true
+        }
         (TriggerCond::PlayerSearchesDeck(side), GameChange::ZoneSearched { by, zone }) => {
             cite!("rule_search_condition");
             by == side && *zone == Zone::Deck(*side)
@@ -2590,10 +2726,22 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::DiscardPhaseEnds { requires, .. }
         | TriggerCond::TurnEnds { requires, .. }
         | TriggerCond::RunnerStealsAgenda { requires }
-        | TriggerCond::CorpScoresAgenda { requires }
+        | TriggerCond::CorpScoresAgenda { requires, .. }
         | TriggerCond::CardInstalledBy { requires, .. }
         | TriggerCond::RunnerTrashesCorpCard { requires }
         | TriggerCond::PlayerPaysCredits { requires, .. } => requires,
+        // The disjunction's requirements are the whole condition's. An
+        // alternative carrying its own would be silently dropped — a
+        // requirement is checked once against the state and cannot be
+        // attributed to one alternative — so it is an authoring error.
+        TriggerCond::AnyOf { alternatives, requires } => {
+            debug_assert!(
+                alternatives.iter().all(|a| trigger_requirements(a).is_empty()),
+                "9.6.5c: an alternative of a disjunctive trigger condition cannot \
+                 carry requirements of its own"
+            );
+            requires
+        }
         _ => &[],
     }
 }

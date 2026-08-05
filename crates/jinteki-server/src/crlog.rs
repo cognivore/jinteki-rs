@@ -372,6 +372,9 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
             "Trace {trace_strength} vs link {link_strength} — the trace {}.",
             if *success { "succeeds" } else { "fails" }
         ),
+        GameChange::SecretlySpentCreditsRevealed { corp, runner } => format!(
+            "Secretly spent credits are revealed: the Corp spent {corp}, the Runner spent {runner}."
+        ),
 
         // Bookkeeping. The CR records these so conditions can be met; no
         // player says them out loud, and a log that did would bury the ones

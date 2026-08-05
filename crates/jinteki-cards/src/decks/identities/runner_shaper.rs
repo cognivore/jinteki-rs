@@ -510,10 +510,71 @@ pub fn jesminder_sareen() -> Card {
         .build()
 }
 
+/// Arissana Rocha Nahu: Street Artist — Identity: Natural.
+/// "Once per turn → 0[credit]: Install 1 program from your grip (paying its
+///  install cost). Use this ability only during a run. When that run ends,
+///  trash that program if it is not a trojan."
+///
+/// COMPLETE. Three printed sentences on one paid ability: what it does, when
+/// it may be used, and what happens afterwards.
+///
+/// The parenthesis is 1.4's reminder text, not a stipulation — 1.16.6 makes an
+/// installing player pay the install cost unless something says otherwise, so
+/// the card is saying that nothing here does.
+///
+/// "Use this ability only during a run" is 9.3.3c's limit on WHEN, stated
+/// about the run structure itself rather than about one of its phases, so it
+/// holds from the run's initiation until its Run Ends Phase completes
+/// (6.1.1) — every paid window inside a run, and none outside one. It is
+/// broader than the encounter and approach restrictions 9.5.6 states, which
+/// name a phase.
+///
+/// The last sentence is 9.6.13's delayed conditional: an ability created now
+/// that waits for the run to end. "That program" is 1.15.4's back-reference to
+/// the target the SAME ability announced two sentences earlier, bound when the
+/// delayed ability is created — the frame that announced it is gone by the
+/// time the run ends. "If it is not a trojan" is 2.16's subtype asked of that
+/// bound card, so a trojan simply survives; a program already trashed or
+/// uninstalled by then is nothing the instruction can reach, which 1.15.3
+/// settles by acting as much as possible.
+///
+/// 9.6.13d: created outside a run the delayed ability would never be created
+/// at all — which cannot happen here, since the restriction is what puts the
+/// ability inside one.
+pub fn arissana_rocha_nahu() -> Card {
+    card("Arissana Rocha Nahu: Street Artist")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.")
+        .paid_once_per_turn_during_a_run(
+            credits(0),
+            [
+                install(
+                    choose(1, &[in_hand_of(Runner), of_type(CardType::Program)]),
+                    InstallDest::DeclaredByInstaller,
+                ),
+                when_this_run_ends(
+                    "trash that program if it is not a trojan",
+                    false,
+                    false,
+                    [if_met(
+                        &[earlier_choice_matches(0, &[non(with_subtype("Trojan"))])],
+                        [trash(earlier_choice(0))],
+                    )],
+                ),
+            ],
+        )
+        .named("street artist")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        arissana_rocha_nahu(),
         jamie_bzzz_micken(),
         ele_smoke_scovak(),
         lat_ethical_freelancer(),
