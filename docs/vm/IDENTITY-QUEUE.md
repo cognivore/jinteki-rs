@@ -85,7 +85,7 @@ the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **149 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **150 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -304,6 +304,6 @@ Module: `decks/identities/corp_weyland.rs`
 Module: `decks/identities/corp_neutral.rs`
 
 - [x] **Ampère: Cybernetics For Anyone** — Your deck cannot include more than 1 copy of any card. Your deck may include up to 2 different agenda cards from each Corp faction.
-- [ ] **Cyber Bureau: Keeping the Peace** — You draw a starting hand of 10 cards. Before taking your first turn, install up to 5 cards, ignoring all install costs. Rez any number of them, lowering the total rez cost among all cards by 20. Flip this identity. Detective's Bureau: Upholding the Law The first time the Runner initiates a run each turn, force the Runner to lose 1[credit] for each agenda point in his or her score area, then you gain 1[credit] for each credit lost. [click]: Gain 3[credit] or draw 3 cards.
+- [x] **Cyber Bureau: Keeping the Peace** — You draw a starting hand of 10 cards. Before taking your first turn, install up to 5 cards, ignoring all install costs. Rez any number of them, lowering the total rez cost among all cards by 20. Flip this identity. Detective's Bureau: Upholding the Law The first time the Runner initiates a run each turn, force the Runner to lose 1[credit] for each agenda point in his or her score area, then you gain 1[credit] for each credit lost. [click]: Gain 3[credit] or draw 3 cards.
 - [x] **The Shadow: Pulling the Strings** — Draft format only. You can use agendas from all factions in this deck.
 - [x] **The Syndicate: Profit over Principle** — Starter game only.

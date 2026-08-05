@@ -16573,3 +16573,320 @@ fn ag_infusion_is_not_offered_when_the_approached_ice_is_rezzed() {
         t.tail(60)
     );
 }
+
+
+// ---------------------------------------------------------------------------
+// Cyber Bureau: Keeping the Peace (both faces)
+// ---------------------------------------------------------------------------
+
+/// A Cyber Bureau game, built through the real §1.6 setup: the corp deck's
+/// first ten cards (the starting hand under `shuffle: false`) hold three
+/// 8-to-rez assets and two 2-to-rez ice; the rest is operation filler, which
+/// no install can choose.
+fn cyber_bureau_game() -> Vm {
+    use jinteki_cr::vm::GameSetup;
+    let mut corp_deck: Vec<PrintedCard> = vec![
+        tk::vanilla_asset("Asset-8a", 8, 1),
+        tk::vanilla_asset("Asset-8b", 8, 1),
+        tk::vanilla_asset("Asset-8c", 8, 1),
+        tk::vanilla_ice("Ice-2a", 2, 3),
+        tk::vanilla_ice("Ice-2b", 2, 3),
+    ];
+    for _ in 0..10 {
+        corp_deck.push(tk::corp_filler("C-filler"));
+    }
+    let runner_deck: Vec<PrintedCard> =
+        (0..8).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    Vm::new_game(GameSetup {
+        corp_identity: Some(card("Cyber Bureau: Keeping the Peace")),
+        runner_identity: None,
+        corp_deck,
+        runner_deck,
+        shuffle: false,
+        seed: 6410,
+        additional_identities: Default::default(),
+        extra_cards: Default::default(),
+    })
+}
+
+/// Cyber Bureau, the whole opening: the starting hand is 10 (1.6.6 draws the
+/// printed number), the pre-first-turn window installs five cards without the
+/// credit pool moving (1.16.5c), the Corp rezzes three 8-cost assets out of
+/// the one 20[credit] pool — shares declared 8, 8, 4 (1.16.2f's division,
+/// clamped to what remains), so 24[credit] of rez costs are paid with
+/// 4[credit] — and the identity flips before the first turn formally begins.
+#[test]
+fn cyber_bureau_opens_with_ten_installs_five_free_rezzes_three_from_the_pool_and_flips() {
+    let mut vm = cyber_bureau_game();
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 10, "1.6.6 drew the printed 10");
+    let id = vm.identity_of(Side::Corp).expect("the Corp identity");
+    let by_name = |vm: &Vm, n: &str| -> ObjectId {
+        vm.st.hand[&Side::Corp]
+            .iter()
+            .copied()
+            .find(|c| vm.st.objects[c].printed.name == n)
+            .expect("in the opening hand")
+    };
+    let a = by_name(&vm, "Asset-8a");
+    let b = by_name(&vm, "Asset-8b");
+    let c = by_name(&vm, "Asset-8c");
+    let i1 = by_name(&vm, "Ice-2a");
+    let i2 = by_name(&vm, "Ice-2b");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // Five installs, one at a time (8.5.5), all cost-ignored.
+            .when(Match::targets().once(), Reply::Targets(vec![a]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![b]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![c]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![i1]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![i2]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Rnd)),
+            )
+            // Three rezzes out of the pool: shares 8, 8, then 8 clamped to
+            // the 4 that remain (1.16.2f's nonnegative numbers, summing to
+            // no more than the modifier).
+            .when(Match::targets().once(), Reply::Targets(vec![a]))
+            .when(Match::cost_division().once(), Reply::Divide(8))
+            .when(Match::targets().once(), Reply::Targets(vec![b]))
+            .when(Match::cost_division().once(), Reply::Divide(8))
+            .when(Match::targets().once(), Reply::Targets(vec![c]))
+            .when(Match::cost_division().once(), Reply::Divide(8))
+            // Decline whatever the pool can still afford after that.
+            .when(Match::targets(), Reply::Targets(Vec::new()))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    let log = &vm.changes.log;
+    let began = log
+        .iter()
+        .position(|c| matches!(c, GameChange::GameBegan))
+        .expect("the game began");
+    assert_eq!(
+        log[..began]
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardInstalled { .. }))
+            .count(),
+        5,
+        "all five installs land before the game begins (1.6.7a): {}",
+        t.tail(60)
+    );
+    // 1.16.5c: the installs moved no credits; the three rezzes paid 8−8,
+    // 8−8 and 8−4 — so the whole opening paid exactly 4 of the Corp's 5.
+    let paid: u32 = log[..began]
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CostPaid { side: Side::Corp, credits, .. } => Some(*credits),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(paid, 4, "24[credit] of rez costs, 20 lowered, 4 paid: {}", t.tail(60));
+    assert_eq!(vm.st.corp.credits, 1, "5 − 4: the installs cost nothing");
+    let rezzed: Vec<ObjectId> = log[..began]
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CardRezzed { obj, .. } => Some(*obj),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rezzed, vec![a, b, c], "the three chosen assets rezzed, in order");
+    assert!(!vm.st.objects[&i1].faceup, "the ice was never rezzed");
+    // "Flip this identity." — mandatory, and inside the window: the flip is
+    // recorded before GameBegan, and the back face shows from then on.
+    let flip = log
+        .iter()
+        .position(|c| matches!(c, GameChange::IdentityFlipped { side: Side::Corp, .. }))
+        .expect("the identity flipped");
+    assert!(flip < began, "flipped before the game began: {}", t.tail(60));
+    assert_eq!(vm.st.objects[&id].flipped, Some(0), "Detective's Bureau faces up");
+}
+
+/// "Install up to 5" — declining the very first pick installs none and
+/// rezzes nothing, and "Flip this identity." still happens: the flip is a
+/// mandatory third instruction of the same ability, not a reward for using
+/// the first two. The game then proceeds into an ordinary first turn.
+#[test]
+fn cyber_bureau_declined_installs_still_flip_the_identity() {
+    let mut vm = cyber_bureau_game();
+    let id = vm.identity_of(Side::Corp).expect("the Corp identity");
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets(), Reply::Targets(Vec::new()))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardInstalled { .. })),
+        "nothing installed: {}",
+        t.tail(30)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardRezzed { .. })),
+        "and nothing rezzed"
+    );
+    assert_eq!(vm.st.corp.credits, 5, "no cost was paid by anything");
+    assert_eq!(vm.st.objects[&id].flipped, Some(0), "the flip is mandatory");
+    let log = &vm.changes.log;
+    let flip = log
+        .iter()
+        .position(|c| matches!(c, GameChange::IdentityFlipped { side: Side::Corp, .. }))
+        .expect("the identity flipped");
+    let first_turn = log
+        .iter()
+        .position(|c| matches!(c, GameChange::TurnBegan { side: Side::Corp }))
+        .expect("the first turn began");
+    assert!(flip < first_turn, "flipped before the first turn: {}", t.tail(30));
+}
+
+/// Detective's Bureau: "The first time the Runner initiates a run each turn,
+/// force the Runner to lose 1[credit] for each agenda point in his or her
+/// score area, then you gain 1[credit] for each credit lost." — 3 points
+/// scored, so the first run costs 3 and pays the Corp 3; the second run the
+/// same turn meets nothing (9.6.5c's ordinal).
+#[test]
+fn detectives_bureau_tolls_only_the_first_run_each_turn() {
+    let mut vm = Vm::empty(6411);
+    let id = tk::install_identity(&mut vm, card("Cyber Bureau: Keeping the Peace"), Side::Corp);
+    // Setup state: the identity begins on its back face (as the mandatory
+    // pre-first-turn flip leaves it) — placement, not effect-by-fiat.
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
+    tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Stolen-3", 3, 3), Side::Runner);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().times(2), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    let losses: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CreditsLost { side: Side::Runner, amount, .. } => Some(*amount),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(losses, vec![3], "one toll, on the FIRST run only: {}", t.tail(40));
+    assert_eq!(vm.st.runner.credits, 2, "5 − 3, and the second run cost nothing");
+    let gains: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CreditsGained { side: Side::Corp, amount, .. } => Some(*amount),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(gains, vec![3], "…and the Corp was paid it once: {}", t.tail(40));
+    assert_eq!(vm.st.corp.credits, 3);
+}
+
+/// The toll against a pool of 1: CR 1.10.3b — a forced loss takes as many
+/// credits as the pool holds and no more, and "for each credit lost" is the
+/// amount ACTUALLY lost (the recorded loss), not the 3 the score area
+/// computes — so the Corp gains exactly 1.
+#[test]
+fn detectives_bureau_toll_is_capped_by_the_runners_pool() {
+    let mut vm = Vm::empty(6412);
+    let id = tk::install_identity(&mut vm, card("Cyber Bureau: Keeping the Peace"), Side::Corp);
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
+    tk::put_in_score_area(&mut vm, tk::vanilla_agenda("Stolen-3", 3, 3), Side::Runner);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 1;
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.credits, 0, "1.10.3b: a pool of 1 loses 1: {}", t.tail(40));
+    let gains: Vec<u32> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::CreditsGained { side: Side::Corp, amount, .. } => Some(*amount),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        gains,
+        vec![1],
+        "the gain reads the recorded loss, not the computed 3: {}",
+        t.tail(40)
+    );
+    assert_eq!(vm.st.corp.credits, 1);
+}
+
+/// "[click]: Gain 3[credit] or draw 3 cards." — both halves of 9.11.4g's
+/// choice, each for one click.
+#[test]
+fn detectives_bureau_click_gains_3_or_draws_3() {
+    for draw_branch in [false, true] {
+        let mut vm = Vm::empty(6413);
+        let id =
+            tk::install_identity(&mut vm, card("Cyber Bureau: Keeping the Peace"), Side::Corp);
+        vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let option = if draw_branch { "draw 3 cards" } else { "Gain 3[credit]" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                // 5.2.4: a [click] ability is an ACTION, offered in the
+                // action window.
+                .when(Match::action().once(), Reply::take("gain 3 or draw 3"))
+                .when(Match::options(), Reply::ChooseNamed(option))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        if draw_branch {
+            assert_eq!(
+                vm.st.hand[&Side::Corp].len(),
+                4,
+                "the 5.3 mandatory draw, then 3 more (draw_branch): {}",
+                t.tail(20)
+            );
+            assert_eq!(vm.st.corp.credits, 0);
+        } else {
+            assert_eq!(vm.st.corp.credits, 3, "gained 3 (gain branch): {}", t.tail(20));
+            assert_eq!(vm.st.hand[&Side::Corp].len(), 1, "only the mandatory draw");
+        }
+    }
+}

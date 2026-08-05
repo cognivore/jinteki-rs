@@ -887,6 +887,27 @@ pub enum Instruction {
         ignore_costs: bool,
         distinct_servers: bool,
     },
+    /// "Rez any number of them, lowering the total rez cost among all cards
+    /// by 20." (Cyber Bureau; 8.1.2b + 1.16.2f.) "Them" is 1.15.4's
+    /// back-reference to the cards THIS ability installed (the same record
+    /// Kabonesa Wu's "if that program is still installed" reads), so the
+    /// instruction carries no target position: the pick is 8.5.5's
+    /// one-at-a-time choice said about rezzes, declinable at every step —
+    /// which is the whole of "any number".
+    ///
+    /// `reduce_total` is 1.16.2f's divide-the-modifier said about MANY
+    /// second costs: one pool of credits lowers the rez costs of all the
+    /// chosen cards, and the Corp declares, before each rez pays (the
+    /// 1.16.2f timing, "before calculating the value"), how many of the
+    /// REMAINING credits come off this one — nonnegative, at most what is
+    /// left, exactly as that rule's numbers must sum to the modifier. Each
+    /// share lowers its own rez cost and 1.16.2a floors it at 0, so a share
+    /// larger than the cost buys nothing; a pool left over when the Corp
+    /// stops rezzing lowers nothing and lapses. Each rez is otherwise
+    /// ordinary — 8.1.2d's payment, its cost-paid checkpoint, and the
+    /// post-instruction checkpoint per rez, because the expansion cuts one
+    /// [`Instruction::RezCard`] per chosen card (9.11.4b).
+    RezInstalledCards { reduce_total: Quantity },
     /// 8.5.16a–c: place into the play area (not installed, not active),
     /// declare the destination, trash like cards.
     InstallStepPlace,
@@ -1342,6 +1363,9 @@ impl Instruction {
             | Instruction::PurgeVirusCounters | Instruction::FlipIdentity(..)
             | Instruction::SecretlySetFlipFace(..) | Instruction::TrashSelf
             | Instruction::StealSelfAgenda | Instruction::ScoreSelfAgenda | Instruction::InstallCards { .. }
+            // 1.15.4: "them" names the cards this ability installed, so the
+            // pick is a choice among a remembered list, not an announcement.
+            | Instruction::RezInstalledCards { .. }
             | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete
             | Instruction::InstallRezPayCost | Instruction::InstallRezFinish | Instruction::PlayCards { .. }
             | Instruction::PlayStepPlace | Instruction::PlayStepPayCost | Instruction::PlayStepActivate
@@ -1477,6 +1501,7 @@ impl Instruction {
             // whole when the offer is answered, announcing for itself.
             | Instruction::OfferAction { .. }
             | Instruction::ScoreSelfAgenda | Instruction::InstallCard { .. } | Instruction::InstallCards { .. }
+            | Instruction::RezInstalledCards { .. }
             | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete
             | Instruction::InstallRezPayCost | Instruction::InstallRezFinish | Instruction::PlayCard { .. }
             | Instruction::PlayCards { .. } | Instruction::PlayStepPlace | Instruction::PlayStepPayCost
@@ -1537,6 +1562,7 @@ impl Instruction {
             self,
             Instruction::InstallCard { .. }
                 | Instruction::InstallCards { .. }
+                | Instruction::RezInstalledCards { .. }
                 | Instruction::PlayCard { .. }
                 | Instruction::PlayCards { .. }
                 | Instruction::Trace { .. }

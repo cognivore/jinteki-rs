@@ -1291,6 +1291,40 @@ pub fn install_cards_from_hand(
         distinct_servers: false,
     }
 }
+/// "Install up to N cards, **ignoring all install costs**." (Cyber Bureau;
+/// 8.5.5 + 1.16.5c.) The same one-at-a-time choice, declinable at every
+/// pick, with every element of each install's cost removed — including
+/// 8.5.11a's 1[credit] per piece of ice already protecting the destination
+/// server.
+pub fn install_cards_from_hand_ignoring_all_costs(
+    count: u32,
+    from_hand_of: Side,
+    filter: InstallFilter,
+    dest: InstallDest,
+) -> Instruction {
+    Instruction::InstallCards {
+        count,
+        from_hand_of,
+        filter,
+        dest,
+        and_rez: false,
+        and_rez_if_able: false,
+        ignore_costs: true,
+        distinct_servers: false,
+    }
+}
+/// "Rez any number of them, lowering the total rez cost among all cards by
+/// N." (Cyber Bureau; 8.1.2b + 1.16.2f.) "Them" is 1.15.4's back-reference
+/// to the cards THIS ability installed; the rezzes are chosen one at a time
+/// and declinable ("any number" includes zero), and the Corp divides the one
+/// N-credit pool across them exactly as 1.16.2f divides an install-and-rez
+/// "total" modifier — a share declared before each rez pays, each rez cost
+/// floored at 0 by 1.16.2a, the leftover lapsing when the Corp stops. Each
+/// rez is otherwise ordinary: only the install costs were ignored, so
+/// 8.1.2d's payment stands, reduced.
+pub fn rez_any_of_the_installed_lowering_total_by(n: i64) -> Instruction {
+    Instruction::RezInstalledCards { reduce_total: Quantity::c(n) }
+}
 /// "You may install up to N pieces of ice, with no more than a single piece
 /// of ice per server." (NEXT Design; 8.5.5 + 8.5.2a.) The "up to"/"you may"
 /// is 8.5.5's one-at-a-time choice, declinable at every pick; the per-server

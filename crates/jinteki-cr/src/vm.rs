@@ -247,6 +247,12 @@ pub enum DecisionCtx {
     /// 1.16.2f: the Corp divides an install-and-rez "total N less" modifier
     /// between the install cost and the rez cost.
     CostDivision,
+    /// 1.16.2f said about MANY rezzes ([`Instruction::RezInstalledCards`]):
+    /// the Corp declares how many of the `pool` credits still in the
+    /// "lowering the total rez cost among all cards" modifier come off the
+    /// rez cost of the card just chosen. The rest stays in the pool for the
+    /// rezzes still to come.
+    RezPoolShare { pool: u32 },
     /// CR 8.5.16a / 8.5.2: the installer declares the face of the card being
     /// installed, under an active faceup permission
     /// ([`StaticDecl::MayInstallFaceup`], BANGUN). The answer resumes step
@@ -6759,6 +6765,9 @@ impl Vm {
             Instruction::InstallCards { count, .. } | Instruction::PlayCards { count, .. } => {
                 usize::from(*count > 0)
             }
+            // The same one-at-a-time pick said about rezzes: "rez any number
+            // of them" chooses among the cards this ability installed.
+            Instruction::RezInstalledCards { .. } => 1,
             // 6.9.1a: an effect that named no server — the Runner announces
             // the attacked one.
             Instruction::InitiateRun { server: None, .. } => 1,
@@ -7128,6 +7137,48 @@ impl Vm {
                     *filter,
                     *and_rez_if_able,
                 );
+                if candidates.is_empty() {
+                    None
+                } else {
+                    Some((
+                        af.controller,
+                        DecisionSpec::ChooseTargets {
+                            candidates,
+                            count: 1,
+                            up_to: true,
+                            min: 0,
+                            distinct_names: false,
+                        },
+                    ))
+                }
+            }
+            // "Rez any number of them" — one card at a time from the cards
+            // this ability installed (1.15.4's remembered list). 8.1.1 keeps
+            // the unrezzed installed Corp cards; 8.1.2c strikes the agendas;
+            // 1.16.1b strikes a card the Corp could not pay for even with
+            // the whole remaining pool on it, and 1.2.2 a card a "cannot"
+            // declaration describes.
+            Instruction::RezInstalledCards { reduce_total } => {
+                let pool =
+                    self.eval_quantity(reduce_total, Some(af.source.obj)).max(0) as u32;
+                let candidates: Vec<ObjectId> = af
+                    .installed_cards
+                    .iter()
+                    .copied()
+                    .filter(|c| {
+                        let Some(o) = self.st.objects.get(c) else { return false };
+                        !o.faceup
+                            && o.printed.side == Side::Corp
+                            && matches!(
+                                o.printed.card_type,
+                                CardType::Asset | CardType::Ice | CardType::Upgrade
+                            )
+                            && self.is_installed(o)
+                            && !self.rez_prohibited(*c)
+                            && self.st.player(Side::Corp).credits
+                                >= self.rez_cost_credits(*c).saturating_sub(pool)
+                    })
+                    .collect();
                 if candidates.is_empty() {
                     None
                 } else {
@@ -8674,6 +8725,10 @@ impl Vm {
                 self.expand_install_cards(instr);
                 return;
             }
+            Instruction::RezInstalledCards { .. } => {
+                self.expand_rez_installed_cards(instr);
+                return;
+            }
             Instruction::PlayCard { .. } => {
                 self.expand_play_card(instr);
                 return;
@@ -9066,6 +9121,66 @@ impl Vm {
             // Re-enter Targets: the InstallCard may itself need a
             // destination choice before expanding.
         }
+    }
+
+    /// "Rez any number of them, lowering the total rez cost among all cards
+    /// by N" (Cyber Bureau) — the rezzes are chosen and performed ONE AT A
+    /// TIME, each as a separate [`Instruction::RezCard`] (9.11.4b), and
+    /// 1.16.2f's division of the "total" modifier is the Corp's declaration
+    /// before each rez pays: this card's share now, the rest kept in the
+    /// pool the tail-instruction carries.
+    fn expand_rez_installed_cards(&mut self, instr: Instruction) {
+        let Instruction::RezInstalledCards { reduce_total } = instr else { unreachable!() };
+        cite!("rule_rez_by_ability");
+        cite!("rule_split_up_instruction");
+        let (announced, source_obj) = {
+            let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+            (af.targets.clone(), af.source.obj)
+        };
+        let Some(&c) = announced.first() else {
+            // Declined, or nothing left to rez: "any number" includes zero,
+            // and whatever remains of the pool lowers nothing (1.16.2a has
+            // no cost to floor) and lapses with the instruction.
+            self.set_ability_phase(AbilityPhase::Checkpoint);
+            return;
+        };
+        let pool = self.eval_quantity(&reduce_total, Some(source_obj)).max(0) as u32;
+        if pool > 0 {
+            // 1.16.2f: the Corp declares this rez's share of the modifier
+            // "before calculating the value" of the cost about to be paid.
+            cite!("rule_install_and_rez_reducing_total");
+            self.ask(
+                Side::Corp,
+                DecisionSpec::DivideCostReduction { total: pool },
+                DecisionCtx::RezPoolShare { pool },
+            );
+            return;
+        }
+        self.cut_rez_from_pool(c, 0, 0);
+    }
+
+    /// Cut one [`Instruction::RezCard`] for `c` with `share` credits of the
+    /// pool on it, and re-queue [`Instruction::RezInstalledCards`] with what
+    /// remains — the 8.5.5-shaped tail the multi-install expansion also
+    /// leaves.
+    fn cut_rez_from_pool(&mut self, c: ObjectId, share: u32, remaining: u32) {
+        let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
+        af.instructions[af.idx] = Instruction::RezCard {
+            target: crate::instr::TargetSpec::Objects(vec![c]),
+            ignore_costs: false,
+            reduce: crate::instr::Quantity::c(share as i64),
+        };
+        af.instructions.insert(
+            af.idx + 1,
+            Instruction::RezInstalledCards {
+                reduce_total: crate::instr::Quantity::c(remaining as i64),
+            },
+        );
+        af.targets.clear();
+        af.target_spans.clear();
+        af.announce_slot = 0;
+        // Re-enter Targets: the RezCard names its object and needs no
+        // announcement, so the pump carries it straight to imminence.
     }
 
     /// §8.6: expand a PlayCard into the 8.6.7 step sequence.
@@ -10595,6 +10710,7 @@ impl Vm {
                         **inner,
                         Instruction::InstallCard { .. }
                             | Instruction::InstallCards { .. }
+                            | Instruction::RezInstalledCards { .. }
                             | Instruction::PlayCard { .. }
                             | Instruction::PlayCards { .. }
                             | Instruction::Trace { .. }
@@ -12286,7 +12402,9 @@ impl Vm {
                     self.score_agenda(source.obj);
                 }
             }
-            Instruction::InstallCard { .. } | Instruction::InstallCards { .. } => {
+            Instruction::InstallCard { .. }
+            | Instruction::InstallCards { .. }
+            | Instruction::RezInstalledCards { .. } => {
                 // Expanded at imminence time (begin_imminence); unreachable
                 // here, but harmless.
             }
@@ -17450,6 +17568,22 @@ impl Vm {
                     if af.phase == AbilityPhase::Resolve {
                         af.phase = AbilityPhase::Checkpoint;
                     }
+                }
+            }
+            (DecisionCtx::RezPoolShare { pool }, DecisionAnswer::DivideReduction(n)) => {
+                // 1.16.2f's declaration said about the next of MANY rezzes
+                // (`Instruction::RezInstalledCards`): this rez's share is
+                // nonnegative and at most what the pool still holds — the
+                // same clamp the install-and-rez division gets — and the
+                // remainder stays in the pool for the rezzes to come.
+                cite!("rule_install_and_rez_reducing_total");
+                let share = n.min(pool);
+                let picked = match self.frames.last() {
+                    Some(Frame::Ability(af)) => af.targets.first().copied(),
+                    _ => None,
+                };
+                if let Some(c) = picked {
+                    self.cut_rez_from_pool(c, share, pool - share);
                 }
             }
             (DecisionCtx::RezAdditionalCost, DecisionAnswer::PayNestedCost(pay)) => {
