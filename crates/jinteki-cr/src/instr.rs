@@ -2215,6 +2215,25 @@ pub enum InstallDest {
     /// created) leaves no destination to identify, and 8.5.14 stops the
     /// install.
     DeclaredByInstallerInRemoteRoot,
+    /// CR 8.5.16b + 4.6.8 + 1.15.4: "…in the root of or protecting **another**
+    /// remote server" (A Teia). The comparison
+    /// [`InstallDest::DeclaredByInstallerInServerOfTriggeringCard`] makes,
+    /// INVERTED — the server the card the occurrence named is in is the one
+    /// server this destination will not take — and narrowed to 4.6.8's remotes
+    /// the way [`InstallDest::DeclaredByInstallerInRemoteRoot`] is. Both of
+    /// 4.6.6b's halves stay open, so the installer declares the server AND
+    /// whether the card goes in its root or protects it.
+    ///
+    /// 8.5.2a's brand-new remote is among the options, and needs no comparison
+    /// to qualify: a server that does not exist yet is not the one the
+    /// occurrence's card is in. 4.6.8f's limit is what can rule it out, and
+    /// `Vm::install_destinations_for` has already applied it.
+    ///
+    /// "Another" needs a first one to be other THAN. With no card named by the
+    /// occurrence, or with one in no server at all, the comparison cannot be
+    /// made, no destination can be identified, and 8.5.14 stops the install —
+    /// the same answer the un-inverted variant gives.
+    DeclaredByInstallerInAnotherRemoteServer,
     /// Runner installs with no stated destination: the rig (8.5.4). Named
     /// for the 1.13.6a choice every install offers — a card whose ability
     /// describes what it can host is an eligible destination, so the

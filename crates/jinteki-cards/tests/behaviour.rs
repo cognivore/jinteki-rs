@@ -11163,3 +11163,295 @@ fn saraswati_mnemonics_withholds_the_score_until_her_next_turn() {
         t2.tail(40)
     );
 }
+
+/// A Teia: "Limit 2 remote servers. The first time each turn you install a
+/// card in the root of or protecting a remote server, you may install 1 card
+/// from HQ in the root of or protecting another remote server, ignoring all
+/// costs. You cannot score the second card this turn."
+///
+/// Both halves of the condition and both halves of the destination, in one
+/// turn. The Corp's first install protects HQ — a central, so 4.6.8 puts it
+/// outside the sentence and it neither fires the ability nor spends 9.6.5c's
+/// ordinal. The second protects a remote and does both.
+///
+/// The destination is then the whole point: the second card is a piece of ice,
+/// which could legally protect every server on the board, and exactly one
+/// position is offered — the OTHER remote. The same remote is out because it
+/// is not "another"; the three centrals are out because they are not remote;
+/// and 8.5.2a's brand-new remote is out because the first printed line has
+/// already been spent, which is what makes the two lines one card.
+#[test]
+fn a_teia_installs_into_another_remote_and_never_the_same_one() {
+    let mut vm = Vm::empty(6222);
+    tk::install_identity(&mut vm, card("A Teia: IP Recovery"), Side::Corp);
+    // Two remotes, which is the limit — so nothing below can create a third.
+    tk::install_root(&mut vm, tk::vanilla_asset("Neighbour A", 0, 2), ServerId::Remote(1), false);
+    tk::install_root(&mut vm, tk::vanilla_asset("Neighbour B", 0, 2), ServerId::Remote(2), false);
+    // One piece of ice already protecting the far remote, so 8.5.11a has a
+    // credit to charge for the second install and "ignoring all costs" has
+    // something to waive.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Guard", 0, 1), ServerId::Remote(2), false);
+    let central_ice = vm.new_object(tk::vanilla_ice("Central Ice", 0, 1), Zone::Hand(Side::Corp));
+    let remote_ice = vm.new_object(tk::vanilla_ice("Remote Ice", 0, 1), Zone::Hand(Side::Corp));
+    let second = vm.new_object(tk::vanilla_ice("Second Card", 0, 1), Zone::Hand(Side::Corp));
+    for id in [central_ice, remote_ice, second] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // (1) protecting HQ: an install, and not one the sentence reaches.
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(central_ice)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+            )
+            // (2) protecting a remote: the first time each turn it happens.
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(remote_ice)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1))),
+            )
+            .when(Match::reaction().offering("ip recovery"), Reply::take("ip recovery"))
+            .when(Match::targets().once(), Reply::Targets(vec![second]))
+            .when(Match::of(Kind::Destination).once(), Reply::Default)
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    assert_eq!(
+        vm.st.objects[&central_ice].zone,
+        Zone::Ice(ServerId::Hq),
+        "the first install went to a central: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&remote_ice].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "the second install protects a remote: {}",
+        t.tail(60)
+    );
+
+    // 4.6.8: the central install is an install like any other, and the
+    // ability is offered exactly once all turn — never for it.
+    let offered_at: Vec<usize> = t
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            e.options().iter().any(|o| matches!(
+                o,
+                jinteki_cr::decision::WindowOption::TriggerInstance { label, .. }
+                    if label.contains("ip recovery")
+            ))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(
+        offered_at.len(),
+        1,
+        "one offer: the install protecting HQ is not one the sentence reaches, so it \
+         neither fires the ability nor spends 9.6.5c's ordinal on it: {}",
+        t.tail(60)
+    );
+
+    let dests: Vec<Vec<jinteki_cr::instr::InstallDest>> = t
+        .of_kind(Kind::Destination)
+        .into_iter()
+        .map(|e| match &e.spec {
+            jinteki_cr::decision::DecisionSpec::DeclareInstallDestination { options } => {
+                options.clone()
+            }
+            other => panic!("a destination declaration, not {other:?}"),
+        })
+        .collect();
+    // Three declarations in the order the installs happened: the central one,
+    // the remote one, and the ability's. Had the central install fired the
+    // ability, the restricted declaration would be the SECOND of the three.
+    assert_eq!(dests.len(), 3, "three installs, three declarations: {}", t.tail(60));
+    assert_eq!(
+        dests[2],
+        vec![jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(2))],
+        "1.15.4 inverted: the ONE position on offer is the other remote's. The same \
+         remote is not 'another'; the three centrals a piece of ice could otherwise \
+         protect are not remote; and 4.6.8f's limit of 2 has already ruled out \
+         8.5.2a's new one, which the first declaration shows was on offer: {}",
+        t.tail(60)
+    );
+    assert!(
+        dests[0].contains(&jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+        "…and the unrestricted declaration really did offer the centrals: {dests:?}"
+    );
+    assert_eq!(
+        vm.st.objects[&second].zone,
+        Zone::Ice(ServerId::Remote(2)),
+        "the card from HQ went there: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 6,
+        "5 credits, one basic credit action, and nothing paid: 8.5.11a would have \
+         charged 1[credit] for the piece of ice already protecting that remote, and \
+         1.16.5c waives it: {}",
+        t.tail(60)
+    );
+}
+
+/// A Teia again, for the sentence the first test's ice cannot be asked about:
+/// "You cannot score the second card this turn."
+///
+/// The card installed is an agenda whose advancement requirement is already
+/// met, so 1.17.3 would offer the (S) option at the very next window. 1.2.2
+/// withholds it for the rest of the turn — and, the span being "this turn"
+/// rather than Saraswati's longer one, hands it back at the start of the
+/// Corp's next.
+#[test]
+fn a_teia_withholds_the_score_of_the_second_card() {
+    let mut vm = Vm::empty(6223);
+    tk::install_identity(&mut vm, card("A Teia: IP Recovery"), Side::Corp);
+    tk::install_root(&mut vm, tk::vanilla_asset("Neighbour A", 0, 2), ServerId::Remote(1), false);
+    // The far remote exists because a piece of ice protects it (4.6.8d), so
+    // its root is free for an agenda.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Guard", 0, 1), ServerId::Remote(2), false);
+    let trigger = vm.new_object(tk::vanilla_ice("Trigger Ice", 0, 1), Zone::Hand(Side::Corp));
+    let agenda = vm.new_object(tk::vanilla_agenda("Free Agenda", 0, 1), Zone::Hand(Side::Corp));
+    for id in [trigger, agenda] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(trigger)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1))),
+            )
+            .when(Match::reaction().offering("ip recovery"), Reply::take("ip recovery"))
+            .when(Match::targets().once(), Reply::Targets(vec![agenda]))
+            .when(Match::of(Kind::Destination).once(), Reply::Default)
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::Root(ServerId::Remote(2)),
+        "the agenda went to the root of the other remote: {}",
+        t.tail(60)
+    );
+    assert!(
+        !offered_options(&t).iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Score { card } if *card == agenda
+        )),
+        "1.2.2: the (S) option is withheld for the rest of the turn, though the \
+         agenda needs no advancement at all: {}",
+        t.tail(60)
+    );
+
+    let t2 = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner().otherwise_click_credit(),
+    );
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's next turn came round: {}", t2.tail(40));
+    assert!(
+        offered_options(&t2).iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Score { card } if *card == agenda
+        )),
+        "…and 'this turn' ran out with the turn it named: {}",
+        t2.tail(40)
+    );
+}
+
+/// A Teia, third: 9.6.5c's ordinal is answered of the install as it HAPPENED.
+///
+/// "The first time each turn you install a card in the root of or protecting a
+/// remote server" makes the ordinal's scan ask the whole condition again of
+/// every earlier change this turn — and where the card went is a fact about
+/// the moment of the install, not about where the card is when the scan runs.
+/// Here the Corp installs an agenda into a remote root, declines the offer,
+/// scores it, and installs again: the agenda is in the score area by then and
+/// in no server at all, and the first install has still spent the turn's one
+/// offer.
+#[test]
+fn a_teia_spends_the_turns_offer_on_an_install_whose_card_has_since_moved() {
+    let mut vm = Vm::empty(6224);
+    tk::install_identity(&mut vm, card("A Teia: IP Recovery"), Side::Corp);
+    tk::install_root(&mut vm, tk::vanilla_asset("Neighbour A", 0, 2), ServerId::Remote(1), false);
+    // 4.6.8d: the far remote exists because a piece of ice protects it, so its
+    // root is free for the agenda.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Guard", 0, 1), ServerId::Remote(2), false);
+    let agenda = vm.new_object(tk::vanilla_agenda("Free Agenda", 0, 1), Zone::Hand(Side::Corp));
+    let later = vm.new_object(tk::vanilla_ice("Later Ice", 0, 1), Zone::Hand(Side::Corp));
+    for id in [agenda, later] {
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(agenda)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Root(ServerId::Remote(2))),
+            )
+            // 9.6.9: declining resolves nothing, and spends no ordinal either
+            // — the ordinal is stipulated on the CONDITION, which occurred.
+            .when(Match::reaction().offering("ip recovery").once(), Reply::Pass)
+            .when(Match::paid().offering_pick(Pick::Score(agenda)).once(), Reply::score(agenda))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(later)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1))),
+            )
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was installed into a remote root and then scored out of it: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&later].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "…and the second install protects a remote, so it meets the condition too: {}",
+        t.tail(60)
+    );
+    let offers = t
+        .entries
+        .iter()
+        .filter(|e| {
+            e.options().iter().any(|o| matches!(
+                o,
+                jinteki_cr::decision::WindowOption::TriggerInstance { label, .. }
+                    if label.contains("ip recovery")
+            ))
+        })
+        .count();
+    assert_eq!(
+        offers, 1,
+        "one offer all turn: the scored agenda is in no server now, and the install \
+         that put it in one still counts as the first time — the record says where \
+         it went: {}",
+        t.tail(60)
+    );
+}
