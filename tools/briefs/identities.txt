@@ -1,5 +1,16 @@
 You are implementing EVERY identity in jinteki-rs, unattended.
 
+CLAIMED ELSEWHERE (2026-08-05, remove this block when the queue hits 150 or
+the claims go stale): a parallel cluster session is implementing these RIGHT
+NOW in isolated worktrees — SKIP them even though their boxes are unticked,
+or you will duplicate a batch that lands before yours: Freedom Khumalo,
+Skorpios, NEXT Design, Ayla "Bios" Rahim, Adam, Méliès U, Hoshiko Shiro,
+Dewi Subrotoputri, SYNC. Cyber Bureau stays parked on the upstream carddata
+fix (user directive). Everything else unticked is yours: AgInfusion,
+MirrorMorph, Sebastião, Jinteki Biotech (its N-faces word is landing from
+the cluster session; only the pre-first-turn window may still be missing
+when you read this — check git log).
+
 Read FIRST: docs/vm/IDENTITY-QUEUE.md (the full list, grouped, with printed
 text and a checkbox each), then docs/vm/WAVES.md, then docs/cards/EDSL.md,
 then crates/jinteki-cards/src/decks/gauntlet.rs (Nebula/Gemilang show the
