@@ -120,6 +120,18 @@ pub fn draft_only(card: &Card) -> bool {
     text_draft_only(card) || !eternal().in_pool(card)
 }
 
+/// CR 1.4.1a (`rule_gateway_identities`): the two System Gateway Starter
+/// Pack identities are "intended for use only with the decks included in
+/// that pack" and are "not legal for play under the full deck construction
+/// rules". The rule names the two cards outright, so this names them the
+/// same way rather than inventing a characteristic they do not print.
+pub fn starter_pack_only(card: &Card) -> bool {
+    matches!(
+        card.title.as_str(),
+        "The Catalyst: Convention Breaker" | "The Syndicate: Profit over Principle"
+    )
+}
+
 /// Eternal table filter for the CR 1.5.4a additional-identities pile: an
 /// identity Rebirth/DJ Fenris may reach must itself be eternal-playable —
 /// in the card pool and not a draft-format card. (Format legality is settled
@@ -196,6 +208,14 @@ pub fn catalog_json() -> Value {
         }
         if c.is_identity() {
             if draft_only(c) {
+                continue;
+            }
+            // CR 1.4.1a: The Catalyst and The Syndicate "are not legal for
+            // play under the full deck construction rules" — starter-pack
+            // identities, in the pool for the STARTER decks only, so the
+            // constructed-deck catalog never offers them. They remain
+            // implemented and playable through any preset that carries them.
+            if starter_pack_only(c) {
                 continue;
             }
             identities.push(catalog_card(c));
