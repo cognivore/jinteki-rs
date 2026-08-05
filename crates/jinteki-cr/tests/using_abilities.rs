@@ -185,3 +185,68 @@ fn the_8_6_6d_removal_resolves_in_the_reaction_window_after_the_play() {
         "8.6.6d: not trashed — removed from the game by the nested conditional"
     );
 }
+
+/// CR 1.14.4b — an ability that names the player who may use it.
+///
+/// 1.14.4 makes the controller of an ability the controller of its source "by
+/// default", and "a player can only use abilities they control". 1.14.4b is
+/// the clause that was missing from the kernel: "Some abilities state that
+/// they can only be used by a specific player. The specified player controls
+/// each such ability, **even if they do not control its source**."
+///
+/// This is every Bioroid in the game. The break ability is printed on the
+/// Corp's ice; the Runner is the one who may use it, and 1.14.3 spends the
+/// RUNNER's click to do it. Before this, the option was filtered by the
+/// controller of the OBJECT, so the ability was offered to the Corp — the
+/// player who can never use it — and to nobody else.
+///
+/// Both halves are asserted, because 1.14.4b says both: the named player may,
+/// and the source's controller may not.
+#[test]
+fn an_ability_naming_its_user_goes_to_that_player_and_not_to_the_cards_controller() {
+    let mut vm = Vm::empty(4411);
+    tk::install_ice(&mut vm, tk::bioroid_ice("Bioroid-like", 0, 1), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().offering("bioroid").once(), Reply::take("bioroid"))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("End the run"))
+            .stop_at_action(),
+    );
+
+    // The Runner was offered it — 1.14.4b's named player controls it.
+    assert!(
+        t.ever_offered("bioroid"),
+        "1.14.4b: the Runner controls an ability that says only they can use \
+         it, even though the Corp controls the ice: {}",
+        t.tail(20)
+    );
+    // …and the Corp never was, which is the other half of the same sentence.
+    let offered_to_corp = t
+        .windows(jinteki_cr::plan::Kind::Paid, Side::Corp)
+        .iter()
+        .any(|e| e.options().iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::TriggerPaid { label, .. } if label.contains("bioroid")
+        )));
+    assert!(
+        !offered_to_corp,
+        "1.14.4: a player can only use abilities they control, and 1.14.4b \
+         took this one away from the source's controller: {}",
+        t.tail(20)
+    );
+    // 1.14.3/1.14.5: the ability's controller carries it out and pays for it
+    // with objects THEY control — the click came off the Runner.
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, jinteki_cr::change::GameChange::RunDeclaredUnsuccessful { .. })),
+        "the subroutine was broken, so the run was not ended: {}",
+        t.tail(20)
+    );
+}

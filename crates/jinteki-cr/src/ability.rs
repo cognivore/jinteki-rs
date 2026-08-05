@@ -2229,6 +2229,31 @@ pub struct AbilityDef {
     /// counted from the game history instead, which 10.2.1 makes open
     /// information.
     pub ordinal: Option<OrdinalScope>,
+    /// CR 1.14.4b: the player this ability states it can only be used by.
+    ///
+    /// 1.14.4 makes the controller of an ability "**by default**" the
+    /// controller of its source, and "a player can only use abilities they
+    /// control". 1.14.4b is the other clause: "Some abilities state that they
+    /// can only be used by a specific player. The specified player controls
+    /// each such ability, EVEN IF THEY DO NOT CONTROL ITS SOURCE."
+    ///
+    /// `None` is the default — the source's controller. `Some(side)` is a
+    /// printed sentence naming a player, and it says two things at once
+    /// because 1.14.4b makes them one thing: the named player may use the
+    /// ability, and the source's controller may not.
+    ///
+    /// Every Bioroid is written with this ("Only the Runner can use this
+    /// ability"), but it is not a Bioroid-shaped field: it is one optional
+    /// side on the general ability record. §12 rule 2 — the player is
+    /// CONTENT on the ability, not a new kind of ability.
+    ///
+    /// 1.14.5 then follows without any plumbing of its own: "the controller
+    /// of an ability carries out its effects and makes any choices required".
+    /// The frame a used paid ability pushes already takes the player who took
+    /// the option, and eligibility below only ever offers the option to this
+    /// ability's controller — so the two are the same player by construction,
+    /// and 1.14.3 spends that player's own clicks and credits.
+    pub controller: Option<Side>,
     /// Human-readable tag for tests/logs.
     pub label: &'static str,
 }
@@ -2247,8 +2272,20 @@ pub enum OrdinalScope {
 }
 
 impl AbilityDef {
+    /// CR 1.14.4: who controls this ability, given who controls its source.
+    /// The default is the source's controller; 1.14.4b's named player wins.
+    pub fn controller_or(&self, source_controller: Side) -> Side {
+        self.controller.unwrap_or(source_controller)
+    }
+
+    /// CR 1.14.4b: state that only `side` can use this ability.
+    pub fn used_only_by(mut self, side: Side) -> Self {
+        self.controller = Some(side);
+        self
+    }
+
     pub fn conditional(cond: TriggerCond, instrs: Vec<Instruction>, optional: bool) -> Self {
-        AbilityDef {
+        AbilityDef { controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: Some(Condition::Trigger(cond)),
@@ -2264,7 +2301,7 @@ impl AbilityDef {
 
     pub fn paid(cost: Cost, instrs: Vec<Instruction>) -> Self {
         // CR 9.5.3: paid abilities are always optional.
-        AbilityDef {
+        AbilityDef { controller: None,
             kind: AbilityKind::Paid,
             flags: Vec::new(),
             condition: None,
@@ -2282,7 +2319,7 @@ impl AbilityDef {
     /// resolves as the card is played (step 8.6.7f).
     pub fn play(instrs: Vec<Instruction>) -> Self {
         cite!("rule_play_ability");
-        AbilityDef {
+        AbilityDef { controller: None,
             kind: AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -2297,7 +2334,7 @@ impl AbilityDef {
     }
 
     pub fn subroutine(instrs: Vec<Instruction>) -> Self {
-        AbilityDef {
+        AbilityDef { controller: None,
             kind: AbilityKind::Subroutine,
             flags: Vec::new(),
             condition: None,
@@ -2312,7 +2349,7 @@ impl AbilityDef {
     }
 
     pub fn static_ability(statics: Vec<StaticDecl>) -> Self {
-        AbilityDef {
+        AbilityDef { controller: None,
             kind: AbilityKind::Static,
             flags: Vec::new(),
             condition: None,
