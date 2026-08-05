@@ -146,25 +146,64 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .rig-row { display: flex; gap: 6px; overflow-x: auto; min-height: 56px; align-items: center; }
 .rig-row .rowlabel { font-size: 10px; color: var(--dim); writing-mode: vertical-rl; text-orientation: mixed; }
 
-/* ── Cards ────────────────────────────────────────────────────────────── */
+/* ── Cards ────────────────────────────────────────────────────────────────
+   A card is a BOX, and everything it is carrying is drawn INSIDE that box.
+   The cost disc, the strength disc and every counter used to hang off the
+   corners on negative offsets, which cost twice over: on the 64x89 card the
+   nine-card fan draws (52x72 below 640px of height) a card carrying three
+   counters ran them off its own bottom edge, and in a fan at a 16px step
+   each card's cost disc was painted across the 16px strip of the card behind
+   it — the strip being the only thing there was to look at. `overflow:
+   hidden` is the structural guarantee that this stays true: it clips a
+   child, never the card's own outline glow, so the three colours of THE LAW
+   §3 are untouched. Discs are sized in `em` so they shrink with the card
+   instead of needing a second set of numbers per breakpoint. */
 .card { position: relative; width: 64px; height: 88px; border-radius: 8px; background: var(--panel);
   border: 1.5px solid var(--line); display: flex; flex-direction: column; padding: 4px;
-  font-size: 9.5px; line-height: 1.15; flex-shrink: 0; }
+  font-size: 9.5px; line-height: 1.15; flex-shrink: 0; overflow: hidden; }
 .card.deal { animation: dealin .3s; }
 @keyframes dealin { from { transform: translateY(10px) scale(.85); opacity: 0; } }
-.card .cost { position: absolute; top: -6px; left: -6px; width: 20px; height: 20px; border-radius: 50%;
+.card .cost { position: absolute; top: 1px; left: 1px; width: 1.9em; height: 1.9em; border-radius: 50%;
   background: var(--gold); color: #241c04; font-weight: 800; display: flex; align-items: center;
-  justify-content: center; font-size: 11px; }
+  justify-content: center; font-size: 1.05em; z-index: 2; }
 .card .cname { font-weight: 700; overflow: hidden; margin-top: 2px; }
 .card .ctype { color: var(--dim); font-size: 8.5px; margin-top: auto; }
-.card .cstr { position: absolute; bottom: -6px; left: -6px; width: 20px; height: 20px; border-radius: 50%;
+.card .cstr { position: absolute; bottom: 1px; left: 1px; width: 1.9em; height: 1.9em; border-radius: 50%;
   background: var(--runner); color: #fff; font-weight: 800; display: flex; align-items: center;
-  justify-content: center; font-size: 11px; }
-.card .badges { position: absolute; top: -6px; right: -4px; display: flex; flex-direction: column; gap: 2px; }
-.badge { min-width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  justify-content: center; font-size: 1.05em; z-index: 2; }
+/* Only the first line has a disc beside it, so only the first line is
+   indented — and only on the cards that actually carry one. */
+.card.hascost .cname { text-indent: 2.4em; }
+.card.hasstr .ctype { text-indent: 2.6em; }
+/* Counters fill the top-right corner right-to-left and wrap DOWNWARD, and
+   past two they get smaller rather than wider: six at once (advancement,
+   credits, power, virus, agenda, bad publicity) still land inside a 52x72
+   card. Nothing is ever dropped — a counter the player cannot see is a
+   counter they will misplay. */
+.card .badges { position: absolute; top: 1px; right: 1px; z-index: 2;
+  display: flex; flex-direction: row-reverse; flex-wrap: wrap;
+  align-content: flex-start; justify-content: flex-start; gap: 1px;
+  max-width: calc(100% - 2px); max-height: calc(100% - 2px); }
+/* …and they stop short of the corners the other discs are standing in: four
+   counters on a 52px card filled the whole top edge and painted over the
+   cost. Each disc is 1.9 x 1.05em wide, so 2.2em of clearance is one disc
+   and a hair, at every card size. */
+.card.hascost .badges { max-width: calc(100% - 2px - 2.2em); }
+.card.hasstr .badges, .card.staged .badges, .card.picked .badges {
+  max-height: calc(100% - 2px - 2.2em); }
+.card .badges.tight { font-size: .8em; }
+.badge { min-width: 1.7em; height: 1.7em; border-radius: 999px; color: #fff; font-size: 1em; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; padding: 0 .25em; line-height: 1;
+  box-shadow: 0 0 0 1px rgba(4,7,14,.8); }
+/* A kind per colour, and every kind has one: power, virus, agenda and bad
+   publicity used to be white text on nothing, which over card art is white
+   text on a photograph. */
 .badge.adv { background: var(--gold); color: #241c04; }
 .badge.cred { background: #2e8f5e; }
+.badge.pow { background: #6f5bd0; }
+.badge.vir { background: #7ba428; color: #10151f; }
+.badge.agn { background: #c05fa8; }
+.badge.badpub { background: var(--danger); }
 .card.facedown { background: repeating-linear-gradient(45deg, #17203a, #17203a 6px, #131a2e 6px, #131a2e 12px); }
 .card.facedown .cname, .card.facedown .ctype { visibility: hidden; }
 .card.corp-card { border-color: #2c4a77; }
@@ -208,10 +247,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    at a glance on a sunlit phone. */
 .card.staged { border-color: #ffffff;
   box-shadow: 0 0 10px rgba(255,255,255,.85), 0 0 26px rgba(255,255,255,.35); }
-.card.staged::after { content: "✓"; position: absolute; top: -7px; left: -7px;
-  background: #fff; color: #10151f; font-weight: 800; font-size: 12px;
-  width: 20px; height: 20px; border-radius: 50%; display: flex;
+/* The mark rides the CARD, inside its box, in the one corner the cost disc,
+   the strength disc and the counters have all left free — so the sheet's copy
+   of a marked card and the board's copy of it are marked identically, and
+   neither of them spills the mark onto the card beside it in a fan. */
+.card.staged::after, .card.picked::after { content: "✓"; position: absolute;
+  right: 1px; bottom: 1px; font-weight: 800; font-size: 1.05em;
+  width: 1.9em; height: 1.9em; border-radius: 50%; display: flex;
   align-items: center; justify-content: center; z-index: 3; }
+.card.staged::after { background: #fff; color: #10151f; }
+.card.picked::after { background: var(--gold); color: #241c04; }
 @media (prefers-reduced-motion: no-preference) {
   .card.staged { animation: prioshimmer 1.6s ease-in-out infinite; }
 }
@@ -247,55 +292,76 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .card .subs { font-size: 8px; color: var(--dim); }
 .card .subs .broken { text-decoration: line-through; opacity: .5; }
 
-/* ── The FAN: one bounded window, used by the hand and by the prompt row ──
-   Geometry is four custom properties, so the arithmetic lives in one place
-   per fan and the mechanism has none of its own. See `renderFan` in app.js
-   for the derivation; the short version for the hand is that `.action-bar`
-   and `.run-controls` are bounded to `calc(50vw - 122px)` at `left: 10px`,
-   so nothing may come within 112px of the centre line, at ANY width:
+/* ── The FAN: ONE widget, one set of numbers, an ELASTIC step ────────────
+   The hand and every "choose one of these" prompt are the same widget, so
+   they are the same SIZE: the geometry lives on `.fan` itself and no caller
+   overrides it. It used to live once per caller — the hand at 64/16 and the
+   prompt at 56/26 — and two sets of numbers is two widgets that merely look
+   alike, which is what a player felt when the prompt's cards behaved unlike
+   the ones in his hand.
 
-     card 44 x 61, step 18, peek 12, window 9
-     ink = 44 + 8*18 + 2*12 = 212px   half = 106px  <= 112  ✓
+   `--fstep` is the ONE number that is not fixed here: `renderFan` measures
+   the band the row actually has and writes the step back as an inline custom
+   property, so these rules place exactly what the arithmetic sized. The
+   value below is only the tightest packing we ever draw — the fallback for a
+   row that has not been measured yet.
 
-   which is to the pixel what the old five-card fan occupied. Nine now live
-   where five did; nothing got wider, so nothing new can overlap. */
-.fan { display: flex; justify-content: center; align-items: flex-end;
-  /* Horizontal panning is the fan's; vertical belongs to the page. */
-  touch-action: pan-y; }
+   `--ftilt` is degrees of rotation per card away from the middle and `--farc`
+   the pixels each one dips: a SHALLOW arc, MTGA's rather than a card table's,
+   because at nine crowded cards a steep one puts the outer cards off the
+   bottom of the screen. Both are scaled down by `renderFan` as the row
+   spreads: cards standing clear of each other on a table lie flat. */
+/* The focused slot is lifted 8px and scaled from its BOTTOM edge, so it grows
+   upward out of the row by 0.22 of its own height — headroom the fan has to
+   own, or the card climbs into whatever is above it (in a prompt sheet, that
+   is the sentence asking the question). The hand's box is a fixed height and
+   bottom-aligned, so the same padding costs it nothing. */
+.fan { --fw: 64px; --fh: 89px; --fstep: 16px; --fpeek: 10px; --ftilt: 1.2; --farc: 1;
+  --ffocus: 1.22;
+  padding-top: calc((var(--ffocus) - 1) * var(--fh) + 14px);
+  display: flex; justify-content: center; align-items: flex-end;
+  /* Nothing here pans horizontally: a card list is static (§8's "no wobble"),
+     so every horizontal gesture belongs to the page, and every vertical one. */
+  touch-action: auto; }
 .fanrow { display: flex; justify-content: center; align-items: flex-end;
   will-change: transform; }
 .fanrow > * { flex-shrink: 0; margin: 0 calc((var(--fstep) - var(--fw)) / 2); }
-.fan .card { width: var(--fw); height: var(--fh); }
+/* The card is the element that opts back into pointer events: both hosts a
+   fan is drawn into (`.hand`, `.prompt-sheet`) are `pointer-events: none` so
+   their empty space cannot eat a tap meant for the board — and the prompt's
+   cards were never given it back, so for as long as the card prompt has
+   existed its cards could not be tapped at all. `.fanpeek .card` turns it
+   off again below, deliberately: a peek is tapped as a whole. */
+.fan .card { width: var(--fw); height: var(--fh); pointer-events: auto; }
 /* The peek is a sliver of the next card: proof there is more, and a target
    to get there. Its own width, not the cards' step — and pushed clear of the
    end card's overhang, or it sits UNDER the card it is supposed to be peeking
    past and the row silently loses its only "there is more" affordance. Each
    end card's ink runs (fw - fstep)/2 beyond its margin box; that is exactly
-   how far the peek has to stand off. */
+   how far the peek has to stand off — and none at all once the step has
+   spread past the card's own width and there is no overhang left. */
 .fanrow > .fanpeek { margin: 0; }
-.fanrow > .fanpeek.left { margin-right: calc((var(--fw) - var(--fstep)) / 2); }
-.fanrow > .fanpeek.right { margin-left: calc((var(--fw) - var(--fstep)) / 2); }
+.fanrow > .fanpeek.left { margin-right: max(0px, calc((var(--fw) - var(--fstep)) / 2)); }
+.fanrow > .fanpeek.right { margin-left: max(0px, calc((var(--fw) - var(--fstep)) / 2)); }
 .fanpeek { pointer-events: auto; cursor: pointer; opacity: .5;
   width: var(--fpeek); overflow: hidden; align-self: flex-end; }
 .fanpeek .card { pointer-events: none; transform: scale(.9); }
 .fanpeek.left { direction: rtl; }
 .fanpeek:hover { opacity: .85; }
 
-/* ── Hand (HS fan) ────────────────────────────────────────────────────── */
-.hand { --fw: 64px; --fh: 89px; --fstep: 16px; --fpeek: 10px;
+/* ── Hand (HS fan) ─────────────────────────────────────────────────────
+   Nothing here but WHERE the fan hangs and how wide it may EVER get: the
+   size, the arc and the focus are `.fan`'s, and the prompt row gets exactly
+   the same ones. `max-width` is a ceiling, not the band — `renderFan`
+   measures what the bottom-corner rails actually leave between them (§8) and
+   this only stops the row spanning a 27" monitor. */
+.hand { max-width: min(920px, calc(var(--safew, 100vw) - 24px));
   /* 12px clears the arc: an outer card dips 4px on the lift and ~3px more as
      its lower corner swings out under the tilt, plus a pixel of rounding. */
   position: fixed; bottom: calc(12px + env(safe-area-inset-bottom, 0)); left: 50%;
   transform: translateX(-50%); display: flex; justify-content: center; z-index: 40; height: 104px;
   pointer-events: none; }
-.hand .card { pointer-events: auto;
-  transform-origin: bottom center; transition: transform .16s, margin .18s; font-size: 9px; }
-/* It is the STEP that has to fit the band, not the CARD: the card is 64px
-   wide with only 16px of it showing at rest, so it can be as large as the
-   overlap allows. The one under the pointer rises out of the fan and is read
-   where it lies (78 x 109); tapping it raises it to 102 x 142. */
-.hand .card.focused { transform-origin: bottom center; }
-.hand .card.raised { transform: translateY(-40px) scale(1.6) !important; z-index: 60; margin: 0 12px; }
+.hand .card { font-size: 9px; }
 
 /* ── Bars & buttons ───────────────────────────────────────────────────── */
 .action-bar { position: fixed; bottom: calc(146px + env(safe-area-inset-bottom, 0)); left: 10px;
@@ -313,10 +379,15 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .run-controls .continue { background: var(--legal); color: #05221d; border: none; }
 .run-controls .jackout { background: var(--danger); color: #fff; border: none; }
 
-/* ── Prompt sheet (HS discover style) ─────────────────────────────────── */
-.prompt-sheet { position: fixed; left: 50%; transform: translateX(-50%);
+/* ── Prompt sheet (HS discover style) ───────────────────────────────────
+   `--sheetw` is the sheet's band, declared once and inherited by the card row
+   inside it: the fan measures that row's max-width to decide how far it may
+   spread (§8), so the sheet's width and the fan's layout cannot disagree.
+   Every breakpoint below overrides the ONE variable. */
+.prompt-sheet { --sheetw: min(calc(.92 * var(--safew)), 480px);
+  position: fixed; left: 50%; transform: translateX(-50%);
   bottom: calc(190px + env(safe-area-inset-bottom, 0)); z-index: 70; background: rgba(16,22,38,.97);
-  border: 1px solid var(--gold); border-radius: 16px; padding: 14px; max-width: min(calc(.92 * var(--safew)), 480px);
+  border: 1px solid var(--gold); border-radius: 16px; padding: 14px; max-width: var(--sheetw);
   display: flex; flex-direction: column; gap: 10px; animation: pop .2s; }
 .prompt-sheet .pmsg { font-size: 15px; text-align: center; }
 .prompt-sheet .pbtns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -377,25 +448,28 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .pilerow:hover { background: rgba(255,255,255,.06); }
 
 /* A prompt whose choices are cards shows the cards (UX.md THE LAW §1).
-   The SAME bounded fan the hand uses, and for the same reason: this row was
-   a horizontal scroll strip, and Rebirth's identity pile (CR 1.5.4a) offers
-   up to 22 cards — a choose-1-of-22 that scrolls sideways is not a choice,
-   it is a search. Window, peeks, rail, hover-scroll, swipe: one mechanism,
-   two callers, so they cannot drift apart.
-
-   Its band is the sheet's own width, not the hand's, so its cards are larger:
-     card 56 x 78, step 26, peek 14, window 9
-     ink = 56 + 8*26 + 2*14 = 292px  <=  480 - 2*14 padding = 452  ✓ */
-.cardprompt { --fw: 56px; --fh: 78px; --fstep: 26px; --fpeek: 14px;
-  padding: 6px 2px 2px;
-  max-width: min(calc(.88 * var(--safew)), 900px); }
+   The SAME bounded fan the hand uses, at the SAME size, and for the same
+   reason: this row was a horizontal scroll strip, and Rebirth's identity
+   pile (CR 1.5.4a) offers up to 22 cards — a choose-1-of-22 that scrolls
+   sideways is not a choice, it is a search. Window, peeks, rail,
+   hover-scroll, the two taps: one mechanism, one geometry, two
+   callers, so they cannot drift apart. `.cardprompt` says only where the
+   row sits inside the sheet. */
+.cardprompt { padding-left: 2px; padding-right: 2px; padding-bottom: 2px;
+  max-width: calc(var(--sheetw, 480px) - 28px); }
+/* Every fan's slot, the hand's included. The slot carries the whole of the
+   fan's geometry — tilt, dip, focus scale, all inline from `renderFan` — so
+   the card inside it never carries a transform of its own that could fight
+   it, and hover cannot lift a card the focus has not moved to. */
 .cardpick { position: relative; display: flex; flex-direction: column;
   align-items: center; gap: 4px; cursor: pointer; width: var(--fw);
-  transition: transform .12s ease; }
-.cardpick .card { position: relative; transition: transform .12s ease; }
+  transform-origin: bottom center; transition: transform .14s ease; }
+.cardpick .card { position: relative; }
 .cardpick.focused { z-index: 4; }
-.cardpick.focused .card { transform: scale(1.22); transform-origin: bottom center; }
-.cardpick:hover .card, .cardpick:active .card { transform: translateY(-6px) scale(1.16); }
+/* Tapping a focused card whose play is a QUESTION (install into which
+   server?) raises it out of the fan while the sheet asks. */
+.fanrow > .cardpick.raised { transform: translateY(-40px) scale(1.6);
+  z-index: 60; margin: 0 12px; }
 .cardpick-label { font-size: 11px; color: var(--muted, #7c8aa5); max-width: var(--fw);
   text-align: center; line-height: 1.2; overflow: hidden; white-space: nowrap;
   text-overflow: ellipsis; }
@@ -405,17 +479,14 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* A card the viewer may not see has a blank face, so its caption is the only
    thing telling two of them apart: that caption survives every breakpoint. */
 .cardpick.blind .cardpick-label { display: block; color: var(--text); }
-/* Already chosen, on the way to "2 of 3". Colour and lift, never a reflow. */
+/* Already chosen, on the way to "2 of 3". Colour, never a reflow — and the ✓
+   is the card's own (`.card.picked::after`, inside its box), not a second one
+   hung off the slot: one card, one mark, wherever the card is drawn. */
 .cardpick.on .card, .card.picked { border-color: var(--gold);
   box-shadow: 0 0 0 2px var(--gold), 0 0 14px rgba(232,185,63,.8); }
-.cardpick.on::after { content: "✓"; position: absolute; top: -6px; right: -4px;
-  background: var(--gold); color: #241c04; font-weight: 800; font-size: 12px;
-  width: 20px; height: 20px; border-radius: 50%; display: flex;
-  align-items: center; justify-content: center; }
-/* Phones: smaller cards so three still fit without the sheet growing. */
 @media (max-width: 560px) {
-  .cardprompt { max-width: calc(.94 * var(--safew)); }
   .cardpick-label { font-size: 10px; }
+  .prompt-sheet { --sheetw: calc(.96 * var(--safew)); }
 }
 
 /* the picker: a long choice list is a search, not a wall of chips.
@@ -439,6 +510,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .picker-preview .zart { width: 100%; border-radius: 8px; }
 .picker-preview h3 { margin: 6px 0 4px; font-size: 15px; }
 .picker-hint { color: var(--muted, #7c8aa5); font-size: 13px; padding: 6px 2px; }
+/* The hint's own slot in the sheet's column — never inside the card row,
+   which is a centred flex ROW and would lay a sentence out beside the cards
+   as a four-word-wide column. Empty by default, so it costs nothing. */
+.prompt-sheet .phint { text-align: center; }
+.prompt-sheet .phint:empty { display: none; }
+.prompt-sheet .phint .picker-hint { padding: 0; }
 /* On a phone the two columns do not fit side by side. */
 @media (max-width: 560px) {
   .picker-body { flex-direction: column; }
@@ -493,6 +570,56 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .hover-preview .zoom-card.small h3 { font-size: 15px; }
 .hover-preview .zoom-card.small .ztext { font-size: 12.5px; }
 .hover-preview .zoom-card.small .zline { font-size: 11px; }
+
+/* ── The FOCUSED card, at reading size, on the right ─────────────────────
+   A nine-card fan shows a 16px strip of each card and 78px of the focused
+   one: a picture, not a page. A pointer device answers this by previewing
+   whatever the mouse is over — and that preview is switched off on a short
+   screen, which is exactly the phone held landscape where the fan is at its
+   smallest. So in landscape the focused card is drawn here, at the size it
+   can be read at, and it follows the focus: a tap, a chevron, a peek, a
+   hover. When the focused option is an ABILITY, this is the card the ability
+   LIVES ON, with the option's own words beneath it.
+
+   THREE fixed things already own the right edge, and they have to be told
+   about each other or the shortest viewport loses one of them (see
+   `#play-rail`'s note). This panel is the fourth, and it is bounded to clear
+   all of them by construction:
+     · `#play-rail`   right 46 + 72 of box  ->  the panel starts at 124
+                      (landscape phone: 40 + 60  ->  106)
+     · `#turn-btn-wrap` and `.run-controls` are further right still, inside
+       that same 124/106, so clearing the rail clears them horizontally
+     · `.run-controls` in landscape is a ROW along the bottom, so the panel's
+       height stops short of it
+     · `.log-tab` is the top right corner, inside 106, so it is cleared too
+   `pointer-events: none`: it shows, it never asks, and it can never eat a
+   tap meant for the board (THE LAW §3b). It does not scroll — a long rules
+   text is cut, and the long-press reader is where the whole of it lives. */
+.fan-preview { display: none; }
+@media (orientation: landscape) and (min-width: 640px) {
+  .fan-preview.on { display: block; position: fixed; z-index: 44;
+    pointer-events: none; overflow: hidden; right: calc(124px + var(--sar));
+    top: calc(20px + var(--sat)); width: 200px;
+    max-height: calc(100vh - 250px - var(--sat) - var(--sab)); }
+}
+@media (orientation: landscape) and (min-width: 640px) and (max-height: 640px) {
+  .fan-preview.on { right: calc(106px + var(--sar)); width: 150px;
+    top: calc(6px + var(--sat));
+    max-height: calc(100vh - 58px - var(--sat) - var(--sab)); }
+}
+.fan-preview .zoom-card.small { width: 100%; min-height: 0; max-height: inherit;
+  padding: 10px; border-width: 1px; border-color: var(--legal); gap: 6px;
+  animation: none; overflow: hidden; }
+/* The art identifies the card; the TEXT is what has to be read, so the art
+   is capped and the words get the rest. */
+.fan-preview .zoom-card.small .zart { width: auto; max-width: 100%; max-height: 30vh;
+  align-self: center; border-radius: 8px; margin-bottom: 2px; }
+.fan-preview .zoom-card.small h3 { font-size: 14px; }
+.fan-preview .zoom-card.small .ztext { font-size: 12px; line-height: 1.35; }
+.fan-preview .zoom-card.small .zline { font-size: 10.5px; }
+/* What the focused OPTION does, under the card it belongs to. */
+.fan-preview .fanpre-eff { font-size: 12px; font-weight: 700; color: #39ff88;
+  border-top: 1px solid var(--line); padding-top: 6px; }
 
 /* toast + gameover */
 .toast { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 100;
@@ -585,8 +712,9 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 
 /* ── phone landscape: everything smaller, denser, closer to the edges ── */
 @media (max-height: 640px) {
+  /* The discs and the counters are sized in `em`, so shrinking the card's
+     font shrinks them with it — one number, not a second set per breakpoint. */
   .card { width: 52px; height: 72px; font-size: 8.5px; border-radius: 6px; }
-  .card .cost, .card .cstr { width: 16px; height: 16px; font-size: 9.5px; }
   .card.ice { width: 72px; height: 46px; }
   .server { min-width: 72px; gap: 2px; }
   .server .central { width: 62px; height: 42px; font-size: 10px; }
@@ -604,13 +732,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .idthumb { width: 30px; height: 22px; }
   .side-bar .who { font-size: 10px; max-width: 56px; }
   /* WIDTH is width-independent — the `50vw - 122px` budget does not shrink
-     with the phone, so the step and the peeks do not either. HEIGHT is not: a
+     with the phone, so the step and the peeks do not either. HEIGHT is: a
      375px-tall landscape phone cannot spend 89px of it on a resting card and
-     still leave room for the rail and a prompt sheet above. So the CARD
-     shrinks, the STEP does not, and the row gets narrower, never wider:
-       card 52 x 72, step 16, peek 10  ->  ink = 52 + 8*16 + 20 = 200px  ✓ */
-  .hand { --fw: 52px; --fh: 72px; height: 86px;
-    bottom: calc(12px + env(safe-area-inset-bottom, 0)); }
+     still leave room for the rail and a prompt sheet above. The card's own
+     shrink is on `.fan` further down, where both fans get it at once. */
+  .hand { height: 86px; bottom: calc(12px + env(safe-area-inset-bottom, 0)); }
   .hand .card { font-size: 8px; }
   /* Action chips live in the bottom strip beside the hand fan, not on top
      of the board's lowest row. */
@@ -627,7 +753,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
      over it — two stacked controls that cannot both be reached is worse
      than either one being small. */
   .prompt-sheet { bottom: calc(164px + env(safe-area-inset-bottom, 0));
-    padding: 8px 10px; gap: 6px; max-width: min(calc(.72 * var(--safew)), 420px); border-radius: 12px; }
+    padding: 8px 10px; gap: 6px; --sheetw: min(calc(.72 * var(--safew)), 420px); border-radius: 12px; }
   .prompt-sheet .pmsg { font-size: 13px; }
   .prompt-sheet .pbtns { gap: 6px; }
   .prompt-sheet .pbtns .chip { font-size: 13px; padding: 8px 14px; min-height: 40px; }
@@ -892,25 +1018,21 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* Above the focused card, which tops out at 12 + 89*1.22 + 8 = 129px. */
 #hand-rail { position: fixed; z-index: 41; left: 50%; transform: translateX(-50%);
   bottom: calc(136px + env(safe-area-inset-bottom, 0)); }
+/* The buttons opt back into pointer events, because the prompt's rail hangs
+   inside a sheet that has none — without this the chevrons were dead in
+   every prompt, which is half of why the strip between them was the only
+   thing that looked like it did anything. */
 .fanrail .railbtn { min-width: 44px; min-height: 40px; font-size: 20px; line-height: 1;
   background: var(--bg2); color: var(--legal); border: 1px solid var(--line);
-  border-radius: 999px; font-weight: 700; }
+  border-radius: 999px; font-weight: 700; pointer-events: auto; }
 .fanrail .railbtn:disabled { opacity: .3; color: var(--dim); }
-/* The track is the tap target, not the pips — scrub anywhere along it. */
-.fanrail .railtrack { flex: 1; min-width: 40px; height: 40px; display: flex;
-  align-items: center; gap: 3px; padding: 0 6px; cursor: pointer;
-  touch-action: none; }
-.fanrail .railpip { flex: 1; min-width: 4px; height: 8px; border-radius: 4px;
-  background: #24314a; transition: background .12s, height .12s; }
-.fanrail .railpip.on { background: var(--legal); height: 18px;
-  box-shadow: 0 0 8px rgba(53,208,186,.9); }
+/* Where you are in the list, said plainly. It replaced a draggable pip strip
+   that read as a control and was not worth using: an affordance nobody wants
+   still costs everybody the look. */
 .fanrail .railcount { font-size: 12px; color: var(--legal); font-weight: 700;
-  min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+  min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
 /* The prompt's rail is part of the sheet, not floating chrome. */
 .prompt-sheet .fanrail { max-width: 100%; }
-
-/* The focused card stands proud of its neighbours. */
-.hand .card.focused { z-index: 3; }
 
 @media (max-height: 640px) {
   /* Above the focused card, which tops out at 12 + 72*1.22 + 8 = 108px.
@@ -919,12 +1041,13 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   #hand-rail { bottom: calc(116px + env(safe-area-inset-bottom, 0)); }
   .fanrail { gap: 6px; padding: 4px 6px; }
   .fanrail .railbtn { min-width: 40px; min-height: 36px; font-size: 18px; }
-  .fanrail .railtrack { height: 36px; min-width: 70px; }
-  .fanrail .railcount { font-size: 11px; min-width: 38px; }
-  /* The sheet's own band is narrower here, so its fan is too:
-       card 46 x 64, step 22, peek 12, window 9
-       ink = 46 + 8*22 + 2*12 = 246px  <=  420 - 20 padding = 400  ✓ */
-  .cardprompt { --fw: 46px; --fh: 64px; --fstep: 22px; --fpeek: 12px; }
+  .fanrail .railcount { font-size: 11px; min-width: 44px; }
+  /* HEIGHT is what a landscape phone is short of, so the CARD shrinks and
+     the STEP does not — the row gets narrower, never wider:
+       card 52 x 72, step 16, peek 10  ->  ink = 52 + 8*16 + 20 = 200px  ✓
+     One rule, on the fan itself: the hand and the prompt row are the same
+     widget and they shrink together or they are not. */
+  .fan { --fw: 52px; --fh: 72px; }
 }
 
 /* The hand window is a CONSTANT width now (5 cards + two peeks ≈ 212px),
@@ -942,4 +1065,39 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 @media (max-height: 640px) {
   .action-bar { max-width: calc(50vw - 118px); }
   .run-controls { max-width: calc(50vw - 118px); }
+}
+
+/* ── The prompt sheet gives way to the preview panel ─────────────────────
+   DECLARED LAST, and it has to be: the phone-landscape block above also sets
+   `--sheetw`, at the same specificity, and the copy that comes first in the
+   file simply loses. The sheet draws ABOVE the panel (z 70 over z 44), so a
+   sheet that overlapped it would hide the very card the sheet is asking
+   about — it is centred on what is LEFT of the panel instead, and bounded to
+   fit there. One offset per orientation: the panel's presence is a media
+   query, not a state, so nothing moves while the game is being played
+   (THE LAW §2). The floor keeps the sheet wide enough for its own fan on the
+   narrow viewports where the two are in real conflict; below it the fan's
+   own elastic step is what gives (§8), never the sheet. */
+@media (orientation: landscape) and (min-width: 640px) {
+  /* Centre of [board's left inset 128, the panel's left edge 100vw-324]
+     is 50vw - 98; the room between them is 100vw - 452. */
+  .prompt-sheet { left: calc(50vw - 98px);
+    --sheetw: min(max(260px, calc(var(--safew) - 464px)), 480px); }
+}
+@media (orientation: landscape) and (min-width: 640px) and (max-height: 640px) {
+  /* Centre of [104, 100vw - 256] = 50vw - 76; the room is 100vw - 360. */
+  .prompt-sheet { left: calc(50vw - 76px);
+    --sheetw: min(max(260px, calc(var(--safew) - 372px)), 420px); }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────
+   DECLARED LAST so it wins on equal specificity. Nothing here changes where
+   anything ENDS UP — the focus still moves, the card is still dealt, the
+   sheet still appears. They simply arrive instead of travelling. The pulsing
+   outlines are handled the other way round, at their own rules: they are
+   only switched ON under `prefers-reduced-motion: no-preference`. */
+@media (prefers-reduced-motion: reduce) {
+  .cardpick, .card, .fanrow { transition: none; }
+  .card.deal { animation: none; }
+  .prompt-sheet, .action-sheet, .zoom-card, .phase-pill, .focus-panel { animation: none; }
 }
