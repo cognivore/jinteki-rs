@@ -58,7 +58,7 @@ fn siphon_replaces_the_breach_but_the_run_is_still_successful() {
     assert!(
         vm.changes.log.iter().any(|c| matches!(
             c,
-            GameChange::CreditsLost { side: Side::Corp, amount: 5 }
+            GameChange::CreditsLost { side: Side::Corp, amount: 5, .. }
         )),
         "the forced loss is a real CreditsLost event"
     );
@@ -113,7 +113,7 @@ fn up_to_five_means_the_observed_loss_not_the_number_printed() {
     assert_eq!(vm.st.corp.credits, 0, "{}", t.tail(12));
     assert!(vm.changes.log.iter().any(|c| matches!(
         c,
-        GameChange::CreditsLost { side: Side::Corp, amount: 3 }
+        GameChange::CreditsLost { side: Side::Corp, amount: 3, .. }
     )));
     assert_eq!(vm.st.runner.credits, runner_before + 6, "2 × the 3 actually lost");
     assert_eq!(vm.st.runner.tags, 2, "the tags do not scale with the loss");

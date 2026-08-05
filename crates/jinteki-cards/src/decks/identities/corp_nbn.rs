@@ -310,10 +310,133 @@ pub fn harishchandra_ent() -> Card {
         .build()
 }
 
+/// NBN: Controlling the Message — Identity: Megacorp.
+/// "The first time the Runner trashes an installed Corp card each turn, you
+///  may trace[4]. If successful, give the Runner 1 tag (cannot be avoided)."
+///
+/// COMPLETE. One declinable conditional ability (9.6.9) carrying 9.6.5c's
+/// ordinal, and one instruction: 10.10 makes a trace and everything stated
+/// after "if successful" one structure, which is why the tag is written
+/// inside it rather than beside it.
+///
+/// "An installed Corp card" is three ordinary description words — whose card
+/// it was (1.14.1), who trashed it (1.14.5), and where it was trashed from.
+/// The last one is doing real work: a Corp card the Runner trashes while
+/// accessing it out of HQ or R&D was never installed, so it does not meet
+/// this, and one trashed out of a server root or off the board does.
+///
+/// "(Cannot be avoided)" is 9.3.3g's restriction, and 9.4.5 makes it ride the
+/// value — so the tag is still a value the trace produced, and nothing
+/// offered in the interrupt window can take it away. 9.9.5 makes "prevent"
+/// and "avoid" the same word, which is why one stipulation answers both.
+pub fn nbn_controlling_the_message() -> Card {
+    card("NBN: Controlling the Message")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Megacorp"])
+        .text("The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).")
+        .may_when_first_each_turn(
+            runner_trashes_an_installed_corp_card(),
+            [trace(4, [give_tags_that_cannot_be_avoided(1)])],
+        )
+        .named("controlling the message")
+        .build()
+}
+
+/// GameNET: Where Dreams are Real — Identity: Division.
+/// "Whenever a Corp card ability causes the Runner to spend or lose at least
+///  1[credit] during a run, gain 1[credit]."
+///
+/// COMPLETE. One conditional ability whose condition carries everything the
+/// sentence stipulates. "Spend or lose" is 1.10.3b's forced movement and
+/// 1.10.3c's payment named together — different ways the same credits leave
+/// the same pool — so it is ONE condition reaching both, the shape a "loses
+/// or spends [click]" sentence already takes for the other resource.
+///
+/// "At least 1[credit]" is not a threshold to check: every payment and every
+/// loss is of an amount, and one of 0 has not moved anything. The phrase says
+/// a payment of five still pays this once, which is what one condition met
+/// per occurrence does — and 1.16.2b makes a calculated cost ONE payment, so
+/// a "for each" cost does not meet it twice either.
+///
+/// "A Corp card ability causes" is 9.1.4's source, asked in the ordinary
+/// description words: the ability whose cost the Runner paid, or whose
+/// instruction took the credits. The Runner's own spending — a play cost, a
+/// basic action, an icebreaker's pump — comes through no Corp card and is not
+/// one of these, and neither is a Corp ability's own payment.
+///
+/// "During a run" is 9.6.5c's stipulation inside the condition (6.1.1: a run
+/// is in progress), so the additional cost 6.3.4 charges to MAKE a run is not
+/// paid during one and does not meet this.
+pub fn gamenet() -> Card {
+    card("GameNET: Where Dreams are Real")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].")
+        .when(
+            spends_or_loses_credits(Runner, &[controlled_by(Corp)], &[during_a_run()]),
+            [gain(Corp, 1)],
+        )
+        .named("where dreams are real")
+        .build()
+}
+
+/// Synapse Global: Faster than Thought — Identity: Division.
+/// "The first time each turn a tag is removed, you may reveal and install 1
+///  card from HQ, ignoring all costs.
+///  [click], remove 1 tag: Gain 2[credit]."
+///
+/// COMPLETE. Two printed lines, two abilities — and the paid one feeds the
+/// conditional one, because 1.16.10b records a payment's own changes where
+/// conditions can meet them. The Corp spends a click and a tag, and the tag
+/// going back to the bank is exactly what the other ability is waiting for:
+/// the identity turns the Runner's tag into a free install, once a turn.
+///
+/// The condition names no player. 10.5.1 puts every tag on the Runner, so a
+/// tag removed by the RUNNER's own 10.5.4 basic action meets this just as
+/// well as one the Corp removed — which is the point of a card that would
+/// otherwise never see its own tags leave.
+///
+/// "Reveal and install" is 9.11.4e's split, not one instruction: making the
+/// card visible ends an instruction, a checkpoint occurs while it is visible,
+/// and the install is what remains of the sentence — acting on the card the
+/// reveal announced (1.15.4). "Ignoring all costs" is 1.16.5c, which removes
+/// 8.5.11a's 1[credit] per piece of ice already protecting the destination
+/// along with every additional cost.
+///
+/// The install states no destination, so 8.5.16b leaves the choice to the
+/// installer: every location the card could legally occupy is on offer.
+pub fn synapse_global() -> Card {
+    card("Synapse Global: Faster than Thought")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs.")
+        .text("[click], remove 1 tag: Gain 2[credit].")
+        .may_when_first_each_turn(
+            a_tag_is_removed(),
+            [
+                reveal(choose(1, &[in_hand_of(Corp)])),
+                install_ignoring_all_costs(earlier_choice(0), InstallDest::DeclaredByInstaller),
+            ],
+        )
+        .named("faster than thought")
+        .paid(clicks(1).plus_cost(remove_a_tag(1)), [gain(Corp, 2)])
+        .named("remove a tag")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        nbn_controlling_the_message(),
+        gamenet(),
+        synapse_global(),
         near_earth_hub(),
         haarpsichord_studios(),
         harishchandra_ent(),

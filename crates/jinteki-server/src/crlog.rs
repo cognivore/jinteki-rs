@@ -154,7 +154,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         GameChange::CreditsGained { side, amount, .. } => {
             format!("{}: gains {amount}[c].", side_name(*side))
         }
-        GameChange::CreditsLost { side, amount } => {
+        GameChange::CreditsLost { side, amount, .. } => {
             format!("{}: loses {amount}[c].", side_name(*side))
         }
         GameChange::ClicksGained { side, amount } => {

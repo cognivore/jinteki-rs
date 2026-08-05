@@ -267,8 +267,18 @@ pub enum Instruction {
     /// instruction whose selector aggregates into a single instance
     /// (9.12.2b/c, Urtica class).
     Damage { kind: DamageKind, amount: Quantity, responsible: Side },
-    /// "Take N tags." (the Runner)
-    GainTags(u32),
+    /// "Take N tags." / "Give the Runner N tags." (the Runner takes them
+    /// either way — 10.5.1 puts the counter on the Runner and no one else.)
+    ///
+    /// `avoidable` is the printed "**(cannot be avoided)**" (NBN: Controlling
+    /// the Message) as content on this one instruction (§12 rule 2): CR
+    /// 9.3.3g makes a stipulation that part of an effect cannot be prevented
+    /// a RESTRICTION, and 9.4.5 makes the restriction ride the value — which
+    /// is exactly [`crate::effects::EffectAtom::unpreventable`], the flag
+    /// [`Instruction::DamageUnpreventable`] already sets for the damage half
+    /// of the same sentence pattern. 9.9.5 makes "prevent" and "avoid"
+    /// synonyms, so one flag says both words.
+    GainTags { amount: u32, avoidable: bool },
     /// "Trash <targets>." — one effect acting on the whole set (9.12.2a).
     TrashCards(TargetSpec),
     /// CR 9.10.3: "choose a server", "choose an installed piece of ice",
@@ -1084,7 +1094,7 @@ impl Instruction {
             // compile-time gate.
             Instruction::GainCredits(..) | Instruction::LoseCredits(..) | Instruction::GainClicks(..)
             | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
-            | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags(..)
+            | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags { .. }
             | Instruction::MustTrashAccessedCard { .. } | Instruction::EndTheRun | Instruction::DeclineableChoice(..)
             | Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } | Instruction::AdditionalAccesses(..)
             | Instruction::EndActionPhase(..) | Instruction::Combined(..) | Instruction::PreventDamage { .. }
@@ -1195,7 +1205,7 @@ impl Instruction {
             }
             Instruction::GainCredits(..) | Instruction::LoseCredits(..) | Instruction::GainClicks(..)
             | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
-            | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags(..)
+            | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags { .. }
             | Instruction::TrashCards(..) | Instruction::MaintainChoice { .. } | Instruction::MustTrashAccessedCard { .. }
             | Instruction::EndTheRun | Instruction::AccessCards { .. } | Instruction::AdditionalAccesses(..)
             | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)

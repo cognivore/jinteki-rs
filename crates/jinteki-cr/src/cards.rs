@@ -408,7 +408,7 @@ pub fn lt_todachine() -> PrintedCard {
             criteria: Vec::new(),
             requires: Vec::new(),
         },
-        vec![Instruction::GainTags(1)],
+        vec![Instruction::GainTags { amount: 1, avoidable: true }],
         false,
     )
     .labeled("lt. todachine: give the runner 1 tag")];
@@ -1100,7 +1100,7 @@ pub fn account_siphon() -> PrintedCard {
                         Side::Runner,
                         Quantity::Times(2, Box::new(Quantity::CreditsLostThisAbility(Side::Corp))),
                     ),
-                    Instruction::GainTags(2),
+                    Instruction::GainTags { amount: 2, avoidable: true },
                 ]),
                 optional: true,
             },

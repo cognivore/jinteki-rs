@@ -4077,7 +4077,7 @@ impl Vm {
                 self.changes.log[mark..]
                     .iter()
                     .map(|c| match c {
-                        GameChange::CreditsLost { side: s, amount } if s == side => {
+                        GameChange::CreditsLost { side: s, amount, .. } if s == side => {
                             *amount as i64
                         }
                         _ => 0,
@@ -4381,8 +4381,15 @@ impl Vm {
                 }
                 vec![EffectAtom::new(EffectClass::Damage(*kind), v, Side::Runner)]
             }
-            Instruction::GainTags(n) => {
-                vec![EffectAtom::new(EffectClass::TakeTags, *n as i64, Side::Runner)]
+            Instruction::GainTags { amount, avoidable } => {
+                // 9.3.3g / 9.4.5: "(cannot be avoided)" is a restriction that
+                // rides the value, exactly as "cannot be prevented" does for
+                // damage — so the atom carries it and 9.9.3a finds no
+                // avoider relevant to it.
+                cite!("rule_cannot_be_prevented_restriction");
+                let mut atom = EffectAtom::new(EffectClass::TakeTags, *amount as i64, Side::Runner);
+                atom.unpreventable = !*avoidable;
+                vec![atom]
             }
             Instruction::TrashCards(spec) => {
                 let resolved = self.resolve_targets(spec, source, targets);
@@ -5685,7 +5692,7 @@ impl Vm {
             }
             // Tag costs blocked by mandatory avoiders are unpayable
             // (1.16.1b), mirrored for choice options.
-            Instruction::GainTags(_) => !self.tag_cost_blocked(),
+            Instruction::GainTags { .. } => !self.tag_cost_blocked(),
             _ => true,
         })
     }
@@ -8572,7 +8579,11 @@ impl Vm {
                     let have = self.st.player(*side).credits;
                     let n = (a.value.max(0) as u32).min(have);
                     self.st.player_mut(*side).credits -= n;
-                    self.changes.record(GameChange::CreditsLost { side: *side, amount: n });
+                    self.changes.record(GameChange::CreditsLost {
+                        side: *side,
+                        amount: n,
+                        source: Some(source.obj),
+                    });
                 }
             }
             // 1.11.3a: gaining clicks increases the number the player has.
@@ -8654,7 +8665,7 @@ impl Vm {
                     }
                 }
             }
-            Instruction::GainTags(_) => {
+            Instruction::GainTags { .. } => {
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
                     let n = a.value as u32;
                     self.st.runner.tags += n;
@@ -8783,8 +8794,11 @@ impl Vm {
                             let have = self.st.player(a.side).credits;
                             let n = (a.value.max(0) as u32).min(have);
                             self.st.player_mut(a.side).credits -= n;
-                            self.changes
-                                .record(GameChange::CreditsLost { side: a.side, amount: n });
+                            self.changes.record(GameChange::CreditsLost {
+                                side: a.side,
+                                amount: n,
+                                source: Some(source.obj),
+                            });
                         }
                         EffectClass::Draw => self.draw_cards(a.side, a.value.max(0) as u32, false),
                         EffectClass::TrashCards => {
@@ -12228,6 +12242,13 @@ impl Vm {
             cite!("rule_cost_interrupt_static_mandatory");
             return false;
         }
+        // 1.16.1b for the other direction: "remove 1 tag" cannot be paid by a
+        // Runner who has none. 10.5.1 puts every tag on the Runner, so this
+        // is the same question whichever player is paying.
+        if cost.remove_tags > 0 && self.st.runner.tags < cost.remove_tags {
+            cite!("rule_tag");
+            return false;
+        }
         // The same rule for a damage component: a Guru-Davinder-class
         // mandatory interrupt that would prevent the damage makes "suffer 4
         // net damage" a cost that cannot be paid (the Obokata example).
@@ -13020,6 +13041,17 @@ impl Vm {
             self.st.runner.tags += cost.tags;
             self.changes.record(GameChange::TagsTaken { amount: cost.tags });
         }
+        // 10.5.1: the tags go back to the bank, one record each, so a
+        // "whenever a tag is removed" condition sees this payment exactly as
+        // it sees the instruction (1.16.10b again).
+        if cost.remove_tags > 0 {
+            cite!("rule_tag");
+            let take = self.st.runner.tags.min(cost.remove_tags);
+            self.st.runner.tags -= take;
+            for _ in 0..take {
+                self.changes.record(GameChange::TagRemoved);
+            }
+        }
         if cost.net_damage > 0 {
             self.do_damage(DamageKind::Net, cost.net_damage, side);
         }
@@ -13042,6 +13074,10 @@ impl Vm {
             credits: want_credits,
             clicks: cost.clicks,
             trashed,
+            // 9.1.4: what the payment was FOR — the source of the ability
+            // whose cost this is, which is what a sentence asking what CAUSED
+            // a player to spend credits reads.
+            source: Some(source),
         });
         self.checkpoint_and_react(None);
     }
@@ -13921,14 +13957,29 @@ impl Vm {
                     af.instructions[idx].clone()
                 };
                 let (payer, _) = self.nested_cost_payer(&instr);
+                // The choice instruction itself resolves as a no-op — and the
+                // frame leaves the announcement phase HERE, before anything is
+                // paid. 9.11.4f ends the instruction with the choice, and
+                // 1.16.3's payment carries its own 10.3.4 checkpoint, which
+                // can open a reaction window (GameNET class) and push a frame
+                // on top of this one. Everything after that point would find
+                // some other frame at the top: leaving the phase until then
+                // left the ability waiting to announce, so closing the window
+                // put the same choice again — and a Runner with enough
+                // credits paid the same nested cost until they ran out.
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    af.phase = AbilityPhase::Checkpoint;
+                }
                 match instr {
                     Instruction::NestedCostThen { cost, effect, .. } => {
                         if pay {
                             cite!("rule_nested_cost_may");
-                            self.pay_cost(payer, source.obj, &cost);
+                            // 1.16.11: the effect is what comes next. Queued
+                            // before the payment for the same reason.
                             if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                                 af.instructions.insert(idx + 1, (*effect).clone());
                             }
+                            self.pay_cost(payer, source.obj, &cost);
                             self.changes.record(GameChange::AbilityUsed { source: source.obj });
                         }
                     }
@@ -13941,10 +13992,6 @@ impl Vm {
                         }
                     }
                     _ => unreachable!(),
-                }
-                // The choice instruction itself resolves as a no-op.
-                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-                    af.phase = AbilityPhase::Checkpoint;
                 }
             }
             (DecisionCtx::StealCost(card), DecisionAnswer::PayNestedCost(pay)) => {
@@ -14348,12 +14395,14 @@ impl Vm {
                 let n = n.min(self.spendable_credits(side));
                 self.spend_flexible(side, n, CreditPurpose::Unspecified);
                 if n > 0 {
-                    self.changes.record(GameChange::CreditsLost { side, amount: n });
+                    let cause = self.current_source();
+                    self.changes.record(GameChange::CreditsLost { side, amount: n, source: cause });
                     self.changes.record(GameChange::CostPaid {
                         side,
                         credits: n,
                         clicks: 0,
                         trashed: Vec::new(),
+                        source: cause,
                     });
                 }
                 if let Some(t) = self.trace.as_mut() {
@@ -14397,16 +14446,19 @@ impl Vm {
                         let runner_bid = n;
                         self.spend_flexible(Side::Corp, corp_bid, CreditPurpose::Unspecified);
                         self.spend_flexible(Side::Runner, runner_bid, CreditPurpose::Unspecified);
+                        let cause = self.current_source();
                         if corp_bid > 0 {
                             self.changes.record(GameChange::CreditsLost {
                                 side: Side::Corp,
                                 amount: corp_bid,
+                                source: cause,
                             });
                         }
                         if runner_bid > 0 {
                             self.changes.record(GameChange::CreditsLost {
                                 side: Side::Runner,
                                 amount: runner_bid,
+                                source: cause,
                             });
                         }
                         // 10.14.6d: branch on match/differ as the following
@@ -14526,7 +14578,7 @@ impl Vm {
                 cite!("runner_basic_action_remove_tag");
                 self.spend_click(side);
                 self.st.runner.credits -= 2;
-                self.changes.record(GameChange::CreditsLost { side, amount: 2 });
+                self.changes.record(GameChange::CreditsLost { side, amount: 2, source: None });
                 self.checkpoint_and_react(None);
                 self.st.runner.tags -= 1;
                 self.changes.record(GameChange::TagRemoved);
@@ -14585,12 +14637,13 @@ impl Vm {
                 cite!("corp_basic_action_advance");
                 self.spend_click(side);
                 self.st.player_mut(side).credits -= 1;
-                self.changes.record(GameChange::CreditsLost { side, amount: 1 });
+                self.changes.record(GameChange::CreditsLost { side, amount: 1, source: None });
                 self.changes.record(GameChange::CostPaid {
                     side,
                     credits: 1,
                     clicks: 0,
                     trashed: Vec::new(),
+                    source: None,
                 });
                 cite!("rule_checkpoint_after_paying_cost");
                 self.checkpoint_and_react(None);
@@ -14611,12 +14664,13 @@ impl Vm {
                 cite!("rule_tagged_trash_resource");
                 self.spend_click(side);
                 self.st.player_mut(side).credits -= 2;
-                self.changes.record(GameChange::CreditsLost { side, amount: 2 });
+                self.changes.record(GameChange::CreditsLost { side, amount: 2, source: None });
                 self.changes.record(GameChange::CostPaid {
                     side,
                     credits: 2,
                     clicks: 0,
                     trashed: Vec::new(),
+                    source: None,
                 });
                 cite!("rule_checkpoint_after_paying_cost");
                 self.checkpoint_and_react(None);
@@ -14751,6 +14805,7 @@ impl Vm {
             credits: 0,
             clicks: 1,
             trashed: Vec::new(),
+            source: None,
         });
         cite!("rule_checkpoint_after_paying_cost");
         self.checkpoint_and_react(None);
@@ -14897,7 +14952,7 @@ fn instruction_aggregates(i: &Instruction) -> bool {
         | Instruction::GainClicks(..)
         | Instruction::LoseClicks(..)
         | Instruction::Draw(..)
-        | Instruction::GainTags(..)
+        | Instruction::GainTags { .. }
         | Instruction::TakeBadPublicity { .. }
         | Instruction::RemoveCountersFromPlayer { .. }
         | Instruction::LookAtCards { .. }
@@ -14927,7 +14982,9 @@ fn scale_instruction(i: &Instruction, x: i64) -> Instruction {
         Instruction::LoseClicks(s, q) => Instruction::LoseClicks(*s, times(q)),
         Instruction::LoseCredits(s, q) => Instruction::LoseCredits(*s, times(q)),
         Instruction::Draw(s, n) => Instruction::Draw(*s, (*n as i64 * x).max(0) as u32),
-        Instruction::GainTags(n) => Instruction::GainTags((*n as i64 * x).max(0) as u32),
+        Instruction::GainTags { amount, avoidable } => {
+            Instruction::GainTags { amount: (*amount as i64 * x).max(0) as u32, avoidable: *avoidable }
+        }
         Instruction::TakeBadPublicity { side, amount } => {
             Instruction::TakeBadPublicity { side: *side, amount: times(amount) }
         }

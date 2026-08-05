@@ -49,7 +49,12 @@ pub enum GameChange {
     /// can be said to have caused. A sentence naming what the credits came
     /// "through" (The Zwicky Group) is asked of this field.
     CreditsGained { side: Side, amount: u32, source: Option<ObjectId> },
-    CreditsLost { side: Side, amount: u32 },
+    /// CR 1.10.3b: credits were forced out of a credit pool and back to the
+    /// bank. `source` is the same field [`GameChange::CreditsGained`] carries
+    /// and reads the same way (9.1.4): the ability's SOURCE where an ability
+    /// caused the loss, `None` where nothing on a card did. A sentence asking
+    /// what CAUSED the Runner to lose credits (GameNET) is asked of it.
+    CreditsLost { side: Side, amount: u32, source: Option<ObjectId> },
     ClicksGained { side: Side, amount: u32 },
     ClickSpent { side: Side },
     /// CR 5.2.5: a player took an action. The identity is what 5.2.5a/b say
@@ -165,7 +170,20 @@ pub enum GameChange {
     IcePassed { ice: ObjectId, after_encounter: bool, fully_broken: bool, subs_resolved: bool },
     ServerApproached { server: ServerId },
     /// CR 1.16.3: a cost was paid (zero costs are real, 1.16.1d).
-    CostPaid { side: Side, credits: u32, clicks: u32, trashed: Vec<ObjectId> },
+    ///
+    /// `source` is what the payment was FOR — the source of the ability whose
+    /// cost this was (9.1.4), and `None` for a basic action's own cost, which
+    /// no card can be said to have caused. It is the same field
+    /// [`GameChange::CreditsGained`] and [`GameChange::CreditsLost`] carry,
+    /// and a sentence asking what made a player SPEND credits (GameNET) is
+    /// asked of it.
+    CostPaid {
+        side: Side,
+        credits: u32,
+        clicks: u32,
+        trashed: Vec<ObjectId>,
+        source: Option<ObjectId>,
+    },
     /// CR 9.1.6: an ability/source was used.
     AbilityUsed { source: ObjectId },
     /// A trash ability was used. `basic` says WHICH: `true` is 7.1.5's basic

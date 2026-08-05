@@ -289,7 +289,7 @@ pub fn snare_like(name: &'static str) -> PrintedCard {
         TriggerCond::SelfAccessed { requires: Vec::new() },
         vec![Instruction::Combined(vec![
             Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(3), responsible: Side::Corp },
-            Instruction::GainTags(1),
+            Instruction::GainTags { amount: 1, avoidable: true },
         ])],
         false,
     )
@@ -383,7 +383,7 @@ pub fn mr_stone_like(name: &'static str) -> PrintedCard {
 /// A runner card with a free paid ability that takes a tag (test driver).
 pub fn take_tag_button(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(1)])
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags { amount: 1, avoidable: true }])
         .labeled("take 1 tag")];
     c
 }
@@ -524,7 +524,7 @@ pub fn amaze_like(name: &'static str) -> PrintedCard {
     c.trash_cost = Some(3);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunOnThisServerEnds,
-        vec![Instruction::GainTags(2)],
+        vec![Instruction::GainTags { amount: 2, avoidable: true }],
         false,
     )
     .labeled("amaze: 2 tags when run on server ends")];
@@ -788,7 +788,7 @@ pub fn reconstruction_like(name: &'static str) -> PrintedCard {
 /// (9.5.6c).
 pub fn arruaceiras_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(1)])
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags { amount: 1, avoidable: true }])
         .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None })
         .labeled("arruaceiras: take 1 tag (encounter only)")];
     c
@@ -983,7 +983,7 @@ pub fn amaze_persistent_like(name: &'static str) -> PrintedCard {
     c.trash_cost = Some(3);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::RunOnThisServerEnds,
-        vec![Instruction::GainTags(2)],
+        vec![Instruction::GainTags { amount: 2, avoidable: true }],
         false,
     )
     .with_flag(AbilityFlag::Persistent)
@@ -1041,7 +1041,7 @@ pub fn psi_button(name: &'static str) -> PrintedCard {
         Cost::free(),
         vec![Instruction::PsiGame {
             on_match: vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
-            on_differ: vec![Instruction::GainTags(1)],
+            on_differ: vec![Instruction::GainTags { amount: 1, avoidable: true }],
         }],
     )
     .labeled("psi: play a psi game")];
@@ -1410,7 +1410,7 @@ pub fn data_raven_like(name: &'static str) -> PrintedCard {
         TriggerCond::SelfEncountered,
         vec![Instruction::ChooseOne {
             options: vec![
-                ("take 1 tag", vec![Instruction::GainTags(1)]),
+                ("take 1 tag", vec![Instruction::GainTags { amount: 1, avoidable: true }]),
                 ("end the run", vec![Instruction::EndTheRun]),
             ],
         }],
@@ -1870,7 +1870,7 @@ pub fn qpm_with_casting_call(name: &'static str) -> PrintedCard {
         .labeled("qpm: if tagged when accessed"),
         AbilityDef::conditional(
             TriggerCond::SelfAccessed { requires: Vec::new() },
-            vec![Instruction::GainTags(2)],
+            vec![Instruction::GainTags { amount: 2, avoidable: true }],
             false,
         )
         .labeled("casting-call: 2 tags on access"),
@@ -2124,7 +2124,7 @@ pub fn strongbox_like(name: &'static str) -> PrintedCard {
 /// A Corp button giving the Runner N tags at once.
 pub fn corp_tags_button(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
-    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags(n)])
+    c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainTags { amount: n, avoidable: true }])
         .labeled("give tags")];
     c
 }
@@ -2196,7 +2196,7 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
             .labeled("surveyor: strength X"),
         AbilityDef::subroutine(vec![Instruction::Trace {
             base: Quantity::XOfSource(Box::new(x)),
-            if_successful: vec![Instruction::GainTags(1)],
+            if_successful: vec![Instruction::GainTags { amount: 1, avoidable: true }],
             if_unsuccessful: vec![],
             determined_min: None,
         }])
@@ -3173,7 +3173,7 @@ pub fn argus_like(name: &'static str) -> PrintedCard {
             side: Side::Runner,
             instr: Box::new(Instruction::ChooseOne {
                 options: vec![
-                    ("take 1 tag", vec![Instruction::GainTags(1)]),
+                    ("take 1 tag", vec![Instruction::GainTags { amount: 1, avoidable: true }]),
                     (
                         "suffer 2 meat damage",
                         vec![Instruction::Damage {
@@ -4018,7 +4018,12 @@ pub fn cayambe_like(name: &'static str) -> PrintedCard {
 pub fn gamenet_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::PlayerPaysCredits(Side::Runner),
+        TriggerCond::PlayerPaysCredits {
+            side: Side::Runner,
+            also_lost: false,
+            caused_by: Vec::new(),
+            requires: Vec::new(),
+        },
         vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         false,
     )
@@ -4722,7 +4727,7 @@ pub fn oppo_research_like(name: &'static str) -> PrintedCard {
             vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
             "oppo: first play ability",
         ),
-        play_ability(vec![Instruction::GainTags(1)], "oppo: second play ability"),
+        play_ability(vec![Instruction::GainTags { amount: 1, avoidable: true }], "oppo: second play ability"),
     ];
     c
 }

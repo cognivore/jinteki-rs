@@ -813,7 +813,7 @@ fn example_rule_run_ends_close_reaction_window_1() {
     let mut taxice = tk::vanilla_ice("TagTax", 0, 3);
     taxice.abilities = vec![jinteki_cr::ability::AbilityDef::conditional(
         jinteki_cr::ability::TriggerCond::SelfEncountered,
-        vec![jinteki_cr::instr::Instruction::GainTags(2)],
+        vec![jinteki_cr::instr::Instruction::GainTags { amount: 2, avoidable: true }],
         false,
     )
     .labeled("tag-tax: 2 tags on encounter")];
@@ -3846,7 +3846,7 @@ fn example_rule_values_defined_by_x_1() {
                     jinteki_cr::instr::TargetFilter::IceProtectingSourceServer,
                 ])),
             ))),
-            if_successful: vec![jinteki_cr::instr::Instruction::GainTags(1)],
+            if_successful: vec![jinteki_cr::instr::Instruction::GainTags { amount: 1, avoidable: true }],
             if_unsuccessful: vec![],
             determined_min: None,
         }],
@@ -5682,7 +5682,7 @@ fn example_rule_lose_credits_1() {
         .log
         .iter()
         .filter_map(|c| match c {
-            GameChange::CreditsLost { side: Side::Runner, amount } => Some(*amount),
+            GameChange::CreditsLost { side: Side::Runner, amount, .. } => Some(*amount),
             _ => None,
         })
         .collect();

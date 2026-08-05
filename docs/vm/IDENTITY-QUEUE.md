@@ -146,7 +146,10 @@ kernel words, not card patches.
   plural and `EarlierTarget { nth }` is one by position; neither is "the ones
   an earlier instruction chose, EXCEPT the one a later instruction chose",
   which is what a sentence handing one card to each player needs.
-  *(Steve Cambridge: Master Grifter.)*
+  *(Steve Cambridge: Master Grifter; AU Co.: The Gold Standard in Clones,
+  whose "trash 1 of those cards and add THE REST to HQ" is the same words
+  about the cards an earlier instruction looked at — and, being one sentence
+  joined by "and", it wants the Blue Sun entry above settled as well.)*
 - **Nothing records a psi game's reveal.** `Instruction::PsiGame` resolves
   10.14.6's construction whole and writes no change for 10.14.6c's reveal, so
   "whenever you and the Runner reveal secretly spent credits" has no
@@ -171,6 +174,48 @@ kernel words, not card patches.
   be relevant to, and the ability that changes the attacked server one step
   before 6.9.5 has no moment to fire in. *(Omar Keung: Conspiracy
   Theorist.)*
+- **Nothing is met by an ability FINISHING.** `TriggerCond::SelfPlayResolved`
+  is 8.6.7h read about the card being played — the source's own view, which is
+  why `GameChange::CardPlayResolved` names one object and no player — and
+  there is no twin for a card OTHER than the source. The other half of the
+  same sentence has no occurrence at all: "an action on an **expendable**
+  card" is a card ability that is an action (5.2.4) reaching the end of its
+  resolution, and `GameChange::AbilityUsed` records that one was USED (9.1.6),
+  which is a different moment. One printed "or" joining them makes it one
+  condition, so both halves have to be sayable before either is.
+  *(Nuvem SA: Law of the Land.)*
+- **A prohibition cannot name one card for a stated span, and none of them
+  names a REZ.** `StaticDecl::CannotScoreMatching` describes the agendas that
+  cannot be scored in the ordinary words — which is how Clot's "during the
+  same turn they installed that agenda" is said — but "you cannot score or rez
+  THAT card until your next turn begins" needs three things it has none of:
+  a description of the one card an earlier instruction of the same ability
+  installed (the entry above), a declaration about rezzing beside the one
+  about scoring, and a span — `WantedDuration` stops at `ThisTurn`, and the
+  rez half bites during the OPPONENT's turn, which is past the end of it.
+  *(Saraswati Mnemonics: Endless Exploration; A Teia: IP Recovery, whose "you
+  cannot score the second card this turn" is the same sentence with the
+  shorter span and no rez half.)*
+- **An install cannot be told to leave the card FACEUP.**
+  `Instruction::InstallCard` stipulates 8.5.15's rez (`and_rez`) and 1.16.5c's
+  costs and nothing at all about the card's face, and 8.1.2 leaves an
+  installed Corp card facedown until it is rezzed — an agenda can never be
+  rezzed, so "you may install agendas faceup" has no stipulation to make. It
+  is the other half of the Apex entry above: one wants a Runner card installed
+  facedown, this one a Corp card installed faceup, and `TrashDestination::
+  FacedownInPlay` is the same word said about a card already installed.
+  *(BANGUN: When Disaster Strikes, whose second sentence also wants
+  `TriggerCond::RunnerAccessesCard` to describe the card accessed.)*
+- **A declaration cannot be scoped to ONE occurrence, or offered.**
+  `StaticDecl::SelectsDamageTrashes { by, count }` is 10.4.3a's modification of
+  the damage procedure, and a static ability never resolves (9.4.1) and is
+  never declined — but "for the FIRST net damage the Runner suffers each turn,
+  YOU MAY look at the Runner's grip and select the card that is trashed"
+  states that declaration about one damage and puts it to the Corp. 9.6.13's
+  lingering effect is the shape that would carry it, and `LingeringSpec` has
+  no member holding a declaration for a stated span.
+  *(Chronos Protocol: Selective Mind-mapping.)*
+
 
 ## Not a kernel gap: the back faces have no printed text here
 
@@ -185,7 +230,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **100 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **104 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -351,7 +396,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (12/19)
+## Corp — NBN (15/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -359,11 +404,11 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Azmari EdTech: Shaping the Future** — When your turn ends, you may name a card type. Gain 2[credit] the first time each turn the Runner plays or installs a card that has the type you last named this way.
 - [x] **Editorial Division: Ad Nihilum** — The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.
 - [ ] **Epiphany Analytica: Nations Undivided** — The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity. [click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.
-- [ ] **GameNET: Where Dreams are Real** — Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].
+- [x] **GameNET: Where Dreams are Real** — Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].
 - [x] **Haarpsichord Studios: Entertainment Unleashed** — The Runner cannot steal more than one agenda each turn.
 - [x] **Harishchandra Ent.: Where You're the Star** — While the Runner is tagged, they play with the grip revealed.
 - [x] **Information Dynamics: All You Need To Know** — Draft format only. If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.
-- [ ] **NBN: Controlling the Message** — The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).
+- [x] **NBN: Controlling the Message** — The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).
 - [ ] **NBN: Making News** — 2[recurring-credit] Use these credits during trace attempts.
 - [x] **NBN: Reality Plus** — The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.
 - [x] **NBN: The World is Yours*** — Your maximum hand size is increased by 1.
@@ -373,9 +418,9 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
 - [ ] **SYNC: Everything, Everywhere** — [click]: Flip this identity. The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
-- [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
+- [x] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (11/19)
+## Corp — Weyland Consortium (12/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -389,7 +434,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [x] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.
 - [ ] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
 - [ ] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
-- [ ] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
+- [x] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
 - [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
 - [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
 - [x] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.

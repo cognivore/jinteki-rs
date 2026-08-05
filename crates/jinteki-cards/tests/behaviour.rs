@@ -8431,3 +8431,275 @@ fn hyoubu_institute_pays_for_the_first_reveal_of_the_turn_only() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — the tail of Weyland and NBN
+// ---------------------------------------------------------------------------
+
+/// SSO Industries: "When your turn ends, you may choose a piece of ice with no
+/// advancement tokens on it. If you do, place 1 advancement token on that
+/// piece of ice for each agenda point on all installed faceup agendas."
+///
+/// Three agendas sit on the board and only one of them is what the sentence
+/// describes: a FACEUP INSTALLED one, worth 2. The facedown installed agenda
+/// beside it and the faceup one in the score area are each excluded by one
+/// half of the description, so the answer is 2 and not 5 or 8. The other
+/// variant advances the only piece of ice first, which takes it out of the
+/// candidates entirely — "with no advancement tokens on it" is a description,
+/// so an already-advanced ice is not a legal target and nothing happens.
+#[test]
+fn sso_industries_advances_ice_once_per_faceup_installed_agenda_point() {
+    for advanced in [false, true] {
+        let mut vm = Vm::empty(6196);
+        tk::install_identity(&mut vm, card("SSO Industries: Fueling Innovation"), Side::Corp);
+        let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 0, 1), ServerId::Hq, false);
+        if advanced {
+            vm.st.objects.get_mut(&ice).unwrap().counters.insert(CounterKind::Advancement, 1);
+        }
+        tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Faceup Initiative", 3, 2),
+            ServerId::Remote(1),
+            true,
+        );
+        // 8.1.2's usual state for an installed Corp card — not described.
+        tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Facedown Initiative", 3, 3),
+            ServerId::Remote(2),
+            false,
+        );
+        // Faceup, but in a score area rather than installed.
+        let scored = vm.new_object(
+            tk::vanilla_agenda("Scored Initiative", 3, 3),
+            Zone::ScoreArea(Side::Corp),
+        );
+        vm.st.objects.get_mut(&scored).unwrap().faceup = true;
+        vm.st.score_area.get_mut(&Side::Corp).unwrap().push(scored);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(
+                    Match::reaction().offering("fueling innovation"),
+                    Reply::take("fueling innovation"),
+                )
+                .when(Match::targets().once(), Reply::target(ice))
+                .otherwise_click_credit(),
+            Plan::runner().when(Match::action(), Reply::Halt),
+        );
+        assert_eq!(vm.st.turn_side, Side::Runner, "the Corp's turn ended: {}", t.tail(30));
+        assert_eq!(
+            vm.st.objects[&ice].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+            if advanced { 1 } else { 2 },
+            "one token per agenda point on the faceup INSTALLED agenda, and only for an ice \
+             with none on it already (advanced={advanced}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// NBN: Controlling the Message: "The first time the Runner trashes an
+/// installed Corp card each turn, you may trace[4]. If successful, give the
+/// Runner 1 tag (cannot be avoided)."
+///
+/// The Runner runs two remotes and trashes the asset in each. Only the first
+/// trace happens — the second trash is past 9.6.5c's ordinal — and the tag it
+/// gives cannot be taken away: a Decoy-class avoider sits in the rig with its
+/// [trash] ability ready, and 9.9.3a never finds it relevant, because 9.4.5
+/// leaves the restriction on the value. The Decoy is still there afterwards,
+/// which is the observable half of "was never offered".
+#[test]
+fn controlling_the_message_traces_once_a_turn_for_a_tag_that_cannot_be_avoided() {
+    let mut vm = Vm::empty(6197);
+    tk::install_identity(&mut vm, card("NBN: Controlling the Message"), Side::Corp);
+    let one =
+        tk::install_root(&mut vm, tk::vanilla_asset("First Asset", 0, 1), ServerId::Remote(1), true);
+    let two = tk::install_root(
+        &mut vm,
+        tk::vanilla_asset("Second Asset", 0, 1),
+        ServerId::Remote(2),
+        true,
+    );
+    let decoy = tk::install_rig(&mut vm, tk::decoy_like("Decoy"));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(
+                Match::reaction().offering("controlling the message"),
+                Reply::take("controlling the message"),
+            )
+            .when(Match::trace_spend(), Reply::Spend(0))
+            .stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+            .when(Match::mid_access(), Reply::Take(Pick::BasicTrash))
+            .when(Match::trace_spend(), Reply::Spend(0))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&one].zone,
+        Zone::Discard(Side::Corp),
+        "both assets were trashed: {}",
+        t.tail(60)
+    );
+    assert_eq!(vm.st.objects[&two].zone, Zone::Discard(Side::Corp), "{}", t.tail(60));
+    let traces = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::TraceInitiated { .. }))
+        .count();
+    assert_eq!(traces, 1, "the ordinal is spent by the first trash of the turn: {}", t.tail(60));
+    assert_eq!(vm.st.runner.tags, 1, "trace 4 beat 0 link: {}", t.tail(60));
+    assert_eq!(
+        vm.st.objects[&decoy].zone,
+        Zone::Rig,
+        "9.4.5: the restriction rode the value, so the avoider was never relevant: {}",
+        t.tail(60)
+    );
+}
+
+/// GameNET: "Whenever a Corp card ability causes the Runner to spend or lose
+/// at least 1[credit] during a run, gain 1[credit]."
+///
+/// Both halves of "spend or lose" are driven against the same identity: Gold
+/// Farmer's subroutines make the Runner PAY 3[credit] each to keep the run
+/// alive, and a Whitespace-class subroutine makes them LOSE 3[credit]
+/// outright. Each occurrence pays the Corp exactly once however many credits
+/// moved — the sentence's "at least 1" is about the occurrence and not a
+/// threshold — so Gold Farmer, which prints the same subroutine twice, pays
+/// twice and the single loss pays once.
+///
+/// The control is in the same play: the Runner opens the turn by paying
+/// 5[credit] to play Sure Gamble, which is a payment of their own outside any
+/// run, and the identity stays quiet for it.
+#[test]
+fn gamenet_pays_once_for_each_corp_caused_spend_or_loss_during_a_run() {
+    for lose in [false, true] {
+        let mut vm = Vm::empty(6198);
+        tk::install_identity(&mut vm, card("GameNET: Where Dreams are Real"), Side::Corp);
+        let ice = if lose {
+            tk::install_ice(&mut vm, tk::whitespace_like("Whitespace", 3), ServerId::Hq, true)
+        } else {
+            tk::install_ice(&mut vm, card("Gold Farmer"), ServerId::Hq, true)
+        };
+        let gamble = vm.new_object(card("Sure Gamble"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(gamble);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 5;
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(gamble))
+                .when(Match::action().once(), Reply::run(ServerId::Hq))
+                // Gold Farmer's nested cost: pay the 3 rather than let the
+                // run end, which is the spending half of the sentence.
+                .when(Match::of(Kind::NestedCost), Reply::PayCost(true))
+                .stop_at_action(),
+        );
+        assert!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterBegan { ice: i, .. } if *i == ice)),
+            "the run reached the ice (lose={lose}): {}",
+            t.tail(60)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            // One per occurrence: Gold Farmer prints its nested cost twice.
+            if lose { 1 } else { 2 },
+            "one credit for each occurrence the Corp's card caused, and nothing for the \
+             Runner's own play cost outside the run (lose={lose}): {}",
+            t.tail(60)
+        );
+    }
+}
+
+/// Synapse Global: "The first time each turn a tag is removed, you may reveal
+/// and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain
+/// 2[credit]."
+///
+/// The two printed lines are driven together, because the card is built that
+/// way: the paid ability's own cost removes the tag that meets the conditional
+/// ability's condition (1.16.10b records a payment where conditions can see
+/// it). With no tag to remove the ability cannot be used at all (1.16.1b), so
+/// the Corp's credits and HQ are both untouched — that is the other variant.
+///
+/// The install is "ignoring all costs" (1.16.5c), and the destination is a
+/// server that already has a piece of ice — so 8.5.11a's 1[credit] per piece
+/// of ice already protecting it would otherwise be paid. The Corp's credits
+/// after the ability are exactly the 2 it gained, which is what says the cost
+/// was ignored rather than merely affordable.
+#[test]
+fn synapse_global_turns_a_removed_tag_into_a_free_install() {
+    for tagged in [false, true] {
+        let mut vm = Vm::empty(6199);
+        tk::install_identity(&mut vm, card("Synapse Global: Faster than Thought"), Side::Corp);
+        tk::install_ice(&mut vm, tk::vanilla_ice("Sitting Ice", 0, 1), ServerId::Hq, false);
+        let from_hq = vm.new_object(tk::vanilla_ice("New Ice", 0, 1), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(from_hq);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.st.runner.tags = u32::from(tagged);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::take("remove a tag"))
+                .when(
+                    Match::reaction().offering("faster than thought"),
+                    Reply::take("faster than thought"),
+                )
+                .when(Match::targets().once(), Reply::target(from_hq))
+                .when(
+                    Match::of(Kind::Destination).once(),
+                    Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+                )
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.runner.tags,
+            0,
+            "the tag paid for the ability (tagged={tagged}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if tagged { 2 } else { 0 },
+            "2 gained, and 8.5.11a's install cost ignored (tagged={tagged}): {}",
+            t.tail(40)
+        );
+        let want = if tagged { Zone::Ice(ServerId::Hq) } else { Zone::Hand(Side::Corp) };
+        assert_eq!(
+            vm.st.objects[&from_hq].zone, want,
+            "the card from HQ was installed exactly when a tag came off (tagged={tagged}): {}",
+            t.tail(40)
+        );
+        if tagged {
+            assert!(
+                vm.changes
+                    .log
+                    .iter()
+                    .any(|c| matches!(c, GameChange::CardRevealed { obj, by: Side::Corp } if *obj == from_hq)),
+                "9.11.4e: the card was revealed before it was installed: {}",
+                t.tail(40)
+            );
+        }
+    }
+}

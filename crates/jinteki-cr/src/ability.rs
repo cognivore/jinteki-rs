@@ -538,7 +538,27 @@ pub enum TriggerCond {
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
     /// condition once however many "for each" terms the calculation had.
-    PlayerPaysCredits(Side),
+    ///
+    /// Every stipulation the printed sentence makes about the spending is
+    /// content on this one atom (§12 rule 2), and the plain sentence is all
+    /// three of them empty:
+    /// - `also_lost` is the printed "spend **or lose**" (GameNET). 1.10.3b's
+    ///   forced loss and 1.10.3c's payment are different movements of the
+    ///   same credits, and a sentence naming both is one condition reaching
+    ///   both occurrences — exactly the shape
+    ///   [`TriggerCond::PlayerSpendsClick`]'s `also_lost` gives the clicks.
+    /// - `caused_by` is what the sentence says CAUSED it — "whenever **a Corp
+    ///   card ability** causes the Runner to spend or lose" — asked of the
+    ///   source recorded on the change (9.1.4) in the shared filter
+    ///   vocabulary (§12 rule 5). An empty list is a sentence naming no
+    ///   cause, which a basic action's own cost meets as well as a card does.
+    /// - `requires` is 9.6.5c's state stipulation ("…**during a run**").
+    PlayerPaysCredits {
+        side: Side,
+        also_lost: bool,
+        caused_by: Vec<crate::instr::TargetFilter>,
+        requires: Vec<TriggerRequirement>,
+    },
     /// CR 8.2.5: "whenever you forfeit an agenda…" (Jemison Astronautics).
     /// `by` is the sentence's stipulation about WHO forfeited — the printed
     /// "you" — carried as content the way every other condition carries it.
@@ -566,6 +586,17 @@ pub enum TriggerCond {
     /// 1.21.5 keeps this distinct from looking, exposing and accessing: a
     /// card LOOKED at is not revealed, and neither is one accessed.
     CardRevealed { by: Side },
+    /// CR 10.5.1: "the first time each turn **a tag is removed**…" (Synapse
+    /// Global). Met once per tag returned to the bank — an effect removing
+    /// two tags meets it twice, exactly as
+    /// [`TriggerCond::PlayerDrawsCards`] is met once per card drawn.
+    ///
+    /// The sentence names no player, and that is the whole of it: 10.5.4's
+    /// basic action is the Runner removing their own tag, a card ability may
+    /// have either player remove one, and this condition is met by all of
+    /// them. It is the counterpart of [`TriggerCond::RunnerTakesTag`], which
+    /// says the same thing about the tag arriving.
+    TagRemoved,
 }
 
 impl TriggerCond {
@@ -873,6 +904,17 @@ pub struct Cost {
     pub trash_self: bool,
     /// "take N tags" as a cost (Funhouse class).
     pub tags: u32,
+    /// CR 10.5.1 / 1.16.1: "[click], **remove 1 tag**:" as a cost (Synapse
+    /// Global). The mirror of `tags`, and a separate component for the reason
+    /// `RemoveTags` is a separate instruction from `GainTags`: the tags move
+    /// the other way, so what makes the cost unpayable is the Runner having
+    /// too FEW of them (1.16.1b), not an interrupt that would stop them
+    /// arriving.
+    ///
+    /// The tags are always the Runner's (10.5.1), whoever is paying — a Corp
+    /// card printing this cost spends the Runner's tags, which is what makes
+    /// the ability cost the Corp something real.
+    pub remove_tags: u32,
     /// "suffer N net damage" as a cost (Obokata class).
     pub net_damage: u32,
     /// CR 5.2.1a: "Lose [click]" as a cost — clicks are spent, but the
@@ -930,6 +972,10 @@ impl Cost {
     }
     pub fn tags(n: u32) -> Self {
         Cost { tags: n, ..Default::default() }
+    }
+    /// CR 10.5.1: "remove N tags" as a cost.
+    pub fn remove_tags(n: u32) -> Self {
+        Cost { remove_tags: n, ..Default::default() }
     }
     pub fn net_damage(n: u32) -> Self {
         Cost { net_damage: n, ..Default::default() }
@@ -992,6 +1038,7 @@ impl Cost {
             clicks: self.clicks + other.clicks,
             trash_self: self.trash_self || other.trash_self,
             tags: self.tags + other.tags,
+            remove_tags: self.remove_tags + other.remove_tags,
             net_damage: self.net_damage + other.net_damage,
             lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
@@ -2107,9 +2154,31 @@ pub fn trigger_matches(
             cite!("step_approach_server");
             true
         }
-        (TriggerCond::PlayerPaysCredits(side), GameChange::CostPaid { side: s, credits, .. }) => {
+        (
+            TriggerCond::PlayerPaysCredits { side, caused_by, .. },
+            GameChange::CostPaid { side: s, credits, source: cause, .. },
+        ) => {
             cite!("rule_cost_quantities");
-            side == s && *credits > 0
+            cite!("rule_spend_credits");
+            side == s
+                && *credits > 0
+                // §12 rule 5: what the sentence says about the cause, asked
+                // of the ability's source the way a description asks it. A
+                // payment no card caused meets no such stipulation.
+                && (caused_by.is_empty()
+                    || cause.is_some_and(|c| matches_criteria(c, caused_by)))
+        }
+        // 1.10.3b: the other half of "spend **or** lose" — the same condition,
+        // met by the forced movement instead of the payment.
+        (
+            TriggerCond::PlayerPaysCredits { side, also_lost: true, caused_by, .. },
+            GameChange::CreditsLost { side: s, amount, source: cause },
+        ) => {
+            cite!("rule_lose_credits");
+            side == s
+                && *amount > 0
+                && (caused_by.is_empty()
+                    || cause.is_some_and(|c| matches_criteria(c, caused_by)))
         }
         (
             TriggerCond::IcePassed { this_ice, fully_broken, subs_resolved, criteria },
@@ -2178,6 +2247,12 @@ pub fn trigger_matches(
             side.is_none() || side.as_ref() == Some(s)
         }
         (TriggerCond::RunnerTakesTag, GameChange::TagsTaken { .. }) => true,
+        // 10.5.1: the tag counter went back to the bank. One record per tag,
+        // so a sentence about "a tag" is met once for each of them.
+        (TriggerCond::TagRemoved, GameChange::TagRemoved) => {
+            cite!("rule_tag");
+            true
+        }
         // 10.4.1: a sentence naming a kind of damage is met only by that kind;
         // one naming none is met by any.
         (
@@ -2458,7 +2533,8 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::TurnEnds { requires, .. }
         | TriggerCond::RunnerStealsAgenda { requires }
         | TriggerCond::CorpScoresAgenda { requires }
-        | TriggerCond::CardInstalledBy { requires, .. } => requires,
+        | TriggerCond::CardInstalledBy { requires, .. }
+        | TriggerCond::PlayerPaysCredits { requires, .. } => requires,
         _ => &[],
     }
 }

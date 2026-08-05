@@ -316,10 +316,64 @@ pub fn the_zwicky_group() -> Card {
         .build()
 }
 
+/// SSO Industries: Fueling Innovation — Identity: Division.
+/// "When your turn ends, you may choose a piece of ice with no advancement
+///  tokens on it. If you do, place 1 advancement token on that piece of ice
+///  for each agenda point on all installed faceup agendas."
+///
+/// COMPLETE. Two printed sentences and ONE instruction: 9.11.4c says a
+/// sentence that only chooses targets and does not act on the choice forms a
+/// single instruction with the sentence that follows it. So "choose a piece of
+/// ice…" is 1.15.2's target announcement for "place 1 advancement token on
+/// that piece of ice", and "if you do" is what 1.15.3 already says — an
+/// ability with no legal target announces none and does nothing.
+///
+/// "With no advancement tokens on it" is the ordinary counter description
+/// with 2.15's "non-" negation on it, so an ice the Corp has already advanced
+/// this turn is not among the candidates at all.
+///
+/// The amount is a calculated quantity (9.12.2), read when the instruction
+/// resolves, and 1.18.2 makes it PLACED rather than advanced — so this never
+/// meets a "whenever you advance a card" condition, and a Built-to-Last-class
+/// identity stays quiet. "All installed faceup agendas" is the pair 8.1.2
+/// makes meaningful: a Corp card is installed facedown unless something says
+/// otherwise, so the usual answer is 0 and the sentence is waiting for a card
+/// that installs an agenda faceup. An agenda in a SCORE area is faceup but
+/// not installed, and the printed word is what keeps it out.
+pub fn sso_industries() -> Card {
+    card("SSO Industries: Fueling Innovation")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Division"])
+        .text("When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.")
+        .may_when(
+            turn_ends(Corp),
+            [place_on_q(
+                choose(
+                    1,
+                    &[of_type(CardType::Ice), non(with_counters(CounterKind::Advancement, 1))],
+                ),
+                CounterKind::Advancement,
+                times(
+                    1,
+                    agenda_points_of(&[
+                        installed_corp_card(),
+                        of_type(CardType::Agenda),
+                        non(facedown()),
+                    ]),
+                ),
+            )],
+        )
+        .named("fueling innovation")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
     vec![
+        sso_industries(),
         jemison_astronautics(),
         the_zwicky_group(),
         fringe_applications(),

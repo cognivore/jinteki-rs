@@ -869,7 +869,15 @@ pub fn prevent_all_net_damage() -> Instruction {
 
 /// "Give the Runner N tags." / "Take N tags."
 pub fn give_tags(n: u32) -> Instruction {
-    Instruction::GainTags(n)
+    Instruction::GainTags { amount: n, avoidable: true }
+}
+/// "Give the Runner N tags **(cannot be avoided)**." (NBN: Controlling the
+/// Message.) CR 9.3.3g makes the parenthesis a restriction and 9.4.5 makes it
+/// ride the value, so nothing offered in the interrupt window can take these
+/// tags away — the same words [`prevent_all_net_damage`] answers on the other
+/// side.
+pub fn give_tags_that_cannot_be_avoided(n: u32) -> Instruction {
+    Instruction::GainTags { amount: n, avoidable: false }
 }
 /// "Remove N tags."
 pub fn remove_tags(n: i64) -> Instruction {
@@ -1054,6 +1062,21 @@ pub fn install(card: TargetSpec, dest: InstallDest) -> Instruction {
         dest,
         and_rez: false,
         ignore_costs: false,
+        reveal_check: None,
+        reduce_total: Quantity::c(0),
+        reduce_install: Quantity::c(0),
+    }
+}
+/// "Install <a card>, **ignoring all costs**." (Synapse Global; 1.16.5c —
+/// every element of the cost is removed, including 8.5.11a's 1[credit] per
+/// piece of ice already protecting the destination server and any 1.16.10
+/// additional cost.)
+pub fn install_ignoring_all_costs(card: TargetSpec, dest: InstallDest) -> Instruction {
+    Instruction::InstallCard {
+        card,
+        dest,
+        and_rez: false,
+        ignore_costs: true,
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
@@ -1358,6 +1381,13 @@ pub fn suffer_net_damage(n: u32) -> Cost {
 /// "Take N tags" as a cost (Funhouse class).
 pub fn take_tags(n: u32) -> Cost {
     Cost::tags(n)
+}
+/// "[click], **remove 1 tag**:" as a cost (Synapse Global; 10.5.1). The tags
+/// are the Runner's whoever pays, so a Corp card printing this spends
+/// something it needed the Runner to have — and cannot use the ability at all
+/// while the Runner has no tags (1.16.1b).
+pub fn remove_a_tag(n: u32) -> Cost {
+    Cost::remove_tags(n)
 }
 
 /// Two costs paid as one, all at once (1.16.10b): `clicks(3).plus(trash_this_card())`.
@@ -1824,6 +1854,41 @@ pub fn trashes_a_from_anywhere(by: Side, of: CardType) -> TriggerCond {
         installed_only: false,
         while_accessed: false,
     }
+}
+/// "…the Runner trashes an **installed** Corp card…" (NBN: Controlling the
+/// Message) — 8.2's trash, naming whose card it was (1.14.1), who did the
+/// trashing (1.14.5) and where it was trashed from. A card the Runner trashes
+/// on access out of HQ or R&D was never installed, so it is not one of these.
+pub fn runner_trashes_an_installed_corp_card() -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: Some(Corp),
+        by: Some(Runner),
+        of_types: Vec::new(),
+        installed_only: true,
+        while_accessed: false,
+    }
+}
+/// "Whenever a <side> card ability causes <the other player> to spend or lose
+/// at least 1[credit] <during a run>…" (GameNET) — 1.10.3b's forced loss and
+/// 1.10.3c's payment as one condition, with what CAUSED it described in the
+/// ordinary words and 9.6.5c's state stipulation beside it.
+pub fn spends_or_loses_credits(
+    side: Side,
+    caused_by: &[TargetFilter],
+    reqs: &[TriggerRequirement],
+) -> TriggerCond {
+    TriggerCond::PlayerPaysCredits {
+        side,
+        also_lost: true,
+        caused_by: caused_by.to_vec(),
+        requires: reqs.to_vec(),
+    }
+}
+/// "…**a tag is removed**…" (Synapse Global; 10.5.1) — met once per tag that
+/// went back to the bank, by whichever player removed it and whether they did
+/// it with 10.5.4's basic action or with a card.
+pub fn a_tag_is_removed() -> TriggerCond {
+    TriggerCond::TagRemoved
 }
 /// "…you trash a card you are accessing…" (René "Loup" Arcemont) — 8.2's
 /// trash, naming the player who does it (1.14.5) and 7.1.2's access it
