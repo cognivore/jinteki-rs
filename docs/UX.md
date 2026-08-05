@@ -37,7 +37,7 @@ conflict.
      column exists only where the screen is tall enough (`.identity-col`
      is hidden under 640px), so the seat rail's `.idchip` is the copy that
      must always carry it.
-   * `.staged` on a card — **marked by you, not yet done**. See §8.
+   * `.staged` on a card — **chosen by you, not yet done**. See §7.
 
    A hueless white, so neither amber nor acid green can be confused with it.
 
@@ -71,25 +71,48 @@ conflict.
    not appear is indistinguishable from a bug, and players reported exactly
    that about Mutual Favor.
 
-7. **An irreversible choice is staged, then confirmed.** MTG Arena's
-   discard, and for MTG Arena's reason: 5.5.4c cannot be taken back, and it
-   is the one decision a player makes with no clicks left and their mind
-   already on next turn. So the taps MARK cards (white, `.staged`), the
-   sentence changes to name what is about to happen, and a separate button
-   does it. Every other card choice is an *announcement* (CR 1.15.2) with
-   nothing yet to undo, and those still commit on the last pick — staging
-   everything would be ceremony, staging nothing was a trap.
+7. **An irreversible choice is staged, then confirmed — but it is CHOSEN
+   the way everything else is.** 5.5.4c cannot be taken back, and it is the
+   one decision a player makes with no clicks left and their mind already on
+   next turn, so the discard still accumulates in white (`.staged`), the
+   sentence still changes to name what is about to happen, and a separate
+   button still does it. What is NOT special is the picking: it used to have
+   a verb of its own ("tap to MARK it") and therefore an affordance of its
+   own to learn. Choosing a card out of a pool is §8's two taps, everywhere,
+   with the same sentence printed under every one of them; the button is the
+   multi-pick's *done*, not a second way to pick. Every other card choice is
+   an *announcement* (CR 1.15.2) with nothing yet to undo, and those commit
+   on the last pick — staging everything would be ceremony, staging nothing
+   was a trap.
 
-8. **In a fan, the first tap focuses and the second acts.** A bounded fan
-   shows nine cards in the width five used to, so a resting card is a 16px
-   strip and a strip is far below the 48px a tap target has to be. The first
-   tap brings a card to focus, where it is 78px wide and lifted clear of its
-   neighbours; the second tap is the one that plays, marks or picks it. On a
-   pointer device the focus simply follows the mouse (MTGA), so the two taps
-   are only ever two on touch. Cards outside the window are reached by the
-   rail, by the peeks, by a swipe that scrubs the window — the frame stays
-   put and the cards flow THROUGH it, never sliding the hand off the table —
-   or, on a pointer, by hovering the fan's outer edge.
+8. **In a fan, the first tap focuses and the second acts — and the list
+   never moves.** A crowded fan draws a resting card as a strip far below the
+   48px a tap target has to be, so the first tap brings a card to focus,
+   lifted and scaled clear of its neighbours, and the second is the one that
+   plays, discards or picks it. On a pointer device the focus follows the
+   mouse (MTGA), so the two taps are only ever two on touch. A tap is a press
+   and a release in the same place: a pointer that has travelled is not a tap
+   on whatever it happens to be over when it lifts.
+
+   The row itself is STATIC. It does not slide, scrub, spring or reflow under
+   a pointer, because a list that moves while you are reading it cannot be
+   read — the carousel that used to do this was reported as a wobble and has
+   been deleted, not tuned. Cards outside the window are reached by the
+   rail's chevrons, by the peeks, or on a pointer by hovering the fan's outer
+   edge. A DRAG means exactly one thing, in exactly one place: in a zone you
+   may rearrange (CR 8.3.3) it carries the one card you picked up, and every
+   other card stands still. Anywhere else a drag is not a gesture at all. A
+   press that wanders a little is still a press — a thumb is not a mouse.
+
+8b. **A fan uses the width it has.** The window is not a constant: the row
+   measures the free band its neighbours leave it and lays the cards out to
+   fill it — five cards on a wide band stand side by side at full size, and
+   the tight nine-in-212px packing is the WORST case, not the layout. The
+   step shrinks continuously as the count grows, so one card more is a
+   slightly tighter row and never a jump into a different mode; only when the
+   band genuinely cannot hold the list do the peeks and the rail appear. The
+   arc flattens as the row spreads: overlapping cards fan, cards standing
+   clear of each other lie flat.
 
 9. **What a rule entitles you to see, you are SHOWN.** CR 7.1.2 lets the
    Runner look at a card they are accessing; most accesses ask them nothing,
@@ -98,6 +121,38 @@ conflict.
    snapshot when the entitlement is live (`state.accessed`) — by the time a
    state is pushed the access is over and `vm.st.accessed` is already null —
    and carried until the player has dismissed it.
+
+10. **The hand and every "choose one of these" are ONE widget.** Not two that
+   look alike — one function draws both, and a caller cannot answer a single
+   question about how the fan behaves. It supplies what is in the row and
+   what each slot is captioned; the fan supplies the size, the arc, the
+   focus, the gestures and the two taps. Where they must differ it is one
+   parameter, never a second code path. This is not tidiness: when the prompt
+   built its own slots it forgot to pass them the fan's index, so a single
+   tap on a 16px strip answered a question the hand would have asked twice
+   for — and the prompt's cards were, for the whole life of that code, not
+   clickable at all, because the sheet they live in is `pointer-events: none`
+   and only the hand's copy had ever opted back in.
+
+11. **A card is a BOX, and everything it carries is drawn inside it.** Cost,
+   strength, every counter (CR 1.9.5's kinds), and the ✓ of a staged choice.
+   Nothing hangs off a corner: in a fan the only part of a resting card you
+   can see is the strip its neighbour does not cover, and a badge that
+   overhangs is a badge painted across that strip. Counters fill the
+   card's top-right corner right-to-left and wrap downward, and past two they
+   get smaller rather than spreading — whatever a card is carrying fits, at
+   every size this UI draws a card at, and nothing is ever dropped, because a
+   counter the player cannot see is a counter they will misplay.
+
+12. **Where the screen can afford it, the focused card is READABLE.** A fan
+   draws a card small enough to recognise and too small to read. In landscape
+   the focused card — whichever card the focus is on, in the hand or in a
+   prompt — is drawn at reading size on the right, and it follows the focus.
+   When the focused option is an ability rather than a card, the card shown
+   is the one the ability LIVES ON, with the option's own words under it: "use
+   the second ability" names nothing by itself. The panel shows and never
+   asks (`pointer-events: none`, §3b), and it is bounded to clear every other
+   thing pinned to that edge.
 
 ## The lessons, and where each one lives
 
@@ -157,9 +212,26 @@ conflict.
 
 ## Deliberate deviations
 
-- **No drag-to-play yet.** HS drags cards; we tap-then-confirm. On small
-  screens with fanned hands, tap+sheet measured fewer misplays in HS's own
-  later UX iterations (see mulligan flow). Drag is a later nicety.
+- **No drag-to-play, and no drag-to-navigate.** HS drags cards; we
+  tap-then-act. On small screens with fanned hands, tap+sheet measured fewer
+  misplays in HS's own later UX iterations (see mulligan flow). Dragging a
+  fan to move it through a window was tried and REMOVED: see §8. The one
+  drag that survives carries a card in a rearrangement.
+- **A fan may draw cards below the 48px tap target, and only then.** The
+  elastic layout (§8b) keeps cards at full size while the band allows it, so
+  the sub-48px strip now happens only when the list genuinely outgrows the
+  room. It is still a deviation, and §8's two taps are still what pays for
+  it: the strip is never the tap target, the focused card is.
+- **A prompt sheet steps aside for the reading panel.** In landscape the
+  sheet is centred on what is left of the screen beside §11's panel rather
+  than on the screen itself. It is a fixed offset per orientation, decided by
+  a media query and not by any game state, so nothing moves while the game is
+  being played (THE LAW §2).
+- **The right-hand panel overlays the board's right edge.** §11's preview has
+  to be somewhere, and every edge of a landscape phone is already spoken for.
+  It overlays rather than reflows — the board's layout never moves (§2) — and
+  it is `pointer-events: none`, so the cards under it are still reachable if
+  the row it covers is ever full.
 - **No card art.** Text cards with type-colored frames. The information
   hierarchy (cost badge top-left, strength bottom-left, counters top-right)
   copies physical Netrunner card anatomy so players' eyes already know it.
