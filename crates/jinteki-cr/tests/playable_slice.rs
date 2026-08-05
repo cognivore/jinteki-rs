@@ -205,7 +205,7 @@ fn full_game_slice() {
         .changes
         .log
         .iter()
-        .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: ServerId::Hq })));
+        .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: ServerId::Hq, .. })));
 
     // === Run 2: HQ again, Corp rezzes → encounter, subroutine ends the run ===
     let corp_credits_before = vm.st.corp.credits;

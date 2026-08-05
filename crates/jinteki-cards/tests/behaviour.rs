@@ -427,7 +427,7 @@ fn crisium_grid() {
             .changes
             .log
             .iter()
-            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: s } if *s == server));
+            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: s, .. } if *s == server));
         assert_eq!(
             declared, !protected,
             "the run is declared successful exactly when Crisium is absent (protected={protected}): {}",
@@ -1300,7 +1300,7 @@ fn account_siphon_replaces_the_breach_and_pays_what_was_actually_lost() {
             vm.changes
                 .log
                 .iter()
-                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: ServerId::Hq })),
+                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: ServerId::Hq, .. })),
             "6.8.4: a replaced breach still leaves the run successful: {}",
             t.tail(14)
         );
@@ -1372,7 +1372,7 @@ fn clean_getaway_lets_the_runner_choose_the_server() {
             vm.changes
                 .log
                 .iter()
-                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: s } if *s == server)),
+                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server: s, .. } if *s == server)),
             "the run went to the announced server: {}",
             t.tail(14)
         );
@@ -6898,6 +6898,72 @@ fn ryo_phoenix_ono_pays_only_after_a_subroutine_resolved_that_run() {
     }
 }
 
+/// The same sentence, from the other end: 9.6.5c's ordinal counts only the
+/// occurrences that met the WHOLE condition, so a plain successful run — no
+/// subroutine resolved — earlier in the turn was never one of "the times"
+/// and spends nothing. The stipulation is read off the declaration's own
+/// record: by the time the second run's checkpoint re-asks the condition of
+/// the first run's declaration, that run's history window is long closed and
+/// the board has nothing left to say about it.
+#[test]
+fn ryo_phoenix_ono_plain_successful_run_does_not_spend_the_turns_one_time() {
+    let mut vm = Vm::empty(6191);
+    tk::install_identity(
+        &mut vm,
+        card("Ryō \"Phoenix\" Ōno: Out of the Ashes"),
+        Side::Runner,
+    );
+    tk::install_ice(&mut vm, tk::three_sub_ice("Some Ice"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+    let hq_before = vm.st.hand[&Side::Corp].len();
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    let successes: Vec<usize> = vm
+        .changes
+        .log
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c, GameChange::RunDeclaredSuccessful { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(successes.len(), 2, "both runs were declared successful: {}", t.tail(50));
+    assert_eq!(
+        vm.st.runner.credits, 1,
+        "the R&D run resolved no subroutine, so the HQ run is still the first time: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        hq_before - vm.st.hand[&Side::Corp].len(),
+        1,
+        "…and the Corp pitches exactly one card, for the HQ run: {}",
+        t.tail(50)
+    );
+    // The change-log claim that pins WHICH run paid: nothing was gained off
+    // the first, subroutine-less success.
+    let gained_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CreditsGained { side: Side::Runner, .. }))
+        .expect("the identity paid out");
+    assert!(
+        gained_at > successes[1],
+        "the credit follows the SECOND declaration, not the first: {}",
+        t.tail(50)
+    );
+}
+
 /// 1.11.3a: how many clicks an ABILITY gave the Runner in their first turn —
 /// read from the change log, so an assertion about it does not depend on
 /// where the plan happened to stop. 5.6.2a's allotment is recorded the same
@@ -7582,6 +7648,83 @@ fn architects_of_tomorrow_rezzes_a_bioroid_for_four_less_on_a_bioroid_pass() {
     );
 }
 
+/// The other half of "rezzed": a fact of the pass's own moment. The same ice
+/// is passed twice in one turn — unrezzed on the first run, rezzed on the
+/// approach of the second — and only the second pass is one of "the times".
+/// Reading the board instead of the record would find the first pass rezzed
+/// too, count it as the turn's first, and withhold the offer the printed
+/// sentence makes.
+#[test]
+fn architects_of_tomorrow_ice_rezzed_after_a_pass_does_not_rewrite_that_pass() {
+    let mut vm = Vm::empty(6192);
+    tk::install_identity(&mut vm, card("Haas-Bioroid: Architects of Tomorrow"), Side::Corp);
+    let gate = tk::install_ice(
+        &mut vm,
+        tk::subtyped_ice("Bioroid Gate", vec!["Bioroid"], 0, 1),
+        ServerId::Archives,
+        false,
+    );
+    let asset = {
+        let mut c = tk::vanilla_asset("Bioroid Asset", 5, 2);
+        c.subtypes = vec!["Bioroid"];
+        tk::install_root(&mut vm, c, ServerId::Remote(1), false)
+    };
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 1;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().approaching_ice().nth(2), Reply::Take(Pick::RezApproachedIce))
+            .when(Match::reaction().offering("architects"), Reply::take("architects"))
+            .when(Match::targets().once(), Reply::Targets(vec![asset])),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.st.objects[&gate].faceup,
+        "the gate was rezzed on the second run's approach: {}",
+        t.tail(50)
+    );
+    let offers = t.of_kind(Kind::Reaction).len();
+    assert_eq!(
+        offers, 1,
+        "one offer, on the second run's pass — the unrezzed pass before it was never one of the times: {}",
+        t.tail(50)
+    );
+    assert!(
+        vm.st.objects[&asset].faceup,
+        "…and the offer was good: the bioroid asset is rezzed: {}",
+        t.tail(50)
+    );
+    // The change-log claim that pins WHICH pass was the time: the asset's rez
+    // follows the second run, not the first pass re-read as rezzed.
+    let runs: Vec<usize> = vm
+        .changes
+        .log
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c, GameChange::RunBegan { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let rezzed_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardRezzed { obj, .. } if *obj == asset))
+        .expect("the asset was rezzed");
+    assert!(
+        rezzed_at > runs[1],
+        "the offer came on the second run's pass, not the first's: {}",
+        t.tail(50)
+    );
+}
+
 /// LEO Construction: "Once per turn → Trash 1 rezzed bioroid card in the root
 /// of or protecting the attacked server: End the run."
 ///
@@ -7811,7 +7954,7 @@ fn stronger_together_puts_bioroid_ice_out_of_a_breakers_reach() {
     );
     assert!(
         vm.changes.log.iter().any(
-            |c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Rnd)
+            |c| matches!(c, GameChange::RunDeclaredSuccessful { server, .. } if *server == ServerId::Rnd)
         ),
         "and the same breaker, at the same strength, broke the plain gate on R&D: {}",
         t.tail(40)
@@ -7932,6 +8075,88 @@ fn builder_of_nations_damages_only_after_an_advanced_ice_encounter() {
         .filter(|c| matches!(c, GameChange::DamageSuffered { kind, .. } if *kind == jinteki_cr::effects::DamageKind::Meat))
         .count();
     assert_eq!(meat, 1, "exactly one — the plain ice's encounter met nothing: {}", t.tail(50));
+}
+
+/// The record's other direction: counters placed after an encounter ended do
+/// not make that encounter retroactively "with an advanced piece of ice".
+/// The first run's plain ice is advanced by a card ability the moment that
+/// run ends; the second run's ice was advanced all along, so its encounter
+/// end is still the first time each turn and the damage happens. Reading the
+/// board instead of the record would count the first encounter, and the
+/// printed damage would never come.
+#[test]
+fn builder_of_nations_counters_placed_later_do_not_rewrite_an_encounter() {
+    let mut vm = Vm::empty(6193);
+    tk::install_identity(&mut vm, card("Weyland Consortium: Builder of Nations"), Side::Corp);
+    let plain =
+        tk::install_ice(&mut vm, tk::vanilla_ice("Plain Ice", 0, 1), ServerId::Archives, true);
+    let advanced_ice =
+        tk::install_ice(&mut vm, tk::vanilla_ice("Advanced Ice", 0, 1), ServerId::Rnd, true);
+    tk::place_counters(&mut vm, advanced_ice, CounterKind::Advancement, 1);
+    tk::install_root(
+        &mut vm,
+        tk::run_ends_advancer("Groundskeeper", ServerId::Archives, plain),
+        ServerId::Remote(1),
+        true,
+    );
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&plain].counter(CounterKind::Advancement),
+        1,
+        "the groundskeeper advanced the first run's ice when that run ended: {}",
+        t.tail(50)
+    );
+    let meat = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::DamageSuffered { kind, .. } if *kind == jinteki_cr::effects::DamageKind::Meat))
+        .count();
+    assert_eq!(
+        meat, 1,
+        "the advanced encounter on R&D is still the first time — its damage happens: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        grip.len() - 1,
+        "one card left the grip, no more: {}",
+        t.tail(50)
+    );
+    // The change-log claim that pins WHICH encounter did it: the damage
+    // follows the second run, not the plain encounter the counter rewrote.
+    let runs: Vec<usize> = vm
+        .changes
+        .log
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c, GameChange::RunBegan { .. }))
+        .map(|(i, _)| i)
+        .collect();
+    let damage_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .expect("the damage happened");
+    assert!(
+        damage_at > runs[1],
+        "the damage follows the R&D run, not the Archives one: {}",
+        t.tail(50)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -11153,7 +11378,7 @@ fn omar_keung_succeeds_on_hq_without_ever_meeting_the_ice_protecting_it() {
         .log
         .iter()
         .filter_map(|c| match c {
-            GameChange::RunDeclaredSuccessful { server } => Some(*server),
+            GameChange::RunDeclaredSuccessful { server, .. } => Some(*server),
             _ => None,
         })
         .collect();

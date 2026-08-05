@@ -1724,11 +1724,16 @@ impl Vm {
                             Some((i, b, r)) if i == ice => (true, b, r),
                             _ => (false, false, false),
                         };
+                        // 8.1's status at the moment of the pass, recorded
+                        // for 9.6.5c's later re-reads of this occurrence.
+                        let rezzed =
+                            self.st.objects.get(&ice).map(|o| o.faceup).unwrap_or(false);
                         self.changes.record(GameChange::IcePassed {
                             ice,
                             after_encounter,
                             fully_broken,
                             subs_resolved,
+                            rezzed,
                         });
                     }
                 }
@@ -1793,7 +1798,14 @@ impl Vm {
                     if let Some((_, _, s)) = self.current_run.as_mut() {
                         *s = true;
                     }
-                    self.changes.record(GameChange::RunDeclaredSuccessful { server });
+                    // 9.8.7 asked of this run's own history window, at the
+                    // moment of the declaration — recorded for 9.6.5c's later
+                    // re-reads, which happen after the window has closed.
+                    let subroutine_resolved = self.changes.log[self.st.run_log_start..]
+                        .iter()
+                        .any(|c| matches!(c, GameChange::SubroutineResolved { .. }));
+                    self.changes
+                        .record(GameChange::RunDeclaredSuccessful { server, subroutine_resolved });
                     // CR 6.7.4: "If successful" means "after the run created
                     // this way becomes successful", so the clause the
                     // initiating effect carried becomes pending HERE — an
@@ -3407,9 +3419,19 @@ impl Vm {
     /// early.
     fn end_encounter(&mut self) {
         if let Some(e) = self.st.encounter.take() {
+            // 1.18.2 asked of the ice at this moment, recorded for 9.6.5c's
+            // later re-reads — ice trashed mid-encounter has already sent its
+            // counters back, and meets nothing, which is what the read finds.
+            let ice_advanced = self
+                .st
+                .objects
+                .get(&e.ice)
+                .map(|o| o.counter(CounterKind::Advancement) > 0)
+                .unwrap_or(false);
             self.changes.record(GameChange::EncounterEnded {
                 ice: e.ice,
                 encounter_id: e.id,
+                ice_advanced,
             });
         }
     }
@@ -8647,7 +8669,7 @@ impl Vm {
                 // same reading `TriggerCond::RunBegins` gives its list.
                 let named = |s: &ServerId| on.is_empty() || on.contains(s);
                 let any = log[start..end].iter().any(|c| match c {
-                    GameChange::RunDeclaredSuccessful { server } => *successful_only && named(server),
+                    GameChange::RunDeclaredSuccessful { server, .. } => *successful_only && named(server),
                     GameChange::RunBegan { server } => !*successful_only && named(server),
                     _ => false,
                 });

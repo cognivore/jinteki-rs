@@ -7623,7 +7623,7 @@ fn example_rule_count_positions_2() {
     assert_eq!(approached, vec![a_only, b0], "6.2.8a: the Runner approaches the ice moved to");
     assert!(
         vm.changes.log.iter().any(
-            |c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Remote(2))
+            |c| matches!(c, GameChange::RunDeclaredSuccessful { server, .. } if *server == ServerId::Remote(2))
         ),
         "6.2.8a: that server became the attacked server: {}",
         t.tail(10)
@@ -7675,7 +7675,7 @@ fn example_rule_ice_change_encounter_move_swap_1() {
     );
     assert!(
         vm.changes.log.iter().any(
-            |c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Archives)
+            |c| matches!(c, GameChange::RunDeclaredSuccessful { server, .. } if *server == ServerId::Archives)
         ),
         "the Runner is now running on Archives"
     );
@@ -8251,7 +8251,7 @@ fn example_rule_no_position_after_approach_server_1() {
         vm.changes.log
     );
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server } if *server == ServerId::Remote(1))),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { server, .. } if *server == ServerId::Remote(1))),
         "the attacked server was never changed by the refused move"
     );
 }

@@ -424,7 +424,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // of the times this condition counts.
                     if let (
                         crate::ability::TriggerCond::SuccessfulRunOnMark { first_each_turn },
-                        GameChange::RunDeclaredSuccessful { server },
+                        GameChange::RunDeclaredSuccessful { server, .. },
                     ) = (cond, c)
                     {
                         cite!("rule_mark_designated_condition_check");
@@ -440,7 +440,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         let so_far = vm.changes.log[since..]
                             .iter()
                             .filter(|x| {
-                                matches!(x, GameChange::RunDeclaredSuccessful { server: s }
+                                matches!(x, GameChange::RunDeclaredSuccessful { server: s, .. }
                                          if *s == mark)
                             })
                             .count();
@@ -467,7 +467,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // choice maintained means the condition is never met.
                     if let (
                         crate::ability::TriggerCond::SuccessfulRunOnChosenServer { key },
-                        GameChange::RunDeclaredSuccessful { server },
+                        GameChange::RunDeclaredSuccessful { server, .. },
                     ) = (cond, c)
                     {
                         let chosen = vm.maintained_choice(obj_id, key);

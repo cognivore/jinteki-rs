@@ -75,7 +75,7 @@ fn siphon_replaces_the_breach_but_the_run_is_still_successful() {
     assert!(
         vm.changes.log.iter().any(|c| matches!(
             c,
-            GameChange::RunDeclaredSuccessful { server: ServerId::Hq }
+            GameChange::RunDeclaredSuccessful { server: ServerId::Hq, .. }
         )),
         "the run was declared successful"
     );

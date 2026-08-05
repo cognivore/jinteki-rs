@@ -178,8 +178,11 @@ pub fn weyland_built_to_last() -> Card {
 ///
 /// COMPLETE. 6.5.10's end of an encounter with what the sentence says about
 /// the ice — "advanced" is 1.18.2 and nothing more: a card with at least one
-/// advancement counter on it. The stipulation is read when the condition
-/// would be met, so ice that lost its counters mid-encounter meets nothing.
+/// advancement counter on it. The stipulation is a fact of the encounter
+/// end's MOMENT and rides on its record: ice that lost its counters
+/// mid-encounter meets nothing, and counters placed or removed later in the
+/// turn do not rewrite which encounters were "the times" when 9.6.5c's
+/// ordinal re-asks.
 ///
 /// 9.6.5c's ordinal is about the occurrence, so the SECOND advanced piece of
 /// ice passed in the same turn does no damage — and an encounter that ends
@@ -193,7 +196,7 @@ pub fn weyland_builder_of_nations() -> Card {
         .subtypes(&["Megacorp"])
         .text("The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.")
         .when_first_each_turn(
-            encounter_with_ice_matching_ends(&[advanced()]),
+            encounter_with_advanced_ice_ends(),
             [meat_damage(Corp, 1)],
         )
         .named("builder of nations")

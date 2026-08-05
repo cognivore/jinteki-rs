@@ -261,11 +261,15 @@ pub fn null_whistleblower() -> Card {
 ///  resolved during that run, gain 1[credit] and the Corp trashes 1 card from
 ///  HQ."
 ///
-/// COMPLETE. The condition is 6.8.4's declaration of success with 9.6.5c's
-/// additional requirement listed inside it — "after a subroutine resolved
+/// COMPLETE. The condition is 6.8.4's declaration of success with the
+/// sentence's own stipulation inside it — "after a subroutine resolved
 /// during that run" — which is what keeps the printed ordinal honest: a
 /// successful run with no subroutine resolved does not meet the condition at
-/// all, so it does not spend the one time each turn.
+/// all, so it does not spend the one time each turn. The stipulation is a
+/// fact of the declaration's MOMENT and rides on its record, because 9.6.5c
+/// re-asks this condition of every earlier change in the turn and the run's
+/// history window has closed by then — a state-read requirement here would
+/// let a plain successful run spend the one time it never met.
 ///
 /// "A subroutine resolved during that run" is the run's whole history and not
 /// the last encounter's: a subroutine that resolved on the first piece of ice
@@ -285,7 +289,7 @@ pub fn ryo_phoenix_ono() -> Card {
         .subtypes(&["G-mod"])
         .text("The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.")
         .when_first_each_turn(
-            makes_successful_run_if(&[at_least(subroutines_resolved_this_run(), 1)]),
+            makes_successful_run_after_subroutine_resolved(),
             [combined([
                 gain(Runner, 1),
                 performed_by(Corp, trash(choose(1, &[in_hand_of(Corp)]))),

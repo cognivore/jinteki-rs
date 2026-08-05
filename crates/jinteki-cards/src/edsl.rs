@@ -1723,17 +1723,21 @@ pub fn passed() -> TriggerCond {
         this_ice: true,
         fully_broken: false,
         subs_resolved: false,
+        rezzed: false,
         criteria: Vec::new(),
     }
 }
 /// "…the Runner passes a **rezzed** piece of **bioroid** ice…" (Haas-Bioroid:
-/// Architects of Tomorrow) — 6.9.4a's pass with what the sentence says about
-/// the ice, written in the ordinary description words.
-pub fn passes_ice_matching(criteria: &[TargetFilter]) -> TriggerCond {
+/// Architects of Tomorrow) — 6.9.4a's pass. "Rezzed" is a fact of the pass's
+/// own moment, read off the record so a later rez does not rewrite what
+/// 9.6.5c's ordinal counts; the rest of the sentence describes the ice in
+/// the ordinary description words.
+pub fn passes_rezzed_ice_matching(criteria: &[TargetFilter]) -> TriggerCond {
     TriggerCond::IcePassed {
         this_ice: false,
         fully_broken: false,
         subs_resolved: false,
+        rezzed: true,
         criteria: criteria.to_vec(),
     }
 }
@@ -1745,6 +1749,7 @@ pub fn passes_any_ice() -> TriggerCond {
         this_ice: false,
         fully_broken: false,
         subs_resolved: false,
+        rezzed: false,
         criteria: Vec::new(),
     }
 }
@@ -1773,17 +1778,32 @@ pub fn after_this_resolves() -> TriggerCond {
 }
 /// "Whenever you make a successful run" — any server (6.8.4).
 pub fn makes_successful_run() -> TriggerCond {
-    TriggerCond::MakesSuccessfulRun { on: None, requires: Vec::new() }
+    TriggerCond::MakesSuccessfulRun {
+        on: None,
+        after_subroutine_resolved: false,
+        requires: Vec::new(),
+    }
 }
-/// "Whenever a run becomes successful, if <requirements>…" — 9.6.5c's
-/// stipulation about the state at the moment the run is declared successful
-/// (Ryō "Phoenix" Ōno's "after a subroutine resolved during that run").
-pub fn makes_successful_run_if(reqs: &[TriggerRequirement]) -> TriggerCond {
-    TriggerCond::MakesSuccessfulRun { on: None, requires: reqs.to_vec() }
+/// "…a run becomes successful **after a subroutine resolved during that
+/// run**" (Ryō "Phoenix" Ōno) — a stipulation about the occurrence itself,
+/// inside what a printed ordinal counts: a successful run with no subroutine
+/// resolved was never one of "the times" and spends nothing. It is read off
+/// the declaration's own record, which is what still answers once the run's
+/// history window has closed.
+pub fn makes_successful_run_after_subroutine_resolved() -> TriggerCond {
+    TriggerCond::MakesSuccessfulRun {
+        on: None,
+        after_subroutine_resolved: true,
+        requires: Vec::new(),
+    }
 }
 /// "…makes a successful run on <these servers>" (Gemilang class).
 pub fn makes_successful_run_on(servers: &[ServerId]) -> TriggerCond {
-    TriggerCond::MakesSuccessfulRun { on: Some(servers.to_vec()), requires: Vec::new() }
+    TriggerCond::MakesSuccessfulRun {
+        on: Some(servers.to_vec()),
+        after_subroutine_resolved: false,
+        requires: Vec::new(),
+    }
 }
 /// "…you make a successful run on **a central server**" (Liza Talking
 /// Thunder, Laramy Fisk). CR 4.6.5 names the central servers and no others —
@@ -2265,15 +2285,12 @@ pub fn runner_made_no_successful_run_last_turn() -> TriggerRequirement {
     }
 }
 /// "…an encounter **with an advanced piece of ice** ends" (Weyland
-/// Consortium: Builder of Nations) — the encounter's end (6.5.10) with what
-/// the sentence says about the ice, in the ordinary description words.
-pub fn encounter_with_ice_matching_ends(criteria: &[TargetFilter]) -> TriggerCond {
-    TriggerCond::EncounterEnds { criteria: criteria.to_vec() }
-}
-/// "…an **advanced** card" (1.18.2) — a card with at least one advancement
-/// counter on it, which is all "advanced" means.
-pub fn advanced() -> TargetFilter {
-    with_counters(CounterKind::Advancement, 1)
+/// Consortium: Builder of Nations) — the encounter's end (6.5.10), with
+/// 1.18.2's "advanced" read off the record of that moment rather than off
+/// the board, so counters that move or leave with the ice afterwards do not
+/// rewrite what 9.6.5c's ordinal counts.
+pub fn encounter_with_advanced_ice_ends() -> TriggerCond {
+    TriggerCond::EncounterEnds { criteria: Vec::new(), with_advanced_ice: true }
 }
 /// "Whenever you take 1 or more bad publicity…" (10.6.1.)
 pub fn takes_bad_publicity(side: Side) -> TriggerCond {

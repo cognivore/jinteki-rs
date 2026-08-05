@@ -297,10 +297,13 @@ pub fn cerebral_imaging() -> Card {
 /// "The first time each turn the Runner passes a rezzed piece of bioroid ice,
 ///  you may rez 1 bioroid card, paying 4[credit] less."
 ///
-/// COMPLETE. 6.9.4a's pass with a whole description of the ice — "a **rezzed**
-/// piece of **bioroid** ice" — which is the ordinary filter vocabulary asked
-/// of the occurrence rather than of a target, and 9.6.5c's ordinal about that
-/// occurrence.
+/// COMPLETE. 6.9.4a's pass with the sentence's two stipulations about the
+/// ice, and 9.6.5c's ordinal about that occurrence. "A piece of **bioroid**
+/// ice" is a characteristic and travels with the card, so it is the ordinary
+/// filter vocabulary asked of the occurrence rather than of a target;
+/// "**rezzed**" is 8.1's status at the pass's own MOMENT and rides on the
+/// pass's record — an ice passed unrezzed and rezzed later the same turn was
+/// never one of "the times", which only the record can still say.
 ///
 /// "Paying 4[credit] less" is 1.16.2a's reduction of the rez cost, floored at
 /// zero by the same rule: the payment still happens, so a Corp who cannot
@@ -318,7 +321,7 @@ pub fn haas_bioroid_architects_of_tomorrow() -> Card {
         .subtypes(&["Megacorp"])
         .text("The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.")
         .may_when_first_each_turn(
-            passes_ice_matching(&[rezzed(), with_subtype("Bioroid"), of_type(CardType::Ice)]),
+            passes_rezzed_ice_matching(&[with_subtype("Bioroid"), of_type(CardType::Ice)]),
             [rez_paying_less(choose(1, &[with_subtype("Bioroid"), unrezzed()]), 4)],
         )
         .named("architects of tomorrow")

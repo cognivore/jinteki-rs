@@ -206,20 +206,44 @@ pub enum GameChange {
     /// CR rule_identity_double_sided: a double-sided identity turned over.
     IdentityFlipped { side: Side },
     RunBegan { server: ServerId },
-    RunDeclaredSuccessful { server: ServerId },
+    /// CR 6.8.4: the run was declared successful. `subroutine_resolved` is
+    /// whether any subroutine had resolved during this run by that moment
+    /// (9.8.7) — a fact about the MOMENT of the declaration, recorded here
+    /// because 9.6.5c's ordinal re-asks the whole condition of every earlier
+    /// change this turn, and by then the run's own history window is closed
+    /// ("…a run becomes successful **after a subroutine resolved during that
+    /// run**", Ryō "Phoenix" Ōno).
+    RunDeclaredSuccessful { server: ServerId, subroutine_resolved: bool },
     RunDeclaredUnsuccessful { server: ServerId },
     /// The run is complete (`step_run_complete`, 6.9.6d).
     RunEnded { server: ServerId, run_id: u64 },
     EncounterBegan { ice: ObjectId, encounter_id: u64 },
-    EncounterEnded { ice: ObjectId, encounter_id: u64 },
+    /// CR 6.5.10: the encounter ended. `ice_advanced` is 1.18.2 asked of the
+    /// ice at that moment — at least one advancement counter — recorded here
+    /// rather than read off the board later, because the counters can move or
+    /// leave with the ice before 9.6.5c's ordinal re-asks the condition of
+    /// this occurrence ("an encounter with an **advanced** piece of ice
+    /// ends", Weyland Consortium: Builder of Nations).
+    EncounterEnded { ice: ObjectId, encounter_id: u64, ice_advanced: bool },
     IceApproached { ice: ObjectId },
     /// CR 6.9.4a: the Runner passed a piece of ice. `after_encounter` is
     /// 6.1.3e's "direct sequence" test — whether this pass directly follows
     /// an Encounter Ice Phase WITH THIS ICE — and the other two flags carry
     /// what happened during that encounter, since 6.1.3f scopes "after fully
     /// breaking it" to that encounter and 9.8.9's Persephone class asks
-    /// whether any subroutine resolved from this ice.
-    IcePassed { ice: ObjectId, after_encounter: bool, fully_broken: bool, subs_resolved: bool },
+    /// whether any subroutine resolved from this ice. `rezzed` is 8.1's
+    /// status of the ice at the moment it was passed — recorded here rather
+    /// than read off the board later, because a rez or derez after the pass
+    /// would change what 9.6.5c's ordinal sees when it re-asks the condition
+    /// of this occurrence ("the Runner passes a **rezzed** piece of bioroid
+    /// ice", Haas-Bioroid: Architects of Tomorrow).
+    IcePassed {
+        ice: ObjectId,
+        after_encounter: bool,
+        fully_broken: bool,
+        subs_resolved: bool,
+        rezzed: bool,
+    },
     ServerApproached { server: ServerId },
     /// CR 1.16.3: a cost was paid (zero costs are real, 1.16.1d).
     ///

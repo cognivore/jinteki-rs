@@ -328,7 +328,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         GameChange::RunBegan { server } => {
             format!("Runner: runs {}.", server_label(*server))
         }
-        GameChange::RunDeclaredSuccessful { server } => {
+        GameChange::RunDeclaredSuccessful { server, .. } => {
             format!("The run on {} is successful.", server_label(*server))
         }
         GameChange::RunDeclaredUnsuccessful { server } => {

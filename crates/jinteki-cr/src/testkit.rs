@@ -2014,7 +2014,7 @@ pub fn chum_like(name: &'static str) -> PrintedCard {
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::EncounterEnds { criteria: Vec::new() },
+                    TriggerCond::EncounterEnds { criteria: Vec::new(), with_advanced_ice: false },
                     vec![Instruction::Damage {
                         kind: DamageKind::Net,
                         amount: Quantity::c(3),
@@ -3573,7 +3573,7 @@ pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
         Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::EncounterEnds { criteria: Vec::new() },
+                    TriggerCond::EncounterEnds { criteria: Vec::new(), with_advanced_ice: false },
                     vec![Instruction::TrashCards(TargetSpec::EarlierTarget { nth: 0 })],
                     false,
                 )
@@ -3952,6 +3952,7 @@ pub fn tatu_bola_like(name: &'static str, from_hq: ObjectId) -> PrintedCard {
             this_ice: true,
             fully_broken: false,
             subs_resolved: false,
+            rezzed: false,
             criteria: Vec::new(),
         },
         vec![
@@ -4204,6 +4205,7 @@ pub fn twins_ice(name: &'static str, strength: i32) -> PrintedCard {
             this_ice: true,
             fully_broken: false,
             subs_resolved: false,
+            rezzed: false,
             criteria: Vec::new(),
         },
             vec![Instruction::ForceEncounter { ice: TargetSpec::SelfSource }],
@@ -4636,6 +4638,26 @@ pub fn trash_counter_like(name: &'static str, of: Side) -> PrintedCard {
         false,
     )
     .labeled("district99: count trashed installed cards")];
+    c
+}
+
+/// Scaffolding for 9.6.5c's re-reads of the past: a Corp card that places 1
+/// advancement counter on a FIXED piece of ice when a run on the named server
+/// ends. The ice is fixed at card-build time (the Tatu-Bola simplification),
+/// so a test can move counters mid-turn without any choreography and then ask
+/// what an ordinal makes of the occurrences BEFORE the move.
+pub fn run_ends_advancer(name: &'static str, on: ServerId, ice: ObjectId) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 1);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::RunEnds { successful_only: false, on: vec![on] },
+        vec![Instruction::PlaceCounters {
+            target: TargetSpec::Objects(vec![ice]),
+            kind: CounterKind::Advancement,
+            amount: Quantity::c(1),
+        }],
+        false,
+    )
+    .labeled("groundskeeper: advance the fixed ice when the run ends")];
     c
 }
 
@@ -6010,6 +6032,7 @@ pub fn persephone_like(name: &'static str) -> PrintedCard {
             this_ice: false,
             fully_broken: false,
             subs_resolved: true,
+            rezzed: false,
             criteria: Vec::new(),
         },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
@@ -6030,6 +6053,7 @@ pub fn inversificator_like(name: &'static str) -> PrintedCard {
             this_ice: false,
             fully_broken: true,
             subs_resolved: false,
+            rezzed: false,
             criteria: Vec::new(),
         },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
@@ -6056,7 +6080,7 @@ pub fn miraju_like(name: &'static str) -> PrintedCard {
     .labeled("[sub] miraju: gain 1")];
     c.abilities.push(
         AbilityDef::conditional(
-            TriggerCond::EncounterEnds { criteria: Vec::new() },
+            TriggerCond::EncounterEnds { criteria: Vec::new(), with_advanced_ice: false },
             vec![Instruction::MoveRunnerToIce {
                 ice: TargetSpec::Choose {
                     count: Quantity::c(1),

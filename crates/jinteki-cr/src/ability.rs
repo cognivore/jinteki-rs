@@ -403,13 +403,25 @@ pub enum TriggerCond {
     /// "Whenever you make a successful run" (Desperado class): the run is
     /// declared successful (6.8.4). `on` stipulates the servers the sentence
     /// names ("…a successful run on HQ or R&D" — Gemilang class); None = any.
-    /// `requires` is 9.6.5c's additional stipulation about the state at the
-    /// moment the run becomes successful — "…**after a subroutine resolved
-    /// during that run**" (Ryō "Phoenix" Ōno), which has to be part of the
-    /// CONDITION so a printed ordinal is not spent by a run that does not
-    /// meet it.
+    ///
+    /// `after_subroutine_resolved` is "…a run becomes successful **after a
+    /// subroutine resolved during that run**" (Ryō "Phoenix" Ōno) — a
+    /// stipulation about the OCCURRENCE itself, read off
+    /// [`crate::change::GameChange::RunDeclaredSuccessful`]'s recorded fact
+    /// rather than off the state, because it is inside what a printed ordinal
+    /// counts: 9.6.5c re-asks this whole condition of every earlier change in
+    /// the turn, and a successful run with no subroutine resolved was never
+    /// one of "the times", so it must not spend the ordinal — which only the
+    /// record can still answer once that run's history window has closed.
+    ///
+    /// `requires` is 9.6.5c's stipulation about the STATE at the moment the
+    /// run becomes successful ("…if you have at least N link" would be one).
+    /// A requirement gates this occurrence firing and is deliberately OUTSIDE
+    /// the ordinal's count — the Jamie "Bzzz" Micken parse, where a leading
+    /// "if" clause does not change which occurrences are "the times".
     MakesSuccessfulRun {
         on: Option<Vec<crate::object::ServerId>>,
+        after_subroutine_resolved: bool,
         requires: Vec<TriggerRequirement>,
     },
     /// CR 10.9.2: "when this card is empty…" (Crowdfunding class). The
@@ -470,11 +482,19 @@ pub enum TriggerCond {
     CardInstalledByAbilityOfSource,
     /// "When that encounter ends…" (Chum-class delayed conditionals).
     ///
-    /// `criteria` is what the sentence says about the ice the encounter was
-    /// with — "an encounter with an **advanced** piece of ice" (Weyland
-    /// Consortium: Builder of Nations) — asked in the shared description
-    /// vocabulary. An empty list is a sentence making no such stipulation.
-    EncounterEnds { criteria: Vec<crate::instr::TargetFilter> },
+    /// `criteria` is what the sentence says about the ice's own
+    /// characteristics, asked in the shared description vocabulary — those
+    /// travel with the card, so a later read still answers for the moment. An
+    /// empty list is a sentence making no such stipulation.
+    ///
+    /// `with_advanced_ice` is "an encounter with an **advanced** piece of ice
+    /// ends" (Weyland Consortium: Builder of Nations) — 1.18.2, but a fact
+    /// about the MOMENT rather than a characteristic: the counters can move
+    /// or leave with the ice before 9.6.5c's ordinal re-asks this condition
+    /// of the occurrence, so it is read off
+    /// [`crate::change::GameChange::EncounterEnded`]'s recorded fact and not
+    /// off the board.
+    EncounterEnds { criteria: Vec<crate::instr::TargetFilter>, with_advanced_ice: bool },
     /// "…if all of its subroutines were broken during that encounter"
     /// (Forked class). 9.12.2d vacuous truth: ice with ZERO subroutines
     /// satisfies this as soon as step 6.9.3b of the encounter begins.
@@ -590,15 +610,25 @@ pub enum TriggerCond {
     /// an encounter at all; a pass with no encounter before it (a bypass)
     /// meets neither, and meets the plain sentence.
     ///
-    /// `criteria` is what the sentence says about the ice itself — "a
-    /// **rezzed** piece of **bioroid** ice" (Haas-Bioroid: Architects of
-    /// Tomorrow) — asked in the shared description vocabulary, the way
-    /// [`TriggerCond::CardPlayed`] asks about the card played. An empty list
-    /// is a sentence making no such stipulation.
+    /// `criteria` is what the sentence says about the ice's own
+    /// characteristics — "a piece of **bioroid** ice" — asked in the shared
+    /// description vocabulary, the way [`TriggerCond::CardPlayed`] asks about
+    /// the card played; those travel with the card, so a later read still
+    /// answers for the moment. An empty list is a sentence making no such
+    /// stipulation.
+    ///
+    /// `rezzed` is "the Runner passes a **rezzed** piece of bioroid ice"
+    /// (Haas-Bioroid: Architects of Tomorrow) — 8.1's status, but a fact
+    /// about the MOMENT rather than a characteristic: a rez after the pass
+    /// would change what 9.6.5c's ordinal sees when it re-asks this condition
+    /// of the occurrence, so it is read off
+    /// [`crate::change::GameChange::IcePassed`]'s recorded fact and not off
+    /// the board.
     IcePassed {
         this_ice: bool,
         fully_broken: bool,
         subs_resolved: bool,
+        rezzed: bool,
         criteria: Vec<crate::instr::TargetFilter>,
     },
     /// "After you resolve this operation/event…" (Oppo Research class). CR
@@ -2487,17 +2517,20 @@ fn trigger_matches_dyn(
         }
         (
             TriggerCond::SuccessfulRunOnServer,
-            GameChange::RunDeclaredSuccessful { server },
+            GameChange::RunDeclaredSuccessful { server, .. },
         ) => {
             cite!("rule_successful_run");
             server_of_source == Some(*server)
         }
         (
-            TriggerCond::MakesSuccessfulRun { on, .. },
-            GameChange::RunDeclaredSuccessful { server },
+            TriggerCond::MakesSuccessfulRun { on, after_subroutine_resolved, .. },
+            GameChange::RunDeclaredSuccessful { server, subroutine_resolved },
         ) => {
             cite!("rule_successful_run");
             on.as_ref().is_none_or(|set| set.contains(server))
+                // 9.8.7 as the record kept it: a stipulation inside what the
+                // ordinal counts, answered of the occurrence's own moment.
+                && (!*after_subroutine_resolved || *subroutine_resolved)
         }
         (TriggerCond::ActionPhaseEnds { side, .. }, GameChange::ActionPhaseEnded { side: s }) => {
             cite!("rule_action_phase_duration");
@@ -2609,12 +2642,13 @@ fn trigger_matches_dyn(
                     || cause.is_some_and(|c| matches_criteria(c, caused_by)))
         }
         (
-            TriggerCond::IcePassed { this_ice, fully_broken, subs_resolved, criteria },
+            TriggerCond::IcePassed { this_ice, fully_broken, subs_resolved, rezzed, criteria },
             GameChange::IcePassed {
                 ice,
                 after_encounter,
                 fully_broken: fb,
                 subs_resolved: sr,
+                rezzed: rz,
             },
         ) => {
             cite!("rule_pass_ice");
@@ -2624,8 +2658,11 @@ fn trigger_matches_dyn(
             (!*this_ice || *ice == source.id)
                 && (!*fully_broken || (*after_encounter && *fb))
                 && (!*subs_resolved || (*after_encounter && *sr))
-                // §12 rule 5: what the sentence says about the ice, asked in
-                // the shared description vocabulary.
+                // 8.1's status as the record kept it: a fact of the moment,
+                // inside what the ordinal counts.
+                && (!*rezzed || *rz)
+                // §12 rule 5: what the sentence says about the ice's own
+                // characteristics, asked in the shared description vocabulary.
                 && matches_criteria(*ice, criteria)
         }
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
@@ -2904,11 +2941,17 @@ fn trigger_matches_dyn(
             cite!("rule_meat_net_damage");
             cards.contains(&source.id)
         }
-        (TriggerCond::EncounterEnds { criteria }, GameChange::EncounterEnded { ice, .. }) => {
+        (
+            TriggerCond::EncounterEnds { criteria, with_advanced_ice },
+            GameChange::EncounterEnded { ice, ice_advanced, .. },
+        ) => {
             cite!("step_encounter_complete");
-            // §12 rule 5: what the sentence says about the ice, asked the way
-            // a description asks it.
-            matches_criteria(*ice, criteria)
+            // 1.18.2 as the record kept it: a fact of the moment, inside what
+            // the ordinal counts.
+            (!*with_advanced_ice || *ice_advanced)
+                // §12 rule 5: what the sentence says about the ice's own
+                // characteristics, asked the way a description asks it.
+                && matches_criteria(*ice, criteria)
         }
         (TriggerCond::AllSubsBrokenOnEncounteredIce, GameChange::AllSubsBroken { .. }) => {
             cite!("rule_vacuous_truth");
