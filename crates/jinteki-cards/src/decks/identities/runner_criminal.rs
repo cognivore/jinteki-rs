@@ -590,11 +590,43 @@ pub fn boris_syfr_kovac() -> Card {
         .build()
 }
 
+/// Nero Severn: Information Broker — Identity: Natural. Link 1.
+/// "Once per turn → When you encounter a sentry, you may jack out."
+///
+/// COMPLETE. One conditional ability with 9.3.6g's once-per-turn flag, which
+/// an optional ability has something to spend it with (9.1.6: an entirely
+/// mandatory ability is never used, so the flag would never come off one).
+/// The "may" is the whole ability, not a component of one sentence.
+///
+/// The condition is 6.9.3's encounter with the sentence's subtype stipulation
+/// (2.16) riding on it as content — the same condition Paperclip states about
+/// a barrier.
+///
+/// "Jack out" is 6.1.5's PROCESS, and the card is why it is an instruction at
+/// all: 6.1.5b opens the opportunity after passing a piece of ice, which is
+/// nowhere near an encounter, so an ability that offers the choice has to be
+/// able to say the process itself. 6.1.5 says it "follows the usual process
+/// for ending the run", so the run ends here exactly as the step's yes-branch
+/// ends it — and the encounter, being inside the run, ends with it (6.1.4b).
+pub fn nero_severn() -> Card {
+    card("Nero Severn: Information Broker")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .link(1)
+        .text("Once per turn → When you encounter a sentry, you may jack out.")
+        .may_when_once_per_turn(encounters_a("Sentry", &[]), [jack_out()])
+        .named("information broker")
+        .build()
+}
+
 /// Every Criminal identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         boris_syfr_kovac(),
+        nero_severn(),
         amoral_scammer(),
         az_mccaffrey(),
         khan(),

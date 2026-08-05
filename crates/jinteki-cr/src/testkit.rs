@@ -229,7 +229,7 @@ pub fn fill_deck(vm: &mut Vm, side: Side, n: usize) -> Vec<ObjectId> {
 pub fn hostile_infra_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 5);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerTrashesCorpCard,
+        TriggerCond::RunnerTrashesCorpCard { requires: Vec::new() },
         vec![Instruction::Damage { kind: DamageKind::Net, amount: Quantity::c(1), responsible: Side::Corp }],
         false,
     )

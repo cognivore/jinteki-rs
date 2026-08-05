@@ -2280,6 +2280,17 @@ impl Vm {
             .any(|(_, d)| matches!(d, StaticDecl::HandRevealed { whose: w } if *w == whose))
     }
 
+    /// CR 4.4.2: is this player's discard pile an ORDERED zone? It is not,
+    /// by default — "a player may freely arrange the cards in their discard
+    /// pile in any order at any time" — until a declaration says otherwise
+    /// (Wyvern's "you must maintain the order of your heap").
+    pub fn discard_pile_is_ordered(&self, whose: Side) -> bool {
+        cite!("rule_discard_pile_unordered");
+        self.active_statics()
+            .iter()
+            .any(|(_, d)| matches!(d, StaticDecl::DiscardPileIsOrdered { whose: w } if *w == whose))
+    }
+
     /// CR 1.17.7: how many agendas the Runner has ALREADY stolen since the
     /// current turn began (1.12.6, 10.2.1), and the smallest limit any active
     /// declaration puts on that number. `None` is no limit at all.
@@ -4428,7 +4439,10 @@ impl Vm {
                         .with_targets(filtered)]
                 }
             }
-            Instruction::EndTheRun => {
+            Instruction::EndTheRun | Instruction::JackOut => {
+                // 6.1.5: jacking out "follows the usual process for ending the
+                // run", so it makes the same effect imminent and anything
+                // relevant to a run ending is relevant to it (9.9.3a).
                 vec![EffectAtom::new(EffectClass::EndTheRun, 1, controller)]
             }
             Instruction::DeclineableChoice(inner) => {
@@ -8754,6 +8768,16 @@ impl Vm {
                     return; // frame already unwound; no phase advance
                 }
             }
+            Instruction::JackOut => {
+                // 6.1.5: the Runner voluntarily ends the run, by the usual
+                // ending process — the same one 6.1.5b's step reaches from its
+                // yes-branch.
+                cite!("rule_jacking_out");
+                if imm.atoms.iter().any(|a| a.occurs_at_resolution()) {
+                    self.end_the_run();
+                    return; // frame already unwound; no phase advance
+                }
+            }
             Instruction::Combined(list) => {
                 // CR 9.11.3: "usually, each SENTENCE in the text of an
                 // ability forms a single instruction" — so a sentence
@@ -11243,6 +11267,19 @@ impl Vm {
             TargetSpec::TopOfDeck { side, count } => {
                 let n = self.eval_quantity(count, source).max(0) as usize;
                 self.st.deck[side].iter().take(n).copied().collect()
+            }
+            // 4.4.2: a discard pile is not ordered, so it has no top — unless
+            // an active declaration says this one is ordered, which is the
+            // whole of Wyvern's first printed line. Without it the position
+            // describes nothing (9.1.4's stranded reference).
+            TargetSpec::TopOfDiscard { side, count } => {
+                cite!("rule_discard_pile_unordered");
+                if !self.discard_pile_is_ordered(*side) {
+                    return Vec::new();
+                }
+                let n = self.eval_quantity(count, source).max(0) as usize;
+                // The most recently trashed card is the top of the pile.
+                self.st.discard[side].iter().rev().take(n).copied().collect()
             }
             // CR 8.7.4: the cards this ability's search found, still set
             // aside facedown.

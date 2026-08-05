@@ -390,11 +390,61 @@ pub fn whizzard() -> Card {
         .build()
 }
 
+/// Wyvern: Chemically Enhanced — Identity: G-mod. Link 0.
+/// "Draft format only.
+///  You must maintain the order of your heap.
+///  Whenever you trash a Corp card, if you have more [anarch] cards installed
+///  than any other faction, shuffle the top card of your heap into your
+///  stack."
+///
+/// COMPLETE. Three printed lines. The first is a FORMAT restriction, settled
+/// before deck construction and never read during play (The Masque's whole
+/// card is that sentence).
+///
+/// The second is a DECLARATION, and it is what makes the third sayable: CR
+/// 4.4.2 is that discard piles are not ordered — "a player may freely arrange
+/// the cards in their discard pile in any order at any time" — so a heap has
+/// no top card to name until a card takes that freedom away. Without this
+/// line the last line would describe nothing at all.
+///
+/// The third is one conditional ability. Its leading "if" is 9.6.5c's
+/// additional requirement listed inside the trigger condition, so it is asked
+/// when the trash occurs and not again when the ability resolves; the
+/// requirement is the comparison across the faction partition of the Runner's
+/// installed cards (2.13) that every draft identity opens with. The
+/// occurrence is per card trashed (9.6.4b), so a sentence trashing three Corp
+/// cards meets it three times.
+///
+/// "Shuffle the top card of your heap into your stack" is the Jackson
+/// movement said about the other pile: the card enters the deck — a hidden
+/// zone, so 1.12.3 makes it a new object — and the stack is shuffled.
+pub fn wyvern() -> Card {
+    card("Wyvern: Chemically Enhanced")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["G-mod"])
+        .text("Draft format only.")
+        .text("You must maintain the order of your heap.")
+        .text("Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.")
+        .declares([discard_pile_is_ordered(Runner)])
+        .when(
+            runner_trashes_a_corp_card_if(&[more_cards_of_this_faction_than_any_other(
+                "Anarch",
+                &[installed_runner_card()],
+            )]),
+            [shuffle_into_deck(top_of_heap(amount(1)), Runner)],
+        )
+        .named("chemically enhanced")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         alice_merchant(),
+        wyvern(),
         whizzard(),
         reina_roja(),
         rene_loup_arcemont(),

@@ -41,16 +41,6 @@ kernel words, not card patches.
   you discard cards to reach your maximum hand size", which names the discard
   itself and hands the cards discarded to the next sentence.
   *(Magdalene Keino-Chemutai: Cryptarchitect.)*
-- **Jacking out is a run step, not an effect.** `Instruction::JackOutChoice`
-  is 6.9.4c's step; a card that OFFERS the choice outside that step has
-  nothing to denote into. *(Nero Severn: Information Broker.)*
-- **Nothing maintains the ORDER of the heap.** `TriggerRequirement::
-  LargestFactionGroupIs` now says the faction-partition clause every
-  draft-format identity opens with, so the rest of Wyvern's text is what is
-  left: "you must maintain the order of your heap" is a declaration about the
-  discard pile as an ORDERED zone, and "shuffle the top card of your heap"
-  wants a `TargetSpec` naming that top card — beside `TopOfDeck`, which is the
-  same idea about the other pile. *(Wyvern: Chemically Enhanced.)*
 - **No ability sees the score areas' agenda-point totals as a WIN
   condition.** The kernel ends a game on a flatline or an empty R&D
   (`GameResult`); nothing anywhere counts agenda points towards 7 or asks how
@@ -128,7 +118,68 @@ kernel words, not card patches.
   installed" beside them — and a 9.6.13 delayed conditional cannot read the
   targets of the ability that created it either, so "when that run ends, trash
   THAT PROGRAM" has nothing to point at. *(Arissana Rocha Nahu: Street Artist;
-  Kabonesa Wu: Netspace Thrillseeker; Topan: Ormas Leader.)*
+  Kabonesa Wu: Netspace Thrillseeker; Topan: Ormas Leader; Mti Mwekundu: Life
+  Improved, whose "the Runner moves to THAT ICE and approaches it" is the same
+  words about the piece its own first sentence installed — `MoveRunnerToIce`
+  is 6.2.8a and would carry it, and the description of the ice is what is
+  missing.)*
+- **A choice between SERVERS cannot be written when the servers do not exist
+  yet.** 1.15.1b lists a server among the things a player can be told to
+  choose, and `ChoiceSpec::Server` names one — the choice BETWEEN them being
+  9.11.4g's option choice, an `Instruction::ChooseOne` whose branches each
+  maintain a different server. That works for the three centrals and for
+  nothing else: 4.6.8's remote servers are created during play, so "choose a
+  server other than the attacked server" has no set of branches to write when
+  the card is written. Two further words the same sentence wants: no
+  `TargetFilter` describes the piece of ice the Runner is APPROACHING (the
+  cost trashes it), and none describes the outermost ice of a server the
+  ability just chose. *(AgInfusion: New Miracles for a New World.)*
+- **A trash records neither that the card was REZZED nor that it happened
+  during an installation.** `GameChange::CardTrashed` carries the zone the
+  card left and whether it was being accessed — both facts about the MOMENT
+  of the trash, recorded there because the card has moved by the time any
+  condition is scanned — and "when you trash a **rezzed** card, **except
+  during installation**" is two more of exactly that kind: the second is
+  8.5.11a's like-card trash, which the install procedure performs and this
+  sentence excludes. The same card wants two more words: `TargetFilter` is
+  `Copy`, so "a card with a printed rez cost exactly 1[credit] less than the
+  trashed card's printed rez cost" has to be a relational atom beside
+  `SameNameAsTriggeringCard` and there is none; and `InstallCard::
+  ignore_costs` is 1.16.5c's "ignoring ALL costs", which the kernel already
+  reads as the INHERENT ones only (an additional rez cost is still paid — the
+  Ob/Archer case is written into `InstallRezPayCost`), while "ignoring
+  **credit** costs" selects costs by their KIND and cuts across 1.16.4's
+  inherent/additional split. *(Ob Superheavy Logistics: Extract. Export.
+  Excel.)*
+- **A counter cost comes off the SOURCE, in a printed number.**
+  `Cost::spend_counters` is 1.9.2's "spend N counters hosted on this card"
+  (Imp), which is why an empty card's ability is unusable rather than free —
+  and "**any** X virus counters" is neither half of that: the count is
+  announced under 1.16.2c and the counters come from any of the payer's cards,
+  which needs a division put to the payer the way 1.10.3c's credits already
+  are. Two more words in the same sentence: `Cost::x_restriction` states the
+  bound as "X must be equal to **or less than**", and "X must be equal to" is
+  a different relation; and `Quantity` reads the rez cost of the ice being
+  ENCOUNTERED (Nasir) but not the printed rez-or-play cost of a card a
+  description names. *(Freedom Khumalo: Crypto-Anarchist.)*
+- **Nothing installs a card at the game's SETUP.**
+  `PrintedCard::starting_hand_size`, `starting_credits` and
+  `starting_bad_publicity` are 1.6's setup facts, and "you start the game with
+  3 different **directive** cards installed (these cards are not considered
+  part of your deck)" is a fourth of the same kind — except that its cards
+  come from outside the deck, so it also wants somewhere for a player to bring
+  them from. `TargetFilter::InIdentityPileOf` is 1.5.4a's pile and is the
+  nearest thing; nothing says a card is brought alongside the deck for any
+  other reason. *(Adam: Compulsive Hacker.)*
+- **A trash cannot be replaced by SETTING THE CARDS ASIDE.**
+  `StaticDecl::ReplaceTrashDestination` is 9.9.8b's replacement and its
+  destinations are the removed-from-game zone and 8.1.4d's facedown-in-play —
+  neither is 4.8's set-aside zone, and none of them is stated about "1 or more
+  cards" as one group the ability then looks through, removes one of and
+  returns. "Ignore this ability if you have already removed a card from the
+  game with it this turn" is 9.3.6g's once-per-turn flag said about a static
+  ability, which never resolves (9.4.1) and so never spends one.
+  *(Skorpios Defense Systems: Persuasive Power.)*
 - **"The other card" cannot be said.** `TargetSpec::EarlierTargets` is 1.15.4's
   plural and `EarlierTarget { nth }` is one by position; neither is "the ones
   an earlier instruction chose, EXCEPT the one a later instruction chose",
@@ -217,20 +268,20 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **109 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **111 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
 Armand "Geist" Walker, Barry "Baz" Wong, Iain Stirling, Silhouette, Gabriel
 Santiago, Los, Liza Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable"
 Sintashta, Virtual Intelligence, P.I., Mercury, MuslihaT, Zahya Sadeghi,
-Az McCaffrey, Khan, Boris "Syfr" Kovac. (Boris prints "Draft format only." and
+Az McCaffrey, Khan, Nero Severn, Boris "Syfr" Kovac. (Boris prints "Draft format only." and
 Andromeda is not a draft deck; 1.4.2 settles a format restriction before the
 game begins and nothing reads it afterwards, so it changes no play — a pile
 that wanted to honour it would filter on that printed line.)
 
 
-## Runner — Criminal (20/22)
+## Runner — Criminal (21/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
@@ -250,7 +301,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Los: Data Hijacker** — The first time the Corp rezzes a piece of ice each turn, gain 2[credit].
 - [x] **Mercury: Chrome Libertador** — Once per turn → When you breach HQ or R&D during a run, if you did not break any subroutines during that run, you may access 1 additional card.
 - [x] **MuslihaT: Multifarious Marketeer** — When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.
-- [ ] **Nero Severn: Information Broker** — Once per turn → When you encounter a sentry, you may jack out.
+- [x] **Nero Severn: Information Broker** — Once per turn → When you encounter a sentry, you may jack out.
 - [x] **Nyusha "Sable" Sintashta: Symphonic Prodigy** — When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) The first time each turn you make a successful run on your mark, gain [click].
 - [x] **Silhouette: Stealth Operative** — The first time you make a successful run on HQ each turn, you may expose 1 card.
 - [ ] **Steve Cambridge: Master Grifter** — The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.
@@ -283,7 +334,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (13/19)
+## Runner — Anarch (14/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -305,7 +356,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [ ] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
 - [x] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.
 - [x] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.
-- [ ] **Wyvern: Chemically Enhanced** — Draft format only. You must maintain the order of your heap. Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.
+- [x] **Wyvern: Chemically Enhanced** — Draft format only. You must maintain the order of your heap. Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.
 
 ## Runner — Neutral (3/3)
 

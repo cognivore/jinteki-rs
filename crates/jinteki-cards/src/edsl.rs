@@ -932,6 +932,13 @@ pub fn remove_tags(n: i64) -> Instruction {
 pub fn end_the_run() -> Instruction {
     Instruction::EndTheRun
 }
+/// "…you may **jack out**." (Nero Severn.) CR 6.1.5's process — the Runner
+/// voluntarily ends the run — offered by an ability wherever the card says,
+/// rather than at the one place the run's own structure opens it (6.1.5b).
+/// Pair it with [`may`] for the printed "you may".
+pub fn jack_out() -> Instruction {
+    Instruction::JackOut
+}
 /// "Run <server>."
 pub fn run(server: ServerId) -> Instruction {
     Instruction::run(server)
@@ -1287,6 +1294,12 @@ pub fn top_of_stack(count: Quantity) -> TargetSpec {
 /// "the top <amount> cards of R&D" (4.2.1).
 pub fn top_of_rnd(count: Quantity) -> TargetSpec {
     TargetSpec::TopOfDeck { side: Corp, count }
+}
+/// "the top <amount> cards of your heap" (Wyvern). CR 4.4.2 leaves a discard
+/// pile unordered, so this names nothing at all unless the same card also
+/// declares [`discard_pile_is_ordered`].
+pub fn top_of_heap(count: Quantity) -> TargetSpec {
+    TargetSpec::TopOfDiscard { side: Runner, count }
 }
 /// "…1 of those cards" — a card this ability has already looked at (1.21.2).
 /// CR 1.12.3: a card that then moves to an unknown location becomes a new
@@ -1971,6 +1984,12 @@ pub fn trashes_the_card_being_accessed(by: Side) -> TriggerCond {
         while_accessed: true,
     }
 }
+/// "Whenever you trash a Corp card, if <requirements>…" (Wyvern) — one
+/// occurrence per card trashed (9.6.4b), with 9.6.5c's requirements listed
+/// inside the condition, so they are asked when the trash happens.
+pub fn runner_trashes_a_corp_card_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::RunnerTrashesCorpCard { requires: reqs.to_vec() }
+}
 /// "The first time you perform the same action three times in a row each
 /// turn…" (The Collective; 5.2.5a/b).
 pub fn same_action_in_a_row(side: Side, count: usize) -> TriggerCond {
@@ -2497,6 +2516,12 @@ pub fn agendas_here_cost_less(n: i32) -> StaticDecl {
 /// the named player's hand stops being hidden from their opponent.)
 pub fn hand_revealed(whose: Side) -> StaticDecl {
     StaticDecl::HandRevealed { whose }
+}
+/// "You must maintain the order of your heap." (Wyvern; CR 4.4.2 — discard
+/// piles are NOT ordered and a player may rearrange one at any time, and this
+/// takes that freedom away.) It is what gives [`top_of_heap`] a card to name.
+pub fn discard_pile_is_ordered(whose: Side) -> StaticDecl {
+    StaticDecl::DiscardPileIsOrdered { whose }
 }
 /// "The Runner cannot steal more than N agendas each turn." (Haarpsichord
 /// Studios; CR 1.17.7 and 1.2.2's absolute "cannot".)

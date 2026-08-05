@@ -9003,3 +9003,118 @@ fn jesminder_prevents_the_first_tag_of_every_run() {
         );
     }
 }
+
+/// Nero Severn: "Once per turn → When you encounter a sentry, you may jack
+/// out."
+///
+/// Both halves of the subtype stipulation, one game each: the encounter with
+/// a sentry offers the choice and the run ends before the breach, and the
+/// encounter with a barrier offers nothing at all.
+#[test]
+fn nero_severn_jacks_out_of_an_encounter_with_a_sentry_and_not_with_a_barrier() {
+    for sentry in [false, true] {
+        let mut vm = Vm::empty(6165);
+        tk::install_identity(&mut vm, card("Nero Severn: Information Broker"), Side::Runner);
+        let subtype = if sentry { "Sentry" } else { "Barrier" };
+        tk::install_ice(
+            &mut vm,
+            tk::subtyped_ice("Some Ice", vec![subtype], 0, 1),
+            ServerId::Hq,
+            true,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Hq))
+                .when(Match::reaction().offering("information broker"), Reply::take("information broker"))
+                .when(Match::of(Kind::Optional), Reply::Optional(true))
+                .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+            !sentry,
+            "sentry={sentry}: jacking out ends the run before the breach, and \
+             the encounter with a barrier never offers it: {}",
+            t.tail(40)
+        );
+        assert!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunEnded { .. })),
+            "sentry={sentry}: either way the run is over by the end of the turn: {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// Wyvern: "You must maintain the order of your heap. / Whenever you trash a
+/// Corp card, if you have more [anarch] cards installed than any other
+/// faction, shuffle the top card of your heap into your stack."
+///
+/// Both of the last line's parts, one game each — and the middle line is what
+/// the assertion about WHICH card moved is checking: the top of the heap is
+/// the card most recently trashed, which is a question a pile CR 4.4.2 leaves
+/// unordered could not answer.
+#[test]
+fn wyvern_shuffles_the_top_of_the_heap_back_only_while_anarch_leads() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6166);
+        tk::install_identity(&mut vm, card("Wyvern: Chemically Enhanced"), Side::Runner);
+        tk::install_rig(
+            &mut vm,
+            of_faction(tk::vanilla_runner_card("Anarch A", CardType::Program), "Anarch"),
+        );
+        if !leading {
+            tk::install_rig(
+                &mut vm,
+                of_faction(tk::vanilla_runner_card("Crim A", CardType::Program), "Criminal"),
+            );
+        }
+        // The heap, in pile order: `deeper` went in first, so `top` is the top.
+        let deeper = vm.new_object(tk::runner_filler("Deeper"), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(deeper);
+        let top = vm.new_object(tk::runner_filler("Top of Heap"), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(top);
+        // The Corp card the Runner trashes: 7.1.5's basic trash ability.
+        let asset =
+            tk::install_root(&mut vm, tk::vanilla_asset("Trashable", 0, 1), ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(Match::of(Kind::MidAccess).once(), Reply::Take(Pick::BasicTrash))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&asset].zone,
+            Zone::Discard(Side::Corp),
+            "leading={leading}: the Runner trashed a Corp card: {}",
+            t.tail(40)
+        );
+        // 1.12.3 makes a card entering the deck a NEW object, so the old one
+        // is gone from the heap rather than sitting in the stack.
+        assert_eq!(
+            vm.st.discard[&Side::Runner].contains(&top),
+            !leading,
+            "leading={leading}: the TOP card of the heap left it, and only while \
+             the Anarch group is strictly the largest: {}",
+            t.tail(40)
+        );
+        assert!(
+            vm.st.discard[&Side::Runner].contains(&deeper),
+            "leading={leading}: the card under it never moves: {}",
+            t.tail(40)
+        );
+    }
+}

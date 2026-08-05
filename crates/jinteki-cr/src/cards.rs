@@ -350,7 +350,7 @@ pub fn hostile_infrastructure() -> PrintedCard {
     c.cost = Some(5);
     c.trash_cost = Some(5);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerTrashesCorpCard,
+        TriggerCond::RunnerTrashesCorpCard { requires: Vec::new() },
         vec![Instruction::Damage {
             kind: DamageKind::Net,
             amount: Quantity::c(1),

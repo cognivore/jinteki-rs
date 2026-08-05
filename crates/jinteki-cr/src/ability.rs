@@ -68,8 +68,12 @@ pub enum TriggerCond {
     /// "Whenever a run on this server ends." (AMAZE class; source in root)
     RunOnThisServerEnds,
     /// "Whenever the Runner trashes a Corp card." — one instance per card
-    /// (per-occurrence, 9.6.4b / 9.12.2a Hostile Infrastructure).
-    RunnerTrashesCorpCard,
+    /// (per-occurrence, 9.6.4b / 9.12.2a Hostile Infrastructure). `requires`
+    /// is 9.6.5c's additional requirement listed inside the condition, which
+    /// is where a draft identity's leading "if you have more … installed than
+    /// any other faction" goes (Wyvern): asked when the trash occurs, and not
+    /// again while the ability resolves.
+    RunnerTrashesCorpCard { requires: Vec<TriggerRequirement> },
     /// "Whenever the Runner trashes at least 1 Corp card." — one instance per
     /// event (Warroid Tracker class, 9.12.2a). `in_this_server` adds 4.6.6i's
     /// scope ("…at least 1 card installed in or protecting this server"),
@@ -1398,6 +1402,17 @@ pub enum StaticDecl {
     /// the zone changes, and the cards are not revealed one at a time, so no
     /// [`crate::change::GameChange::CardRevealed`] is ever recorded by it.
     HandRevealed { whose: Side },
+    /// CR 4.4.2: "**You must maintain the order of your heap.**" (Wyvern.)
+    /// 4.4.2 is that discard piles are NOT ordered — "a player may freely
+    /// arrange the cards in their discard pile in any order at any time" — so
+    /// this sentence is a declaration that takes that freedom away and makes
+    /// one player's discard pile an ordered zone. Whose is content (§12 rule
+    /// 2); a Corp card printing it about Archives is the same declaration.
+    ///
+    /// Its reader is [`crate::instr::TargetSpec::TopOfDiscard`]: "the top card
+    /// of your heap" describes nothing at all while 4.4.2 stands, because an
+    /// unordered pile has no top, and this is what gives it one.
+    DiscardPileIsOrdered { whose: Side },
     /// CR 1.17.7: "the Runner cannot steal more than one agenda each turn"
     /// (Haarpsichord Studios). The count is taken from the turn's history
     /// (1.12.6, 10.2.1) and the threshold is content (§12 rule 2), so a card
@@ -2159,7 +2174,7 @@ pub fn trigger_matches(
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
         }
-        (TriggerCond::RunnerTrashesCorpCard, GameChange::CardTrashed { by, obj, .. }) => {
+        (TriggerCond::RunnerTrashesCorpCard { .. }, GameChange::CardTrashed { by, obj, .. }) => {
             *by == Side::Runner && trashed_is_corp(*obj)
         }
         (
@@ -2577,6 +2592,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::RunnerStealsAgenda { requires }
         | TriggerCond::CorpScoresAgenda { requires }
         | TriggerCond::CardInstalledBy { requires, .. }
+        | TriggerCond::RunnerTrashesCorpCard { requires }
         | TriggerCond::PlayerPaysCredits { requires, .. } => requires,
         _ => &[],
     }

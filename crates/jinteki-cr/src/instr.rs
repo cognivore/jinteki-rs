@@ -300,6 +300,24 @@ pub enum Instruction {
     MustTrashAccessedCard { means: TrashMeans },
     /// "End the run."
     EndTheRun,
+    /// CR 6.1.5: "…you may **jack out**." Jacking out is the PROCESS by which
+    /// the Runner voluntarily ends a run, and 6.1.5's own words are that it
+    /// "follows the usual process for ending the run" — so it is the same
+    /// ending, and the atom it makes imminent is the same one, which is what
+    /// keeps an ability that acts on a run ending relevant to it (9.9.3a).
+    ///
+    /// Distinct from [`Instruction::JackOutChoice`], which is 6.1.5b's STEP:
+    /// the step is an opportunity the run's structure opens at one place, and
+    /// this is the ability's effect, offered wherever the card says (Nero
+    /// Severn offers it during an encounter, where the structure opens none).
+    /// The step's yes-branch and this instruction end the run by the same
+    /// path.
+    ///
+    /// 6.1.5's remaining sentence — that some abilities function differently
+    /// depending on whether the Runner chose to end the run this way — has no
+    /// reader in the kernel yet, and the step does not record the choice
+    /// either; when one arrives it is the same record for both.
+    JackOut,
     /// An optional part its controller may decline (9.6.9c): "you may …".
     DeclineableChoice(Box<Instruction>),
     /// CR 9.11.4f / 1.16.11a: "you may pay [cost] to [effect]" — the pay/
@@ -1095,7 +1113,8 @@ impl Instruction {
             Instruction::GainCredits(..) | Instruction::LoseCredits(..) | Instruction::GainClicks(..)
             | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
             | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags { .. }
-            | Instruction::MustTrashAccessedCard { .. } | Instruction::EndTheRun | Instruction::DeclineableChoice(..)
+            | Instruction::MustTrashAccessedCard { .. } | Instruction::EndTheRun | Instruction::JackOut
+            | Instruction::DeclineableChoice(..)
             | Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } | Instruction::AdditionalAccesses(..)
             | Instruction::EndActionPhase(..) | Instruction::Combined(..) | Instruction::PreventDamage { .. }
             | Instruction::PreventAllDamage { .. } | Instruction::AvoidTags(..) | Instruction::RemoveTags(..)
@@ -1207,7 +1226,8 @@ impl Instruction {
             | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
             | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags { .. }
             | Instruction::TrashCards(..) | Instruction::MaintainChoice { .. } | Instruction::MustTrashAccessedCard { .. }
-            | Instruction::EndTheRun | Instruction::AccessCards { .. } | Instruction::AdditionalAccesses(..)
+            | Instruction::EndTheRun | Instruction::JackOut | Instruction::AccessCards { .. }
+            | Instruction::AdditionalAccesses(..)
             | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)
             | Instruction::LookAtCards { .. } | Instruction::ExposeCards { .. } | Instruction::RevealCards { .. }
             | Instruction::RevealRandomFromHand { .. }
@@ -1490,6 +1510,18 @@ pub enum TargetSpec {
     /// "the top X cards of your stack, where X is the number of cards you
     /// would draw plus 1" (The Class Act) is a selector.
     TopOfDeck { side: Side, count: Quantity },
+    /// "…the top card of your heap." (Wyvern.) The other pile, said the same
+    /// way — the cards themselves, in pile order, not a description anyone
+    /// picks from — and the count is a quantity position for the same reason.
+    ///
+    /// CR 4.4.2 is what makes this different from [`TargetSpec::TopOfDeck`]:
+    /// discard piles are NOT ordered, so this position describes NOTHING
+    /// unless an active [`crate::ability::StaticDecl::DiscardPileIsOrdered`]
+    /// says that pile has an order to have a top of. A card that says "the top
+    /// card of your heap" without a card saying the heap is ordered is a card
+    /// pointing at nothing, which is 9.1.4's stranded reference and not an
+    /// error.
+    TopOfDiscard { side: Side, count: Quantity },
     /// CR 8.7.4: the cards found by this ability's search, still set aside
     /// facedown (4.8.4). This is how an install/play/add-to-hand instruction
     /// refers to them without a per-card hook.
@@ -1529,6 +1561,7 @@ impl TargetSpec {
             | TargetSpec::EncounteredIce
             | TargetSpec::TriggeringCard
             | TargetSpec::TopOfDeck { .. }
+            | TargetSpec::TopOfDiscard { .. }
             | TargetSpec::FoundBySearch
             | TargetSpec::EarlierTarget { .. }
             | TargetSpec::EarlierTargets => 0,
