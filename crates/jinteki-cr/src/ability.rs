@@ -378,11 +378,15 @@ pub enum TriggerCond {
     /// interrupt can modify it; the relevance test is whether the imminent
     /// instruction carries such a value.
     WouldPayCost,
-    /// CR 5.2.5b: "the first time each turn you take N DIFFERENT actions…"
-    /// (MirrorMorph class). Met when the player takes an action and every
-    /// action they have taken this turn — `count` of them — is different from
-    /// every other, by 5.2.5a/b's identity: the same basic action, or the
-    /// same ability of the same card.
+    /// CR 5.2.5b: "if the first, second, and third actions you take on your
+    /// turn are each different from one another, when the third action
+    /// completes…" (MirrorMorph class). Met when an action COMPLETES (5.2.2d
+    /// puts "conditions related to an action finishing" at the end of the
+    /// action step that ran it) and every action taken this turn — `count`
+    /// of them — is different from every other, by 5.2.5a/b's identity: the
+    /// same basic action, or the same ability of the same card. The count is
+    /// exact, so the condition can be met at most once a turn — a fourth
+    /// action completing finds four in the log and does not meet it again.
     DifferentActionsThisTurn { side: Side, count: usize },
     /// CR 5.2.5b, the other half: "the first time you perform the SAME action
     /// three times in a row each turn" (The Collective). Met when the player
@@ -2757,9 +2761,18 @@ fn trigger_matches_dyn(
             cite!("rule_run_initiation_phase");
             on.is_empty() || on.contains(server)
         }
-        (TriggerCond::DifferentActionsThisTurn { side, .. }, GameChange::ActionTaken { side: s, .. }) => {
-            // 5.2.5b: the "all different" test is a game-state question the
-            // checkpoint scan answers against the turn's action history.
+        (
+            TriggerCond::DifferentActionsThisTurn { side, .. },
+            GameChange::ActionCompleted { side: s, .. },
+        ) => {
+            // 5.2.2d: "when the third action COMPLETES" — the occurrence is
+            // the action finishing, not its initiation, so an ability this
+            // condition heads resolves between the completed action and the
+            // next action window rather than inside the action's own
+            // resolution (5.2.2a). The "all different" test is a game-state
+            // question the checkpoint scan answers against the turn's
+            // action history.
+            cite!("rule_finish_action_trigger_condition");
             cite!("rule_defferent_actions");
             side == s
         }

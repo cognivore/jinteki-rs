@@ -5711,8 +5711,10 @@ pub fn vacheron_like(name: &'static str, points: i32, counters: u32) -> PrintedC
 // W13e shapes: action identity (§5.2.5) and clicks spent to take an action
 // ---------------------------------------------------------------------------
 
-/// MirrorMorph shape (5.2.5b): "the first time each turn you take N DIFFERENT
-/// actions, gain 1[credit]." Two plays of two different operations are still
+/// MirrorMorph shape (5.2.5b): "if the first N actions you take on your turn
+/// are each different from one another, when the Nth completes, gain
+/// 1[credit]." The condition is met when the Nth action COMPLETES (5.2.2d),
+/// not when it is initiated. Two plays of two different operations are still
 /// the SAME action — the basic "Play 1 operation from HQ" — so they do not
 /// make the identity's condition true.
 pub fn mirrormorph_like(name: &'static str, count: usize) -> PrintedCard {

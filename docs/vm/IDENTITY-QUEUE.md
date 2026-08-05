@@ -37,12 +37,7 @@ kernel words, not card patches.
 
 
 
-- **No instruction TAKES an action.** `TriggerCond::DifferentActionsThisTurn`
-  already counts 5.2.5's distinct actions, so MirrorMorph's condition is
-  sayable — but "take another different action, paying [click] less" is an
-  ability handing a player a basic action at a reduced cost, and 5.2 offers
-  actions only from the action phase's own step. *(MirrorMorph: Endless
-  Iteration.)*
+
 - **A choice between SERVERS cannot be written when the servers do not exist
   yet.** 1.15.1b lists a server among the things a player can be told to
   choose, and `ChoiceSpec::Server` names one — the choice BETWEEN them being
@@ -100,7 +95,7 @@ the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **147 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **148 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -230,7 +225,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Haas-Bioroid: Precision Design** — You get +1 maximum hand size. Whenever you score an agenda, you may add 1 card from Archives to HQ.
 - [x] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
 - [x] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
-- [ ] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
+- [x] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
 - [x] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.
 - [x] **Poétrï Luxury Brands: All the Rage** — Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them. Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.
 - [x] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.

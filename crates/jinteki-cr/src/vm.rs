@@ -189,7 +189,17 @@ pub enum DecisionCtx {
     /// CR 1.16.10c: pay or decline the additional cost to SCORE this agenda.
     ScoreCost(ObjectId),
     /// CR 6.3.4 / 1.16.10a: pay or decline the additional cost to make a run.
-    RunActionCost(ServerId),
+    /// `click_discount` is the [click] reduction the action was offered at —
+    /// 0 from the action window, [`Instruction::OfferAction`]'s discount
+    /// otherwise — carried through the suspension because the [click] is
+    /// spent only once the cost is accepted.
+    RunActionCost { server: ServerId, click_discount: u32 },
+    /// CR 5.2.2, from [`Instruction::OfferAction`]: the resolving player was
+    /// offered an action outside the action phase's own step (MirrorMorph's
+    /// "take another different action, paying [click] less"). The answer is
+    /// dispatched through the same 5.2.2 procedure the action window uses,
+    /// minus the window bookkeeping — there is no window frame to close.
+    OfferedAction { click_discount: u32 },
     /// 10.8.6c/d trace spends.
     TraceSpend(Side),
     /// CR 9.8.2c: the granting player declares where the subroutines just
@@ -230,7 +240,7 @@ pub enum DecisionCtx {
     /// initiated and before its costs are paid — a 1.16.10 additional cost
     /// stated about the announced card (Sebastião Souza Pessoa) is combined
     /// with the regular cost, so the card must be known before the payment.
-    BasicTrashTarget,
+    BasicTrashTarget { click_discount: u32 },
     /// 8.5.13d/1.16.4c: pay or decline the additional rez cost during an
     /// "install and rez" effect.
     RezAdditionalCost,
@@ -6609,6 +6619,19 @@ impl Vm {
             // Tag costs blocked by mandatory avoiders are unpayable
             // (1.16.1b), mirrored for choice options.
             Instruction::GainTags { .. } => !self.tag_cost_blocked(),
+            // An offer with no offerable action resolves to nothing, so a
+            // "gain 1[credit] or take another different action" ChooseOne
+            // keeps only the credit when every different action is
+            // unaffordable or already taken (9.12.3c).
+            Instruction::OfferAction { different_from_this_turn, click_discount } => {
+                let side = match self.frames.last() {
+                    Some(Frame::Ability(af)) => af.controller,
+                    _ => self.st.turn_side,
+                };
+                !self
+                    .offered_action_options(side, *different_from_this_turn, *click_discount)
+                    .is_empty()
+            }
             _ => true,
         })
     }
@@ -11180,6 +11203,34 @@ impl Vm {
                 // Handled at answer time (the choice ends the instruction;
                 // the chosen effect is injected as the next instruction).
             }
+            Instruction::OfferAction { different_from_this_turn, click_discount } => {
+                // 5.2.4: actions are taken only during the action phase —
+                // this instruction is a printed ability offering one from
+                // inside its own resolution (MirrorMorph's "take another
+                // different action, paying [click] less"), so the offer is
+                // the same 5.2 option set the 9.2.6 window computes, priced
+                // at the discount and filtered to identities not yet taken.
+                cite!("rule_actions_outside_action_phase");
+                cite!("rule_action_window_options");
+                let options = self.offered_action_options(
+                    controller,
+                    *different_from_this_turn,
+                    *click_discount,
+                );
+                if options.is_empty() {
+                    // 9.11.2: the game does as much of an instruction as it
+                    // can — with no action to offer, that is nothing. (Under
+                    // a ChooseOne this branch is unreachable: 9.12.3c's
+                    // resolvable-options filter already removed it.)
+                    cite!("rule_do_as_much_as_you_can");
+                } else {
+                    self.ask(
+                        controller,
+                        DecisionSpec::TakeAction { options },
+                        DecisionCtx::OfferedAction { click_discount: *click_discount },
+                    );
+                }
+            }
             Instruction::PreventTrashOf(protected) => {
                 // Sacrificial-Construct class: remove the object from the
                 // imminent trash effect; the effect may become empty (9.9.7b
@@ -13364,7 +13415,7 @@ impl Vm {
 
         match kind {
             WindowKind::Action => {
-                let options = self.action_options(priority);
+                let options = self.action_options(priority, 0);
                 self.ask(priority, DecisionSpec::TakeAction { options }, DecisionCtx::Window(wid));
             }
             WindowKind::Paid(classes) => {
@@ -13484,10 +13535,24 @@ impl Vm {
         }
     }
 
-    fn action_options(&self, side: Side) -> Vec<ActionOption> {
+    /// The actions this player could take right now (5.2) — the action
+    /// window's offer, and [`Instruction::OfferAction`]'s. `click_discount`
+    /// is the [click] reduction the offer prices each action at ("paying
+    /// [click] less", 1.16.2a floors at 0): the window passes 0, and the
+    /// window's own `ActivePlayerHasClicks` predicate is what guarantees the
+    /// undiscounted single-[click] actions are affordable there — a
+    /// discounted offer has no such predicate, which is why every
+    /// click-count test below adds the discount to the clicks held.
+    fn action_options(&self, side: Side, click_discount: u32) -> Vec<ActionOption> {
         cite!("rule_action_window_options");
         cite!("rule_corp_basic_actions");
         cite!("rule_runner_basic_actions");
+        // Every action's cost includes at least one [click] (5.2.1/5.2.6/
+        // 5.2.7; a paid ability without one is not an action) — with no
+        // click held and none discounted, nothing is offered at all.
+        if self.st.player(side).clicks + click_discount == 0 {
+            return Vec::new();
+        }
         let mut out = vec![ActionOption::BasicCredit, ActionOption::BasicDraw];
         if side == Side::Runner {
             cite!("runner_basic_action_run");
@@ -13603,10 +13668,10 @@ impl Vm {
                 out.push(ActionOption::BasicTrashResource);
             }
             // 5.2.6h: "[click][click][click]: Purge virus counters." The
-            // action costs three clicks, so it is only available with three
-            // left to spend.
+            // action costs three clicks (less the discount, 1.16.2a), so it
+            // is only available with that many left to spend.
             cite!("corp_basic_action_purge_virus_counters");
-            if self.st.corp.clicks >= 3 {
+            if self.st.corp.clicks + click_discount >= 3 {
                 out.push(ActionOption::BasicPurge);
             }
         }
@@ -13640,7 +13705,12 @@ impl Vm {
             if !self.play_permitted(c) {
                 continue;
             }
-            if self.cost_payable(side, c, &cost) && self.st.player(side).clicks > cost.clicks {
+            // The action's [click] plus any additional [click] cost, less
+            // the discount (1.16.2a) — the whole click component of 1.16.4d's
+            // aggregate must be affordable.
+            if self.cost_payable(side, c, &cost)
+                && self.st.player(side).clicks + click_discount > cost.clicks
+            {
                 out.push(ActionOption::BasicPlayOperation { card: c });
             }
         }
@@ -13698,7 +13768,12 @@ impl Vm {
                     cite!("rule_once_per_turn_flag");
                     continue;
                 }
-                if self.paid_ability_cost_payable(side, o.id, a.cost.as_ref().unwrap()) {
+                // The discount comes off the ability's [click] component
+                // (1.16.2a floors at 0); the rest of the trigger cost is
+                // unchanged and still has to be payable.
+                let mut cost = a.cost.clone().unwrap();
+                cost.clicks = cost.clicks.saturating_sub(click_discount);
+                if self.paid_ability_cost_payable(side, o.id, &cost) {
                     out.push(ActionOption::CardAction {
                         ability: AbilityRef { obj: o.id, index: i },
                         label: a.label,
@@ -13707,6 +13782,33 @@ impl Vm {
             }
         }
         out
+    }
+
+    /// The offer [`Instruction::OfferAction`] puts up: the same 5.2 option
+    /// set [`Vm::action_options`] computes for the action window, priced at
+    /// the discount, and — where the sentence says "another DIFFERENT
+    /// action" — filtered by 5.2.5a/b's identity to actions not yet taken
+    /// this turn, the same comparison `DifferentActionsThisTurn` counts by.
+    fn offered_action_options(
+        &self,
+        side: Side,
+        different_from_this_turn: bool,
+        click_discount: u32,
+    ) -> Vec<ActionOption> {
+        let mut options = self.action_options(side, click_discount);
+        if different_from_this_turn {
+            cite!("rule_same_actions");
+            cite!("rule_defferent_actions");
+            let taken: Vec<ActionIdentity> = self.changes.log[self.st.turn_log_start..]
+                .iter()
+                .filter_map(|c| match c {
+                    GameChange::ActionTaken { side: s, action } if *s == side => Some(*action),
+                    _ => None,
+                })
+                .collect();
+            options.retain(|o| !taken.contains(&Self::action_identity(o)));
+        }
+        options
     }
 
     fn all_servers(&self) -> Vec<ServerId> {
@@ -16493,13 +16595,13 @@ impl Vm {
             // and any 1.16.10 additional cost the announced card's criteria
             // brought in, combined into one payment. The checkpoint and the
             // trash follow the payment (`PaymentCont::BasicTrashResourceAction`).
-            (DecisionCtx::BasicTrashTarget, DecisionAnswer::Targets(ts)) => {
+            (DecisionCtx::BasicTrashTarget { click_discount }, DecisionAnswer::Targets(ts)) => {
                 cite!("corp_basic_action_trash_resource");
                 cite!("rule_initiate_action");
                 cite!("rule_additional_cost");
                 let card = ts[0];
                 let cost = self.basic_trash_resource_cost(card);
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 self.begin_payment(
                     side,
                     card,
@@ -16848,7 +16950,10 @@ impl Vm {
                     }
                 }
             }
-            (DecisionCtx::RunActionCost(server), DecisionAnswer::PayNestedCost(pay)) => {
+            (
+                DecisionCtx::RunActionCost { server, click_discount },
+                DecisionAnswer::PayNestedCost(pay),
+            ) => {
                 // CR 9.12.3e: "a singular 'must' ability cannot force a player
                 // to pay an additional cost they wish to decline." Being
                 // offered the cost is enough to satisfy the requirement, so
@@ -16860,7 +16965,7 @@ impl Vm {
                     // to MAKE the run; the run formally begins afterwards.
                     cite!("rule_abilities_during_a_run");
                     let extra = self.run_action_cost(server);
-                    self.spend_click(Side::Runner);
+                    self.spend_action_clicks(Side::Runner, 1, click_discount);
                     self.pay_cost(Side::Runner, ObjectId(0), &extra);
                     self.initiate_run(server);
                 }
@@ -17378,21 +17483,13 @@ impl Vm {
         }
     }
 
-    fn take_action(&mut self, side: Side, opt: ActionOption) {
-        // Close the action window first (9.2.6c: after the action the window
-        // closes; the player does not receive priority again). The action
-        // itself may push frames (run structure, ability frame).
-        cite!("rule_action_window_closes_after_action");
-        let Some(Frame::Window(_)) = self.frames.pop() else { unreachable!() };
-        self.after_window_closed();
-        // CR 5.2.2: initiate by paying [click] (checkpoint follows, 10.3.4).
-        cite!("rule_initiate_action");
-        // CR 5.2.5a/b: the action's IDENTITY — what makes two actions the
-        // same or different — is recorded as the action is initiated, and it
-        // is also the key 1.16.4d attributes clicks to.
+    /// CR 5.2.5a/b: the action's IDENTITY — what makes two actions the same
+    /// or different: the same basic action, or the same ability of the same
+    /// card. Two plays of two different operations are the SAME action.
+    fn action_identity(opt: &ActionOption) -> ActionIdentity {
         cite!("rule_same_actions");
         cite!("rule_defferent_actions");
-        let identity = match &opt {
+        match opt {
             ActionOption::BasicCredit => ActionIdentity::Basic(BasicAction::Credit),
             ActionOption::BasicDraw => ActionIdentity::Basic(BasicAction::Draw),
             ActionOption::BasicRun { .. } => ActionIdentity::Basic(BasicAction::Run),
@@ -17407,7 +17504,38 @@ impl Vm {
             }
             ActionOption::BasicPurge => ActionIdentity::Basic(BasicAction::Purge),
             ActionOption::CardAction { ability, .. } => ActionIdentity::CardAbility(*ability),
-        };
+        }
+    }
+
+    /// The [click] half of initiating an action, at the offer's discount:
+    /// "paying [click] less" takes clicks off the cost, and 1.16.2a floors
+    /// it at 0 — a click that is not owed is not spent and not recorded.
+    fn spend_action_clicks(&mut self, side: Side, base: u32, discount: u32) {
+        cite!("rule_modified_costs");
+        for _ in 0..base.saturating_sub(discount) {
+            self.spend_click(side);
+        }
+    }
+
+    fn take_action(&mut self, side: Side, opt: ActionOption) {
+        // Close the action window first (9.2.6c: after the action the window
+        // closes; the player does not receive priority again). The action
+        // itself may push frames (run structure, ability frame).
+        cite!("rule_action_window_closes_after_action");
+        let Some(Frame::Window(_)) = self.frames.pop() else { unreachable!() };
+        self.after_window_closed();
+        self.initiate_action(side, opt, 0);
+    }
+
+    /// CR 5.2.2's action procedure — initiate, pay [click] (checkpoint
+    /// follows, 10.3.4), resolve — shared between the action window
+    /// ([`Vm::take_action`], discount 0) and [`Instruction::OfferAction`],
+    /// which runs it from an ability's resolution at a [click] discount.
+    fn initiate_action(&mut self, side: Side, opt: ActionOption, click_discount: u32) {
+        cite!("rule_initiate_action");
+        // CR 5.2.5a/b: the action's identity is recorded as the action is
+        // initiated, and it is also the key 1.16.4d attributes clicks to.
+        let identity = Self::action_identity(&opt);
         // 1.16.4d: the clicks spent to TAKE this action, counted from here —
         // "even though other steps take place between initiating the action
         // and paying that cost".
@@ -17417,7 +17545,7 @@ impl Vm {
         match opt {
             ActionOption::BasicCredit => {
                 cite!("rule_corp_basic_action_credit");
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 self.changes.bump_group();
                 self.st.player_mut(side).credits += 1;
                 // 5.2.6b: the basic action is the PLAYER's, not a card's.
@@ -17433,7 +17561,7 @@ impl Vm {
                 // ever act on the commonest draw in the game.
                 cite!("rule_corp_basic_action_draw");
                 cite!("runner_basic_action_card");
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 self.changes.bump_group();
                 self.push_ability_frame(
                     ResolutionKind::Paid,
@@ -17456,12 +17584,12 @@ impl Vm {
                     self.ask(
                         side,
                         DecisionSpec::NestedCost { cost: extra },
-                        DecisionCtx::RunActionCost(server),
+                        DecisionCtx::RunActionCost { server, click_discount },
                     );
                     return;
                 }
                 self.st.run_requirement_discharged = true;
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 self.initiate_run(server);
             }
             ActionOption::BasicRemoveTag => {
@@ -17471,7 +17599,7 @@ impl Vm {
                 // at 0, and a cost of 0 credits moves none and records none).
                 cite!("rule_modified_costs");
                 let cost = self.basic_action_credits(crate::change::BasicAction::RemoveTag, 2);
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 if cost > 0 {
                     self.st.runner.credits -= cost;
                     self.changes.record(GameChange::CreditsLost {
@@ -17490,7 +17618,7 @@ impl Vm {
                 // inside the 8.6.7 procedure, and 1.16.4d attributes all of
                 // it to this action.
                 cite!("rule_corp_basic_action_operation");
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 // The action's effect is the 8.6.7 play procedure; it runs in
                 // a rules ability frame, exactly as the 7.2.3 steal does.
                 self.push_ability_frame(
@@ -17513,7 +17641,7 @@ impl Vm {
                 // inside it, at step 8.5.16b.
                 cite!("rule_corp_basic_action_install");
                 cite!("runner_basic_action_install");
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 self.push_ability_frame(
                     ResolutionKind::Paid,
                     AbilityRef { obj: card, index: usize::MAX },
@@ -17548,7 +17676,7 @@ impl Vm {
                 // when the credits are spent.
                 cite!("corp_basic_action_advance");
                 cite!("rule_spend_credits");
-                self.spend_click(side);
+                self.spend_action_clicks(side, 1, click_discount);
                 self.begin_payment(
                     side,
                     card,
@@ -17574,15 +17702,13 @@ impl Vm {
                 // — is payable.
                 let candidates = self.basic_trash_resource_candidates();
                 let spec = self.announcement(candidates, 1);
-                self.ask(side, spec, DecisionCtx::BasicTrashTarget);
+                self.ask(side, spec, DecisionCtx::BasicTrashTarget { click_discount });
             }
             ActionOption::BasicPurge => {
                 // CR 5.2.6h: three clicks, paid one at a time — each is a cost
                 // payment with its own checkpoint (1.16.3).
                 cite!("corp_basic_action_purge_virus_counters");
-                self.spend_click(side);
-                self.spend_click(side);
-                self.spend_click(side);
+                self.spend_action_clicks(side, 3, click_discount);
                 self.push_ability_frame(
                     ResolutionKind::Paid,
                     AbilityRef { obj: ObjectId(0), index: usize::MAX },
@@ -17593,7 +17719,13 @@ impl Vm {
                 );
             }
             ActionOption::CardAction { ability, .. } => {
-                let Some(def) = self.ability_at(ability.obj, ability.index) else { return };
+                let Some(mut def) = self.ability_at(ability.obj, ability.index) else { return };
+                // The discount comes off the trigger cost's [click]
+                // component (1.16.2a floors at 0); the rest is paid as
+                // printed, in the ability frame's own PayCost phase.
+                if let Some(cost) = def.cost.as_mut() {
+                    cost.clicks = cost.clicks.saturating_sub(click_discount);
+                }
                 self.trigger_paid_ability(side, ability, def);
             }
         }

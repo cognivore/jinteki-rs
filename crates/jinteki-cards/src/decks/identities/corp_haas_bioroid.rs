@@ -618,6 +618,70 @@ pub fn next_design() -> Card {
             ],
         )
         .named("guarding the net")
+        .text("If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.")
+        .may_when(
+            different_actions_this_turn(Corp, 3),
+            [choose_one([
+                ("gain 1[credit]", vec![gain(Corp, 1)]),
+                (
+                    "take another different action, paying [click] less",
+                    vec![take_another_different_action_paying_a_click_less()],
+                ),
+            ])],
+        )
+        .named("the third different action completed")
+        .build()
+}
+
+/// Every Haas-Bioroid identity this module carries, in the order the queue
+/// reached them.
+/// MirrorMorph: Endless Iteration — Identity: Division.
+/// "If the first, second, and third actions you take on your turn are each
+///  different from one another, when the third action completes, you may
+///  gain 1[credit] or take another different action, paying [click] less."
+///
+/// COMPLETE. "When the third action completes" is 5.2.2d's moment — the end
+/// of the action step that ran it — and "each different from one another" is
+/// 5.2.5a/b's identity over the whole turn, so the condition is
+/// `DifferentActionsThisTurn` with an exact count of 3, met at the
+/// completion. Exactness is what stops the fourth action from meeting it
+/// again: by the time THAT one completes, the log holds four.
+///
+/// "You may gain 1[credit] or take another different action" is 9.6.9's
+/// declinable ability around 9.11.4g's option choice — declining the whole
+/// thing and choosing the credit are different answers. "Take another
+/// different action, paying [click] less" is one instruction handing the
+/// Corp a 5.2.2 action from inside the resolution: the action window's own
+/// option set, minus the three identities already taken (5.2.5), each
+/// priced 1[click] cheaper (1.16.2a floors at 0 — a 1[click] action costs
+/// no click at all, and every other cost is still paid). When no different
+/// action is affordable, 9.12.3c leaves the choice only its credit half.
+///
+/// 5.2.2a ("once an action is initiated it must be completed before the
+/// game can advance to the next step or open another action window") is
+/// kept, not bent: the third action has already completed when the ability
+/// resolves, and the fourth initiates and completes inside that
+/// completion's checkpoint, before the turn structure advances — its own
+/// `ActionTaken`/`ActionCompleted` are recorded, so anything counting the
+/// turn's actions sees four.
+pub fn mirrormorph() -> Card {
+    card("MirrorMorph: Endless Iteration")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.")
+        .may_when(
+            different_actions_this_turn(Corp, 3),
+            [choose_one([
+                ("gain 1[credit]", vec![gain(Corp, 1)]),
+                (
+                    "take another different action, paying [click] less",
+                    vec![take_another_different_action_paying_a_click_less()],
+                ),
+            ])],
+        )
+        .named("the third different action completed")
         .build()
 }
 
@@ -637,6 +701,7 @@ pub fn identities() -> Vec<Card> {
         haas_bioroid_stronger_together(),
         leo_construction(),
         next_design(),
+        mirrormorph(),
         poetri_luxury_brands(),
         seidr_laboratories(),
         sportsmetal(),

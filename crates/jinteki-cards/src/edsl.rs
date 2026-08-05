@@ -1477,6 +1477,16 @@ pub fn choose_one(
 ) -> Instruction {
     Instruction::ChooseOne { options: options.into_iter().collect() }
 }
+/// "…take another different action, paying [click] less." (MirrorMorph:
+/// Endless Iteration.) The resolving player takes one action through 5.2.2's
+/// ordinary procedure, from inside the ability — the offer is the action
+/// window's own option set, priced 1[click] cheaper (1.16.2a floors at 0)
+/// and filtered by 5.2.5a/b's identity to actions not yet taken this turn.
+/// The action taken this way is an action like any other: it is recorded,
+/// completed, and counted by anything that counts the turn's actions.
+pub fn take_another_different_action_paying_a_click_less() -> Instruction {
+    Instruction::OfferAction { different_from_this_turn: true, click_discount: 1 }
+}
 /// "Trace[N]. If successful, …" (10.8.) One sentence, one instruction.
 pub fn trace(base: i64, if_successful: impl IntoIterator<Item = Instruction>) -> Instruction {
     Instruction::Trace {
@@ -2554,6 +2564,14 @@ pub fn runner_trashes_a_corp_card_if(reqs: &[TriggerRequirement]) -> TriggerCond
 /// turn…" (The Collective; 5.2.5a/b).
 pub fn same_action_in_a_row(side: Side, count: usize) -> TriggerCond {
     TriggerCond::SameActionInARow { side, count }
+}
+/// "If the first, second, and third actions you take on your turn are each
+/// different from one another, when the third action completes…"
+/// (MirrorMorph: Endless Iteration; 5.2.5a/b, met at 5.2.2d's completion of
+/// the `count`th action). The count is exact, so a later action of the turn
+/// — including one this ability itself hands out — cannot meet it again.
+pub fn different_actions_this_turn(side: Side, count: usize) -> TriggerCond {
+    TriggerCond::DifferentActionsThisTurn { side, count }
 }
 /// "Whenever the Runner draws a card…" (8.4.2: met once per card drawn).
 pub fn draws_a_card(side: Side) -> TriggerCond {

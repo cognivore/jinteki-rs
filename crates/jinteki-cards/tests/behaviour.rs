@@ -6,7 +6,8 @@
 //! file — no hand-written `PrintedCard` — puts it on a board and drives it
 //! with the shared plan driver, then asserts the printed sentence's effect.
 
-use jinteki_cr::change::GameChange;
+use jinteki_cr::change::{ActionIdentity, BasicAction, GameChange};
+use jinteki_cr::decision::{ActionOption, DecisionSpec};
 
 use jinteki_cr::instr::Instruction;
 use jinteki_cr::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
@@ -15966,4 +15967,279 @@ fn biotech_flip_costs_exactly_three_clicks() {
         t2.tail(30)
     );
     assert_eq!(vm2.st.corp.clicks, 2, "the driver halted with the two clicks unspent");
+}
+
+
+// ---------------------------------------------------------------------------
+// MirrorMorph: Endless Iteration — a fourth action, a [click] cheaper
+// ---------------------------------------------------------------------------
+
+/// MirrorMorph: "If the first, second, and third actions you take on your
+/// turn are each different from one another, when the third action completes,
+/// you may gain 1[credit] or take another different action, paying [click]
+/// less." Three different actions — the basic credit, draw and install — and
+/// when the third completes the offer comes. The Corp takes a FOURTH
+/// different action, the basic play, paying no [click] for it: three clicks
+/// allotted, three spent, four actions on the record — each initiated and
+/// completed, so anything counting the turn's actions sees four.
+#[test]
+fn mirrormorph_hands_out_a_fourth_different_action_for_no_click() {
+    let mut vm = Vm::empty(6500);
+    tk::install_identity(&mut vm, card("MirrorMorph: Endless Iteration"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("Third-Asset", 0, 2), Zone::Hand(Side::Corp));
+    let op = vm.new_object(tk::operation("Fourth-Op", 0, vec![]), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().extend([asset, op]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset)))
+            .when(Match::reaction().offering("mirrormorph").once(), Reply::take("mirrormorph"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("take another"))
+            // The offer is a TakeAction decision like the window's own —
+            // the fourth Kind::Action decision this plan sees.
+            .when(Match::action().once(), Reply::play_card(op)),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert!(t.ever_offered("mirrormorph"), "the third completion brought the offer: {}", t.tail(20));
+    assert_eq!(
+        vm.st.objects[&op].zone,
+        Zone::Discard(Side::Corp),
+        "the fourth action happened — the operation was played: {}",
+        t.tail(20)
+    );
+    // The click ledger: three allotted, three spent — the fourth action's
+    // 1[click] was reduced to 0 (1.16.2a) and spent nothing.
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::ClickSpent { side: Side::Corp })).count(),
+        3,
+        "three clicks paid for four actions: {}",
+        t.tail(20)
+    );
+    // All four initiations are on the record, each a different 5.2.5
+    // identity, in the order taken.
+    let taken: Vec<ActionIdentity> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::ActionTaken { side: Side::Corp, action } => Some(*action),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        taken,
+        vec![
+            ActionIdentity::Basic(BasicAction::Credit),
+            ActionIdentity::Basic(BasicAction::Draw),
+            ActionIdentity::Basic(BasicAction::Install),
+            ActionIdentity::Basic(BasicAction::PlayOperation),
+        ],
+        "four ActionTaken records, all different: {}",
+        t.tail(20)
+    );
+    // …and all four completed (5.2.2a): the offered action finished inside
+    // the third completion's checkpoint, before the turn moved on.
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::ActionCompleted { side: Side::Corp, .. })).count(),
+        4,
+        "four completions — the fourth is an action like any other: {}",
+        t.tail(20)
+    );
+}
+
+/// MirrorMorph, the other half of the choice: "you may gain 1[credit] or
+/// take another different action" — choosing the credit lands 1[credit] and
+/// no fourth action is taken.
+#[test]
+fn mirrormorph_gains_one_credit_when_that_half_is_chosen() {
+    let mut vm = Vm::empty(6501);
+    tk::install_identity(&mut vm, card("MirrorMorph: Endless Iteration"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("Third-Asset", 0, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(asset);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset)))
+            .when(Match::reaction().offering("mirrormorph").once(), Reply::take("mirrormorph"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("gain 1")),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        2,
+        "1 from the basic credit action + 1 from the identity: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::ActionTaken { side: Side::Corp, .. })).count(),
+        3,
+        "the credit was chosen, so no fourth action: {}",
+        t.tail(20)
+    );
+}
+
+/// MirrorMorph is silent when the first three actions are NOT all different:
+/// credit, credit, draw — the first two share 5.2.5a's identity, so the
+/// condition is never met and no offer comes.
+#[test]
+fn mirrormorph_stays_silent_when_an_action_repeats() {
+    let mut vm = Vm::empty(6502);
+    tk::install_identity(&mut vm, card("MirrorMorph: Endless Iteration"), Side::Corp);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().times(2), Reply::credit())
+            .when(Match::action().once(), Reply::draw()),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.ever_offered("mirrormorph"),
+        "5.2.5a: two basic credit actions are the same action: {}",
+        t.tail(20)
+    );
+}
+
+/// MirrorMorph is a "may": declining the pending ability at the reaction
+/// window resolves nothing — no credit, no fourth action.
+#[test]
+fn mirrormorph_declined_entirely_does_nothing() {
+    let mut vm = Vm::empty(6503);
+    tk::install_identity(&mut vm, card("MirrorMorph: Endless Iteration"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("Third-Asset", 0, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(asset);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    // No reaction rule: the neutral fallback passes on the optional pending.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset))),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert!(t.ever_offered("mirrormorph"), "the offer WAS there to decline: {}", t.tail(20));
+    assert_eq!(vm.st.corp.credits, 1, "only the basic credit action paid: {}", t.tail(20));
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::ActionTaken { side: Side::Corp, .. })).count(),
+        3,
+        "declined: three actions stay three: {}",
+        t.tail(20)
+    );
+}
+
+/// "Take another DIFFERENT action": the offer's option list is the action
+/// window's, minus the three 5.2.5 identities already taken. With credit,
+/// draw and install spent, the only different action this board affords is
+/// the basic play — and the three taken kinds are absent from the offer.
+#[test]
+fn mirrormorph_offers_only_actions_different_from_the_three_taken() {
+    let mut vm = Vm::empty(6504);
+    tk::install_identity(&mut vm, card("MirrorMorph: Endless Iteration"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("Third-Asset", 0, 2), Zone::Hand(Side::Corp));
+    let op = vm.new_object(tk::operation("Fourth-Op", 0, vec![]), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().extend([asset, op]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset)))
+            .when(Match::reaction().offering("mirrormorph").once(), Reply::take("mirrormorph"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("take another"))
+            // Halt ON the offer itself, so its option list can be asserted.
+            .when(Match::action().once(), Reply::Halt),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    let offer = t.of_kind(Kind::Action).into_iter().last().expect("the offer decision");
+    assert!(offer.answer.is_none(), "halted on the offer: {}", t.tail(10));
+    let DecisionSpec::TakeAction { options } = &offer.spec else {
+        panic!("the offer is a TakeAction decision: {:?}", offer.spec)
+    };
+    // Only the basic play remains: credit, draw and install are the taken
+    // identities (two plays of different cards are still ONE identity, so
+    // every playable card is one option each); purge needs 3[click] and
+    // only 1 is discounted; no other action is afforded by this board.
+    assert!(
+        options.iter().all(|o| matches!(o, ActionOption::BasicPlayOperation { .. })),
+        "the three taken kinds are absent from the offer: {:?}\n{}",
+        options,
+        t.tail(10)
+    );
+    assert!(
+        options.contains(&ActionOption::BasicPlayOperation { card: op }),
+        "…and the operation in hand is on it: {:?}\n{}",
+        options,
+        t.tail(10)
+    );
+}
+
+/// MirrorMorph works fresh each turn: 5.2.5b counts the actions of THIS
+/// turn, so a second turn of three different actions brings the offer again.
+#[test]
+fn mirrormorph_comes_back_the_next_turn() {
+    let mut vm = Vm::empty(6505);
+    tk::install_identity(&mut vm, card("MirrorMorph: Endless Iteration"), Side::Corp);
+    let a1 = vm.new_object(tk::vanilla_asset("Turn-1-Asset", 0, 2), Zone::Hand(Side::Corp));
+    let a2 = vm.new_object(tk::vanilla_asset("Turn-2-Asset", 0, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().extend([a1, a2]);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(a1)))
+            .when(Match::reaction().offering("mirrormorph").once(), Reply::take("mirrormorph"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("gain 1"))
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(a2)))
+            .when(Match::reaction().offering("mirrormorph").once(), Reply::take("mirrormorph"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("gain 1")),
+        Plan::runner()
+            .when(Match::action().times(4), Reply::credit())
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        t.offers("mirrormorph"),
+        2,
+        "three different actions each Corp turn, one offer each: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        4,
+        "each turn: 1 from the credit action + 1 from the identity: {}",
+        t.tail(30)
+    );
 }

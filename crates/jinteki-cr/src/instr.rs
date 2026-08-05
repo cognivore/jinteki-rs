@@ -651,6 +651,30 @@ pub enum Instruction {
     /// choice ends an instruction and must select a fully-resolvable option
     /// if any exists; the chosen effect is then separately interruptible.
     ChooseOne { options: Vec<(&'static str, Vec<Instruction>)> },
+    /// "…take another different action, paying [click] less." (MirrorMorph:
+    /// Endless Iteration.) The resolving player takes ONE action (5.2.2's
+    /// full procedure: initiate, spend the discounted [click] cost, resolve)
+    /// from inside this ability's resolution — the only place other than the
+    /// action phase's own step (5.2.4) an action is ever offered. The
+    /// options are the same set the 9.2.6 action window would offer, priced
+    /// with `click_discount` fewer [click] (1.16.2a floors each click cost
+    /// at 0; every other cost — install credits, an operation's play cost —
+    /// is still required and still paid).
+    ///
+    /// `different_from_this_turn` is 5.2.5's identity test as a filter:
+    /// "another DIFFERENT action" removes every option whose 5.2.5a/b
+    /// identity was already taken this turn. The action taken here is an
+    /// action like any other — `ActionTaken` and `ActionCompleted` are
+    /// recorded for it, so a condition counting the turn's actions sees it.
+    ///
+    /// 5.2.2a ("once an action is initiated, it must be completed before
+    /// the game can advance to the next step or open another action
+    /// window") holds because the offer itself sits between two actions:
+    /// the condition that resolves this ability is met by an action
+    /// COMPLETING, so the whole ability — this instruction and the action
+    /// it hands out — runs inside that completion's checkpoint, before the
+    /// turn structure advances to its next step.
+    OfferAction { different_from_this_turn: bool, click_discount: u32 },
     /// "Break N subroutines on the encountered ice." — the subroutines it
     /// acts on are a target POSITION (1.15.1: subroutines are targets like
     /// objects are), so "break up to 2 subroutines" (Cleaver class),
@@ -1296,6 +1320,10 @@ impl Instruction {
             | Instruction::PsiGame { .. } | Instruction::CorpDiscards { .. } | Instruction::RestrictAccessToSelf
             | Instruction::CreateDelayedConditional { .. } | Instruction::CreateLingeringEffect { .. }
             | Instruction::ReduceRunnerMemoryThisTurn(..) | Instruction::ChooseOne { .. } | Instruction::BreakSubroutines { .. }
+            // 5.2.2: the offered action's own announcements (an install's
+            // destination, a play's card) are the action procedure's, made
+            // as it runs — the offer itself names no object.
+            | Instruction::OfferAction { .. }
             | Instruction::BypassEncounteredIce | Instruction::ChangeAttackedServer { .. }
             | Instruction::PurgeVirusCounters | Instruction::FlipIdentity(..)
             | Instruction::SecretlySetFlipFace(..) | Instruction::TrashSelf
@@ -1430,6 +1458,10 @@ impl Instruction {
             | Instruction::FlipIdentity(..) | Instruction::SecretlySetFlipFace(..)
             | Instruction::SwitchIdentity { .. } | Instruction::ShuffleCardsIntoDeck { .. }
             | Instruction::RemoveCardsFromGame { .. } | Instruction::TrashSelf | Instruction::StealSelfAgenda
+            // 5.2.2: the action this instruction offers is not a contained
+            // instruction — it is the ordinary action procedure, dispatched
+            // whole when the offer is answered, announcing for itself.
+            | Instruction::OfferAction { .. }
             | Instruction::ScoreSelfAgenda | Instruction::InstallCard { .. } | Instruction::InstallCards { .. }
             | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete
             | Instruction::InstallRezPayCost | Instruction::InstallRezFinish | Instruction::PlayCard { .. }
