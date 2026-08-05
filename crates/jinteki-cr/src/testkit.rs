@@ -157,7 +157,7 @@ pub fn three_ability_guest(name: &'static str) -> PrintedCard {
         AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))])
             .labeled("guest-paid: gain 2"),
         AbilityDef::conditional(
-            TriggerCond::RunEnds { successful_only: false },
+            TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
             vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
             false,
         )
@@ -982,7 +982,7 @@ pub fn amaze_persistent_like(name: &'static str) -> PrintedCard {
 pub fn doppel_like(name: &'static str, server: ServerId) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Hardware);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::DeclineableChoice(Box::new(Instruction::run(server)))],
         true,
     )
@@ -1197,7 +1197,7 @@ pub fn ash_like(name: &'static str) -> PrintedCard {
 pub fn zahya_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::DeclineableChoice(Box::new(Instruction::GainCredits(Side::Runner, Quantity::c(1))))],
         true,
     )
@@ -1219,7 +1219,7 @@ pub fn mandatory_once_per_turn_gainer(name: &'static str) -> PrintedCard {
     let mut c = program_cost(name, 0);
     c.memory_cost = Some(1);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -1237,7 +1237,7 @@ pub fn first_time_each_turn_gainer(name: &'static str) -> PrintedCard {
     let mut c = program_cost(name, 0);
     c.memory_cost = Some(1);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -1329,7 +1329,7 @@ pub fn mayfly_button(name: &'static str) -> PrintedCard {
         Cost::free(),
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(AbilityDef::conditional(
-                TriggerCond::RunEnds { successful_only: false },
+                TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
                 vec![Instruction::TrashSelf],
                 false,
             )
@@ -1958,7 +1958,7 @@ pub fn forked_button(name: &'static str, server: ServerId) -> PrintedCard {
 pub fn drt_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::Damage { kind: DamageKind::Meat, amount: Quantity::c(2), responsible: Side::Corp }],
         false,
     )
@@ -4463,7 +4463,7 @@ pub fn direct_access_like(name: &'static str, server: ServerId) -> PrintedCard {
 pub fn run_end_identity(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -4488,7 +4488,7 @@ pub fn compile_like(name: &'static str, program: ObjectId) -> PrintedCard {
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::RunEnds { successful_only: false },
+                    TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
                     vec![Instruction::MoveToDeck {
                         card: TargetSpec::Objects(vec![program]),
                         top: false,
@@ -4544,9 +4544,11 @@ pub fn blackguard_like(name: &'static str) -> PrintedCard {
 pub fn trash_counter_like(name: &'static str, of: Side) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::InstalledCardTrashed {
-            side: of,
+        TriggerCond::CardTrashed {
+            owner: Some(of),
+            by: None,
             of_types: vec![CardType::Program, CardType::Hardware],
+            installed_only: true,
         },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,
@@ -4800,7 +4802,7 @@ pub fn otoroshi_like(name: &'static str, card: ObjectId) -> PrintedCard {
 pub fn zahya_counts_accesses(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::AccessesThisRun)],
         false,
     )
@@ -5284,7 +5286,7 @@ pub fn titanium_ribs_like(name: &'static str) -> PrintedCard {
 pub fn bravado_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunEnds { successful_only: false },
+        TriggerCond::RunEnds { successful_only: false, on: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::DistinctIcePassedThisRun)],
         false,
     )
@@ -5363,7 +5365,12 @@ pub fn additional_score_cost_agenda(name: &'static str, req: u32, points: i32) -
 pub fn trash_reaction_asset(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::InstalledCardTrashed { side: Side::Corp, of_types: Vec::new() },
+        TriggerCond::CardTrashed {
+            owner: Some(Side::Corp),
+            by: None,
+            of_types: Vec::new(),
+            installed_only: true,
+        },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,
             kind: CounterKind::Power,

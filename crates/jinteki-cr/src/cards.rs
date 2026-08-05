@@ -655,7 +655,7 @@ pub fn dirty_laundry() -> PrintedCard {
         Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::RunEnds { successful_only: true },
+                    TriggerCond::RunEnds { successful_only: true, on: Vec::new() },
                     vec![Instruction::GainCredits(Side::Runner, Quantity::c(5))],
                     false,
                 )
@@ -1124,7 +1124,7 @@ pub fn desperado() -> PrintedCard {
         AbilityDef::static_ability(vec![StaticDecl::MemoryLimitMod(1)])
             .labeled("desperado: +1 memory"),
         AbilityDef::conditional(
-            TriggerCond::MakesSuccessfulRun { on: None },
+            TriggerCond::MakesSuccessfulRun { on: None, requires: Vec::new() },
             vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
             false,
         )

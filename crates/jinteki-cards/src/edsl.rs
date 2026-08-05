@@ -568,6 +568,42 @@ impl CardBuilder {
                 .first_time_each_turn(),
         )
     }
+    /// "Once per turn → When <trigger>, you may …" — a conditional ability
+    /// carrying 9.3.6g's once-per-turn flag.
+    ///
+    /// The flag and the ability's OPTIONALITY go together, and that is not a
+    /// convenience: 9.1.6's second sentence says "players do not 'use'
+    /// abilities that are entirely mandatory", so a mandatory conditional
+    /// would never spend the flag at all. The optional part may sit inside
+    /// the instructions instead of on the ability (Null: Whistleblower's
+    /// "you may trash 1 card from your grip"), which 9.6.9d is — hence
+    /// [`CardBuilder::when_once_per_turn`] beside this one.
+    pub fn may_when_once_per_turn(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), true)
+                .with_flag(AbilityFlag::OncePerTurn),
+        )
+    }
+    /// "Once per turn → When <trigger>, <effect with an optional component>"
+    /// — the same flag on an ability whose "may" is inside one sentence
+    /// (9.6.9d), so it is the INSTRUCTION that is declinable and not the
+    /// ability. Never use this for an entirely mandatory ability: 9.1.6 would
+    /// never spend the flag, and the sentence the designer means is
+    /// [`CardBuilder::when_first_each_turn`]'s 9.6.5c ordinal.
+    pub fn when_once_per_turn(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
+                .with_flag(AbilityFlag::OncePerTurn),
+        )
+    }
     /// "When <trigger>, you may …" — the same, declinable (9.6.9). Use this
     /// only where the "may" is the WHOLE ability; a "may" inside one sentence
     /// is [`may`] or [`may_pay`], which put the choice where the card does.
@@ -706,8 +742,9 @@ fn trigger_word(t: &TriggerCond) -> &'static str {
         TriggerCond::SelfAccessed { .. } => "accessed",
         TriggerCond::SelfPassed => "passed",
         TriggerCond::SelfPlayResolved => "resolved",
-        TriggerCond::RunEnds { successful_only: true } => "successful run ends",
+        TriggerCond::RunEnds { successful_only: true, .. } => "successful run ends",
         TriggerCond::RunEnds { .. } => "run ends",
+        TriggerCond::RunBegins { .. } => "a run begins",
         _ => "trigger",
     }
 }
@@ -1255,6 +1292,12 @@ pub fn hosted_counters(kind: CounterKind, n: u32) -> Cost {
     Cost::spend_counters(kind, n)
 }
 /// "Forfeit an agenda" as a cost (8.2.5).
+/// "…trash 1 card from your grip" as a cost (Null: Whistleblower; 1.16.10).
+/// The cards are the payer's to choose, and naming the grip is what lifts
+/// 1.15.2c's installed-cards default.
+pub fn trash_cards_from_hand_of(side: Side, n: u32) -> Cost {
+    Cost::trash_matching(n, vec![in_hand_of(side)])
+}
 pub fn forfeit_agenda(n: u32) -> Cost {
     Cost::forfeit_agenda(n)
 }
@@ -1404,7 +1447,16 @@ pub fn passed() -> TriggerCond {
 }
 /// "When this run ends, …"
 pub fn run_ends() -> TriggerCond {
-    TriggerCond::RunEnds { successful_only: false }
+    TriggerCond::RunEnds { successful_only: false, on: Vec::new() }
+}
+/// "When a run on HQ or R&D ends, …" — the same condition with the server
+/// the sentence names (Zahya Sadeghi).
+pub fn run_on_ends(servers: &[ServerId]) -> TriggerCond {
+    TriggerCond::RunEnds { successful_only: false, on: servers.to_vec() }
+}
+/// "When a run on R&D begins, …" (Captain Padma Isbister; 6.9.1.)
+pub fn run_begins_on(servers: &[ServerId]) -> TriggerCond {
+    TriggerCond::RunBegins { on: servers.to_vec() }
 }
 /// "After you resolve this operation, …" (8.6.7h.)
 pub fn after_this_resolves() -> TriggerCond {
@@ -1412,11 +1464,17 @@ pub fn after_this_resolves() -> TriggerCond {
 }
 /// "Whenever you make a successful run" — any server (6.8.4).
 pub fn makes_successful_run() -> TriggerCond {
-    TriggerCond::MakesSuccessfulRun { on: None }
+    TriggerCond::MakesSuccessfulRun { on: None, requires: Vec::new() }
+}
+/// "Whenever a run becomes successful, if <requirements>…" — 9.6.5c's
+/// stipulation about the state at the moment the run is declared successful
+/// (Ryō "Phoenix" Ōno's "after a subroutine resolved during that run").
+pub fn makes_successful_run_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::MakesSuccessfulRun { on: None, requires: reqs.to_vec() }
 }
 /// "…makes a successful run on <these servers>" (Gemilang class).
 pub fn makes_successful_run_on(servers: &[ServerId]) -> TriggerCond {
-    TriggerCond::MakesSuccessfulRun { on: Some(servers.to_vec()) }
+    TriggerCond::MakesSuccessfulRun { on: Some(servers.to_vec()), requires: Vec::new() }
 }
 /// "…you make a successful run on **a central server**" (Liza Talking
 /// Thunder, Laramy Fisk). CR 4.6.5 names the central servers and no others —
@@ -1641,6 +1699,27 @@ pub fn installs_a_card(side: Side) -> TriggerCond {
 pub fn installs_a_subtyped(side: Side, of: CardType, subtype: &'static str) -> TriggerCond {
     TriggerCond::CardInstalledBy { side, of_types: vec![of], of_subtypes: vec![subtype] }
 }
+/// "Whenever you install a piece of hardware…" — 8.5's install with the
+/// sentence's card-type stipulation and nothing else.
+pub fn installs_a(side: Side, of: CardType) -> TriggerCond {
+    TriggerCond::CardInstalledBy { side, of_types: vec![of], of_subtypes: Vec::new() }
+}
+/// "Whenever you trash a piece of hardware **(from any location)**…" — 8.2's
+/// trash, naming the player who does it (1.14.5) and the type of card, and
+/// deliberately NOT naming where it was trashed from.
+pub fn trashes_a_from_anywhere(by: Side, of: CardType) -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: None,
+        by: Some(by),
+        of_types: vec![of],
+        installed_only: false,
+    }
+}
+/// "The first time you perform the same action three times in a row each
+/// turn…" (The Collective; 5.2.5a/b).
+pub fn same_action_in_a_row(side: Side, count: usize) -> TriggerCond {
+    TriggerCond::SameActionInARow { side, count }
+}
 /// "Whenever the Runner draws a card…" (8.4.2: met once per card drawn).
 pub fn draws_a_card(side: Side) -> TriggerCond {
     TriggerCond::PlayerDrawsCards(side)
@@ -1699,6 +1778,23 @@ pub fn additional_cost_to_access_a_card_in_a_remote_root(c: Cost) -> StaticDecl 
 /// "…1 resource **or** piece of hardware" (2.15) — the type LIST as one
 /// description word, because a card has exactly one type and several
 /// [`of_type`] words together would mean all of them.
+/// "…an **icebreaker** or a **run** event" — the printed "or" between two
+/// whole descriptions. Each inner list is one description, read as all of its
+/// words together, exactly as descriptions written beside each other are.
+///
+/// Use [`of_any_type`] or [`with_any_subtype`] for the "or" between single
+/// words of one kind ("a resource **or** piece of hardware"); this is for the
+/// one that separates descriptions.
+pub fn any_of(alternatives: &[&[TargetFilter]]) -> TargetFilter {
+    let leaked: Vec<&'static [TargetFilter]> =
+        alternatives.iter().map(|alt| &*Box::leak(alt.to_vec().into_boxed_slice())).collect();
+    TargetFilter::AnyOf(Box::leak(leaked.into_boxed_slice()))
+}
+/// "…a card that already has [a power counter] on it" (the charge keyword's
+/// reminder text; 1.9).
+pub fn with_counters(kind: CounterKind, at_least: u32) -> TargetFilter {
+    TargetFilter::HasCounters { kind, at_least }
+}
 pub fn of_any_type(list: &'static [CardType]) -> TargetFilter {
     TargetFilter::CardTypeIsAny(list)
 }
@@ -1750,9 +1846,14 @@ pub fn host_accessed_on_self() -> Instruction {
 pub fn additional_accesses(n: i64) -> Instruction {
     Instruction::AdditionalAccesses(Quantity::c(n))
 }
-/// "Whenever you breach <server>, if <requirements>…"
+/// "Whenever you breach <server>, if <requirements>…" — one server, or the
+/// several a printed "or" names ("breach HQ or R&D").
 pub fn breaches_server_if(server: ServerId, reqs: &[TriggerRequirement]) -> TriggerCond {
-    TriggerCond::BreachesServer { server, requires: reqs.to_vec() }
+    TriggerCond::BreachesServer { servers: vec![server], requires: reqs.to_vec() }
+}
+/// "Whenever you breach HQ or R&D, if <requirements>…" (Mercury.)
+pub fn breaches_one_of_if(servers: &[ServerId], reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::BreachesServer { servers: servers.to_vec(), requires: reqs.to_vec() }
 }
 /// "…if this program has a hosted Corp card" (Cupellation class).
 pub fn source_hosts_corp_card() -> TriggerRequirement {
@@ -2072,6 +2173,30 @@ pub fn revealed_this_encounter() -> TargetFilter {
 /// "If <amount> is N or more, …" (Slot Machine's "if you revealed 2 or more
 /// cards that share a type") — a calculated amount against a printed
 /// threshold.
+/// "…for each time you accessed a card during that run" (Zahya Sadeghi;
+/// 7.3.6).
+pub fn accesses_this_run() -> Quantity {
+    Quantity::AccessesThisRun
+}
+/// "…the subroutines you broke during that run" (Mercury; 9.8.7).
+pub fn subroutines_broken_this_run() -> Quantity {
+    Quantity::SubroutinesBrokenThisRun
+}
+/// "…the subroutines that resolved during that run" (Ryō "Phoenix" Ōno;
+/// 9.8.10).
+pub fn subroutines_resolved_this_run() -> Quantity {
+    Quantity::SubroutinesResolvedThisRun
+}
+/// "…if you did **not** break any subroutines during that run" — an amount
+/// compared against a threshold from the other end.
+pub fn at_most(amount: Quantity, n: i64) -> TriggerRequirement {
+    TriggerRequirement::QuantityAtMost { amount, at_most: n }
+}
+/// "…**during a run**" (6.1.1) — there is a run in progress, and nothing else
+/// is asked about it.
+pub fn during_a_run() -> TriggerRequirement {
+    TriggerRequirement::RunInProgress
+}
 pub fn at_least(amount: Quantity, n: i64) -> TriggerRequirement {
     TriggerRequirement::QuantityAtLeast { amount, at_least: n }
 }
@@ -2130,7 +2255,7 @@ pub fn when_this_run_ends(
     Instruction::CreateDelayedConditional {
         def: Box::new(
             AbilityDef::conditional(
-                TriggerCond::RunEnds { successful_only },
+                TriggerCond::RunEnds { successful_only, on: Vec::new() },
                 instrs.into_iter().collect(),
                 optional,
             )

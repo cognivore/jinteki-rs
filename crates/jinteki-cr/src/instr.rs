@@ -69,6 +69,17 @@ pub enum Quantity {
     /// the game history. An object that no longer exists in the present game
     /// state still counts, which is the whole of the rule.
     DistinctIcePassedThisRun,
+    /// CR 9.8.7: "if you did not break any subroutines during that run" — the
+    /// number of subroutines BROKEN since the run in progress began (or the
+    /// run that just ended, for a "when this run ends" ability), read from
+    /// the change log, which 10.2.1 makes open information. 0 outside a run.
+    SubroutinesBrokenThisRun,
+    /// CR 9.8.10: "after a subroutine resolved during that run" — the number
+    /// of subroutines that RESOLVED during the run, the same history read
+    /// from the other side. A subroutine that was broken never resolves, and
+    /// a 9.8.9 replacement still resolves from the ice, so both are counted
+    /// exactly as the rules record them.
+    SubroutinesResolvedThisRun,
     /// CR 9.12.2e: a value defined by X, where the ability defining X lives
     /// on the source (the Surveyor class shares one X between a strength
     /// definition and a trace). While the defining ability is inactive or
@@ -1195,11 +1206,24 @@ impl Instruction {
     }
 
     /// CR 1.15.2: does this instruction choose any of the objects it acts on?
-    /// True exactly when one of its declared target positions is an
-    /// announcement, which is what makes it an instruction of its own under
-    /// 9.11.3 rather than something another instruction can absorb.
+    /// True when one of its declared target positions is an announcement,
+    /// which is what makes it an instruction of its own under 9.11.3 rather
+    /// than something another instruction can absorb.
+    ///
+    /// An instruction that CONTAINS one inline chooses too: 1.14.5's "the
+    /// Corp trashes 1 card from HQ" declares no position of its own — the
+    /// wrapper only names who chooses — and the choice is still made here.
+    /// Without looking through it, such a sub-instruction inside a
+    /// `Combined` was not spliced out and resolved against no targets at all
+    /// (the defect class of W14b's `MoveToDeck`, one level down).
     pub fn chooses_targets(&self) -> bool {
-        self.target_positions().iter().any(|s| s.announcement_slots() > 0)
+        if self.target_positions().iter().any(|s| s.announcement_slots() > 0) {
+            return true;
+        }
+        match self.contains() {
+            Contained::Inline(list) => list.iter().any(|i| i.chooses_targets()),
+            Contained::Nothing | Contained::Deferred(_) | Contained::Branches(_) => false,
+        }
     }
 
     /// CR 9.2.2e: the instructions that are PROCEDURES — they expand into a
@@ -1550,6 +1574,25 @@ pub enum TargetFilter {
     /// where the card is, so 1.15.2c's play-area default still applies unless
     /// another criterion beside it lifts it.
     Not(&'static TargetFilter),
+    /// "…an **icebreaker** or a **run** event" — a DISJUNCTION of criteria,
+    /// in the same shared filter vocabulary (§12 rule 5). Several criteria
+    /// written beside each other are a conjunction wherever the CR speaks of
+    /// "the criteria" in the plural, so a printed "or" between two
+    /// descriptions that are each already several words has no other way to
+    /// be said: one alternative here is one such description, and the card
+    /// matches when it matches every criterion of at least one of them.
+    ///
+    /// Deliberately NOT [`TargetFilter::CardTypeIsAny`] or
+    /// [`TargetFilter::HasAnySubtype`], which are the printed "or" between
+    /// single words of one kind. Those stay, because "a resource or piece of
+    /// hardware" really is one description word about the type; this is for
+    /// the "or" that separates whole descriptions.
+    AnyOf(&'static [&'static [TargetFilter]]),
+    /// "…a card that already has [a power counter]" — CR 1.9: a card hosting
+    /// at least `at_least` counters of a kind. The threshold is content
+    /// (§12 rule 2), so the same atom says "a card with a counter on it" and
+    /// "a card with 3 or more virus counters".
+    HasCounters { kind: crate::object::CounterKind, at_least: u32 },
     /// CR 1.13.2: a card that is FACEDOWN — its back face is the one showing,
     /// wherever it is. Not [`TargetFilter::Unrezzed`], which 8.1.2 restricts
     /// to installed Corp cards: 10.3.1a puts a card the Corp trashes into
@@ -1705,7 +1748,15 @@ impl TargetFilter {
                 // 2.13: the faction is a printed characteristic like any
                 // other, so a sentence stipulating one has to be demonstrated.
                 | TargetFilter::FactionMatchesIdentityOf { .. }
-        )
+        ) || match self {
+            // A disjunction stipulates a characteristic when any alternative
+            // does: showing which alternative was met is showing a
+            // characteristic, and there is no alternative that avoids it.
+            TargetFilter::AnyOf(alts) => {
+                alts.iter().any(|alt| alt.iter().any(|f| f.stipulates_characteristic()))
+            }
+            _ => false,
+        }
     }
 }
 
@@ -1777,7 +1828,16 @@ impl TargetFilter {
                 // 1.5.4a: the pile is a place, and naming it is the only way
                 // an ability can reach a card outside the game.
                 | TargetFilter::InIdentityPileOf(_)
-        )
+        ) || match self {
+            // A disjunction specifies the zone only when EVERY alternative
+            // does: 1.15.2c lifts for a description that says where to look,
+            // and an "or" with one branch saying nothing still leaves the
+            // default standing for that branch.
+            TargetFilter::AnyOf(alts) => {
+                !alts.is_empty() && alts.iter().all(|alt| alt.iter().any(|f| f.names_zone()))
+            }
+            _ => false,
+        }
     }
 }
 

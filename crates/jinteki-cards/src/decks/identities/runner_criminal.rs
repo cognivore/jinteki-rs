@@ -341,6 +341,134 @@ pub fn virtual_intelligence_pi() -> Card {
         .build()
 }
 
+/// Mercury: Chrome Libertador — Identity: Bioroid. Link 0.
+/// "Once per turn → When you breach HQ or R&D during a run, if you did not
+///  break any subroutines during that run, you may access 1 additional card."
+///
+/// COMPLETE. "HQ or R&D" is ONE condition with two servers in it, not two
+/// abilities: "Once per turn →" is 9.3.6g's flag stated once, and two
+/// abilities would each carry their own copy of it and let the identity fire
+/// twice in a turn. That is the same trap Leela Patel's "scored or stolen"
+/// avoids only because a score and a steal really are different occurrences —
+/// a breach of HQ and a breach of R&D are the same occurrence with a
+/// different server, so the server is content on the one condition.
+///
+/// The flag has something to spend it with because the ability is OPTIONAL:
+/// 9.1.6's second sentence says a player does not *use* an entirely mandatory
+/// ability, so a mandatory conditional written with the flag would never
+/// expend it at all.
+///
+/// Both "during a run" and "if you did not break any subroutines during that
+/// run" are 9.6.5c requirements listed inside the condition, checked when the
+/// breach begins. The first is 7.2's point: a breach can happen without a run
+/// (an Ashen Epilogue-class effect), and this sentence excludes those. The
+/// second reviews the run's history for a break (9.8.7) — "did not break
+/// ANY" is a count with the threshold at 0.
+pub fn mercury() -> Card {
+    card("Mercury: Chrome Libertador")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Bioroid"])
+        .text("Once per turn → When you breach HQ or R&D during a run, if you did not break any subroutines during that run, you may access 1 additional card.")
+        .may_when_once_per_turn(
+            breaches_one_of_if(
+                &[ServerId::Hq, ServerId::Rnd],
+                &[during_a_run(), at_most(subroutines_broken_this_run(), 0)],
+            ),
+            [additional_accesses(1)],
+        )
+        .named("chrome libertador")
+        .build()
+}
+
+/// MuslihaT: Multifarious Marketeer — Identity: Natural. Link 0.
+/// "When your turn begins, look at the top card of your stack. If that card
+///  is an icebreaker or a run event, you may reveal it and add it to your
+///  grip."
+///
+/// COMPLETE. Two printed sentences, so two instructions — and here 9.11.4e
+/// says so twice over, since looking and revealing are each one of its
+/// exceptions.
+///
+/// "An **icebreaker** or a **run** event" is a printed "or" between two whole
+/// descriptions rather than between two words of one kind: an icebreaker is
+/// named by its subtype alone, a run event by a type AND a subtype. Written
+/// as one flat list the two would become a conjunction and describe no card
+/// at all, so the alternation is said as one criterion with two alternatives.
+///
+/// "That card" and "it" are 1.15.4's back-reference to the card the look
+/// named, which 1.12.3 stamps for the resolving ability — nothing is
+/// announced, because "the top card of your stack" already named a zone and
+/// fixed the card (1.15.2c). That is also why the reveal is honest: 1.21.3
+/// shows the Corp a card the Runner has already seen and nobody else had.
+pub fn muslihat() -> Card {
+    let an_icebreaker_or_a_run_event = || {
+        any_of(&[
+            &[with_subtype("Icebreaker")],
+            &[of_type(CardType::Event), with_subtype("Run")],
+        ])
+    };
+    card("MuslihaT: Multifarious Marketeer")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .text("When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.")
+        .when(
+            turn_begins(Runner),
+            [
+                look_at(top_of_stack(amount(1)), Runner),
+                if_met(
+                    &[board_has(
+                        &[looked_at_by_this_ability(), an_icebreaker_or_a_run_event()],
+                        1,
+                    )],
+                    // 9.11.3: "reveal it and add it to your grip" is one
+                    // sentence, so one instruction.
+                    [may(combined([
+                        reveal(all_matching(&[looked_at_by_this_ability()])),
+                        add_to_hand(all_matching(&[looked_at_by_this_ability()])),
+                    ]))],
+                ),
+            ],
+        )
+        .named("multifarious marketeer")
+        .build()
+}
+
+/// Zahya Sadeghi: Versatile Smuggler — Identity: Cyborg. Link 0.
+/// "Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for
+///  each time you accessed a card during that run."
+///
+/// COMPLETE. The condition is 6.9.6's end of the run with the servers the
+/// sentence names as content on it — one condition, for the reason Mercury's
+/// is one: the printed "Once per turn →" is 9.3.6g's flag stated once, and a
+/// pair of abilities would carry a flag each.
+///
+/// "For each time you accessed a card during that run" spans the whole run
+/// rather than one breach: 7.3.6 counts the accesses PERFORMED, so a run that
+/// breached twice counts both breaches' accesses, and an access replaced by
+/// another effect never happened and is not counted.
+///
+/// The CR uses this card as its own example of 9.3.6g (`example_rule_once_
+/// per_turn_flag_1`): the ability being declined does not spend the flag,
+/// because 9.1.6 makes using it the thing that does.
+pub fn zahya_sadeghi() -> Card {
+    card("Zahya Sadeghi: Versatile Smuggler")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Cyborg"])
+        .text("Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.")
+        .may_when_once_per_turn(
+            run_on_ends(&[ServerId::Hq, ServerId::Rnd]),
+            [gain_q(Runner, times(1, accesses_this_run()))],
+        )
+        .named("versatile smuggler")
+        .build()
+}
+
 /// Every Criminal identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -357,5 +485,8 @@ pub fn identities() -> Vec<Card> {
         leela_patel(),
         nyusha_sintashta(),
         virtual_intelligence_pi(),
+        mercury(),
+        muslihat(),
+        zahya_sadeghi(),
     ]
 }

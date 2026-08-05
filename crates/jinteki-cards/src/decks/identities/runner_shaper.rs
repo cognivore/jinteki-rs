@@ -189,6 +189,116 @@ pub fn tao_salonga() -> Card {
         .build()
 }
 
+/// Captain Padma Isbister: Intrepid Explorer — Identity: Cyborg. Link 0.
+/// "The first time each turn a run on R&D begins, you may charge 1 of your
+///  installed cards. (Add 1 power counter to a card that already has one.)"
+///
+/// COMPLETE. The parenthesis is 1.4's reminder text — it restates what the
+/// charge keyword already is, so it is not a second instruction — and it is
+/// also where the description comes from: charging places a power counter on
+/// a card that ALREADY has one, so "a card that already has one" is a
+/// criterion about the counters the card hosts and not a second effect.
+///
+/// "A run on R&D begins" is 6.9.1's Run Initiation Phase, whose first step
+/// announces the attacked server — so the server is known when the condition
+/// is met. It is deliberately not the approach of R&D: 6.9.2 approaches a
+/// server only after every piece of ice protecting it has been passed, which
+/// is later and may not happen at all.
+///
+/// A run the Runner did not make still meets it: the sentence says "a run",
+/// not "you make a run".
+pub fn captain_padma_isbister() -> Card {
+    card("Captain Padma Isbister: Intrepid Explorer")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Cyborg"])
+        .text("The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)")
+        .may_when_first_each_turn(
+            run_begins_on(&[ServerId::Rnd]),
+            [place_on(
+                choose(
+                    1,
+                    &[installed_runner_card(), with_counters(CounterKind::Power, 1)],
+                ),
+                CounterKind::Power,
+                1,
+            )],
+        )
+        .named("intrepid explorer")
+        .build()
+}
+
+/// Hiram "0mission" Svensson: Shadow of the Past — Identity: Natural. Link 0.
+/// "Whenever you install or trash a piece of hardware (from any location),
+///  look at the top card of R&D."
+///
+/// COMPLETE. One printed sentence with two conditions, so it is two
+/// conditional abilities with the same effect — the Leela Patel shape, and
+/// for the same reason: 9.6.1 gives an ability ONE primary condition, and
+/// 8.5.1's install and 8.2's trash are different occurrences. Nothing is lost
+/// by the split here, because the sentence states no ordinal for the pair to
+/// share.
+///
+/// The parenthesis is not reminder text — it is a stipulation, and the one
+/// this card exists to make. A trash condition is otherwise read as the
+/// installed cards (1.15.2c's default read from the other side), so "(from
+/// any location)" is the card saying that a piece of hardware trashed out of
+/// the grip or the heap counts as much as one trashed off the rig.
+///
+/// "You install or trash" names the player doing it (1.14.5), which is what
+/// leaves a piece of hardware the CORP trashes alone.
+pub fn hiram_svensson() -> Card {
+    card("Hiram \"0mission\" Svensson: Shadow of the Past")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.")
+        .when(
+            installs_a(Runner, CardType::Hardware),
+            [look_at(top_of_rnd(amount(1)), Runner)],
+        )
+        .named("a piece of hardware was installed")
+        .when(
+            trashes_a_from_anywhere(Runner, CardType::Hardware),
+            [look_at(top_of_rnd(amount(1)), Runner)],
+        )
+        .named("a piece of hardware was trashed")
+        .build()
+}
+
+/// The Collective: Williams, Wu, et al. — Identity: Cybernetic. Link 1.
+/// "The first time you perform the same action three times in a row each
+///  turn, gain [click]."
+///
+/// COMPLETE. 5.2.5a/b decide what "the same action" is — the same basic
+/// action, or the same ability of the same card, so two different cards
+/// printing the same words are still two actions — and the kernel records
+/// that identity with every action taken.
+///
+/// "Three times in a row" reads the LAST three actions of the turn rather
+/// than all of them: an action of another kind in between breaks the run and
+/// the count starts again. That is what distinguishes it from MirrorMorph's
+/// "each different from one another", which asks about every action of the
+/// turn at once.
+///
+/// "The first time … each turn" is 9.6.5c's ordinal about the occurrence, so
+/// a fourth identical action in the same turn does not meet the condition at
+/// all — the ability is not throttled, it simply never triggers again.
+pub fn the_collective() -> Card {
+    card("The Collective: Williams, Wu, et al.")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Cybernetic"])
+        .link(1)
+        .text("The first time you perform the same action three times in a row each turn, gain [click].")
+        .when_first_each_turn(same_action_in_a_row(Runner, 3), [gain_clicks(Runner, 1)])
+        .named("williams, wu, et al.")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -199,5 +309,8 @@ pub fn identities() -> Vec<Card> {
         rielle_kit_peddler(),
         the_professor(),
         tao_salonga(),
+        captain_padma_isbister(),
+        hiram_svensson(),
+        the_collective(),
     ]
 }

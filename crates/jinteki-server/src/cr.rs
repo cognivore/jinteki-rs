@@ -147,6 +147,9 @@ pub const ANDROMEDA_PILE: &[&str] = &[
     "Leela Patel: Trained Pragmatist",
     "Nyusha \"Sable\" Sintashta: Symphonic Prodigy",
     "Virtual Intelligence, P.I.: \"You Can Call Me Vic\"",
+    "Mercury: Chrome Libertador",
+    "MuslihaT: Multifarious Marketeer",
+    "Zahya Sadeghi: Versatile Smuggler",
 ];
 
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed

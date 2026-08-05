@@ -6178,3 +6178,508 @@ fn silhouette_may_expose_only_an_installed_unrezzed_card() {
         t.tail(40)
     );
 }
+
+/// Mercury: "Once per turn → When you breach HQ or R&D during a run, if you
+/// did not break any subroutines during that run, you may access 1
+/// additional card."
+///
+/// The requirement is the whole of it: the same run, breaching the same
+/// server, accesses two cards when nothing was broken and one when a
+/// subroutine was. Both stipulations ride on ONE condition, so the printed
+/// "Once per turn →" is one flag and not two.
+#[test]
+fn mercury_accesses_a_second_card_only_when_nothing_was_broken() {
+    for broke in [false, true] {
+        let mut vm = Vm::empty(6140);
+        tk::install_identity(&mut vm, card("Mercury: Chrome Libertador"), Side::Runner);
+        let deck = tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::install_ice(&mut vm, tk::three_sub_ice("Some Ice"), ServerId::Rnd, true);
+        tk::install_rig(&mut vm, tk::break_button("Breaker"));
+        vm.start_turn(Side::Runner);
+
+        let mut runner = Plan::runner().when(Match::action().once(), Reply::run(ServerId::Rnd));
+        if broke {
+            runner = runner
+                .when(Match::paid().once(), Reply::take("break"))
+                .when(Match::sub_targets().once(), Reply::SubroutineNamed("bloop 0"));
+        }
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            runner
+                .when(Match::reaction().offering("chrome libertador"), Reply::take("chrome libertador"))
+                .when(Match::optional(), Reply::Optional(true))
+                .stop_at_action(),
+        );
+        let accessed = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardAccessed { obj } if deck.contains(obj)))
+            .count();
+        assert_eq!(
+            accessed,
+            if broke { 1 } else { 2 },
+            "the additional access is the requirement's (broke={broke}): {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// Mercury again, for 9.3.6g: one condition with two servers in it, so the
+/// flag is spent by the first use and the second breach — of the OTHER named
+/// server — is never offered.
+#[test]
+fn mercury_is_one_ability_with_one_once_per_turn_flag() {
+    let mut vm = Vm::empty(6141);
+    tk::install_identity(&mut vm, card("Mercury: Chrome Libertador"), Side::Runner);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_hand(&mut vm, Side::Corp, 4);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::reaction().offering("chrome libertador"), Reply::take("chrome libertador"))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        t.offers("chrome libertador"),
+        1,
+        "9.3.6g: one flag for the whole sentence, spent by the R&D breach — the HQ breach \
+         of the same turn is not offered: {}",
+        t.tail(40)
+    );
+}
+
+/// MuslihaT: "When your turn begins, look at the top card of your stack. If
+/// that card is an icebreaker or a run event, you may reveal it and add it to
+/// your grip."
+///
+/// The disjunction, both ways round and once against a card that is neither:
+/// an icebreaker (a subtype alone) and a run event (a type AND a subtype) are
+/// each taken, and a plain program is left where it is.
+#[test]
+fn muslihat_takes_an_icebreaker_or_a_run_event_and_nothing_else() {
+    for kind in ["icebreaker", "run event", "neither"] {
+        let mut vm = Vm::empty(6142);
+        tk::install_identity(&mut vm, card("MuslihaT: Multifarious Marketeer"), Side::Runner);
+        let mut top = match kind {
+            "run event" => tk::event("Top Card", 0, vec![]),
+            _ => tk::program_cost("Top Card", 0),
+        };
+        top.subtypes = match kind {
+            "icebreaker" => vec!["Icebreaker"],
+            "run event" => vec!["Run"],
+            _ => Vec::new(),
+        };
+        let top = vm.new_object(top, Zone::Deck(Side::Runner));
+        vm.st.deck.get_mut(&Side::Runner).unwrap().push(top);
+        tk::fill_deck(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner().when(Match::optional(), Reply::Optional(true)).stop_at_action(),
+        );
+        let taken = vm.st.objects[&top].zone == Zone::Hand(Side::Runner);
+        assert_eq!(
+            taken,
+            kind != "neither",
+            "the card was taken exactly when it matched the description (kind={kind}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::CardRevealed { obj } if *obj == top)),
+            kind != "neither",
+            "…and the reveal happened with it (kind={kind}): {}",
+            t.tail(30)
+        );
+        assert!(
+            vm.changes.log.iter().any(
+                |c| matches!(c, GameChange::CardLookedAt { obj, by } if *obj == top && *by == Side::Runner)
+            ),
+            "the look is the first sentence and happens whatever the card is (kind={kind}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Zahya Sadeghi: "Once per turn → When a run on HQ or R&D ends, you may gain
+/// 1[credit] for each time you accessed a card during that run."
+///
+/// Two accesses in one run of HQ pay two credits — 7.3.6 counts the accesses
+/// PERFORMED, so an additional access counts with the ordinary one — and the
+/// flag is then spent, so a second run of the same turn pays nothing.
+#[test]
+fn zahya_sadeghi_pays_one_credit_per_access_of_the_run_once_a_turn() {
+    let mut vm = Vm::empty(6143);
+    tk::install_identity(&mut vm, card("Zahya Sadeghi: Versatile Smuggler"), Side::Runner);
+    tk::install_rig(&mut vm, tk::additional_access_card("Extra", ServerId::Hq, 1));
+    tk::fill_hand(&mut vm, Side::Corp, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::paid().offering("makers-eye").once(), Reply::take("makers-eye"))
+            .when(Match::reaction().offering("versatile smuggler"), Reply::take("versatile smuggler"))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.runner.credits, 2,
+        "1 credit for each of the run's two accesses, and nothing for the second run: {}",
+        t.tail(40)
+    );
+    assert_eq!(t.offers("versatile smuggler"), 1, "9.3.6g: offered once: {}", t.tail(40));
+}
+
+/// Zahya again: the condition names HQ and R&D, so a run on a remote server
+/// ending is not one of the occurrences that meets it.
+#[test]
+fn zahya_sadeghi_ignores_a_run_on_a_remote_server() {
+    let mut vm = Vm::empty(6144);
+    tk::install_identity(&mut vm, card("Zahya Sadeghi: Versatile Smuggler"), Side::Runner);
+    tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 2), ServerId::Remote(1), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::reaction().offering("versatile smuggler"), Reply::take("versatile smuggler"))
+            .when(Match::optional(), Reply::Optional(true))
+            .stop_at_action(),
+    );
+    assert_eq!(t.offers("versatile smuggler"), 0, "the remote is not HQ or R&D: {}", t.tail(30));
+    assert_eq!(vm.st.runner.credits, 0, "so nothing was gained: {}", t.tail(30));
+}
+
+/// Captain Padma Isbister: "The first time each turn a run on R&D begins, you
+/// may charge 1 of your installed cards. (Add 1 power counter to a card that
+/// already has one.)"
+///
+/// The reminder text is the description: only the card that ALREADY has a
+/// power counter is a candidate. And the ordinal is about the occurrence, so
+/// the second R&D run of the turn is not offered at all.
+#[test]
+fn captain_padma_isbister_charges_only_a_card_that_already_has_a_counter() {
+    let mut vm = Vm::empty(6145);
+    tk::install_identity(
+        &mut vm,
+        card("Captain Padma Isbister: Intrepid Explorer"),
+        Side::Runner,
+    );
+    let loaded = tk::install_rig(&mut vm, tk::program_cost("Loaded", 0));
+    let empty = tk::install_rig(&mut vm, tk::program_cost("Empty", 0));
+    tk::place_counters(&mut vm, loaded, CounterKind::Power, 1);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::reaction().offering("intrepid explorer"), Reply::take("intrepid explorer"))
+            .stop_at_action(),
+    );
+    let announcements: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(announcements.len(), 1, "offered once, on the first R&D run: {}", t.tail(40));
+    assert_eq!(
+        announcements[0].candidates(),
+        [loaded],
+        "only the card that already has a power counter can be charged: {}",
+        t.tail(40)
+    );
+    assert_eq!(vm.st.objects[&loaded].counter(CounterKind::Power), 2, "charged: {}", t.tail(40));
+    assert_eq!(vm.st.objects[&empty].counter(CounterKind::Power), 0, "and the other untouched");
+}
+
+/// Hiram "0mission" Svensson: "Whenever you install or trash a piece of
+/// hardware (from any location), look at the top card of R&D."
+///
+/// Three occurrences in one turn: a piece of hardware installed from the
+/// grip, the same one trashed off the rig, and a PROGRAM installed — the
+/// first two look, the third does not, because the sentence names a type.
+#[test]
+fn hiram_svensson_looks_on_installing_and_on_trashing_hardware() {
+    let mut vm = Vm::empty(6146);
+    tk::install_identity(
+        &mut vm,
+        card("Hiram \"0mission\" Svensson: Shadow of the Past"),
+        Side::Runner,
+    );
+    let hw = vm.new_object(
+        tk::vanilla_runner_card("Some Hardware", CardType::Hardware),
+        Zone::Hand(Side::Runner),
+    );
+    let prog = vm.new_object(tk::program_cost("Some Program", 0), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([hw, prog]);
+    tk::install_rig(&mut vm, tk::runner_install_button("Install-Button", 1));
+    tk::install_rig(&mut vm, tk::trash_set_button("Trash-Button", vec![hw]));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let looks = |vm: &Vm| {
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardLookedAt { by, .. } if *by == Side::Runner))
+            .count()
+    };
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::Targets(vec![hw]))
+            .when(Match::paid().once(), Reply::take("trash the set"))
+            .when(Match::paid().once(), Reply::take("install-button"))
+            .when(Match::targets().once(), Reply::Targets(vec![prog]))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Rig, "the program was installed too: {}", t.tail(40));
+    assert_eq!(
+        vm.st.objects[&hw].zone,
+        Zone::Discard(Side::Runner),
+        "and the hardware was trashed: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        looks(&vm),
+        2,
+        "the install and the trash each looked; installing a PROGRAM did not: {}",
+        t.tail(40)
+    );
+}
+
+/// The Collective: "The first time you perform the same action three times in
+/// a row each turn, gain [click]."
+///
+/// Four basic credit actions: the third meets the condition and pays a click,
+/// the fourth does not, because the printed ordinal is about the occurrence
+/// and the turn has already had its one.
+#[test]
+fn the_collective_pays_a_click_for_three_of_the_same_action_in_a_row() {
+    let mut vm = Vm::empty(6147);
+    tk::install_identity(&mut vm, card("The Collective: Williams, Wu, et al."), Side::Runner);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().times(4), Reply::credit()).stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.credits, 4, "four basic credit actions: {}", t.tail(40));
+    assert_eq!(
+        clicks_gained_by_the_runner(&vm),
+        1,
+        "the third of the three paid, and the fourth did not — the ordinal is spent: {}",
+        t.tail(40)
+    );
+}
+
+/// The Collective again: "in a row" is the whole of it. A different action in
+/// the middle breaks the run, so three identical actions that are not
+/// consecutive pay nothing.
+#[test]
+fn the_collective_pays_nothing_when_the_run_of_actions_is_broken() {
+    let mut vm = Vm::empty(6148);
+    tk::install_identity(&mut vm, card("The Collective: Williams, Wu, et al."), Side::Runner);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::draw())
+            .when(Match::action().once(), Reply::credit())
+            .stop_at_action(),
+    );
+    assert_eq!(
+        clicks_gained_by_the_runner(&vm),
+        0,
+        "four actions and no three of a kind in a row, so nothing was paid: {}",
+        t.tail(40)
+    );
+}
+
+/// Null: Whistleblower: "Once per turn → When you encounter a piece of ice,
+/// you may trash 1 card from your grip. If you do, that ice gets –2 strength
+/// for the remainder of this run."
+///
+/// The trash is 1.16.11a's optional COST, so the strength drops only when it
+/// is paid — and the cards offered are the grip's, which is what naming the
+/// zone does.
+#[test]
+fn null_whistleblower_trashes_from_the_grip_to_weaken_the_encountered_ice() {
+    let mut vm = Vm::empty(6149);
+    tk::install_identity(&mut vm, card("Null: Whistleblower"), Side::Runner);
+    let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 0, 4), ServerId::Hq, true);
+    let hand = tk::fill_hand(&mut vm, Side::Runner, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    // The modification lives for the run, so it has to be read from inside
+    // one: halt at 6.9.4c's jack-out decision, which follows passing the ice.
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::payment_cards().once(), Reply::Targets(vec![hand[0]]))
+            .when(Match::of(Kind::JackOut).once(), Reply::Halt)
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+    assert_eq!(
+        vm.st.objects[&hand[0]].zone,
+        Zone::Discard(Side::Runner),
+        "the chosen card of the GRIP paid the cost: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.effective_strength(ice),
+        Some(2),
+        "printed 4, less the 2 the sentence takes off — and still, now the encounter has ended: {}",
+        t.tail(40)
+    );
+
+    script.run(&mut vm); // resume: finish the run
+    let t = script.transcript();
+    assert_eq!(
+        vm.effective_strength(ice),
+        Some(4),
+        "the modification died with the run it was made for: {}",
+        t.tail(40)
+    );
+}
+
+/// Null again, from the other side: declining the optional cost costs nothing
+/// and takes nothing off the ice — 1.16.11a, and 9.6.9d is what gives the
+/// printed "Once per turn →" flag something to be spent by.
+#[test]
+fn null_whistleblower_takes_nothing_off_the_ice_when_the_cost_is_declined() {
+    let mut vm = Vm::empty(6151);
+    tk::install_identity(&mut vm, card("Null: Whistleblower"), Side::Runner);
+    let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 0, 4), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Runner, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::nested_cost().once(), Reply::PayCost(false))
+            .when(Match::of(Kind::JackOut).once(), Reply::Halt)
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 2, "nothing left the grip: {}", t.tail(40));
+    assert_eq!(
+        vm.effective_strength(ice),
+        Some(4),
+        "and the ice is as printed: {}",
+        t.tail(40)
+    );
+}
+
+/// Ryō "Phoenix" Ōno: "The first time each turn a run becomes successful
+/// after a subroutine resolved during that run, gain 1[credit] and the Corp
+/// trashes 1 card from HQ."
+///
+/// The requirement is part of the condition: a successful run with a
+/// subroutine resolved pays, and one without it does not — and does not spend
+/// the turn's one time either.
+#[test]
+fn ryo_phoenix_ono_pays_only_after_a_subroutine_resolved_that_run() {
+    for resolved in [false, true] {
+        let mut vm = Vm::empty(6150);
+        tk::install_identity(
+            &mut vm,
+            card("Ryō \"Phoenix\" Ōno: Out of the Ashes"),
+            Side::Runner,
+        );
+        let server = if resolved { ServerId::Hq } else { ServerId::Rnd };
+        tk::install_ice(&mut vm, tk::three_sub_ice("Some Ice"), ServerId::Hq, true);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+        let hq_before = vm.st.hand[&Side::Corp].len();
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner().when(Match::action().once(), Reply::run(server)).stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            u32::from(resolved),
+            "the credit is the requirement's (resolved={resolved}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            hq_before - vm.st.hand[&Side::Corp].len(),
+            usize::from(resolved),
+            "…and so is the card the Corp pitches (resolved={resolved}): {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// 1.11.3a: how many clicks an ABILITY gave the Runner in their first turn —
+/// read from the change log, so an assertion about it does not depend on
+/// where the plan happened to stop. 5.6.2a's allotment is recorded the same
+/// way and is the first of them, which is what the `skip(1)` drops.
+fn clicks_gained_by_the_runner(vm: &Vm) -> usize {
+    vm.changes
+        .log
+        .iter()
+        .take_while(|c| !matches!(c, GameChange::TurnEnded { .. }))
+        .filter(|c| matches!(c, GameChange::ClicksGained { side: Side::Runner, .. }))
+        .skip(1)
+        .count()
+}

@@ -218,6 +218,83 @@ pub fn valencia_estevez() -> Card {
         .build()
 }
 
+/// Null: Whistleblower — Identity: Natural. Link 0.
+/// "Once per turn → When you encounter a piece of ice, you may trash 1 card
+///  from your grip. If you do, that ice gets –2 strength for the remainder of
+///  this run."
+///
+/// COMPLETE. "You may trash 1 card from your grip. If you do, …" is 1.16.11a's
+/// OPTIONAL COST: the trash is not an effect the ability produces but the
+/// price of the one that follows, which is why the two sentences are one
+/// instruction and why declining costs nothing.
+///
+/// "1 card from your grip" names a zone, and that is what lifts 1.15.2c's
+/// installed-cards default — so the cards offered are the grip's, and the
+/// Runner chooses which. 9.3.6g's flag has something to spend it with because
+/// the ability's effect is optional (9.6.9d), which 9.1.6 requires: nothing
+/// ever expends the flag on an entirely mandatory ability.
+///
+/// "That ice" is 1.15.4's back-reference to the ice of the encounter that met
+/// the condition, so nothing is announced, and "for the remainder of this
+/// run" is the duration the sentence names — the modification outlives the
+/// encounter it was made in and dies with the run.
+pub fn null_whistleblower() -> Card {
+    card("Null: Whistleblower")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.")
+        .when_once_per_turn(
+            encounters_any_ice(),
+            [may_pay(
+                trash_cards_from_hand_of(Runner, 1),
+                modify_strength_of(encountered_ice(), -2, WantedDuration::ThisRun),
+            )],
+        )
+        .named("whistleblower")
+        .build()
+}
+
+/// Ryō "Phoenix" Ōno: Out of the Ashes — Identity: G-mod. Link 0.
+/// "The first time each turn a run becomes successful after a subroutine
+///  resolved during that run, gain 1[credit] and the Corp trashes 1 card from
+///  HQ."
+///
+/// COMPLETE. The condition is 6.8.4's declaration of success with 9.6.5c's
+/// additional requirement listed inside it — "after a subroutine resolved
+/// during that run" — which is what keeps the printed ordinal honest: a
+/// successful run with no subroutine resolved does not meet the condition at
+/// all, so it does not spend the one time each turn.
+///
+/// "A subroutine resolved during that run" is the run's whole history and not
+/// the last encounter's: a subroutine that resolved on the first piece of ice
+/// counts when the run becomes successful several servers' worth of ice
+/// later. A subroutine that was broken never resolves (9.8.7), and one
+/// resolved through a 9.8.9 replacement still resolves from the ice.
+///
+/// "Gain 1[credit] and the Corp trashes 1 card from HQ" is one printed
+/// sentence, so one instruction (9.11.3). "The Corp trashes" is 1.14.5's
+/// attribution — the choice of card is the Corp's, though 9.1.1a makes the
+/// Runner the controller of a Runner identity's ability.
+pub fn ryo_phoenix_ono() -> Card {
+    card("Ryō \"Phoenix\" Ōno: Out of the Ashes")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["G-mod"])
+        .text("The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.")
+        .when_first_each_turn(
+            makes_successful_run_if(&[at_least(subroutines_resolved_this_run(), 1)]),
+            [combined([
+                gain(Runner, 1),
+                performed_by(Corp, trash(choose(1, &[in_hand_of(Corp)]))),
+            ])],
+        )
+        .named("out of the ashes")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -230,5 +307,7 @@ pub fn identities() -> Vec<Card> {
         noise(),
         quetzal(),
         valencia_estevez(),
+        null_whistleblower(),
+        ryo_phoenix_ono(),
     ]
 }

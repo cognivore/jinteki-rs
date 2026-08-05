@@ -59,9 +59,6 @@ kernel words, not card patches.
   `TriggerRequirement::QuantityAtLeast` measures one amount against a printed
   number; "the same number of cards in your grip as the Corp has in HQ" needs
   two amounts and an equality. *(Lat: Ethical Freelancer.)*
-- **Nothing counts accesses within a run.** 7.4.3 records the accessed cards
-  per BREACH; "for each time you accessed a card during that run" spans every
-  breach of one run. *(Zahya Sadeghi: Versatile Smuggler.)*
 - **"more [faction] cards installed than any other faction" is unsayable.**
   A comparison across the faction partition of the board, not a threshold.
   Every draft-format identity opens with it. *(Boris "Syfr" Kovac, Jamie
@@ -109,22 +106,46 @@ kernel words, not card patches.
   `StaticDecl::MaxHandSizeMod` carries a printed amount; "your maximum hand
   size is equal to the number of credits in your credit pool" is an absolute
   whose value is a 9.12.2 quantity. *(Cerebral Imaging: Infinite Frontiers.)*
+- **Nothing names the card an ability INSTALLED.**
+  `TargetFilter::{LookedAtByThisAbility, SetAsideByThisAbility, DrawnCards}`
+  each name a set an ability made, and there is no "the card this ability
+  installed" beside them — and a 9.6.13 delayed conditional cannot read the
+  targets of the ability that created it either, so "when that run ends, trash
+  THAT PROGRAM" has nothing to point at. *(Arissana Rocha Nahu: Street Artist;
+  Kabonesa Wu: Netspace Thrillseeker; Topan: Ormas Leader.)*
+- **"The other card" cannot be said.** `TargetSpec::EarlierTargets` is 1.15.4's
+  plural and `EarlierTarget { nth }` is one by position; neither is "the ones
+  an earlier instruction chose, EXCEPT the one a later instruction chose",
+  which is what a sentence handing one card to each player needs.
+  *(Steve Cambridge: Master Grifter.)*
 - **Nothing records a psi game's reveal.** `Instruction::PsiGame` resolves
   10.14.6's construction whole and writes no change for 10.14.6c's reveal, so
   "whenever you and the Runner reveal secretly spent credits" has no
   occurrence to be met by. *(Nisei Division: The Next Generation.)*
 
+## Not a kernel gap: the back faces have no printed text here
+
+`crates/jinteki-core/carddata/cards.json` is NSG's card data and carries FRONT
+faces only, so a double-sided identity's back face has no oracle text in this
+repo to copy from. SYS-D-10 forbids writing one from memory, so those
+identities wait on the data and not on the kernel. *(Hoshiko Shiro: Untold
+Protagonist; Dewi Subrotoputri: Pedagogical Dhalang; Jinteki Biotech: Life
+Imagined; Méliès U: Only the Brightest; SYNC: Everything, Everywhere; Earth
+Station: SEA Headquarters; Cyber Bureau: Keeping the Peace. Gemilang Arena,
+Nebula Talent Management's back face, was sourced before this was noticed.)*
+
 ## Progress
 
-- Implemented: **62 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **70 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
-so Rebirth reaches them at the table: Ken Tenma, Gabriel Santiago, Los, Liza
-Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable" Sintashta, Virtual
-Intelligence, P.I.
+so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
+Armand "Geist" Walker, Barry "Baz" Wong, Iain Stirling, Silhouette, Gabriel
+Santiago, Los, Liza Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable"
+Sintashta, Virtual Intelligence, P.I., Mercury, MuslihaT, Zahya Sadeghi.
 
 
-## Runner — Criminal (14/22)
+## Runner — Criminal (17/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
@@ -142,29 +163,29 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Leela Patel: Trained Pragmatist** — Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ.
 - [x] **Liza Talking Thunder: Prominent Legislator** — The first time you make a successful run on a central server each turn, draw 2 cards and take 1 tag.
 - [x] **Los: Data Hijacker** — The first time the Corp rezzes a piece of ice each turn, gain 2[credit].
-- [ ] **Mercury: Chrome Libertador** — Once per turn → When you breach HQ or R&D during a run, if you did not break any subroutines during that run, you may access 1 additional card.
-- [ ] **MuslihaT: Multifarious Marketeer** — When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.
+- [x] **Mercury: Chrome Libertador** — Once per turn → When you breach HQ or R&D during a run, if you did not break any subroutines during that run, you may access 1 additional card.
+- [x] **MuslihaT: Multifarious Marketeer** — When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.
 - [ ] **Nero Severn: Information Broker** — Once per turn → When you encounter a sentry, you may jack out.
 - [x] **Nyusha "Sable" Sintashta: Symphonic Prodigy** — When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) The first time each turn you make a successful run on your mark, gain [click].
 - [x] **Silhouette: Stealth Operative** — The first time you make a successful run on HQ each turn, you may expose 1 card.
 - [ ] **Steve Cambridge: Master Grifter** — The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
-- [ ] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
+- [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (7/21)
+## Runner — Shaper (10/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
 - [x] **Akiko Nisei: Head Case** — Whenever you breach R&D, you and the Corp secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Corp spent the same number of credits, access 1 additional card.
 - [ ] **Arissana Rocha Nahu: Street Artist** — Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.
 - [ ] **Ayla "Bios" Rahim: Simulant Specialist** — Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack. [click]: Add 1 card set aside with this identity to your grip.
-- [ ] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
+- [x] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
 - [x] **Chaos Theory: Wünderkind** — +1[mu]
 - [ ] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
 - [ ] **Ele "Smoke" Scovak: Cynosure of the Net** — 1[recurring-credit] Use this credit to pay for using icebreakers.
 - [x] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
 - [x] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
-- [ ] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
+- [x] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
 - [ ] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
 - [ ] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
 - [ ] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
@@ -173,11 +194,11 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.
 - [ ] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
 - [x] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
-- [ ] **The Collective: Williams, Wu, et al.** — The first time you perform the same action three times in a row each turn, gain [click].
+- [x] **The Collective: Williams, Wu, et al.** — The first time you perform the same action three times in a row each turn, gain [click].
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (8/19)
+## Runner — Anarch (10/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -189,12 +210,12 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **MaxX: Maximum Punk Rock** — When your turn begins, trash the top 2 cards of your stack. Draw 1 card.
 - [x] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.
 - [x] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
-- [ ] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
+- [x] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
 - [ ] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
 - [x] **Quetzal: Free Spirit** — Once per turn → 0[credit]: Break 1 barrier subroutine.
 - [ ] **Reina Roja: Freedom Fighter** — The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.
 - [ ] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.
-- [ ] **Ryō "Phoenix" Ōno: Out of the Ashes** — The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.
+- [x] **Ryō "Phoenix" Ōno: Out of the Ashes** — The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.
 - [ ] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
 - [ ] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
 - [x] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.

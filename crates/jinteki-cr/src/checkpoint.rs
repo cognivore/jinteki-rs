@@ -75,6 +75,29 @@ fn persisted_server_override(
     false
 }
 
+/// CR 5.2.5a/b: at the point `idx` in the change log, were the last `count`
+/// actions of the turn all the SAME action?
+///
+/// Asked of a point in the history rather than of the present, because both
+/// callers need it that way: the scan asks it of the change it is looking at,
+/// and 9.6.5c's ordinal asks it of every earlier change, to decide whether
+/// that change was one of "the times" the sentence counts.
+fn same_action_run_at(vm: &Vm, count: usize, idx: usize) -> bool {
+    cite!("rule_same_actions");
+    let from = vm.st.turn_log_start.min(idx);
+    let taken: Vec<crate::change::ActionIdentity> = vm.changes.log[from..=idx]
+        .iter()
+        .filter_map(|x| match x {
+            GameChange::ActionTaken { action, .. } => Some(*action),
+            _ => None,
+        })
+        .collect();
+    taken.len() >= count && {
+        let tail = &taken[taken.len() - count..];
+        tail.iter().all(|a| *a == tail[0])
+    }
+}
+
 fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     cite!("step_checkpoint_conditional_abilities");
     cite!("rule_condition_checked_in_checkpoints");
@@ -322,6 +345,17 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             continue;
                         }
                     }
+                    // 5.2.5a/b, the other end: the last `count` actions taken
+                    // this turn are all the SAME action. "In a row" is why
+                    // this reads a suffix of the history rather than all of
+                    // it — an action of another kind in between breaks the
+                    // run and the count starts again from there.
+                    if let crate::ability::TriggerCond::SameActionInARow { count, .. } = cond {
+                        cite!("rule_same_actions");
+                        if !same_action_run_at(vm, *count, window_start + offset) {
+                            continue;
+                        }
+                    }
                     // 1.16.4d: every [click] spent to TAKE the action counts,
                     // including one paid several steps into its resolution.
                     if let crate::ability::TriggerCond::ClicksSpentOnAction { count, .. } = cond {
@@ -421,7 +455,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // card types; the scan has the state access to read the
                     // trashed card's type.
                     if let (
-                        crate::ability::TriggerCond::InstalledCardTrashed { of_types, .. },
+                        crate::ability::TriggerCond::CardTrashed { of_types, .. },
                         GameChange::CardTrashed { obj, .. },
                     ) = (cond, c)
                     {
@@ -480,9 +514,26 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                                 })
                                 .unwrap_or(false)
                         };
+                        // The same reading for "the same action three times in
+                        // a row": whether an earlier action was one of "the
+                        // times" is a question about the history AS IT STOOD
+                        // then, not now — without this, the first of three
+                        // identical actions would spend the ordinal and the
+                        // third could never fire.
+                        let same_action_cond = match cond {
+                            crate::ability::TriggerCond::SameActionInARow { count, .. } => {
+                                Some(*count)
+                            }
+                            _ => None,
+                        };
                         let earlier = vm.changes.log[from..here].iter().enumerate().any(|(k, x)| {
                             if during_run_cond && !run_in_progress_at(from + k) {
                                 return false;
+                            }
+                            if let Some(n) = same_action_cond {
+                                if !same_action_run_at(vm, n, from + k) {
+                                    return false;
+                                }
                             }
                             trigger_matches(
                                 cond,

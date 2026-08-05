@@ -4005,6 +4005,24 @@ impl Vm {
                 }
                 seen.len() as i64
             }
+            // 9.8.7 / 9.8.10: "did you break any subroutines during that
+            // run", "did a subroutine resolve during that run" — the same
+            // 1.12.6 history window, read for the two changes the rules
+            // record when a subroutine is broken and when one resolves.
+            Q::SubroutinesBrokenThisRun => {
+                cite!("rule_break_subroutine");
+                self.changes.log[self.st.run_log_start..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::SubroutineBroken { .. }))
+                    .count() as i64
+            }
+            Q::SubroutinesResolvedThisRun => {
+                cite!("step_subroutine_resolution");
+                self.changes.log[self.st.run_log_start..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::SubroutineResolved { .. }))
+                    .count() as i64
+            }
             Q::CountersOnSource(kind) => {
                 // CR 1.17.8: an ability that met its condition from its source
                 // agenda being scored or stolen reads that agenda's LAST KNOWN
@@ -6617,6 +6635,18 @@ impl Vm {
             TargetFilter::Facedown => !o.faceup,
             // "non-<something>": the criterion negated, asked the same way.
             TargetFilter::Not(inner) => !self.filter_matches(o, *inner, source),
+            // "an icebreaker OR a run event": the alternatives asked the same
+            // way, each one a conjunction of its own criteria. An empty list
+            // of alternatives describes nothing, which is what an "or" with
+            // no branches would mean.
+            TargetFilter::AnyOf(alts) => alts
+                .iter()
+                .any(|alt| alt.iter().all(|f| self.filter_matches(o, *f, source))),
+            // 1.9: "a card that already has [a counter of this kind]".
+            TargetFilter::HasCounters { kind, at_least } => {
+                cite!("rule_counters_cards");
+                o.counters.get(&kind).copied().unwrap_or(0) >= at_least
+            }
             // 1.15.4 + 2.15: the same type as the card the condition named.
             TargetFilter::SameCardTypeAsTriggeringCard => self
                 .frames
@@ -7561,6 +7591,16 @@ impl Vm {
             R::QuantityAtLeast { amount, at_least } => {
                 cite!("rule_calculated_quantity");
                 self.eval_quantity(amount, source) >= *at_least
+            }
+            R::QuantityAtMost { amount, at_most } => {
+                cite!("rule_calculated_quantity");
+                self.eval_quantity(amount, source) <= *at_most
+            }
+            // 6.1.1: a run is in progress. Nothing about which server, and
+            // nothing about the run's outcome — only that there is one.
+            R::RunInProgress => {
+                cite!("rule_abilities_during_a_run");
+                self.current_run.is_some()
             }
             R::RunnerLinkAtLeast(n) => self.runner_link() >= *n as i32,
             // 1.17.1: the named player's score, read through the same
@@ -12222,11 +12262,17 @@ impl Vm {
         restriction: Option<&PaymentRestriction>,
     ) -> Vec<ObjectId> {
         let Some((_, criteria)) = &cost.trash_matching else { return Vec::new() };
+        // CR 1.15.2c again: the cards a cost describes are the installed ones
+        // unless a criterion names a zone. "Trash 1 of your other installed
+        // cards" says nothing and gets the default; "trash 1 card from your
+        // grip" (Null: Whistleblower) names the grip and lifts it.
+        cite!("rule_targets_must_be_in_play_area");
+        let zoned = criteria.iter().any(|f| f.names_zone());
         let mut out: Vec<ObjectId> = self
             .st
             .objects
             .values()
-            .filter(|o| o.controller == side && o.zone.is_installed())
+            .filter(|o| o.controller == side && (zoned || o.zone.is_installed()))
             .filter(|o| criteria.iter().all(|f| self.filter_matches(o, *f, Some(source))))
             .map(|o| o.id)
             .collect();

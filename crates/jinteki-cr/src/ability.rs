@@ -49,7 +49,22 @@ pub enum TriggerCond {
     /// instructions.
     TurnBegins { side: Side, requires: Vec<TriggerRequirement> },
     /// "When this run ends." Optionally only if it was successful.
-    RunEnds { successful_only: bool },
+    ///
+    /// `on` is the server the sentence names — "when a run **on HQ or R&D**
+    /// ends" (Zahya Sadeghi) — as content on the one condition (§12 rule 2),
+    /// the same list [`TriggerCond::MakesSuccessfulRun`] carries. An empty
+    /// list is a sentence naming no server, which is every run.
+    RunEnds { successful_only: bool, on: Vec<ServerId> },
+    /// CR 6.9.1: "when a run **on R&D** begins" (Captain Padma Isbister) —
+    /// the Run Initiation Phase, whose first step announces the attacked
+    /// server, so the server is known when the condition is met. `on` is the
+    /// same stipulation [`TriggerCond::RunEnds`] carries, and empty is a
+    /// sentence naming no server.
+    ///
+    /// Deliberately NOT [`TriggerCond::ServerApproached`]: 6.9.2 approaches a
+    /// server after every piece of ice protecting it has been passed, which
+    /// is a later step and does not happen at all if the run ends first.
+    RunBegins { on: Vec<ServerId> },
     /// "Whenever a run on this server ends." (AMAZE class; source in root)
     RunOnThisServerEnds,
     /// "Whenever the Runner trashes a Corp card." — one instance per card
@@ -174,7 +189,13 @@ pub enum TriggerCond {
     ThisServerBreached,
     /// "Whenever you breach <this server>…" (Cupellation class — the server
     /// is named by the sentence), with 9.6.5c requirements riding along.
-    BreachesServer { server: ServerId, requires: Vec<TriggerRequirement> },
+    ///
+    /// `servers` is the list the sentence names — one for Cupellation's
+    /// "breach R&D", two for Mercury's "breach **HQ or R&D**" — because a
+    /// printed "or" between two servers is one description and must not
+    /// become two abilities: an ordinal or a 9.3.6g flag stated once would
+    /// then be spent twice.
+    BreachesServer { servers: Vec<ServerId>, requires: Vec<TriggerRequirement> },
     /// CR 7.3.8: "when the current breach ends" — the condition the kernel
     /// gives the conditional ability a delayed breach is treated as.
     BreachEnds,
@@ -258,6 +279,17 @@ pub enum TriggerCond {
     /// every other, by 5.2.5a/b's identity: the same basic action, or the
     /// same ability of the same card.
     DifferentActionsThisTurn { side: Side, count: usize },
+    /// CR 5.2.5b, the other half: "the first time you perform the SAME action
+    /// three times in a row each turn" (The Collective). Met when the player
+    /// takes an action and the last `count` actions taken this turn are all
+    /// the same action by 5.2.5a/b's identity — the same basic action, or the
+    /// same ability of the same card.
+    ///
+    /// "In a row" is what makes this a different condition rather than a
+    /// polarity on [`TriggerCond::DifferentActionsThisTurn`]: that one asks
+    /// about EVERY action of the turn, this one about the run of actions
+    /// ending now, so a different action in between starts the count again.
+    SameActionInARow { side: Side, count: usize },
     /// CR 1.16.4d: "the first time each turn you spend N [click] on the same
     /// action…" (Jeeves class). The clicks counted are all of the clicks
     /// spent to TAKE the action, including those of an additional cost paid
@@ -291,7 +323,15 @@ pub enum TriggerCond {
     /// "Whenever you make a successful run" (Desperado class): the run is
     /// declared successful (6.8.4). `on` stipulates the servers the sentence
     /// names ("…a successful run on HQ or R&D" — Gemilang class); None = any.
-    MakesSuccessfulRun { on: Option<Vec<crate::object::ServerId>> },
+    /// `requires` is 9.6.5c's additional stipulation about the state at the
+    /// moment the run becomes successful — "…**after a subroutine resolved
+    /// during that run**" (Ryō "Phoenix" Ōno), which has to be part of the
+    /// CONDITION so a printed ordinal is not spent by a run that does not
+    /// meet it.
+    MakesSuccessfulRun {
+        on: Option<Vec<crate::object::ServerId>>,
+        requires: Vec<TriggerRequirement>,
+    },
     /// CR 10.9.2: "when this card is empty…" (Crowdfunding class). The
     /// condition can only be met after the card has been LOADED with counters
     /// of this kind by a preceding ability of the same card — a card with no
@@ -410,11 +450,26 @@ pub enum TriggerCond {
     /// because exposing is not one of 9.12.2c's aggregated effect classes.
     CardExposed,
     /// "Whenever an installed <side> card is trashed…" (District 99 /
-    /// Wasteland class). `of_types` narrows the description the way the
-    /// printed text does ("a program or piece of hardware"); empty is any
-    /// card type. CR 8.2.2a: a trash that was PREVENTED never happened, so
-    /// this condition is not met by it.
-    InstalledCardTrashed { side: Side, of_types: Vec<CardType> },
+    /// Wasteland class), "whenever **you** trash a piece of hardware **(from
+    /// any location)**" (Hiram "0mission" Svensson). CR 8.2.2a: a trash that
+    /// was PREVENTED never happened, so this condition is not met by it.
+    ///
+    /// Every stipulation a printed sentence can make about a trash is content
+    /// on this one atom (§12 rule 2), and `None`/empty/`false` is a sentence
+    /// making none of it:
+    /// - `owner` — 1.14.1, whose card it was ("a card **you own**");
+    /// - `by` — 1.14.5, who did the trashing ("**you** trash");
+    /// - `of_types` — the description's card type ("a program or piece of
+    ///   hardware");
+    /// - `installed_only` — where it was trashed from. The printed "(from any
+    ///   location)" is the parenthesis a card writes precisely because the
+    ///   usual reading is the installed one.
+    CardTrashed {
+        owner: Option<Side>,
+        by: Option<Side>,
+        of_types: Vec<CardType>,
+        installed_only: bool,
+    },
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
     /// condition once however many "for each" terms the calculation had.
@@ -493,6 +548,17 @@ pub enum TriggerRequirement {
     /// threshold is content (§12 rule 2), so a card asking the same question
     /// about a different number is the same atom.
     QuantityAtLeast { amount: crate::instr::Quantity, at_least: i64 },
+    /// "…if you did **not** break any subroutines during that run" (Mercury)
+    /// — the same comparison with the threshold at the other end, and a
+    /// separate atom for the reason `BoardHasAtMostMatching` is: the
+    /// direction is part of what the sentence says, and "at most 0" is the
+    /// only way a count says "none".
+    QuantityAtMost { amount: crate::instr::Quantity, at_most: i64 },
+    /// "…**during a run**" (Mercury) — CR 6.1.1: a run is in progress. Not a
+    /// question about the run's server or its success, only that there is
+    /// one; a breach can happen without a run (7.2), which is exactly the
+    /// case this stipulation excludes.
+    RunInProgress,
     /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
     /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
     /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`
@@ -1661,11 +1727,27 @@ pub fn trigger_matches(
         // checkpoint scan (it has the state access); this arm matches the
         // occurrence itself.
         (TriggerCond::TurnBegins { side, .. }, GameChange::TurnBegan { side: s }) => side == s,
-        (TriggerCond::RunEnds { .. }, GameChange::RunEnded { .. }) => true,
+        (TriggerCond::RunEnds { on, .. }, GameChange::RunEnded { server, .. }) => {
+            // The server the sentence names, where it names one — the same
+            // reading `MakesSuccessfulRun` gives its list.
+            on.is_empty() || on.contains(server)
+        }
+        // 6.9.1: the run begins at the Run Initiation Phase, whose first step
+        // has already announced the attacked server.
+        (TriggerCond::RunBegins { on }, GameChange::RunBegan { server }) => {
+            cite!("rule_run_initiation_phase");
+            on.is_empty() || on.contains(server)
+        }
         (TriggerCond::DifferentActionsThisTurn { side, .. }, GameChange::ActionTaken { side: s, .. }) => {
             // 5.2.5b: the "all different" test is a game-state question the
             // checkpoint scan answers against the turn's action history.
             cite!("rule_defferent_actions");
+            side == s
+        }
+        (TriggerCond::SameActionInARow { side, .. }, GameChange::ActionTaken { side: s, .. }) => {
+            // 5.2.5a/b again, from the other end: the "same action" test is
+            // the checkpoint scan's, which can read the turn's history.
+            cite!("rule_same_actions");
             side == s
         }
         (TriggerCond::ClicksSpentOnAction { side, .. }, GameChange::ClickSpent { side: s }) => {
@@ -1695,7 +1777,7 @@ pub fn trigger_matches(
             server_of_source == Some(*server)
         }
         (
-            TriggerCond::MakesSuccessfulRun { on },
+            TriggerCond::MakesSuccessfulRun { on, .. },
             GameChange::RunDeclaredSuccessful { server },
         ) => {
             cite!("rule_successful_run");
@@ -1811,11 +1893,11 @@ pub fn trigger_matches(
             server_of_source == Some(*server)
         }
         (
-            TriggerCond::BreachesServer { server, .. },
+            TriggerCond::BreachesServer { servers, .. },
             GameChange::BreachBegan { server: s },
         ) => {
             cite!("rule_breaching_servers");
-            server == s
+            servers.contains(s)
         }
         (TriggerCond::BreachEnds, GameChange::BreachEnded { .. }) => {
             cite!("rule_consecutive_breaches");
@@ -1950,14 +2032,18 @@ pub fn trigger_matches(
             true
         }
         (
-            TriggerCond::InstalledCardTrashed { side, .. },
-            GameChange::CardTrashed { obj, was_zone, .. },
+            TriggerCond::CardTrashed { owner, by, installed_only, .. },
+            GameChange::CardTrashed { obj, was_zone, by: trasher },
         ) => {
             // 8.2.2a: only a trash that actually happened records this change.
             // The `of_types` narrowing is applied by the checkpoint scan,
             // which can read the trashed card's type.
             cite!("rule_cancelled_movement");
-            was_zone.is_installed() && is_corp_card_side(trashed_is_corp(*obj)) == *side
+            (!*installed_only || was_zone.is_installed())
+                // 1.14.1: whose card it was.
+                && owner.is_none_or(|s| is_corp_card_side(trashed_is_corp(*obj)) == s)
+                // 1.14.5: who did the trashing.
+                && by.is_none_or(|s| *trasher == s)
         }
         (TriggerCond::SelfTrashedByDamage, GameChange::DamageSuffered { cards, .. }) => {
             cite!("rule_meat_net_damage");
@@ -2082,6 +2168,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::SelfScored { requires }
         | TriggerCond::ActionPhaseEnds { requires, .. }
         | TriggerCond::BreachesServer { requires, .. }
+        | TriggerCond::MakesSuccessfulRun { requires, .. }
         | TriggerCond::TurnBegins { requires, .. }
         | TriggerCond::EncounterBegins { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
