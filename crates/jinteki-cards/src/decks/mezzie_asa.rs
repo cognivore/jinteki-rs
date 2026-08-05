@@ -22,7 +22,7 @@ use crate::edsl::*;
 /// Estelle Moon — Asset: Executive. Rez 2, trash 3. ◆
 /// "Whenever you install a card in the root of a remote server, place 1 power
 ///  counter on this asset.
-///  <strong>[trash]:</strong> For each power counter on this asset, gain
+///  [trash]: For each power counter on this asset, gain
 ///  2[credit] and draw 1 card."
 ///
 /// COMPLETE. Two printed sentences: a conditional ability that counts, and a
@@ -62,7 +62,7 @@ pub fn estelle_moon() -> Card {
         .trash_cost(3)
         .unique()
         .text("Whenever you install a card in the root of a remote server, place 1 power counter on this asset.")
-        .text("<strong>[trash]:</strong> For each power counter on this asset, gain 2[credit] and draw 1 card.")
+        .text("[trash]: For each power counter on this asset, gain 2[credit] and draw 1 card.")
         .when(installs_a_card_in_the_root_of_a_remote_server(Corp), [place(CounterKind::Power, 1)])
         .named("a counter for every remote install")
         .paid(
@@ -78,7 +78,7 @@ pub fn estelle_moon() -> Card {
 
 /// Jeeves Model Bioroids — Asset: Alliance. Rez 2, trash 5. ◆
 /// "This card costs 0 influence if you have 6 or more
-///  non-<strong>alliance</strong> [haas-bioroid] cards in your deck.
+///  non-alliance [haas-bioroid] cards in your deck.
 ///  The first time you spend 3[click] on the same action each turn, gain
 ///  [click]."
 ///
@@ -111,7 +111,7 @@ pub fn jeeves_model_bioroids() -> Card {
         .cost(2)
         .trash_cost(5)
         .unique()
-        .text("This card costs 0 influence if you have 6 or more non-<strong>alliance</strong> [haas-bioroid] cards in your deck.")
+        .text("This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck.")
         .text("The first time you spend 3[click] on the same action each turn, gain [click].")
         .unimplemented("The first time you spend 3[click] on the same action each turn, gain [click].")
         .build()
@@ -119,7 +119,7 @@ pub fn jeeves_model_bioroids() -> Card {
 
 /// Lakshmi Smartfabrics — Asset. Rez 1, trash 3.
 /// "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics.
-///  <strong>X hosted power counters:</strong> Reveal an agenda worth X points
+///  X hosted power counters: Reveal an agenda worth X points
 ///  from HQ. The Runner cannot steal copies of that agenda for the remainder
 ///  of this turn."
 ///
@@ -151,10 +151,10 @@ pub fn lakshmi_smartfabrics() -> Card {
         .cost(1)
         .trash_cost(3)
         .text("Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics.")
-        .text("<strong>X hosted power counters:</strong> Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
+        .text("X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
         .when(corp_rezzes_a_card(), [place(CounterKind::Power, 1)])
         .named("a counter for every rez")
-        .unimplemented("<strong>X hosted power counters:</strong> Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
+        .unimplemented("X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
         .build()
 }
 
@@ -163,8 +163,8 @@ pub fn lakshmi_smartfabrics() -> Card {
 ///  it.
 ///  When your turn begins, take 2[credit] from this asset.
 ///  [interrupt] → When this asset would be trashed, you may shuffle it into
-///  R&D instead of adding it to Archives. <em>(It is still considered
-///  trashed.)</em>"
+///  R&D instead of adding it to Archives. (It is still considered
+///  trashed.)"
 ///
 /// PARTIAL: the campaign pays out and empties itself; the escape into R&D is
 /// marked.
@@ -202,21 +202,21 @@ pub fn marilyn_campaign() -> Card {
         .trash_cost(3)
         .text("When you rez this asset, load 8[credit] onto it. When it is empty, trash it.")
         .text("When your turn begins, take 2[credit] from this asset.")
-        .text("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. <em>(It is still considered trashed.)</em>")
+        .text("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)")
         .when(self_rezzed(), [load(CounterKind::Credit, 8)])
         .named("load eight on the rez")
         .when(empty_of(CounterKind::Credit), [trash_self()])
         .named("empty, so gone")
         .when(turn_begins(Corp), [take_hosted_credits(this_card(), 2, Corp)])
         .named("two a turn")
-        .unimplemented("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. <em>(It is still considered trashed.)</em>")
+        .unimplemented("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)")
         .build()
 }
 
 /// MCA Austerity Policy — Asset. Rez 1, trash 3. ◆
-/// "Once per turn → [click]<strong>:</strong> Place 1 power counter on this
+/// "Once per turn → [click]: Place 1 power counter on this
 ///  asset. When the Runner's next turn begins, they lose [click].
-///  [click], [trash], <strong>3 hosted power counters:</strong> Gain
+///  [click], [trash], 3 hosted power counters: Gain
 ///  [click][click][click][click]."
 ///
 /// COMPLETE. Two paid abilities; the first carries 9.3.6g's once-per-turn
@@ -247,8 +247,8 @@ pub fn mca_austerity_policy() -> Card {
         .cost(1)
         .trash_cost(3)
         .unique()
-        .text("Once per turn → [click]<strong>:</strong> Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click].")
-        .text("[click], [trash], <strong>3 hosted power counters:</strong> Gain [click][click][click][click].")
+        .text("Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click].")
+        .text("[click], [trash], 3 hosted power counters: Gain [click][click][click][click].")
         .paid_once_per_turn(
             clicks(1),
             [
@@ -275,8 +275,8 @@ pub fn mca_austerity_policy() -> Card {
 
 /// Tatu-Bola — ICE: Barrier. Rez 2, strength 1.
 /// "When the Runner passes this ice, you may swap it with a piece of ice from
-///  HQ. If you do, gain 4[credit]. <em>(The new ice is installed unrezzed. You
-///  do not pay an install cost.)</em>
+///  HQ. If you do, gain 4[credit]. (The new ice is installed unrezzed. You
+///  do not pay an install cost.)
 ///  [subroutine] End the run."
 ///
 /// COMPLETE. Two printed sentences, two instructions (9.11.3) — the swap, and
@@ -317,7 +317,7 @@ pub fn tatu_bola() -> Card {
         .faction("Jinteki")
         .subtypes(&["Barrier"])
         .cost(2)
-        .text("When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. <em>(The new ice is installed unrezzed. You do not pay an install cost.)</em>")
+        .text("When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. (The new ice is installed unrezzed. You do not pay an install cost.)")
         .text("[subroutine] End the run.")
         .may_when(
             passed(),
@@ -354,7 +354,7 @@ pub fn vanilla() -> Card {
 }
 
 /// Fairchild 3.0 — ICE: Code Gate - Bioroid - AP. Rez 6, strength 5.
-/// "<strong>Lose [click][click][click]:</strong> Break up to 3 subroutines on
+/// "Lose [click][click][click]: Break up to 3 subroutines on
 ///  this ice. Only the Runner can use this ability.
 ///  [subroutine] The Runner must pay 3[credit] or trash 1 of their installed
 ///  cards.
@@ -387,11 +387,11 @@ pub fn fairchild_3_0() -> Card {
         .faction("Haas-Bioroid")
         .subtypes(&["Code Gate", "Bioroid", "AP"])
         .cost(6)
-        .text("<strong>Lose [click][click][click]:</strong> Break up to 3 subroutines on this ice. Only the Runner can use this ability.")
+        .text("Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability.")
         .text("[subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards.")
         .text("[subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards.")
         .text("[subroutine] Do 1 core damage or end the run.")
-        .unimplemented("<strong>Lose [click][click][click]:</strong> Break up to 3 subroutines on this ice. Only the Runner can use this ability.")
+        .unimplemented("Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability.")
         // The card prints this subroutine twice, so it is written twice.
         .subroutine([performed_by(
             Runner,

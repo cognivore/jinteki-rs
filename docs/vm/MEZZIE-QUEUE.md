@@ -38,21 +38,21 @@ Identity is COMPLETE. Printed text below is from
       "[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters. / While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“"
 - [ ] **Project Vitruvius** ×3 — agenda · Research · adv 3/2
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
-- [x] **Estelle Moon** ×3 — asset · Executive · cost 2, trash 3
+- [x] **Estelle Moon** ◆ ×3 — asset · Executive · cost 2, trash 3
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
-- [ ] **Jeeves Model Bioroids** ×1 — asset · Alliance · cost 2, trash 5
+- [ ] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
 - [ ] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
 - [ ] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
-      "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. <em>(It is still considered trashed.)</em>"
-- [x] **MCA Austerity Policy** ×2 — asset · cost 1, trash 3
+      "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)"
+- [x] **MCA Austerity Policy** ◆ ×2 — asset · cost 1, trash 3
       "Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click]. / [click], [trash], 3 hosted power counters: Gain [click][click][click][click]."
 - [ ] **Mumba Temple** ×3 — asset · Alliance - Facility · cost 1, trash 3
       "This card costs 0 influence if you have 15 or fewer ice in your deck. / 2[recurring-credit] / Use these credits to rez cards."
-- [x] **Rashida Jaheem** ×3 — asset · Character · cost 0, trash 1
+- [x] **Rashida Jaheem** ◆ ×3 — asset · Character · cost 0, trash 1
       "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
-- [ ] **Spin Doctor** ×3 — asset · Character · cost 0, trash 2
+- [ ] **Spin Doctor** ◆ ×3 — asset · Character · cost 0, trash 2
       "When you rez this asset, draw 2 cards. / Remove this asset from the game: Shuffle up to 2 cards from Archives into R&D."
 - [ ] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
       "This operation is not trashed until another current is played or an agenda is stolen. / As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."
@@ -62,12 +62,12 @@ Identity is COMPLETE. Printed text below is from
       "After you resolve this operation, end your action phase. / Install up to 2 cards from Archives (paying all install costs)."
 - [ ] **Fully Operational** ×3 — operation · cost 1
       "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice."
-- [ ] **Ash 2X3ZB9CY** ×1 — upgrade · Bioroid · cost 2, trash 3
+- [ ] **Ash 2X3ZB9CY** ◆ ×1 — upgrade · Bioroid · cost 2, trash 3
       "Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run."
-- [ ] **Manegarm Skunkworks** ×1 — upgrade · cost 2, trash 3
+- [ ] **Manegarm Skunkworks** ◆ ×1 — upgrade · cost 2, trash 3
       "Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."
 - [x] **Tatu-Bola** ×1 — ice · Barrier · cost 2, str 1
-      "When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. <em>(The new ice is installed unrezzed. You do not pay an install cost.)</em> / [subroutine] End the run."
+      "When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. (The new ice is installed unrezzed. You do not pay an install cost.) / [subroutine] End the run."
 - [x] **Vanilla** ×3 — ice · Barrier · cost 0, str 0
       "[subroutine] End the run."
 - [ ] **Fairchild 3.0** ×2 — ice · Code Gate - Bioroid - AP · cost 6, str 5
@@ -100,7 +100,7 @@ Identity is COMPLETE.
 - [ ] **Moshing** ×3 — event · cost 0
       "As an additional cost to play this event, trash 3 cards from your grip. / Gain 3[credit] and draw 3 cards."
 - [ ] **Raindrops Cut Stone** ×2 — event · Run · cost 1
-      "Run any server. Whenever a subroutine resolves during that run <em>(including a subroutine that ends the run)</em>, place 1 power counter on this event. / When that run ends, draw 1 card for each hosted power counter and gain 3[credit]."
+      "Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event. / When that run ends, draw 1 card for each hosted power counter and gain 3[credit]."
 - [x] **Rebirth** ×1 — event · cost 0
       "Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it. / Limit 1 per deck."
 - [ ] **Steelskin Scarring** ×3 — event · cost 1
@@ -109,19 +109,19 @@ Identity is COMPLETE.
       "Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented."
 - [x] **Sure Gamble** ×2 — event · cost 5
       "Gain 9[credit]."
-- [x] **Boomerang** ×2 — hardware · cost 2
+- [x] **Boomerang** ◆ ×2 — hardware · cost 2
       "When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice. / [trash]: Break up to 2 subroutines. When this run ends, if it was successful, you may shuffle 1 copy of Boomerang from your heap into your stack."
-- [x] **Desperado** ×2 — hardware · Console · cost 3
+- [x] **Desperado** ◆ ×2 — hardware · Console · cost 3
       "+1[mu] / Gain 1[credit] whenever you make a successful run. / Limit 1 console per player."
-- [ ] **Zer0** ×3 — hardware · cost 1
+- [ ] **Zer0** ◆ ×3 — hardware · cost 1
       "Once per turn → [click], suffer 1 net damage: Gain 1[credit] and draw 2 cards."
 - [ ] **Clan Vengeance** ×3 — resource · Clan · cost 3
       "Whenever you suffer any amount of damage, place 1 power counter on Clan Vengeance. / [trash]: Trash 1 card from HQ at random for each power counter on Clan Vengeance."
-- [ ] **Mystic Maemi** ×3 — resource · Companion - Virtual · cost 1
+- [ ] **Mystic Maemi** ◆ ×3 — resource · Companion - Virtual · cost 1
       "When your turn begins and whenever you steal an agenda, place 1[credit] on this resource. / You can spend hosted credits to play events. / When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource."
 - [ ] **Same Old Thing** ×1 — resource · cost 0
       "[click], [click], [trash]: Play an event from your heap (paying its play cost)."
-- [ ] **Tsakhia "Bankhar" Gantulga** ×3 — resource · Connection · cost 1
+- [ ] **Tsakhia "Bankhar" Gantulga** ◆ ×3 — resource · Connection · cost 1
       "When your turn begins, you may choose a server. / During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve "[subroutine] Do 1 net damage."."
 - [ ] **Black Orchestra** ×2 — program · Icebreaker - Decoder · cost 3, str 2
       "Whenever you encounter a code gate, you may install this program from your heap. / 3[credit]: +2 strength. Then, if this program can interface with the code gate you are encountering, break up to 2 subroutines."

@@ -17202,7 +17202,7 @@ fn fairchild_3_0_subroutines_are_a_mandatory_choice() {
     let fairchild = jinteki_cards::find("Fairchild 3.0").expect("Fairchild 3.0 is in the card layer");
     assert_eq!(
         fairchild.unimplemented,
-        vec!["<strong>Lose [click][click][click]:</strong> Break up to 3 subroutines on this ice. Only the Runner can use this ability."],
+        vec!["Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability."],
         "exactly one printed line is still unsayable"
     );
 
