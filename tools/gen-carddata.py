@@ -11,6 +11,16 @@ Pipeline (see docs/CARD-COVERAGE.md):
   crates/jinteki-core/carddata/coverage.json   per-title implementation coverage
   docs/CARD-COVERAGE.md                        generated human summary
 
+Back faces: the EDN STRIPS double-sided cards' back-face text — its :faces
+entries are card-id pointers and flavor only — so a second input supplies it:
+a local clone of NSG's card DB (NullSignalGames/netrunner-cards-json), whose
+v2/cards/*.json carry the faces inline. Default location ../netrunner-cards-json
+beside this repo; override with --nsg-clone <path>. Every card whose v2 file
+has a non-empty faces[] gains a `faces` key ([{title, text}] in face order),
+and the clone's commit hash is recorded in coverage.json's _provenance.
+A v2 file with an EMPTY faces[] (Cyber Bureau, an upstream anomaly) gets no
+faces key — deliberately not worked around.
+
 Coverage sources:
   - jnet_impl / jnet_partial: (defcard "Title" ...) forms scanned from the
     reference implementation ../jinteki-reference/src/clj/game/cards/*.clj
@@ -27,11 +37,17 @@ Regenerate with:  python3 tools/gen-carddata.py
 import json
 import os
 import re
+import subprocess
 import sys
 from collections import OrderedDict
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW_EDN = os.path.join(REPO, "tools", "raw_data.edn")
+# The local NSG card-DB clone the back faces come from (see module docstring).
+NSG_CLONE = os.path.join(os.path.dirname(REPO), "netrunner-cards-json")
+for _i, _a in enumerate(sys.argv):
+    if _a == "--nsg-clone" and _i + 1 < len(sys.argv):
+        NSG_CLONE = sys.argv[_i + 1]
 REFERENCE_CARDS_DIR = os.path.join(
     os.path.dirname(REPO), "jinteki-reference", "src", "clj", "game", "cards"
 )
@@ -289,6 +305,47 @@ def scan_rust_behaviors(path):
     return titles
 
 
+# ── NSG v2 back faces ───────────────────────────────────────────────────────
+
+
+def load_v2_faces(clone_dir):
+    """{v2 card id: [{"title": str|None, "text": str}, …]} for every v2 card
+    whose faces[] is non-empty, in printed face order.
+
+    The v2 id is the filename slug (underscores); the EDN's :normalizedtitle
+    is the same slug with hyphens, which is the join key. A file with an
+    EMPTY faces[] contributes nothing (Cyber Bureau — upstream anomaly, left
+    exactly as upstream has it).
+    """
+    cards_dir = os.path.join(clone_dir, "v2", "cards")
+    if not os.path.isdir(cards_dir):
+        sys.exit(
+            f"error: NSG v2 clone not found at {clone_dir} (no v2/cards/); "
+            "clone NullSignalGames/netrunner-cards-json there or pass --nsg-clone <path>"
+        )
+    out = {}
+    for fname in sorted(os.listdir(cards_dir)):
+        if not fname.endswith(".json"):
+            continue
+        with open(os.path.join(cards_dir, fname), encoding="utf-8") as f:
+            d = json.load(f)
+        faces = d.get("faces") or []
+        if faces:
+            out[d["id"]] = [
+                OrderedDict([("title", fc.get("title")), ("text", fc.get("text"))])
+                for fc in faces
+            ]
+    return out
+
+
+def nsg_clone_commit(clone_dir):
+    """The clone's HEAD commit — the faces' provenance pin, recorded beside
+    the raw_data.edn pin in coverage.json's _provenance."""
+    return subprocess.check_output(
+        ["git", "-C", clone_dir, "rev-parse", "HEAD"], text=True
+    ).strip()
+
+
 # ── card normalization ──────────────────────────────────────────────────────
 
 
@@ -382,6 +439,32 @@ def main():
             by_title[t] = c
     cards = [normalize_card(c) for c in sorted(by_title.values(), key=lambda c: c.get(":title"))]
 
+    # Back faces from the NSG v2 clone (the EDN strips their text). Join on
+    # the slug: EDN :normalizedtitle is hyphenated, the v2 id underscored.
+    v2_faces = load_v2_faces(NSG_CLONE)
+    nsg_commit = nsg_clone_commit(NSG_CLONE)
+    faces_matched = 0
+    for c in cards:
+        slug = c.get("slug")
+        if not slug:
+            continue
+        faces = v2_faces.get(slug.replace("-", "_"))
+        if faces:
+            c["faces"] = faces
+            faces_matched += 1
+    unmatched = len(v2_faces) - faces_matched
+    print(
+        f"  NSG v2 faces: {len(v2_faces)} cards with faces, {faces_matched} joined "
+        f"(clone @ {nsg_commit[:12]})",
+        file=sys.stderr,
+    )
+    if unmatched:
+        joined = {c["slug"].replace("-", "_") for c in cards if c.get("faces")}
+        sys.exit(
+            "error: v2 cards with faces failed the slug join: "
+            f"{sorted(set(v2_faces) - joined)}"
+        )
+
     # Coverage sources.
     defcards = scan_defcards(REFERENCE_CARDS_DIR)
     rs_titles = scan_rust_behaviors(CARDDB_RS)
@@ -417,6 +500,10 @@ def main():
                         (
                             "card_data",
                             "tools/raw_data.edn (netrunner-data raw_data.edn)",
+                        ),
+                        (
+                            "faces_source",
+                            f"netrunner-cards-json v2/cards @ {nsg_commit}",
                         ),
                         ("reference", "jinteki-reference/src/clj/game/cards/*.clj"),
                         ("behavior_table", "crates/jinteki-core/src/carddb.rs"),
@@ -518,7 +605,12 @@ def main():
     lines.append("")
     lines.append(
         "- `crates/jinteki-core/carddata/cards.json` — printed data for every card "
-        "(deduped by title; the printing with the highest numeric code wins);"
+        "(deduped by title; the printing with the highest numeric code wins). "
+        "Double-sided cards carry a `faces` key with each back face's title and "
+        "text, copied from a local clone of NSG's "
+        "[netrunner-cards-json](https://github.com/NullSignalGames/netrunner-cards-json) "
+        f"(`v2/cards/*.json`, commit `{nsg_commit}`) — the EDN strips that text, "
+        "keeping only card-id pointers;"
     )
     lines.append(
         "- `crates/jinteki-core/carddata/coverage.json` — per-title flags: does a "

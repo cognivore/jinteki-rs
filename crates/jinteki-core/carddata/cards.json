@@ -14235,7 +14235,13 @@
   "min_deck_size": 45,
   "previous_codes": [],
   "slug": "dewi-subrotoputri-pedagogical-dhalang",
-  "standard_banned": false
+  "standard_banned": false,
+  "faces": [
+   {
+    "title": "Dewi Subrotoputri: Shadow Guide",
+    "text": "Whenever you make a successful run, if you have at least 1 unused [mu], you may flip this identity and draw 1 card."
+   }
+  ]
  },
  {
   "title": "Dhegdheer",
@@ -15715,7 +15721,13 @@
   "min_deck_size": 45,
   "previous_codes": [],
   "slug": "earth-station-sea-headquarters",
-  "standard_banned": false
+  "standard_banned": false,
+  "faces": [
+   {
+    "title": "Earth Station: Ascending to Orbit",
+    "text": "Limit 1 remote server.\nAs an additional cost to run a remote server, the Runner must pay 6[credit].\nWhen the Runner makes a successful run on HQ, flip this identity."
+   }
+  ]
  },
  {
   "title": "Earthrise Hotel",
@@ -24236,7 +24248,13 @@
   "min_deck_size": 45,
   "previous_codes": [],
   "slug": "hoshiko-shiro-untold-protagonist",
-  "standard_banned": true
+  "standard_banned": true,
+  "faces": [
+   {
+    "title": "Hoshiko Shiro: Mahou Shoujo",
+    "text": "When your turn begins, draw 1 card and lose 1[credit].\nWhen your turn ends, if you did not access any cards this turn, flip this identity."
+   }
+  ]
  },
  {
   "title": "Hostage",
@@ -27427,7 +27445,21 @@
   "min_deck_size": 45,
   "previous_codes": [],
   "slug": "jinteki-biotech-life-imagined",
-  "standard_banned": false
+  "standard_banned": false,
+  "faces": [
+   {
+    "title": "The Brewery: Jinteki Biotech",
+    "text": "When you flip this identity, do 2 net damage."
+   },
+   {
+    "title": "The Tank: Jinteki Biotech",
+    "text": "When you flip this identity, shuffle all cards in Archives into R&D."
+   },
+   {
+    "title": "The Greenhouse: Jinteki Biotech",
+    "text": "When you flip this identity, place 4 advancement counters on 1 installed card that you can advance."
+   }
+  ]
  },
  {
   "title": "Jinteki: Personal Evolution",
@@ -35156,7 +35188,21 @@
   "min_deck_size": 45,
   "previous_codes": [],
   "slug": "melies-u-only-the-brightest",
-  "standard_banned": true
+  "standard_banned": true,
+  "faces": [
+   {
+    "title": "Tenure Floors: Méliès U",
+    "text": "When you flip this identity to this side during a run on HQ, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.\nWhen the Runner’s discard phase ends, flip this identity."
+   },
+   {
+    "title": "Subsurface Labs: Méliès U",
+    "text": "When you flip this identity to this side during a run on R&D, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.\nWhen the Runner’s discard phase ends, flip this identity."
+   },
+   {
+    "title": "Disposal Grounds: Méliès U",
+    "text": "When you flip this identity to this side during a run on Archives, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.\nWhen the Runner’s discard phase ends, flip this identity."
+   }
+  ]
  },
  {
   "title": "Möbius",
@@ -36102,7 +36148,13 @@
   "min_deck_size": 45,
   "previous_codes": [],
   "slug": "nebula-talent-management-making-stars",
-  "standard_banned": false
+  "standard_banned": false,
+  "faces": [
+   {
+    "title": "Gemilang Arena: Burning Bright",
+    "text": "The first time each turn you play an operation, gain [click].\nWhen the Runner makes a successful run on HQ or R&D, flip this identity."
+   }
+  ]
  },
  {
   "title": "Negotiator",
@@ -46062,7 +46114,13 @@
   "min_deck_size": 40,
   "previous_codes": [],
   "slug": "sync-everything-everywhere",
-  "standard_banned": false
+  "standard_banned": false,
+  "faces": [
+   {
+    "title": null,
+    "text": "[click]: Flip this identity.\nYou may pay 2[credit] fewer when spending a [click] to trash a resource (not through a card ability)."
+   }
+  ]
  },
  {
   "title": "Sabotage",

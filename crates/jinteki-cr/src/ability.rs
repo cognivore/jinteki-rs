@@ -1477,7 +1477,16 @@ pub enum StaticDecl {
     /// run — 6.3.4: the run formally begins only after the attacked server is
     /// announced and any costs are paid, so nothing paid here is paid
     /// "during a run".
-    AdditionalRunActionCost(Cost),
+    ///
+    /// `on` is what the printed sentence says about the server: "…to make a
+    /// run" reaches every server ([`crate::instr::RunServerSet::Any`]), "…to
+    /// run HQ" names one (Earth Station: SEA Headquarters), and "…to run **a
+    /// remote server**" names 4.6.8's class, a set the game state computes
+    /// (Earth Station: Ascending to Orbit). One stipulation on this one
+    /// declaration (§12 rule 2), read at 6.9.1a where the attacked server is
+    /// already announced — which is why the cost can be asked per server at
+    /// all.
+    AdditionalRunActionCost { cost: Cost, on: crate::instr::RunServerSet },
     /// CR 9.12.3a/e: "You must make a run with your first [click] each turn."
     /// (Always Be Running class.) A requirement on the action window, not an
     /// effect: while it holds, the only actions offered are runs. 9.12.3e:

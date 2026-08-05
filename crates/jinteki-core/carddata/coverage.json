@@ -2,6 +2,7 @@
  "_provenance": {
   "generator": "tools/gen-carddata.py",
   "card_data": "tools/raw_data.edn (netrunner-data raw_data.edn)",
+  "faces_source": "netrunner-cards-json v2/cards @ 51e7c6d99838ca1197f27ad9f7a36d522b8204a8",
   "reference": "jinteki-reference/src/clj/game/cards/*.clj",
   "behavior_table": "crates/jinteki-core/src/carddb.rs"
  },

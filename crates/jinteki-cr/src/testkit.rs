@@ -5571,12 +5571,14 @@ pub fn successful_run_trace_upgrade(name: &'static str, base: i64) -> PrintedCar
 // ---------------------------------------------------------------------------
 
 /// Enhanced Login Protocol / Service Outage shape (6.3.4 / 1.16.10): "the
-/// Runner must pay [cost] as an additional cost to make a run."
+/// Runner must pay [cost] as an additional cost to make a run." The sentence
+/// names no server, so the declaration's set is every server.
 pub fn run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
-    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost(
-        extra,
-    )])
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost {
+        cost: extra,
+        on: crate::instr::RunServerSet::Any,
+    }])
     .labeled("surcharge: additional cost to make a run")];
     c
 }

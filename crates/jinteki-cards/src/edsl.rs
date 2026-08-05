@@ -2397,6 +2397,25 @@ pub fn non(f: TargetFilter) -> TargetFilter {
 pub fn additional_cost_to_access_a_card_in_a_remote_root(c: Cost) -> StaticDecl {
     StaticDecl::AdditionalAccessCost(c)
 }
+/// "As an additional cost to run <these servers>, the Runner must pay
+/// <cost>." (Earth Station: SEA Headquarters; 1.16.10 / 6.3.4.) The named
+/// servers are the sentence's stipulation on the one declaration — a
+/// sentence naming none ("…to make a run", Service Outage class) is the same
+/// declaration with [`jinteki_cr::instr::RunServerSet::Any`].
+pub fn additional_cost_to_run(servers: &[ServerId], c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalRunActionCost {
+        cost: c,
+        on: jinteki_cr::instr::RunServerSet::These(servers.to_vec()),
+    }
+}
+/// "As an additional cost to run **a remote server**, the Runner must pay
+/// <cost>." (Earth Station: Ascending to Orbit.) 4.6.8's remotes are a class
+/// the game state computes, not a list the card could print — which is why
+/// this is [`jinteki_cr::instr::RunServerSet::AnyRemote`] and never an
+/// enumeration.
+pub fn additional_cost_to_run_a_remote_server(c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalRunActionCost { cost: c, on: jinteki_cr::instr::RunServerSet::AnyRemote }
+}
 /// "…1 resource **or** piece of hardware" (2.15) — the type LIST as one
 /// description word, because a card has exactly one type and several
 /// [`of_type`] words together would mean all of them.

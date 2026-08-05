@@ -13278,14 +13278,20 @@ impl Vm {
         self.eval_quantity(&cost.credits, Some(source)).max(0) as u32
     }
 
-    /// CR 1.16.10 / 6.3.4: the additional cost to make a run, aggregated from
-    /// every active declaration into ONE all-at-once payment (1.16.10b).
-    pub fn run_action_cost(&self) -> Cost {
+    /// CR 1.16.10 / 6.3.4: the additional cost to make a run on THIS server,
+    /// aggregated from every active declaration whose stated server set
+    /// reaches it into ONE all-at-once payment (1.16.10b). The server is
+    /// known before any cost is paid — 6.9.1a announces the attacked server
+    /// first — which is what lets a declaration scoped to HQ or to 4.6.8's
+    /// remotes (Earth Station class) charge only the runs it names.
+    pub fn run_action_cost(&self, server: ServerId) -> Cost {
         cite!("rule_additional_cost");
         let mut total = Cost::free();
         for (_, d) in self.active_statics() {
-            if let StaticDecl::AdditionalRunActionCost(c) = d {
-                total = total.plus(&c);
+            if let StaticDecl::AdditionalRunActionCost { cost, on } = d {
+                if on.allows(server) {
+                    total = total.plus(&cost);
+                }
             }
         }
         total
@@ -15414,7 +15420,7 @@ impl Vm {
                     // 6.3.4: the [click] and the additional cost are both paid
                     // to MAKE the run; the run formally begins afterwards.
                     cite!("rule_abilities_during_a_run");
-                    let extra = self.run_action_cost();
+                    let extra = self.run_action_cost(server);
                     self.spend_click(Side::Runner);
                     self.pay_cost(Side::Runner, ObjectId(0), &extra);
                     self.initiate_run(server);
@@ -15962,7 +15968,7 @@ impl Vm {
                 // 1.16.10a: an additional cost to make a run may be declined,
                 // and declining means the action is not taken at all — the
                 // [click] is not spent either (1.16.4c's shape).
-                let extra = self.run_action_cost();
+                let extra = self.run_action_cost(server);
                 if !extra.is_free() {
                     cite!("rule_additional_cost");
                     cite!("rule_decline_additional_cost");

@@ -149,20 +149,41 @@ kernel words, not card patches.
   `TriggerCond::RunnerAccessesCard` to describe the card accessed.)*
 
 
-## Not a kernel gap: the back faces have no printed text here
+## No longer a data gap: the back faces ride in cards.json now
 
-`crates/jinteki-core/carddata/cards.json` is NSG's card data and carries FRONT
-faces only, so a double-sided identity's back face has no oracle text in this
-repo to copy from. SYS-D-10 forbids writing one from memory, so those
-identities wait on the data and not on the kernel. *(Hoshiko Shiro: Untold
-Protagonist; Dewi Subrotoputri: Pedagogical Dhalang; Jinteki Biotech: Life
-Imagined; Méliès U: Only the Brightest; SYNC: Everything, Everywhere; Earth
-Station: SEA Headquarters; Cyber Bureau: Keeping the Peace. Gemilang Arena,
-Nebula Talent Management's back face, was sourced before this was noticed.)*
+The netrunner-data EDN strips double-sided cards' back-face TEXT (its `:faces`
+entries are card-id pointers and flavor only), which is why
+`crates/jinteki-core/carddata/cards.json` used to carry front faces alone.
+`tools/gen-carddata.py` now takes a second input — a local clone of NSG's
+[netrunner-cards-json](https://github.com/NullSignalGames/netrunner-cards-json)
+(`../netrunner-cards-json` by default, `--nsg-clone <path>` to override) — and
+every card whose `v2/cards/*.json` file has a non-empty `faces[]` gains a
+`faces` key: `[{title, text}]` in face order, with the clone's commit pinned
+in `coverage.json`'s `_provenance`. So the double-siders' backs are now
+SYS-D-10-copyable from this repo, and each waits only on what it always
+really waited on:
+
+- **Hoshiko Shiro: Untold Protagonist**, **Dewi Subrotoputri: Pedagogical
+  Dhalang**, **SYNC: Everything, Everywhere** — their small kernel words
+  (Hoshiko's did-not-access-this-turn condition, Dewi's unused-[mu]
+  requirement, SYNC's remove-tag cost modifier).
+- **Jinteki Biotech: Life Imagined**, **Méliès U: Only the Brightest** — the
+  N-faces word: `PrintedCard::flip_face` is one back, and these carry three
+  (`faces[3]`), chosen rather than toggled.
+- **Cyber Bureau: Keeping the Peace** — upstream: its v2 file has `faces: []`
+  (empty), so its back has no text anywhere; per an explicit user directive
+  the anomaly is ignored, not worked around — no faces key, no
+  special-casing, until upstream fixes the data.
+
+Earth Station: SEA Headquarters was completed from exactly this data.
 
 ## Progress
 
+<<<<<<< HEAD
 - Implemented: **132 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+=======
+- Implemented: **130 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+>>>>>>> c442d78 (feat(carddata+cards): the back faces arrive from the source, and Earth Station flips)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -352,14 +373,14 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [x] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (15/19)
+## Corp — Weyland Consortium (16/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
 - [x] **Argus Security: Protection Guaranteed** — Whenever the Runner steals an agenda, they must take 1 tag or suffer 2 meat damage.
 - [ ] **BANGUN: When Disaster Strikes** — You may install agendas faceup. (This does not make their abilities active.) Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.
 - [x] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
-- [ ] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
+- [x] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
 - [x] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.
 - [x] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
 - [x] **Gagarin Deep Space: Expanding the Horizon** — As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].

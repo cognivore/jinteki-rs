@@ -12612,3 +12612,166 @@ fn au_co_spends_two_counters_at_turn_start_to_filter_the_top_of_rnd() {
         }
     }
 }
+
+/// Earth Station, front face: "As an additional cost to run HQ, the Runner
+/// must pay 1[credit]." — the toll is charged on HQ and on HQ only: a run on
+/// Archives asks for nothing.
+#[test]
+fn earth_station_taxes_the_run_on_hq_and_only_hq() {
+    let mut vm = Vm::empty(6300);
+    tk::install_identity(&mut vm, card("Earth Station: SEA Headquarters"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            // 1.16.10a: pay the 1[credit] and the run is made.
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::RunBegan { .. })).count(),
+        2,
+        "both runs happened: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        4,
+        "1[credit] for HQ and nothing for Archives — the declaration reaches \
+         only the server the sentence names: {}",
+        t.tail(20)
+    );
+}
+
+/// Earth Station, front face, the other half of 1.16.10a: the Runner may
+/// decline the additional cost, and then the action is not taken at all —
+/// no run, and the [click] not spent either (1.16.4c's shape).
+#[test]
+fn earth_station_declined_toll_costs_neither_the_run_nor_the_click() {
+    let mut vm = Vm::empty(6301);
+    tk::install_identity(&mut vm, card("Earth Station: SEA Headquarters"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::nested_cost().once(), Reply::PayCost(false))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunBegan { .. })),
+        "declined, so no run began: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        vm.st.runner.clicks, vm.st.runner.allotted_clicks,
+        "…and the [click] was not spent: {}",
+        t.tail(12)
+    );
+    assert_eq!(vm.st.runner.credits, 5, "…and no credit either");
+}
+
+/// Earth Station, front face: "Limit 1 remote server." (4.6.8f) — with one
+/// remote up, a new remote is not a destination the Corp may declare, and an
+/// install that names no other destination identifies none at all (8.5.14).
+#[test]
+fn earth_station_limits_the_corp_to_one_remote() {
+    let mut vm = Vm::empty(6302);
+    tk::install_identity(&mut vm, card("Earth Station: SEA Headquarters"), Side::Corp);
+    assert!(vm.can_create_new_remote(), "no remote exists yet");
+    tk::install_root(&mut vm, tk::vanilla_asset("First Asset", 0, 3), ServerId::Remote(1), false);
+    assert!(
+        !vm.can_create_new_remote(),
+        "4.6.8f: one remote already exists, so the limit forbids creating another"
+    );
+
+    // The install effect still runs; its destination just cannot be
+    // identified, so the card stays in HQ.
+    let hand = vm.new_object(tk::vanilla_asset("Second Asset", 0, 3), Zone::Hand(Side::Corp));
+    tk::install_root(&mut vm, tk::adt_button("Installer", hand), ServerId::Hq, true);
+    vm.start_turn(Side::Corp);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().first(), Reply::take("adt")).stop_at_action(),
+        Plan::runner().stopping_at_the_rest(),
+    );
+    assert!(t.ever_offered("adt"), "the installing ability was used: {}", t.tail(12));
+    assert_eq!(
+        vm.st.objects[&hand].zone,
+        Zone::Hand(Side::Corp),
+        "8.5.14: no destination could be identified, so no installation took place"
+    );
+    assert_eq!(vm.remote_servers().len(), 1, "and no second remote server exists");
+}
+
+/// Earth Station, both faces: "[click]: Flip this identity." turns the back
+/// face up; the back's "As an additional cost to run a remote server, the
+/// Runner must pay 6[credit]" reaches 4.6.8's whole class and no central;
+/// and "When the Runner makes a successful run on HQ, flip this identity."
+/// turns the front face home again.
+#[test]
+fn earth_station_flips_for_a_click_and_the_back_taxes_remotes_until_hq_flips_it_home() {
+    let mut vm = Vm::empty(6303);
+    let id = tk::install_identity(&mut vm, card("Earth Station: SEA Headquarters"), Side::Corp);
+    // The one remote the limit allows; its occupant is expensive to trash so
+    // the access default is to pass.
+    tk::install_root(&mut vm, tk::vanilla_asset("Orbital Asset", 0, 9), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::take("flip"))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            // The back face's toll on the remote: 6[credit], paid.
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            // HQ under the back face: no toll is asked at all — the next
+            // decision after the run action is the action window again.
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        vm.st.objects[&id].flipped == false,
+        "flipped up for the [click], home again on the successful HQ run: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        2,
+        "exactly two flips: the paid ability's and the HQ run's: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        1,
+        "7 − 6 for the remote, 0 for HQ — the back face's declaration names \
+         the class of remotes and nothing central: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::RunBegan { .. })).count(),
+        2,
+        "both runs were made: {}",
+        t.tail(30)
+    );
+}

@@ -71,7 +71,7 @@ jinteki.net pseudo-cards (basic actions and similar); they are engine-internal o
 
 `tools/raw_data.edn` (official card data, vendored byte-for-byte from [netrunner-data](https://github.com/NoahTheDuke/netrunner-data) `edn/raw_data.edn` at the commit pinned in `tools/raw_data.edn.lock`; actualise/verify/re-fetch it with `rust-script tools/fetch-carddata.rs [verify|pinned]` — no argument moves the pin to the latest upstream commit) is parsed by `tools/gen-carddata.py` (a small tolerant EDN reader), which emits:
 
-- `crates/jinteki-core/carddata/cards.json` — printed data for every card (deduped by title; the printing with the highest numeric code wins);
+- `crates/jinteki-core/carddata/cards.json` — printed data for every card (deduped by title; the printing with the highest numeric code wins). Double-sided cards carry a `faces` key with each back face's title and text, copied from a local clone of NSG's [netrunner-cards-json](https://github.com/NullSignalGames/netrunner-cards-json) (`v2/cards/*.json`, commit `51e7c6d99838ca1197f27ad9f7a36d522b8204a8`) — the EDN strips that text, keeping only card-id pointers;
 - `crates/jinteki-core/carddata/coverage.json` — per-title flags: does a reference `(defcard "Title" ...)` exist (`jnet_impl`), does it carry an `:implementation` caveat (`jnet_partial`), and does the Rust behavior table cover it (`rs_behavior`);
 - this document.
 

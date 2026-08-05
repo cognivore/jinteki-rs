@@ -509,6 +509,87 @@ pub fn blue_sun() -> Card {
         .build()
 }
 
+/// Earth Station: SEA Headquarters — Identity: Division.
+/// "Limit 1 remote server.
+///  As an additional cost to run HQ, the Runner must pay 1[credit].
+///  [click]: Flip this identity."
+///
+/// COMPLETE, both faces. Three printed lines: two static declarations and a
+/// paid ability.
+///
+/// "Limit 1 remote server" is 4.6.8f, the same declaration A Teia writes with
+/// a 2 (`StaticDecl::RemoteServerLimit`): a restriction (9.3.4) on install
+/// DESTINATIONS, read at step 8.5.16b — with one remote up, a new remote is
+/// not a destination the Corp may declare, and an install with no other
+/// destination identifies none at all (8.5.14).
+///
+/// The second line is 1.16.10 / 6.3.4's additional cost to the basic run
+/// ACTION (`StaticDecl::AdditionalRunActionCost`), with the server the
+/// sentence names as the declaration's stipulation — 6.9.1a announces the
+/// attacked server before any cost is paid, which is what makes "to run HQ"
+/// askable at all. Runs on R&D, Archives and the remote pay nothing.
+/// 1.16.10a: the Runner may decline, and declining means the action is not
+/// taken — the [click] is not spent either (1.16.4c's shape).
+///
+/// The third is an ordinary paid ability (9.5); its whole cost is the
+/// [click], and `Instruction::FlipIdentity` is rule_identity_double_sided's
+/// turn-over: the 10.3.1a checkpoint after it re-derives every ability from
+/// the face now showing, so the back's declarations take over at once.
+pub fn earth_station_sea_headquarters() -> Card {
+    card("Earth Station: SEA Headquarters")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Division"])
+        .text("Limit 1 remote server.")
+        .text("As an additional cost to run HQ, the Runner must pay 1[credit].")
+        .text("[click]: Flip this identity.")
+        .declares([remote_server_limit(1)])
+        .named("limit 1 remote server")
+        .declares([additional_cost_to_run(&[ServerId::Hq], credits(1))])
+        .named("the toll on HQ")
+        .paid(clicks(1), [flip_identity(Corp)])
+        .named("flip")
+        .flip_face(earth_station_ascending_to_orbit())
+        .build()
+}
+
+/// Earth Station: Ascending to Orbit — Identity: Division; the back face of
+/// Earth Station: SEA Headquarters (oracle: netrunner-cards-json v2,
+/// `faces[0]`).
+/// "Limit 1 remote server.
+///  As an additional cost to run a remote server, the Runner must pay
+///  6[credit].
+///  When the Runner makes a successful run on HQ, flip this identity."
+///
+/// The first line is the front's, printed again — the limit holds on both
+/// sides. The second is the same `AdditionalRunActionCost` declaration with
+/// the OTHER stipulation a sentence can make about the server: 4.6.8's
+/// remotes are a class the game state computes, never a list the card could
+/// print, so the declaration carries the class itself
+/// (`RunServerSet::AnyRemote`) and a run on any central pays nothing.
+///
+/// The third is the Gemilang Arena shape: 6.8.4's successful run, stipulated
+/// to HQ, met exactly when the Runner would rather be taxed again — flipping
+/// home is mandatory, which is the card's whole bargain.
+pub fn earth_station_ascending_to_orbit() -> Card {
+    card("Earth Station: Ascending to Orbit")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Division"])
+        .text("Limit 1 remote server.")
+        .text("As an additional cost to run a remote server, the Runner must pay 6[credit].")
+        .text("When the Runner makes a successful run on HQ, flip this identity.")
+        .declares([remote_server_limit(1)])
+        .named("limit 1 remote server")
+        .declares([additional_cost_to_run_a_remote_server(credits(6))])
+        .named("the toll on remotes")
+        .when(makes_successful_run_on(&[ServerId::Hq]), [flip_identity(Corp)])
+        .named("flip back")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
@@ -528,5 +609,6 @@ pub fn identities() -> Vec<Card> {
         weyland_because_we_built_it(),
         nuvem_sa(),
         blue_sun(),
+        earth_station_sea_headquarters(),
     ]
 }
