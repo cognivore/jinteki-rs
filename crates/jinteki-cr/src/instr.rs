@@ -1074,6 +1074,17 @@ pub enum Instruction {
     /// 6.2.8c: with no position to move to — the Success Phase, the Run Ends
     /// Phase, or no run at all — the Runner does nothing.
     MoveRunnerToIce { ice: TargetSpec, encounter: bool },
+    /// CR 6.2.8b: "The Runner moves to **the outermost position** of <a
+    /// server>." That server becomes the attacked server; if any ice
+    /// protects it, the Runner's position becomes the outermost such
+    /// piece's and the current timing step becomes the Approach Ice Phase
+    /// (6.9.2) — the rule names a POSITION rather than a piece of ice, so
+    /// unlike [`Instruction::MoveRunnerToIce`] it never encounters directly:
+    /// the approach is the rule's, and 6.4.4 decides from there. If no ice
+    /// protects the server, the Runner ceases to have a position and the
+    /// step becomes the Movement Phase (6.9.4). 6.2.8c: during the Success
+    /// Phase, the Run Ends Phase, or outside a run, nothing.
+    MoveRunnerToOutermost { server: ServerRef },
     /// CR 1.14.5: "<player> does X." — an instruction naming the player who
     /// carries out the effect. By DEFAULT the ability's controller carries
     /// out every effect and makes every choice it requires (1.14.5); where
@@ -1325,6 +1336,9 @@ impl Instruction {
             // as it runs — the offer itself names no object.
             | Instruction::OfferAction { .. }
             | Instruction::BypassEncounteredIce | Instruction::ChangeAttackedServer { .. }
+            // 6.2.8b: the server is a ServerRef, never an object — a
+            // maintained-choice server was chosen when it was maintained.
+            | Instruction::MoveRunnerToOutermost { .. }
             | Instruction::PurgeVirusCounters | Instruction::FlipIdentity(..)
             | Instruction::SecretlySetFlipFace(..) | Instruction::TrashSelf
             | Instruction::StealSelfAgenda | Instruction::ScoreSelfAgenda | Instruction::InstallCards { .. }
@@ -1472,7 +1486,8 @@ impl Instruction {
             | Instruction::AddCardsToHand { .. } | Instruction::AddCardsToHeap { .. }
             | Instruction::AddToScoreArea { .. } | Instruction::TrashRandomFromHand { .. }
             | Instruction::HostCards { .. } | Instruction::SwapCards { .. } | Instruction::MoveIce { .. }
-            | Instruction::MoveRunnerToIce { .. } | Instruction::Sabotage { .. } | Instruction::RemoveCountersFromPlayer { .. }
+            | Instruction::MoveRunnerToIce { .. } | Instruction::MoveRunnerToOutermost { .. }
+            | Instruction::Sabotage { .. } | Instruction::RemoveCountersFromPlayer { .. }
             | Instruction::ReduceImminentCost { .. } | Instruction::IdentifyMark | Instruction::LoadCounters { .. }
             | Instruction::TakeBadPublicity { .. } | Instruction::GainAllottedClicks(..) | Instruction::RefillRecurring(..)
             | Instruction::TurnFormallyBegins(..) | Instruction::MandatoryDraw | Instruction::DiscardToHandSize(..)
@@ -1640,6 +1655,46 @@ pub enum ChoiceSpec {
     /// arrives as an answer to a decision instead. The namespace and the
     /// exclusion are both content on this one variant (§12 rule 2).
     Named { of: NameSpace, excluding: Option<NameExclusion> },
+    /// CR 1.15.1b + 4.6.8: "Choose a server other than the attacked server."
+    /// (AgInfusion class.) A choice BETWEEN servers is 9.11.4g's option
+    /// choice wherever its branches can be written — the three centrals can —
+    /// but 4.6.8d's remote servers exist only while cards make them up, so
+    /// "a server" said of ALL the servers there are has no set of branches
+    /// at card-write time. The namespace closes at RESOLUTION instead: the
+    /// servers are enumerated then, the stated exclusion is applied, and the
+    /// value arrives as the answer to a decision, exactly as
+    /// [`ChoiceSpec::Named`]'s open namespaces do. The exclusion is content
+    /// on this one variant (§12 rule 2); `None` is a bare "choose a server".
+    AnyServer { excluding: Option<ServerExclusion> },
+}
+
+/// CR 6.1.2: a server a resolution-enumerated server choice may NOT name —
+/// the "other than …" of the sentence, read from the game when the options
+/// are built rather than written as a name (4.6.8's remotes have none to
+/// write, and even a central exclusion is a fact about the RUN, not about
+/// the card).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerExclusion {
+    /// "…other than the attacked server." (6.1.2 — the server announced at
+    /// initiation, or as since changed.) Outside a run nothing is excluded.
+    AttackedServer,
+}
+
+/// A server POSITION in an instruction — which server an effect that acts on
+/// one means. A card can name a central outright (4.6.7's three exist before
+/// the game does); "**that** server", said of a choice the ability just made,
+/// is 9.10.3's back-reference, read the way [`TargetSpec::MaintainedChoice`]
+/// reads a remembered object — which is the only way an instruction can ever
+/// reach one of 4.6.8's remotes, since none exists to name at card-write
+/// time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerRef {
+    /// A server the card names outright ("HQ").
+    Server(ServerId),
+    /// CR 9.10.3: the server this source's maintained choice remembers under
+    /// `key` (AgInfusion's "that server"). Names nothing while no server is
+    /// being maintained there.
+    MaintainedChoice(&'static str),
 }
 
 /// CR 1.15.1b: the OPEN namespaces a card can direct a player to name — the
@@ -1895,15 +1950,29 @@ pub enum TargetFilter {
     /// encounter with an uninstalled card is still an encounter, which is why
     /// this reads the encounter record rather than any position.
     IsEncounteredIce,
+    /// CR 6.4.1/6.4.2: "the piece of ice the Runner is approaching" — the
+    /// ice in the Runner's current position while the run's current timing
+    /// step is inside the Approach Ice Phase (6.9.2; 6.4.2 makes the
+    /// approach that phase's span at that ice's position). The approach
+    /// fixes the card the way an encounter fixes
+    /// [`TargetFilter::IsEncounteredIce`], so there is no selection left for
+    /// 1.15.2c to restrict: a cost that trashes "the unrezzed piece of ice
+    /// the Runner is approaching" (AgInfusion) names exactly it, and nothing
+    /// at all in any other phase — a position still occupied after the pass
+    /// (6.9.4a-d) is no longer being APPROACHED, and an encounter has a
+    /// criterion of its own.
+    IsApproachedIce,
     /// CR 6.2.1/6.2.2: "the outermost piece of ice protecting its server" —
     /// the ice in ITS OWN server's outermost occupied position (positions are
     /// innermost first, so it is the last ice in the sequence). Read against
     /// whatever server the candidate protects, so one atom serves "…the
     /// outermost piece of ice protecting **any** server" (Acme Consulting:
-    /// conjoined with [`TargetFilter::IsEncounteredIce`]) and "…the outermost
-    /// piece of ice protecting **that** server" (AgInfusion: conjoined with a
-    /// server-naming criterion). Hosted ice occupies no position (6.2.1a) and
-    /// is never this.
+    /// conjoined with [`TargetFilter::IsEncounteredIce`]) wherever a
+    /// sentence DESCRIBES such ice. (AgInfusion's "the outermost position
+    /// of that server" is not this atom at all: 6.2.8b reads it as a
+    /// movement to a POSITION — [`Instruction::MoveRunnerToOutermost`] —
+    /// and the ice there is met by approaching it.) Hosted ice occupies no
+    /// position (6.2.1a) and is never this.
     OutermostIceOfItsServer,
     /// Cards in a player's hand (Ashigaru-class counting).
     CardsInHandOf(Side),
@@ -2334,6 +2403,10 @@ impl TargetFilter {
                 // encounter with an UNINSTALLED card is still an encounter,
                 // so the description must reach outside the play area.
                 | TargetFilter::IsEncounteredIce
+                // 6.2.1: only ice PROTECTING a server occupies the position
+                // an approach is at, so this criterion already names the
+                // play area.
+                | TargetFilter::IsApproachedIce
                 // 6.2.1: only ice PROTECTING a server occupies a position, so
                 // this criterion already names the play area.
                 | TargetFilter::OutermostIceOfItsServer

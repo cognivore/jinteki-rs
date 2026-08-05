@@ -16243,3 +16243,333 @@ fn mirrormorph_comes_back_the_next_turn() {
         t.tail(30)
     );
 }
+
+fn ag_infusion_trashes_the_approached_ice_and_moves_the_runner_to_the_chosen_remote() {
+    let mut vm = Vm::empty(6430);
+    tk::install_identity(&mut vm, card("AgInfusion: New Miracles for a New World"), Side::Corp);
+    let gate = tk::install_ice(&mut vm, tk::vanilla_ice("Gate", 0, 1), ServerId::Hq, false);
+    let wall = tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 0, 1), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp()
+            .when(
+                Match::paid().approaching_ice().offering("new miracles"),
+                Reply::take("new miracles"),
+            )
+            .when(Match::choose_server(), Reply::Server(ServerId::Remote(1))),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            // 6.9.4c on the remote, after passing its encountered outermost
+            // ice — halt with the redirected run still in progress.
+            .when(Match::of(Kind::JackOut), Reply::Halt),
+    );
+    script.run(&mut vm);
+    let t = script.transcript();
+
+    let choices: Vec<_> = t.entries.iter().filter(|e| e.kind() == Kind::ChooseServer).collect();
+    assert_eq!(choices.len(), 1, "one server choice was put to the Corp: {}", t.tail(60));
+    assert_eq!(choices[0].side, Side::Corp, "1.14.5: the ability's controller chooses");
+    assert_eq!(
+        choices[0].spec,
+        jinteki_cr::decision::DecisionSpec::ChooseServer {
+            options: vec![ServerId::Rnd, ServerId::Archives, ServerId::Remote(1)],
+        },
+        "every server there IS except the attacked one — the remote created \
+         this game included, HQ excluded: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&gate].zone,
+        Zone::Discard(Side::Corp),
+        "1.16.10: the approached ice was trashed as the trigger cost: {}",
+        t.tail(60)
+    );
+    let approached = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::IceApproached { ice } if *ice == wall));
+    let encountered = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == wall));
+    assert!(
+        approached.is_some(),
+        "6.2.8b: the move is an approach of the remote's outermost ice: {}",
+        t.tail(60)
+    );
+    assert!(
+        encountered.is_some(),
+        "…and 6.4.4 turns the approach of a REZZED ice into the encounter: {}",
+        t.tail(60)
+    );
+    assert!(approached < encountered, "approached first, encountered from there");
+    let r = vm.run_ctx().expect("halted at 6.9.4c with the run in progress");
+    assert_eq!(r.server, ServerId::Remote(1), "6.2.8b: that server became the attacked server");
+    assert_eq!(
+        r.position,
+        Some(vm.position_of_ice(wall).unwrap().1),
+        "…and the Runner stands in its outermost position: {}",
+        t.tail(60)
+    );
+}
+
+/// AgInfusion, the chosen server protected by NO ice: 6.2.8b's other half.
+/// The Runner ceases to have a position and the current timing step becomes
+/// the Movement Phase — no approach, no encounter, no pass (the run did not
+/// reach the phase from an approach or an encounter) — and the run continues
+/// toward the server itself (6.9.4g).
+#[test]
+fn ag_infusion_sends_the_runner_straight_to_the_server_when_the_chosen_one_has_no_ice() {
+    let mut vm = Vm::empty(6431);
+    tk::install_identity(&mut vm, card("AgInfusion: New Miracles for a New World"), Side::Corp);
+    let gate = tk::install_ice(&mut vm, tk::vanilla_ice("Gate", 0, 1), ServerId::Hq, false);
+    // 4.6.8d: a root card alone is enough for the remote to EXIST — and to
+    // be offered.
+    tk::install_root(&mut vm, tk::vanilla_asset("Vault", 0, 3), ServerId::Remote(1), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(
+                Match::paid().approaching_ice().offering("new miracles"),
+                Reply::take("new miracles"),
+            )
+            .when(Match::choose_server(), Reply::Server(ServerId::Remote(1))),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&gate].zone,
+        Zone::Discard(Side::Corp),
+        "the cost was still paid: {}",
+        t.tail(60)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::EncounterBegan { .. })),
+        "no ice there, so nothing was encountered anywhere this run: {}",
+        t.tail(60)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::ServerApproached { server: ServerId::Remote(1) })),
+        "6.2.8b + 6.9.4g: with no position the run continued to the server itself: {}",
+        t.tail(60)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Remote(1), .. }
+        )),
+        "…and was declared successful THERE, not on HQ: {}",
+        t.tail(60)
+    );
+}
+
+/// AgInfusion, the chosen server's outermost UNREZZED: the documented
+/// reading. "The Runner moves to the outermost position of that server" is
+/// 6.2.8b, and 6.2.8b makes the move an APPROACH — never a direct or forced
+/// encounter (6.5.9a is stated for abilities that encounter "without first
+/// changing their position", and this sentence moves). So the unrezzed
+/// outermost is approached, the Corp may rez it in the 6.9.2b window the
+/// approach opens (6.4.1/6.4.3), and only then does 6.4.4 deliver the
+/// printed "encounters any ice there".
+#[test]
+fn ag_infusion_approaches_an_unrezzed_outermost_and_the_corp_may_rez_it_into_the_encounter() {
+    let mut vm = Vm::empty(6432);
+    tk::install_identity(&mut vm, card("AgInfusion: New Miracles for a New World"), Side::Corp);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Gate", 0, 1), ServerId::Hq, false);
+    let wall = tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 2, 1), ServerId::Remote(1), false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(
+                Match::paid().approaching_ice().offering("new miracles"),
+                Reply::take("new miracles"),
+            )
+            .when(Match::choose_server(), Reply::Server(ServerId::Remote(1)))
+            // The second approach window of the run — the one 6.2.8b's move
+            // opened on the remote — is where 6.4.3 lets the Corp rez the
+            // approached ice.
+            .when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+
+    let approached = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::IceApproached { ice } if *ice == wall));
+    let encountered = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == wall));
+    assert!(
+        approached.is_some(),
+        "6.2.8b: the unrezzed outermost is APPROACHED, not force-encountered: {}",
+        t.tail(60)
+    );
+    assert!(
+        vm.st.objects[&wall].faceup,
+        "6.4.1/6.4.3: the approach opened the rez window and the Corp used it: {}",
+        t.tail(60)
+    );
+    assert_eq!(vm.st.corp.credits, 3, "…paying Wall's printed 2[credit] rez cost");
+    assert!(
+        encountered.is_some() && approached < encountered,
+        "6.4.4: rezzed during the approach, encountered after it — the printed \
+         'encounters any ice there' arrives through the run's own structure: {}",
+        t.tail(60)
+    );
+}
+
+/// AgInfusion's arrow: 9.3.6g's once-per-turn flag is spent by using the
+/// ability, so the second approach of an unrezzed piece of ice in the same
+/// turn offers nothing.
+#[test]
+fn ag_infusion_is_offered_once_per_turn() {
+    let mut vm = Vm::empty(6433);
+    tk::install_identity(&mut vm, card("AgInfusion: New Miracles for a New World"), Side::Corp);
+    let inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner", 0, 1), ServerId::Hq, false);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer", 0, 1), ServerId::Hq, false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(
+                Match::paid().approaching_ice().offering("new miracles"),
+                Reply::take("new miracles"),
+            )
+            .when(Match::choose_server(), Reply::Server(ServerId::Archives)),
+        Plan::runner()
+            .when(Match::action().times(2), Reply::run(ServerId::Hq))
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+
+    let offers = t
+        .entries
+        .iter()
+        .filter(|e| e.kind() == Kind::Paid)
+        .filter(|e| {
+            e.options().iter().any(|o| matches!(
+                o,
+                jinteki_cr::decision::WindowOption::TriggerPaid { label, .. }
+                    if label.contains("new miracles")
+            ))
+        })
+        .count();
+    assert_eq!(
+        offers, 1,
+        "the flag was spent by the first use — the second run's approach of \
+         Inner, the same turn, offered nothing: {}",
+        t.tail(60)
+    );
+    // Each run met the outermost ice of its moment: Outer paid the first
+    // use's cost; Inner — outermost once Outer left — was approached on the
+    // second run and simply passed.
+    assert_eq!(
+        vm.st.objects[&outer].zone,
+        Zone::Discard(Side::Corp),
+        "the first approach's ice went to the cost: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&inner].zone,
+        Zone::Ice(ServerId::Hq),
+        "the second approach's ice stayed exactly where it was: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::RunBegan { .. }))
+            .count(),
+        2,
+        "two runs were made: {}",
+        t.tail(60)
+    );
+}
+
+/// AgInfusion is not offered at all while the approached ice is REZZED:
+/// 9.5.6b's timing restriction reads the sentence's own stipulation — "the
+/// **unrezzed** piece of ice the Runner is approaching" — and 1.16.1b agrees
+/// from the cost's side, whose description reaches no card.
+#[test]
+fn ag_infusion_is_not_offered_when_the_approached_ice_is_rezzed() {
+    let mut vm = Vm::empty(6434);
+    tk::install_identity(&mut vm, card("AgInfusion: New Miracles for a New World"), Side::Corp);
+    let gate = tk::install_ice(&mut vm, tk::vanilla_ice("Gate", 0, 1), ServerId::Hq, true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::of(Kind::JackOut), Reply::JackOut(false))
+            .stop_at_action(),
+    );
+
+    assert!(
+        !t.entries.iter().filter(|e| e.kind() == Kind::Paid).any(|e| {
+            e.options().iter().any(|o| matches!(
+                o,
+                jinteki_cr::decision::WindowOption::TriggerPaid { label, .. }
+                    if label.contains("new miracles")
+            ))
+        }),
+        "no window of the run offered the ability: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&gate].zone,
+        Zone::Ice(ServerId::Hq),
+        "and nothing was trashed: {}",
+        t.tail(60)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::EncounterBegan { ice, .. } if *ice == gate)),
+        "the rezzed ice was encountered as the run's own structure provides: {}",
+        t.tail(60)
+    );
+}

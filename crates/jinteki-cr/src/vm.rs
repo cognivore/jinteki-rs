@@ -280,6 +280,15 @@ pub enum DecisionCtx {
         source: ObjectId,
         excluding: Option<crate::instr::NameExclusion>,
     },
+    /// CR 1.15.1b + 4.6.8 / 9.10.3: the choosing player picks a server from
+    /// the resolution-enumerated list, and the source starts maintaining it.
+    /// Asked at the instruction's resolution, never as an announcement — a
+    /// server is not an object (1.15.1b), so there is no target to announce.
+    MaintainServerChoice {
+        key: &'static str,
+        duration: crate::lingering::WantedDuration,
+        source: ObjectId,
+    },
 }
 
 /// CR 8.5.16: one installation in progress. Installing is a procedure, not
@@ -5381,7 +5390,8 @@ impl Vm {
             | Instruction::SwapCards { .. }
             | Instruction::SwitchIdentity { .. }
             | Instruction::MoveIce { .. }
-            | Instruction::MoveRunnerToIce { .. } => {
+            | Instruction::MoveRunnerToIce { .. }
+            | Instruction::MoveRunnerToOutermost { .. } => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::RemoveCountersFromPlayer { side, amount, .. }
@@ -7986,6 +7996,27 @@ impl Vm {
             TargetFilter::IsEncounteredIce => {
                 cite!("rule_encounter_ice_phase");
                 self.st.encounter.as_ref().is_some_and(|e| e.ice == o.id)
+            }
+            // 6.4.1/6.4.2: the ice in the Runner's position while the run's
+            // current timing step is inside the Approach Ice Phase — the
+            // approach fixes the card, and no other phase is an approach: a
+            // position still occupied after the pass (6.9.4a-d) is not being
+            // approached, and during an encounter the run structure is
+            // parked at its encounter step.
+            TargetFilter::IsApproachedIce => {
+                cite!("rule_approach_ice_phase");
+                cite!("rule_approach_condition");
+                self.run_ctx()
+                    .and_then(|r| self.approached_ice(r))
+                    .is_some_and(|ice| ice == o.id)
+                    && matches!(
+                        self.run_step_id(),
+                        Some(
+                            "step_approach_begins"
+                                | "step_approach_paw"
+                                | "step_approach_complete"
+                        )
+                    )
             }
             // 6.2.1/6.2.2: the last ice in ITS OWN server's innermost-first
             // sequence. Hosted ice occupies no position (6.2.1a), so it is
@@ -11179,6 +11210,41 @@ impl Vm {
                         );
                         return;
                     }
+                    // 4.6.8d: the set of servers exists only NOW — remotes
+                    // are made of the cards currently making them up — so
+                    // the options 9.11.4g could not write on the card are
+                    // enumerated here, the stated exclusion is applied, and
+                    // the choice arrives as an answer (1.15.1b: a server is
+                    // not an object, so nothing is announced).
+                    crate::instr::ChoiceSpec::AnyServer { excluding } => {
+                        cite!("rule_remote_server_existence");
+                        cite!("rule_object_subroutine_targets");
+                        let mut options = self.all_servers();
+                        if let Some(crate::instr::ServerExclusion::AttackedServer) = excluding {
+                            // 6.1.2: "other than the attacked server" reads
+                            // the run in progress; outside one, nothing is
+                            // excluded.
+                            cite!("rule_attacked_server");
+                            if let Some((_, atk, _)) = self.current_run {
+                                options.retain(|s| *s != atk);
+                            }
+                        }
+                        if options.is_empty() {
+                            // 9.11.2: no server to choose — as much as
+                            // possible is nothing, and nothing is maintained.
+                            return;
+                        }
+                        self.ask(
+                            controller,
+                            DecisionSpec::ChooseServer { options },
+                            DecisionCtx::MaintainServerChoice {
+                                key,
+                                duration: *duration,
+                                source: source.obj,
+                            },
+                        );
+                        return;
+                    }
                 };
                 let Some(choice) = value else { return };
                 self.maintain_choice(source.obj, key, choice, *duration);
@@ -11809,6 +11875,66 @@ impl Vm {
                     "step_encounter_begins"
                 } else {
                     "step_approach_begins"
+                });
+            }
+            Instruction::MoveRunnerToOutermost { server } => {
+                // 6.2.8b: "the outermost position" of a server — the rule
+                // names a POSITION, so the move is always an approach: the
+                // server becomes the attacked server, and with ice the
+                // Runner's position becomes the outermost piece's and the
+                // timing step the Approach Ice Phase; with none the Runner
+                // ceases to have a position and the step becomes the
+                // Movement Phase (whose 6.9.4a pass is skipped because the
+                // run did not get there from an approach or an encounter).
+                cite!("rule_move_runner_to_position");
+                cite!("rule_move_to_specific_position");
+                let server = match server {
+                    crate::instr::ServerRef::Server(s) => Some(*s),
+                    // 9.10.3: "that server" — the one this source's
+                    // maintained choice remembers; nothing maintained,
+                    // nothing to move to (9.1.4's stranded reference).
+                    crate::instr::ServerRef::MaintainedChoice(k) => {
+                        cite!("rule_lingering_effect_maintain_choice");
+                        match self.maintained_choice(source.obj, k) {
+                            Some(crate::lingering::ChoiceValue::Server(s)) => Some(s),
+                            _ => None,
+                        }
+                    }
+                };
+                let Some(server) = server else { return };
+                // 6.2.8c: no position can be entered during the Success
+                // Phase, the Run Ends Phase, or outside a run.
+                let movable = self
+                    .run_ctx()
+                    .map(|r| !r.reached_success && !r.jump_to_run_ends)
+                    .unwrap_or(false);
+                if !movable {
+                    cite!("rule_ineffective_move");
+                    cite!("rule_no_position_after_approach_server");
+                    return;
+                }
+                let outermost = self.positions_at(server).last().map(|p| p.id);
+                // 6.2.8d: already approaching that very position — nothing.
+                if let Some(pos) = outermost {
+                    if self.run_ctx().map(|r| (r.server, r.position) == (server, Some(pos)))
+                        == Some(true)
+                    {
+                        cite!("rule_move_to_current_ice");
+                        return;
+                    }
+                }
+                if let Some(r) = self.run_ctx_mut() {
+                    r.server = server;
+                    r.position = outermost;
+                    r.came_from_ice = false;
+                }
+                if let Some((_, s, _)) = self.current_run.as_mut() {
+                    *s = server;
+                }
+                self.jump_run_to(if outermost.is_some() {
+                    "step_approach_begins"
+                } else {
+                    "step_pass_ice"
                 });
             }
             Instruction::RemoveTags(amount) => {
@@ -13921,8 +14047,13 @@ impl Vm {
                         }
                         let Some(r) = self.run_ctx() else { continue };
                         let Some(ice) = self.approached_ice(r) else { continue };
-                        if rezzed && !self.st.objects[&ice].faceup {
-                            continue;
+                        // 8.1.2: a rez-state stipulation, either way round —
+                        // "this rezzed ice" or "the unrezzed piece of ice
+                        // the Runner is approaching".
+                        if let Some(want) = rezzed {
+                            if self.st.objects[&ice].faceup != want {
+                                continue;
+                            }
                         }
                         if let Some(sub) = required_subtype {
                             let effects = self.char_effects();
@@ -17097,6 +17228,30 @@ impl Vm {
                     );
                 }
             }
+            (
+                DecisionCtx::MaintainServerChoice { key, duration, source },
+                DecisionAnswer::Server(s),
+            ) => {
+                // 1.15.1b: the choice was made when the instruction
+                // resolved, which is here. The answer is clamped to the
+                // offered list, like every other Decision: there is no
+                // "your answer was illegal" path.
+                cite!("rule_object_subroutine_targets");
+                let chosen = match &spec {
+                    DecisionSpec::ChooseServer { options } => {
+                        if options.contains(&s) { Some(s) } else { options.first().copied() }
+                    }
+                    _ => None,
+                };
+                if let Some(s) = chosen {
+                    self.maintain_choice(
+                        source,
+                        key,
+                        crate::lingering::ChoiceValue::Server(s),
+                        duration,
+                    );
+                }
+            }
             (DecisionCtx::Arrange { to_top_of }, DecisionAnswer::Arrangement(order)) => {
                 // 8.3.3: the declared order is applied to the cards this
                 // ability set aside. Anything the answer omitted keeps the
@@ -17478,6 +17633,15 @@ impl Vm {
                         }
                     }
                 }
+            }
+            (DecisionCtx::OfferedAction { click_discount }, DecisionAnswer::Action(opt)) => {
+                // 5.2.2, from [`Instruction::OfferAction`]: the same
+                // initiation the action window dispatches, minus the window
+                // bookkeeping — the frame on top is the offering ability's,
+                // already past the instruction, and whatever the action
+                // pushes (a play's rules frame, a payment) resolves above it.
+                cite!("rule_initiate_action");
+                self.initiate_action(side, opt, click_discount);
             }
             (ctx, ans) => panic!("mismatched decision answer {ans:?} for {ctx:?}"),
         }

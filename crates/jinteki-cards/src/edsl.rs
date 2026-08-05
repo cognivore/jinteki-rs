@@ -555,6 +555,26 @@ impl CardBuilder {
                 .with_timing(TimingRestriction::RunOnly),
         )
     }
+    /// "Once per turn → <cost referring to the unrezzed ice being
+    /// approached>: …" (AgInfusion.) The once-per-turn flag (9.3.6g) and
+    /// 9.5.6b's timing restriction: a paid ability that refers to the ice
+    /// the Runner is approaching can only be used during the Approach Ice
+    /// Phase, with the approached ice matching every stipulation used in
+    /// referring to it — here 8.1.2's "unrezzed".
+    pub fn paid_once_per_turn_while_approaching_unrezzed_ice(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_flag(AbilityFlag::OncePerTurn)
+                .with_timing(TimingRestriction::ApproachOnly {
+                    required_subtype: None,
+                    rezzed: Some(false),
+                }),
+        )
+    }
     /// "Interface → 1[credit]: …" — a paid ability gated by strength (9.3.6c)
     /// and usable only during an encounter (9.5.6a). Naming a subtype makes
     /// it usable only against ice of that kind (9.5.6c), which is exactly
@@ -1063,6 +1083,18 @@ pub fn jack_out() -> Instruction {
 /// Ice Phase. With no such ice — nothing was installed — nothing happens.
 pub fn move_runner_to_ice(ice: TargetSpec) -> Instruction {
     Instruction::MoveRunnerToIce { ice, encounter: false }
+}
+/// "The Runner moves to **the outermost position** of that server…"
+/// (AgInfusion; 6.2.8b — the CR quotes the card's own phrase.) That server
+/// becomes the attacked server; with ice protecting it the Runner's position
+/// becomes the outermost piece's and the timing step the Approach Ice Phase,
+/// with none the Runner has no position and the step is the Movement Phase.
+/// "That server" is the one this card is remembering under `key` (9.10.3);
+/// remembering none, the Runner moves nowhere.
+pub fn runner_moves_to_outermost_of_remembered(key: &'static str) -> Instruction {
+    Instruction::MoveRunnerToOutermost {
+        server: jinteki_cr::instr::ServerRef::MaintainedChoice(key),
+    }
 }
 /// "Run <server>."
 pub fn run(server: ServerId) -> Instruction {
@@ -1727,11 +1759,19 @@ pub fn advanceable() -> TargetFilter {
 pub fn the_encountered_ice() -> TargetFilter {
     TargetFilter::IsEncounteredIce
 }
+/// "…the piece of ice the Runner is **approaching**" (AgInfusion; 6.4.1/
+/// 6.4.2) — the ice in the Runner's position while the run's current step is
+/// inside the Approach Ice Phase. The approach fixes the card the way an
+/// encounter fixes [`the_encountered_ice`]'s, so nothing is chosen.
+pub fn the_approached_ice() -> TargetFilter {
+    TargetFilter::IsApproachedIce
+}
 /// "…the outermost piece of ice protecting its server" (6.2.1/6.2.2) — the
 /// last ice in its own server's innermost-first sequence, whichever server
 /// that is. "…protecting **any** server" (Acme Consulting) is this atom
-/// alone; "…protecting **that** server" (AgInfusion) is this atom conjoined
-/// with a criterion naming the server.
+/// alone. (AgInfusion's "the outermost position of that server" is not a
+/// description at all — 6.2.8b reads it as a movement to a position,
+/// [`runner_moves_to_outermost_of_remembered`].)
 pub fn outermost_ice_of_its_server() -> TargetFilter {
     TargetFilter::OutermostIceOfItsServer
 }
@@ -1776,6 +1816,15 @@ pub fn any_x_counters_equal_to(kind: CounterKind, q: Quantity) -> Cost {
 /// 1.15.2c's installed-cards default.
 pub fn trash_cards_from_hand_of(side: Side, n: u32) -> Cost {
     Cost::trash_matching(n, vec![in_hand_of(side)])
+}
+/// "**Trash the unrezzed piece of ice the Runner is approaching:**"
+/// (AgInfusion; 1.16.10 + 6.4.2.) A trigger cost over the shared criteria —
+/// the approach fixes the ice, and "unrezzed" is 8.1.2's stipulation about
+/// it, so there is exactly one card the description can reach and nothing is
+/// chosen. 1.16.1b: with the approached ice rezzed — or no approach under
+/// way — the description reaches nothing and the cost cannot be paid.
+pub fn trash_the_approached_unrezzed_ice() -> Cost {
+    Cost::trash_matching(1, vec![unrezzed(), the_approached_ice()])
 }
 pub fn forfeit_agenda(n: u32) -> Cost {
     Cost::forfeit_agenda(n)
@@ -3541,6 +3590,24 @@ pub fn choose_and_remember(key: &'static str, count: i64, criteria: &[TargetFilt
 /// "…**that ice**", "…the chosen card" — the object this card remembers.
 pub fn the_remembered(key: &'static str) -> TargetSpec {
     TargetSpec::MaintainedChoice(key)
+}
+/// "Choose a server other than the attacked server." (AgInfusion — CR
+/// 1.15.1b lists a server among the things a player can be told to choose,
+/// and 4.6.8d's remote servers exist only while cards make them up, so the
+/// options cannot be written as 9.11.4g branches: they are enumerated when
+/// the instruction resolves, less the attacked server (6.1.2), and the
+/// answer is remembered under `key`. 9.10.3c: the choice is read by the same
+/// ability's next instruction — not by another lingering effect (9.10.3a)
+/// and not from a "when your turn begins" choice-only ability (9.10.3b) —
+/// so it is maintained while this card is active.)
+pub fn choose_a_server_other_than_the_attacked(key: &'static str) -> Instruction {
+    Instruction::MaintainChoice {
+        key,
+        of: jinteki_cr::instr::ChoiceSpec::AnyServer {
+            excluding: Some(jinteki_cr::instr::ServerExclusion::AttackedServer),
+        },
+        duration: WantedDuration::WhileSourceActive,
+    }
 }
 /// "You cannot <act on> **that card** [for a duration]." (Saraswati
 /// Mnemonics; CR 1.2.2 + 9.10.1.) The card is NAMED rather than described, so

@@ -106,6 +106,8 @@ pub enum Kind {
     Destination,
     /// 1.15.1b: naming a card or a number.
     NameValue,
+    /// 1.15.1b + 4.6.8: choosing a server from a resolution-enumerated list.
+    ChooseServer,
 }
 
 impl Kind {
@@ -144,6 +146,7 @@ impl Kind {
             DecisionSpec::ChooseCounters { .. } => Kind::CounterTargets,
             DecisionSpec::DeclareInstallDestination { .. } => Kind::Destination,
             DecisionSpec::NameValue { .. } => Kind::NameValue,
+            DecisionSpec::ChooseServer { .. } => Kind::ChooseServer,
         }
     }
 }
@@ -448,6 +451,10 @@ impl Match {
     pub fn name_value() -> Match {
         Match::of(Kind::NameValue)
     }
+    /// 1.15.1b + 4.6.8: choosing a server from a resolution-enumerated list.
+    pub fn choose_server() -> Match {
+        Match::of(Kind::ChooseServer)
+    }
     /// Any priority window (the five 9.2.5 kinds).
     pub fn window() -> Match {
         Match::any()
@@ -643,7 +650,8 @@ pub enum Reply {
     Division(Vec<u32>),
     /// 8.5.16b: declare this install destination.
     Destination(crate::instr::InstallDest),
-    /// 6.9.1a: announce this attacked server.
+    /// Name this server — 6.9.1a's attacked-server announcement, or
+    /// 1.15.1b's resolution-enumerated server choice, whichever is asked.
     Server(ServerId),
     /// 1.15.1b: name this card (2.1.1). The title is a `&'static str` because
     /// that is what a printed card's name IS here — a plan names cards it has.
@@ -1160,7 +1168,13 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::Division(v) => DecisionAnswer::Division(v.clone()),
         Reply::Arrange(v) => DecisionAnswer::Arrangement(v.clone()),
         Reply::Destination(d) => DecisionAnswer::InstallDestination(*d),
-        Reply::Server(s) => DecisionAnswer::AttackedServer(*s),
+        // One reply, two declarations: which answer a named server becomes
+        // is the decision's to say (6.9.1a's announcement or 1.15.1b's
+        // resolution-enumerated choice).
+        Reply::Server(s) => match spec {
+            DecisionSpec::ChooseServer { .. } => DecisionAnswer::Server(*s),
+            _ => DecisionAnswer::AttackedServer(*s),
+        },
         Reply::Name(n) => DecisionAnswer::NamedValue(crate::instr::NamedValue::CardName(n)),
         Reply::Number(n) => DecisionAnswer::NamedValue(crate::instr::NamedValue::Number(*n)),
         Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
@@ -1197,6 +1211,11 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         ),
         // 6.9.1a: an announcement cannot be passed either.
         DecisionSpec::DeclareAttackedServer { options } => DecisionAnswer::AttackedServer(
+            options.first().copied().expect("a server was offered"),
+        ),
+        // 1.15.1b: neither can a server choice — the neutral policy takes
+        // the first server offered.
+        DecisionSpec::ChooseServer { options } => DecisionAnswer::Server(
             options.first().copied().expect("a server was offered"),
         ),
         // 1.15.1b: naming has no decline, so the neutral policy names the

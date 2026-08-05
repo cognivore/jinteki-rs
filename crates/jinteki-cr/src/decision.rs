@@ -244,6 +244,14 @@ pub enum DecisionSpec {
     /// (§12 rule 2); a namespace that IS enumerable is 9.11.4g's option
     /// choice and never reaches this decision at all.
     NameValue { of: crate::instr::NameSpace, excluding: Option<crate::instr::NameExclusion> },
+    /// CR 1.15.1b + 4.6.8: "choose a server", where the set of servers could
+    /// not be written as 9.11.4g branches because 4.6.8d's remotes exist
+    /// only while cards make them up — so the options are enumerated at the
+    /// instruction's RESOLUTION, with any stated exclusion (the attacked
+    /// server) already applied. Like the other declarations, this cannot be
+    /// passed: a maintained choice with nothing maintained would leave the
+    /// sentences that read it pointing at nothing the card meant.
+    ChooseServer { options: Vec<ServerId> },
 }
 
 /// Defunctionalized answers.
@@ -289,4 +297,7 @@ pub enum DecisionAnswer {
     AttackedServer(ServerId),
     /// CR 1.15.1b: the value the naming player said.
     NamedValue(crate::instr::NamedValue),
+    /// CR 1.15.1b: the server the choosing player chose, from a
+    /// resolution-enumerated list ([`DecisionSpec::ChooseServer`]).
+    Server(ServerId),
 }

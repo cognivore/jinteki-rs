@@ -38,17 +38,7 @@ kernel words, not card patches.
 
 
 
-- **A choice between SERVERS cannot be written when the servers do not exist
-  yet.** 1.15.1b lists a server among the things a player can be told to
-  choose, and `ChoiceSpec::Server` names one — the choice BETWEEN them being
-  9.11.4g's option choice, an `Instruction::ChooseOne` whose branches each
-  maintain a different server. That works for the three centrals and for
-  nothing else: 4.6.8's remote servers are created during play, so "choose a
-  server other than the attacked server" has no set of branches to write when
-  the card is written. Two further words the same sentence wants: no
-  `TargetFilter` describes the piece of ice the Runner is APPROACHING (the
-  cost trashes it), and none describes the outermost ice of a server the
-  ability just chose. *(AgInfusion: New Miracles for a New World.)*
+
 
 
 
@@ -95,7 +85,7 @@ the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **148 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **149 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -241,7 +231,7 @@ Module: `decks/identities/corp_jinteki.rs`
 
 - [x] **A Teia: IP Recovery** — Limit 2 remote servers. The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.
 - [x] **AU Co.: The Gold Standard in Clones** — Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity. When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.
-- [ ] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
+- [x] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
 - [x] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.
 - [x] **Harmony Medtech: Biomedical Pioneer** — Each player needs 1 fewer agenda point to win the game.
 - [x] **Hyoubu Institute: Absolute Clarity** — The first time each turn you reveal a card, gain 1[credit]. [click]: Reveal 1 card from the grip at random or the top card of the stack.

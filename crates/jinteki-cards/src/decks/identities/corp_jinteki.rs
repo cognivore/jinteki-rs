@@ -1074,6 +1074,64 @@ pub fn the_greenhouse_jinteki_biotech() -> Card {
         .build()
 }
 
+/// AgInfusion: New Miracles for a New World — Identity: Division.
+/// "Once per turn → Trash the unrezzed piece of ice the Runner is
+///  approaching: Choose a server other than the attacked server. The Runner
+///  moves to the outermost position of that server and encounters any ice
+///  there."
+///
+/// COMPLETE. One paid ability: the arrow carries 9.3.6g's once-per-turn flag,
+/// and the bold-and-colon sentence is 1.16.10's trigger cost. "The unrezzed
+/// piece of ice the Runner is approaching" is a description, not a choice —
+/// 6.4.2 makes the approach the Approach Ice Phase's span at that ice's
+/// position, so the phase fixes the card and 8.1.2's "unrezzed" is a
+/// stipulation about it. 9.5.6b then reads the same words as the ability's
+/// timing: a paid ability referring to the approached ice is usable only
+/// during the Approach Ice Phase, with the ice matching every stipulation
+/// used in referring to it — so a rezzed approach offers nothing, twice over
+/// (the cost's description also reaches nothing, 1.16.1b).
+///
+/// "Choose a server other than the attacked server" is the choice 9.11.4g
+/// could not write: 1.15.1b lists a server among the things a player can be
+/// told to choose, but 4.6.8d's remote servers exist only while cards make
+/// them up, so there is no set of branches at card-write time. The options
+/// are enumerated when the instruction resolves — every server there IS,
+/// less 6.1.2's attacked one — and the answer is remembered (9.10.3; case c,
+/// while this identity is active, since its reader is the next instruction
+/// rather than another lingering effect).
+///
+/// "The Runner moves to the outermost position of that server" is 6.2.8b
+/// VERBATIM — the CR quotes this card's own phrase — and that settles what
+/// "and encounters any ice there" can mean: 6.2.8b makes the move an
+/// APPROACH (the rule names a position, and with ice the timing step becomes
+/// the Approach Ice Phase, 6.9.2), never a direct encounter. It is not
+/// 6.5.9a's forced encounter either — that rule is stated for abilities that
+/// encounter "without first changing their position", and this sentence
+/// moves. So the encounter arrives the way 6.4.4 hands it out: a rezzed
+/// outermost is encountered when the approach completes; an unrezzed one is
+/// approached, the Corp may rez it in the 6.9.2b window (6.4.1/6.4.3 — the
+/// window a forced encounter would never open), and only if it ends the
+/// approach rezzed does the printed encounter happen. With no ice at all,
+/// 6.2.8b's other half: the Runner ceases to have a position and the run
+/// continues at the Movement Phase, toward the server itself (6.9.4g).
+pub fn ag_infusion() -> Card {
+    card("AgInfusion: New Miracles for a New World")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.")
+        .paid_once_per_turn_while_approaching_unrezzed_ice(
+            trash_the_approached_unrezzed_ice(),
+            [
+                choose_a_server_other_than_the_attacked("new miracles"),
+                runner_moves_to_outermost_of_remembered("new miracles"),
+            ],
+        )
+        .named("new miracles")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -1098,5 +1156,6 @@ pub fn identities() -> Vec<Card> {
         au_co(),
         melies_u_only_the_brightest(),
         jinteki_biotech(),
+        ag_infusion(),
     ]
 }

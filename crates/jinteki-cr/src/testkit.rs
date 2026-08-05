@@ -819,7 +819,7 @@ pub fn wotan_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))])
         .with_timing(TimingRestriction::ApproachOnly {
             required_subtype: Some("bioroid"),
-            rezzed: true,
+            rezzed: Some(true),
         })
         .labeled("wotan: approach-only ability")];
     c

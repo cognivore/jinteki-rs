@@ -618,23 +618,9 @@ pub fn next_design() -> Card {
             ],
         )
         .named("guarding the net")
-        .text("If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.")
-        .may_when(
-            different_actions_this_turn(Corp, 3),
-            [choose_one([
-                ("gain 1[credit]", vec![gain(Corp, 1)]),
-                (
-                    "take another different action, paying [click] less",
-                    vec![take_another_different_action_paying_a_click_less()],
-                ),
-            ])],
-        )
-        .named("the third different action completed")
         .build()
 }
 
-/// Every Haas-Bioroid identity this module carries, in the order the queue
-/// reached them.
 /// MirrorMorph: Endless Iteration — Identity: Division.
 /// "If the first, second, and third actions you take on your turn are each
 ///  different from one another, when the third action completes, you may

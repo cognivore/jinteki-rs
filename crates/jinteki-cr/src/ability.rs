@@ -1465,7 +1465,11 @@ pub enum TimingRestriction {
     },
     /// 9.5.6b: usable only during the Approach Ice Phase, with the
     /// approached ice matching all stipulations used in referring to it.
-    ApproachOnly { required_subtype: Option<&'static str>, rezzed: bool },
+    /// `rezzed` is 8.1.2's pair as a stipulation: `Some(true)` refers to the
+    /// approached ice as rezzed, `Some(false)` as unrezzed ("the unrezzed
+    /// piece of ice the Runner is approaching", AgInfusion), and `None` is a
+    /// sentence that says neither.
+    ApproachOnly { required_subtype: Option<&'static str>, rezzed: Option<bool> },
     /// 9.3.3c: "Limits on when, WHERE, or how often an ability can be used
     /// are restrictions." An ability stating the zone it works from — "Play
     /// this operation **from Archives**" (Petty Cash) — can only be used

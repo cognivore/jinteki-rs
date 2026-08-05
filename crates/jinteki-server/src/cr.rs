@@ -1661,6 +1661,14 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, server_label(*s), DecisionAnswer::AttackedServer(*s));
             }
         }
+        // CR 1.15.1b + 4.6.8: a server choice whose options could only be
+        // enumerated at resolution (remote servers are created during play).
+        DecisionSpec::ChooseServer { options } => {
+            p.msg = "Choose a server (1.15.1b).".into();
+            for s in options {
+                push(&mut p, server_label(*s), DecisionAnswer::Server(*s));
+            }
+        }
         // CR 1.15.1b: naming a card or a number. The kernel offers no
         // candidate list — the namespace is open, and the only list it could
         // build from its own state is the union of both decks, which §10.2
