@@ -938,6 +938,142 @@ pub fn disposal_grounds_melies_u() -> Card {
         .build()
 }
 
+/// Jinteki Biotech: Life Imagined — Identity: Division.
+/// "Before taking your first turn, you may switch this identity with any copy
+///  of Jinteki Biotech.
+///  [click][click][click]: Flip this identity."
+///
+/// COMPLETE, all four faces. The card ships as three copies with the same
+/// front and a different back each (The Brewery / The Tank / The Greenhouse),
+/// so the identity carries three `.flip_face(…)` backs in face order — the
+/// Méliès U shape, one release earlier.
+///
+/// "Switch this identity with any copy" is NOT `Instruction::SwitchIdentity`
+/// (the Rebirth class): 1.5.4b's switch trades for ANOTHER identity from the
+/// pile outside the game, and 1.5.4d turns the newcomer front side up with
+/// nothing sealed — a public trade of one card for a different card. Here the
+/// copies ARE this card: identical fronts, and the only game fact the switch
+/// changes is WHICH back lies against the table — a fact the Runner cannot
+/// read off the physically identical fronts, i.e. hidden information
+/// (10.2.2a, the psi grain). So the honest word is the Méliès one:
+/// `Instruction::SecretlySetFlipFace`, resolved in 1.6.7a's before-taking-
+/// your-first-turn step — the choice among the three backs is put to the
+/// Corp, the answer is sealed outside the open change log, and the record
+/// (`IdentityFaceSecretlySet`) says only THAT it happened, which is all the
+/// Runner would see at the table.
+///
+/// The printed "may": the option space absorbs it. The physical card in play
+/// always has SOME back — the copy the Corp brought, The Brewery (`faces[0]`,
+/// the first face cards.json lists and the copy the software defaults to) —
+/// and "switching" means putting a different copy there. Choosing The
+/// Brewery IS declining the switch: same table state, same seal, and the
+/// kernel has no second question to ask (the SYNC-back precedent of not
+/// double-asking a choice with only one distinguishable outcome). Every game
+/// therefore seals exactly one back before the first turn, and the
+/// triple-click flip always has a face to reveal — Méliès U's 9.11.2
+/// unsealed-flip-does-nothing edge is unreachable here, exactly as the
+/// physical card makes it.
+///
+/// The second line is Earth Station / SYNC's paid ability with a triple
+/// click: the whole cost is [click][click][click] (1.16.10b pays them as
+/// one), and `Instruction::FlipIdentity` is rule_identity_double_sided's
+/// turn-over — it reveals the sealed copy, and the 10.3.1a checkpoint after
+/// it re-derives abilities from the face now showing, so the back's own
+/// "when you flip" sentence speaks next. The backs print no flip ability, so
+/// the card turns once: face down at three clicks, never home.
+pub fn jinteki_biotech() -> Card {
+    card("Jinteki Biotech: Life Imagined")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech.")
+        .text("[click][click][click]: Flip this identity.")
+        .when(before_taking_first_turn(), [secretly_set_identity_face(Corp)])
+        .named("jinteki biotech: the switch")
+        .paid(clicks(3), [flip_identity(Corp)])
+        .named("jinteki biotech: flip")
+        .flip_face(the_brewery_jinteki_biotech())
+        .flip_face(the_tank_jinteki_biotech())
+        .flip_face(the_greenhouse_jinteki_biotech())
+        .build()
+}
+
+/// The Brewery: Jinteki Biotech — Identity: Division; the first back face of
+/// Jinteki Biotech: Life Imagined (oracle: netrunner-cards-json v2,
+/// `faces[0]` — the copy the card defaults to when the switch is declined).
+/// "When you flip this identity, do 2 net damage."
+///
+/// The bare flip sentence — no "to this side", because unlike Méliès U's
+/// backs nothing here stipulates a run — but the condition is the same
+/// `SelfFlippedTo` word: a back face's abilities are derived exactly while
+/// that back shows, so the only flip this ability can ever see is the one
+/// that turned The Brewery up. The damage is 10.4.1's does-branch with the
+/// Corp responsible, the same words Jinteki: Personal Evolution says.
+pub fn the_brewery_jinteki_biotech() -> Card {
+    card("The Brewery: Jinteki Biotech")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When you flip this identity, do 2 net damage.")
+        .when(flipped_to_this_side(), [net_damage(Corp, 2)])
+        .named("the brewery: 2 net damage")
+        .build()
+}
+
+/// The Tank: Jinteki Biotech — Identity: Division; the second back face of
+/// Jinteki Biotech: Life Imagined (oracle: netrunner-cards-json v2,
+/// `faces[1]`).
+/// "When you flip this identity, shuffle all cards in Archives into R&D."
+///
+/// The same bare `SelfFlippedTo` condition as The Brewery. The effect is the
+/// Jackson word said about everything at once: "all cards in Archives" is
+/// the whole of 4.4's zone, faceup and facedown alike (`in_archives()`
+/// describes the zone, not a face), each entering R&D as a new object
+/// (1.12.3) with the shuffle following (8.1.4).
+pub fn the_tank_jinteki_biotech() -> Card {
+    card("The Tank: Jinteki Biotech")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When you flip this identity, shuffle all cards in Archives into R&D.")
+        .when(
+            flipped_to_this_side(),
+            [shuffle_into_deck(all_matching(&[in_archives()]), Corp)],
+        )
+        .named("the tank: archives into r&d")
+        .build()
+}
+
+/// The Greenhouse: Jinteki Biotech — Identity: Division; the third back face
+/// of Jinteki Biotech: Life Imagined (oracle: netrunner-cards-json v2,
+/// `faces[2]`).
+/// "When you flip this identity, place 4 advancement counters on 1 installed
+///  card that you can advance."
+///
+/// The same bare `SelfFlippedTo` condition. "1 installed card that you can
+/// advance" is 1.18.3's permission as a criterion (`advanceable()` — the
+/// same reading the basic advance action makes, which already confines it to
+/// installed cards), and the placement is 1.18.2's bare placing, NOT an
+/// advance: no "whenever you advance" condition is met, the counters simply
+/// arrive (the Mushin No Shin grain, four at once).
+pub fn the_greenhouse_jinteki_biotech() -> Card {
+    card("The Greenhouse: Jinteki Biotech")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When you flip this identity, place 4 advancement counters on 1 installed card that you can advance.")
+        .when(
+            flipped_to_this_side(),
+            [place_on(choose(1, &[advanceable()]), CounterKind::Advancement, 4)],
+        )
+        .named("the greenhouse: 4 advancement counters")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -961,5 +1097,6 @@ pub fn identities() -> Vec<Card> {
         a_teia(),
         au_co(),
         melies_u_only_the_brightest(),
+        jinteki_biotech(),
     ]
 }

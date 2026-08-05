@@ -15672,3 +15672,298 @@ fn an_empty_hq_shields_connections_from_the_basic_trash_action() {
         g.transcript().tail(12)
     );
 }
+
+
+// ---------------------------------------------------------------------------
+// Jinteki Biotech: Life Imagined — the pre-first-turn switch, sealed; three
+// backs, one triple-click reveal
+// ---------------------------------------------------------------------------
+
+/// A Jinteki Biotech game through the real §1.6 setup. Under `shuffle: false`
+/// the corp deck's first five cards are the starting hand.
+fn biotech_game(seed: u64, corp_deck: Vec<PrintedCard>) -> Vm {
+    use jinteki_cr::vm::GameSetup;
+    let runner_deck: Vec<PrintedCard> =
+        (0..8).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    Vm::new_game(GameSetup {
+        corp_identity: Some(card("Jinteki Biotech: Life Imagined")),
+        runner_identity: None,
+        corp_deck,
+        runner_deck,
+        shuffle: false,
+        seed,
+        additional_identities: Default::default(),
+        extra_cards: Default::default(),
+    })
+}
+
+/// Jinteki Biotech: "Before taking your first turn, you may switch this
+/// identity with any copy of Jinteki Biotech." — the switch is offered to the
+/// CORP in 1.6.7a's window, as the secret choice among the three printed
+/// backs (which copy lies on the table is what the physically identical
+/// fronts hide); this Corp seals The Tank. Then
+/// "[click][click][click]: Flip this identity." reveals it, and The Tank's
+/// "When you flip this identity, shuffle all cards in Archives into R&D."
+/// empties Archives into the deck.
+#[test]
+fn biotech_seals_the_tank_before_the_first_turn_and_the_flip_shuffles_archives_into_rnd() {
+    let corp_deck: Vec<PrintedCard> = (0..12).map(|_| tk::corp_filler("C-filler")).collect();
+    let mut vm = biotech_game(6404, corp_deck);
+    // Stage Archives: three cards buried before the game formally begins.
+    let buried: Vec<ObjectId> = ["Vat-A", "Vat-B", "Vat-C"]
+        .into_iter()
+        .map(|n| {
+            let o = vm.new_object(tk::corp_filler(n), Zone::Discard(Side::Corp));
+            vm.st.discard.get_mut(&Side::Corp).unwrap().push(o);
+            o
+        })
+        .collect();
+    let id = vm.identity_of(Side::Corp).expect("the identity is in the play area");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("The Tank"))
+            .when(Match::action().once(), Reply::take("jinteki biotech: flip"))
+            .stop_at_action(),
+        Plan::runner().stop_at_action(),
+    );
+    let asked = t.of_kind(Kind::Options);
+    assert_eq!(asked.len(), 1, "one switch, before the first turn: {}", t.tail(30));
+    assert_eq!(asked[0].side, Side::Corp, "put to the Corp — it is their identity");
+    assert_eq!(
+        plan::choices(&asked[0].spec),
+        [
+            "The Brewery: Jinteki Biotech",
+            "The Tank: Jinteki Biotech",
+            "The Greenhouse: Jinteki Biotech"
+        ],
+        "the options are exactly the three copies, in face order"
+    );
+    assert_eq!(
+        vm.st.objects[&id].flipped,
+        Some(1),
+        "the flip revealed the sealed copy — The Tank, faces[1]: {}",
+        t.tail(30)
+    );
+    // The Tank's effect: Archives is empty and every buried card is in R&D.
+    for b in &buried {
+        assert_eq!(
+            vm.st.objects[b].zone,
+            Zone::Deck(Side::Corp),
+            "shuffled into R&D: {}",
+            t.tail(30)
+        );
+    }
+    // The shuffle emptied Archives; the ONE card there now is the discard
+    // phase's own (5.5.4 — the mandatory draw made the hand 6, the flip took
+    // every click, so one card went down AFTER the shuffle), and it is none
+    // of the buried three.
+    assert_eq!(vm.st.discard[&Side::Corp].len(), 1, "only the discard phase's later card");
+    assert!(
+        !vm.st.discard[&Side::Corp].iter().any(|c| buried.contains(c)),
+        "none of the buried three came back"
+    );
+    // 12 − 5 (starting hand) − 1 (the first turn's mandatory draw) + 3 in.
+    assert_eq!(vm.st.deck[&Side::Corp].len(), 9, "R&D count after the shuffle-in");
+    // The order of the record: the seal before the game began (1.6.7a), the
+    // flip during the first turn, the shuffle after the flip that caused it.
+    let log = &vm.changes.log;
+    let sealed = log
+        .iter()
+        .position(|c| matches!(c, GameChange::IdentityFaceSecretlySet { side: Side::Corp }))
+        .expect("the seal is recorded — THAT it happened is open");
+    let began = log.iter().position(|c| matches!(c, GameChange::GameBegan)).expect("game began");
+    let flip = log
+        .iter()
+        .position(|c| matches!(c, GameChange::IdentityFlipped { .. }))
+        .expect("the flip");
+    let shuffle = log
+        .iter()
+        .position(|c| matches!(c, GameChange::DeckShuffled { side: Side::Corp }))
+        .expect("the shuffle");
+    assert!(
+        sealed < began && began < flip && flip < shuffle,
+        "seal ({sealed}) < game began ({began}) < flip ({flip}) < shuffle ({shuffle}): {}",
+        t.tail(40)
+    );
+    assert_eq!(vm.st.corp.clicks, 0, "the flip took the whole action phase");
+}
+
+/// Declining the switch: the physical card always has SOME back — the copy
+/// the Corp brought, The Brewery (`faces[0]`, the first face the card data
+/// lists). Choosing it IS the decline: same table state as never having
+/// switched, so the kernel asks once, not twice. The triple-click flip then
+/// reveals The Brewery, whose own sentence resolves.
+#[test]
+fn biotech_declining_the_switch_keeps_the_default_copy_and_the_flip_reveals_the_brewery() {
+    let corp_deck: Vec<PrintedCard> = (0..12).map(|_| tk::corp_filler("C-filler")).collect();
+    let mut vm = biotech_game(6405, corp_deck);
+    let id = vm.identity_of(Side::Corp).expect("the identity");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // The decline: keep the default copy — faces[0], The Brewery.
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("The Brewery"))
+            .when(Match::action().once(), Reply::take("jinteki biotech: flip"))
+            .stop_at_action(),
+        Plan::runner().stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&id].flipped,
+        Some(0),
+        "the default copy turned up — The Brewery, faces[0]: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        1,
+        "one flip: {}",
+        t.tail(30)
+    );
+    // …and its effect happened: 2 net damage, two cards off the grip.
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 3, "5 drawn − 2 net damage: {}", t.tail(30));
+}
+
+/// The Greenhouse: "When you flip this identity, place 4 advancement
+/// counters on 1 installed card that you can advance." — sealed before the
+/// first turn, revealed on the second (turn one spent a click installing the
+/// agenda the counters want), and the placement is 1.18.2's bare placing:
+/// four counters arrive, no advance happens.
+#[test]
+fn biotech_greenhouse_places_four_advancement_counters_on_an_advanceable_card() {
+    let mut corp_deck: Vec<PrintedCard> = vec![tk::vanilla_agenda("Vat Complex", 3, 1)];
+    corp_deck.extend((0..11).map(|_| tk::corp_filler("C-filler")));
+    let mut vm = biotech_game(6406, corp_deck);
+    let id = vm.identity_of(Side::Corp).expect("the identity");
+    let agenda = vm.st.hand[&Side::Corp]
+        .iter()
+        .copied()
+        .find(|c| vm.st.objects[c].printed.card_type == CardType::Agenda)
+        .expect("the agenda is in the starting hand");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("The Greenhouse"))
+            // Turn 1: install the agenda, then two clicks on credits.
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(agenda)))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::action().times(2), Reply::credit())
+            // Turn 2: the whole action phase on the flip.
+            .when(Match::action().once(), Reply::take("jinteki biotech: flip"))
+            .when(Match::targets().once(), Reply::target(agenda))
+            .stop_at_action(),
+        Plan::runner().when(Match::action().times(4), Reply::credit()).stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&id].flipped, Some(2), "The Greenhouse — faces[2]: {}", t.tail(40));
+    assert_eq!(
+        vm.st.objects[&agenda].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+        4,
+        "4 advancement counters placed on the advanceable card: {}",
+        t.tail(40)
+    );
+    // 1.18.2: placed, not advanced — no advance was recorded.
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAdvanced { .. })),
+        "bare placement is not an advance: {}",
+        t.tail(40)
+    );
+}
+
+/// The Brewery's sentence in full: "When you flip this identity, do 2 net
+/// damage." — one flip, one damage occurrence of 2, the Corp responsible
+/// (10.4.2), two cards from the grip to the heap.
+#[test]
+fn biotech_brewery_does_two_net_damage_on_the_flip() {
+    let corp_deck: Vec<PrintedCard> = (0..12).map(|_| tk::corp_filler("C-filler")).collect();
+    let mut vm = biotech_game(6407, corp_deck);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("The Brewery"))
+            .when(Match::action().once(), Reply::take("jinteki biotech: flip"))
+            .stop_at_action(),
+        Plan::runner().stop_at_action(),
+    );
+    let hits: Vec<_> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::DamageSuffered { kind, amount, cards, responsible }
+                if *kind == jinteki_cr::effects::DamageKind::Net =>
+            {
+                Some((*amount, cards.len(), *responsible))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        hits,
+        vec![(2, 2, Side::Corp)],
+        "one occurrence of 2 net damage, 2 cards trashed, the Corp responsible: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.discard[&Side::Runner].len(), 2, "both in the heap");
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 3, "5 − 2 in the grip");
+}
+
+/// The flip costs exactly [click][click][click]: a full action phase pays it
+/// (3 → 0, three ClickSpent records), and at 2 clicks the ability is not
+/// offered at all — 1.16.10's cost gate removes it from the window, so the
+/// plan's take-rule never fires and nothing flips.
+#[test]
+fn biotech_flip_costs_exactly_three_clicks() {
+    // Affordable: the whole action phase.
+    let corp_deck: Vec<PrintedCard> = (0..12).map(|_| tk::corp_filler("C-filler")).collect();
+    let mut vm = biotech_game(6408, corp_deck);
+    let id = vm.identity_of(Side::Corp).expect("the identity");
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("The Tank"))
+            .when(Match::action().once(), Reply::take("jinteki biotech: flip"))
+            .stop_at_action(),
+        Plan::runner().stop_at_action(),
+    );
+    assert_eq!(vm.st.objects[&id].flipped, Some(1), "flipped at 3 clicks: {}", t.tail(30));
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::ClickSpent { side: Side::Corp }))
+            .count(),
+        3,
+        "three clicks spent — the whole allotment, all on the flip: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.corp.clicks, 0, "3 → 0");
+
+    // Unaffordable: after one click on a credit, 2 remain and the ability is
+    // no longer offered — the take-rule's implicit guard never matches.
+    let corp_deck: Vec<PrintedCard> = (0..12).map(|_| tk::corp_filler("C-filler")).collect();
+    let mut vm2 = biotech_game(6409, corp_deck);
+    let id2 = vm2.identity_of(Side::Corp).expect("the identity");
+    let t2 = plan::play(
+        &mut vm2,
+        Plan::corp()
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("The Tank"))
+            .when(Match::action().nth(1), Reply::credit())
+            .when(Match::action(), Reply::take("jinteki biotech: flip"))
+            .stop_at_action(),
+        Plan::runner().stop_at_action(),
+    );
+    assert_eq!(vm2.st.objects[&id2].flipped, None, "2 clicks cannot pay 3: {}", t2.tail(30));
+    assert!(
+        !vm2.changes.log.iter().any(|c| matches!(c, GameChange::IdentityFlipped { .. })),
+        "no flip was ever recorded: {}",
+        t2.tail(30)
+    );
+    assert_eq!(vm2.st.corp.clicks, 2, "the driver halted with the two clicks unspent");
+}

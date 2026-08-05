@@ -100,7 +100,7 @@ the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **146 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **147 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -252,7 +252,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Hyoubu Institute: Absolute Clarity** — The first time each turn you reveal a card, gain 1[credit]. [click]: Reveal 1 card from the grip at random or the top card of the stack.
 - [x] **Industrial Genomics: Growing Solutions** — The trash cost of each card is increased by 1 for each facedown card in Archives.
 - [x] **Issuaq Adaptics: Sustaining Diversity** — Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity. For each hosted power counter, you need 1 less agenda point to win the game.
-- [ ] **Jinteki Biotech: Life Imagined** — Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech. [click][click][click]: Flip this identity.
+- [x] **Jinteki Biotech: Life Imagined** — Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech. [click][click][click]: Flip this identity.
 - [x] **Jinteki: Personal Evolution** — Whenever an agenda is scored or stolen, do 1 net damage.
 - [x] **Jinteki: Potential Unleashed** — Whenever the Runner takes at least 1 net damage, trash the top card of the stack.
 - [x] **Jinteki: Replicating Perfection** — The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.

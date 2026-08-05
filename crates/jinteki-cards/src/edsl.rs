@@ -2907,6 +2907,14 @@ pub fn secretly_set_identity_face(side: Side) -> Instruction {
 pub fn flipped_to_this_side_during_a_run_on(servers: &[ServerId]) -> TriggerCond {
     TriggerCond::SelfFlippedTo { requires: vec![during_a_run_on(servers)] }
 }
+/// "When you flip this identity, …" (Jinteki Biotech's backs) — the bare
+/// sentence, no stipulation riding along. The same
+/// [`TriggerCond::SelfFlippedTo`]: written on a BACK face, it can only ever
+/// see the flip that turned that back up, because a face's abilities are
+/// derived exactly while the face shows.
+pub fn flipped_to_this_side() -> TriggerCond {
+    TriggerCond::SelfFlippedTo { requires: vec![] }
+}
 /// "Switch your identity with another identity …" (Rebirth class; CR 1.5.4).
 /// The identity that leaves the play area goes back to the pile it came from
 /// (1.5.4b); a double-sided one arrives front side faceup (1.5.4d).
