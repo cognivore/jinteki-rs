@@ -9262,7 +9262,18 @@ fn example_rule_look_reveal_instruction_1() {
             ServerId::Hq,
             true,
         );
-        let deck = tk::fill_deck(&mut vm, Side::Corp, 7);
+        // Installable furniture: the subroutine INSTALLS one of the
+        // looked-at cards, and 8.5.1 keeps an operation from ever being a
+        // candidate — the example's "among them" needs cards an install can
+        // take.
+        let deck: Vec<_> = (0..7)
+            .map(|i| {
+                let name: &'static str = Box::leak(format!("deck-{i}").into_boxed_str());
+                let id = vm.new_object(tk::vanilla_asset(name, 0, 1), Zone::Deck(Side::Corp));
+                vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+                id
+            })
+            .collect();
         vm.start_turn(Side::Runner);
 
         let runner = Plan::runner()
@@ -11656,9 +11667,12 @@ fn example_rule_bluffing_1() {
         ServerId::Remote(2),
         true,
     );
+    // Installable furniture: the Corp will INSTALL one of these, and 8.5.1
+    // keeps an operation from ever being an install's candidate — the cards
+    // this example bluffs with are an asset and an agenda anyway.
     let mut deck = Vec::new();
     for name in ["Snare-like", "Braintrust-like", "Rnd-3", "Rnd-4"] {
-        let id = vm.new_object(tk::corp_filler(name), Zone::Deck(Side::Corp));
+        let id = vm.new_object(tk::vanilla_asset(name, 0, 1), Zone::Deck(Side::Corp));
         vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
         deck.push(id);
     }

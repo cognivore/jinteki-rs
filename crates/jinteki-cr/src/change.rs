@@ -131,7 +131,17 @@ pub enum GameChange {
     ///
     /// 1.13.12 puts a hosted card in its host's zone, so a card hosted at
     /// install time records the server 4.6.6b puts the host in.
-    CardInstalled { obj: ObjectId, side: Side, from: Zone, to: Zone },
+    ///
+    /// `by_ability_of` is the card whose PRINTED ability's resolution
+    /// performed this install — one more fact about the MOMENT, recorded for
+    /// the same reason as the others: "When you install that card, …"
+    /// (Topan class) is a condition met by the install its own card's ability
+    /// made, and the frame that made it is popped long before any condition
+    /// is scanned. `None` when a rules frame installed the card (5.2.6d /
+    /// 5.2.7d's basic action is the player's, not a card's — the frame's
+    /// `AbilityRef` convention marks it) and for 8.8.4b's swap, where the
+    /// card became installed without any installation being performed.
+    CardInstalled { obj: ObjectId, side: Side, from: Zone, to: Zone, by_ability_of: Option<ObjectId> },
     /// CR 1.21.3: a card was REVEALED — shown to all players, then returned
     /// to its previous state. `by` is the player who revealed it, which is
     /// the ability's controller and NOT the card's owner: a sentence reading

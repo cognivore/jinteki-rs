@@ -1697,6 +1697,14 @@ pub fn stolen() -> TriggerCond {
 pub fn installed() -> TriggerCond {
     TriggerCond::SelfInstalled
 }
+/// "When you install that card, …" (Topan) — "that card" being the one an
+/// install instruction of this same card's ability performed, so the
+/// condition is met by that install and by no other: not by the basic
+/// action's, not by another card's, and not by a swap that made a card
+/// installed without installing it.
+pub fn installs_that_card() -> TriggerCond {
+    TriggerCond::CardInstalledByAbilityOfSource
+}
 /// "When it is empty, …" (10.9.2 — only after the card was LOADED.)
 pub fn empty_of(kind: CounterKind) -> TriggerCond {
     TriggerCond::SelfEmpty { kind }

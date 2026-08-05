@@ -456,6 +456,18 @@ pub enum TriggerCond {
     /// "Whenever the Corp installs a card in the root of this server…"
     /// (Tranquility Home Grid class; the 9.6.5b activity gate is the point).
     CardInstalledInSourceServer,
+    /// "When you install that card, …" (Topan class) — met by an install an
+    /// ability of THIS card performed, and by nothing else. The sentence
+    /// follows an install instruction of the same printed ability, and its
+    /// occurrence happens while that instruction is resolving — so a delayed
+    /// conditional created after it would wait for the NEXT install (9.6.13),
+    /// and a condition saying merely "you install a card" would be met by
+    /// every install the player makes. What it must say instead is WHOSE
+    /// ability made the install, which is
+    /// [`crate::change::GameChange::CardInstalled::by_ability_of`]'s moment
+    /// fact — compared against the source the way every other "this card"
+    /// condition is.
+    CardInstalledByAbilityOfSource,
     /// "When that encounter ends…" (Chum-class delayed conditionals).
     ///
     /// `criteria` is what the sentence says about the ice the encounter was
@@ -2792,6 +2804,19 @@ fn trigger_matches_dyn(
         (TriggerCond::SelfAddedToDeck, GameChange::CardMoved { obj, to: Zone::Deck(_), .. }) => {
             cite!("rule_active_exception_conditional_move_to_inactive_zone");
             *obj == source.id
+        }
+        // 8.5.16f: "when installed" conditions meet their trigger conditions
+        // — this one is the installing ABILITY's own card saying "when you
+        // install that card". The occurrence recorded which ability's
+        // resolution performed the install, because the frame that did it is
+        // gone by the time any condition is scanned; the comparison against
+        // the source is all that is left to ask.
+        (
+            TriggerCond::CardInstalledByAbilityOfSource,
+            GameChange::CardInstalled { by_ability_of, .. },
+        ) => {
+            cite!("rule_steps_installing_installed_condition");
+            *by_ability_of == Some(source.id)
         }
         (
             TriggerCond::CardInstalledInSourceServer,

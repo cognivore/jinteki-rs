@@ -72,19 +72,6 @@ kernel words, not card patches.
   ability handing a player a basic action at a reduced cost, and 5.2 offers
   actions only from the action phase's own step. *(MirrorMorph: Endless
   Iteration.)*
-- **A condition cannot be met by an earlier instruction of its OWN ability.**
-  "Install 1 card from your grip, paying 2[credit] less. **When you install
-  that card**, suffer 1 meat damage." — the second sentence is a conditional
-  whose occurrence happens while the FIRST is resolving, so there is nowhere
-  to put it: `Instruction::CreateDelayedConditional` resolves after the
-  install and 9.6.13 would have it wait for the next one, and a printed
-  conditional ability of the identity would be met by every install rather
-  than by the one this ability performed. What is missing is a trigger
-  condition that describes the OCCURRENCE as "an install this ability made".
-  `TargetFilter::InstalledByThisAbility` describes the CARD such an install
-  produced and is no help here: it is read while the ability is resolving, and
-  this sentence needs a moment DURING the install for a conditional to be met
-  at. *(Topan: Ormas Leader.)*
 - **A choice between SERVERS cannot be written when the servers do not exist
   yet.** 1.15.1b lists a server among the things a player can be told to
   choose, and `ChoiceSpec::Server` names one — the choice BETWEEN them being
@@ -175,7 +162,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **131 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **132 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -241,7 +228,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (15/19)
+## Runner — Anarch (16/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -260,7 +247,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.
 - [x] **Ryō "Phoenix" Ōno: Out of the Ashes** — The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.
 - [ ] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
-- [ ] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
+- [x] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
 - [x] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.
 - [x] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.
 - [x] **Wyvern: Chemically Enhanced** — Draft format only. You must maintain the order of your heap. Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.

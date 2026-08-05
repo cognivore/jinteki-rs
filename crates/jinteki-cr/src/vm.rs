@@ -6427,6 +6427,23 @@ impl Vm {
                 if matches!(instr, Instruction::InstallCard { .. }) {
                     candidates.retain(|c| !self.install_prohibited(*c));
                 }
+                // 8.5.1/8.5.3: events, operations and identities are never
+                // installed, so a description saying only "1 card" (Topan)
+                // cannot pick one (1.15.3) — unless the install is a facedown
+                // one, where 8.1.4a leaves no card type to be judged by.
+                if let Instruction::InstallCard { facedown: false, .. } = instr {
+                    cite!("rule_installing");
+                    candidates.retain(|c| {
+                        !matches!(
+                            self.st.objects[c].printed.card_type,
+                            CardType::Event | CardType::Operation | CardType::Identity
+                        )
+                    });
+                }
+                // 8.5.1/8.5.3: events, operations and identities are never
+                // installed, so a description saying only "1 card" (Topan)
+                // cannot pick one (1.15.3) — unless the install is a facedown
+                // one, where 8.1.4a leaves no card type to be judged by.
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((af.controller, self.announcement(candidates, want)))
             }
@@ -7009,6 +7026,11 @@ impl Vm {
                 // that zone is this install's destination. No step 8.5.16b ran
                 // to declare one.
                 to: if xi { zx } else { zy },
+                // 8.8.4b: the card BECAME installed, "WITHOUT the 8.5.16
+                // install procedure" — nothing installed it, so no ability
+                // performed an install here for "when you install that card"
+                // to be met by.
+                by_ability_of: None,
             });
         }
         if let (Zone::ScoreArea(sx), Zone::ScoreArea(sy)) = (zx, zy) {
@@ -11389,11 +11411,28 @@ impl Vm {
                 // zone, so a card hosted at install time records the server
                 // 4.6.6b puts the host in.
                 let to = self.st.objects[&c].zone;
+                // The card whose printed ability performed this install —
+                // read off the installing frame HERE because the frame is
+                // popped long before any condition is scanned. A rules frame
+                // (5.2.6d/5.2.7d's basic action, marked by its `AbilityRef`
+                // convention) is the player installing, not a card's ability,
+                // so it attributes nothing.
+                let by_ability_of = self
+                    .frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(&af.source),
+                        _ => None,
+                    })
+                    .filter(|src| src.index != usize::MAX)
+                    .map(|src| src.obj);
                 self.changes.record(GameChange::CardInstalled {
                     obj: c,
                     side,
                     from: p.from_zone,
                     to,
+                    by_ability_of,
                 });
                 // The installing ability now knows which card it installed —
                 // "…and install it … if THAT PROGRAM is still installed"

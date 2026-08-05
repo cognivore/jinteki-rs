@@ -11246,6 +11246,159 @@ fn omar_keung_is_not_offered_when_the_run_cannot_be_declared_successful() {
     );
 }
 
+/// Topan: Ormas Leader — "Once per turn → [click]: Install 1 card from your
+/// grip, paying 2[credit] less. When you install that card, suffer 1 meat
+/// damage."
+///
+/// The ability installs a 3-cost program for 1[credit], and the damage lands
+/// AFTER the install is complete — the condition is met by the install the
+/// ability performed, pended at the checkpoint that processes it, so the log
+/// shows the install first and exactly one meat damage after it. 9.3.6g's
+/// flag is spent by the use: the action is offered once this turn.
+///
+/// "1 card" is untyped, so the announcement is where 8.5.3 bites: the event
+/// in the grip is never a candidate, because an event is not a card that can
+/// be installed and so not a valid target (1.15.3).
+#[test]
+fn topan_installs_for_two_less_and_the_damage_follows_that_install() {
+    let mut vm = Vm::empty(6227);
+    tk::install_identity(&mut vm, card("Topan: Ormas Leader"), Side::Runner);
+    let program = {
+        let mut c = tk::vanilla_runner_card("Some Program", CardType::Program);
+        c.cost = Some(3);
+        c.memory_cost = Some(1);
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    let event = {
+        let mut c = tk::vanilla_runner_card("Some Event", CardType::Event);
+        c.cost = Some(0);
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            // No `.once()` on the action rule: a second offer would be taken
+            // again, and the offer count below would catch the unspent flag.
+            .when(Match::action(), Reply::take("ormas leader"))
+            .when(Match::targets().once(), Reply::Targets(vec![program]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&program].zone,
+        Zone::Rig,
+        "the ability installed the program: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "1 credit paid a 3-credit install — 1.16.6 lowered it by 2: {}",
+        t.tail(40)
+    );
+    let meat = vm
+        .changes
+        .log
+        .iter()
+        .filter(|c| matches!(c, GameChange::DamageSuffered { kind, .. } if *kind == jinteki_cr::effects::DamageKind::Meat))
+        .count();
+    assert_eq!(meat, 1, "the second sentence did exactly one meat damage: {}", t.tail(40));
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        3,
+        "five cards in the grip: the install took the program, the damage one more: {}",
+        t.tail(40)
+    );
+    let announce = t
+        .entries
+        .iter()
+        .find(|e| e.kind() == Kind::Targets)
+        .unwrap_or_else(|| panic!("no target announcement: {}", t.tail(16)));
+    assert!(
+        announce.candidates().contains(&program),
+        "the program is a candidate: {:?}",
+        announce.candidates()
+    );
+    assert!(
+        !announce.candidates().contains(&event),
+        "8.5.3: an event is never installed, so it is not one: {:?}",
+        announce.candidates()
+    );
+    let installed_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == program))
+        .expect("the install was recorded");
+    let damaged_at = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .expect("the damage was recorded");
+    assert!(
+        installed_at < damaged_at,
+        "8.5.16f before the conditional it meets — install first, damage after: {}",
+        t.tail(40)
+    );
+    let offers = t
+        .of_kind(Kind::Action)
+        .into_iter()
+        .filter(|e| Pick::Labeled("ormas leader").find_action(e.actions()).is_some())
+        .count();
+    assert_eq!(offers, 1, "9.3.6g: the ability is offered once a turn: {}", t.tail(40));
+}
+
+/// The other half of the new occurrence fact: the basic action's install
+/// (5.2.7d) is the PLAYER's, not this ability's, so "when you install that
+/// card" is met by nothing and no damage happens.
+#[test]
+fn topans_damage_does_not_follow_the_basic_actions_install() {
+    let mut vm = Vm::empty(6228);
+    tk::install_identity(&mut vm, card("Topan: Ormas Leader"), Side::Runner);
+    let program = {
+        let mut c = tk::vanilla_runner_card("Some Program", CardType::Program);
+        c.cost = Some(0);
+        c.memory_cost = Some(1);
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    tk::fill_hand(&mut vm, Side::Runner, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(program)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&program].zone,
+        Zone::Rig,
+        "the basic action installed the program: {}",
+        t.tail(40)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::DamageSuffered { .. })),
+        "and the identity's condition was met by none of it: {}",
+        t.tail(40)
+    );
+}
+
 /// Every `WindowOption` this transcript ever put in front of a player. The
 /// prohibition Saraswati creates is a "cannot", so what it changes is what is
 /// OFFERED (1.2.2), and that is where it has to be read.

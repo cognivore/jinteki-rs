@@ -489,6 +489,46 @@ pub fn omar_keung() -> Card {
         .build()
 }
 
+/// Topan: Ormas Leader — Identity: Natural. Link 0.
+/// "Once per turn → [click]: Install 1 card from your grip, paying 2[credit]
+///  less. When you install that card, suffer 1 meat damage."
+///
+/// COMPLETE. Two printed sentences, and the second is why this identity
+/// waited: its condition is met WHILE the first sentence's install
+/// instruction is resolving, so a delayed conditional created after the
+/// install would wait for the next one (9.6.13), and a plain "you install a
+/// card" condition would be met by every install the Runner makes. The
+/// occurrence now records which ability's resolution performed the install,
+/// and this condition compares that record against its own card — so the
+/// basic action's install does not meet it, and neither does any other
+/// card's.
+///
+/// "1 card" is untyped, and 8.5.3 is what narrows it — events are never
+/// installed, so one is not a valid target (1.15.3) — enforced where targets
+/// are announced rather than written into a description the card does not
+/// print. "Paying 2[credit] less" is 1.16.6's reduction of the install cost
+/// alone, the same word Khan uses. The damage is MANDATORY, and the Runner is
+/// responsible for it: the identity is the Runner's own card (9.1.1a).
+pub fn topan() -> Card {
+    card("Topan: Ormas Leader")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.")
+        .paid_once_per_turn(
+            clicks(1),
+            [install_paying_less(
+                choose(1, &[in_hand_of(Runner)]),
+                InstallDest::RunnerChoiceHostOrRig,
+                2,
+            )],
+        )
+        .named("ormas leader")
+        .when(installs_that_card(), [meat_damage(Runner, 1)])
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -508,5 +548,6 @@ pub fn identities() -> Vec<Card> {
         null_whistleblower(),
         ryo_phoenix_ono(),
         omar_keung(),
+        topan(),
     ]
 }
