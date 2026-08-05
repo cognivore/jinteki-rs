@@ -10304,3 +10304,116 @@ fn because_we_built_it_pays_to_advance_ice_and_nothing_else() {
         );
     }
 }
+
+/// Chronos Protocol: Selective Mind-mapping — "For the first net damage the
+/// Runner suffers each turn, you may look at the Runner's grip and select the
+/// card that is trashed."
+///
+/// The Corp presses the same button twice in one turn. The FIRST net damage
+/// offers the choice and trashes the card the Corp names; the second offers
+/// nothing and takes 10.4.2a's random card, which is the printed ordinal being
+/// read from the change log rather than from a once-per-turn flag a static
+/// ability would never spend (9.4.1).
+#[test]
+fn chronos_protocol_selects_the_card_the_first_net_damage_trashes() {
+    let mut vm = Vm::empty(6207);
+    tk::install_identity(&mut vm, card("Chronos Protocol: Selective Mind-mapping"), Side::Corp);
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt", 1), ServerId::Remote(1), true);
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    let victim = grip[2];
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().times(2), Reply::take("do net damage"))
+            .when(Match::optional(), Reply::Optional(true))
+            .when(Match::targets(), Reply::Targets(vec![victim]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&victim].zone,
+        Zone::Discard(Side::Runner),
+        "10.4.3a: the card the Corp selected is the one that was trashed: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "both net damages landed — the declaration changes which card, never how \
+         many: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Optional).len(),
+        1,
+        "and the choice was offered exactly once: the SECOND net damage of the turn \
+         is not the first one, so the declaration does not reach it: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Targets).len(),
+        1,
+        "so the grip was named only for the damage the declaration reached: {}",
+        t.tail(40)
+    );
+}
+
+/// The two halves the same sentence states about WHICH damage it reaches, and
+/// about how it is offered.
+///
+/// "Net damage" names one of 10.4.2's three types, so a meat damage of the same
+/// size is left random and the Corp is asked nothing at all. And the printed
+/// "you may" governs the looking as well as the selecting: a Corp who declines
+/// is never shown the grip, so no target announcement happens — while the
+/// damage itself lands either way.
+#[test]
+fn chronos_protocol_ignores_meat_damage_and_names_no_grip_when_it_is_declined() {
+    for (label, meat, take) in [("meat", true, true), ("declined", false, false)] {
+        let mut vm = Vm::empty(6208);
+        tk::install_identity(&mut vm, card("Chronos Protocol: Selective Mind-mapping"), Side::Corp);
+        let button = if meat {
+            tk::meat_damage_button("Hurt", 1)
+        } else {
+            tk::net_damage_button("Hurt", 1)
+        };
+        tk::install_root(&mut vm, button, ServerId::Remote(1), true);
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let label_of = if meat { "do meat damage" } else { "do net damage" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take(label_of))
+                .when(Match::optional(), Reply::Optional(take))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            3,
+            "the {label} damage landed: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            t.of_kind(Kind::Optional).len(),
+            if meat { 0 } else { 1 },
+            "the declaration names net damage, so only that one is offered ({label}): {}",
+            t.tail(40)
+        );
+        assert!(
+            t.of_kind(Kind::Targets).is_empty(),
+            "and the grip is never named — not for a damage the declaration does not \
+             reach, and not for one the Corp declined to use it on ({label}): {}",
+            t.tail(40)
+        );
+    }
+}

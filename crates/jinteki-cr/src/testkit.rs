@@ -5296,14 +5296,20 @@ pub fn any_order_granter(
 /// choice "otherwise resolves as normal" even when the other player's
 /// declaration wins the choice.
 ///
-/// SIMPLIFICATION (§12 rule 3): the printed "first time each turn" limit is
-/// elided; no example here damages twice in a turn.
+/// The printed ordinal, damage type and "you may" are all sayable
+/// (`StaticDecl::SelectsDamageTrashes`), and this SHAPE declines all three on
+/// purpose: 9.12.1c is what it exists to exercise, and an extra optional
+/// decision in every example plan would only obscure it. The card itself is
+/// written in `jinteki-cards`.
 pub fn chronos_protocol_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::SelectsDamageTrashes {
             by: Side::Corp,
             count: Quantity::c(1),
+            kinds: Vec::new(),
+            first_each_turn: false,
+            optional: false,
         }])
         .labeled("chronos: the Corp chooses the first card trashed"),
         AbilityDef::conditional(
@@ -5327,6 +5333,9 @@ pub fn titanium_ribs_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::SelectsDamageTrashes {
         by: Side::Runner,
         count: Quantity::c(9),
+        kinds: Vec::new(),
+        first_each_turn: false,
+        optional: false,
     }])
     .labeled("ribs: you choose the cards you trash")];
     c

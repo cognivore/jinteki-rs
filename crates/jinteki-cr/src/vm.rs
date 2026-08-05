@@ -202,7 +202,21 @@ pub enum DecisionCtx {
     /// many times it resolves.
     LoopCount,
     /// CR 10.4.3a: which cards the selecting player trashes for this damage.
-    DamageSelection { kind: crate::effects::DamageKind, amount: u32 },
+    /// `responsible` is 10.4.1's responsible player, carried through the
+    /// suspension because 10.4.2a has THEM trash the cards and the damage
+    /// instruction that knew it is no longer on the stack when the answer
+    /// arrives.
+    DamageSelection { kind: crate::effects::DamageKind, amount: u32, responsible: Side },
+    /// CR 10.4.3a: the declaration OFFERS the selection ("you may look at the
+    /// Runner's grip and select the card that is trashed") — asked before the
+    /// candidates are named, since the printed "may" governs the looking too.
+    DamageSelectionOffer {
+        kind: crate::effects::DamageKind,
+        amount: u32,
+        responsible: Side,
+        by: Side,
+        want: u32,
+    },
     /// 10.14.6 sealed psi bids.
     PsiBid(Side),
     /// 10.3.1j: the Runner declares candidacy of a mid-breach root entry.
@@ -8917,11 +8931,31 @@ impl Vm {
                         _ => None,
                     });
                 if let Some((kind, amount)) = hit {
-                    if let Some((by, n)) = self.damage_trash_selector() {
+                    if let Some((by, n, optional)) = self.damage_trash_selector(kind) {
                         let hand = self.st.hand[&Side::Runner].clone();
                         let want = n.min(amount).min(hand.len() as u32);
                         if want > 0 {
                             cite!("rule_multiple_damage_selected_sequentially");
+                            let responsible = *responsible;
+                            if optional {
+                                // 9.6.9c: the declaration is offered. The grip
+                                // is not named yet — the printed "may" covers
+                                // looking at it.
+                                self.ask(
+                                    by,
+                                    DecisionSpec::OptionalEffect {
+                                        label: "select the cards trashed by this damage",
+                                    },
+                                    DecisionCtx::DamageSelectionOffer {
+                                        kind,
+                                        amount,
+                                        responsible,
+                                        by,
+                                        want,
+                                    },
+                                );
+                                return;
+                            }
                             self.ask(
                                 by,
                                 DecisionSpec::ChooseTargets {
@@ -8931,7 +8965,7 @@ impl Vm {
                                     min: want,
                                     distinct_names: false,
                                 },
-                                DecisionCtx::DamageSelection { kind, amount },
+                                DecisionCtx::DamageSelection { kind, amount, responsible },
                             );
                             return;
                         }
@@ -13633,30 +13667,52 @@ impl Vm {
     /// CR 10.4.2: meat/net trash 1 random grip card per point; core also
     /// takes a core damage counter. Flatline if damage > grip (1.7.2b).
     /// CR 10.4.3a / 9.12.1c: who, if anyone, selects the cards trashed by
-    /// damage, and how many of them. With declarations from BOTH players the
-    /// choice can only be made once, so the active player makes it (9.12.1c)
-    /// — and the rest of each ability still resolves, which is why this
-    /// function decides nothing except the choice itself.
-    pub fn damage_trash_selector(&self) -> Option<(Side, u32)> {
-        let mut found: Vec<(Side, u32)> = Vec::new();
+    /// damage of `kind`, how many of them, and whether the declaration offers
+    /// the selection rather than imposing it. With declarations from BOTH
+    /// players the choice can only be made once, so the active player makes it
+    /// (9.12.1c) — and the rest of each ability still resolves, which is why
+    /// this function decides nothing except the choice itself.
+    ///
+    /// A declaration naming a damage type reaches only that type, and one
+    /// carrying the printed ordinal reaches only the first such damage each
+    /// turn — 10.2.1 makes the earlier ones open information, and the count is
+    /// taken here, before this damage's own `DamageSuffered` is recorded.
+    pub fn damage_trash_selector(&self, kind: DamageKind) -> Option<(Side, u32, bool)> {
+        let mut found: Vec<(Side, u32, bool)> = Vec::new();
         for (obj, d) in self.active_statics() {
-            if let StaticDecl::SelectsDamageTrashes { by, count } = d {
-                let n = self.eval_quantity(&count, Some(obj)).max(0) as u32;
-                found.push((by, n));
+            let StaticDecl::SelectsDamageTrashes { by, count, kinds, first_each_turn, optional } =
+                d
+            else {
+                continue;
+            };
+            if !kinds.is_empty() && !kinds.contains(&kind) {
+                continue;
             }
+            if first_each_turn {
+                cite!("rule_open_information");
+                let earlier = self.changes.log[self.st.turn_log_start..].iter().any(|c| {
+                    matches!(c, GameChange::DamageSuffered { kind: k, .. }
+                        if kinds.is_empty() || kinds.contains(k))
+                });
+                if earlier {
+                    continue;
+                }
+            }
+            let n = self.eval_quantity(&count, Some(obj)).max(0) as u32;
+            found.push((by, n, optional));
         }
         if found.is_empty() {
             return None;
         }
         cite!("rule_multiple_damage_selected_sequentially");
-        if found.iter().any(|(s, _)| *s == Side::Corp)
-            && found.iter().any(|(s, _)| *s == Side::Runner)
+        if found.iter().any(|(s, _, _)| *s == Side::Corp)
+            && found.iter().any(|(s, _, _)| *s == Side::Runner)
         {
             cite!("rule_modify_ability_with_choice");
             let active = self.st.turn_side;
-            return found.into_iter().find(|(s, _)| *s == active);
+            return found.into_iter().find(|(s, _, _)| *s == active);
         }
-        found.into_iter().max_by_key(|(_, n)| *n)
+        found.into_iter().max_by_key(|(_, n, _)| *n)
     }
 
     pub fn do_damage(&mut self, kind: DamageKind, amount: u32, responsible: Side) {
@@ -14834,11 +14890,47 @@ impl Vm {
                     // continue naturally.
                 }
             }
-            (DecisionCtx::DamageSelection { kind, amount }, DecisionAnswer::Targets(chosen)) => {
+            (
+                DecisionCtx::DamageSelection { kind, amount, responsible },
+                DecisionAnswer::Targets(chosen),
+            ) => {
                 // 10.4.3a: selected sequentially, trashed simultaneously.
                 cite!("rule_multiple_damage_selected_sequentially");
                 cite!("rule_multiple_damage_taken_simultaneously");
-                self.do_damage_selecting(kind, amount, &chosen, Side::Corp);
+                self.do_damage_selecting(kind, amount, &chosen, responsible);
+            }
+            (
+                DecisionCtx::DamageSelectionOffer { kind, amount, responsible, by, want },
+                DecisionAnswer::ResolveOptional(yes),
+            ) => {
+                // 10.4.3a is the whole anchor: the declaration that modifies
+                // the damage procedure is the same one that states the
+                // modification is offered rather than imposed.
+                cite!("rule_multiple_damage_selected_sequentially");
+                if !yes {
+                    // Declined: 10.4.2a's randomly-chosen cards, and the grip
+                    // was never named.
+                    self.do_damage(kind, amount, responsible);
+                    return;
+                }
+                let hand = self.st.hand[&Side::Runner].clone();
+                let want = want.min(hand.len() as u32);
+                if want == 0 {
+                    self.do_damage(kind, amount, responsible);
+                    return;
+                }
+                cite!("rule_multiple_damage_selected_sequentially");
+                self.ask(
+                    by,
+                    DecisionSpec::ChooseTargets {
+                        candidates: hand,
+                        count: want,
+                        up_to: false,
+                        min: want,
+                        distinct_names: false,
+                    },
+                    DecisionCtx::DamageSelection { kind, amount, responsible },
+                );
             }
             (DecisionCtx::SubroutineOrder, DecisionAnswer::SubroutineOrder(at)) => {
                 // 9.8.2c: apply the declared positions to the grant that was

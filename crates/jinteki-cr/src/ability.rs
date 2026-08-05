@@ -1331,7 +1331,34 @@ pub enum StaticDecl {
     /// CR 9.12.1c: when both players' effects make this declaration, the
     /// choice can only be made once, so the ACTIVE player makes it — and the
     /// rest of each ability still resolves.
-    SelectsDamageTrashes { by: Side, count: crate::instr::Quantity },
+    ///
+    /// Every stipulation the printed sentence makes about WHICH damage the
+    /// declaration is stated about, and about how it is offered, is content on
+    /// this one atom (§12 rule 2). The plain sentence ("you choose the cards
+    /// you trash to damage" — Titanium Ribs) is all three of them empty:
+    /// - `kinds` is the damage type the sentence names ("the first **net**
+    ///   damage"). 10.4.2 lists three of them and an empty list names none, so
+    ///   it reaches every kind, which is what a sentence saying plain "damage"
+    ///   means.
+    /// - `first_each_turn` is the printed ordinal, read from the change log
+    ///   (10.2.1 open information) exactly as
+    ///   [`StaticDecl::InherentCostMod`]'s is: the declaration reaches this
+    ///   damage only while no earlier `DamageSuffered` this turn matched
+    ///   `kinds`. It is NOT 9.3.6g's once-per-turn flag — 9.4.1 says a static
+    ///   ability never resolves, so it never spends one.
+    /// - `optional` is the printed "**you may** look at the Runner's grip and
+    ///   select the card that is trashed" (Chronos Protocol: Selective
+    ///   Mind-mapping). The "may" governs the looking as well as the
+    ///   selecting, so it is asked BEFORE the candidates are named: offering
+    ///   the grip as candidates and letting the player pick none would show
+    ///   them a grip the card only lets them see when they use the ability.
+    SelectsDamageTrashes {
+        by: Side,
+        count: crate::instr::Quantity,
+        kinds: Vec<crate::effects::DamageKind>,
+        first_each_turn: bool,
+        optional: bool,
+    },
     /// CR 7.4.2: "the Runner cannot access any cards other than this one"
     /// (Flagship class). Declared by a STATIC ability rather than created as
     /// a lingering effect, so it applies exactly while the ability is active

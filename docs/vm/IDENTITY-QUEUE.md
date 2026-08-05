@@ -217,15 +217,6 @@ kernel words, not card patches.
   where 8.5.2 otherwise settles the face with nobody asked.
   *(BANGUN: When Disaster Strikes, whose second sentence also wants
   `TriggerCond::RunnerAccessesCard` to describe the card accessed.)*
-- **A declaration cannot be scoped to ONE occurrence, or offered.**
-  `StaticDecl::SelectsDamageTrashes { by, count }` is 10.4.3a's modification of
-  the damage procedure, and a static ability never resolves (9.4.1) and is
-  never declined — but "for the FIRST net damage the Runner suffers each turn,
-  YOU MAY look at the Runner's grip and select the card that is trashed"
-  states that declaration about one damage and puts it to the Corp. 9.6.13's
-  lingering effect is the shape that would carry it, and `LingeringSpec` has
-  no member holding a declaration for a stated span.
-  *(Chronos Protocol: Selective Mind-mapping.)*
 
 
 ## Not a kernel gap: the back faces have no printed text here
@@ -241,7 +232,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **122 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **123 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -381,14 +372,14 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (14/21)
+## Corp — Jinteki (15/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
 - [ ] **A Teia: IP Recovery** — Limit 2 remote servers. The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.
 - [ ] **AU Co.: The Gold Standard in Clones** — Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity. When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.
 - [ ] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
-- [ ] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.
+- [x] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.
 - [x] **Harmony Medtech: Biomedical Pioneer** — Each player needs 1 fewer agenda point to win the game.
 - [x] **Hyoubu Institute: Absolute Clarity** — The first time each turn you reveal a card, gain 1[credit]. [click]: Reveal 1 card from the grip at random or the top card of the stack.
 - [x] **Industrial Genomics: Growing Solutions** — The trash cost of each card is increased by 1 for each facedown card in Archives.

@@ -528,6 +528,54 @@ pub fn mti_mwekundu() -> Card {
         .build()
 }
 
+/// Chronos Protocol: Selective Mind-mapping — Identity: Division.
+/// "For the first net damage the Runner suffers each turn, you may look at the
+///  Runner's grip and select the card that is trashed."
+///
+/// COMPLETE. One printed sentence, and it never happens: 10.4.2a trashes "1
+/// randomly-chosen card from the grip" for each point of damage, and this
+/// sentence is 10.4.3a's modification OF that procedure, so it is a static
+/// declaration (9.4.1 — it never resolves) rather than anything the Corp does.
+///
+/// Everything the sentence stipulates is content on that declaration:
+///
+/// - **"net damage"** names one of 10.4.2's three types, so a meat or core
+///   damage goes on being random while this identity is out.
+/// - **"the first … each turn"** is the printed ordinal, read from the change
+///   log (10.2.1 open information) rather than from 9.3.6g's once-per-turn
+///   flag: a static ability never resolves and so never spends one. The count
+///   is taken before this damage's own occurrence is recorded, so the damage
+///   being decided is never one of the earlier ones it is counted against —
+///   and a *prevented* damage was never suffered, so it does not use the turn
+///   up.
+/// - **"you may"** governs the looking as well as the selecting, so the Corp
+///   is asked before the grip is named. Naming the candidates first and
+///   letting the Corp choose none would show them a grip the card only lets
+///   them see when they use it — 4.3.2 keeps the grip hidden otherwise.
+///
+/// "The card that is trashed" is singular because one net damage trashes one
+/// card. The number is the declaration's own, not the damage's: the VM takes
+/// the smaller of the two, so a Corp who somehow did two net damage at once
+/// selects one of the pair and the other stays random.
+///
+/// 9.12.1c is what happens when the Runner declares the same thing (Titanium
+/// Ribs): the choice can only be made once, so the active player makes it.
+pub fn chronos_protocol_selective_mind_mapping() -> Card {
+    card("Chronos Protocol: Selective Mind-mapping")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.")
+        .declares([may_select_first_damage_trashes_each_turn(
+            Corp,
+            DamageKind::Net,
+            amount(1),
+        )])
+        .named("selective mind-mapping")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -546,5 +594,6 @@ pub fn identities() -> Vec<Card> {
         palana_foods(),
         tennin_institute(),
         mti_mwekundu(),
+        chronos_protocol_selective_mind_mapping(),
     ]
 }

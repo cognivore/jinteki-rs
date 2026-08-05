@@ -2738,6 +2738,37 @@ pub fn first_installed_each_turn_costs_less(criteria: &[TargetFilter], n: i32) -
         first_each_turn: true,
     }
 }
+/// "For the first <kind> damage the Runner suffers each turn, you may look at
+/// the Runner's grip and select the card that is trashed." (Chronos Protocol:
+/// Selective Mind-mapping; CR 10.4.3a — the declaration modifies the damage
+/// procedure so the cards are selected rather than random.)
+///
+/// The "you may" is asked before the grip is named, because the printed word
+/// covers the looking as well as the selecting.
+pub fn may_select_first_damage_trashes_each_turn(
+    by: Side,
+    kind: DamageKind,
+    count: Quantity,
+) -> StaticDecl {
+    StaticDecl::SelectsDamageTrashes {
+        by,
+        count,
+        kinds: vec![kind],
+        first_each_turn: true,
+        optional: true,
+    }
+}
+/// "You choose the cards you trash to damage." (Titanium Ribs; CR 10.4.3a.)
+/// No damage type, no ordinal, no choice about it.
+pub fn selects_damage_trashes(by: Side, count: Quantity) -> StaticDecl {
+    StaticDecl::SelectsDamageTrashes {
+        by,
+        count,
+        kinds: Vec::new(),
+        first_each_turn: false,
+        optional: false,
+    }
+}
 /// "The first <described card> the Corp rezzes each turn costs N[credit] more
 /// to rez." (Reina Roja.)
 pub fn first_rezzed_each_turn_costs_more(criteria: &[TargetFilter], n: i32) -> StaticDecl {
