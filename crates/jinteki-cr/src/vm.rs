@@ -219,6 +219,10 @@ pub enum DecisionCtx {
     },
     /// 10.14.6 sealed psi bids.
     PsiBid(Side),
+    /// CR 10.2.2a: a sealed identity-face choice (Méliès U's "secretly set
+    /// your identity to any copy") — the answer goes into hidden state and
+    /// is revealed by the flip, exactly as a psi bid is sealed until 10.14.6c.
+    SecretFaceChoice(Side),
     /// 10.3.1j: the Runner declares candidacy of a mid-breach root entry.
     BreachCandidacy(ObjectId),
     /// 8.5.13d/1.16.4c: pay or decline the additional rez cost during an
@@ -434,6 +438,13 @@ pub struct Vm {
     pub pending_from_effect: Vec<u64>,
     /// Sealed first bid of an in-progress Psi Game (10.14.6).
     psi_first_bid: Option<u32>,
+    /// CR 10.2.2a: the back face each side's identity is SECRETLY set to —
+    /// an index into its `flip_faces` (Méliès U's "secretly set your
+    /// identity to any copy"). Hidden information the same way a sealed psi
+    /// bid is: the choice's having been made is open (the change log records
+    /// it without content), the answer lives only here, and the reveal is
+    /// the flip itself — `FlipIdentity` turns this face up for all to see.
+    secret_flip_face: std::collections::BTreeMap<Side, usize>,
     pub pending_decision: Option<(Side, DecisionSpec, DecisionCtx)>,
     answer: Option<DecisionAnswer>,
     pub game_over: Option<GameResult>,
@@ -804,6 +815,7 @@ impl Vm {
             pending_candidacy: Vec::new(),
             pending_from_effect: Vec::new(),
             psi_first_bid: None,
+            secret_flip_face: std::collections::BTreeMap::new(),
             pending_decision: None,
             answer: None,
             game_over: None,
@@ -834,7 +846,7 @@ impl Vm {
             Object {
                 id,
                 printed,
-                flipped: false,
+                flipped: None,
                 zone,
                 faceup: false,
                 owner,
@@ -5041,7 +5053,8 @@ impl Vm {
             | Instruction::ShuffleCardsIntoDeck { .. }
             | Instruction::ShuffleDeck { .. }
             | Instruction::RemoveCardsFromGame { .. }
-            | Instruction::FlipIdentity(_) => {
+            | Instruction::FlipIdentity(_)
+            | Instruction::SecretlySetFlipFace(_) => {
                 vec![EffectAtom::new(EffectClass::Structural, 1, controller)]
             }
             Instruction::DeclareRunSuccessful => {
@@ -8985,11 +8998,16 @@ impl Vm {
                 cite!("rule_calculated_quantity");
                 self.eval_quantity(left, source) == self.eval_quantity(right, source)
             }
-            // 6.1.1: a run is in progress. Nothing about which server, and
-            // nothing about the run's outcome — only that there is one.
-            R::RunInProgress => {
+            // 6.1.1: a run is in progress — on one of the named servers,
+            // where the sentence names any (an empty list is a sentence
+            // naming none, which is every run). Nothing about the run's
+            // outcome.
+            R::RunInProgress { on } => {
                 cite!("rule_abilities_during_a_run");
-                self.current_run.is_some()
+                match self.current_run {
+                    Some((_, server, _)) => on.is_empty() || on.contains(&server),
+                    None => false,
+                }
             }
             R::RunnerLinkAtLeast(n) => self.runner_link() >= *n as i32,
             // 1.17.1: the named player's score, read through the same
@@ -11583,16 +11601,65 @@ impl Vm {
                 // changes which face's printed characteristics apply. The
                 // 10.3.1a checkpoint after this instruction re-derives
                 // abilities from the new face, so pendings/statics follow.
+                //
+                // Which back comes up: a card with ONE back has only it
+                // (Nebula/Earth Station class); a card printed as several
+                // copies with different backs (Méliès U class) turns up the
+                // one its secret set last chose — the physical copy on the
+                // table. With several backs and no set made, no face is
+                // determined, and 9.11.2 does as much as it can: nothing.
+                // Flipping home never asks: the front is the front, and the
+                // secret choice survives it — the copy on the table does not
+                // change by being turned back over.
                 cite!("rule_identity_double_sided");
                 cite!("rule_double_sided_identity");
                 let id = self.identity_of(*side);
+                let chosen = self.secret_flip_face.get(side).copied();
                 if let Some(id) = id {
                     if let Some(o) = self.st.objects.get_mut(&id) {
-                        if o.printed.flip_face.is_some() {
-                            o.flipped = !o.flipped;
-                            self.changes.record(GameChange::IdentityFlipped { side: *side });
+                        let n = o.printed.flip_faces.len();
+                        if n > 0 {
+                            match o.flipped {
+                                Some(_) => {
+                                    o.flipped = None;
+                                    self.changes
+                                        .record(GameChange::IdentityFlipped { side: *side });
+                                }
+                                None => {
+                                    let up = if n == 1 { Some(0) } else { chosen };
+                                    if let Some(f) = up.filter(|f| *f < n) {
+                                        o.flipped = Some(f);
+                                        self.changes
+                                            .record(GameChange::IdentityFlipped { side: *side });
+                                    }
+                                }
+                            }
                         }
                     }
+                }
+            }
+            Instruction::SecretlySetFlipFace(side) => {
+                // CR 10.2.2a via the psi precedent (10.14.6b): a decision
+                // whose ANSWER is hidden information. "When your discard
+                // phase ends, secretly set your identity to any copy of
+                // Méliès U" — the choice is put to the identity's controller
+                // among its printed backs; the answer is sealed in
+                // `secret_flip_face` (never in the change log, which 10.2.1
+                // makes open), and the flip is the reveal. With no back or
+                // one back there is nothing to choose (9.11.2), and the one
+                // back needs no seal — `FlipIdentity` finds it by itself.
+                cite!("rule_hidden_information");
+                let id = self.identity_of(*side);
+                let faces: Vec<&'static str> = id
+                    .and_then(|id| self.st.objects.get(&id))
+                    .map(|o| o.printed.flip_faces.iter().map(|f| f.name).collect())
+                    .unwrap_or_default();
+                if faces.len() > 1 {
+                    self.ask(
+                        *side,
+                        DecisionSpec::ChooseOption { options: faces },
+                        DecisionCtx::SecretFaceChoice(*side),
+                    );
                 }
             }
             Instruction::SwitchIdentity { side, with } => {
@@ -11636,8 +11703,11 @@ impl Vm {
                 // faceup … regardless of the previous identity's current
                 // side."
                 cite!("rule_additional_identity_double_sided");
-                o.flipped = false;
+                o.flipped = None;
                 o.active_since = seq;
+                // A sealed face choice was the OLD identity's; the card it
+                // named has left the play area, so nothing keeps it.
+                self.secret_flip_face.remove(&side);
             }
             Instruction::ShuffleCardsIntoDeck { targets, to } => {
                 // Jackson class: the announced cards enter the deck (1.12.3
@@ -16764,6 +16834,30 @@ impl Vm {
                     self.checkpoint_and_react(None);
                 }
                 // The spend instruction completes.
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    if af.phase == AbilityPhase::Resolve {
+                        af.phase = AbilityPhase::Checkpoint;
+                    }
+                }
+            }
+            (DecisionCtx::SecretFaceChoice(side), DecisionAnswer::Option(i)) => {
+                // The psi grain (10.14.6b): the answer is SEALED — it goes
+                // into `secret_flip_face` and never into the change log,
+                // which 10.2.1 makes open information. What IS open is that
+                // the set happened: the mandatory ability resolved in front
+                // of both players, so the record carries the side and
+                // nothing else. The reveal is the flip (rule_identity_double
+                // _sided): the chosen face turns up for everyone.
+                cite!("rule_hidden_information");
+                let n = self
+                    .identity_of(side)
+                    .and_then(|id| self.st.objects.get(&id))
+                    .map(|o| o.printed.flip_faces.len())
+                    .unwrap_or(0);
+                assert!(i < n, "illegal face choice {i} of {n}");
+                self.secret_flip_face.insert(side, i);
+                self.changes.record(GameChange::IdentityFaceSecretlySet { side });
+                // The set instruction completes.
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                     if af.phase == AbilityPhase::Resolve {
                         af.phase = AbilityPhase::Checkpoint;

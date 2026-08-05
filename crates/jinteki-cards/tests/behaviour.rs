@@ -1760,7 +1760,7 @@ fn nebula_flips_after_an_operation_turn() {
         "flipped exactly once at the phase end: {}",
         t.tail(12)
     );
-    assert!(vm.st.objects[&id].flipped, "the back face is up");
+    assert!(vm.st.objects[&id].flipped.is_some(), "the back face is up");
     // 5 − 5 (Hedge Fund) + 9 + 2 (two remaining basic credits) + 1 (Nebula).
     assert_eq!(vm.st.corp.credits, 12, "{}", t.tail(12));
 }
@@ -1773,7 +1773,7 @@ fn gemilang_pays_a_click_once_and_flips_back_on_a_central_run() {
     let id = tk::install_identity(&mut vm, card("Nebula Talent Management: Making Stars"), Side::Corp);
     // Setup state: the identity begins on its back face (as after a Nebula
     // turn) — placement, not effect-by-fiat.
-    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
     let hf1 = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(hf1);
     let hf2 = vm.new_object(card("Hedge Fund"), Zone::Hand(Side::Corp));
@@ -1804,7 +1804,7 @@ fn gemilang_pays_a_click_once_and_flips_back_on_a_central_run() {
         1,
         "the 'first time each turn' fired once"
     );
-    assert!(vm.st.objects[&id].flipped, "still Gemilang — no flip yet");
+    assert!(vm.st.objects[&id].flipped.is_some(), "still Gemilang — no flip yet");
 
     // Resume: the Corp drains, the Runner runs R&D. The successful run flips
     // the identity home; the Runner's halt right after proves the timing.
@@ -1815,7 +1815,7 @@ fn gemilang_pays_a_click_once_and_flips_back_on_a_central_run() {
         "flipped back on the successful central run: {}",
         script.transcript().tail(14)
     );
-    assert!(!vm.st.objects[&id].flipped, "front face up again");
+    assert!(vm.st.objects[&id].flipped.is_none(), "front face up again");
 }
 
 /// Closed Accounts: "Play only if the Runner is tagged. The Runner loses all
@@ -12751,7 +12751,7 @@ fn earth_station_flips_for_a_click_and_the_back_taxes_remotes_until_hq_flips_it_
             .when(Match::action(), Reply::Halt),
     );
     assert!(
-        vm.st.objects[&id].flipped == false,
+        vm.st.objects[&id].flipped.is_none(),
         "flipped up for the [click], home again on the successful HQ run: {}",
         t.tail(30)
     );
@@ -12988,7 +12988,7 @@ fn hoshiko_gains_2_and_flips_together_when_an_access_turn_ends() {
         "flipped exactly once, at the turn's end: {}",
         t.tail(16)
     );
-    assert!(vm.st.objects[&id].flipped, "the back face is up");
+    assert!(vm.st.objects[&id].flipped.is_some(), "the back face is up");
     // 5 + 3 (remaining basic credits after the run's click) + 2 (Hoshiko).
     assert_eq!(
         vm.st.runner.credits,
@@ -13017,7 +13017,7 @@ fn hoshiko_stays_put_when_a_turn_without_access_ends() {
         "no access this turn, so no flip: {}",
         t.tail(16)
     );
-    assert!(!vm.st.objects[&id].flipped, "the front face is still up");
+    assert!(vm.st.objects[&id].flipped.is_none(), "the front face is still up");
     assert_eq!(vm.st.runner.credits, 9, "5 + 4 basic credits and nothing from Hoshiko");
 }
 
@@ -13030,7 +13030,7 @@ fn hoshiko_back_draws_and_loses_1_when_the_turn_begins() {
     let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
     // Setup state: the identity begins on its back face (as after an access
     // turn) — placement, not effect-by-fiat.
-    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
     tk::fill_deck(&mut vm, Side::Runner, 5);
     vm.st.runner.credits = 5;
     vm.start_turn(Side::Runner);
@@ -13051,7 +13051,7 @@ fn hoshiko_back_draws_and_loses_1_when_the_turn_begins() {
 fn hoshiko_back_at_zero_credits_still_draws_and_loses_nothing() {
     let mut vm = Vm::empty(6403);
     let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
-    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
     tk::fill_deck(&mut vm, Side::Runner, 5);
     vm.st.runner.credits = 0;
     vm.start_turn(Side::Runner);
@@ -13102,7 +13102,7 @@ fn hoshiko_round_trip_flips_out_on_access_and_home_on_none() {
         "flipped out at the first turn's end and home at the second's: {}",
         t.tail(30)
     );
-    assert!(!vm.st.objects[&id].flipped, "the front face is up again");
+    assert!(vm.st.objects[&id].flipped.is_none(), "the front face is up again");
     assert_eq!(
         vm.st.hand[&Side::Runner].len(),
         1,
@@ -14441,7 +14441,7 @@ fn dewi_flips_and_gains_when_mu_is_full() {
             .when(Match::reaction().once(), Reply::take("dewi"))
             .stop_at_action(),
     );
-    assert!(vm.st.objects[&id].flipped, "flipped to Shadow Guide: {}", t.tail(16));
+    assert!(vm.st.objects[&id].flipped.is_some(), "flipped to Shadow Guide: {}", t.tail(16));
     assert_eq!(vm.st.runner.credits, 6, "…and gained 1 with the flip: {}", t.tail(16));
 }
 
@@ -14469,7 +14469,7 @@ fn dewi_makes_no_offer_while_mu_is_not_full() {
             .stop_at_action(),
     );
     assert!(!t.ever_offered("dewi"), "1 unused [mu] is not full: {}", t.tail(16));
-    assert!(!vm.st.objects[&id].flipped, "the front face is still up");
+    assert!(vm.st.objects[&id].flipped.is_none(), "the front face is still up");
     assert_eq!(vm.st.runner.credits, 5, "and no credit arrived");
 }
 
@@ -14482,7 +14482,7 @@ fn dewi_back_flips_home_and_draws_with_unused_mu() {
     let mut vm = Vm::empty(6412);
     let id =
         tk::install_identity(&mut vm, card("Dewi Subrotoputri: Pedagogical Dhalang"), Side::Runner);
-    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
     let mut prog = tk::vanilla_runner_card("Slim Program", CardType::Program);
     prog.memory_cost = Some(3);
     tk::install_rig(&mut vm, prog);
@@ -14499,7 +14499,7 @@ fn dewi_back_flips_home_and_draws_with_unused_mu() {
             .when(Match::reaction().once(), Reply::take("shadow guide"))
             .stop_at_action(),
     );
-    assert!(!vm.st.objects[&id].flipped, "flipped home to the front face: {}", t.tail(16));
+    assert!(vm.st.objects[&id].flipped.is_none(), "flipped home to the front face: {}", t.tail(16));
     assert_eq!(
         vm.st.hand[&Side::Runner].len(),
         1,
@@ -14565,7 +14565,7 @@ fn sync_front_tax_puts_the_action_out_of_a_2_credit_reach() {
 fn sync_back_discounts_the_basic_trash_resource_to_zero() {
     let mut vm = Vm::empty(6422);
     let id = tk::install_identity(&mut vm, card("SYNC: Everything, Everywhere"), Side::Corp);
-    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    vm.st.objects.get_mut(&id).unwrap().flipped = Some(0);
     let res =
         tk::install_rig(&mut vm, tk::vanilla_runner_card("Doomed Resource", CardType::Resource));
     tk::fill_hand(&mut vm, Side::Corp, 2);
@@ -14628,7 +14628,7 @@ fn sync_flips_for_a_click_and_each_face_keeps_its_own_static() {
         "one flip out, one flip home — a [click] each: {}",
         t.tail(30)
     );
-    assert!(!vm.st.objects[&id].flipped, "the front face is up again");
+    assert!(vm.st.objects[&id].flipped.is_none(), "the front face is up again");
     assert_eq!(vm.st.runner.tags, 0, "with the back showing, the tag tax was gone: {}", t.tail(30));
     // 2 − 2 (the printed price, untaxed with the back up) + 3 basic credits.
     assert_eq!(
@@ -14636,5 +14636,240 @@ fn sync_flips_for_a_click_and_each_face_keeps_its_own_static() {
         3,
         "…so 2[credit] bought the basic action at its printed price: {}",
         t.tail(30)
+    );
+}
+
+
+// ---------------------------------------------------------------------------
+// Méliès U: Only the Brightest — one front, three secretly-chosen backs
+// ---------------------------------------------------------------------------
+
+/// Méliès U, front face: "When your discard phase ends, secretly set your
+/// identity to any copy of Méliès U: Only the Brightest." — the choice is put
+/// to the CORP, among the three printed backs, and the Runner learns nothing
+/// but that it happened.
+///
+/// What "the Runner learns nothing" is, mechanically: the sealed answer lives
+/// in kernel-private state (the psi-bid grain — `psi_first_bid` is the
+/// precedent), never in the change log, which CR 10.2.1 makes open to both
+/// players — the one record of the set (`IdentityFaceSecretlySet`) carries
+/// the side and nothing else. A back face is not even an object, so no
+/// `View` (zones of `CardView`s, maintained choices, credit pools) has a slot
+/// that could carry it; the assertions below pin the record's silence and the
+/// decision's addressee, which are the two surfaces the kernel exposes.
+#[test]
+fn melies_secretly_sets_a_face_at_discard_phase_end_and_the_record_stays_silent() {
+    let mut vm = Vm::empty(6400);
+    let id = tk::install_identity(&mut vm, card("Méliès U: Only the Brightest"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(
+            Match::of(Kind::Options).once(),
+            Reply::ChooseNamed("Subsurface Labs"),
+        ),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    let asked = t.of_kind(Kind::Options);
+    assert_eq!(asked.len(), 1, "one secret set, at the discard phase's end: {}", t.tail(20));
+    assert_eq!(asked[0].side, Side::Corp, "9.1.1a: the Corp's identity, so the Corp seals");
+    assert_eq!(
+        plan::choices(&asked[0].spec),
+        [
+            "Tenure Floors: Méliès U",
+            "Subsurface Labs: Méliès U",
+            "Disposal Grounds: Méliès U"
+        ],
+        "the options are exactly the three printed backs, in face order"
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(
+            c,
+            GameChange::IdentityFaceSecretlySet { side: Side::Corp }
+        )).count(),
+        1,
+        "THAT the set happened is open information: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.objects[&id].flipped, None, "nothing turned over — the set is not a flip");
+    // 10.2.2a: both views show the same thing — the identity's front. The
+    // sealed face has no object id, so neither view has anywhere to say it.
+    assert!(vm.view_of(Side::Runner).sees(id), "the identity itself is open to the Runner");
+    assert!(vm.view_of(Side::Corp).sees(id), "…and to the Corp — the views do not differ");
+}
+
+/// Méliès U: the front's "When the Runner makes a successful run on a central
+/// server, flip this identity." turns up the SEALED back — and that back's
+/// own "When you flip this identity to this side during a run on R&D, look
+/// at the top card of R&D. You may trash that card. If you do, add 1 card
+/// from Archives to HQ." fires, because the run that flipped it is on the
+/// server the back names.
+#[test]
+fn melies_flips_to_the_sealed_back_and_the_back_speaks_on_its_server() {
+    let mut vm = Vm::empty(6401);
+    let id = tk::install_identity(&mut vm, card("Méliès U: Only the Brightest"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    let deck = tk::fill_deck(&mut vm, Side::Corp, 5);
+    // The Corp's mandatory draw takes deck[0] at the turn's start, so the
+    // top card of R&D when the run happens is deck[1].
+    let top = deck[1];
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    let buried = vm.new_object(tk::corp_filler("Archived Paper"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("Subsurface Labs"))
+            // 1.16.11a: pay the optional cost — trash the looked-at card.
+            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            // "Add 1 card from Archives to HQ": the just-trashed card is in
+            // Archives too and is honestly on offer; this Corp reaches for
+            // the one that was buried all along.
+            .when(Match::of(Kind::Targets).once(), Reply::target(buried)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.st.objects[&id].flipped,
+        Some(1),
+        "the run on R&D turned up the SEALED copy — Subsurface Labs, faces[1]: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        1,
+        "one flip — the reveal: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardLookedAt { obj, by: Side::Corp } if *obj == top
+        )),
+        "the back's look: the top card of R&D, shown to the Corp alone: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&top].zone,
+        Zone::Discard(Side::Corp),
+        "the looked-at card was trashed for the optional cost: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&buried].zone,
+        Zone::Hand(Side::Corp),
+        "…and 'if you do': 1 card from Archives went to HQ: {}",
+        t.tail(40)
+    );
+}
+
+/// Méliès U, front face, the other two sentences — and the honest edge of
+/// the N-faces word. "When the Runner's action phase ends, gain 1[credit]."
+/// pays the Corp at the end of the RUNNER's action phase; and a successful
+/// central run before any discard phase has sealed a face flips NOTHING:
+/// with three backs and no set, no face is determined, and 9.11.2 does as
+/// much as it can — which is nothing at all. (In a real game the Corp's
+/// first discard phase precedes every Runner run, so the edge is unreachable
+/// from setup; the kernel still refuses to invent a face.)
+#[test]
+fn melies_gains_at_runner_action_phase_end_and_an_unsealed_flip_does_nothing() {
+    let mut vm = Vm::empty(6402);
+    let id = tk::install_identity(&mut vm, card("Méliès U: Only the Brightest"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Hq)),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Hq, .. }
+        )),
+        "the central run WAS successful: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        0,
+        "…and flipped nothing — three backs, none sealed, no face to turn up: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.objects[&id].flipped, None, "still the front");
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::ActionPhaseEnded { side: Side::Runner }
+        )),
+        "the Runner's action phase ended: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        1,
+        "…and the tuition arrived: 1[credit] at ITS end, not the Corp's own: {}",
+        t.tail(30)
+    );
+}
+
+/// Méliès U: the set happens again at every Corp discard phase's end, and
+/// the LAST seal is the one the flip reveals — re-setting replaces the
+/// pending face.
+#[test]
+fn melies_resets_the_sealed_face_on_a_later_discard_phase() {
+    let mut vm = Vm::empty(6403);
+    let id = tk::install_identity(&mut vm, card("Méliès U: Only the Brightest"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // A decision an earlier rule claims never counts towards a later
+            // one, so the second seal's rule wants `once()`, not `nth(2)`.
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("Tenure Floors"))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("Disposal Grounds")),
+        Plan::runner()
+            // The Runner's first turn spends itself on credits; the second
+            // opens with the run on Archives.
+            .when(Match::action().times(4), Reply::credit())
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::action().once(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(
+            c,
+            GameChange::IdentityFaceSecretlySet { side: Side::Corp }
+        )).count(),
+        2,
+        "two Corp discard phases, two seals: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&id].flipped,
+        Some(2),
+        "the run on Archives revealed the SECOND seal — Disposal Grounds, \
+         faces[2] — not the replaced first: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        1,
+        "one flip: {}",
+        t.tail(40)
     );
 }

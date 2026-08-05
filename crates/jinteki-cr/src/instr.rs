@@ -715,6 +715,14 @@ pub enum Instruction {
     PurgeVirusCounters,
     /// "…flip this identity." (rule_identity_double_sided; Nebula class.)
     FlipIdentity(Side),
+    /// "…**secretly set** your identity to any copy of <this identity>."
+    /// (Méliès U class.) The named side's identity has several printed back
+    /// faces — the copies it ships as — and its controller seals a choice
+    /// among them: WHICH is hidden information (10.2.2a, the psi-bid grain),
+    /// held by the VM outside the open change log; THAT the set happened is
+    /// open, recorded as `GameChange::IdentityFaceSecretlySet`. The reveal
+    /// is the flip: `FlipIdentity` turns the sealed face up.
+    SecretlySetFlipFace(Side),
     /// CR 1.5.4 / 1.5.4b: "switch your identity with another identity …"
     /// (Rebirth class). The identity described by `with` takes the play area
     /// (3.1.1) and the one it replaces goes back to the pile outside the game,
@@ -1248,7 +1256,8 @@ impl Instruction {
             | Instruction::CreateDelayedConditional { .. } | Instruction::CreateLingeringEffect { .. }
             | Instruction::ReduceRunnerMemoryThisTurn(..) | Instruction::ChooseOne { .. } | Instruction::BreakSubroutines { .. }
             | Instruction::BypassEncounteredIce | Instruction::ChangeAttackedServer { .. }
-            | Instruction::PurgeVirusCounters | Instruction::FlipIdentity(..) | Instruction::TrashSelf
+            | Instruction::PurgeVirusCounters | Instruction::FlipIdentity(..)
+            | Instruction::SecretlySetFlipFace(..) | Instruction::TrashSelf
             | Instruction::StealSelfAgenda | Instruction::ScoreSelfAgenda | Instruction::InstallCards { .. }
             | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete
             | Instruction::InstallRezPayCost | Instruction::InstallRezFinish | Instruction::PlayCards { .. }
@@ -1377,7 +1386,8 @@ impl Instruction {
             | Instruction::BreakSubroutines { .. } | Instruction::BypassEncounteredIce | Instruction::ForceEncounter { .. }
             | Instruction::ModifyStrength { .. } | Instruction::PlaceCounters { .. } | Instruction::ChangeAttackedServer { .. }
             | Instruction::MoveCounters { .. } | Instruction::AdvanceCard { .. } | Instruction::PurgeVirusCounters
-            | Instruction::FlipIdentity(..) | Instruction::SwitchIdentity { .. } | Instruction::ShuffleCardsIntoDeck { .. }
+            | Instruction::FlipIdentity(..) | Instruction::SecretlySetFlipFace(..)
+            | Instruction::SwitchIdentity { .. } | Instruction::ShuffleCardsIntoDeck { .. }
             | Instruction::RemoveCardsFromGame { .. } | Instruction::TrashSelf | Instruction::StealSelfAgenda
             | Instruction::ScoreSelfAgenda | Instruction::InstallCard { .. } | Instruction::InstallCards { .. }
             | Instruction::InstallStepPlace | Instruction::InstallStepPayCost | Instruction::InstallStepComplete

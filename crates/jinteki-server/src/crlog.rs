@@ -232,6 +232,11 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         GameChange::IdentityFlipped { side } => {
             format!("{}: turns their identity over.", side_name(*side))
         }
+        // CR 10.2.2a: the set is open, the face is not — the line says
+        // exactly what both players are entitled to know.
+        GameChange::IdentityFaceSecretlySet { side } => {
+            format!("{}: secretly sets their identity.", side_name(*side))
+        }
 
         // ── counters ───────────────────────────────────────────────────
         GameChange::CounterPlaced { obj, kind, amount } => format!(

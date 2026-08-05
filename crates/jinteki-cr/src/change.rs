@@ -239,6 +239,13 @@ pub enum GameChange {
     ActionPhaseEnded { side: Side },
     /// CR rule_identity_double_sided: a double-sided identity turned over.
     IdentityFlipped { side: Side },
+    /// CR 10.2.2a: this side SEALED a choice of identity back face ("secretly
+    /// set your identity to any copy of Méliès U"). The record carries no
+    /// face on purpose — the change log is open information (10.2.1), and
+    /// WHICH copy was chosen is hidden until the flip reveals it, exactly as
+    /// a psi bid is sealed until 10.14.6c. What both players are entitled to
+    /// is what this record says: the set happened.
+    IdentityFaceSecretlySet { side: Side },
     RunBegan { server: ServerId },
     /// CR 6.8.4: the run was declared successful. `subroutine_resolved` is
     /// whether any subroutine had resolved during this run by that moment

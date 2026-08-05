@@ -302,9 +302,13 @@ pub struct PrintedCard {
     /// player, so the fact is about the game's setup and not about whose card
     /// it is. None = none.
     pub starting_bad_publicity: Option<u32>,
-    /// CR 1.4 double-sided identities: the back face's printed
-    /// characteristics ("flip this identity" — Nebula/Gemilang class).
-    pub flip_face: Option<Box<PrintedCard>>,
+    /// CR 1.4 double-sided identities: the back faces' printed
+    /// characteristics ("flip this identity" — Nebula/Gemilang class), in
+    /// face order. Most double-siders print ONE back; Méliès U ships as
+    /// three copies with the same front and a different back each, so its
+    /// identity carries three and "secretly set your identity to any copy"
+    /// is the choice among them. Empty = a single-faced card.
+    pub flip_faces: Vec<PrintedCard>,
     /// CR 1.10.3c: "credits hosted on cards may only be spent as the card's
     /// ability allows" — so what the card allows is the content, not a
     /// yes/no (Fencer Fueno allows anything, Miss Bones allows one class of
@@ -339,7 +343,7 @@ impl PrintedCard {
             starting_hand_size: None,
             starting_credits: None,
             starting_bad_publicity: None,
-            flip_face: None,
+            flip_faces: Vec::new(),
             hosted_credits_spendable: None,
             abilities: Vec::new(),
         }
@@ -385,9 +389,10 @@ impl PrintedCard {
 pub struct Object {
     pub id: ObjectId,
     pub printed: PrintedCard,
-    /// CR double-sided identities: which face is up. Only ever true for an
-    /// identity with a `flip_face`.
-    pub flipped: bool,
+    /// CR double-sided identities: which BACK face is up — an index into
+    /// `printed.flip_faces`, `None` while the front shows. Only ever `Some`
+    /// for an identity with at least one entry in `flip_faces`.
+    pub flipped: Option<usize>,
     pub zone: Zone,
     /// CR 8.1: faceup/facedown; a faceup installed Corp card is rezzed.
     pub faceup: bool,
@@ -510,8 +515,8 @@ impl Object {
     /// that reads printed characteristics of an ACTIVE card goes through
     /// here, so flipping an identity swaps its abilities, name and subtypes.
     pub fn face(&self) -> &PrintedCard {
-        if self.flipped {
-            if let Some(back) = &self.printed.flip_face {
+        if let Some(i) = self.flipped {
+            if let Some(back) = self.printed.flip_faces.get(i) {
                 return back;
             }
         }

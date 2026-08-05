@@ -406,11 +406,15 @@ impl CardBuilder {
         self.printed.starting_bad_publicity = Some(n);
         self
     }
-    /// The identity's back face (rule_identity_double_sided; Nebula class).
-    /// Build the back exactly like a card — its own printed text and
-    /// abilities — and "flip this identity" swaps which face applies.
+    /// One back face of the identity (rule_identity_double_sided; Nebula
+    /// class). Build the back exactly like a card — its own printed text and
+    /// abilities — and "flip this identity" swaps which face applies. Call
+    /// once per back, in face order: most double-siders print one, and
+    /// Méliès U ships as three copies with a different back each, so its
+    /// definition calls this three times and "secretly set your identity to
+    /// any copy" chooses among them.
     pub fn flip_face(mut self, back: Card) -> Self {
-        self.printed.flip_face = Some(Box::new(back.printed));
+        self.printed.flip_faces.push(back.printed);
         self
     }
     pub fn text(mut self, line: &'static str) -> Self {
@@ -2752,6 +2756,18 @@ pub fn access_one_root_of_another_server_restricted() -> Instruction {
 pub fn flip_identity(side: Side) -> Instruction {
     Instruction::FlipIdentity(side)
 }
+/// "…**secretly set** your identity to any copy of <this identity>."
+/// (Méliès U class.) The controller seals a choice among the identity's
+/// printed backs — the copies it ships as; the flip is the reveal.
+pub fn secretly_set_identity_face(side: Side) -> Instruction {
+    Instruction::SecretlySetFlipFace(side)
+}
+/// "When you flip this identity **to this side** during a run on <these
+/// servers>…" (Méliès U's backs). Written on the BACK face, whose abilities
+/// exist exactly while it is up — which is what "to this side" says.
+pub fn flipped_to_this_side_during_a_run_on(servers: &[ServerId]) -> TriggerCond {
+    TriggerCond::SelfFlippedTo { requires: vec![during_a_run_on(servers)] }
+}
 /// "Switch your identity with another identity …" (Rebirth class; CR 1.5.4).
 /// The identity that leaves the play area goes back to the pile it came from
 /// (1.5.4b); a double-sided one arrives front side faceup (1.5.4d).
@@ -3286,7 +3302,12 @@ pub fn at_most(amount: Quantity, n: i64) -> TriggerRequirement {
 /// "…**during a run**" (6.1.1) — there is a run in progress, and nothing else
 /// is asked about it.
 pub fn during_a_run() -> TriggerRequirement {
-    TriggerRequirement::RunInProgress
+    TriggerRequirement::RunInProgress { on: Vec::new() }
+}
+/// "…**during a run on HQ**" (Méliès U's backs) — the same question with the
+/// sentence's server stipulation as content.
+pub fn during_a_run_on(servers: &[ServerId]) -> TriggerRequirement {
+    TriggerRequirement::RunInProgress { on: servers.to_vec() }
 }
 pub fn at_least(amount: Quantity, n: i64) -> TriggerRequirement {
     TriggerRequirement::QuantityAtLeast { amount, at_least: n }

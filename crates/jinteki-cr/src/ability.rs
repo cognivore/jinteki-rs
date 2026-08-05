@@ -295,6 +295,16 @@ pub enum TriggerCond {
     /// print both wordings, which is the whole reason the stipulation is a
     /// field rather than two conditions.
     DiscardPhaseEnds { side: Option<Side>, requires: Vec<TriggerRequirement> },
+    /// rule_identity_double_sided: "When you flip this identity **to this
+    /// side**…" (Méliès U's backs). Met by the SOURCE identity turning over
+    /// — and "to this side" costs the condition nothing extra, because an
+    /// ability is derived from the face that shows (`Object::face`): a back
+    /// face's abilities exist exactly while that back is up, so the flip a
+    /// back's own ability can ever see is the one that turned it up, and a
+    /// flip AWAY re-derives it out of existence before the scan. `requires`
+    /// is 9.6.5c's stipulation riding along — "…**during a run on HQ**" is
+    /// [`TriggerRequirement::RunInProgress`] with the server as content.
+    SelfFlippedTo { requires: Vec<TriggerRequirement> },
     /// CR 5.7.4 / 5.6.4: "Whenever you **discard cards to reach your maximum
     /// hand size**…" (Magdalene Keino-Chemutai). The DISCARD, not the phase
     /// around it: [`TriggerCond::DiscardPhaseEnds`] is 5.1.4b's formal end of
@@ -944,11 +954,14 @@ pub enum TriggerRequirement {
     /// here knows about grips or HQs; a card comparing any two amounts it can
     /// name is this same atom.
     QuantitiesEqual { left: crate::instr::Quantity, right: crate::instr::Quantity },
-    /// "…**during a run**" (Mercury) — CR 6.1.1: a run is in progress. Not a
-    /// question about the run's server or its success, only that there is
-    /// one; a breach can happen without a run (7.2), which is exactly the
-    /// case this stipulation excludes.
-    RunInProgress,
+    /// "…**during a run**" (Mercury) — CR 6.1.1: a run is in progress — and
+    /// "…**during a run on HQ**" (Méliès U's backs), the same question with
+    /// the sentence's server stipulation as content (§12 rule 2), carried
+    /// exactly as [`TriggerRequirement::RunnerMadeRun`] carries its `on`: an
+    /// empty list is a sentence naming no server, which is every run. Not a
+    /// question about the run's success; a breach can happen without a run
+    /// (7.2), which is exactly the case the bare stipulation excludes.
+    RunInProgress { on: Vec<ServerId> },
     /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
     /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
     /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`
@@ -2981,6 +2994,16 @@ fn trigger_matches_dyn(
             cite!("rule_agenda_scored");
             *obj == source.id
         }
+        // rule_identity_double_sided: "when you flip this identity to this
+        // side" — the record names only the side, and the source IS that
+        // side's identity when it is an identity this side controls. "To
+        // this side" is carried by derivation: this ability exists only
+        // while its own face is up (see the variant's doc).
+        (TriggerCond::SelfFlippedTo { .. }, GameChange::IdentityFlipped { side }) => {
+            cite!("rule_identity_double_sided");
+            source.printed.card_type == crate::object::CardType::Identity
+                && source.controller == *side
+        }
         // 1.17.7: "when the Runner steals this agenda" — met after the Runner
         // moves it to their score area.
         (TriggerCond::SelfStolen, GameChange::AgendaStolen { obj, .. }) => {
@@ -3322,6 +3345,7 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::EncounterBegins { requires, .. }
         | TriggerCond::CorpRezzesCard { requires, .. }
         | TriggerCond::DiscardPhaseEnds { requires, .. }
+        | TriggerCond::SelfFlippedTo { requires }
         | TriggerCond::TurnEnds { requires, .. }
         | TriggerCond::RunnerStealsAgenda { requires }
         | TriggerCond::CorpScoresAgenda { requires, .. }

@@ -772,6 +772,172 @@ pub fn au_co() -> Card {
         .build()
 }
 
+/// Méliès U: Only the Brightest — Identity: Division.
+/// "When your discard phase ends, secretly set your identity to any copy of
+///  Méliès U: Only the Brightest.
+///  When the Runner makes a successful run on a central server, flip this
+///  identity.
+///  When the Runner’s action phase ends, gain 1[credit]."
+///
+/// COMPLETE, all four faces. The card ships as three copies with the same
+/// front and a different back each (Tenure Floors / Subsurface Labs /
+/// Disposal Grounds), so the identity carries three `.flip_face(…)` backs in
+/// face order, and "any copy" is the choice among them — which physical copy
+/// sits on the table.
+///
+/// The first sentence is the psi grain (10.14.6b) stretched across turns: a
+/// decision whose ANSWER is hidden information (10.2.2a). The set itself is
+/// open — a mandatory ability resolving in front of both players, recorded
+/// as `GameChange::IdentityFaceSecretlySet` with the side and nothing else —
+/// while WHICH copy lives only in the kernel's sealed state, never in the
+/// change log 10.2.1 opens to both. The reveal is the flip: the chosen back
+/// turns up for everyone, exactly as sealed psi bids are revealed at
+/// 10.14.6c. Re-setting on a later discard phase replaces the sealed choice,
+/// because the sentence happens again (5.5.4).
+///
+/// The second sentence is the Liza/Gemilang shape: 6.8.4's successful run,
+/// stipulated to 4.6.5's three central servers. The flip turns up the copy
+/// the last set sealed — the back whose own "to this side" ability then asks
+/// which server this run is on.
+///
+/// The third names the RUNNER's action phase (5.6.2), so the Corp is paid at
+/// the end of every Runner action phase and never at the end of its own.
+pub fn melies_u_only_the_brightest() -> Card {
+    card("Méliès U: Only the Brightest")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest.")
+        .text("When the Runner makes a successful run on a central server, flip this identity.")
+        .text("When the Runner’s action phase ends, gain 1[credit].")
+        .when(
+            your_discard_phase_ends_if(Corp, &[]),
+            [secretly_set_identity_face(Corp)],
+        )
+        .named("melies u: secretly set")
+        .when(makes_successful_run_on_a_central_server(), [flip_identity(Corp)])
+        .named("melies u: flip on a central run")
+        .when(action_phase_ends_if(Runner, &[]), [gain(Corp, 1)])
+        .named("melies u: tuition")
+        .flip_face(tenure_floors_melies_u())
+        .flip_face(subsurface_labs_melies_u())
+        .flip_face(disposal_grounds_melies_u())
+        .build()
+}
+
+/// Tenure Floors: Méliès U — Identity: Division; the first back face of
+/// Méliès U: Only the Brightest (oracle: netrunner-cards-json v2, `faces[0]`).
+/// "When you flip this identity to this side during a run on HQ, look at the
+///  top card of R&D. You may trash that card. If you do, add 1 card from
+///  Archives to HQ.
+///  When the Runner’s discard phase ends, flip this identity."
+///
+/// "To this side" costs the condition nothing extra: a back face's abilities
+/// are derived from the face that shows, so the only flip this ability can
+/// ever see is the one that turned Tenure Floors up. "During a run on HQ" is
+/// 9.6.5c's requirement with the server as content — flipped up by a run on
+/// R&D or Archives, this side stays silent.
+///
+/// The first sentence is two instructions (9.11.3): the look (1.21.2 — shown
+/// to the Corp alone), then "You may trash that card. If you do, …" as
+/// 1.16.11a's optional cost (the Null: Whistleblower shape): the trash is the
+/// price of the add, "that card" is the looked-at card (1.15.4), and
+/// declining costs — and adds — nothing. The add is Archived Memories' word.
+///
+/// The second sentence flips home at the end of the RUNNER's discard phase
+/// (5.5.4 / 5.1.4b), so the front's own abilities are back before the Corp's
+/// next turn begins.
+pub fn tenure_floors_melies_u() -> Card {
+    card("Tenure Floors: Méliès U")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When you flip this identity to this side during a run on HQ, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.")
+        .text("When the Runner’s discard phase ends, flip this identity.")
+        .when(
+            flipped_to_this_side_during_a_run_on(&[ServerId::Hq]),
+            [
+                look_at(top_of_rnd(amount(1)), Corp),
+                may_pay(
+                    trash_cards_matching(1, &[looked_at_by_this_ability()]),
+                    add_to_hand(choose(1, &[in_archives()])),
+                ),
+            ],
+        )
+        .named("tenure floors: the top of r&d")
+        .when(your_discard_phase_ends_if(Runner, &[]), [flip_identity(Corp)])
+        .named("tenure floors: flip home")
+        .build()
+}
+
+/// Subsurface Labs: Méliès U — Identity: Division; the second back face of
+/// Méliès U: Only the Brightest (oracle: netrunner-cards-json v2, `faces[1]`).
+/// "When you flip this identity to this side during a run on R&D, look at the
+///  top card of R&D. You may trash that card. If you do, add 1 card from
+///  Archives to HQ.
+///  When the Runner’s discard phase ends, flip this identity."
+///
+/// Tenure Floors with the server stipulation R&D — see that face for the
+/// reading; everything but the server is the same printed sentence.
+pub fn subsurface_labs_melies_u() -> Card {
+    card("Subsurface Labs: Méliès U")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When you flip this identity to this side during a run on R&D, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.")
+        .text("When the Runner’s discard phase ends, flip this identity.")
+        .when(
+            flipped_to_this_side_during_a_run_on(&[ServerId::Rnd]),
+            [
+                look_at(top_of_rnd(amount(1)), Corp),
+                may_pay(
+                    trash_cards_matching(1, &[looked_at_by_this_ability()]),
+                    add_to_hand(choose(1, &[in_archives()])),
+                ),
+            ],
+        )
+        .named("subsurface labs: the top of r&d")
+        .when(your_discard_phase_ends_if(Runner, &[]), [flip_identity(Corp)])
+        .named("subsurface labs: flip home")
+        .build()
+}
+
+/// Disposal Grounds: Méliès U — Identity: Division; the third back face of
+/// Méliès U: Only the Brightest (oracle: netrunner-cards-json v2, `faces[2]`).
+/// "When you flip this identity to this side during a run on Archives, look
+///  at the top card of R&D. You may trash that card. If you do, add 1 card
+///  from Archives to HQ.
+///  When the Runner’s discard phase ends, flip this identity."
+///
+/// Tenure Floors with the server stipulation Archives — see that face for the
+/// reading; everything but the server is the same printed sentence.
+pub fn disposal_grounds_melies_u() -> Card {
+    card("Disposal Grounds: Méliès U")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When you flip this identity to this side during a run on Archives, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.")
+        .text("When the Runner’s discard phase ends, flip this identity.")
+        .when(
+            flipped_to_this_side_during_a_run_on(&[ServerId::Archives]),
+            [
+                look_at(top_of_rnd(amount(1)), Corp),
+                may_pay(
+                    trash_cards_matching(1, &[looked_at_by_this_ability()]),
+                    add_to_hand(choose(1, &[in_archives()])),
+                ),
+            ],
+        )
+        .named("disposal grounds: the top of r&d")
+        .when(your_discard_phase_ends_if(Runner, &[]), [flip_identity(Corp)])
+        .named("disposal grounds: flip home")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -794,5 +960,6 @@ pub fn identities() -> Vec<Card> {
         saraswati_mnemonics(),
         a_teia(),
         au_co(),
+        melies_u_only_the_brightest(),
     ]
 }
