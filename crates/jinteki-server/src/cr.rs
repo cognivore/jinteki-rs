@@ -449,6 +449,25 @@ struct Select {
     kind: SelectKind,
 }
 
+impl Select {
+    /// Is the set the player has already a COMPLETE answer — one they may
+    /// submit without picking anything more?
+    ///
+    /// Two ways to be complete. CR 1.15.2e lets "up to N" finish at any size
+    /// from its floor upward, which is why the chooser gets a button at all.
+    /// A FIXED N is normally completed by the last pick committing on its own
+    /// — except where 1.15.2b clamped N to ZERO because fewer eligible
+    /// targets exist than the instruction asked for. Then the empty set is
+    /// complete the moment the question is asked and no pick will ever arrive
+    /// to commit it, so without a button the prompt cannot be answered at
+    /// all. Both the field the client reads and the command the client sends
+    /// come from here, so the button's presence and the server's willingness
+    /// to honour it cannot drift apart.
+    fn complete_at(&self, picked: usize) -> bool {
+        picked as u32 >= self.min && (self.up_to || picked as u32 >= self.count)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SelectKind {
     Targets,
@@ -1258,7 +1277,7 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
     // targets on offer is forced to announce both.
     if cmd == "select-done" {
         let sel = p.select.as_ref().ok_or("nothing to select right now")?;
-        if !sel.up_to || (g.picked.len() as u32) < sel.min {
+        if !sel.complete_at(g.picked.len()) {
             return Err("you have not chosen enough cards yet".into());
         }
         let picks = std::mem::take(&mut g.picked);
@@ -2318,13 +2337,13 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             "select-picked".into(),
             Value::Array(g.picked.iter().map(|c| json!(c.0)).collect()),
         );
-        // CR 1.15.2e: "up to" with its floor met can stop here. Nothing else
-        // in the prompt says so, and a player who has taken the one target
-        // they wanted out of two must be able to finish (THE LAW §6).
-        m.insert(
-            "select-done".into(),
-            json!(s.up_to && g.picked.len() as u32 >= s.min),
-        );
+        // Whether what the player already holds is an answer they may send.
+        // Nothing else in the prompt says so, and a player who has taken the
+        // one target they wanted out of two must be able to finish, as must a
+        // player whose announcement 1.15.2b already clamped to nothing at all
+        // (THE LAW §6: an empty answer is stated, never implied — and it has
+        // to be GIVABLE, or stating it just names the dead end).
+        m.insert("select-done".into(), json!(s.complete_at(g.picked.len())));
         m.insert(
             "select-kind".into(),
             json!(match s.kind {
@@ -2793,6 +2812,58 @@ mod tests {
         let out = prompt_json(&g, &view, Side::Runner);
         assert_eq!(out["select-done"], json!(true), "the floor is met: stopping is legal");
         assert_eq!(out["select-picked"], json!([want[0].0]), "and the sheet says which");
+    }
+
+    /// The dead end, in one assertion. CR 1.15.2b clamps an announcement to
+    /// the eligible targets available, so a "choose 1 installed piece of ice"
+    /// with no ice on the table asks for ZERO cards: nothing to draw, nothing
+    /// to tap, no "None" (that button is offered only for an explicit "up
+    /// to"), and a `select-done` that tested `up_to` and so said no. The
+    /// sheet said "No card qualifies — there is nothing to choose" and then
+    /// gave the player nothing to click, which stopped the game.
+    ///
+    /// The kernel no longer asks this question at all. The server must still
+    /// be able to answer one, because a prompt that cannot be answered is not
+    /// a bad prompt, it is a hung game — and the button and the command have
+    /// to agree, or the button is a lie.
+    #[test]
+    fn an_announcement_of_nothing_can_still_be_answered() {
+        let mut g = dealt_game();
+        let spec = DecisionSpec::ChooseTargets {
+            candidates: Vec::new(),
+            count: 0,
+            up_to: false,
+            min: 0,
+            distinct_names: false,
+        };
+        g.pending = Some(present(&g.vm, Side::Runner, &spec));
+        let view = g.vm.view_of(Side::Runner);
+        let out = prompt_json(&g, &view, Side::Runner);
+        assert_eq!(
+            out["select-cards"].as_array().map(|a| a.len()),
+            Some(0),
+            "there is nothing to show: {out:#?}"
+        );
+        assert!(
+            out["choices"].as_array().map(|a| a.is_empty()).unwrap_or(false),
+            "…and no per-candidate button either, which is what made it a dead end: {out:#?}"
+        );
+        assert_eq!(
+            out["select-done"],
+            json!(true),
+            "so the empty set has to BE the answer, and the sheet has to say so: {out:#?}"
+        );
+        // The button the client draws and the command the server honours read
+        // the SAME predicate, so asserting it asserts both — a button whose
+        // command then refuses it is worse than no button at all. (Committing
+        // for real would need a VM actually waiting on this decision, and the
+        // kernel no longer produces one, which is the whole point.)
+        let sel = g.pending.as_ref().unwrap().select.as_ref().expect("a selection");
+        assert!(
+            sel.complete_at(0),
+            "…and `select-done` is accepted with nothing picked, not rejected \
+             as 'you have not chosen enough cards yet'"
+        );
     }
 
     /// A long list is a search box only when what it lists is the CARD POOL.

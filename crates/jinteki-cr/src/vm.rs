@@ -829,7 +829,46 @@ impl Vm {
     }
 
     fn ask(&mut self, side: Side, spec: DecisionSpec, ctx: DecisionCtx) {
+        // A decision with one legal answer is not a decision. Answer it here
+        // and `step` applies it without ever yielding, so no driver — test
+        // script, server, or human — is shown the question.
+        let forced = Self::forced_answer(&spec);
         self.pending_decision = Some((side, spec, ctx));
+        if self.answer.is_none() {
+            self.answer = forced;
+        }
+    }
+
+    /// The only answer a decision admits, where it admits only one.
+    ///
+    /// CR 1.15.2b caps an announcement at the eligible targets available, so
+    /// an instruction that asks for a target none of whose candidates exist
+    /// announces NOTHING — and the empty announcement is then the only one
+    /// that could be made. Asking for it makes the player confirm arithmetic
+    /// the kernel already did, and a prompt built out of a candidate list has
+    /// no candidates to draw and no buttons to offer, so the question is not
+    /// merely redundant: it is UNANSWERABLE. Installing Boomerang with no ice
+    /// on the table reached exactly that — "Choose 0 cards", an empty sheet,
+    /// and no way forward.
+    ///
+    /// This returns the answer rather than skipping the decision so that
+    /// there is ONE resolution path: an announcement of nothing advances the
+    /// frame's announce slot through `apply_answer` exactly as an
+    /// announcement of something does.
+    fn forced_answer(spec: &DecisionSpec) -> Option<DecisionAnswer> {
+        cite!("rule_announce_targets");
+        match spec {
+            DecisionSpec::ChooseTargets { count: 0, .. } => {
+                Some(DecisionAnswer::Targets(Vec::new()))
+            }
+            DecisionSpec::ChooseSubroutines { count: 0, .. } => {
+                Some(DecisionAnswer::Subroutines(Vec::new()))
+            }
+            DecisionSpec::ChooseCounters { count: 0, .. } => {
+                Some(DecisionAnswer::Counters(Vec::new()))
+            }
+            _ => None,
+        }
     }
 
     pub fn next_instance_id(&mut self) -> u64 {
