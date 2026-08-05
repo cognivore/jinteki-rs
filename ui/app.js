@@ -777,7 +777,10 @@ function renderServers() {
       sliver.className = "ice-sliver" + (rezzed ? " rezzed" : "") + (isCurrent ? " current" : "") +
         (glow ? " " + glow : "");
       const subsN = (c.subroutines || []).length;
-      sliver.innerHTML = `<span class="iname">${rezzed ? c.title : "?"}</span>` +
+      // Counters ride the sliver whether or not the ice is rezzed: WHERE a
+      // counter sits is open information (an advanced Ice Wall is advanced
+      // for everyone), and the sliver is the only copy of this card drawn.
+      sliver.innerHTML = `<span class="iname">${rezzed ? c.title : "?"}</span>` + sliverBadges(c) +
         (rezzed ? `<span class="imeta">${c.strength ?? ""}${subsN ? " · " + "↳".repeat(subsN) : ""}</span>` : "");
       let t = null, fired = false;
       // A tap answers where there is something to answer; otherwise it reads.
@@ -1183,7 +1186,11 @@ function renderFan(host, items, opts) {
 
   // Nothing here ever moves under a pointer: the row is laid out once and
   // stays exactly where it is (THE LAW §2, and the player's "no wobble").
-  const row = el("div", "fanrow");
+  // `.overlapped` is the stylesheet's cue that a resting card is a LEFT
+  // strip: it comes from the same step arithmetic that laid the row out, so
+  // the badges' re-anchoring (see `.badges` in the stylesheet) can never
+  // disagree with whether the cards actually overlap.
+  const row = el("div", "fanrow" + (fit.step < fw ? " overlapped" : ""));
   shown.forEach((it, i) => {
     const idx = start + i;
     const focused = idx === f.focus;
@@ -1481,18 +1488,40 @@ const COUNTER_BADGES = [
    bottom edge, and every badge overlapped the card next to it in the fan.
    They now sit inside the top-right corner, fill right-to-left and wrap
    downward, and above two they shrink rather than spread: whatever a card is
-   carrying, it fits, at every size this UI draws a card at. */
-function counterBadges(c) {
+   carrying, it fits, at every size this UI draws a card at.
+
+   One list of what a card is carrying, for every size it is drawn at: the
+   card's own badges, the ice sliver's inline discs, and the reader's text
+   lines all read this, so no size can forget a kind the others show. */
+function counterItems(c) {
   const out = [];
   if (c["advance-counter"]) {
-    out.push(`<div class="badge adv" title="advancement counters">${+c["advance-counter"]}</div>`);
+    out.push(["adv", "advancement counters", String(+c["advance-counter"])]);
   }
   const k = c.counter || {};
   for (const [key, cls, glyph, hint] of COUNTER_BADGES) {
-    if (k[key]) out.push(`<div class="badge ${cls}" title="${hint}">${glyph}${+k[key]}</div>`);
+    if (k[key]) out.push([cls, hint, glyph + (+k[key])]);
   }
-  if (!out.length) return "";
-  return `<div class="badges${out.length > 2 ? " tight" : ""}">${out.join("")}</div>`;
+  return out;
+}
+function counterBadges(c) {
+  const items = counterItems(c);
+  if (!items.length) return "";
+  return `<div class="badges${items.length > 2 ? " tight" : ""}">${items
+    .map(([cls, hint, text]) => `<div class="badge ${cls}" title="${hint}">${text}</div>`)
+    .join("")}</div>`;
+}
+/* The ice sliver is the deepest truncation this UI draws a card down to
+   (THE LAW §4), and it used to be the one size that dropped the counters
+   outright: an Ice Wall three advancements tall read exactly like a bare
+   one, and a counter the player cannot see is a counter they will misplay
+   (§11). A sliver is still a card, so it carries the same discs, inline. */
+function sliverBadges(c) {
+  const items = counterItems(c);
+  if (!items.length) return "";
+  return `<span class="sbadges">${items
+    .map(([cls, hint, text]) => `<span class="badge ${cls}" title="${hint}">${text}</span>`)
+    .join("")}</span>`;
 }
 
 /* ── card info (shared by hover preview and long-press zoom) ─────────── */
@@ -1503,10 +1532,7 @@ function cardInfoHtml(c) {
   else if (c.strength != null) lines.push("Strength " + c.strength);
   if (c.advancementcost != null) lines.push(`Adv req ${c.advancementcost} · ${c.agendapoints} pts`);
   if (c["trash-cost"] != null) lines.push("Trash cost " + c["trash-cost"]);
-  if (c["advance-counter"]) lines.push("Advancements: " + c["advance-counter"]);
-  for (const [key, , , hint] of COUNTER_BADGES) {
-    if (c.counter && c.counter[key]) lines.push(`${hint}: ${c.counter[key]}`);
-  }
+  for (const [, hint, text] of counterItems(c)) lines.push(`${hint}: ${text}`);
   if (c.implementation) lines.push("⚠ " + c.implementation);
   const art = c.code
     ? `<img class="zart" src="${cardImgUrl(c.code)}" alt="" onerror="this.remove()">`
@@ -1704,6 +1730,20 @@ function renderPrompt() {
   // (a fan, or an option pointed at) or leaves it clear.
   fanPreviewSet("prompt", null);
   if (!p) { sheet.style.display = "none"; hideAccessReader(); return; }
+  // Beats in breach order (CR 7.5): every snapshot in `state.accessed` was
+  // taken BEFORE the machine stopped on this decision — the stop is what
+  // pushed the state — so a reveal still owed to the player is always the
+  // EARLIER beat. It presents first, one card at a time, and the decision is
+  // drawn when the last of them is acknowledged. Nothing is lost by the
+  // wait: the decision is the reason the machine is stopped, and it is still
+  // the live question when the reveals are done. Without this, "access A,
+  // then a steal prompt on B" showed B's question before A's card — two
+  // beats out of order, and no way to tell which card was which.
+  if (p["prompt-type"] !== "waiting" && pendingReveals().length) {
+    sheet.style.display = "none";
+    hideAccessReader();
+    return;
+  }
   // A decision ABOUT a card puts the card itself in front of you.
   if (p.card && p.card.title) { sheet.style.display = "none"; renderAccessReader(p); return; }
   hideAccessReader();
@@ -2375,6 +2415,16 @@ function pendingAccesses() {
   return all.filter((a) => (a.seq || 0) > accessSeen && a.card && a.card.title);
 }
 
+/* The reveals still owed to the player, minus the card the mid-access reader
+   is about to show full-size itself — one question for two callers: the
+   reveal overlay shows these, and `renderPrompt` holds the decision behind
+   them, so the two can never disagree about whose beat it is. */
+function pendingReveals() {
+  const p = myPrompt();
+  const shown = p && p.card && p.card.cid;
+  return pendingAccesses().filter((a) => a.card.cid !== shown);
+}
+
 function revealOverlayEl() {
   let o = document.getElementById("reveal-overlay");
   if (!o) {
@@ -2402,48 +2452,46 @@ function renderAccessReveal() {
   if (rest.length !== list.length) {
     accessSeen = Math.max(accessSeen, ...list.filter((a) => a.card.cid === shown).map((a) => a.seq));
   }
-  // …and nothing else may sit on top of a decision either. A reveal waits
-  // its turn; the seq floor means it is still there when the decision is done.
-  if (!rest.length || (p && p["prompt-type"] !== "waiting")) { hide(); return; }
+  if (!rest.length) { hide(); return; }
 
-  const top = Math.max(...rest.map((a) => a.seq));
-  const many = rest.length > 1;
+  // ONE card at a time, oldest first. The kernel resolves a breach access by
+  // access (CR 7.5 — each access is its own step), and the presentation now
+  // keeps that shape: the reveal is a single card, whole — art, text, where
+  // it came from — acknowledged before the next appears, so it is never
+  // ambiguous which card is in front of the player. "You accessed 3 cards"
+  // over a row of thumbnails was a summary of a sequence, and cards from
+  // Archives — a whole pile arriving at once — were the worst of it.
+  // Decisions interleave in the same order: `renderPrompt` holds a decision
+  // behind the reveals that predate it, so "access A, steal B" reads as A,
+  // then B, exactly as it resolved.
+  rest.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  const cur = rest[0];
+  const more = rest.length - 1;
   const ov = revealOverlayEl();
   ov.style.display = "flex";
   ov.innerHTML = "";
-  const card = el("div", "zoom-card" + (many ? " pile" : ""));
-  const where = rest[rest.length - 1].from;
+  const card = el("div", "zoom-card");
   // An eyebrow, not a second title: `cardInfoHtml` prints the card's own
   // name, and printing it twice reads as a bug rather than as emphasis.
-  card.appendChild(el("div", "acc-eyebrow", many
-    ? `You accessed ${rest.length} cards`
-    : where ? `You accessed — from ${where}` : "You accessed"));
-  if (many) {
-    const row = el("div", "cardprompt");
-    rest.forEach((a) => {
-      const wrap = el("div", "cardpick");
-      wrap.appendChild(cardEl(a.card, { side: "runner" }));
-      if (a.from) wrap.appendChild(el("div", "cardpick-label", a.from));
-      row.appendChild(wrap);
-    });
-    card.appendChild(row);
-    card.appendChild(el("div", "picker-hint", "Press and hold a card to read it."));
-  } else {
-    // §12.6: card text is the card layer's, never a user string.
-    const body = document.createElement("div");
-    body.innerHTML = cardInfoHtml(rest[0].card);
-    while (body.firstChild) card.appendChild(body.firstChild);
-  }
-  const ok = el("button", "chip go", "Got it");
-  const done = () => { accessSeen = Math.max(accessSeen, top); ov.style.display = "none"; render(); };
+  card.appendChild(el("div", "acc-eyebrow",
+    (cur.from ? `You accessed — from ${cur.from}` : "You accessed") +
+    (more ? ` · ${more} more to see` : "")));
+  // §12.6: card text is the card layer's, never a user string.
+  const body = document.createElement("div");
+  body.innerHTML = cardInfoHtml(cur.card);
+  while (body.firstChild) card.appendChild(body.firstChild);
+  const ok = el("button", "chip go", more ? `Next card — ${more} more` : "Got it");
+  // Dismissing acknowledges THIS card only: the floor rises to its seq, and
+  // the re-render brings the next reveal (or the decision that was waiting
+  // behind them) on its own beat.
+  const done = () => { accessSeen = Math.max(accessSeen, cur.seq || 0); ov.style.display = "none"; render(); };
   ok.onclick = done;
   card.appendChild(ok);
   ov.appendChild(card);
-  ov.appendChild(el("div", "tapaway", "tap away to close"));
-  // Inside the reader the cards are real cards — press and hold still reads
-  // one — so only a tap OUTSIDE it dismisses. Nothing here traps anybody:
-  // the button, the dim area and Escape all close it, and what was accessed
-  // stays in the log either way.
+  ov.appendChild(el("div", "tapaway", more ? "tap away for the next card" : "tap away to close"));
+  // Tapping away advances, never abandons: each card still gets its own
+  // acknowledged beat, and Escape does the same. Nothing here traps anybody
+  // — every accessed card stays in the log either way.
   dismissOnTapAway(ov, (e) => !!e.target.closest(".zoom-card"), done);
 }
 

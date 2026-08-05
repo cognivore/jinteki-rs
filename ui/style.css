@@ -204,6 +204,64 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .badge.vir { background: #7ba428; color: #10151f; }
 .badge.agn { background: #c05fa8; }
 .badge.badpub { background: var(--danger); }
+
+/* ── Badges survive the fan (UX.md lesson 11) ───────────────────────────
+   In an overlapping fan the only part of a resting card on screen is the
+   LEFT strip its neighbour does not cover — and the top-RIGHT corner is the
+   first part of the card to go under, taking every counter with it. When
+   the row overlaps (`.fanrow.overlapped`, written by `renderFan` from the
+   same step arithmetic that laid the row out, so the class and the geometry
+   cannot disagree) a resting card's badges re-anchor down that strip: a
+   single column against the left edge, below the cost disc where there is
+   one, each kind its own disc. The tightest strip we ever draw is 16px and
+   a disc is at most 1.7em of the card's font — 16.2px at the largest card,
+   inside 16 by the time `.tight` has applied — so the column lives in the
+   sliver at every size. The focused and the raised card are whole, so they
+   keep §11's top-right fill; the badges jump corners as the focus moves,
+   which is the truncation being answered, not a wobble (nothing else
+   moves). `max-height` still stops the column short of the corners the
+   strength disc and the staged ✓ stand in, and `flex-wrap` spills a
+   six-kind card into a second column INSIDE the box rather than dropping
+   anything. */
+.fanrow.overlapped .cardpick:not(.focused):not(.raised) .card .badges {
+  left: 1px; right: auto; top: 1px;
+  flex-direction: column; align-content: flex-start;
+  max-width: calc(100% - 2px); max-height: calc(100% - 2px);
+}
+.fanrow.overlapped .cardpick:not(.focused):not(.raised) .card.hascost .badges {
+  top: calc(2.2em + 1px); max-height: calc(100% - 2px - 2.2em);
+}
+.fanrow.overlapped .cardpick:not(.focused):not(.raised) .card.hasstr .badges {
+  max-height: calc(100% - 2px - 2.2em);
+}
+.fanrow.overlapped .cardpick:not(.focused):not(.raised) .card.hascost.hasstr .badges {
+  top: calc(2.2em + 1px); max-height: calc(100% - 2px - 4.4em);
+}
+/* The peeks are the deepest fan truncation of all — a 10px sliver. The RIGHT
+   peek shows a card's left edge, so its badges anchor left exactly like a
+   resting overlapped card's; the LEFT peek shows the right edge (its `rtl`
+   clip) and keeps the top-right corner. Shrunk to fit the 10px window, and
+   flush against the surviving edge: a peek's badge is proof the card is
+   carrying something, and the tap that follows it makes the counts legible. */
+.fanpeek .card .badges { font-size: .6em; top: 0; }
+.fanpeek.left .card .badges { right: 0; }
+.fanpeek.right .card .badges { left: 0; right: auto;
+  flex-direction: column; align-content: flex-start; }
+/* Below the cost disc, which is sized in the CARD's em, not the badges' —
+   3.5 of these shrunken em clears the 2em-of-card-font disc at every size. */
+.fanpeek.right .card.hascost .badges { top: 3.5em; }
+/* The flipped board (your own Corp seat) hangs its server columns from the
+   bottom edge, so a column too tall for its half clips at the TOP — which
+   was the one place the badges lived. Same rule as the fan: the badges ride
+   the edge that survives, here the bottom, stepping clear of the corners the
+   staged ✓ / picked mark and the strength disc stand in. */
+#board.flipped .server .card .badges { top: auto; bottom: 1px;
+  align-content: flex-end; }
+#board.flipped .server .card.staged .badges,
+#board.flipped .server .card.picked .badges { bottom: calc(2.2em + 1px);
+  max-height: calc(100% - 2px - 2.2em); }
+#board.flipped .server .card.hasstr .badges {
+  max-width: calc(100% - 2px - 2.2em); }
 .card.facedown { background: repeating-linear-gradient(45deg, #17203a, #17203a 6px, #131a2e 6px, #131a2e 12px); }
 .card.facedown .cname, .card.facedown .ctype { visibility: hidden; }
 .card.corp-card { border-color: #2c4a77; }
@@ -345,7 +403,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .fanrow > .fanpeek.right { margin-left: max(0px, calc((var(--fw) - var(--fstep)) / 2)); }
 .fanpeek { pointer-events: auto; cursor: pointer; opacity: .5;
   width: var(--fpeek); overflow: hidden; align-self: flex-end; }
+/* The scale is anchored to the edge the clip window keeps — centre-origin
+   shrank the card AWAY from that edge, sliding the very sliver being peeked
+   (and the badge now anchored to it) part-way out of the window. */
 .fanpeek .card { pointer-events: none; transform: scale(.9); }
+.fanpeek.right .card { transform-origin: top left; }
+.fanpeek.left .card { transform-origin: top right; }
 .fanpeek.left { direction: rtl; }
 .fanpeek:hover { opacity: .85; }
 
@@ -639,6 +702,13 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .ice-sliver.current { border-color: var(--danger); color: var(--text);
   box-shadow: 0 0 10px rgba(255,92,92,.6); animation: runpulse 1.2s infinite; }
 .ice-sliver .imeta { font-size: 8.5px; color: var(--gold); flex-shrink: 0; margin-left: 4px; }
+/* A sliver is still a card (§5), so it carries the card's counters — the
+   same discs, inline, sized to the chip. They shrink the name, never each
+   other: an advanced Ice Wall must never read like a bare one. */
+.ice-sliver .sbadges { display: inline-flex; gap: 1px; flex-shrink: 0;
+  margin-left: 3px; align-items: center; }
+.ice-sliver .badge { min-width: 1.55em; height: 1.55em; font-size: 8px;
+  padding: 0 .18em; }
 /* THE LAW §4/§5: a chip is still a card, so it wears the same three colours
    the cards do — a stack collapsed for space must not also collapse the only
    affordance saying it can be tapped. */
@@ -973,18 +1043,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   letter-spacing: .5px; pointer-events: none; }
 
 /* ── The accessed card (CR 7.1.2) ────────────────────────────────────────
-   Shown whether or not the access asks anything. Bordered in the run's own
-   red so it reads as "this happened during your run", not as a question. */
+   Shown whether or not the access asks anything, and always ONE at a time,
+   oldest first (UX.md lesson 12) — a multi-access breach is a sequence of
+   these, each acknowledged before the next, never a grid of thumbnails.
+   Bordered in the run's own red so it reads as "this happened during your
+   run", not as a question. */
 .reveal-overlay .zoom-card { border-color: var(--runner); }
 .acc-eyebrow { font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
   color: var(--runner); font-weight: 800; }
 .reveal-overlay .zoom-card > .chip.go { align-self: flex-start; margin-top: 8px;
   min-height: 46px; font-size: 15px; font-weight: 700; padding: 12px 22px; }
-.reveal-overlay .cardprompt { --fw: 56px; --fh: 78px; display: flex; gap: 8px;
-  flex-wrap: wrap; justify-content: center; }
-.reveal-overlay .cardpick { width: var(--fw); }
-.reveal-overlay .cardpick .card { width: var(--fw); height: var(--fh); }
-.reveal-overlay .cardpick .cardpick-label { visibility: visible; }
 
 /* Where the board already holds the cards, the sheet holds only the words —
    and says where to look, in the colour it is looking for. */

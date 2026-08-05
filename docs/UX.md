@@ -222,6 +222,40 @@ conflict.
     server row with snap — remotes grow rightward like MTGA's battlefield
     lanes.
 
+11. **A badge lives on the sliver that survives** (THE LAW §11, carried into
+    every truncation). In an overlapping fan the only part of a resting card
+    on screen is the LEFT strip its neighbour does not cover — and the
+    counters sat top-right, which is the first part of the card to go under,
+    so a fanned card carrying three virus counters read as bare. When a row
+    overlaps (`.fanrow.overlapped`, written by `renderFan` from the same step
+    arithmetic that laid the row out) a resting card's badges re-anchor down
+    that strip, one disc per kind, below the cost disc; the focused card is
+    whole and keeps the top-right fill, so several kinds still cluster
+    without covering each other or the title. The right peek anchors left for
+    the same reason; the left peek shows the card's right sliver and keeps
+    the corner. And the deepest truncation of all — the ice sliver — carries
+    the same discs inline (`sliverBadges`), because an advanced Ice Wall that
+    reads like a bare one is a counter the player will misplay. Overlay only,
+    never a reflow: the badges move within their card, and the board does not
+    move at all (THE LAW §2).
+
+12. **Accesses arrive one at a time** (CR 7.5, kept visible). The kernel
+    resolves a breach access by access — each its own decision round-trip —
+    and the client now presents exactly that shape: every reveal is ONE card,
+    whole, oldest first ("You accessed — from R&D · 2 more to see"),
+    acknowledged before the next appears, so it is never ambiguous which card
+    is in front of the player. A decision the machine stopped on (steal,
+    trash) waits behind the reveals that predate it — every snapshot in
+    `state.accessed` was taken before the stop, so the reveals are always the
+    earlier beat — and "access A, then steal B" reads as A, then B, exactly
+    as it resolved. "You accessed 3 cards" over a grid of thumbnails was a
+    summary of a sequence; Archives, where a whole pile arrives at once, was
+    the worst of it, and facedown cards turning faceup ride the same
+    one-per-beat path. Presentation only: the kernel's sequence is untouched,
+    the tap that acknowledges is the same tap every reader takes (§3b), and
+    nothing is ever trapped — Escape and tap-away advance, and the log keeps
+    every line.
+
 ## Deliberate deviations
 
 - **No drag-to-play, and no drag-to-navigate.** HS drags cards; we
