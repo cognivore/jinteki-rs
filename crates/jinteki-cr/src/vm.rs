@@ -7718,6 +7718,26 @@ impl Vm {
                 cite!("rule_targets_must_be_in_play_area");
                 self.candidates_matching(criteria, source).len() <= *at_most as usize
             }
+            // 2.13: the same described set, partitioned by faction instead of
+            // measured against a number. The description is the ordinary
+            // criteria vocabulary, so "your installed cards" means here what
+            // it would mean as a target; each card then joins the group of
+            // its printed faction (2.13.2's neutral is a faction like any
+            // other), and the named group must be STRICTLY the largest — a
+            // tie is not "more than".
+            R::LargestFactionGroupIs { faction, criteria } => {
+                cite!("rule_targets_must_be_in_play_area");
+                cite!("rule_faction_citation");
+                cite!("rule_faction_list");
+                let factions: Vec<&'static str> = self
+                    .candidates_matching(criteria, source)
+                    .into_iter()
+                    .filter_map(|id| self.st.objects.get(&id).and_then(|o| o.face().faction))
+                    .collect();
+                let group_of = |f: &str| factions.iter().filter(|x| **x == f).count();
+                let mine = group_of(faction);
+                mine > 0 && factions.iter().all(|f| *f == *faction || group_of(f) < mine)
+            }
             // 1.15.4: "…if THE EXPOSED CARD has the named card type" — a
             // question about a target this ability already announced, asked
             // through the same criteria vocabulary. 1.15.3: an announcement

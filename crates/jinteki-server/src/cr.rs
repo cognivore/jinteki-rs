@@ -152,6 +152,13 @@ pub const ANDROMEDA_PILE: &[&str] = &[
     "Zahya Sadeghi: Versatile Smuggler",
     "Az McCaffrey: Mechanical Prodigy",
     "Khan: Savvy Skiptracer",
+    // Complete, and enlisted for the same reason as the rest — with the one
+    // caveat that its first printed line is "Draft format only." and Andromeda
+    // is not a draft deck. Format legality is settled before the game begins
+    // (1.4.2) and nothing reads it afterwards, so it changes no play here; a
+    // pile that wanted to honour it would filter on that printed line, which
+    // is a decision about deck construction and not about this card.
+    "Boris \"Syfr\" Kovac: Crafty Veteran",
 ];
 
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed

@@ -155,10 +155,85 @@ pub fn editorial_division() -> Card {
         .build()
 }
 
+/// Information Dynamics: All You Need To Know — Identity: Division.
+/// "Draft format only.
+///  If you have more [nbn] cards rezzed than any other faction, whenever an
+///  agenda is scored or stolen, give the runner 1 tag."
+///
+/// COMPLETE. The format restriction, then one printed sentence with TWO
+/// conditions — 1.17.3a's score and 1.17.3b's steal are different occurrences
+/// — so two conditional abilities with the same effect, the shape Jinteki:
+/// Personal Evolution takes from the same sentence. Each carries its own copy
+/// of 9.6.5c's additional requirement, which is exact here and not merely
+/// convenient: the requirement is a question about the board, so asking it
+/// twice is asking it once per occurrence, and no ordinal is being shared.
+///
+/// The faction partition is drawn over the rezzed cards, and the Runner's
+/// theft is as much an occurrence of it as the Corp's score.
+pub fn information_dynamics() -> Card {
+    let more_nbn_rezzed = || {
+        more_cards_of_this_faction_than_any_other("NBN", &[installed_corp_card(), rezzed()])
+    };
+    card("Information Dynamics: All You Need To Know")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("Draft format only.")
+        .text("If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.")
+        .when(corp_scores_agenda_if(&[more_nbn_rezzed()]), [give_tags(1)])
+        .named("an agenda was scored")
+        .when(runner_steals_agenda_if(&[more_nbn_rezzed()]), [give_tags(1)])
+        .named("an agenda was stolen")
+        .build()
+}
+
+/// New Angeles Sol: Your News — Identity: Division.
+/// "Whenever an agenda is scored or stolen, you may play 1 current from HQ or
+///  Archives (paying its play cost)."
+///
+/// COMPLETE. One printed sentence with two conditions — 1.17.3a's score and
+/// 1.17.3b's steal — so two declinable conditional abilities with the same
+/// effect, the Leela Patel shape.
+///
+/// "From HQ **or** Archives" is a printed "or" between two whole
+/// descriptions, so it is the disjunction word and not two instructions:
+/// where the card is is a criterion about the card, exactly as its subtype
+/// is. Both branches name a zone, which is what lifts 1.15.2c for the whole
+/// description — a disjunction with one silent branch would leave the
+/// play-area default standing for that branch and describe nothing at all.
+///
+/// The parenthesis is 8.6.7b restated rather than a second sentence: an
+/// effect that plays a card pays the play cost unless it says otherwise. So
+/// the Corp who cannot afford the current is simply not able to play it, and
+/// 8.6.6c is what then keeps the played current in the play area instead of
+/// trashing it.
+pub fn new_angeles_sol() -> Card {
+    let a_current_in_hq_or_archives = || {
+        choose(
+            1,
+            &[with_subtype("Current"), any_of(&[&[in_hand_of(Corp)], &[in_archives()]])],
+        )
+    };
+    card("New Angeles Sol: Your News")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).")
+        .may_when(corp_scores_agenda(), [play_card(a_current_in_hq_or_archives())])
+        .named("an agenda was scored")
+        .may_when(runner_steals_agenda(), [play_card(a_current_in_hq_or_archives())])
+        .named("an agenda was stolen")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        new_angeles_sol(),
+        information_dynamics(),
         editorial_division(),
         nbn_reality_plus(),
         nbn_the_world_is_yours(),

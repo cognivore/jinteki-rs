@@ -758,7 +758,7 @@ pub fn fan_site() -> PrintedCard {
     c.subtypes = vec!["Virtual"];
     c.cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::CorpScoresAgenda,
+        TriggerCond::CorpScoresAgenda { requires: Vec::new() },
         vec![Instruction::AddToScoreArea {
             cards: TargetSpec::SelfSource,
             to: Side::Runner,

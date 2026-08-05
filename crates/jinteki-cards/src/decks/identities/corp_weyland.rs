@@ -198,10 +198,53 @@ pub fn weyland_builder_of_nations() -> Card {
         .build()
 }
 
+/// Fringe Applications: Tomorrow, Today — Identity: Division.
+/// "Draft format only.
+///  If you have more [weyland-consortium] cards rezzed than any other faction,
+///  when the Runner's turn begins, place an advancement token on a piece of
+///  ice."
+///
+/// COMPLETE. The format restriction, then one conditional ability with
+/// 9.6.5c's additional requirement inside its condition — the faction
+/// partition of the rezzed cards, asked when the RUNNER's turn begins, which
+/// is a turn the Corp's identity is nonetheless active for (9.1.7).
+///
+/// "A piece of ice" makes no stipulation about where or whose, so the
+/// description is 2.15's card type and nothing else, with 1.15.2c supplying
+/// the play area — and only the Corp has ice, so the sentence needs no word
+/// about sides. The ability is MANDATORY: with a piece of ice on the board
+/// the Corp must place, and with none it does as much as possible (1.15.3),
+/// which is nothing.
+///
+/// 1.18.2: the counter is PLACED, not advanced, so this never meets a
+/// "whenever you advance a card" condition — Built to Last stays quiet.
+pub fn fringe_applications() -> Card {
+    card("Fringe Applications: Tomorrow, Today")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Division"])
+        .text("Draft format only.")
+        .text("If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.")
+        .when(
+            turn_begins_if(
+                Runner,
+                &[more_cards_of_this_faction_than_any_other(
+                    "Weyland Consortium",
+                    &[installed_corp_card(), rezzed()],
+                )],
+            ),
+            [place_on(choose(1, &[of_type(CardType::Ice)]), CounterKind::Advancement, 1)],
+        )
+        .named("tomorrow, today")
+        .build()
+}
+
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
 pub fn identities() -> Vec<Card> {
     vec![
+        fringe_applications(),
         argus_security(),
         weyland_builder_of_nations(),
         gagarin_deep_space(),

@@ -6,6 +6,14 @@
 
 use crate::edsl::*;
 
+/// One installed piece of ice — the description Synthetic Systems' sentence
+/// makes twice, written once here. 8.8.2 filters the second announcement
+/// against the first, so the same description on both sides can never choose
+/// the same card twice.
+fn an_installed_piece_of_ice() -> TargetSpec {
+    choose(1, &[installed_corp_card(), of_type(CardType::Ice)])
+}
+
 /// Jinteki: Personal Evolution — Identity: Megacorp.
 /// "Whenever an agenda is scored or stolen, do 1 net damage."
 ///
@@ -141,10 +149,92 @@ pub fn jinteki_restoring_humanity() -> Card {
         .build()
 }
 
+/// Synthetic Systems: The World Re-imagined — Identity: Division.
+/// "Draft format only.
+///  If you have more [jinteki] cards rezzed than any other faction, when your
+///  turn begins, you may swap 2 pieces of installed ice."
+///
+/// COMPLETE. The format restriction, then one declinable conditional ability
+/// (9.6.9) with 9.6.5c's additional requirement inside its condition — the
+/// faction partition of the Corp's rezzed cards, asked when the Corp's own
+/// turn begins.
+///
+/// The swap is 1.15.2's two announcements for one instruction, and 8.8.2 is
+/// what keeps the Corp from naming the same piece of ice twice. Both pieces
+/// are just "installed ice": the sentence says nothing about servers or
+/// positions, so a rezzed piece and an unrezzed one may trade places, and
+/// neither one has to be on the same server as the other.
+pub fn synthetic_systems() -> Card {
+    card("Synthetic Systems: The World Re-imagined")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Draft format only.")
+        .text("If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.")
+        .may_when(
+            turn_begins_if(
+                Corp,
+                &[more_cards_of_this_faction_than_any_other(
+                    "Jinteki",
+                    &[installed_corp_card(), rezzed()],
+                )],
+            ),
+            [swap(an_installed_piece_of_ice(), an_installed_piece_of_ice())],
+        )
+        .named("the world re-imagined")
+        .build()
+}
+
+/// PT Untaian: Life's Building Blocks — Identity: Division.
+/// "When your discard phase ends, if there are 3 or fewer cards in HQ, you may
+///  pay 1[credit] to place 1 advancement counter on an unrezzed card you can
+///  advance. (You cannot score that card this turn.)"
+///
+/// COMPLETE. 5.5.4's discard phase named as the Corp's own, with 9.6.5c's
+/// additional requirement inside the condition — so HQ is counted AFTER the
+/// cards discarded there have gone, which is what makes a Corp who discarded
+/// down to three qualify.
+///
+/// "You may pay 1[credit] to …" is 9.6.9d: the option is inside the one
+/// sentence rather than on the ability, so the ability is mandatory and the
+/// INSTRUCTION is what may be declined — and 1.16.1 makes the payment part of
+/// the instruction, so a Corp who cannot afford it is not offered the choice
+/// at all.
+///
+/// "An unrezzed card you can advance" is two ordinary description words:
+/// 8.1.2's facedown installed Corp card — which includes an agenda, since an
+/// agenda can never be rezzed — and 1.18.3's advance permission, read through
+/// the same derivation the basic advance action uses.
+///
+/// The parenthesis is 1.4's reminder text and not a second instruction: 5.5
+/// puts the discard phase after the action phase, and 1.17.3c offers scoring
+/// only in the action phase's paid windows, so the turn this counter is
+/// placed in has no scoring left in it to forbid.
+pub fn pt_untaian() -> Card {
+    card("PT Untaian: Life's Building Blocks")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)")
+        .when(
+            your_discard_phase_ends_if(Corp, &[board_has_at_most(&[in_hand_of(Corp)], 3)]),
+            [may_pay(
+                credits(1),
+                place_on(choose(1, &[unrezzed(), advanceable()]), CounterKind::Advancement, 1),
+            )],
+        )
+        .named("life's building blocks")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        synthetic_systems(),
+        pt_untaian(),
         jinteki_personal_evolution(),
         jinteki_potential_unleashed(),
         jinteki_restoring_humanity(),

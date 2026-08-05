@@ -48,11 +48,13 @@ kernel words, not card patches.
   `TriggerRequirement::QuantityAtLeast` measures one amount against a printed
   number; "the same number of cards in your grip as the Corp has in HQ" needs
   two amounts and an equality. *(Lat: Ethical Freelancer.)*
-- **"more [faction] cards installed than any other faction" is unsayable.**
-  A comparison across the faction partition of the board, not a threshold.
-  Every draft-format identity opens with it. *(Boris "Syfr" Kovac, Jamie
-  "Bzzz" Micken, Strategic Innovations, Fringe Applications, Information
-  Dynamics, Synthetic Systems, Wyvern.)*
+- **Nothing maintains the ORDER of the heap.** `TriggerRequirement::
+  LargestFactionGroupIs` now says the faction-partition clause every
+  draft-format identity opens with, so the rest of Wyvern's text is what is
+  left: "you must maintain the order of your heap" is a declaration about the
+  discard pile as an ORDERED zone, and "shuffle the top card of your heap"
+  wants a `TargetSpec` naming that top card — beside `TopOfDeck`, which is the
+  same idea about the other pile. *(Wyvern: Chemically Enhanced.)*
 - **The ordinal "the first time each RUN" has no home.**
   `AbilityDef::first_each_turn` is the turn-scoped one, and `WouldDamage`
   carries `first_each_run` as content on that one condition. The scope is
@@ -165,17 +167,20 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **84 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **92 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
 Armand "Geist" Walker, Barry "Baz" Wong, Iain Stirling, Silhouette, Gabriel
 Santiago, Los, Liza Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable"
 Sintashta, Virtual Intelligence, P.I., Mercury, MuslihaT, Zahya Sadeghi,
-Az McCaffrey, Khan.
+Az McCaffrey, Khan, Boris "Syfr" Kovac. (Boris prints "Draft format only." and
+Andromeda is not a draft deck; 1.4.2 settles a format restriction before the
+game begins and nothing reads it afterwards, so it changes no play — a pile
+that wanted to honour it would filter on that printed line.)
 
 
-## Runner — Criminal (19/22)
+## Runner — Criminal (20/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
@@ -184,7 +189,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Armand "Geist" Walker: Tech Lord** — Whenever you use a [trash] ability, draw 1 card.
 - [x] **Az McCaffrey: Mechanical Prodigy** — The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.
 - [x] **Barry "Baz" Wong: Tri-Maf Veteran** — Whenever the Corp rezzes a piece of ice, you may install 1 resource or piece of hardware from your grip.
-- [ ] **Boris "Syfr" Kovac: Crafty Veteran** — Draft format only. If you have more [criminal] cards installed than any other faction, when your turn begins, remove 1 tag.
+- [x] **Boris "Syfr" Kovac: Crafty Veteran** — Draft format only. If you have more [criminal] cards installed than any other faction, when your turn begins, remove 1 tag.
 - [x] **Gabriel Santiago: Consummate Professional** — The first time you make a successful run on HQ each turn, gain 2[credit].
 - [x] **Iain Stirling: Retired Spook** — When your turn begins, gain 2[credit] if the Corp has more scored agenda points than you.
 - [x] **Ken "Express" Tenma: Disappeared Clone** — The first time each turn you play a run event, gain 1[credit].
@@ -202,7 +207,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (12/21)
+## Runner — Shaper (13/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -216,7 +221,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
 - [x] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
 - [x] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
-- [ ] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
+- [x] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
 - [ ] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
 - [ ] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
 - [x] **Kate "Mac" McCaffrey: Digital Tinker** — Lower the install cost of the first program or piece of hardware you install each turn by 1.
@@ -278,7 +283,7 @@ Module: `decks/identities/runner_sunny.rs`
 
 - [x] **Sunny Lebeau: Security Specialist** — 
 
-## Corp — Haas-Bioroid (14/19)
+## Corp — Haas-Bioroid (15/19)
 
 Module: `decks/identities/corp_haas_bioroid.rs`
 
@@ -297,12 +302,12 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Poétrï Luxury Brands: All the Rage** — Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them. Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.
 - [x] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.
 - [x] **Sportsmetal: Go Big or Go Home** — Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.
-- [ ] **Strategic Innovations: Future Forward** — Draft format only. If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.
+- [x] **Strategic Innovations: Future Forward** — Draft format only. If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.
 - [x] **The Foundry: Refining the Process** — The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (5/21)
+## Corp — Jinteki (7/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
@@ -322,13 +327,13 @@ Module: `decks/identities/corp_jinteki.rs`
 - [ ] **Mti Mwekundu: Life Improved** — Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.
 - [ ] **Méliès U: Only the Brightest** — When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest. When the Runner makes a successful run on a central server, flip this identity. When the Runner’s action phase ends, gain 1[credit].
 - [ ] **Nisei Division: The Next Generation** — Whenever you and the Runner reveal secretly spent credits, gain 1[credit].
-- [ ] **PT Untaian: Life's Building Blocks** — When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)
+- [x] **PT Untaian: Life's Building Blocks** — When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)
 - [x] **Pālanā Foods: Sustainable Growth** — The first time each turn the Runner draws a card, gain 1[credit].
 - [ ] **Saraswati Mnemonics: Endless Exploration** — [click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.
-- [ ] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
+- [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (7/19)
+## Corp — NBN (9/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -339,20 +344,20 @@ Module: `decks/identities/corp_nbn.rs`
 - [ ] **GameNET: Where Dreams are Real** — Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].
 - [ ] **Haarpsichord Studios: Entertainment Unleashed** — The Runner cannot steal more than one agenda each turn.
 - [ ] **Harishchandra Ent.: Where You're the Star** — While the Runner is tagged, they play with the grip revealed.
-- [ ] **Information Dynamics: All You Need To Know** — Draft format only. If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.
+- [x] **Information Dynamics: All You Need To Know** — Draft format only. If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.
 - [ ] **NBN: Controlling the Message** — The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).
 - [ ] **NBN: Making News** — 2[recurring-credit] Use these credits during trace attempts.
 - [x] **NBN: Reality Plus** — The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.
 - [x] **NBN: The World is Yours*** — Your maximum hand size is increased by 1.
 - [ ] **Near-Earth Hub: Broadcast Center** — The first time each turn you create a remote server, draw 1 card.
 - [x] **Nebula Talent Management: Making Stars** — When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.
-- [ ] **New Angeles Sol: Your News** — Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).
+- [x] **New Angeles Sol: Your News** — Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).
 - [x] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
 - [ ] **SYNC: Everything, Everywhere** — [click]: Flip this identity. The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [ ] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 
-## Corp — Weyland Consortium (8/19)
+## Corp — Weyland Consortium (9/19)
 
 Module: `decks/identities/corp_weyland.rs`
 
@@ -360,7 +365,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [ ] **BANGUN: When Disaster Strikes** — You may install agendas faceup. (This does not make their abilities active.) Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.
 - [ ] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
 - [ ] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
-- [ ] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.
+- [x] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.
 - [x] **GRNDL: Power Unleashed** — You start the game with 10[credit] and 1 bad publicity.
 - [x] **Gagarin Deep Space: Expanding the Horizon** — As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].
 - [ ] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.

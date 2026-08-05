@@ -228,7 +228,10 @@ pub enum TriggerCond {
     /// met even when there was nothing to remove.
     CorpPurgesVirusCounters,
     /// "When this turn ends." (Joshua B. class delayed conditionals.)
-    TurnEnds(Side),
+    /// `requires` is 9.6.5c's additional stipulation — "…**if** you have more
+    /// [haas-bioroid] cards rezzed than any other faction, when the Runner's
+    /// turn ends" (Strategic Innovations).
+    TurnEnds { side: Side, requires: Vec<TriggerRequirement> },
     /// CR 5.5.4 / 5.1.4b: "When a discard phase ends…" (Breaking News, The
     /// Class Act, Citadel Sanctuary). 5.1.4b is explicit that conditions
     /// related to a turn OR DISCARD PHASE ending are met at the same step —
@@ -398,14 +401,17 @@ pub enum TriggerCond {
     /// `printed_only` is the origin stipulation as content (§12 rule 2).
     SubroutineBrokenOnSelf { printed_only: bool },
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
-    /// Seidr class drivers for the 7.4.7a examples).
-    RunnerStealsAgenda,
+    /// Seidr class drivers for the 7.4.7a examples). `requires` is 9.6.5c's
+    /// additional stipulation — "…**if** you have more [nbn] cards rezzed
+    /// than any other faction" (Information Dynamics).
+    RunnerStealsAgenda { requires: Vec<TriggerRequirement> },
     /// CR 1.17.6: "Whenever the Corp scores an agenda…" (Fan Site class) —
     /// the scoring twin of [`TriggerCond::RunnerStealsAgenda`], met "after
     /// the Corp moves the agenda from its current zone to their score area".
     /// 1.17.3e/f: a card ADDED to a score area is not scored, so it cannot
-    /// meet this.
-    CorpScoresAgenda,
+    /// meet this. `requires` is 9.6.5c's additional stipulation, exactly as
+    /// on the steal twin.
+    CorpScoresAgenda { requires: Vec<TriggerRequirement> },
     /// "Whenever the Runner avoids receiving a tag…" (Thunder Art Gallery
     /// class — the 9.9.4c/d chain-reaction examples).
     RunnerAvoidsTag,
@@ -432,7 +438,16 @@ pub enum TriggerCond {
     /// you install a virus program" does not name. Nor is it `CardPlayed`
     /// with `also_installed`, which is the sentence that names BOTH ways a
     /// card leaves a hand (8.5.1 / 8.6.1) and would fire on a play as well.
-    CardInstalledBy { side: Side, of_types: Vec<CardType>, of_subtypes: Vec<&'static str> },
+    ///
+    /// `requires` is 9.6.5c's additional stipulation — "…**if** you have more
+    /// [shaper] cards installed than any other faction, when you install a
+    /// card" (Jamie "Bzzz" Micken).
+    CardInstalledBy {
+        side: Side,
+        of_types: Vec<CardType>,
+        of_subtypes: Vec<&'static str>,
+        requires: Vec<TriggerRequirement>,
+    },
     /// "Whenever you make a successful run on the chosen server…" (Security
     /// Testing class). CR 9.10.3b: the server is read from the maintained
     /// choice under `key`, so the condition is met only by a run on the
@@ -713,6 +728,28 @@ pub enum TriggerRequirement {
     /// content (§12 rule 2). Never met when the ability announced no such
     /// target (1.15.3).
     EarlierTargetMatches { nth: usize, criteria: Vec<crate::instr::TargetFilter> },
+    /// CR 2.13: "…if you have more **[criminal]** cards installed than any
+    /// other faction" / "…more **[nbn]** cards rezzed than any other faction"
+    /// — the clause every draft-format identity opens with. A comparison
+    /// across the FACTION PARTITION of a described set of cards, which is why
+    /// [`TriggerRequirement::BoardHasMatching`] cannot say it: that one
+    /// measures one description against a printed number, and this sentence
+    /// prints no number at all — it measures one faction's share of the
+    /// described cards against every other faction's.
+    ///
+    /// `criteria` is the described set in the shared filter vocabulary (§12
+    /// rule 5), so WHICH cards are partitioned is content exactly as it is
+    /// for `BoardHasMatching`: "cards installed" is the play area, "cards
+    /// rezzed" adds 8.1.2's faceup stipulation, and a sentence about some
+    /// other set is this same atom.
+    ///
+    /// 2.13.3 gives every card a faction and 2.13.2's neutral is one of them,
+    /// so a neutral card joins the neutral group rather than no group; a card
+    /// printing no faction at all is in no group and is not counted.
+    ///
+    /// "MORE than any other" is strict — a tie with any other faction does
+    /// not meet it, and neither does an empty board.
+    LargestFactionGroupIs { faction: &'static str, criteria: Vec<crate::instr::TargetFilter> },
 }
 
 /// Stable identity of one subroutine on a piece of ice: (category rank per
@@ -2042,7 +2079,7 @@ pub fn trigger_matches(
             cite!("rule_purge");
             true
         }
-        (TriggerCond::TurnEnds(side), GameChange::TurnEnded { side: s }) => side == s,
+        (TriggerCond::TurnEnds { side, .. }, GameChange::TurnEnded { side: s }) => side == s,
         // 5.1.4b: "Trigger conditions related to a turn or discard phase
         // ending are met at the timing step that indicates the formal end of
         // the turn." Same step, same occurrence, different sentence.
@@ -2195,8 +2232,8 @@ pub fn trigger_matches(
             cite!("rule_break_subroutine");
             *ice == source.id && (!*printed_only || *printed)
         }
-        (TriggerCond::RunnerStealsAgenda, GameChange::AgendaStolen { .. }) => true,
-        (TriggerCond::CorpScoresAgenda, GameChange::AgendaScored { .. }) => {
+        (TriggerCond::RunnerStealsAgenda { .. }, GameChange::AgendaStolen { .. }) => true,
+        (TriggerCond::CorpScoresAgenda { .. }, GameChange::AgendaScored { .. }) => {
             cite!("rule_agenda_scored");
             true
         }
@@ -2220,7 +2257,7 @@ pub fn trigger_matches(
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
         }
         (
-            TriggerCond::CardInstalledBy { side, of_types, of_subtypes },
+            TriggerCond::CardInstalledBy { side, of_types, of_subtypes, .. },
             GameChange::CardInstalled { side: s, obj, .. },
         ) => {
             // 2.15/2.16: the stipulations, asked of the card the change names.
@@ -2299,7 +2336,11 @@ pub fn trigger_requirements(cond: &TriggerCond) -> &[TriggerRequirement] {
         | TriggerCond::TurnBegins { requires, .. }
         | TriggerCond::EncounterBegins { requires, .. }
         | TriggerCond::CorpRezzesCard { requires, .. }
-        | TriggerCond::DiscardPhaseEnds { requires, .. } => requires,
+        | TriggerCond::DiscardPhaseEnds { requires, .. }
+        | TriggerCond::TurnEnds { requires, .. }
+        | TriggerCond::RunnerStealsAgenda { requires }
+        | TriggerCond::CorpScoresAgenda { requires }
+        | TriggerCond::CardInstalledBy { requires, .. } => requires,
         _ => &[],
     }
 }

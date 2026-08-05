@@ -439,10 +439,52 @@ pub fn thunderbolt_armaments() -> Card {
         .build()
 }
 
+/// Strategic Innovations: Future Forward — Identity: Division.
+/// "Draft format only.
+///  If you have more [haas-bioroid] cards rezzed than any other faction, when
+///  the Runner's turn ends, shuffle 1 card in Archives into R&D."
+///
+/// COMPLETE. The format restriction, then one conditional ability whose
+/// leading "if" is 9.6.5c's additional requirement inside the trigger
+/// condition — asked at 5.6.3d/5.7.2d, the formal end of the Runner's turn,
+/// which is when the condition would be met.
+///
+/// The faction partition is drawn over the REZZED cards, which is the same
+/// comparison Boris "Syfr" Kovac makes over the installed ones with 8.1.2's
+/// faceup stipulation added; a Corp identity says it that way because 8.1.1
+/// makes rezzing the only thing that turns a Corp card faceup in the play
+/// area.
+///
+/// "1 card in Archives" names a zone, so 1.15.2c's play-area restriction
+/// lifts for it. The shuffle is what makes the card go to R&D as a card and
+/// not to its top: 8.7.3's shuffle is the whole move.
+pub fn strategic_innovations() -> Card {
+    card("Strategic Innovations: Future Forward")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Draft format only.")
+        .text("If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.")
+        .when(
+            turn_ends_if(
+                Runner,
+                &[more_cards_of_this_faction_than_any_other(
+                    "Haas-Bioroid",
+                    &[installed_corp_card(), rezzed()],
+                )],
+            ),
+            [shuffle_into_deck(choose(1, &[in_archives()]), Corp)],
+        )
+        .named("future forward")
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
     vec![
+        strategic_innovations(),
         asa_group(),
         cerebral_imaging(),
         custom_biotics(),

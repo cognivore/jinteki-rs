@@ -3058,7 +3058,10 @@ fn example_rule_playing_lingering_effects_1() {
                 },
                 jinteki_cr::instr::Instruction::CreateDelayedConditional {
                     def: Box::new(jinteki_cr::ability::AbilityDef::conditional(
-                        jinteki_cr::ability::TriggerCond::TurnEnds(Side::Runner),
+                        jinteki_cr::ability::TriggerCond::TurnEnds {
+                            side: Side::Runner,
+                            requires: Vec::new(),
+                        },
                         vec![jinteki_cr::instr::Instruction::GainCredits(Side::Runner, Quantity::c(1))],
                         false,
                     )

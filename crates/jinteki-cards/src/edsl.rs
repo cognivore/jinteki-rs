@@ -1054,6 +1054,15 @@ pub fn install_paying_less(card: TargetSpec, dest: InstallDest, less: i64) -> In
 pub fn play_cards_from_hand(count: u32, from_hand_of: Side) -> Instruction {
     Instruction::PlayCards { count, from_hand_of, ignore_costs: false }
 }
+/// "Play 1 **current** from HQ or Archives **(paying its play cost)**." (New
+/// Angeles Sol; 8.6.3.) One card, described the way any other target is — so
+/// where it is played FROM is a criterion on the description and not a
+/// property of the instruction, which is what lets one sentence name two
+/// zones at once. The parenthetical is 8.6.7b restated: an effect that plays
+/// a card pays the play cost unless it says otherwise, and this one does not.
+pub fn play_card(card: TargetSpec) -> Instruction {
+    Instruction::PlayCard { card, ignore_costs: false, then_remove_from_game: false }
+}
 /// "Rez <a card>." (8.1.2.)
 pub fn rez(target: TargetSpec) -> Instruction {
     Instruction::RezCard { target, ignore_costs: false, reduce: Quantity::c(0) }
@@ -1742,17 +1751,43 @@ pub fn accesses_a(of: CardType) -> TriggerCond {
 /// "Whenever you install a card…" — 8.5's install, with no stipulation about
 /// what was installed.
 pub fn installs_a_card(side: Side) -> TriggerCond {
-    TriggerCond::CardInstalledBy { side, of_types: Vec::new(), of_subtypes: Vec::new() }
+    TriggerCond::CardInstalledBy {
+        side,
+        of_types: Vec::new(),
+        of_subtypes: Vec::new(),
+        requires: Vec::new(),
+    }
+}
+/// "If you have more [shaper] cards installed than any other faction, when
+///  you install a card…" (Jamie "Bzzz" Micken) — the same install condition
+/// carrying 9.6.5c's additional requirement.
+pub fn installs_a_card_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::CardInstalledBy {
+        side,
+        of_types: Vec::new(),
+        of_subtypes: Vec::new(),
+        requires: reqs.to_vec(),
+    }
 }
 /// "Whenever you install a <subtype> <type>…" (Noise class) — 2.15's type and
 /// 2.16's subtype, both stipulations on the one install condition.
 pub fn installs_a_subtyped(side: Side, of: CardType, subtype: &'static str) -> TriggerCond {
-    TriggerCond::CardInstalledBy { side, of_types: vec![of], of_subtypes: vec![subtype] }
+    TriggerCond::CardInstalledBy {
+        side,
+        of_types: vec![of],
+        of_subtypes: vec![subtype],
+        requires: Vec::new(),
+    }
 }
 /// "Whenever you install a piece of hardware…" — 8.5's install with the
 /// sentence's card-type stipulation and nothing else.
 pub fn installs_a(side: Side, of: CardType) -> TriggerCond {
-    TriggerCond::CardInstalledBy { side, of_types: vec![of], of_subtypes: Vec::new() }
+    TriggerCond::CardInstalledBy {
+        side,
+        of_types: vec![of],
+        of_subtypes: Vec::new(),
+        requires: Vec::new(),
+    }
 }
 /// "Whenever you trash a piece of hardware **(from any location)**…" — 8.2's
 /// trash, naming the player who does it (1.14.5) and the type of card, and
@@ -1910,6 +1945,18 @@ pub fn uses_a_trash_symbol_ability(side: Side) -> TriggerCond {
 pub fn agenda_points_ahead(side: Side) -> TriggerRequirement {
     TriggerRequirement::AgendaPointsAhead { side }
 }
+/// "If you have more **[criminal]** cards installed than any other faction, …"
+/// / "…more **[nbn]** cards rezzed than any other faction, …" — the clause
+/// every draft-format identity opens with (2.13). The described cards are the
+/// ordinary filter words, so "installed" is `[installed_runner_card()]` and
+/// "rezzed" is `[installed_corp_card(), rezzed()]`; they are grouped by
+/// printed faction and the named group must be STRICTLY the largest.
+pub fn more_cards_of_this_faction_than_any_other(
+    faction: &'static str,
+    criteria: &[TargetFilter],
+) -> TriggerRequirement {
+    TriggerRequirement::LargestFactionGroupIs { faction, criteria: criteria.to_vec() }
+}
 /// "…a facedown card" (1.13.2) — the plain question, in whatever zone the
 /// rest of the description names.
 pub fn facedown() -> TargetFilter {
@@ -2036,11 +2083,22 @@ pub fn credits_in_pool_of(side: Side) -> Quantity {
 }
 /// "Whenever the Corp scores an agenda…" (1.17.6.)
 pub fn corp_scores_agenda() -> TriggerCond {
-    TriggerCond::CorpScoresAgenda
+    TriggerCond::CorpScoresAgenda { requires: Vec::new() }
+}
+/// "If you have more [nbn] cards rezzed than any other faction, whenever an
+///  agenda is scored…" (Information Dynamics) — the same condition carrying
+/// 9.6.5c's additional requirement.
+pub fn corp_scores_agenda_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::CorpScoresAgenda { requires: reqs.to_vec() }
 }
 /// "Whenever the Runner steals an agenda…" (1.17.7.)
 pub fn runner_steals_agenda() -> TriggerCond {
-    TriggerCond::RunnerStealsAgenda
+    TriggerCond::RunnerStealsAgenda { requires: Vec::new() }
+}
+/// "…whenever an agenda is stolen" with 9.6.5c's additional requirement
+/// (Information Dynamics).
+pub fn runner_steals_agenda_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::RunnerStealsAgenda { requires: reqs.to_vec() }
 }
 /// "When a discard phase ends, …" (5.5.4). CR 5.1.4b puts it at the same step
 /// as the turn formally ending, so it is that occurrence read as a different
@@ -2095,7 +2153,13 @@ pub fn look_at_whole_hand_of(hand_of: Side, by: Side) -> Instruction {
 }
 /// "When your turn ends, …" (5.6.3/5.7.2 — the formal end of the turn).
 pub fn turn_ends(side: Side) -> TriggerCond {
-    TriggerCond::TurnEnds(side)
+    TriggerCond::TurnEnds { side, requires: Vec::new() }
+}
+/// "If you have more [haas-bioroid] cards rezzed than any other faction, when
+///  the Runner's turn ends, …" (Strategic Innovations) — 5.6.3/5.7.2's formal
+/// end of the turn carrying 9.6.5c's additional requirement.
+pub fn turn_ends_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::TurnEnds { side, requires: reqs.to_vec() }
 }
 /// "Remove <cards> from the game." (§4.9.)
 pub fn remove_from_game(targets: TargetSpec) -> Instruction {

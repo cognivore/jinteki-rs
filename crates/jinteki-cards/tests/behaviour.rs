@@ -7470,3 +7470,482 @@ fn builder_of_nations_damages_only_after_an_advanced_ice_encounter() {
         .count();
     assert_eq!(meat, 1, "exactly one — the plain ice's encounter met nothing: {}", t.tail(50));
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — the draft format's faction partition (CR 2.13)
+// ---------------------------------------------------------------------------
+
+/// A supporting board card of a named faction (2.13.3). The identity under
+/// test always comes out of its deck module; what a faction partition is
+/// drawn OVER is ordinary board furniture, so it is the testkit's — with the
+/// one characteristic the sentence reads set explicitly, which is what lets
+/// each case below say exactly which groups exist and how big they are.
+fn of_faction(mut c: PrintedCard, faction: &'static str) -> PrintedCard {
+    c.faction = Some(faction);
+    c
+}
+
+/// Boris "Syfr" Kovac: "If you have more [criminal] cards installed than any
+/// other faction, when your turn begins, remove 1 tag."
+///
+/// The requirement is the card, so both readings are asserted. A TIE is the
+/// case worth having: two Criminal cards against two Anarch ones is not "more
+/// than any other faction", and the tag stays.
+#[test]
+fn boris_syfr_kovac_removes_a_tag_only_while_criminal_is_strictly_ahead() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6180);
+        tk::install_identity(&mut vm, card("Boris \"Syfr\" Kovac: Crafty Veteran"), Side::Runner);
+        tk::install_rig(
+            &mut vm,
+            of_faction(tk::vanilla_runner_card("Crim A", CardType::Program), "Criminal"),
+        );
+        tk::install_rig(
+            &mut vm,
+            of_faction(tk::vanilla_runner_card("Anarch A", CardType::Program), "Anarch"),
+        );
+        if leading {
+            tk::install_rig(
+                &mut vm,
+                of_faction(tk::vanilla_runner_card("Crim B", CardType::Hardware), "Criminal"),
+            );
+        }
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.tags = 2;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+        assert_eq!(
+            vm.st.runner.tags,
+            if leading { 1 } else { 2 },
+            "the tag comes off only while the Criminal group is STRICTLY the largest \
+             (leading={leading}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Jamie "Bzzz" Micken: "If you have more [shaper] cards installed than any
+/// other faction, when you install a card the first time each turn, draw 1
+/// card."
+///
+/// Both of 9.6.5c's stipulations at once. The Runner installs twice in a turn:
+/// while Shaper leads, the FIRST install draws and the second does not; while
+/// it is tied, neither does — and the ordinal is not banked for later, because
+/// the condition was never met at all.
+#[test]
+fn jamie_bzzz_micken_draws_on_the_first_install_only_while_shaper_leads() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6181);
+        tk::install_identity(&mut vm, card("Jamie \"Bzzz\" Micken: Techno Savant"), Side::Runner);
+        tk::install_rig(
+            &mut vm,
+            of_faction(tk::vanilla_runner_card("Shaper A", CardType::Program), "Shaper"),
+        );
+        if !leading {
+            tk::install_rig(
+                &mut vm,
+                of_faction(tk::vanilla_runner_card("Crim A", CardType::Program), "Criminal"),
+            );
+        }
+        // Hardware: installable with the basic action (5.2.7d) and costing no
+        // [mu], so the two installs are the only thing the case turns on.
+        let first = vm
+            .new_object(tk::vanilla_runner_card("First", CardType::Hardware), Zone::Hand(Side::Runner));
+        let second = vm
+            .new_object(tk::vanilla_runner_card("Second", CardType::Hardware), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().extend([first, second]);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(first)))
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(second)))
+                .stop_at_action(),
+        );
+        let drawn = vm.st.hand[&Side::Runner].len();
+        assert_eq!(
+            drawn,
+            usize::from(leading),
+            "two installs draw exactly once, and only while Shaper is strictly ahead \
+             (leading={leading}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Strategic Innovations: "If you have more [haas-bioroid] cards rezzed than
+/// any other faction, when the Runner's turn ends, shuffle 1 card in Archives
+/// into R&D."
+///
+/// The partition is drawn over the REZZED cards, so an unrezzed Haas-Bioroid
+/// card is in no group at all: the two cases differ only in whether the second
+/// Haas-Bioroid card is faceup, which is what decides a tie against NBN.
+#[test]
+fn strategic_innovations_recycles_archives_only_while_hb_leads_the_rezzed_cards() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6182);
+        tk::install_identity(
+            &mut vm,
+            card("Strategic Innovations: Future Forward"),
+            Side::Corp,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("HB One", 0, 2), "Haas-Bioroid"),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("NBN One", 0, 2), "NBN"),
+            ServerId::Remote(2),
+            true,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("HB Two", 0, 2), "Haas-Bioroid"),
+            ServerId::Remote(3),
+            leading,
+        );
+        let buried = vm.new_object(tk::corp_filler("Buried"), Zone::Discard(Side::Corp));
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        let deck_before = vm.st.deck[&Side::Corp].len();
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::targets().once(), Reply::Targets(vec![buried]))
+                .when(Match::action(), Reply::Halt),
+            Plan::runner().otherwise_click_credit(),
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Runner's turn ended: {}", t.tail(30));
+        assert_eq!(
+            vm.st.discard[&Side::Corp].len(),
+            usize::from(!leading),
+            "Archives emptied exactly when Haas-Bioroid was strictly ahead among the REZZED \
+             cards (leading={leading}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.deck[&Side::Corp].len(),
+            // 5.5.2: the Corp's turn opens with the mandatory draw, which the
+            // plan runs through on its way to the Corp's action window.
+            deck_before - 1 + usize::from(leading),
+            "and the card went into R&D (leading={leading}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Fringe Applications: "If you have more [weyland-consortium] cards rezzed
+/// than any other faction, when the Runner's turn begins, place an
+/// advancement token on a piece of ice."
+///
+/// The Corp's identity, read at the start of the RUNNER's turn — 9.1.7 keeps
+/// it active across the turn boundary — and the counter is placed by the Corp,
+/// who announces which piece of ice.
+#[test]
+fn fringe_applications_advances_an_ice_as_the_runners_turn_opens() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6183);
+        tk::install_identity(&mut vm, card("Fringe Applications: Tomorrow, Today"), Side::Corp);
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("NBN One", 0, 2), "NBN"),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("Weyland One", 0, 2), "Weyland Consortium"),
+            ServerId::Remote(2),
+            true,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("Weyland Two", 0, 2), "Weyland Consortium"),
+            ServerId::Remote(3),
+            leading,
+        );
+        let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 0, 1), ServerId::Hq, false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::targets().once(), Reply::Targets(vec![ice])),
+            Plan::runner().stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&ice].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+            u32::from(leading),
+            "the token is placed only while Weyland Consortium is strictly ahead \
+             (leading={leading}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Information Dynamics: "If you have more [nbn] cards rezzed than any other
+/// faction, whenever an agenda is scored or stolen, give the runner 1 tag."
+///
+/// One sentence, two occurrences: 1.17.3a's score and 1.17.3b's steal are two
+/// conditional abilities, and each asks the faction question for itself. Both
+/// halves are driven, and the not-leading case shuts both off.
+#[test]
+fn information_dynamics_tags_on_a_score_and_on_a_steal_while_nbn_leads() {
+    for stolen in [false, true] {
+        for leading in [false, true] {
+            let mut vm = Vm::empty(6184);
+            tk::install_identity(
+                &mut vm,
+                card("Information Dynamics: All You Need To Know"),
+                Side::Corp,
+            );
+            tk::install_root(
+                &mut vm,
+                of_faction(tk::vanilla_asset("NBN One", 0, 2), "NBN"),
+                ServerId::Remote(2),
+                true,
+            );
+            tk::install_root(
+                &mut vm,
+                of_faction(tk::vanilla_asset("Jinteki One", 0, 2), "Jinteki"),
+                ServerId::Remote(3),
+                true,
+            );
+            tk::install_root(
+                &mut vm,
+                of_faction(tk::vanilla_asset("NBN Two", 0, 2), "NBN"),
+                ServerId::Remote(4),
+                leading,
+            );
+            let agenda = tk::install_root(
+                &mut vm,
+                tk::vanilla_agenda("Some Agenda", 3, 2),
+                ServerId::Remote(1),
+                false,
+            );
+            vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+            tk::fill_deck(&mut vm, Side::Corp, 5);
+            tk::fill_deck(&mut vm, Side::Runner, 5);
+
+            let t = if stolen {
+                vm.start_turn(Side::Runner);
+                plan::play(
+                    &mut vm,
+                    Plan::corp(),
+                    Plan::runner()
+                        .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                        .stop_at_action(),
+                )
+            } else {
+                vm.start_turn(Side::Corp);
+                plan::play(
+                    &mut vm,
+                    Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+                    Plan::runner(),
+                )
+            };
+            assert_eq!(
+                vm.st.runner.tags,
+                u32::from(leading),
+                "the tag lands exactly when NBN is strictly ahead among the rezzed cards \
+                 (stolen={stolen}, leading={leading}): {}",
+                t.tail(30)
+            );
+        }
+    }
+}
+
+/// Synthetic Systems: "If you have more [jinteki] cards rezzed than any other
+/// faction, when your turn begins, you may swap 2 pieces of installed ice."
+///
+/// The declinable half is the Corp's, and 8.8.2 is what keeps the second
+/// announcement off the card the first one took.
+#[test]
+fn synthetic_systems_swaps_two_ice_while_jinteki_leads_the_rezzed_cards() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6185);
+        tk::install_identity(
+            &mut vm,
+            card("Synthetic Systems: The World Re-imagined"),
+            Side::Corp,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("Jinteki One", 0, 2), "Jinteki"),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("Weyland One", 0, 2), "Weyland Consortium"),
+            ServerId::Remote(2),
+            true,
+        );
+        tk::install_root(
+            &mut vm,
+            of_faction(tk::vanilla_asset("Jinteki Two", 0, 2), "Jinteki"),
+            ServerId::Remote(3),
+            leading,
+        );
+        let a = tk::install_ice(&mut vm, tk::vanilla_ice("Ice A", 0, 1), ServerId::Hq, false);
+        let b = tk::install_ice(&mut vm, tk::vanilla_ice("Ice B", 0, 1), ServerId::Rnd, false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(
+                    Match::reaction().offering("the world re-imagined"),
+                    Reply::take("the world re-imagined"),
+                )
+                .when(Match::targets().once(), Reply::Targets(vec![a]))
+                .when(Match::targets().once(), Reply::Targets(vec![b]))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        let (want_a, want_b) = if leading {
+            (Zone::Ice(ServerId::Rnd), Zone::Ice(ServerId::Hq))
+        } else {
+            (Zone::Ice(ServerId::Hq), Zone::Ice(ServerId::Rnd))
+        };
+        assert_eq!(
+            vm.st.objects[&a].zone, want_a,
+            "the swap happens only while Jinteki is strictly ahead (leading={leading}): {}",
+            t.tail(30)
+        );
+        assert_eq!(vm.st.objects[&b].zone, want_b, "and the other half of it: {}", t.tail(30));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The identity queue — Jinteki and NBN, the rest of the batch
+// ---------------------------------------------------------------------------
+
+/// PT Untaian: "When your discard phase ends, if there are 3 or fewer cards in
+/// HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed
+/// card you can advance."
+///
+/// The requirement is asked AFTER the discard, which is the whole point of a
+/// discard-phase-end condition: a Corp holding six cards discards to five and
+/// is still over the line, and one holding three is under it. The description
+/// is the other half — the facedown asset beside the agenda is unrezzed but
+/// cannot be advanced, so only the agenda is ever a candidate.
+#[test]
+fn pt_untaian_pays_a_credit_for_a_counter_only_with_a_small_hq() {
+    for hand in [2usize, 5usize] {
+        let mut vm = Vm::empty(6186);
+        tk::install_identity(&mut vm, card("PT Untaian: Life's Building Blocks"), Side::Corp);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Some Agenda", 5, 3),
+            ServerId::Remote(1),
+            false,
+        );
+        let asset =
+            tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 0, 2), ServerId::Remote(2), false);
+        tk::fill_hand(&mut vm, Side::Corp, hand);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::nested_cost(), Reply::PayCost(true))
+                .when(Match::targets().once(), Reply::Targets(vec![agenda]))
+                .when(Match::action(), Reply::credit()),
+            Plan::runner().when(Match::action(), Reply::Halt),
+        );
+        let small = hand == 2;
+        assert_eq!(vm.st.turn_side, Side::Runner, "the Corp's turn finished: {}", t.tail(40));
+        assert_eq!(
+            vm.st.objects[&agenda].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+            u32::from(small),
+            "the counter is placed only with 3 or fewer cards left in HQ (hand={hand}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            // 3 clicks on 5.2.6b's basic credit action, less the 1 this pays.
+            vm.st.corp.credits,
+            3 - u32::from(small),
+            "and the credit is spent exactly when the counter is placed (hand={hand}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.objects[&asset].counters.get(&CounterKind::Advancement).copied().unwrap_or(0),
+            0,
+            "the unrezzed ASSET can never be advanced, so it is never a candidate: {}",
+            t.tail(40)
+        );
+    }
+}
+
+/// New Angeles Sol: "Whenever an agenda is scored or stolen, you may play 1
+/// current from HQ or Archives (paying its play cost)."
+///
+/// The "or" between the two zones is one description, so the same ability
+/// reaches a current in either — both are driven. Targeted Marketing is the
+/// current: it stays in the play area once played (8.6.6c), which is what
+/// makes the play observable at all.
+#[test]
+fn new_angeles_sol_plays_a_current_out_of_hq_or_out_of_archives() {
+    for from_archives in [false, true] {
+        let mut vm = Vm::empty(6187);
+        tk::install_identity(&mut vm, card("New Angeles Sol: Your News"), Side::Corp);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Some Agenda", 3, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+        let current = if from_archives {
+            let c = vm.new_object(card("Targeted Marketing"), Zone::Discard(Side::Corp));
+            vm.st.discard.get_mut(&Side::Corp).unwrap().push(c);
+            c
+        } else {
+            let c = vm.new_object(card("Targeted Marketing"), Zone::Hand(Side::Corp));
+            vm.st.hand.get_mut(&Side::Corp).unwrap().push(c);
+            c
+        };
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid(), Reply::score(agenda))
+                .when(
+                    Match::reaction().offering("an agenda was scored"),
+                    Reply::take("an agenda was scored"),
+                )
+                .when(Match::targets().once(), Reply::Targets(vec![current]))
+                .when(Match::name_value().once(), Reply::Name("Sure Gamble"))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.objects[&current].zone,
+            Zone::PlayArea(Side::Corp),
+            "the current was played and 8.6.6c kept it there (from_archives={from_archives}): {}",
+            t.tail(40)
+        );
+    }
+}

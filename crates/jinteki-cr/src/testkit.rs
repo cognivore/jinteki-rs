@@ -1322,7 +1322,7 @@ pub fn joshua_button(name: &'static str) -> PrintedCard {
         Cost::free(),
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(AbilityDef::conditional(
-                TriggerCond::TurnEnds(Side::Runner),
+                TriggerCond::TurnEnds { side: Side::Runner, requires: Vec::new() },
                 vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
                 false,
             )
@@ -1847,7 +1847,7 @@ pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
                 also_installed: false,
                 matching_choice: None,
             },
-            TriggerCond::RunnerStealsAgenda,
+            TriggerCond::RunnerStealsAgenda { requires: Vec::new() },
         ],
     }])
     .labeled("tm: current-style trash shield")];
@@ -2098,7 +2098,7 @@ pub fn bacterial_like(name: &'static str) -> PrintedCard {
 pub fn seidr_like(name: &'static str, card: ObjectId) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerStealsAgenda,
+        TriggerCond::RunnerStealsAgenda { requires: Vec::new() },
         vec![Instruction::MoveToDeck { card: TargetSpec::Objects(vec![card]), top: true }],
         false,
     )
@@ -2733,6 +2733,7 @@ pub fn near_earth_hub_like(name: &'static str) -> PrintedCard {
             side: Side::Corp,
             of_types: Vec::new(),
             of_subtypes: Vec::new(),
+            requires: Vec::new(),
         },
         vec![Instruction::Draw(Side::Corp, 1)],
         false,
@@ -3165,7 +3166,7 @@ pub fn threat_button(name: &'static str, n: u8, label: &'static str) -> PrintedC
 pub fn argus_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Identity);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerStealsAgenda,
+        TriggerCond::RunnerStealsAgenda { requires: Vec::new() },
         // 1.14.5: the text names the Runner as taking the tag or suffering
         // the damage, so the RUNNER chooses, not the ability's controller.
         vec![Instruction::PerformedBy {
@@ -3942,6 +3943,7 @@ pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> P
             side: Side::Corp,
             of_types: Vec::new(),
             of_subtypes: Vec::new(),
+            requires: Vec::new(),
         },
         vec![Instruction::InstallCard {
             card: TargetSpec::Objects(vec![installee]),
@@ -4994,7 +4996,7 @@ pub fn returns_program_at_turn_end(name: &'static str, program: ObjectId) -> Pri
         vec![Instruction::CreateDelayedConditional {
             def: Box::new(
                 AbilityDef::conditional(
-                    TriggerCond::TurnEnds(Side::Runner),
+                    TriggerCond::TurnEnds { side: Side::Runner, requires: Vec::new() },
                     vec![Instruction::MoveToDeck {
                         card: TargetSpec::Objects(vec![program]),
                         top: true,

@@ -370,10 +370,48 @@ pub fn nasir_meidan() -> Card {
         .build()
 }
 
+/// Jamie "Bzzz" Micken: Techno Savant — Identity: Natural. Link 0.
+/// "Draft format only.
+///  If you have more [shaper] cards installed than any other faction, when you
+///  install a card the first time each turn, draw 1 card."
+///
+/// COMPLETE. The format restriction, then one conditional ability carrying
+/// BOTH of 9.6.5c's stipulations about its condition at once: the leading
+/// "if" is the additional requirement, and "the first time each turn" is the
+/// ordinal about the occurrence. They are asked together, when the install
+/// happens — a Runner who is behind on the faction count when they install
+/// their first card of the turn does not bank the ordinal for later, because
+/// the condition was never met at all.
+///
+/// The install condition makes no stipulation about the card, because the
+/// sentence makes none.
+pub fn jamie_bzzz_micken() -> Card {
+    card("Jamie \"Bzzz\" Micken: Techno Savant")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("Draft format only.")
+        .text("If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.")
+        .when_first_each_turn(
+            installs_a_card_if(
+                Runner,
+                &[more_cards_of_this_faction_than_any_other(
+                    "Shaper",
+                    &[installed_runner_card()],
+                )],
+            ),
+            [draw(Runner, 1)],
+        )
+        .named("techno savant")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        jamie_bzzz_micken(),
         akiko_nisei(),
         kate_mac_mccaffrey(),
         nasir_meidan(),

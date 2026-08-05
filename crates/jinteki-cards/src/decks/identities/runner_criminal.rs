@@ -547,10 +547,54 @@ pub fn khan() -> Card {
         .build()
 }
 
+/// Boris "Syfr" Kovac: Crafty Veteran — Identity: Cyborg. Link 0.
+/// "Draft format only.
+///  If you have more [criminal] cards installed than any other faction, when
+///  your turn begins, remove 1 tag."
+///
+/// COMPLETE. Two printed lines and one ability: the first is a FORMAT
+/// restriction, settled before deck construction and never read during play
+/// (The Masque's whole card is that sentence), and the second is one
+/// conditional ability whose leading "if" is 9.6.5c's additional requirement
+/// listed inside the trigger condition — so it is asked when the turn begins
+/// and not again while the ability resolves.
+///
+/// The requirement is a comparison across the FACTION PARTITION of the
+/// Runner's installed cards (2.13), which is why no threshold word can say
+/// it: the sentence prints no number, and what it wants is one group being
+/// strictly larger than every other. "Installed" is the ordinary description
+/// word, so the described set is the play area and nothing else — cards in
+/// the grip, the heap and the stack have no faction group here.
+///
+/// The removal is MANDATORY and the sentence says "1 tag", so a Runner with
+/// none simply removes as much as possible (1.15.3) and nothing happens.
+pub fn boris_syfr_kovac() -> Card {
+    card("Boris \"Syfr\" Kovac: Crafty Veteran")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Cyborg"])
+        .text("Draft format only.")
+        .text("If you have more [criminal] cards installed than any other faction, when your turn begins, remove 1 tag.")
+        .when(
+            turn_begins_if(
+                Runner,
+                &[more_cards_of_this_faction_than_any_other(
+                    "Criminal",
+                    &[installed_runner_card()],
+                )],
+            ),
+            [remove_tags(1)],
+        )
+        .named("crafty veteran")
+        .build()
+}
+
 /// Every Criminal identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
+        boris_syfr_kovac(),
         amoral_scammer(),
         az_mccaffrey(),
         khan(),
