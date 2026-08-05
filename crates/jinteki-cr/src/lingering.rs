@@ -67,7 +67,18 @@ pub enum Payload {
     /// here because the frame that announced them is gone by the time this
     /// ability resolves. Empty for a delayed conditional the rules themselves
     /// create (7.3.8's postponed breach, 8.6.6's removal after play).
-    DelayedConditional { def: AbilityDef, bound_targets: Vec<ObjectId> },
+    ///
+    /// `bound_installs` crosses the same gap for the cards that ability's own
+    /// install instructions INSTALLED. They are not targets — an install whose
+    /// card came from a search announces nothing at all (8.7.4's find is not
+    /// 1.15.2's announcement) — so they cannot ride `bound_targets`, and a
+    /// sentence saying "that program" about the card its own earlier sentence
+    /// installed (Kabonesa Wu) has nothing else to read.
+    DelayedConditional {
+        def: AbilityDef,
+        bound_targets: Vec<ObjectId>,
+        bound_installs: Vec<ObjectId>,
+    },
     /// CR 9.12.5: a persistent ability persisting after its source was
     /// trashed during an access; applicable only to the bound run (9.12.5d).
     PersistedAbility { def: AbilityDef, run_id: u64 },

@@ -1360,6 +1360,21 @@ pub fn top_of_heap(count: Quantity) -> TargetSpec {
 pub fn looked_at_by_this_ability() -> TargetFilter {
     TargetFilter::LookedAtByThisAbility
 }
+/// "…**that program**", said of the card an earlier instruction of the SAME
+/// ability installed (Kabonesa Wu). CR 8.7.4's find is not 1.15.2's
+/// announcement, so a card a search installed is no target of anything and
+/// [`earlier_choice`] cannot reach it. Fixes the card by identity, so it says
+/// nothing about where the card now is — "still installed" is
+/// [`installed_runner_card`] written beside it.
+pub fn installed_by_this_ability() -> TargetFilter {
+    TargetFilter::InstalledByThisAbility
+}
+/// "…remove **it** from the game" — the same card pointed at rather than
+/// described, so nothing is announced (the pointing twin of
+/// [`installed_by_this_ability`]).
+pub fn the_card_this_ability_installed() -> TargetSpec {
+    TargetSpec::InstalledByThisAbility
+}
 
 // The filter atoms, named the way a card describes cards.
 pub fn installed_corp_card() -> TargetFilter {
@@ -3051,6 +3066,30 @@ pub fn when_this_card_is_uninstalled(
         def: Box::new(
             AbilityDef::conditional(
                 TriggerCond::SelfUninstalled,
+                instrs.into_iter().collect(),
+                false,
+            )
+            .labeled(label),
+        ),
+        // 9.6.13c: no stated duration — it exists until it first resolves.
+        duration: WantedDuration::UntilResolved,
+    }
+}
+/// "…when your turn ends, <do this>" as a DELAYED conditional (9.6.13) — an
+/// ability created now that waits for the end of the turn it was created in.
+/// A printed conditional ability of the source would fire every turn; this one
+/// exists until it first resolves (9.6.13c), which is what a sentence speaking
+/// of "that card" needs, since the card is only the one THIS use of the ability
+/// dealt with.
+pub fn when_your_turn_ends(
+    side: Side,
+    label: &'static str,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::CreateDelayedConditional {
+        def: Box::new(
+            AbilityDef::conditional(
+                TriggerCond::TurnEnds { side, requires: Vec::new() },
                 instrs.into_iter().collect(),
                 false,
             )

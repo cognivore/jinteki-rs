@@ -147,8 +147,19 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     // conditionals maintained by lingering effects (9.6.13) + granted ones.
     // The last element is CR 1.15.4's bound targets, which only a delayed
     // conditional carries (the ability that created it announced them).
-    let mut sources: Vec<(ObjectId, usize, AbilityDef, Side, Option<u64>, Vec<ObjectId>)> =
-        Vec::new();
+    // (source, ability index, def, controller, lingering effect, 1.15.4's
+    // bound targets, 8.5.16f's bound installs) — the last two are empty for
+    // every ability but a 9.6.13 delayed conditional, which is the only kind
+    // that has to carry its creator's references across the delay.
+    let mut sources: Vec<(
+        ObjectId,
+        usize,
+        AbilityDef,
+        Side,
+        Option<u64>,
+        Vec<ObjectId>,
+        Vec<ObjectId>,
+    )> = Vec::new();
     // 9.1.9b: the abilities an object HAS — printed ones it did not lose, and
     // ones it gained (DJ Fenris class), which are conditional abilities of the
     // gaining object like any other.
@@ -171,7 +182,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
             if a.is_interrupt() {
                 continue;
             }
-            sources.push((o.id, i, a.clone(), o.controller, None, Vec::new()));
+            sources.push((o.id, i, a.clone(), o.controller, None, Vec::new(), Vec::new()));
         }
     }
     for l in &vm.lingering {
@@ -190,11 +201,19 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     .unwrap_or(Side::Corp);
                 // Encode the run binding by filtering at match time below via
                 // the persisted marker: usize::MAX index + stored run.
-                sources.push((l.source, usize::MAX - 1, def.clone(), controller, Some(l.id), Vec::new()));
+                sources.push((
+                    l.source,
+                    usize::MAX - 1,
+                    def.clone(),
+                    controller,
+                    Some(l.id),
+                    Vec::new(),
+                    Vec::new(),
+                ));
                 let _ = run_id;
             }
         }
-        if let Payload::DelayedConditional { def, bound_targets } = &l.payload {
+        if let Payload::DelayedConditional { def, bound_targets, bound_installs } = &l.payload {
             if def.kind == AbilityKind::Conditional && !def.is_interrupt() {
                 let controller = vm
                     .st
@@ -209,6 +228,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     controller,
                     Some(l.id),
                     bound_targets.clone(),
+                    bound_installs.clone(),
                 ));
             }
         }
@@ -220,13 +240,22 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     .get(to)
                     .map(|o| o.controller)
                     .unwrap_or(Side::Corp);
-                sources.push((*to, usize::MAX, def.clone(), controller, Some(l.id), Vec::new()));
+                sources.push((
+                    *to,
+                    usize::MAX,
+                    def.clone(),
+                    controller,
+                    Some(l.id),
+                    Vec::new(),
+                    Vec::new(),
+                ));
             }
         }
     }
 
     let mut newly: Vec<u64> = Vec::new();
-    for (obj_id, index, def, controller, from_lingering, bound_targets) in sources {
+    for (obj_id, index, def, controller, from_lingering, bound_targets, bound_installs) in sources
+    {
         // CR 9.1.9: an ability the card no longer HAS cannot meet a condition.
         // (`usize::MAX` indices are abilities carried by a lingering effect,
         // not printed on the card, so 9.1.9's gains/losses do not address
@@ -697,6 +726,9 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             // 1.15.4 + 9.6.13: the targets the ability that
                             // created this delayed one had announced.
                             bound_targets: bound_targets.clone(),
+                            // 8.5.16f + 9.6.13: and the cards its creator
+                            // installed, which no announcement holds.
+                            bound_installs: bound_installs.clone(),
                         },
                     );
                     newly.push(id);
@@ -759,6 +791,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         triggering_card: None,
                         triggering_cards: Vec::new(),
                         bound_targets: bound_targets.clone(),
+                        bound_installs: bound_installs.clone(),
                     },
                 );
                 newly.push(id);

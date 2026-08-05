@@ -9863,3 +9863,148 @@ fn magdalene_installs_a_program_from_anywhere_among_the_cards_she_just_discarded
         }
     }
 }
+
+/// Kabonesa Wu: "[click]: Search your stack for a non-virus program and
+/// install it, lowering its install cost by 1[credit], then shuffle your
+/// stack. If that program is still installed when your turn ends, remove it
+/// from the game."
+///
+/// The whole of the second sentence's difficulty is which card "that program"
+/// is. It is not a target — 8.7.4's find is not 1.15.2's announcement, so the
+/// ability announced nothing at all — and the frame that installed it is gone
+/// by the time the turn ends. The delayed conditional carries the install
+/// across the gap, and this test is what proves it names the RIGHT card: a
+/// second program, installed the same turn with the basic action (5.2.6d),
+/// sits in the rig beside it and must survive.
+#[test]
+fn kabonesa_wu_removes_the_program_her_search_installed_and_no_other() {
+    let mut vm = Vm::empty(6201);
+    tk::install_identity(&mut vm, card("Kabonesa Wu: Netspace Thrillseeker"), Side::Runner);
+
+    // The stack: one non-virus program (cost 2) and one virus program, which
+    // the criteria must leave alone.
+    let mut wanted = tk::vanilla_runner_card("Stack Program", CardType::Program);
+    wanted.cost = Some(2);
+    let found = vm.new_object(wanted, Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(found);
+    let mut virus = tk::vanilla_runner_card("Stack Virus", CardType::Program);
+    virus.cost = Some(1);
+    virus.subtypes = vec!["Virus"];
+    let unwanted = vm.new_object(virus, Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(unwanted);
+    tk::fill_deck(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+
+    // And one in the grip, installed by the basic action: the card the
+    // identity must NOT reach.
+    let mut other = tk::vanilla_runner_card("Grip Program", CardType::Program);
+    other.cost = Some(1);
+    let beside = vm.new_object(other, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(beside);
+
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner()
+            .when(Match::action().once(), Reply::take("kabonesa wu"))
+            .when(Match::targets().once(), Reply::target(found))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(beside)))
+            .when(Match::action(), Reply::credit()),
+    );
+
+    let offered = t.of_kind(Kind::Targets);
+    assert_eq!(
+        offered[0].candidates(),
+        [found],
+        "8.7.2a: the virus in the same stack is not a card the search may find: {}",
+        t.tail(50)
+    );
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Runner's turn finished: {}", t.tail(50));
+    assert_eq!(
+        vm.st.objects[&found].zone,
+        Zone::RemovedFromGame,
+        "the program the ability installed is gone when the turn ends: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.objects[&beside].zone,
+        Zone::Rig,
+        "and the one the basic action installed is not \"that program\": {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.objects[&unwanted].zone,
+        Zone::Deck(Side::Runner),
+        "the virus was never found: {}",
+        t.tail(50)
+    );
+    // 5 credits, 4 clicks: the ability (1 of 2 after 1.16.6's reduction), the
+    // basic install (1), then two basic credit actions.
+    assert_eq!(
+        vm.st.runner.credits,
+        5 - 1 - 1 + 2,
+        "1.16.6 lowered the install cost by 1 and the basic install paid its own: {}",
+        t.tail(50)
+    );
+}
+
+/// The other half of Kabonesa Wu's second sentence: "**if** that program is
+/// still installed".
+///
+/// 8.7.2e lets a criteria search of a deck fail to find, so a stack with no
+/// non-virus program in it leaves the ability with nothing to install — and
+/// 8.7.4 resumes the resolution anyway. The delayed conditional is still
+/// created and still meets its condition when the turn ends; what it must not
+/// do is reach the virus it could not find, or anything else.
+#[test]
+fn kabonesa_wu_removes_nothing_when_her_search_installed_nothing() {
+    let mut vm = Vm::empty(6202);
+    tk::install_identity(&mut vm, card("Kabonesa Wu: Netspace Thrillseeker"), Side::Runner);
+
+    let mut virus = tk::vanilla_runner_card("Stack Virus", CardType::Program);
+    virus.cost = Some(1);
+    virus.subtypes = vec!["Virus"];
+    let unwanted = vm.new_object(virus, Zone::Deck(Side::Runner));
+    vm.st.deck.get_mut(&Side::Runner).unwrap().push(unwanted);
+    tk::fill_deck(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+
+    let mut other = tk::vanilla_runner_card("Grip Program", CardType::Program);
+    other.cost = Some(1);
+    let beside = vm.new_object(other, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(beside);
+
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner()
+            .when(Match::action().once(), Reply::take("kabonesa wu"))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(beside)))
+            .when(Match::action(), Reply::credit()),
+    );
+
+    assert!(
+        t.of_kind(Kind::Targets).is_empty(),
+        "8.7.2e: nothing in the stack matches, so nothing is even offered: {}",
+        t.tail(50)
+    );
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Runner's turn finished: {}", t.tail(50));
+    assert_eq!(
+        vm.st.objects[&beside].zone,
+        Zone::Rig,
+        "the program the identity never installed survives the turn ending: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.objects[&unwanted].zone,
+        Zone::Deck(Side::Runner),
+        "and the virus it could not find is still in the stack: {}",
+        t.tail(50)
+    );
+}

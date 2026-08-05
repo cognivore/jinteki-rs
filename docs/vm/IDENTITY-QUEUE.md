@@ -102,20 +102,22 @@ kernel words, not card patches.
   that caused the payment (9.1.4) — which a basic action has none of, so a
   "whenever a Corp card ability causes…" condition would start meeting it.
   *(Weyland Consortium: Because We Built It.)*
-- **Nothing names the card an ability installed when the install ANNOUNCED
-  no target.** A 9.6.13 delayed conditional now carries the targets the
-  ability that created it announced (`AbilityInstance::bound_targets`), so
-  "install 1 program from your grip … when that run ends, trash THAT PROGRAM"
-  reads the same card in both halves — but an install whose card came from a
-  SEARCH announces nothing at all (8.7.4's find is not 1.15.2's announcement),
-  and `TargetFilter::{LookedAtByThisAbility, SetAsideByThisAbility,
-  DrawnCards}` have no "the card this ability installed" beside them to
-  describe it with. *(Kabonesa Wu: Netspace Thrillseeker, whose "if THAT
-  PROGRAM is still installed when your turn ends" is about the card her search
-  found; Mti Mwekundu: Life Improved, whose "the Runner moves to THAT ICE and
-  approaches it" is the same words about the piece its own first sentence
-  installed from HQ — `MoveRunnerToIce` is 6.2.8a and would carry it, and the
-  description of the ice is what is missing.)*
+- **No install destination names the INNERMOST position protecting a server,
+  and nothing counts the approaches of a run.** 8.5.2d's install puts a piece
+  of ice in the OUTERMOST position and `InstallDest` says so; its one relative
+  destination, `InwardFromSource`, is 6.2.2c measured from the ability's own
+  source ice, which an identity installing from HQ has none of. "In the
+  innermost position protecting that server" is a third thing — a position
+  described from the server's inward end — and it is not a card patch: 6.2.2
+  is where the position vocabulary lives. The same card's third sentence wants
+  the other half: `GameChange::IceApproached` records every approach, so the
+  history is there, but no `Quantity` and no `TriggerRequirement` reads it, and
+  "if this is **not the first time** they have approached ice this run" is a
+  count of exactly that. (`Instruction::JackOutChoice` is 6.1.5b and already
+  says "they may jack out", and "the Runner moves to that ice and approaches
+  it" is `MoveRunnerToIce` pointed at
+  `TargetSpec::InstalledByThisAbility` — those two halves are sayable now.)
+  *(Mti Mwekundu: Life Improved.)*
 - **A condition cannot be met by an earlier instruction of its OWN ability.**
   "Install 1 card from your grip, paying 2[credit] less. **When you install
   that card**, suffer 1 meat damage." — the second sentence is a conditional
@@ -124,9 +126,11 @@ kernel words, not card patches.
   install and 9.6.13 would have it wait for the next one, and a printed
   conditional ability of the identity would be met by every install rather
   than by the one this ability performed. What is missing is a trigger
-  condition that describes the occurrence as "an install THIS ability made",
-  which is the same want as the entry above said from the other end.
-  *(Topan: Ormas Leader.)*
+  condition that describes the OCCURRENCE as "an install this ability made".
+  `TargetFilter::InstalledByThisAbility` describes the CARD such an install
+  produced and is no help here: it is read while the ability is resolving, and
+  this sentence needs a moment DURING the install for a conditional to be met
+  at. *(Topan: Ormas Leader.)*
 - **A choice between SERVERS cannot be written when the servers do not exist
   yet.** 1.15.1b lists a server among the things a player can be told to
   choose, and `ChoiceSpec::Server` names one — the choice BETWEEN them being
@@ -220,12 +224,12 @@ kernel words, not card patches.
   names a REZ.** `StaticDecl::CannotScoreMatching` describes the agendas that
   cannot be scored in the ordinary words — which is how Clot's "during the
   same turn they installed that agenda" is said — but "you cannot score or rez
-  THAT card until your next turn begins" needs three things it has none of:
-  a description of the one card an earlier instruction of the same ability
-  installed (the install-target entry above), a declaration about rezzing
-  beside the one
-  about scoring, and a span — `WantedDuration` stops at `ThisTurn`, and the
-  rez half bites during the OPPONENT's turn, which is past the end of it.
+  THAT card until your next turn begins" needs two things it has none of: a
+  declaration about rezzing beside the one about scoring, and a span —
+  `WantedDuration` stops at `ThisTurn`, and the rez half bites during the
+  OPPONENT's turn, which is past the end of it. ("That card" itself is sayable:
+  `TargetFilter::InstalledByThisAbility` is the card the same ability's earlier
+  instruction installed.)
   *(Saraswati Mnemonics: Endless Exploration; A Teia: IP Recovery, whose "you
   cannot score the second card this turn" is the same sentence with the
   shorter span and no rez half.)*
@@ -264,7 +268,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **119 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **120 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -304,7 +308,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (18/21)
+## Runner — Shaper (19/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -320,7 +324,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
 - [x] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
 - [x] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
-- [ ] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
+- [x] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
 - [x] **Kate "Mac" McCaffrey: Digital Tinker** — Lower the install cost of the first program or piece of hardware you install each turn by 1.
 - [x] **Lat: Ethical Freelancer** — When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.
 - [x] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.

@@ -1556,6 +1556,13 @@ pub enum TargetSpec {
     /// later instruction of the same ability acts on all of them — which
     /// `EarlierTarget` cannot say, since it names one.
     EarlierTargets,
+    /// CR 8.5.16f + 1.15.4: "…remove **it** from the game", said of the card
+    /// this ability's own earlier instruction INSTALLED (Kabonesa Wu). The
+    /// pointing twin of [`TargetFilter::InstalledByThisAbility`], and the
+    /// counterpart of [`TargetSpec::EarlierTarget`] for a card that was never
+    /// announced: nothing is chosen here, so this position requires no
+    /// announcement, exactly as [`TargetSpec::TriggeringCard`] requires none.
+    InstalledByThisAbility,
 }
 
 impl TargetSpec {
@@ -1579,7 +1586,8 @@ impl TargetSpec {
             | TargetSpec::TopOfDiscard { .. }
             | TargetSpec::FoundBySearch
             | TargetSpec::EarlierTarget { .. }
-            | TargetSpec::EarlierTargets => 0,
+            | TargetSpec::EarlierTargets
+            | TargetSpec::InstalledByThisAbility => 0,
         }
     }
 }
@@ -1729,6 +1737,24 @@ pub enum TargetFilter {
     /// — no longer matches, so the ability can no longer act on it. A
     /// zone-naming criterion, so 1.15.2c's play-area restriction lifts.
     LookedAtByThisAbility,
+    /// CR 8.5.16f + 1.15.4: "…**that program**", said of the card THIS
+    /// ability's own earlier instruction installed (Kabonesa Wu). The card was
+    /// never announced — 8.7.4's find is not 1.15.2's announcement, so the
+    /// program a search installed is no target of anything — which is why
+    /// [`TargetFilter::IsTriggeringCard`] and the `EarlierTarget` family cannot
+    /// say it and this criterion has to.
+    ///
+    /// Like those, it fixes cards by IDENTITY, so 1.15.2c's play-area default
+    /// has nothing left to restrict: the card an ability installed is that card
+    /// wherever it now sits, heap included. A sentence that also wants it to
+    /// still be in the rig says so with [`TargetFilter::InstalledRunnerCard`]
+    /// beside this one, which is what "if that program is **still installed**"
+    /// prints.
+    ///
+    /// Reads the innermost resolving ability's
+    /// [`crate::frames::AbilityFrame::installed_cards`], exactly as
+    /// [`TargetFilter::LookedAtByThisAbility`] reads its `looked_at`.
+    InstalledByThisAbility,
     /// CR 1.21.3 + 6.1.3: a card REVEALED during the encounter in progress —
     /// "the cards you revealed when this encounter began" (Slot Machine). A
     /// reveal puts the card back exactly as it was (1.21.3a), so nothing
@@ -1974,6 +2000,10 @@ impl TargetFilter {
                 | TargetFilter::SetAsideByThisAbility
                 | TargetFilter::DrawnCards
                 | TargetFilter::LookedAtByThisAbility
+                // 1.15.4: the description fixes the cards by identity, the
+                // same way the triggering-card criteria below do, so there is
+                // no selection left for 1.15.2c to restrict.
+                | TargetFilter::InstalledByThisAbility
                 | TargetFilter::RevealedThisEncounter
                 | TargetFilter::TopOfDeckOf { .. }
                 // 6.2.1: only ice PROTECTING a server occupies a position, so

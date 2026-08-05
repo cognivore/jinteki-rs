@@ -299,6 +299,75 @@ pub fn the_collective() -> Card {
         .build()
 }
 
+/// Kabonesa Wu: Netspace Thrillseeker — Identity: G-mod. Link 1.
+/// "[click]: Search your stack for a non-virus program and install it,
+///  lowering its install cost by 1[credit], then shuffle your stack. If that
+///  program is still installed when your turn ends, remove it from the game."
+///
+/// COMPLETE. The first printed sentence is TWO instructions and the boundary
+/// is not 9.11.3's: 9.11.4d puts it inside the sentence — "treat these
+/// sentences as if ending the search and performing any necessary shuffling is
+/// the end of an instruction. A checkpoint occurs while cards found by the
+/// search are in the set-aside zone, then the remainder of the sentence is
+/// treated as the next instruction." So the printed "then shuffle your stack"
+/// is 8.7.3's own reshuffle named in the text and not a third instruction, and
+/// the install is the second.
+///
+/// "A non-virus program" is 2.15's type with 2.16's subtype negated beside it,
+/// and it names no zone because the search already did (8.7.1). 8.7.2e lets the
+/// search fail to find, which is what makes the ability usable with an empty
+/// stack; 8.7.4 then resumes with nothing found and the install does nothing.
+/// "Lowering its install cost by 1[credit]" is 1.16.6's reduction of the
+/// install cost alone, floored at 0 by 1.16.2a.
+///
+/// The second sentence is 9.6.13's delayed conditional, created by the same
+/// ability and waiting for the end of the turn. "That program" is the card the
+/// FIRST instruction installed — and it is not a target: 8.7.4's find is not
+/// 1.15.2's announcement, so nothing was ever announced here and 1.15.4's
+/// back-references reach nothing. `installed_by_this_ability` is what names it,
+/// bound into the delayed ability when it is created, since the frame that
+/// installed it is gone by the time the turn ends.
+///
+/// "Still installed" is the ordinary description of the play area written
+/// beside that back-reference: the card is fixed by identity, so it would
+/// otherwise be reached in the heap too. The stipulation rides in the
+/// INSTRUCTIONS (9.6.5d) rather than in the condition, exactly as Arissana's
+/// "if it is not a trojan" does — the sentence is about what to do when the
+/// turn ends, not about which turn-ends occurrence counts.
+///
+/// 9.6.13c: no duration is stated, so the delayed ability exists until it first
+/// resolves — one per use of the paid ability, each bound to its own program.
+pub fn kabonesa_wu() -> Card {
+    card("Kabonesa Wu: Netspace Thrillseeker")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["G-mod"])
+        .link(1)
+        .text("[click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.")
+        .paid(
+            clicks(1),
+            [
+                search_stack(&[of_type(CardType::Program), non(with_subtype("Virus"))], 1),
+                install_paying_less(
+                    found_by_search(),
+                    InstallDest::RunnerChoiceHostOrRig,
+                    1,
+                ),
+                when_your_turn_ends(
+                    Runner,
+                    "if that program is still installed when your turn ends, remove it from the game",
+                    [if_met(
+                        &[board_has(&[installed_by_this_ability(), installed_runner_card()], 1)],
+                        [remove_from_game(the_card_this_ability_installed())],
+                    )],
+                ),
+            ],
+        )
+        .named("search your stack for a non-virus program")
+        .build()
+}
+
 /// Kate "Mac" McCaffrey: Digital Tinker — Identity: Natural. Link 1.
 /// "Lower the install cost of the first program or piece of hardware you
 ///  install each turn by 1."
@@ -642,5 +711,6 @@ pub fn identities() -> Vec<Card> {
         hiram_svensson(),
         the_collective(),
         magdalene_keino_chemutai(),
+        kabonesa_wu(),
     ]
 }

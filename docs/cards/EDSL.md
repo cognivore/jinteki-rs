@@ -140,6 +140,7 @@ Farmer prints the same subroutine twice, so it is written twice.
 | `run_ends()` | "When this run ends…" |
 | `after_this_resolves()` | "After you resolve this operation, …" |
 | `discards_cards_to_reach_maximum_hand_size(Runner)` | "Whenever you discard cards to reach your maximum hand size, …" |
+| `when_your_turn_ends(Runner, …)` | "…when your turn ends, <do this>" — created now, waits for the end of this turn (9.6.13) |
 
 ### What it costs
 
@@ -241,6 +242,9 @@ let _ = encountered_ice();
 let _ = top_of_stack(amount(3));                      // "the top 3 cards of your stack"
 let _ = choose(1, &[looked_at_by_this_ability()]);    // "1 of those cards"
 let _ = choose(1, &[among_those_cards()]);            // "1 card from among those cards"
+let _ = the_card_this_ability_installed();            // "that program", "it"
+let _ = choose(1, &[installed_by_this_ability(), installed_runner_card()]);
+                                                      // "that program, still installed"
 ```
 
 The descriptions stack: several of them together mean *all* of them, exactly

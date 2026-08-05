@@ -284,6 +284,21 @@ pub struct AbilityFrame {
     /// a shuffle, a rearrangement — becomes a NEW object, so the ability can
     /// no longer act on it, and the stale entry is exactly how that shows.
     pub looked_at: Vec<(crate::object::ObjectId, u32)>,
+    /// CR 8.5.16f: the cards THIS ability's own install instructions have
+    /// installed, in the order they became installed. What
+    /// [`crate::instr::TargetFilter::InstalledByThisAbility`] describes and
+    /// [`crate::instr::TargetSpec::InstalledByThisAbility`] points at.
+    ///
+    /// Deliberately NOT [`AbilityFrame::ability_targets`]: 1.15.4 is about the
+    /// targets an ability ANNOUNCED, and an install whose card came from a
+    /// search announced none — 8.7.4's find is not 1.15.2's announcement — so
+    /// putting it there would both lie about what was announced and shift every
+    /// [`crate::instr::TargetSpec::EarlierTarget`] index after it.
+    ///
+    /// Seeded from [`crate::ability::AbilityInstance::bound_installs`] when the
+    /// frame is pushed, which is how a delayed conditional (9.6.13) still knows
+    /// which card its creator installed.
+    pub installed_cards: Vec<crate::object::ObjectId>,
     /// CR 8.3.3 / 4.8.7: the facedown set-aside GROUP this ability created —
     /// the cards it set aside from the top of a deck to arrange them. It is
     /// what `TargetFilter::SetAsideByThisAbility` names while 8.3.3b's "other

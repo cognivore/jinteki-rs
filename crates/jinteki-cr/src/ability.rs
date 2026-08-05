@@ -1999,6 +1999,19 @@ pub struct AbilityInstance {
     ///
     /// Empty for every instance not created that way.
     pub bound_targets: Vec<ObjectId>,
+    /// CR 1.15.4 + 9.6.13 for the cards the creating ability INSTALLED rather
+    /// than announced — "search your stack for a non-virus program and install
+    /// it … if **that program** is still installed when your turn ends"
+    /// (Kabonesa Wu). 8.7.4's find is not 1.15.2's announcement, so such a card
+    /// was never a target and cannot travel in
+    /// [`AbilityInstance::bound_targets`]; it travels here, and the frame the
+    /// delayed ability resolves in starts with these as its own
+    /// [`crate::frames::AbilityFrame::installed_cards`], so
+    /// [`crate::instr::TargetFilter::InstalledByThisAbility`] says the same
+    /// thing inside the delay as outside it.
+    ///
+    /// Empty for every instance not created that way.
+    pub bound_installs: Vec<ObjectId>,
 }
 
 /// CR 9.1.7 + 9.1.8: whether an ability is active. `encounter_ice` is the

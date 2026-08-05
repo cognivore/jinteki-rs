@@ -2514,6 +2514,7 @@ impl Vm {
                     triggering_card: None,
                     triggering_cards: Vec::new(),
                     bound_targets: Vec::new(),
+                    bound_installs: Vec::new(),
                 },
             );
             out.push(id);
@@ -2572,6 +2573,7 @@ impl Vm {
                 triggering_card: None,
                 triggering_cards: Vec::new(),
                 bound_targets: Vec::new(),
+                bound_installs: Vec::new(),
             },
         );
         self.pending_from_effect.push(id);
@@ -4982,6 +4984,7 @@ impl Vm {
                     triggering_card: None,
                     triggering_cards: Vec::new(),
                     bound_targets: Vec::new(),
+                    bound_installs: Vec::new(),
                 },
             );
             pending_ids.push(id);
@@ -5411,6 +5414,13 @@ impl Vm {
             ability_targets: instance
                 .and_then(|i| self.instances.get(&i))
                 .map(|i| i.bound_targets.clone())
+                .unwrap_or_default(),
+            // 8.5.16f + 9.6.13: and the cards it INSTALLED, which 1.15.4's
+            // targets cannot carry because an install fed by a search
+            // announced none (8.7.4).
+            installed_cards: instance
+                .and_then(|i| self.instances.get(&i))
+                .map(|i| i.bound_installs.clone())
                 .unwrap_or_default(),
             imminent_index: None,
             instance,
@@ -6888,6 +6898,21 @@ impl Vm {
                         Frame::Ability(af) => {
                             Some(af.looked_at.iter().any(|(id, g)| *id == o.id && *g == gen))
                         }
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+            }
+            // 8.5.16f: the cards this ability installed. Read from the frame
+            // for the reason `LookedAtByThisAbility` is: the card carries no
+            // record of WHOSE install it was, and 1.15.4's targets cannot hold
+            // it, since an install fed by a search announced nothing (8.7.4).
+            TargetFilter::InstalledByThisAbility => {
+                cite!("rule_steps_installing_become_installed");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|fr| match fr {
+                        Frame::Ability(af) => Some(af.installed_cards.contains(&o.id)),
                         _ => None,
                     })
                     .unwrap_or(false)
@@ -9274,7 +9299,11 @@ impl Vm {
                     self.lingering.push(LingeringEffect::new(
                         id,
                         source.obj,
-                        Payload::DelayedConditional { def, bound_targets: Vec::new() },
+                        Payload::DelayedConditional {
+                            def,
+                            bound_targets: Vec::new(),
+                            bound_installs: Vec::new(),
+                        },
                         // 9.6.13c: no stated duration — until it resolves.
                         crate::lingering::Duration::UntilResolved,
                     ));
@@ -9494,6 +9523,11 @@ impl Vm {
                 // announced targets, so every word that reads one says the
                 // same thing inside the delay as outside it.
                 let bound_targets = self.ability_targets();
+                // 8.5.16f: and the same crossing for a card this ability
+                // INSTALLED rather than announced — Kabonesa Wu's "that
+                // program" is the card her search found, which 8.7.4 keeps out
+                // of 1.15.2's announcements altogether.
+                let bound_installs = self.ability_installed_cards();
                 // 9.6.13d: "when this run ends" with no run in progress —
                 // the lingering effect is not created.
                 if matches!(
@@ -9518,7 +9552,11 @@ impl Vm {
                     self.lingering.push(LingeringEffect::new(
                         id,
                         source.obj,
-                        Payload::DelayedConditional { def: (**def).clone(), bound_targets },
+                        Payload::DelayedConditional {
+                            def: (**def).clone(),
+                            bound_targets,
+                            bound_installs,
+                        },
                         dur,
                     ));
                 }
@@ -10739,6 +10777,18 @@ impl Vm {
                 // conditions; the install effect is complete.
                 let side = self.st.objects[&c].printed.side;
                 self.changes.record(GameChange::CardInstalled { obj: c, side, from: p.from_zone });
+                // The installing ability now knows which card it installed —
+                // "…and install it … if THAT PROGRAM is still installed"
+                // (Kabonesa Wu). Recorded here rather than at step (a) because
+                // this is where the installation is complete: a destination
+                // that could not be identified (8.5.14) or a "cannot install"
+                // declaration (1.2.2) leaves the card uninstalled, and neither
+                // reaches this line.
+                if let Some(Frame::Ability(af)) =
+                    self.frames.iter_mut().rev().find(|f| matches!(f, Frame::Ability(_)))
+                {
+                    af.installed_cards.push(c);
+                }
                 if !p.and_rez {
                     let done = self.installs.pop().unwrap();
                     self.install_terminal_reveal(&done);
@@ -11005,6 +11055,7 @@ impl Vm {
                                 )
                                 .labeled("after it resolves, remove it from the game"),
                                 bound_targets: Vec::new(),
+                                bound_installs: Vec::new(),
                             },
                             Duration::UntilResolved,
                         ));
@@ -11462,6 +11513,13 @@ impl Vm {
                 cite!("rule_continue_after_search");
                 self.found_cards()
             }
+            // CR 8.5.16f: the cards this ability installed. Not 1.15.4's
+            // announced targets — a card a search installed was never
+            // announced — so this reads the frame's own install record.
+            TargetSpec::InstalledByThisAbility => {
+                cite!("rule_steps_installing_become_installed");
+                self.ability_installed_cards()
+            }
         }
     }
 
@@ -11493,6 +11551,22 @@ impl Vm {
         let skip: usize = imm.target_spans.iter().take(before).sum();
         let take: usize = imm.target_spans.iter().skip(before).take(mine).sum();
         imm.targets.iter().copied().skip(skip).take(take).collect()
+    }
+
+    /// CR 8.5.16f: the cards the innermost resolving ability has INSTALLED —
+    /// what "that program", said of the card an earlier instruction of the same
+    /// ability installed, reaches. A delayed conditional's frame is seeded with
+    /// the ones its creator installed (9.6.13), so the words read the same
+    /// inside the delay as outside it.
+    fn ability_installed_cards(&self) -> Vec<ObjectId> {
+        self.frames
+            .iter()
+            .rev()
+            .find_map(|f| match f {
+                Frame::Ability(af) => Some(af.installed_cards.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 
     /// The cards found by the innermost resolving ability's search (4.8.4).
