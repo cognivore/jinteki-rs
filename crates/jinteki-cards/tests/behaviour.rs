@@ -1730,6 +1730,7 @@ fn andromeda_draws_a_starting_hand_of_nine() {
         corp_deck,
         runner_deck,
         shuffle: true,
+        extra_cards: Default::default(),
     });
     assert_eq!(vm.st.hand[&Side::Runner].len(), 9, "Andromeda's opening nine");
     assert_eq!(vm.st.hand[&Side::Corp].len(), 5, "the Corp's ordinary five");
@@ -2738,6 +2739,7 @@ fn an_identity_in_the_pile_is_inactive() {
         corp_deck,
         runner_deck,
         shuffle: true,
+        extra_cards: Default::default(),
     });
     let carried = vm.identity_pile(Side::Runner);
     assert_eq!(carried.len(), 1, "1.5.4a: the pile came to the table");
@@ -5918,6 +5920,7 @@ fn the_two_setup_identities_change_the_game_before_it_starts() {
         corp_deck: deck(20),
         runner_deck: rdeck(20),
         shuffle: true,
+        extra_cards: Default::default(),
     });
     assert_eq!(vm.st.corp.bad_publicity, 1, "Valencia hands the Corp its bad publicity at setup");
     assert_eq!(vm.st.corp.credits, 5, "and leaves 1.6.4's five credits alone");
@@ -5931,6 +5934,7 @@ fn the_two_setup_identities_change_the_game_before_it_starts() {
         corp_deck: deck(20),
         runner_deck: rdeck(20),
         shuffle: true,
+        extra_cards: Default::default(),
     });
     assert_eq!(vm.st.corp.credits, 10, "GRNDL starts on ten, not 1.6.4's five");
     assert_eq!(vm.st.corp.bad_publicity, 1, "and with one bad publicity");
@@ -14872,4 +14876,470 @@ fn melies_resets_the_sealed_face_on_a_later_discard_phase() {
         "one flip: {}",
         t.tail(40)
     );
+}
+
+
+// ---------------------------------------------------------------------------
+// C1: the game-start window (CR 1.6.2 / 1.6.1a / 1.6.7a)
+// ---------------------------------------------------------------------------
+
+/// A NEXT Design game, built through the real §1.6 setup: the corp deck's
+/// first five cards (the starting hand under `shuffle: false`) hold `ice`
+/// pieces of ice, the rest is filler.
+fn next_design_game(ice: usize, deck_size: usize) -> Vm {
+    use jinteki_cr::vm::GameSetup;
+    let mut corp_deck: Vec<PrintedCard> = Vec::new();
+    for i in 0..deck_size {
+        if i < ice {
+            corp_deck.push(tk::vanilla_ice(["Ice-A", "Ice-B", "Ice-C"][i], 1, 3));
+        } else {
+            corp_deck.push(tk::corp_filler("C-filler"));
+        }
+    }
+    let runner_deck: Vec<PrintedCard> =
+        (0..8).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    Vm::new_game(GameSetup {
+        corp_identity: Some(card("NEXT Design: Guarding the Net")),
+        runner_identity: None,
+        corp_deck,
+        runner_deck,
+        shuffle: false,
+        seed: 6401,
+        additional_identities: Default::default(),
+        extra_cards: Default::default(),
+    })
+}
+
+/// NEXT Design: "Before taking your first turn, you may install up to 3
+/// pieces of ice, with no more than a single piece of ice per server. Draw
+/// until you have 5 cards in HQ." — all three installed, one per server, the
+/// hand refilled to exactly 5, and every bit of it before the Corp's first
+/// turn formally begins (1.6.7a: "and thus before the game starts").
+#[test]
+fn next_design_installs_three_ice_and_draws_back_to_five_before_the_first_turn() {
+    let mut vm = next_design_game(3, 12);
+    let ice: Vec<ObjectId> = vm.st.hand[&Side::Corp]
+        .iter()
+        .copied()
+        .filter(|c| vm.st.objects[c].printed.card_type == CardType::Ice)
+        .collect();
+    assert_eq!(ice.len(), 3, "the opening hand holds the three ice");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(vec![ice[0]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![ice[1]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Rnd)),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![ice[2]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(
+                    ServerId::Archives,
+                )),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let protecting = |s: ServerId| -> Vec<ObjectId> {
+        vm.st.ice[&s].iter().filter_map(|p| p.ice).collect()
+    };
+    assert_eq!(protecting(ServerId::Hq), vec![ice[0]], "one ice protecting HQ: {}", t.tail(20));
+    assert_eq!(protecting(ServerId::Rnd), vec![ice[1]], "one protecting R&D");
+    assert_eq!(protecting(ServerId::Archives), vec![ice[2]], "one protecting Archives");
+    // 1.6.7a: the whole ability resolves immediately BEFORE the first turn,
+    // "and thus before the game starts" — read off the log, which puts every
+    // install and every one of its draws before GameBegan, and GameBegan
+    // before the turn's formal beginning (5.1.4a). "Draw until you have 5
+    // cards in HQ" landed at exactly 5: the hand held 5 − 3 installed = 2,
+    // and exactly 3 pre-game draws follow. (The hand then visible holds 6 —
+    // the first turn's own 5.3 mandatory draw, which is not this ability's.)
+    let log = &vm.changes.log;
+    let last_install = log
+        .iter()
+        .rposition(|c| matches!(c, GameChange::CardInstalled { .. }))
+        .expect("three installs were recorded");
+    let began = log
+        .iter()
+        .position(|c| matches!(c, GameChange::GameBegan))
+        .expect("the game began");
+    let first_turn = log
+        .iter()
+        .position(|c| matches!(c, GameChange::TurnBegan { side: Side::Corp }))
+        .expect("the Corp's first turn began");
+    let pre_game_draws = log[..began]
+        .iter()
+        .filter(|c| matches!(c, GameChange::CardDrawn { side: Side::Corp, .. }))
+        .count();
+    assert_eq!(
+        pre_game_draws, 3,
+        "draw-until-5 drew exactly 3 before the game began: {}",
+        t.tail(30)
+    );
+    assert!(
+        last_install < began && began < first_turn,
+        "1.6.7a: installs, then the game begins, then the first turn: {}",
+        t.tail(30)
+    );
+}
+
+/// The per-server stipulation: after the first ice protects HQ, the second
+/// destination declaration no longer offers HQ at all — "no more than a
+/// single piece of ice per server" is enforced by the offer, not by trust.
+#[test]
+fn next_design_offers_each_server_only_once() {
+    let mut vm = next_design_game(2, 12);
+    let ice: Vec<ObjectId> = vm.st.hand[&Side::Corp]
+        .iter()
+        .copied()
+        .filter(|c| vm.st.objects[c].printed.card_type == CardType::Ice)
+        .collect();
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(vec![ice[0]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![ice[1]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Rnd)),
+            )
+            .when(Match::targets(), Reply::Targets(Vec::new()))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let second = t.nth_window(Kind::Destination, Side::Corp, 2);
+    let jinteki_cr::decision::DecisionSpec::DeclareInstallDestination { options } = &second.spec
+    else {
+        panic!("a destination declaration");
+    };
+    assert!(
+        !options.contains(&jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+        "HQ already took this effect's single piece of ice: {options:?}"
+    );
+    assert!(
+        options.contains(&jinteki_cr::instr::InstallDest::Protecting(ServerId::Rnd)),
+        "the untouched centrals are still offered: {options:?}"
+    );
+}
+
+/// "You may install **up to** 3" — declining the first pick installs none,
+/// and the draw half still resolves: it is one ability, and the draw is
+/// mandatory. A full hand draws nothing ("until you have 5" of a hand of 5).
+#[test]
+fn next_design_declines_every_install_and_the_full_hand_draws_nothing() {
+    let mut vm = next_design_game(3, 12);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(Vec::new()))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        vm.st.ice.values().all(|v| v.iter().all(|p| p.ice.is_none())),
+        "nothing installed anywhere: {}",
+        t.tail(20)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardInstalled { .. })),
+        "and no install was recorded"
+    );
+    // The hand already had 5, so "draw until you have 5" drew nothing: not
+    // one Corp draw precedes GameBegan (the one that follows it is the first
+    // turn's own 5.3 mandatory draw).
+    let began = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::GameBegan))
+        .expect("the game began");
+    assert_eq!(
+        vm.changes.log[..began]
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardDrawn { side: Side::Corp, .. }))
+            .count(),
+        0,
+        "a full hand draws nothing: {}",
+        t.tail(20)
+    );
+}
+
+/// "Draw until you have 5 cards in HQ" against a short R&D: the draw takes
+/// what remains and stops. It is not 5.3's mandatory draw, so 1.7.2c's
+/// flatline-by-decking does not fire — the game goes on.
+#[test]
+fn next_design_draws_fewer_when_rnd_is_short() {
+    // 5 in hand (3 ice + 2 filler), exactly 1 left in R&D.
+    let mut vm = next_design_game(3, 6);
+    let ice: Vec<ObjectId> = vm.st.hand[&Side::Corp]
+        .iter()
+        .copied()
+        .filter(|c| vm.st.objects[c].printed.card_type == CardType::Ice)
+        .collect();
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(vec![ice[0]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Hq)),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![ice[1]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Rnd)),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![ice[2]]))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(
+                    ServerId::Archives,
+                )),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let log = &vm.changes.log;
+    let began = log
+        .iter()
+        .position(|c| matches!(c, GameChange::GameBegan))
+        .expect("the game began");
+    assert_eq!(
+        log[..began]
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardDrawn { side: Side::Corp, .. }))
+            .count(),
+        1,
+        "R&D held 1, so the draw-until-5 took 1 and stopped: {}",
+        t.tail(20)
+    );
+    assert!(vm.st.deck[&Side::Corp].is_empty(), "R&D gave everything it had");
+    // NEXT's draw is NOT 1.7.2c's "required to draw": the game went on — its
+    // first turn formally began on an empty R&D. The 5.3 mandatory draw that
+    // follows IS required, meets the empty deck, and ends the game; the
+    // contrast is the ruling.
+    assert!(
+        log.iter().any(|c| matches!(c, GameChange::TurnBegan { side: Side::Corp })),
+        "the first turn began after the shortfall: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.game_over,
+        Some(jinteki_cr::decision::GameResult::RndEmpty),
+        "then the MANDATORY draw met the empty R&D (1.7.2c)"
+    );
+}
+
+/// An Ayla game through the real §1.6 setup. `new_game` returns before the
+/// starting hands: her ability resolves first.
+fn ayla_game() -> Vm {
+    use jinteki_cr::vm::GameSetup;
+    let runner_deck: Vec<PrintedCard> =
+        (0..20).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    let corp_deck: Vec<PrintedCard> = (0..8).map(|_| tk::corp_filler("C-filler")).collect();
+    Vm::new_game(GameSetup {
+        runner_identity: Some(card("Ayla \"Bios\" Rahim: Simulant Specialist")),
+        corp_deck,
+        runner_deck,
+        corp_identity: None,
+        shuffle: false,
+        seed: 6402,
+        additional_identities: Default::default(),
+        extra_cards: Default::default(),
+    })
+}
+
+/// Ayla: "Before drawing your starting hand, set aside the top 6 cards of
+/// your stack facedown. … Shuffle 2 of those cards into your stack." — six
+/// set aside before any hand exists, two chosen back in, four left in the
+/// group stamped with the identity, and only THEN the starting hand.
+#[test]
+fn ayla_sets_aside_six_and_shuffles_two_back_before_the_starting_hand() {
+    let mut vm = ayla_game();
+    // 1.6.1a: the ability resolves BEFORE the 1.6.6 draw — the hands are not
+    // drawn yet when new_game returns.
+    assert!(vm.st.hand[&Side::Runner].is_empty(), "no starting hand before the ability");
+    let top6: Vec<ObjectId> = vm.st.deck[&Side::Runner][0..6].to_vec();
+    let ayla = vm.identity_of(Side::Runner).unwrap();
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner().when(Match::targets().once(), Reply::Targets(vec![top6[0], top6[1]])),
+    );
+    let set_aside: Vec<ObjectId> = vm
+        .st
+        .objects
+        .values()
+        .filter(|o| {
+            o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.with == Some(ayla))
+        })
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(set_aside.len(), 4, "6 set aside − 2 shuffled back: {}", t.tail(20));
+    for c in &top6[2..] {
+        assert!(set_aside.contains(c), "the unchosen four stay set aside");
+        assert!(
+            !vm.st.objects[c].faceup,
+            "facedown — though the group is Ayla's, so she may look at any time"
+        );
+    }
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "then the starting hand: {}", t.tail(20));
+    // 20 − 6 set aside + 2 shuffled back − 5 drawn.
+    assert_eq!(vm.st.deck[&Side::Runner].len(), 11, "the stack after all of §1.6");
+}
+
+/// Ayla's second line: "[click]: Add 1 card set aside with this identity to
+/// your grip." — the set-aside group outlives setup, and a click on the
+/// Runner's first turn moves one of the four to the grip.
+#[test]
+fn ayla_spends_a_click_to_add_a_set_aside_card_to_the_grip() {
+    let mut vm = ayla_game();
+    let top6: Vec<ObjectId> = vm.st.deck[&Side::Runner][0..6].to_vec();
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::targets().once(), Reply::Targets(vec![top6[0], top6[1]]))
+            .when(Match::action().once(), Reply::take("add 1 set-aside card"))
+            .when(Match::targets().once(), Reply::Targets(vec![top6[2]]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&top6[2]].zone,
+        Zone::Hand(Side::Runner),
+        "the chosen set-aside card is in the grip: {}",
+        t.tail(25)
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 6, "5 drawn + 1 retrieved");
+    assert_eq!(vm.st.runner.clicks, 3, "4 allotted − 1 spent on the identity");
+    let ayla = vm.identity_of(Side::Runner).unwrap();
+    let still_aside = vm
+        .st
+        .objects
+        .values()
+        .filter(|o| {
+            o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.with == Some(ayla))
+        })
+        .count();
+    assert_eq!(still_aside, 3, "three remain for later clicks");
+}
+
+/// The mulligan interaction, per the CR alone: 1.6.6a's mulligan "shuffles
+/// their starting hand back into their deck, then draws a new starting hand"
+/// — the set-aside cards are in neither the hand nor the stack, so the
+/// redraw neither returns them nor sets aside more. One resolution, before
+/// the first draw; the second hand is drawn from the 16-card stack the
+/// ability left behind.
+#[test]
+fn ayla_mulligan_redraws_around_an_untouched_set_aside() {
+    let mut vm = ayla_game();
+    let top6: Vec<ObjectId> = vm.st.deck[&Side::Runner][0..6].to_vec();
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::targets().once(), Reply::Targets(vec![top6[0], top6[1]]))
+            .when(Match::mulligan(), Reply::Mulligan),
+    );
+    let ayla = vm.identity_of(Side::Runner).unwrap();
+    let set_aside: Vec<ObjectId> = vm
+        .st
+        .objects
+        .values()
+        .filter(|o| {
+            o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.with == Some(ayla))
+        })
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(
+        set_aside.len(),
+        4,
+        "still exactly four — the mulligan set aside none: {}",
+        t.tail(20)
+    );
+    for c in &top6[2..] {
+        assert!(set_aside.contains(c), "and they are the same four objects");
+    }
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "the second starting hand");
+    assert_eq!(
+        vm.st.deck[&Side::Runner].len(),
+        11,
+        "16 − 5: the redraw came from the stack the ability left"
+    );
+}
+
+/// Adam: "You start the game with 3 different directive cards installed
+/// (these cards are not considered part of your deck)." — the three
+/// directives are installed and ACTIVE from the game's first moment (Safety
+/// First's max-hand-size reduction is already in force), the stack was never
+/// touched by them, and they are in no deck-derived zone at all.
+#[test]
+fn adam_starts_the_game_with_three_directives_installed_and_active() {
+    use jinteki_cr::vm::GameSetup;
+    let runner_deck: Vec<PrintedCard> =
+        (0..20).map(|_| tk::vanilla_runner_card("R-filler", CardType::Resource)).collect();
+    let corp_deck: Vec<PrintedCard> = (0..8).map(|_| tk::corp_filler("C-filler")).collect();
+    let mut vm = Vm::new_game(GameSetup {
+        runner_identity: Some(card_partial("Adam: Compulsive Hacker")),
+        corp_deck,
+        runner_deck,
+        extra_cards: [(
+            Side::Runner,
+            vec![
+                card_partial("Always Be Running"),
+                card_partial("Neutralize All Threats"),
+                card_partial("Safety First"),
+            ],
+        )]
+        .into_iter()
+        .collect(),
+        corp_identity: None,
+        shuffle: false,
+        seed: 6403,
+        additional_identities: Default::default(),
+    });
+    let directives: Vec<ObjectId> = vm
+        .st
+        .objects
+        .values()
+        .filter(|o| o.printed.subtypes.contains(&"Directive"))
+        .map(|o| o.id)
+        .collect();
+    assert_eq!(directives.len(), 3, "exactly the three brought cards exist");
+    for d in &directives {
+        let o = &vm.st.objects[d];
+        assert_eq!(o.zone, Zone::Rig, "installed in the play area (1.5.3b)");
+        assert!(o.faceup, "4.6.4c: Runner cards are installed faceup");
+    }
+    assert_eq!(vm.st.deck[&Side::Runner].len(), 15, "20 − 5 drawn; no directive among them");
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 5, "an ordinary starting hand");
+    assert!(
+        vm.st.hand[&Side::Runner]
+            .iter()
+            .chain(vm.st.deck[&Side::Runner].iter())
+            .all(|c| !directives.contains(c)),
+        "1.5.3: not considered part of the deck"
+    );
+    // Active from the first moment: Safety First's "Your maximum hand size
+    // is reduced by 2" is a static declaration of an installed, active card.
+    assert_eq!(vm.max_hand_size(Side::Runner), 3, "5 − 2 (Safety First already in force)");
+
+    // And the game plays on normally from there.
+    let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+    assert!(vm.game_over.is_none(), "{}", t.tail(10));
 }

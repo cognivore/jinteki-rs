@@ -387,6 +387,9 @@ pub fn eternal_setup(seed: u64) -> Result<GameSetup, Readiness> {
         additional_identities: [(Side::Corp, corp_pile), (Side::Runner, runner_pile)]
             .into_iter()
             .collect(),
+        // CR 1.5.1: neither eternal deck's identity requires cards from
+        // outside the deck (Adam's directives are the case that would).
+        extra_cards: Default::default(),
         seed,
         shuffle: true,
     })

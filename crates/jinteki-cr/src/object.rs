@@ -240,6 +240,21 @@ pub struct CounterRef {
     pub index: u32,
 }
 
+/// CR 1.5.3b: the setup fact [`PrintedCard::starting_extra_installs`] states —
+/// "the player playing Adam selects exactly 3 of their provided *directive*
+/// cards. Those cards begin the game installed in the play area."
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartingExtraInstalls {
+    /// "…exactly 3…" (1.5.3b).
+    pub count: u32,
+    /// What the provided cards must be — "*directive* cards" is the subtype
+    /// criterion in the shared filter vocabulary (§12 rule 5).
+    pub criteria: Vec<crate::instr::TargetFilter>,
+    /// "3 **different** directive cards" — CR 2.1.5's differently-named
+    /// stipulation, which 1.5.3a restates about what must be brought.
+    pub distinct_names: bool,
+}
+
 /// The printed (immutable) face of a card — the base of the characteristics
 /// pipeline (9.12.1d starts "begin with each object's printed characteristics").
 #[derive(Debug, Clone)]
@@ -302,6 +317,16 @@ pub struct PrintedCard {
     /// player, so the fact is about the game's setup and not about whose card
     /// it is. None = none.
     pub starting_bad_publicity: Option<u32>,
+    /// CR 1.5.3 + 1.6.2: "You start the game with 3 different **directive**
+    /// cards installed (these cards are not considered part of your deck)."
+    /// (Adam) — a fourth setup fact of the `starting_*` family, settled while
+    /// the game is built, except that its cards come from OUTSIDE the deck:
+    /// 1.5.3a's extra cards brought along with it (`GameSetup::extra_cards`,
+    /// placed in [`Zone::OutsideGame`]), from which 1.5.3b selects exactly
+    /// `count` and "those cards begin the game installed in the play area".
+    /// The selection and installation happen at 1.6.2's special-setup moment
+    /// — after identities are revealed, before credits, shuffles, or hands.
+    pub starting_extra_installs: Option<StartingExtraInstalls>,
     /// CR 1.4 double-sided identities: the back faces' printed
     /// characteristics ("flip this identity" — Nebula/Gemilang class), in
     /// face order. Most double-siders print ONE back; Méliès U ships as
@@ -343,6 +368,7 @@ impl PrintedCard {
             starting_hand_size: None,
             starting_credits: None,
             starting_bad_publicity: None,
+            starting_extra_installs: None,
             flip_faces: Vec::new(),
             hosted_credits_spendable: None,
             abilities: Vec::new(),

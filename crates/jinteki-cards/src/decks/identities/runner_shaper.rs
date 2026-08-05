@@ -746,6 +746,42 @@ pub fn dewi_subrotoputri_shadow_guide() -> Card {
         .build()
 }
 
+/// Ayla "Bios" Rahim: Simulant Specialist — Identity: Natural.
+/// "Before drawing your starting hand, set aside the top 6 cards of your
+///  stack facedown. (You may look at those cards at any time.) Shuffle 2 of
+///  those cards into your stack.
+///  [click]: Add 1 card set aside with this identity to your grip."
+///
+/// COMPLETE. "Before drawing your starting hand" is CR 1.6.1a's setup
+/// alteration at the step the text indicates — 1.6.6's draw — so the §1.6
+/// procedure resolves it after the 1.6.5 shuffle and before any hand exists.
+/// It resolves ONCE: a 1.6.6a mulligan "shuffles their starting hand back
+/// into their deck, then draws a new starting hand", and the set-aside cards
+/// are in neither the hand nor the stack, so the redraw neither returns them
+/// nor sets aside six more. (The redraw is the mulligan's own procedure, not
+/// a second performance of 1.6.6 — "they must keep the second hand" leaves
+/// no room for one.)
+pub fn ayla_bios_rahim() -> Card {
+    card("Ayla \"Bios\" Rahim: Simulant Specialist")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack.")
+        .text("[click]: Add 1 card set aside with this identity to your grip.")
+        .when(
+            before_drawing_starting_hand(),
+            [
+                set_aside_top_of_deck_with_this_card(Runner, 6),
+                shuffle_into_deck(choose(2, &[set_aside_with_this_card()]), Runner),
+            ],
+        )
+        .named("simulant specialist")
+        .paid(clicks(1), [add_to_hand(choose(1, &[set_aside_with_this_card()]))])
+        .named("add 1 set-aside card to the grip")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -769,5 +805,6 @@ pub fn identities() -> Vec<Card> {
         magdalene_keino_chemutai(),
         kabonesa_wu(),
         dewi_subrotoputri(),
+        ayla_bios_rahim(),
     ]
 }

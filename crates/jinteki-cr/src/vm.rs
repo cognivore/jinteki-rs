@@ -355,11 +355,26 @@ pub struct TraceState {
     pub link_strength: i64,
 }
 
-/// Setup progress (§1.6 is a procedure, not a timing structure).
+/// Setup progress (§1.6 is a procedure, not a timing structure — 9.2.2 lists
+/// the timing structures and setup is not one, so its decision points are
+/// phases of the toplevel pump rather than steps of a table).
+///
+/// The two ability phases hold `Vm::setup_queue`: the identity abilities the
+/// procedure resolves at that point, one frame at a time. 1.6.2's order — "if
+/// both players have setup or start of game abilities at this time, the Corp
+/// resolves theirs first" — is the order the queue was built in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SetupPhase {
+    /// CR 1.6.1a + 1.6.6: "Before drawing your starting hand, …" (Ayla
+    /// class) — identity abilities that alter the starting-hand step, resolved
+    /// after 1.6.5's shuffle and before any hand is drawn.
+    BeforeStartingHands,
     CorpMulligan,
     RunnerMulligan,
+    /// CR 1.6.7a: "Before taking your first turn, …" (NEXT class) — the
+    /// Corp's identity ability resolved immediately before the first turn,
+    /// after both mulligan decisions.
+    BeforeFirstTurn,
     Done,
 }
 
@@ -449,6 +464,9 @@ pub struct Vm {
     answer: Option<DecisionAnswer>,
     pub game_over: Option<GameResult>,
     setup: SetupPhase,
+    /// The identity abilities the current setup phase still has to resolve
+    /// (1.6.2: Corp's first), for the two SetupPhase ability points.
+    setup_queue: Vec<AbilityRef>,
     next_turn_side: Side,
     // id fountains
     next_object: u32,
@@ -667,10 +685,31 @@ pub struct GameSetup {
     /// their deck. They never enter a zone at setup — they are outside the
     /// game — so they are handed straight to `CoreState::additional_identities`.
     pub additional_identities: BTreeMap<Side, Vec<PrintedCard>>,
+    /// CR 1.5.1/1.5.3a: "additional cards from outside the deck" an ability
+    /// requires a player to bring — Adam's directives ("must bring at least 3
+    /// differently named cards with the *directive* subtype along with their
+    /// deck"). Placed in [`Zone::OutsideGame`] at 1.6.1, where
+    /// `PrintedCard::starting_extra_installs` selects from them at 1.6.2.
+    pub extra_cards: BTreeMap<Side, Vec<PrintedCard>>,
     pub seed: u64,
     /// Test-harness determinism hook: skip the 1.6.5 shuffle so decks stay
     /// in the given order (SYS-F-8 stack-deck semantics).
     pub shuffle: bool,
+}
+
+impl Default for GameSetup {
+    fn default() -> GameSetup {
+        GameSetup {
+            corp_deck: Vec::new(),
+            runner_deck: Vec::new(),
+            corp_identity: None,
+            runner_identity: None,
+            additional_identities: BTreeMap::new(),
+            extra_cards: BTreeMap::new(),
+            seed: 0,
+            shuffle: true,
+        }
+    }
 }
 
 impl Vm {
@@ -678,9 +717,17 @@ impl Vm {
     // Construction
     // ------------------------------------------------------------------
 
-    /// Full game start per §1.6: credits (1.6.4), shuffle (1.6.5), draw 5
-    /// (1.6.6), then the mulligan decisions (1.6.6a) and the Corp's first
-    /// turn (1.6.7).
+    /// Full game start per §1.6: identities and decks (1.6.1), special setup
+    /// (1.6.2 — Adam's 1.5.3b installs), credits (1.6.4), shuffle (1.6.5),
+    /// then the "before drawing your starting hand" abilities (1.6.1a — Ayla
+    /// class), the draw (1.6.6), the mulligan decisions (1.6.6a), the "before
+    /// taking your first turn" ability (1.6.7a — NEXT class) and the Corp's
+    /// first turn (1.6.7).
+    ///
+    /// Everything up to the starting-hand draw is synchronous; the draw
+    /// itself is deferred behind `SetupPhase::BeforeStartingHands` only when
+    /// an identity actually prints a pre-draw ability, so a game without one
+    /// returns with hands drawn exactly as before.
     pub fn new_game(setup: GameSetup) -> Vm {
         let mut vm = Vm::empty(setup.seed);
         for (side, deck, identity) in [
@@ -718,6 +765,27 @@ impl Vm {
                 vm.st.objects.get_mut(&id).unwrap().faceup = true;
             }
         }
+        // CR 1.5.1: "additional cards from outside the deck" an ability
+        // requires — Adam's directives. The same outside-the-game zone as the
+        // identity pile, faceup for the reason 1.5.3b's remainder is open:
+        // what was brought is not hidden information.
+        cite!("rule_outside_deck");
+        for (side, pile) in setup.extra_cards {
+            for card in pile {
+                let id = vm.new_object(card, Zone::OutsideGame(side));
+                vm.st.objects.get_mut(&id).unwrap().faceup = true;
+            }
+        }
+        // CR 1.6.2 + 1.5.3b: special setup that corresponds to no setup step
+        // — "the player playing Adam selects exactly 3 of their provided
+        // directive cards. Those cards begin the game installed in the play
+        // area." A setup FACT of the starting_* family, settled while the
+        // game is built; the Corp's first (1.6.2), for what that is worth to
+        // a fact with no decisions left in it.
+        cite!("rule_setup_abilities");
+        for side in [Side::Corp, Side::Runner] {
+            vm.perform_starting_extra_installs(side);
+        }
         cite!("rule_start_credits");
         vm.st.corp.credits = vm.starting_credits(Side::Corp);
         vm.st.runner.credits = vm.starting_credits(Side::Runner);
@@ -737,15 +805,127 @@ impl Vm {
                 deck.shuffle(&mut vm.rng);
             }
         }
+        // CR 1.6.1a: identity abilities that alter setup do so "at the
+        // appropriate step as indicated by their text" — "before drawing your
+        // starting hand" indicates 1.6.6, so they resolve here, after the
+        // 1.6.5 shuffle. With none, the hands are drawn now and the machine
+        // is exactly where it always was.
+        vm.setup_queue = vm.setup_identity_abilities(
+            &[Side::Corp, Side::Runner],
+            |c| matches!(c, crate::ability::TriggerCond::BeforeDrawingStartingHand),
+        );
+        if vm.setup_queue.is_empty() {
+            vm.draw_starting_hands();
+            vm.setup = SetupPhase::CorpMulligan;
+        } else {
+            vm.setup = SetupPhase::BeforeStartingHands;
+        }
+        vm
+    }
+
+    /// CR 1.6.6: each player draws their starting hand.
+    fn draw_starting_hands(&mut self) {
         cite!("rule_start_hand");
         for side in [Side::Corp, Side::Runner] {
-            let n = vm.starting_hand_size(side);
+            let n = self.starting_hand_size(side);
             for _ in 0..n {
-                vm.draw_card_silent(side);
+                self.draw_card_silent(side);
             }
         }
-        vm.setup = SetupPhase::CorpMulligan;
-        vm
+    }
+
+    /// The identity abilities whose printed condition marks them for one of
+    /// §1.6's resolution points, in 1.6.2's order (the Corp's first — which
+    /// is the order of `sides` as every caller passes it).
+    fn setup_identity_abilities(
+        &self,
+        sides: &[Side],
+        wanted: fn(&crate::ability::TriggerCond) -> bool,
+    ) -> Vec<AbilityRef> {
+        let mut out = Vec::new();
+        for &side in sides {
+            let Some(obj) = self.identity_of(side) else { continue };
+            for (index, a) in self.st.objects[&obj].face().abilities.iter().enumerate() {
+                if let Some(crate::ability::Condition::Trigger(t)) = &a.condition {
+                    if wanted(t) {
+                        out.push(AbilityRef { obj, index });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// CR 1.5.3b + 1.6.2: perform `starting_extra_installs` for one side —
+    /// select exactly `count` differently-named matching cards from the
+    /// outside-the-game pile and start the game with them installed.
+    ///
+    /// The selection is forced when the pile holds exactly `count` matching
+    /// names, which is the shape every honest `GameSetup` supplies (1.5.3a
+    /// requires AT LEAST that; bringing more would put a real selection here,
+    /// and no caller does). A pile that cannot yield the fact is a
+    /// deck-construction error, not a game state — the game cannot begin, so
+    /// this panics rather than starting it wrong.
+    fn perform_starting_extra_installs(&mut self, side: Side) {
+        let Some(id) = self.identity_of(side) else { return };
+        let Some(fact) = self.st.objects[&id].face().starting_extra_installs.clone() else {
+            return;
+        };
+        cite!("rule_adam");
+        cite!("rule_adam_different_directives");
+        cite!("rule_adam_directives_install");
+        let pile: Vec<ObjectId> = self
+            .st
+            .objects
+            .values()
+            .filter(|o| o.zone == Zone::OutsideGame(side))
+            .filter(|o| fact.criteria.iter().all(|f| self.filter_matches(o, *f, Some(id))))
+            .map(|o| o.id)
+            .collect();
+        let mut names: Vec<&'static str> = Vec::new();
+        let mut chosen: Vec<ObjectId> = Vec::new();
+        for c in pile {
+            let name = self.st.objects[&c].printed.name;
+            if fact.distinct_names && names.contains(&name) {
+                continue;
+            }
+            names.push(name);
+            chosen.push(c);
+        }
+        assert!(
+            chosen.len() == fact.count as usize,
+            "CR 1.5.3a/b: the {side:?} identity starts the game with {} matching cards \
+             installed, so the GameSetup must bring exactly that many differently-named \
+             ones (got {})",
+            fact.count,
+            chosen.len()
+        );
+        // 1.5.3b: "those cards begin the game installed in the play area" —
+        // a state the game is built in, not an install effect: no 8.5
+        // procedure ran, no cost existed, and nothing is recorded that a
+        // "when you install" condition could ever have met (the game has not
+        // begun). 1.5.3d: from here on they are ordinary installed cards.
+        cite!("rule_adam_directives_during_game");
+        for c in chosen {
+            let dest = match side {
+                Side::Runner => Zone::Rig,
+                // No Corp card prints this fact today; the root of a new
+                // remote would be the Corp reading of "installed in the play
+                // area", and inventing one now would be an approximation.
+                Side::Corp => unimplemented!(
+                    "CR 1.5.3 names only Adam; a Corp starting_extra_installs has no printed \
+                     card to copy the destination from"
+                ),
+            };
+            let o = self.st.objects.get_mut(&c).unwrap();
+            // 1.13.2/4.6: installed IS the zone — a card in the rig is an
+            // installed Runner card, and 4.6.4c installs it faceup.
+            o.zone = dest;
+            o.faceup = true;
+            o.controller = side;
+            // 1.10.5b: active from the moment the game begins.
+            self.place_recurring_credits(c);
+        }
     }
 
     /// Bare machine for scripted example states (test support): empty zones,
@@ -820,6 +1000,7 @@ impl Vm {
             answer: None,
             game_over: None,
             setup: SetupPhase::Done,
+            setup_queue: Vec::new(),
             next_turn_side: Side::Corp,
             next_object: 1,
             next_instance: 1,
@@ -1020,6 +1201,16 @@ impl Vm {
 
     fn tick_toplevel(&mut self) {
         match self.setup {
+            // CR 1.6.1a: the pre-draw identity abilities, one frame at a
+            // time; when the last frame has resolved the hands are drawn
+            // (1.6.6) and the mulligans follow.
+            SetupPhase::BeforeStartingHands => {
+                cite!("rule_setup_identity");
+                if !self.resolve_next_setup_ability() {
+                    self.draw_starting_hands();
+                    self.setup = SetupPhase::CorpMulligan;
+                }
+            }
             SetupPhase::CorpMulligan => {
                 cite!("rule_mulligan");
                 self.ask(
@@ -1035,11 +1226,19 @@ impl Vm {
                     DecisionCtx::Mulligan(Side::Runner),
                 );
             }
+            // CR 1.6.7a: "the Corp resolves that ability immediately before
+            // taking their first turn, and thus before the game starts."
+            SetupPhase::BeforeFirstTurn => {
+                cite!("rule_before_first_turn");
+                if !self.resolve_next_setup_ability() {
+                    self.setup = SetupPhase::Done;
+                }
+            }
             SetupPhase::Done => {
                 // CR 1.6.7: the game begins and the Corp takes their first
                 // turn; afterwards turns alternate (5.1).
                 cite!("rule_start_corp_turn");
-                if self.changes.log.is_empty() {
+                if self.changes.log.iter().all(|c| !matches!(c, GameChange::GameBegan)) {
                     self.changes.record(GameChange::GameBegan);
                 }
                 let side = self.next_turn_side;
@@ -1047,6 +1246,29 @@ impl Vm {
                 self.next_turn_side = side.other();
             }
         }
+    }
+
+    /// Pop and resolve the next queued §1.6 identity ability as an ordinary
+    /// conditional-resolution frame (1.6.2 built the queue Corp-first).
+    /// Returns false when the queue is empty and the phase may advance.
+    fn resolve_next_setup_ability(&mut self) -> bool {
+        let Some(ability) = self.setup_queue.first().copied() else {
+            return false;
+        };
+        self.setup_queue.remove(0);
+        let Some(def) = self.ability_at(ability.obj, ability.index) else {
+            return true;
+        };
+        let controller = self.st.objects[&ability.obj].controller;
+        self.push_ability_frame(
+            ResolutionKind::Conditional,
+            ability,
+            controller,
+            def.instructions.clone(),
+            None,
+            None,
+        );
+        true
     }
 
     /// Test-support entry: begin a specific player's turn structure directly
@@ -4510,6 +4732,11 @@ impl Vm {
         match q {
             Q::Const(n) => *n,
             Q::Count(criteria) => self.count_filter(criteria, source),
+            // 4.3.4: the number of cards in a hand is open information.
+            Q::CardsInHandOf(side) => self.st.hand[side].len() as i64,
+            // 5.7.3: the maximum hand size as modified, through the same
+            // 9.12.1a pipeline the discard step reads.
+            Q::MaxHandSizeOf(side) => self.max_hand_size(*side) as i64,
             // 2.15: every card has exactly one type, so "cards that share a
             // type" is the biggest same-type group among the described cards.
             Q::LargestGroupSharingCardType(criteria) => {
@@ -4859,9 +5086,17 @@ impl Vm {
             // 8.4.5a: setting the cards aside IS the draw — "the cards are
             // now considered drawn" — so this is the step that carries the
             // draw's expected effect and that a WouldDraw interrupt modifies.
-            Instruction::Draw(side, n) | Instruction::DrawStepSetAside { side, n, .. } => {
+            Instruction::Draw(side, q) => {
                 // 9.9.2: statics modify expected effects — a Lockdown-class
                 // "cannot draw" removes the draw entirely.
+                if self.draw_prohibited(*side) {
+                    vec![]
+                } else {
+                    let n = self.eval_quantity(q, source).max(0);
+                    vec![EffectAtom::new(EffectClass::Draw, n, *side)]
+                }
+            }
+            Instruction::DrawStepSetAside { side, n, .. } => {
                 if self.draw_prohibited(*side) {
                     vec![]
                 } else {
@@ -6913,6 +7148,7 @@ impl Vm {
                     | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
                     | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot
                     | crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer),
+                distinct_servers,
                 ..
             } => {
                 cite!("rule_steps_installing_destination");
@@ -6922,6 +7158,23 @@ impl Vm {
                     .copied();
                 let mut options =
                     c.map(|c| self.install_destinations_for(c, af.controller)).unwrap_or_default();
+                // "…with no more than a single piece of ice per server" (NEXT
+                // Design): a server this ability has already installed a card
+                // into or protecting is not offered again. A brand-new remote
+                // is always offered — it is not a server anything was
+                // installed to yet, and 8.5.16e creates a different one each
+                // time.
+                if *distinct_servers {
+                    let used: Vec<ServerId> = af
+                        .installed_cards
+                        .iter()
+                        .filter_map(|c| self.server_of(*c))
+                        .collect();
+                    options.retain(|d| match Self::dest_server(*d) {
+                        Some(s) => !used.contains(&s),
+                        None => true,
+                    });
+                }
                 // 1.15.4: "the same server" — the one the card the occurrence
                 // named is in, so every destination naming another server is
                 // not one this effect offers at all.
@@ -7728,6 +7981,25 @@ impl Vm {
                 cite!("rule_draw_relevant_abilities_see_set_aside");
                 o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.drawn)
             }
+            // 4.8.7 + 4.8.3: a card whose set-aside group is stamped with the
+            // selecting ability's SOURCE card — "1 card set aside with this
+            // identity" (Ayla "Bios" Rahim). The stamp is on the GROUP rather
+            // than on any frame, which is what lets a later ability of the
+            // same card refer to what an earlier one set aside.
+            TargetFilter::SetAsideWithSource => {
+                cite!("rule_set_aside_zone_passthrough");
+                cite!("rule_facedown_set_aside_distinct_groups");
+                o.zone == Zone::SetAside
+                    && source.is_some()
+                    && o.set_aside_group.is_some_and(|g| g.with == source)
+            }
+            // 2.6 / 7.1.5a: a card with a trash cost printed on it. The
+            // polarity is the card's, not the number's: no modifier gives a
+            // trash cost to a card that prints none.
+            TargetFilter::HasTrashCost => {
+                cite!("rule_trash_cost_location");
+                o.printed.trash_cost.is_some()
+            }
             TargetFilter::SetAsideByThisAbility => {
                 cite!("rule_trash_ability_keeps_track_of_hosted_objects");
                 cite!("rule_set_aside_zone_passthrough");
@@ -8412,6 +8684,7 @@ impl Vm {
             reduce_total,
             reduce_install,
             facedown,
+            distinct_servers: _,
         } = instr
         else {
             unreachable!()
@@ -8591,10 +8864,18 @@ impl Vm {
     /// what lets a "whenever you draw" ability resolve while the cards are
     /// still set aside (8.4.2/8.4.2a).
     fn expand_draw(&mut self, instr: Instruction) {
-        let Instruction::Draw(side, n) = instr else { unreachable!() };
+        let Instruction::Draw(side, q) = instr else { unreachable!() };
         cite!("rule_drawing");
         cite!("rule_draw_procedure");
         cite!("sec_steps_of_drawing_n_cards");
+        // 9.12.2: the count is a calculated quantity, read when the
+        // instruction resolves — "draw until you have 5 cards in HQ" (NEXT
+        // Design) reads the hand as it now stands. 9.12.2e floors it at 0.
+        let source = match self.frames.last() {
+            Some(Frame::Ability(af)) => Some(af.source.obj),
+            _ => None,
+        };
+        let n = self.eval_quantity(&q, source).max(0) as u32;
         let group = self.st.next_set_aside_group;
         self.st.next_set_aside_group += 1;
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
@@ -8626,8 +8907,12 @@ impl Vm {
                 o.set_aside_from = Some(Zone::Deck(side));
                 o.zone = Zone::SetAside;
                 o.faceup = false;
-                o.set_aside_group =
-                    Some(crate::view::SetAsideGroup { id: group, by: side, drawn: true });
+                o.set_aside_group = Some(crate::view::SetAsideGroup {
+                    id: group,
+                    by: side,
+                    drawn: true,
+                    with: None,
+                });
             }
             self.changes.record(GameChange::CardDrawn { side, obj: id });
         }
@@ -8667,6 +8952,7 @@ impl Vm {
             and_rez,
             and_rez_if_able,
             ignore_costs,
+            distinct_servers,
         } = instr
         else {
             unreachable!()
@@ -8693,6 +8979,7 @@ impl Vm {
                 reduce_total: crate::instr::Quantity::c(0),
                 reduce_install: crate::instr::Quantity::c(0),
                 facedown: false,
+                distinct_servers,
             };
             af.instructions.insert(
                 af.idx + 1,
@@ -8704,6 +8991,7 @@ impl Vm {
                     and_rez,
                     and_rez_if_able,
                     ignore_costs,
+                    distinct_servers,
                 },
             );
             af.targets.clear();
@@ -8998,6 +9286,14 @@ impl Vm {
                 cite!("rule_calculated_quantity");
                 self.eval_quantity(left, source) == self.eval_quantity(right, source)
             }
+            // 9.12.2 twice over, with the strict inequality the sentence
+            // prints: "…if you do NOT have cards in your grip equal to or
+            // greater than your maximum hand size" (Safety First).
+            R::QuantityLessThan { left, right } => {
+                cite!("rule_calculated_quantity");
+                self.eval_quantity(left, source) < self.eval_quantity(right, source)
+            }
+            
             // 6.1.1: a run is in progress — on one of the named servers,
             // where the sentence names any (an empty list is a sentence
             // naming none, which is every run). Nothing about the run's
@@ -12282,7 +12578,7 @@ impl Vm {
                     self.move_card(source.obj, Zone::RemovedFromGame);
                 }
             }
-            Instruction::SetAsideTopOfDeck { deck_of, count } => {
+            Instruction::SetAsideTopOfDeck { deck_of, count, with_source } => {
                 // 8.3.3 / 4.8.2: "that player sets aside the appropriate
                 // number of cards facedown". 4.8.7 keeps them as one distinct
                 // group; 8.3.3a is why only the arranging player may look.
@@ -12292,6 +12588,14 @@ impl Vm {
                 let n = self.eval_quantity(count, Some(source.obj)).max(0) as usize;
                 let group = self.st.next_set_aside_group;
                 self.st.next_set_aside_group += 1;
+                // 4.8.7 + 4.8.3: a group set aside WITH the source card is
+                // stamped with it, so a later ability of the same card can
+                // refer to the group after this frame is gone (Ayla "Bios"
+                // Rahim's "1 card set aside with this identity"). The group's
+                // `by` stays the controller, so the "(You may look at those
+                // cards at any time.)" entitlement is the same visibility
+                // rule every facedown group already answers.
+                let with = with_source.then_some(source.obj);
                 let take: Vec<ObjectId> =
                     self.st.deck[deck_of].iter().copied().take(n).collect();
                 for c in &take {
@@ -12306,6 +12610,7 @@ impl Vm {
                         id: group,
                         by: controller,
                         drawn: false,
+                        with,
                     });
                 }
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {
@@ -15651,7 +15956,7 @@ impl Vm {
         cite!("rule_set_aside_default_faceup");
         o.faceup = true;
         o.set_aside_group =
-            Some(crate::view::SetAsideGroup { id: group, by: controller, drawn: false });
+            Some(crate::view::SetAsideGroup { id: group, by: controller, drawn: false, with: None });
     }
 
     /// Rez: pay cost (checkpoint per 8.1.2e), turn faceup, active stamp.
@@ -16054,7 +16359,27 @@ impl Vm {
                 }
                 self.setup = match s {
                     Side::Corp => SetupPhase::RunnerMulligan,
-                    Side::Runner => SetupPhase::Done,
+                    // CR 1.6.7a: after both mulligan decisions, the CORP'S
+                    // identity ("If the Corp's identity has an ability…")
+                    // may have a "before taking your first turn" ability to
+                    // resolve; with none, the game begins.
+                    Side::Runner => {
+                        self.setup_queue = self.setup_identity_abilities(
+                            &[Side::Corp],
+                            |c| {
+                                matches!(
+                                    c,
+                                    crate::ability::TriggerCond::BeforeTakingFirstTurn
+                                )
+                            },
+                        );
+                        if self.setup_queue.is_empty() {
+                            SetupPhase::Done
+                        } else {
+                            cite!("rule_before_first_turn");
+                            SetupPhase::BeforeFirstTurn
+                        }
+                    }
                 };
             }
             // CR 1.16: every choice a payment needs routes here; the payment
@@ -17000,7 +17325,7 @@ impl Vm {
                     ResolutionKind::Paid,
                     AbilityRef { obj: ObjectId(0), index: usize::MAX },
                     side,
-                    vec![Instruction::Draw(side, 1)],
+                    vec![Instruction::Draw(side, crate::instr::Quantity::c(1))],
                     None,
                     None,
                 );
@@ -17089,6 +17414,7 @@ impl Vm {
                         reduce_total: crate::instr::Quantity::Const(0),
                         reduce_install: crate::instr::Quantity::Const(0),
                         facedown: false,
+                        distinct_servers: false,
                     }],
                     None,
                     None,
@@ -17456,7 +17782,7 @@ fn scale_instruction(i: &Instruction, x: i64) -> Instruction {
         Instruction::GainClicks(s, q) => Instruction::GainClicks(*s, times(q)),
         Instruction::LoseClicks(s, q) => Instruction::LoseClicks(*s, times(q)),
         Instruction::LoseCredits(s, q) => Instruction::LoseCredits(*s, times(q)),
-        Instruction::Draw(s, n) => Instruction::Draw(*s, (*n as i64 * x).max(0) as u32),
+        Instruction::Draw(s, q) => Instruction::Draw(*s, times(q)),
         Instruction::GainTags { amount, avoidable } => {
             Instruction::GainTags { amount: (*amount as i64 * x).max(0) as u32, avoidable: *avoidable }
         }

@@ -25,6 +25,7 @@ pub mod corp_jinteki;
 pub mod corp_nbn;
 pub mod corp_neutral;
 pub mod corp_weyland;
+pub mod runner_adam;
 pub mod runner_anarch;
 pub mod runner_apex;
 pub mod runner_criminal;
@@ -38,6 +39,7 @@ pub fn cards() -> Vec<Card> {
     all.extend(runner_shaper::identities());
     all.extend(runner_anarch::identities());
     all.extend(runner_neutral::identities());
+    all.extend(runner_adam::identities());
     all.extend(runner_apex::identities());
     all.extend(runner_sunny::identities());
     all.extend(corp_haas_bioroid::identities());
@@ -45,5 +47,9 @@ pub fn cards() -> Vec<Card> {
     all.extend(corp_nbn::identities());
     all.extend(corp_weyland::identities());
     all.extend(corp_neutral::identities());
+    // CR 1.5.3a: the directives Adam brings along with his deck — not
+    // identities, but they ride with his module because nothing else brings
+    // them, and `find` has to reach them like any other card.
+    all.extend(runner_adam::directives());
     all
 }

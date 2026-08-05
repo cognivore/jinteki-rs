@@ -571,6 +571,56 @@ pub fn chronos_protocol_haas_bioroid() -> Card {
         .build()
 }
 
+/// NEXT Design: Guarding the Net — Identity: Division.
+/// "Before taking your first turn, you may install up to 3 pieces of ice,
+///  with no more than a single piece of ice per server. Draw until you have
+///  5 cards in HQ."
+///
+/// COMPLETE. "Before taking your first turn" is CR 1.6.7a's own phrase: the
+/// Corp resolves this ability immediately before their first turn — after
+/// both 1.6.6a mulligan decisions, "and thus before the game starts" — so a
+/// "when your turn begins" condition is met strictly after everything here.
+/// The §1.6 setup procedure resolves it directly; no window ever offers it.
+///
+/// "You may install up to 3" is 8.5.5's one-at-a-time choice, declinable at
+/// every pick, and "no more than a single piece of ice per server" is a
+/// stipulation about the multi-install as a whole: a server this ability has
+/// already installed ice to is not offered at the next 8.5.16b declaration.
+/// The sentence says nothing about costs, so costs are paid per 8.5.11 — and
+/// under the per-server stipulation each install is a server's FIRST ice of
+/// the effect. The ice comes from HQ, where 8.5's installs come from when no
+/// zone is printed.
+///
+/// "Draw until you have 5 cards in HQ" is a draw whose count is calculated
+/// when it resolves (9.12.2): five minus the hand as it stands after the
+/// installs, floored at zero. A deck shorter than that gives what it has —
+/// 1.7.2c's flatline-by-decking is about the draw the Corp is REQUIRED to
+/// make (5.3's mandatory draw), and this optional-identity's draw is not it.
+/// One ability, not two: the draw is mandatory even when every install was
+/// declined, which is why the "may" sits inside the instructions.
+pub fn next_design() -> Card {
+    card("NEXT Design: Guarding the Net")
+        .corp()
+        .identity()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Division"])
+        .text("Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.")
+        .when(
+            before_taking_first_turn(),
+            [
+                install_up_to_max_one_per_server(
+                    3,
+                    Corp,
+                    InstallFilter::Ice,
+                    InstallDest::DeclaredByInstaller,
+                ),
+                draw_until_hand_has(Corp, 5),
+            ],
+        )
+        .named("guarding the net")
+        .build()
+}
+
 /// Every Haas-Bioroid identity this module carries, in the order the queue
 /// reached them.
 pub fn identities() -> Vec<Card> {
@@ -586,6 +636,7 @@ pub fn identities() -> Vec<Card> {
         haas_bioroid_precision_design(),
         haas_bioroid_stronger_together(),
         leo_construction(),
+        next_design(),
         poetri_luxury_brands(),
         seidr_laboratories(),
         sportsmetal(),

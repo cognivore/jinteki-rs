@@ -36,14 +36,7 @@ Still wanted by identities other than the ones named, in every case: these are
 kernel words, not card patches.
 
 
-- **Nothing happens BEFORE the first turn.** `PrintedCard::starting_hand_size`,
-  `starting_credits` and `starting_bad_publicity` are 1.6's setup FACTS,
-  settled while the game is built and never resolved by anything; "before
-  taking your first turn, you may install up to 3 pieces of ice" is an
-  ABILITY, and 1.7 is a window the kernel does not open, so there is nowhere
-  to put one. *(NEXT Design: Guarding the Net; Cyber Bureau: Keeping the
-  Peace; Jinteki Biotech: Life Imagined; Ayla "Bios" Rahim: Simulant
-  Specialist.)*
+
 - **No instruction TAKES an action.** `TriggerCond::DifferentActionsThisTurn`
   already counts 5.2.5's distinct actions, so MirrorMorph's condition is
   sayable — but "take another different action, paying [click] less" is an
@@ -63,15 +56,6 @@ kernel words, not card patches.
   ability just chose. *(AgInfusion: New Miracles for a New World.)*
 
 
-- **Nothing installs a card at the game's SETUP.**
-  `PrintedCard::starting_hand_size`, `starting_credits` and
-  `starting_bad_publicity` are 1.6's setup facts, and "you start the game with
-  3 different **directive** cards installed (these cards are not considered
-  part of your deck)" is a fourth of the same kind — except that its cards
-  come from outside the deck, so it also wants somewhere for a player to bring
-  them from. `TargetFilter::InIdentityPileOf` is 1.5.4a's pile and is the
-  nearest thing; nothing says a card is brought alongside the deck for any
-  other reason. *(Adam: Compulsive Hacker.)*
 
 - **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
   trash-a-resource action pays its click and its 2[credit] and only THEN
@@ -122,7 +106,7 @@ the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **142 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **145 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -168,7 +152,7 @@ Module: `decks/identities/runner_shaper.rs`
 
 - [x] **Akiko Nisei: Head Case** — Whenever you breach R&D, you and the Corp secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Corp spent the same number of credits, access 1 additional card.
 - [x] **Arissana Rocha Nahu: Street Artist** — Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.
-- [ ] **Ayla "Bios" Rahim: Simulant Specialist** — Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack. [click]: Add 1 card set aside with this identity to your grip.
+- [x] **Ayla "Bios" Rahim: Simulant Specialist** — Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack. [click]: Add 1 card set aside with this identity to your grip.
 - [x] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
 - [x] **Chaos Theory: Wünderkind** — +1[mu]
 - [x] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
@@ -224,7 +208,7 @@ Module: `decks/identities/runner_neutral.rs`
 
 Module: `decks/identities/runner_adam.rs`
 
-- [ ] **Adam: Compulsive Hacker** — You start the game with 3 different directive cards installed (these cards are not considered part of your deck).
+- [x] **Adam: Compulsive Hacker** — You start the game with 3 different directive cards installed (these cards are not considered part of your deck).
 
 ## Runner — Apex (1/1)
 
@@ -253,7 +237,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Haas-Bioroid: Stronger Together** — All bioroid ice has +1 strength.
 - [x] **LEO Construction: Labor Solutions** — Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.
 - [ ] **MirrorMorph: Endless Iteration** — If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.
-- [ ] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.
+- [x] **NEXT Design: Guarding the Net** — Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.
 - [x] **Poétrï Luxury Brands: All the Rage** — Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them. Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.
 - [x] **Seidr Laboratories: Destiny Defined** — The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.
 - [x] **Sportsmetal: Go Big or Go Home** — Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.

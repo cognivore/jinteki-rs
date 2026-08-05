@@ -133,6 +133,13 @@ pub struct SetAsideGroup {
     /// condition refers to cards being drawn can see it in the set-aside
     /// zone, which is an explicit exception to 4.8.3.
     pub drawn: bool,
+    /// CR 4.8.7 + 4.8.3: the CARD these cards were set aside "with" (Ayla
+    /// "Bios" Rahim's "1 card set aside with this identity"). `None` is the
+    /// ordinary group, whose record lives and dies with the ability frame
+    /// that made it; `Some` outlives every frame, so a later ability of the
+    /// same card can refer to the group
+    /// ([`crate::instr::TargetFilter::SetAsideWithSource`]).
+    pub with: Option<crate::object::ObjectId>,
 }
 
 /// One player's view of the game state: everything they are entitled to know.

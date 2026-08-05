@@ -77,6 +77,10 @@ pub const SOURCES: &[(&str, &str)] = &[
         include_str!("identities/runner_sunny.rs"),
     ),
     (
+        "identities/runner_adam.rs",
+        include_str!("identities/runner_adam.rs"),
+    ),
+    (
         "identities/corp_haas_bioroid.rs",
         include_str!("identities/corp_haas_bioroid.rs"),
     ),

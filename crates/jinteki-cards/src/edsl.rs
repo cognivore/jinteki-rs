@@ -413,6 +413,29 @@ impl CardBuilder {
     /// Méliès U ships as three copies with a different back each, so its
     /// definition calls this three times and "secretly set your identity to
     /// any copy" chooses among them.
+    /// "You start the game with N different <criteria> cards installed
+    /// (these cards are not considered part of your deck)." (Adam; CR 1.5.3 +
+    /// 1.6.2.) The fourth setup FACT of the `starting_*` family: the cards
+    /// come from the extra pile the player brought along with their deck
+    /// (`GameSetup::extra_cards`, 1.5.3a), exactly N differently-named
+    /// matching ones begin the game installed (1.5.3b), and from the game's
+    /// first moment they are ordinary installed cards (1.5.3d).
+    pub fn starts_the_game_with_installed(
+        mut self,
+        count: u32,
+        criteria: &[TargetFilter],
+    ) -> Self {
+        self.printed.starting_extra_installs =
+            Some(jinteki_cr::object::StartingExtraInstalls {
+                count,
+                criteria: criteria.to_vec(),
+                distinct_names: true,
+            });
+        self
+    }
+    /// The identity's back face (rule_identity_double_sided; Nebula class).
+    /// Build the back exactly like a card — its own printed text and
+    /// abilities — and "flip this identity" swaps which face applies.
     pub fn flip_face(mut self, back: Card) -> Self {
         self.printed.flip_faces.push(back.printed);
         self
@@ -911,7 +934,19 @@ pub fn lose(side: Side, n: u32) -> Instruction {
 
 /// "Draw N cards."
 pub fn draw(side: Side, n: u32) -> Instruction {
-    Instruction::Draw(side, n)
+    Instruction::Draw(side, Quantity::c(n as i64))
+}
+/// "Draw until you have N cards in HQ." (NEXT Design; 8.4 + 9.12.2.) A
+/// draw-up-to is a draw whose count is calculated when it resolves — the
+/// printed target minus the hand as it then stands, floored at zero — so a
+/// hand already at N draws nothing, and a deck shorter than the difference
+/// gives what it has (`Vm::draw` takes what remains; 1.7.2c is about the
+/// MANDATORY draw, which this is not).
+pub fn draw_until_hand_has(side: Side, n: i64) -> Instruction {
+    Instruction::Draw(
+        side,
+        Quantity::Minus(Box::new(Quantity::c(n)), Box::new(Quantity::CardsInHandOf(side))),
+    )
 }
 /// "Add <cards> to your grip/HQ."
 pub fn add_to_hand(cards: TargetSpec) -> Instruction {
@@ -1221,6 +1256,62 @@ pub fn install_cards_from_hand(
         and_rez: false,
         and_rez_if_able: false,
         ignore_costs: false,
+        distinct_servers: false,
+    }
+}
+/// "You may install up to N pieces of ice, with no more than a single piece
+/// of ice per server." (NEXT Design; 8.5.5 + 8.5.2a.) The "up to"/"you may"
+/// is 8.5.5's one-at-a-time choice, declinable at every pick; the per-server
+/// stipulation excludes a server this ability already installed to from the
+/// 8.5.16b destination declaration. Costs are paid as ever — the sentence
+/// says nothing about them, so 8.5.11's ice install cost stands (and under
+/// this stipulation it is always 0[credit], each server taking its first
+/// ice of the effect).
+pub fn install_up_to_max_one_per_server(
+    count: u32,
+    from_hand_of: Side,
+    filter: InstallFilter,
+    dest: InstallDest,
+) -> Instruction {
+    Instruction::InstallCards {
+        count,
+        from_hand_of,
+        filter,
+        dest,
+        and_rez: false,
+        and_rez_if_able: false,
+        ignore_costs: false,
+        distinct_servers: true,
+    }
+}
+/// "Set aside the top N cards of your stack facedown." said by a card whose
+/// LATER ability refers to "cards set aside with this identity" (Ayla "Bios"
+/// Rahim; 4.8.7 + 4.8.3) — the group is stamped with the source card, so it
+/// outlives this resolution and [`set_aside_with_this_card`] can name it.
+/// The "(You may look at those cards at any time.)" entitlement is the
+/// facedown group's ordinary visibility: it belongs to its controller.
+pub fn set_aside_top_of_deck_with_this_card(deck_of: Side, n: i64) -> Instruction {
+    Instruction::SetAsideTopOfDeck {
+        deck_of,
+        count: Quantity::c(n),
+        with_source: true,
+    }
+}
+/// "…1 card set aside with this identity" (Ayla "Bios" Rahim) — a card whose
+/// set-aside group was stamped with the selecting ability's source card.
+pub fn set_aside_with_this_card() -> TargetFilter {
+    TargetFilter::SetAsideWithSource
+}
+/// "…a card with a trash cost" (Neutralize All Threats; 2.6/7.1.5a).
+pub fn has_trash_cost() -> TargetFilter {
+    TargetFilter::HasTrashCost
+}
+/// "You must trash that card by paying its trash cost, if able." (Neutralize
+/// All Threats; 9.12.3b — only the basic trash ability satisfies the
+/// requirement, so nothing else can be forced.)
+pub fn must_trash_accessed_by_paying_trash_cost() -> Instruction {
+    Instruction::MustTrashAccessedCard {
+        means: jinteki_cr::instr::TrashMeans::PayingTheTrashCost,
     }
 }
 /// "Install <a card>." (8.5.)
@@ -1235,6 +1326,7 @@ pub fn install(card: TargetSpec, dest: InstallDest) -> Instruction {
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
         facedown: false,
+        distinct_servers: false,
     }
 }
 /// "Install <a card>, **ignoring all costs**." (Synapse Global; 1.16.5c —
@@ -1252,6 +1344,7 @@ pub fn install_ignoring_all_costs(card: TargetSpec, dest: InstallDest) -> Instru
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
         facedown: false,
+        distinct_servers: false,
     }
 }
 /// "Install and rez the card you found, **ignoring credit costs**." (Ob
@@ -1275,6 +1368,7 @@ pub fn install_and_rez_found_ignoring_credit_costs() -> Instruction {
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
         facedown: false,
+        distinct_servers: false,
     }
 }
 /// "Install <a card>, paying N[credit] less." (1.16.6 — a reduction of the
@@ -1290,6 +1384,7 @@ pub fn install_paying_less(card: TargetSpec, dest: InstallDest, less: i64) -> In
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(less),
         facedown: false,
+        distinct_servers: false,
     }
 }
 /// "Install 1 card from your grip **facedown**." (Apex; CR 4.6.4d / 8.1.4.)
@@ -1307,6 +1402,7 @@ pub fn install_facedown(card: TargetSpec, dest: InstallDest) -> Instruction {
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
         facedown: true,
+        distinct_servers: false,
     }
 }
 /// "You may play N operations from HQ." (8.6.3 — chosen one at a time, and
@@ -2209,6 +2305,25 @@ pub fn accesses_a(of: CardType) -> TriggerCond {
 /// (§12 rule 5), asked of the card's state at the access itself.
 pub fn accesses_a_matching(of: CardType, criteria: &[TargetFilter]) -> TriggerCond {
     TriggerCond::RunnerAccessesCard { of_types: vec![of], criteria: criteria.to_vec() }
+}
+/// "…you access a card <matching the criteria>…" — the same access condition
+/// with the sentence's other stipulations in the shared filter vocabulary
+/// ("a card **with a trash cost**", Neutralize All Threats).
+pub fn accesses_a_card_matching(criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::RunnerAccessesCard { of_types: Vec::new(), criteria: criteria.to_vec() }
+}
+/// "Before drawing your starting hand, …" (Ayla "Bios" Rahim; CR 1.6.1a) —
+/// an identity ability resolved by the §1.6 setup procedure immediately
+/// before the 1.6.6 starting-hand draw (and after the 1.6.5 shuffle). A
+/// 1.6.6a mulligan redraw does not resolve it again.
+pub fn before_drawing_starting_hand() -> TriggerCond {
+    TriggerCond::BeforeDrawingStartingHand
+}
+/// "Before taking your first turn, …" (NEXT Design; CR 1.6.7a) — the Corp's
+/// identity ability resolved immediately before the first turn, after both
+/// mulligan decisions and "thus before the game starts".
+pub fn before_taking_first_turn() -> TriggerCond {
+    TriggerCond::BeforeTakingFirstTurn
 }
 /// "Whenever you install a card…" — 8.5's install, with no stipulation about
 /// what was installed.
@@ -3317,6 +3432,24 @@ pub fn at_least(amount: Quantity, n: i64) -> TriggerRequirement {
 /// against a printed number.
 pub fn same_number(left: Quantity, right: Quantity) -> TriggerRequirement {
     TriggerRequirement::QuantitiesEqual { left, right }
+}
+/// "…if you do **not** have cards in your grip equal to or greater than your
+/// maximum hand size" (Safety First) — NOT (left ≥ right) is left < right,
+/// the strict inequality between two calculated amounts.
+pub fn fewer_than(left: Quantity, right: Quantity) -> TriggerRequirement {
+    TriggerRequirement::QuantityLessThan { left, right }
+}
+/// "…cards in your grip" / "…cards in HQ" as a NUMBER (4.3.4 makes it open
+/// information) — the count "draw until you have 5 cards in HQ" subtracts
+/// and "cards in your grip equal to or greater than…" compares.
+pub fn cards_in_hand_count(side: Side) -> Quantity {
+    Quantity::CardsInHandOf(side)
+}
+/// "…your maximum hand size" as a NUMBER — as modified, read through the
+/// same 9.12.1a pipeline the discard step reads, so a card's own "-2"
+/// (Safety First) is already inside what it compares against.
+pub fn maximum_hand_size_of(side: Side) -> Quantity {
+    Quantity::MaxHandSizeOf(side)
 }
 /// "…for each credit lost" — the credits this ability has ACTUALLY caused
 /// `side` to lose, which 1.10.3b caps at what their pool held. That is what

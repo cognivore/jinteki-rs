@@ -176,6 +176,18 @@ pub enum Quantity {
     /// about a forfeited agenda can be answered at all (8.2.5 has already
     /// removed it from the game by the time the ability resolves).
     AgendaPointsOf(Vec<TargetFilter>),
+    /// CR 4.3: the number of cards in the named player's hand. "Draw until
+    /// you have 5 cards in HQ" (NEXT Design) is `Const(5) − CardsInHandOf`,
+    /// asked at resolution — the hand as it stands then, not as it stood when
+    /// the ability began. A count, not a criterion:
+    /// [`TargetFilter::CardsInHandOf`] describes the cards, this reads how
+    /// many there are, and 4.3.4 makes that number open information.
+    CardsInHandOf(Side),
+    /// CR 5.5.1/5.7.3: the named player's maximum hand size, as modified —
+    /// read through the same 9.12.1a pipeline the discard step reads
+    /// (`Vm::max_hand_size`), so a Safety-First-class "-2" or a Cybernetics
+    /// "-1" is already inside the number a sentence compares against.
+    MaxHandSizeOf(Side),
 }
 
 impl Default for Quantity {
@@ -293,7 +305,13 @@ pub enum Instruction {
     /// ability that acts on the draw has resolved. So this instruction
     /// expands into the 8.4.5 step sequence, exactly as an install expands
     /// into 8.5.16.
-    Draw(Side, u32),
+    ///
+    /// The count is a quantity position (§12 rule 6): "draw 1 card" is a
+    /// constant, and "draw until you have 5 cards in HQ" (NEXT Design) is
+    /// `Const(5) − CardsInHandOf` — a draw-up-to is a draw whose number is
+    /// calculated from the hand as it stands, evaluated when the instruction
+    /// resolves and floored at zero like every 9.12.2e count of nothing.
+    Draw(Side, Quantity),
     /// CR 8.4.5a: "Set aside N cards from the top of the drawing player's
     /// deck. The cards are now considered drawn and can be looked at by their
     /// controller." They are one facedown 4.8.7 group, so 4.8.2a's exception
@@ -818,11 +836,23 @@ pub enum Instruction {
         /// gives "facedown Runner cards" no install cost in the same breath
         /// as agendas and upgrades.
         facedown: bool,
+        /// [`Instruction::InstallCards`]' `distinct_servers`, carried onto
+        /// the one-card install the expansion cut: the 8.5.16b destination
+        /// declaration excludes every server this ability has already
+        /// installed a card into or protecting.
+        distinct_servers: bool,
     },
     /// 8.5.5: an effect installing more than one card — the cards are chosen
     /// and installed ONE AT A TIME, each as a separate instruction
     /// (9.11.4b). `and_rez_if_able` is the Ad Blitz "if able" stipulation
     /// (8.5.13d): unrezzable cards cannot be chosen.
+    ///
+    /// `distinct_servers` is "…with no more than a single piece of ice **per
+    /// server**" (NEXT Design) — a stipulation about the multi-install as a
+    /// whole (§12 rule 2), so it rides here and on each
+    /// [`Instruction::InstallCard`] the expansion cuts: a server this
+    /// ability has already installed a card into (or protecting) is not
+    /// offered as a destination for the next one.
     InstallCards {
         count: u32,
         from_hand_of: Side,
@@ -831,6 +861,7 @@ pub enum Instruction {
         and_rez: bool,
         and_rez_if_able: bool,
         ignore_costs: bool,
+        distinct_servers: bool,
     },
     /// 8.5.16a–c: place into the play area (not installed, not active),
     /// declare the destination, trash like cards.
@@ -904,7 +935,17 @@ pub enum Instruction {
     /// The first half of the 8.3.3 arranging procedure, and the point at which
     /// 8.3.3b's "other effects on cards in a deck" become possible: while the
     /// cards are set aside, `TargetFilter::SetAsideByThisAbility` names them.
-    SetAsideTopOfDeck { deck_of: Side, count: Quantity },
+    ///
+    /// `with_source` is 4.8.7's group stamped with the CARD whose ability set
+    /// the cards aside — "set aside the top 6 cards of your stack facedown …
+    /// Add 1 card **set aside with this identity** to your grip" (Ayla "Bios"
+    /// Rahim). The plain 8.3.3 group dies with the arranging ability's frame;
+    /// a group set aside WITH a card outlives every frame, because a later
+    /// ability of the same card refers to it by the card and not by the
+    /// ability ([`TargetFilter::SetAsideWithSource`]). The group's `by` is
+    /// still its controller, so 8.3.3a's "may look at any time" entitlement
+    /// falls out of the same visibility rule as every facedown group.
+    SetAsideTopOfDeck { deck_of: Side, count: Quantity, with_source: bool },
     /// CR 8.3.3: "…secretly puts them in the order of their choice, and
     /// returns them to the top of that deck." The order is a declaration, not
     /// a target announcement (nothing is chosen to be acted ON), and 8.3.3
@@ -1942,6 +1983,21 @@ pub enum TargetFilter {
     /// set-aside zone at all (Street Peddler class). A zone-naming criterion,
     /// so 1.15.2c's play-area restriction lifts for it.
     SetAsideByThisAbility,
+    /// CR 4.8.7 + 4.8.3: "1 card **set aside with this identity**" (Ayla
+    /// "Bios" Rahim) — a card whose set-aside group was stamped with the
+    /// selecting ability's SOURCE card
+    /// ([`Instruction::SetAsideTopOfDeck`]'s `with_source`). The other way
+    /// an ability "refers to set-aside objects" under 4.8.3: not the frame's
+    /// own set-aside (that record dies with the frame) but the card's, which
+    /// is how one ability of a card reaches what another ability of the same
+    /// card set aside in a different resolution entirely. A zone-naming
+    /// criterion, so 1.15.2c's play-area restriction lifts for it.
+    SetAsideWithSource,
+    /// CR 2.6: a card with a trash cost printed on it — "…you access a card
+    /// **with a trash cost**" (Neutralize All Threats). 7.1.5a's polarity: a
+    /// card either has one or does not, and no modifier gives one to a card
+    /// that prints none, so the question is asked of the printed box.
+    HasTrashCost,
     /// CR 8.4.2a: the cards a player has DRAWN and that are still set aside —
     /// "abilities with a trigger condition that refers to cards being drawn
     /// can see the drawn cards in the set-aside zone. This is an exception to
@@ -2230,6 +2286,7 @@ impl TargetFilter {
                 | TargetFilter::InScoreAreaOf(_)
                 | TargetFilter::InDiscardOf(_)
                 | TargetFilter::SetAsideByThisAbility
+                | TargetFilter::SetAsideWithSource
                 | TargetFilter::DrawnCards
                 | TargetFilter::LookedAtByThisAbility
                 // 1.15.4: the description fixes the cards by identity, the

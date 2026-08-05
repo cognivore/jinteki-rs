@@ -441,6 +441,7 @@ mod tests {
                 CardType::Identity,
             )),
             additional_identities: Default::default(),
+            extra_cards: Default::default(),
             seed,
             shuffle: true,
         }

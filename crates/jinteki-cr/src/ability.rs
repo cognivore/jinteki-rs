@@ -150,6 +150,11 @@ pub enum TriggerCond {
     /// state at the access itself: the checkpoint scan that creates
     /// instances runs on the step that made the card accessed (7.3.1),
     /// before 7.3.4's steal moves it anywhere.
+    /// as it does on [`TriggerCond::CorpRezzesCard`]. `criteria` is anything
+    /// else the sentence says about the accessed card, in the shared filter
+    /// vocabulary (§12 rule 5) — "…you access a card **with a trash cost**"
+    /// (Neutralize All Threats) is [`crate::instr::TargetFilter::
+    /// HasTrashCost`] here; empty is a sentence saying nothing more.
     RunnerAccessesCard {
         of_types: Vec<crate::object::CardType>,
         criteria: Vec<crate::instr::TargetFilter>,
@@ -847,6 +852,26 @@ pub enum TriggerCond {
     /// there is nowhere to say which alternative it came with — so the
     /// alternatives are asserted to carry none.
     AnyOf { alternatives: Vec<TriggerCond>, requires: Vec<TriggerRequirement> },
+    /// CR 1.6.1a + 1.6.6: "**Before drawing your starting hand**, …" (Ayla
+    /// "Bios" Rahim) — an identity ability that alters setup "at the
+    /// appropriate step as indicated by their text", and the step its text
+    /// indicates is 1.6.6's starting-hand draw. NOT met by any change record:
+    /// the §1.6 setup procedure resolves it directly, immediately before the
+    /// hands are drawn — after 1.6.5's shuffle, so "the top 6 cards of your
+    /// stack" is asked of a shuffled stack — and never again. In particular a
+    /// 1.6.6a mulligan does not re-meet it: the mulligan shuffles the
+    /// STARTING HAND back and draws a new one, and cards this ability set
+    /// aside are in neither the hand nor the stack, so the redraw neither
+    /// disturbs them nor sets aside more.
+    BeforeDrawingStartingHand,
+    /// CR 1.6.7a: "**Before taking your first turn**, …" (NEXT Design) — "the
+    /// Corp resolves that ability immediately before taking their first turn,
+    /// and thus before the game starts." NOT met by any change record: the
+    /// §1.6 setup procedure resolves it directly, after both 1.6.6a mulligan
+    /// decisions and before the first turn's timing structure opens — so a
+    /// "when your turn begins" condition is met strictly after everything
+    /// this ability did.
+    BeforeTakingFirstTurn,
 }
 
 impl TriggerCond {
@@ -962,6 +987,13 @@ pub enum TriggerRequirement {
     /// question about the run's success; a breach can happen without a run
     /// (7.2), which is exactly the case the bare stipulation excludes.
     RunInProgress { on: Vec<ServerId> },
+    /// "…if you do **not** have cards in your grip equal to or greater than
+    /// your maximum hand size" (Safety First) — two calculated amounts with
+    /// the strict inequality between them: NOT (grip ≥ max) is grip < max.
+    /// A fourth atom beside [`TriggerRequirement::QuantitiesEqual`] for the
+    /// reason that one is beside the thresholds: the direction is part of
+    /// what the sentence says.
+    QuantityLessThan { left: crate::instr::Quantity, right: crate::instr::Quantity },
     /// "…if the Runner is tagged" (10.5: the Runner is tagged while they have
     /// 1 or more tags) and "…if the Runner has at least 2 tags" (BOOM!) — one
     /// predicate, the threshold as content (§12 rule 2). `RunnerTagsAtLeast(1)`
@@ -2819,6 +2851,7 @@ fn trigger_matches_dyn(
                 // about the card, asked of its state at the access itself
                 // (the scan runs before 7.3.4's steal moves it).
                 && matches_criteria(*obj, criteria)
+                && (criteria.is_empty() || matches_criteria(*obj, criteria))
         }
         (TriggerCond::PlayerDrawsCards(side), GameChange::CardDrawn { side: s, .. }) => {
             cite!("rule_draw_procedure");

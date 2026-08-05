@@ -381,7 +381,7 @@ pub fn rashida_jaheem() -> PrintedCard {
             cost: Cost::trash_self(),
             effect: Box::new(Instruction::Combined(vec![
                 Instruction::GainCredits(Side::Corp, Quantity::c(3)),
-                Instruction::Draw(Side::Corp, 3),
+                Instruction::Draw(Side::Corp, crate::instr::Quantity::c(3)),
             ])),
             payer: Some(Side::Corp),
         }],
@@ -633,7 +633,7 @@ pub fn easy_mark() -> PrintedCard {
 pub fn diesel() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Diesel", Side::Runner, CardType::Event);
     c.cost = Some(0);
-    c.abilities = vec![AbilityDef::play(vec![Instruction::Draw(Side::Runner, 3)])
+    c.abilities = vec![AbilityDef::play(vec![Instruction::Draw(Side::Runner, crate::instr::Quantity::c(3))])
         .labeled("diesel: draw 3 cards")];
     c
 }

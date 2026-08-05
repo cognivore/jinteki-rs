@@ -48,6 +48,7 @@ fn full_game_slice() {
         runner_identity: None,
         seed: 7,
         additional_identities: Default::default(),
+        extra_cards: Default::default(),
         shuffle: true,
     };
     let mut vm = Vm::new_game(setup);
