@@ -5445,6 +5445,18 @@ fn argus_security_makes_the_runner_choose_a_tag_or_two_meat() {
             "and the 2 meat damage on the other (take_tag={take_tag}): {}",
             t.tail(30)
         );
+        if !take_tag {
+            assert!(
+                vm.changes.log.iter().any(|c| matches!(
+                    c,
+                    GameChange::DamageSuffered { responsible: Side::Runner, .. }
+                )),
+                "10.4.1: the sentence directs the Runner to SUFFER the damage, so the \
+                 RUNNER and the source are responsible — a 'damage done by the Corp' \
+                 reader must not see this occurrence: {}",
+                t.tail(30)
+            );
+        }
     }
 }
 
@@ -11755,4 +11767,181 @@ fn a_teia_spends_the_turns_offer_on_an_install_whose_card_has_since_moved() {
          it went: {}",
         t.tail(60)
     );
+}
+
+/// AU Co.: "Whenever you do damage or trash 1 or more cards from HQ, place 1
+/// power counter on this identity."
+///
+/// Four occurrences, two counters. A 2-point net damage is one aggregated
+/// occurrence (10.4.3), so one counter — and its own trashes leave the
+/// RUNNER's grip, so the trash half never sees them. A Corp trash of TWO
+/// cards out of HQ is 9.12.2a's plural: one event, one counter. The Runner
+/// choosing to SUFFER damage is 10.4.1's other branch — the Runner is
+/// responsible, so the Corp never "did" it — and a Runner card trashing an
+/// HQ card is not "you trash" either: no counter for those.
+#[test]
+fn au_co_counts_its_own_damage_and_hq_trash_events_once_each() {
+    let mut vm = Vm::empty(6225);
+    let ident =
+        tk::install_identity(&mut vm, card("AU Co.: The Gold Standard in Clones"), Side::Corp);
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt", 2), ServerId::Remote(1), true);
+    let hq = tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Purge", vec![hq[0], hq[1]]),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::install_rig(
+        &mut vm,
+        tk::suffer_damage_button("Ouch", jinteki_cr::effects::DamageKind::Net, 1),
+    );
+    tk::install_rig(&mut vm, tk::trash_set_button("Swipe", vec![hq[2]]));
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("do net damage"))
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("suffer damage"))
+            .when(Match::paid().once(), Reply::take("trash the set"))
+            .stop_at_action(),
+    );
+    assert!(
+        [hq[0], hq[1], hq[2]]
+            .iter()
+            .all(|c| vm.st.objects[c].zone == Zone::Discard(Side::Corp)),
+        "all three HQ cards were trashed — two by the Corp's event, one by the Runner's: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "both damages happened — 2 net from the Corp, 1 the Runner suffered: {}",
+        t.tail(60)
+    );
+    assert_eq!(
+        vm.st.objects[&ident].counters.get(&CounterKind::Power).copied().unwrap_or(0),
+        2,
+        "one counter for the damage the Corp DID (however many points), one for the \
+         HQ trash EVENT (however many cards) — and none for the suffered damage or \
+         the Runner's trash: {}",
+        t.tail(60)
+    );
+}
+
+/// AU Co.'s second line: "When your turn begins, you may remove 2 hosted
+/// power counters to look at the top 3 cards of R&D. Trash 1 of those cards
+/// and add the rest to HQ."
+///
+/// With 2 hosted counters the offer is made: paying looks at the top 3 of
+/// R&D, the Corp's one announced choice is trashed, and "the rest" — the
+/// looked-at cards the choice did not take — go to HQ with nobody asked
+/// (1.15.2e leaves no choice over a count equal to the description). With
+/// only 1 counter the 1.9.2 cost is unpayable and nothing is offered at all;
+/// declining spends and moves nothing.
+#[test]
+fn au_co_spends_two_counters_at_turn_start_to_filter_the_top_of_rnd() {
+    for (counters, accept) in [(2u32, true), (2, false), (1, true)] {
+        let mut vm = Vm::empty(6226);
+        let ident =
+            tk::install_identity(&mut vm, card("AU Co.: The Gold Standard in Clones"), Side::Corp);
+        vm.st.objects.get_mut(&ident).unwrap().counters.insert(CounterKind::Power, counters);
+        let deck: Vec<ObjectId> = (0..5)
+            .map(|_| vm.new_object(tk::vanilla_asset("Deck Asset", 0, 1), Zone::Deck(Side::Corp)))
+            .collect();
+        vm.st.deck.get_mut(&Side::Corp).unwrap().extend(deck.iter().copied());
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Corp);
+
+        // The turn-begins window opens before the mandatory draw, so the top
+        // 3 of R&D are deck[0..3]; the trash takes deck[1] and "the rest" is
+        // the other two.
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::nested_cost(), Reply::PayCost(accept))
+                .when(Match::targets().once(), Reply::Targets(vec![deck[1]]))
+                .when(Match::targets().once(), Reply::Targets(vec![deck[0], deck[2]]))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        let spent = counters == 2 && accept;
+        assert_eq!(
+            vm.st.objects[&ident].counters.get(&CounterKind::Power).copied().unwrap_or(0),
+            if spent { 0 } else { counters },
+            "counters={counters} accept={accept}: 1.9.2's cost comes off the identity, \
+             and an unpayable one is never offered: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.objects[&deck[1]].zone,
+            if spent { Zone::Discard(Side::Corp) } else { Zone::Deck(Side::Corp) },
+            "counters={counters} accept={accept}: the announced choice is the card \
+             trashed: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.deck[&Side::Corp].len(),
+            if spent { 1 } else { 4 },
+            "counters={counters} accept={accept}: the mandatory draw takes one card, \
+             and the ability takes the next three exactly when it was paid for: {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            if spent { 3 } else { 1 },
+            "counters={counters} accept={accept}: the drawn card, plus 'the rest' — \
+             the two looked-at cards the trash did not take: {}",
+            t.tail(40)
+        );
+        let anns: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+        if spent {
+            assert_eq!(
+                anns.len(),
+                2,
+                "two announcements — the trash's choice of 1, then 'the rest': {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                anns[0].candidates().len(),
+                3,
+                "the trash chooses among exactly the three looked-at cards: {}",
+                t.tail(40)
+            );
+            assert_eq!(
+                anns[1].candidates(),
+                [deck[0], deck[2]],
+                "'the rest' describes the looked-at cards the trash did not take: {}",
+                t.tail(40)
+            );
+            assert!(
+                matches!(
+                    anns[1].spec,
+                    jinteki_cr::decision::DecisionSpec::ChooseTargets {
+                        count: 2,
+                        up_to: false,
+                        min: 2,
+                        ..
+                    }
+                ),
+                "…and its count is the description's own: 1.15.2e leaves nothing to \
+                 reach for, so adding fewer than all of them is not an answer: {}",
+                t.tail(40)
+            );
+        } else {
+            assert!(
+                anns.is_empty(),
+                "counters={counters} accept={accept}: nothing was announced — the \
+                 sentence's descriptions describe nothing unpaid-for: {}",
+                t.tail(40)
+            );
+        }
+    }
 }

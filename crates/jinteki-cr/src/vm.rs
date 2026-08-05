@@ -6343,11 +6343,15 @@ impl Vm {
             // 1.13.1/8.7.4: "host <cards> on this card" / "add <a card> to
             // your grip" — the cards a search or a hand supplies, whose
             // number is not forced (1.15.2e's completion applies to the
-            // ceiling the player reached for).
+            // ceiling the player reached for). NOT a quantity the description
+            // itself counts out ("add **the rest** to HQ", AU Co.): there the
+            // count equals what the description reaches by construction, so
+            // 1.15.2e leaves no number to reach for and the announcement is
+            // the whole set.
             (Instruction::HostCards { .. }, 0)
             | (Instruction::AddToScoreArea { .. }, 0)
             | (Instruction::AddCardsToHand { .. }, 0)
-                if !*up_to =>
+                if !*up_to && !matches!(count, crate::instr::Quantity::Count(_)) =>
             {
                 let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
@@ -14354,7 +14358,7 @@ impl Vm {
             self.st.runner.max_hand_size_base -= amount as i32;
         }
         // One aggregated occurrence (9.12.2c: trash by damage aggregates).
-        self.changes.record(GameChange::DamageSuffered { kind, amount, cards: trashed });
+        self.changes.record(GameChange::DamageSuffered { kind, amount, cards: trashed, responsible });
     }
 
     /// Move a card between zones, maintaining zone lists.

@@ -16,10 +16,12 @@ use crate::edsl::*;
 /// choice with 9.1.1a's controller.
 ///
 /// "Must" is 9.12.3: the Runner has no choice about whether, only about
-/// which, so neither option may be declined. The meat damage stays the
-/// CORP's under 10.4.2 even though the Runner chose it — the sentence is on
-/// the Corp's identity, and responsibility is what decides who wins a
-/// flatline.
+/// which, so neither option may be declined. The damage is the RUNNER's:
+/// 10.4.1 splits responsibility on the printed verb, and this sentence
+/// directs the Runner to "suffer" the damage, which is the branch that makes
+/// the Runner and the source responsible — so a "+N to meat damage done by
+/// the Corp" bonus does not reach it, and the trashes it performs are the
+/// Runner's own.
 pub fn argus_security() -> Card {
     card("Argus Security: Protection Guaranteed")
         .corp()
@@ -33,7 +35,7 @@ pub fn argus_security() -> Card {
                 Runner,
                 choose_one([
                     ("take 1 tag", vec![give_tags(1)]),
-                    ("suffer 2 meat damage", vec![meat_damage(Corp, 2)]),
+                    ("suffer 2 meat damage", vec![meat_damage(Runner, 2)]),
                 ]),
             )],
         )

@@ -249,7 +249,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         GameChange::VirusCountersPurged => "Corp: purges virus counters.".to_string(),
 
         // ── the Runner's condition ─────────────────────────────────────
-        GameChange::DamageSuffered { kind, amount, cards } => {
+        GameChange::DamageSuffered { kind, amount, cards, .. } => {
             let trashed: Vec<String> = cards.iter().map(|c| card(*c)).collect();
             if trashed.is_empty() {
                 format!("Runner: suffers {amount} {} damage.", damage_word(*kind))

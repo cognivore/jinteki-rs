@@ -76,7 +76,14 @@ pub enum GameChange {
     ClicksLost { side: Side, amount: u32 },
     CardDrawn { side: Side, obj: ObjectId },
     /// One record per point batch: `cards` are the simultaneous random trashes.
-    DamageSuffered { kind: DamageKind, amount: u32, cards: Vec<ObjectId> },
+    ///
+    /// `responsible` is 10.4.1's responsible player, a fact about the
+    /// OCCURRENCE: a Corp card that "does" damage makes the Corp responsible,
+    /// and one that directs or allows the Runner to "suffer" damage makes it
+    /// the Runner. It is recorded here rather than asked of anything later
+    /// because nothing later could answer it — the source's printed wording
+    /// decided it at the moment the damage resolved.
+    DamageSuffered { kind: DamageKind, amount: u32, cards: Vec<ObjectId>, responsible: Side },
     TagsTaken { amount: u32 },
     TagRemoved,
     /// CR 9.9.5-adjacent: the Runner AVOIDED receiving tags (Thunder Art

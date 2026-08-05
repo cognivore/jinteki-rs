@@ -2007,11 +2007,19 @@ pub fn avoid_tags(n: u32) -> Instruction {
 /// sentence's stipulation, and [`suffers_any_damage`] is the sentence that
 /// makes none.
 pub fn suffers_damage(kind: DamageKind) -> TriggerCond {
-    TriggerCond::RunnerSuffersDamage { kind: Some(kind), trashed_a_card: false }
+    TriggerCond::RunnerSuffersDamage { kind: Some(kind), trashed_a_card: false, responsible: None }
 }
 /// "Whenever the Runner suffers damage…" — any kind.
 pub fn suffers_any_damage() -> TriggerCond {
-    TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false }
+    TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false, responsible: None }
+}
+/// "Whenever **you do** damage…" (AU Co.) — the same occurrence
+/// [`suffers_any_damage`] names, with 10.4.1's stipulation about who was
+/// RESPONSIBLE: a card that "does" damage makes its own side responsible,
+/// while one that directs the Runner to "suffer" damage made the Runner
+/// responsible — so a sentence on the second shape is not one of these.
+pub fn does_damage(by: Side) -> TriggerCond {
+    TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false, responsible: Some(by) }
 }
 /// "Whenever the Runner **trashes a card for** <kind> damage…" (Chronos
 /// Protocol: Haas-Bioroid) — the same occurrence [`suffers_damage`] names,
@@ -2021,7 +2029,7 @@ pub fn suffers_any_damage() -> TriggerCond {
 /// and this sentence is not met. The cards trashed are what the sentence's
 /// "that card" means (1.15.4).
 pub fn trashes_a_card_for_damage(kind: DamageKind) -> TriggerCond {
-    TriggerCond::RunnerSuffersDamage { kind: Some(kind), trashed_a_card: true }
+    TriggerCond::RunnerSuffersDamage { kind: Some(kind), trashed_a_card: true, responsible: None }
 }
 /// "…sabotage N." (10.16: the Corp trashes N cards of their choice from HQ
 /// and/or the top of R&D.)
@@ -2102,7 +2110,25 @@ pub fn trashes_a_card_from(by: Side, zone: Zone, reqs: &[TriggerRequirement]) ->
         installed_only: false,
         while_accessed: false,
         from_zone: Some(zone),
+        at_least_one: false,
         requires: reqs.to_vec(),
+    }
+}
+/// "…you trash **1 or more cards** from HQ…" (AU Co.) — the same trash
+/// [`trashes_a_card_from`] names, with 9.12.2a's plural noun: the sentence
+/// speaks of the cards of one event together, so it is met ONCE however many
+/// cards that event trashed, where the singular sentence is met once per
+/// card (9.6.4b).
+pub fn trashes_at_least_one_card_from(by: Side, zone: Zone) -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: None,
+        by: Some(by),
+        of_types: Vec::new(),
+        installed_only: false,
+        while_accessed: false,
+        from_zone: Some(zone),
+        at_least_one: true,
+        requires: Vec::new(),
     }
 }
 /// "Whenever **you finish resolving an operation**…" (Nuvem SA) — CR 8.6.7h's
@@ -2138,6 +2164,7 @@ pub fn trashes_a_from_anywhere(by: Side, of: CardType) -> TriggerCond {
         installed_only: false,
         while_accessed: false,
         from_zone: None,
+        at_least_one: false,
         requires: Vec::new(),
     }
 }
@@ -2153,6 +2180,7 @@ pub fn runner_trashes_an_installed_corp_card() -> TriggerCond {
         installed_only: true,
         while_accessed: false,
         from_zone: None,
+        at_least_one: false,
         requires: Vec::new(),
     }
 }
@@ -2190,6 +2218,7 @@ pub fn trashes_the_card_being_accessed(by: Side) -> TriggerCond {
         installed_only: false,
         while_accessed: true,
         from_zone: None,
+        at_least_one: false,
         requires: Vec::new(),
     }
 }

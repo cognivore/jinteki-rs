@@ -187,7 +187,20 @@ pub enum TriggerCond {
     /// changes no game the kernel can currently play. It is written because
     /// the card writes it, not because a case is waiting on it. 1.15.4's cards
     /// are the trashed ones either way ([`crate::change::cards_named_by`]).
-    RunnerSuffersDamage { kind: Option<DamageKind>, trashed_a_card: bool },
+    ///
+    /// `responsible` is 10.4.1's third stipulation about the same occurrence:
+    /// "whenever **you do** damage" (AU Co.) is the does-branch — the Corp
+    /// and the source are responsible — while a sentence that directs the
+    /// Runner to "suffer" damage put the responsibility on the Runner, so a
+    /// Corp identity's "you do damage" is NOT met by it. `None` is a sentence
+    /// naming nobody, which is every condition that existed before this
+    /// field. Read off the record, not the board: the source's printed
+    /// wording decided it at the moment the damage resolved.
+    RunnerSuffersDamage {
+        kind: Option<DamageKind>,
+        trashed_a_card: bool,
+        responsible: Option<Side>,
+    },
     /// Interrupt trigger: "…would draw any number of cards" (Class Act).
     /// `by` is the sentence's stipulation about WHOSE draw — "the first time
     /// each turn YOU would draw" is the ability's controller, and `None` is a
@@ -649,6 +662,14 @@ pub enum TriggerCond {
     ///   you trash a card from R&D during each of **your** turns"): the
     ///   ordinal counts within whatever turn is being played, so the sentence
     ///   also has to say whose turn it is.
+    /// - `at_least_one` — 9.12.2a's plural noun ("you trash **1 or more
+    ///   cards** from HQ", AU Co.), read by [`trigger_per_event`]: the
+    ///   sentence speaks of the cards of one event together, so it is met
+    ///   ONCE per occurrence group however many cards that event trashed —
+    ///   the same reading [`TriggerCond::RunnerTrashesAtLeastOneCorpCard`]
+    ///   has always had, carried here as content because the singular
+    ///   sentence ("you trash **a card** from R&D", Nuvem SA) is met once per
+    ///   card (9.6.4b) and only the noun's number tells them apart.
     CardTrashed {
         owner: Option<Side>,
         by: Option<Side>,
@@ -656,6 +677,7 @@ pub enum TriggerCond {
         installed_only: bool,
         while_accessed: bool,
         from_zone: Option<Zone>,
+        at_least_one: bool,
         requires: Vec<TriggerRequirement>,
     },
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
@@ -2660,15 +2682,20 @@ fn trigger_matches_dyn(
         // 10.4.1: a sentence naming a kind of damage is met only by that kind;
         // one naming none is met by any.
         (
-            TriggerCond::RunnerSuffersDamage { kind, trashed_a_card },
-            GameChange::DamageSuffered { kind: k, cards, .. },
+            TriggerCond::RunnerSuffersDamage { kind, trashed_a_card, responsible },
+            GameChange::DamageSuffered { kind: k, cards, responsible: resp, .. },
         ) => {
             // 10.4.2a/b: the trash IS the damage procedure, so a sentence
             // that speaks of the trash asks one more thing of the same
             // occurrence — and an empty grip answers it no.
             cite!("rule_meat_net_damage");
             cite!("rule_brain_damage");
-            (kind.is_none() || kind.as_ref() == Some(k)) && (!*trashed_a_card || !cards.is_empty())
+            // 10.4.1: "you do damage" is the does-branch's responsibility,
+            // a fact the record carries about the occurrence.
+            cite!("rule_suffer_or_take_damage");
+            (kind.is_none() || kind.as_ref() == Some(k))
+                && (!*trashed_a_card || !cards.is_empty())
+                && responsible.is_none_or(|r| *resp == r)
         }
         (
             TriggerCond::UsesTrashAbility { side, basic },
@@ -3035,12 +3062,18 @@ pub fn trigger_per_event(cond: &TriggerCond) -> bool {
     // 5.7.4's discard is the same shape: one instruction moves every card a
     // player discards, and "whenever you discard cardS" is one occurrence
     // naming all of them.
-    matches!(
-        cond,
+    match cond {
         TriggerCond::RunnerTrashesAtLeastOneCorpCard { .. }
-            | TriggerCond::PlayerDrawsCards(_)
-            | TriggerCond::PlayerDiscardsCards { .. }
-    )
+        | TriggerCond::PlayerDrawsCards(_)
+        | TriggerCond::PlayerDiscardsCards { .. }
+        | TriggerCond::CardTrashed { at_least_one: true, .. } => true,
+        // A sentence met by either of two occurrences keeps each half's own
+        // number: "you do damage or trash 1 or more cards from HQ" (AU Co.)
+        // groups the trash half's cards while the damage half was one
+        // aggregated occurrence to begin with (9.12.2c).
+        TriggerCond::AnyOf { alternatives, .. } => alternatives.iter().any(trigger_per_event),
+        _ => false,
+    }
 }
 
 /// Map the trash-trigger filter's Corp-ness back to a side.

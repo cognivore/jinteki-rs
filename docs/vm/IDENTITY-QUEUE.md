@@ -142,17 +142,6 @@ kernel words, not card patches.
   game with it this turn" is 9.3.6g's once-per-turn flag said about a static
   ability, which never resolves (9.4.1) and so never spends one.
   *(Skorpios Defense Systems: Persuasive Power.)*
-- **Neither half of "whenever you do damage or trash 1 or more cards from HQ"
-  is a condition yet.** `GameChange::DamageSuffered` records the kind, the
-  amount and the cards it trashed but not who was RESPONSIBLE (10.4.1), so
-  "you do damage" has nothing to read; and the only batched trash condition
-  is `TriggerCond::RunnerTrashesAtLeastOneCorpCard` — 9.12.2a's one-event
-  reading of the RUNNER trashing — so the Corp's own "1 or more", with the
-  zone stipulated, is a condition that does not exist rather than a twin of
-  one. Both look like the field-on-a-record shape. *(AU Co.: The Gold
-  Standard in Clones — whose SECOND line now waits on nothing: "the rest" is
-  the looked-at description beside `TargetFilter::AmongEarlierTargets`
-  negated, the words Steve Cambridge landed.)*
 - **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
   trash-a-resource action pays its click and its 2[credit] and only THEN
   announces the resource, so an additional cost stated about *which* resource
@@ -186,7 +175,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **130 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **131 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -326,12 +315,12 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (17/21)
+## Corp — Jinteki (18/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
 - [x] **A Teia: IP Recovery** — Limit 2 remote servers. The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.
-- [ ] **AU Co.: The Gold Standard in Clones** — Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity. When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.
+- [x] **AU Co.: The Gold Standard in Clones** — Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity. When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.
 - [ ] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
 - [x] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.
 - [x] **Harmony Medtech: Biomedical Pioneer** — Each player needs 1 fewer agenda point to win the game.

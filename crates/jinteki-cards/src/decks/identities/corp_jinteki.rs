@@ -713,6 +713,65 @@ pub fn a_teia() -> Card {
         .build()
 }
 
+/// AU Co.: The Gold Standard in Clones — Identity: Division.
+/// "Whenever you do damage or trash 1 or more cards from HQ, place 1 power
+///  counter on this identity.
+///  When your turn begins, you may remove 2 hosted power counters to look at
+///  the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ."
+///
+/// COMPLETE. The first sentence's "or" is one condition met by either of two
+/// occurrences (the Epiphany shape), and each half keeps its own number:
+/// "you do damage" is 10.4.1's does-branch — the responsibility the record
+/// carries, which is why the Runner choosing to SUFFER damage under an
+/// Argus-class sentence places nothing — and "1 or more cards from HQ" is
+/// 9.12.2a's plural, met once per trash event however many cards it took.
+/// The damage procedure's own trashes leave the grip, not HQ, so one
+/// occurrence never places twice.
+///
+/// The second line is two printed sentences on one condition. 9.11.4f's
+/// nested cost comes off the source (1.9.2), so with fewer than 2 hosted
+/// counters there is nothing to offer; the trash-and-add sentence is
+/// 9.11.3's "and" — both halves announce before either resolves, which is
+/// how "the rest" (the looked-at cards NOT among the sentence's earlier
+/// choice) describes exactly the two cards the trash did not take. Declining
+/// the cost leaves "those cards" describing nothing, and 1.15.3 moves
+/// nothing.
+pub fn au_co() -> Card {
+    card("AU Co.: The Gold Standard in Clones")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity.")
+        .text("When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.")
+        .when(
+            either_of(&[
+                does_damage(Corp),
+                trashes_at_least_one_card_from(Corp, Zone::Hand(Corp)),
+            ]),
+            [place(CounterKind::Power, 1)],
+        )
+        .named("the gold standard in clones")
+        .when(
+            turn_begins(Corp),
+            [
+                may_pay(
+                    hosted_counters(CounterKind::Power, 2),
+                    look_at(top_of_rnd(amount(3)), Corp),
+                ),
+                combined([
+                    trash(choose(1, &[looked_at_by_this_ability()])),
+                    add_to_hand(all_matching(&[
+                        looked_at_by_this_ability(),
+                        non(among_earlier_choices()),
+                    ])),
+                ]),
+            ],
+        )
+        .named("look at the top 3 cards of R&D")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -734,5 +793,6 @@ pub fn identities() -> Vec<Card> {
         chronos_protocol_selective_mind_mapping(),
         saraswati_mnemonics(),
         a_teia(),
+        au_co(),
     ]
 }

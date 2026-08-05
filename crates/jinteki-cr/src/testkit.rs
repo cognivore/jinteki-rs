@@ -450,6 +450,24 @@ pub fn core_damage_button(name: &'static str, n: u32) -> PrintedCard {
     c
 }
 
+/// A runner card with a free paid ability by which the Runner SUFFERS N
+/// damage (Stimhack shape — 10.4.1's suffer-branch, so the RUNNER and the
+/// source are responsible, which is what a Corp identity's "you do damage"
+/// does not reach).
+pub fn suffer_damage_button(name: &'static str, kind: DamageKind, n: u32) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::Damage {
+            kind,
+            amount: Quantity::c(n as i64),
+            responsible: Side::Runner,
+        }],
+    )
+    .labeled("suffer damage")];
+    c
+}
+
 /// A runner card with a free paid ability trashing fixed targets (Singularity
 /// stand-in driver: one instruction, simultaneous set trash — 9.12.2a).
 pub fn trash_set_button(name: &'static str, targets: Vec<ObjectId>) -> PrintedCard {
@@ -853,7 +871,7 @@ pub fn predictive_like(name: &'static str) -> PrintedCard {
 pub fn sol_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false },
+        TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false, responsible: None },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )
@@ -4607,6 +4625,7 @@ pub fn trash_counter_like(name: &'static str, of: Side) -> PrintedCard {
             installed_only: true,
             while_accessed: false,
             from_zone: None,
+            at_least_one: false,
             requires: Vec::new(),
         },
         vec![Instruction::PlaceCounters {
@@ -5317,7 +5336,7 @@ pub fn chronos_protocol_like(name: &'static str) -> PrintedCard {
         }])
         .labeled("chronos: the Corp chooses the first card trashed"),
         AbilityDef::conditional(
-            TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false },
+            TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false, responsible: None },
             vec![Instruction::LookAtCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(1),
@@ -5444,6 +5463,7 @@ pub fn trash_reaction_asset(name: &'static str) -> PrintedCard {
             installed_only: true,
             while_accessed: false,
             from_zone: None,
+            at_least_one: false,
             requires: Vec::new(),
         },
         vec![Instruction::PlaceCounters {
