@@ -17,6 +17,52 @@ let mySide = "runner";
 let S = null;               // last state
 let ACTIONS = [];           // legal actions (local mode)
 let raised = null;          // raised hand card cid
+
+/* ── THE ARMED CARD: the one card a second tap would act on ───────────────
+ *
+ * `null` means NOTHING is focused, and that is the resting state — the board
+ * opens with no card singled out and returns there whenever you tap away.
+ *
+ * It exists because arming is the only cancel the rules leave room for. CR
+ * 9.2.7f: "Each option must be fully resolved before another is chosen."
+ * Once a card is played or an ability is used, the option has been chosen and
+ * it resolves to the end; there is no rewind, and inventing one would also
+ * hand the player a way to look at a card and then un-look at it. So the
+ * whole cancellable region of the game sits BEFORE the command is sent, and
+ * arming is what makes that region big enough to change your mind in: the
+ * first tap only says "this one", the second one commits, and anything else
+ * you do in between throws the intent away.
+ *
+ * One card, globally — not one per fan. Two cards lit in two places would be
+ * two different answers to "what does the next tap do", and the point of the
+ * thing is that the answer is always exactly one card or none. */
+let armed = null;
+function setArmed(cid) {
+  if (armed === cid) return;
+  armed = cid;
+  repaintArmed();
+}
+/* Put the game back to nothing-focused. Also drops the hand's raised card:
+ * a raised card is an intent too, and leaving it up after the intent it
+ * belonged to was abandoned is the same lie in a different widget. */
+function disarm() {
+  const wasLit = Object.keys(fans).some((k) => fans[k].lit);
+  if (armed === null && raised === null && !wasLit) return;
+  armed = null;
+  raised = null;
+  // Nothing lifted, anywhere. The anchors stay where they are — the windows
+  // must not jump when you tap the table — but no card is drawn as the one
+  // you mean, because you have just said you mean none of them.
+  Object.keys(fans).forEach((k) => { fans[k].lit = false; });
+  repaintArmed();
+}
+/* Arming changes only what is LIT, never the game state, so this is a redraw
+ * and never a state push (THE LAW §2). It goes through `render`, not through
+ * the individual painters, so it keeps the per-section fault isolation and
+ * the ordering the hand's band measurement depends on (§8). `armed` is part
+ * of the dirty key of every section that draws a card, or the redraw would
+ * decide nothing had changed. */
+function repaintArmed() { if (S) render(); }
 let prev = { credits: {}, clicks: {}, logn: 0 };
 // Jitter control: deal-in animation fires only for cards never seen before,
 // and each board section re-renders only when its slice of state changed.
@@ -81,7 +127,17 @@ function send(obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
   else toast("Not connected");
 }
-function act(command, args) { send({ type: "action", command, args: args || {} }); }
+function act(command, args) {
+  // The intent has been sent. It belongs to the game now, not to the player —
+  // CR 9.2.7f resolves a chosen option to the end — so nothing stays armed
+  // across a command, and the ring goes out the moment the tap lands rather
+  // than when the new state gets back.
+  armed = null;
+  raised = null;
+  Object.keys(fans).forEach((k) => { fans[k].lit = false; });
+  repaintArmed();
+  send({ type: "action", command, args: args || {} });
+}
 
 function handle(m) {
   switch (m.type) {
@@ -542,10 +598,10 @@ function render() {
   section("hover", reapHoverPreview);
   section("bars", renderBars);
   section("servers", () => {
-    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority])) renderServers();
+    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority, armed])) renderServers();
   });
   section("rig", () => {
-    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt(), S.priority])) renderRig();
+    if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt(), S.priority, armed])) renderRig();
   });
   // The chrome that shares the bottom of the screen goes FIRST: the hand
   // measures the band those rails leave it (§8), and measuring last frame's
@@ -554,7 +610,7 @@ function render() {
   section("run controls", renderRunControls);
   section("play area", renderPlayRail);
   section("hand", () => {
-    if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt()])) renderHand();
+    if (dirty("hand", [me().hand, raised, ACTIONS, myPrompt(), armed])) renderHand();
   });
   section("the prompt", renderPrompt);
   section("access", renderAccessReveal);
@@ -1074,18 +1130,30 @@ const FAN_SLOP = 14;
  * state or redraw the board (THE LAW §2). */
 const fans = {};
 function fanOf(key) {
-  if (!fans[key]) fans[key] = { focus: 0, total: 0, repaint: null };
+  // `lit` is whether the anchor is DRAWN as focused. The anchor itself is
+  // always a real index (the window has to sit somewhere); being lifted is a
+  // separate question, and its answer starts as "no card is".
+  if (!fans[key]) fans[key] = { focus: 0, total: 0, lit: false, repaint: null };
   return fans[key];
 }
-function fanGoto(key, i) {
+/* Move the anchor and do the housekeeping, but draw nothing. Split out
+ * because a tap that arms a card has to repaint the WHOLE board — the card
+ * that was armed a moment ago may be in the rig, and only its own section
+ * will clear it — and letting the fan draw itself first would draw it twice. */
+function fanSetFocus(key, i) {
   const f = fanOf(key);
   const next = Math.max(0, Math.min(i, Math.max(0, f.total - 1)));
-  if (next === f.focus) return;
+  if (next === f.focus) return false;
   f.focus = next;
   fanStopHover();
   // The caller's own housekeeping: the hand drops its raised card, or the
   // focus would be dragged straight back to it by `pin` on the next draw.
   if (f.onMove) f.onMove();
+  return true;
+}
+function fanGoto(key, i) {
+  const f = fanOf(key);
+  if (!fanSetFocus(key, i)) return;
   if (f.repaint) f.repaint();
 }
 function fanMove(key, d) { fanGoto(key, fanOf(key).focus + d); }
@@ -1095,6 +1163,20 @@ function fanMove(key, d) { fanGoto(key, fanOf(key).focus + d); }
  * which must not be read as a tap on it. A WINDOW, not a one-shot flag: the
  * release may land on a card, on a peek, or on nothing at all, and a flag
  * consumed by the first of those would let the others through. */
+/* THE PRESS IN FLIGHT, kept outside the element it started on.
+ *
+ * A fan redraws whenever the pointer moves onto a different card, so the node
+ * a press began on is routinely gone before the finger comes up: the press
+ * was recorded in that node's closure, the replacement node knows nothing
+ * about it, and the release is discarded as "a pointer that arrived here
+ * mid-gesture". The tap vanishes. It cost the FIRST click on any card you
+ * moved the mouse to — the second worked, because by then nothing was
+ * redrawing — which reads as an unreliable board rather than as a bug.
+ *
+ * Keyed by CARD, because that is the thing that survives a redraw. The
+ * element is only where the events happened to land. */
+const PRESS = { cid: null, timer: null, x: 0, y: 0, long: false };
+
 let fanTapUntil = 0;
 function fanSuppressesTap() { return performance.now() < fanTapUntil; }
 function fanDragHappened() { fanTapUntil = performance.now() + 350; }
@@ -1328,10 +1410,21 @@ function renderFan(host, items, opts) {
   // the badges' re-anchoring (see `.badges` in the stylesheet) can never
   // disagree with whether the cards actually overlap.
   const row = el("div", "fanrow" + (fit.step < fw ? " overlapped" : ""));
+  // Cleared first, and re-set below only if a card is actually lit. Without
+  // this the panel keeps reading whatever was focused last, so "nothing is
+  // selected" would still have a card on display insisting otherwise.
+  fanPreviewSet(key, null);
   shown.forEach((it, i) => {
     const idx = start + i;
-    const focused = idx === f.focus;
     const c = cardOf(it);
+    // The anchor and the FOCUS are two different things now. `f.focus` is
+    // where the window sits — it always points somewhere, or the fan would
+    // not know which cards to show. Being focused is a card having been
+    // singled out by the player, and that is `armed`, which can be nothing at
+    // all. Before this they were one variable, so a fan always had a card
+    // lifted whether or not anyone had asked for one, and there was no state
+    // for "I have changed my mind" to return to.
+    const focused = idx === f.focus && f.lit;
     const so = (opts.slotOpts ? opts.slotOpts(it, idx) : null) || {};
     const slot = el("div", "cardpick" + (so.extra ? " " + so.extra : ""));
     // `fanKey`/`fanIndex` are the fan's to give, never the caller's to forget:
@@ -1354,8 +1447,19 @@ function renderFan(host, items, opts) {
     // the raise owns the focus until it is put down. It rides the CARD, which
     // is the element that opts back into pointer events inside a sheet that
     // has none.
+    // Hover LIGHTS a card; only a click ARMS one. They used to be the same
+    // thing, which quietly made every play on a mouse a single click: the
+    // pointer arrived, the card became the focus, and the click that followed
+    // went straight past the two-tap gate into the action. Reading with the
+    // pointer must never be able to commit anything (§5, and the long-press
+    // has the same rule).
     if (hoverCapable && opts.pin == null) {
-      node.addEventListener("mouseenter", () => fanGoto(key, idx));
+      node.addEventListener("mouseenter", () => {
+        if (f.lit && f.focus === idx) return;   // already reading this one
+        f.lit = true;
+        fanSetFocus(key, idx);
+        if (f.repaint) f.repaint();             // `lit` alone is a redraw too
+      });
     }
     // Whatever is focused is what the right-hand preview is reading (§4).
     if (focused) fanPreviewSet(key, c, so.label || null);
@@ -1511,6 +1615,10 @@ function cardEl(c, opts) {
     // for the ones that are actually there — and only for those.
     (showCost ? " hascost" : "") + (showStr ? " hasstr" : "");
   el.dataset.cid = c.cid;
+  // ARMED: the one card a second tap acts on. Distinct from the fan's lift,
+  // which only says "this is the one you are reading" — the ring says "and
+  // the next tap on it commits".
+  if (armed != null && c.cid === armed) el.classList.add("armed");
 
   el.innerHTML = `
     ${showCost ? `<div class="cost">${c.cost}</div>` : ""}
@@ -1537,33 +1645,39 @@ function cardEl(c, opts) {
   else if (mode === "bridge" && !facedown && opts.hand) el.classList.add("legal");
 
   // tap + long-press (mobile read gesture) + hover preview (desktop)
-  let pressTimer = null, longFired = false, pressX = 0, pressY = 0;
-  // A drag that takes this card away (the arrangement row is the only place
-  // one can) has to be able to call the read off: it captures the pointer, so
-  // this element stops hearing about the pointer that is carrying it.
-  let pressed = false;
-  el.__cancelPress = () => { clearTimeout(pressTimer); pressTimer = null; pressed = false; };
+  //
+  // The press is tracked in MODULE state keyed by the card, not in this
+  // closure keyed by the element — see `PRESS` — because the element does not
+  // survive long enough to be a reliable place to keep it.
+  el.__cancelPress = () => {
+    if (PRESS.cid !== c.cid) return;
+    clearTimeout(PRESS.timer); PRESS.timer = null; PRESS.cid = null;
+  };
   el.addEventListener("pointerdown", (e) => {
-    longFired = false; pressed = true;
-    pressX = e.clientX; pressY = e.clientY;
+    clearTimeout(PRESS.timer);
+    PRESS.cid = c.cid; PRESS.long = false;
+    PRESS.x = e.clientX; PRESS.y = e.clientY;
     // `isConnected`: a re-render that replaces this card mid-press strands
     // the timer (the replacement never hears the pointerup), and a stranded
     // timer opening a reader nobody asked for is the double-spawn race.
-    pressTimer = setTimeout(() => { longFired = true; if (el.isConnected) zoomCard(c); }, 420);
+    PRESS.timer = setTimeout(() => {
+      PRESS.long = true;
+      if (el.isConnected) zoomCard(c);
+    }, 420);
   });
   // A press that WANDERS is still a press — a thumb is not a mouse, and at
   // 8px the read gesture was being cancelled by the hand holding the phone.
   // Past `FAN_SLOP` it is a page pan (or, in an arrangement row, a drag), and
   // those are not reads.
   el.addEventListener("pointermove", (e) => {
-    if (!pressTimer) return;
-    if (Math.abs(e.clientX - pressX) > FAN_SLOP || Math.abs(e.clientY - pressY) > FAN_SLOP) {
-      clearTimeout(pressTimer); pressTimer = null;
+    if (!PRESS.timer || PRESS.cid !== c.cid) return;
+    if (Math.abs(e.clientX - PRESS.x) > FAN_SLOP || Math.abs(e.clientY - PRESS.y) > FAN_SLOP) {
+      clearTimeout(PRESS.timer); PRESS.timer = null;
     }
   });
   el.addEventListener("pointerup", (e) => {
-    clearTimeout(pressTimer); pressTimer = null;
-    const wasPressed = pressed; pressed = false;
+    clearTimeout(PRESS.timer); PRESS.timer = null;
+    const wasPressed = PRESS.cid === c.cid; PRESS.cid = null;
     // A TAP is a press and a release in about the same place, on the same
     // card. Anything else is a drag or a page pan — and in a fan a drag does
     // NOTHING (§6), which includes not quietly moving the focus to whichever
@@ -1572,19 +1686,32 @@ function cardEl(c, opts) {
     // either. Same hazard as the long-press that used to commit a choice: a
     // gesture must resolve to exactly one meaning.
     if (!wasPressed) return;
-    if (Math.abs(e.clientX - pressX) > FAN_SLOP || Math.abs(e.clientY - pressY) > FAN_SLOP) return;
+    if (Math.abs(e.clientX - PRESS.x) > FAN_SLOP || Math.abs(e.clientY - PRESS.y) > FAN_SLOP) return;
     if (fanSuppressesTap()) return;
-    if (longFired) return;
-    // TWO TAPS in a fan, MTGA's rule: the first brings the card to focus,
-    // the second acts on it. At a 16px step the resting cards are strips, and
-    // a strip is far below the 48px a tap target has to be — so a single tap
+    if (PRESS.long) return;
+    // TWO TAPS, MTGA's rule: the first brings the card to focus, the second
+    // acts on it. At a 16px step the resting cards in a fan are strips, and a
+    // strip is far below the 48px a tap target has to be — so a single tap
     // there would be a misplay waiting to happen, on a decision (play a card,
     // discard to hand size) that cannot be taken back. Once it is focused it
     // is 78px wide and lifted clear, and THAT is the thing you tap.
+    //
+    // It applies EVERYWHERE, not only in fans. A card on the board is big
+    // enough to hit, but size was never the whole reason: 9.2.7f makes a
+    // chosen option resolve to the end, so the tap that chooses it is the
+    // last moment anything can be called off. An installed card offering one
+    // ability used to spend that moment on the way down — one tap, cost paid,
+    // ability resolving, nothing asked. Now the board arms like the hand
+    // does, and the gap between the two taps is where you get to change your
+    // mind.
+    if (opts.fanKey != null) fanOf(opts.fanKey).lit = true;
     if (opts.fanKey != null && fanOf(opts.fanKey).focus !== opts.fanIndex) {
-      fanGoto(opts.fanKey, opts.fanIndex);
+      armed = c.cid;                     // set before the draw, not after
+      fanSetFocus(opts.fanKey, opts.fanIndex);
+      repaintArmed();                    // one draw, for the whole board
       return;
     }
+    if (armed !== c.cid) { setArmed(c.cid); return; }
     onCardTap(c, opts, el);
   });
   el.addEventListener("pointerleave", el.__cancelPress);
@@ -1855,8 +1982,27 @@ function openSheet(items, x, y) {
   sheet.style.display = "flex";
 }
 function closeSheet() { $("action-sheet").style.display = "none"; }
+/* Tapping the table means "none of these".
+ *
+ * A focused card is an unsent intent, and the way you throw an intent away is
+ * to stop pointing at it. Without this the only way out of a focus was to
+ * focus something ELSE, so there was no way to end up with nothing selected
+ * and the board always claimed you meant some card — usually whichever one
+ * the window happened to be sitting on.
+ *
+ * Everything a player could deliberately hit is exempt. A card handles its
+ * own tap (that is the two-tap gate); a button is a thing being pressed, not
+ * a place being tapped away to; the sheets, the rails and the readers are all
+ * chrome that belongs to the very question the focus is part of. What is left
+ * is bare board, and bare board is the answer "none". */
+const HOLDS_FOCUS = ".card, .action-sheet, .prompt-sheet, .fanrail, .railbtn, " +
+  "button, .fan-preview, .hover-preview, #zoom-overlay, #access-overlay, #reveal-overlay";
 document.addEventListener("pointerdown", (e) => {
-  if (!e.target.closest(".action-sheet") && !e.target.closest(".card")) { closeSheet(); if (raised) { raised = null; renderHand(); } }
+  const t = e.target;
+  if (t.closest && t.closest(".card")) return;   // its own handler decides
+  if (!(t.closest && t.closest(".action-sheet"))) closeSheet();
+  if (t.closest && t.closest(HOLDS_FOCUS)) return;
+  disarm();
 });
 
 /* ── prompts ─────────────────────────────────────────────────────────── */
@@ -2707,6 +2853,17 @@ function renderChips() {
     b.textContent = label; b.onclick = fn;
     bar.appendChild(b);
   };
+  // A card is armed: say so, and give the way out a NAME. Tapping the table
+  // already cancels, but a way out you have to guess at is not one a player
+  // under time pressure will find — and this is the last moment before an
+  // option is chosen and 9.2.7f makes it resolve to the end.
+  if (armed != null) {
+    const b = document.createElement("button");
+    b.className = "chip cancel-armed";
+    b.textContent = "Cancel";
+    b.onclick = () => { closeSheet(); disarm(); };
+    bar.appendChild(b);
+  }
   if (native()) {
     if (has("credit")) mk("Gain 1 ⬡", () => act("credit"));
     if (has("draw")) mk("Draw a card", () => act("draw"));
@@ -2852,6 +3009,11 @@ document.addEventListener("keydown", (e) => {
     const o = document.getElementById(id);
     if (o && o.style.display !== "none" && o.__dismiss) { o.__dismiss(); return; }
   }
+  // Nothing open to dismiss, so Escape means the same as tapping the table:
+  // whatever was singled out, is not any more. On a keyboard this is the
+  // fastest way to take back a card you did not mean to reach for.
+  closeSheet();
+  disarm();
 });
 
 /* Opening a reader is IDEMPOTENT: one press, one preview. Asking for the

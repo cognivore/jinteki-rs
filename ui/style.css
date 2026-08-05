@@ -541,6 +541,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   transform-origin: bottom center; transition: transform .14s ease; }
 .cardpick .card { position: relative; }
 .cardpick.focused { z-index: 4; }
+
+/* ARMED — the one card whose next tap commits. A THIRD thing, and not one of
+   the three in THE LAW §3: gold and green answer "what can I do", white
+   answers "is the game waiting on me", and this answers "what happens if I
+   tap again". It has to read as a held breath rather than a state of the
+   game, so it is a ring drawn outside the border and nothing else moves. */
+.card.armed { box-shadow: 0 0 0 3px #ffd76a, 0 0 16px rgba(255,215,106,.55); }
+.card.armed.usable { box-shadow: 0 0 0 3px #ffd76a, 0 0 16px rgba(57,255,136,.6); }
+.chip.cancel-armed { border-color: #ffd76a; color: #ffd76a; }
+@media (prefers-reduced-motion: reduce) { .card.armed { box-shadow: 0 0 0 3px #ffd76a; } }
 /* Tapping a focused card whose play is a QUESTION (install into which
    server?) raises it out of the fan while the sheet asks. */
 .fanrow > .cardpick.raised { transform: translateY(-40px) scale(1.6);
