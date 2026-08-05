@@ -1202,6 +1202,7 @@ pub fn install(card: TargetSpec, dest: InstallDest) -> Instruction {
         dest,
         and_rez: false,
         ignore_costs: false,
+        ignore_credit_costs: false,
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
@@ -1218,6 +1219,30 @@ pub fn install_ignoring_all_costs(card: TargetSpec, dest: InstallDest) -> Instru
         dest,
         and_rez: false,
         ignore_costs: true,
+        ignore_credit_costs: false,
+        reveal_check: None,
+        reduce_total: Quantity::c(0),
+        reduce_install: Quantity::c(0),
+        facedown: false,
+    }
+}
+/// "Install and rez the card you found, **ignoring credit costs**." (Ob
+/// Superheavy Logistics; 8.5.15's install-and-rez of 8.7.4's found card.)
+/// "Ignoring credit costs" selects cost components by KIND, cutting across
+/// 1.16.4's inherent/additional split — every credit component (the inherent
+/// install cost, the rez cost, the credit part of an additional cost)
+/// becomes 0, while the non-credit parts of an additional cost (an
+/// Archer-class forfeit) are still paid. That is a different axis from
+/// [`install_ignoring_all_costs`]'s 1.16.5c, which the kernel reads as the
+/// INHERENT costs only. The card states no destination, so the Corp declares
+/// one at step 8.5.16b.
+pub fn install_and_rez_found_ignoring_credit_costs() -> Instruction {
+    Instruction::InstallCard {
+        card: TargetSpec::FoundBySearch,
+        dest: InstallDest::DeclaredByInstaller,
+        and_rez: true,
+        ignore_costs: false,
+        ignore_credit_costs: true,
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
@@ -1232,6 +1257,7 @@ pub fn install_paying_less(card: TargetSpec, dest: InstallDest, less: i64) -> In
         dest,
         and_rez: false,
         ignore_costs: false,
+        ignore_credit_costs: false,
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(less),
@@ -1248,6 +1274,7 @@ pub fn install_facedown(card: TargetSpec, dest: InstallDest) -> Instruction {
         dest,
         and_rez: false,
         ignore_costs: false,
+        ignore_credit_costs: false,
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
@@ -2182,6 +2209,8 @@ pub fn trashes_a_card_from(by: Side, zone: Zone, reqs: &[TriggerRequirement]) ->
         while_accessed: false,
         from_zone: Some(zone),
         at_least_one: false,
+        rezzed_only: false,
+        except_during_install: false,
         requires: reqs.to_vec(),
     }
 }
@@ -2199,6 +2228,8 @@ pub fn trashes_at_least_one_card_from(by: Side, zone: Zone) -> TriggerCond {
         while_accessed: false,
         from_zone: Some(zone),
         at_least_one: true,
+        rezzed_only: false,
+        except_during_install: false,
         requires: Vec::new(),
     }
 }
@@ -2236,6 +2267,8 @@ pub fn trashes_a_from_anywhere(by: Side, of: CardType) -> TriggerCond {
         while_accessed: false,
         from_zone: None,
         at_least_one: false,
+        rezzed_only: false,
+        except_during_install: false,
         requires: Vec::new(),
     }
 }
@@ -2252,6 +2285,8 @@ pub fn runner_trashes_an_installed_corp_card() -> TriggerCond {
         while_accessed: false,
         from_zone: None,
         at_least_one: false,
+        rezzed_only: false,
+        except_during_install: false,
         requires: Vec::new(),
     }
 }
@@ -2290,6 +2325,29 @@ pub fn trashes_the_card_being_accessed(by: Side) -> TriggerCond {
         while_accessed: true,
         from_zone: None,
         at_least_one: false,
+        rezzed_only: false,
+        except_during_install: false,
+        requires: Vec::new(),
+    }
+}
+/// "When you trash a **rezzed** card, **except during installation**…" (Ob
+/// Superheavy Logistics) — 8.2's trash, naming the player who does it
+/// (1.14.5) and two facts of the MOMENT of the trash: 8.1.2's rezzed (the
+/// card was a faceup installed Corp card then, whatever 10.3.1a has done to
+/// it since) and NOT 8.5.11a's like-card trash, the one the install
+/// procedure itself performs and this sentence excludes. Both are read from
+/// the record rather than from the state, which no longer says either.
+pub fn trashes_a_rezzed_card_except_during_install(by: Side) -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: None,
+        by: Some(by),
+        of_types: Vec::new(),
+        installed_only: false,
+        while_accessed: false,
+        from_zone: None,
+        at_least_one: false,
+        rezzed_only: true,
+        except_during_install: true,
         requires: Vec::new(),
     }
 }
@@ -2384,6 +2442,16 @@ pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
 /// where to look ("search R&D") is what says it.
 pub fn a_copy_of_the_triggering_card() -> TargetFilter {
     TargetFilter::SameNameAsTriggeringCard
+}
+/// "…a card with a printed rez cost exactly N[credit] **less than the
+/// trashed card's** printed rez cost" (Ob Superheavy Logistics) — a printed
+/// number compared against the card the occurrence that met this ability's
+/// condition named (1.15.4), the relational sibling of
+/// [`a_copy_of_the_triggering_card`]. Both sides must HAVE a printed rez
+/// cost — 8.1.2's assets, ice and upgrades — so an operation or an agenda
+/// matches nothing. It names no zone of its own; "search R&D" does.
+pub fn rez_cost_exactly_less_than_the_triggering_cards(n: i64) -> TargetFilter {
+    TargetFilter::RezCostRelativeToTriggeringCard { delta: -n }
 }
 /// "…from among **those cards**" (Magdalene Keino-Chemutai) — one of the
 /// cards the occurrence that met this ability's condition named (1.15.4 in

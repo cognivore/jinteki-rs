@@ -61,23 +61,7 @@ kernel words, not card patches.
   `TargetFilter` describes the piece of ice the Runner is APPROACHING (the
   cost trashes it), and none describes the outermost ice of a server the
   ability just chose. *(AgInfusion: New Miracles for a New World.)*
-- **A trash records neither that the card was REZZED nor that it happened
-  during an installation.** `GameChange::CardTrashed` carries the zone the
-  card left and whether it was being accessed — both facts about the MOMENT
-  of the trash, recorded there because the card has moved by the time any
-  condition is scanned — and "when you trash a **rezzed** card, **except
-  during installation**" is two more of exactly that kind: the second is
-  8.5.11a's like-card trash, which the install procedure performs and this
-  sentence excludes. The same card wants two more words: `TargetFilter` is
-  `Copy`, so "a card with a printed rez cost exactly 1[credit] less than the
-  trashed card's printed rez cost" has to be a relational atom beside
-  `SameNameAsTriggeringCard` and there is none; and `InstallCard::
-  ignore_costs` is 1.16.5c's "ignoring ALL costs", which the kernel already
-  reads as the INHERENT ones only (an additional rez cost is still paid — the
-  Ob/Archer case is written into `InstallRezPayCost`), while "ignoring
-  **credit** costs" selects costs by their KIND and cuts across 1.16.4's
-  inherent/additional split. *(Ob Superheavy Logistics: Extract. Export.
-  Excel.)*
+
 - **A counter cost comes off the SOURCE, in a printed number.**
   `Cost::spend_counters` is 1.9.2's "spend N counters hosted on this card"
   (Imp), which is why an empty card's ability is unusable rather than free —
@@ -148,9 +132,9 @@ Earth Station: SEA Headquarters was completed from exactly this data.
 ## Progress
 
 <<<<<<< HEAD
-- Implemented: **135 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **136 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 =======
-- Implemented: **135 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **136 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 >>>>>>> c442d78 (feat(carddata+cards): the back faces arrive from the source, and Earth Station flips)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
@@ -354,7 +338,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [x] **Gagarin Deep Space: Expanding the Horizon** — As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].
 - [x] **Jemison Astronautics: Sacrifice. Audacity. Success.** — Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.
 - [x] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
-- [ ] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
+- [x] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
 - [x] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
 - [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
 - [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].

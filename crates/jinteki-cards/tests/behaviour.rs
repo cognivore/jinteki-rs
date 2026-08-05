@@ -13231,3 +13231,400 @@ fn acme_stacks_on_a_real_tag_and_a_cost_still_removes_only_the_real_one() {
         t.tail(50)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Ob Superheavy Logistics: Extract. Export. Excel.
+// ---------------------------------------------------------------------------
+
+/// Ob Superheavy Logistics: "Once per turn → When you trash a rezzed card,
+/// except during installation, you may search R&D for 1 card with a printed
+/// rez cost exactly 1[credit] less than the trashed card's printed rez cost.
+/// Install and rez the card you found, ignoring credit costs."
+///
+/// The happy path, with the Corp at 0[credit] the whole way: the Corp trashes
+/// its own rezzed 3-cost asset, the offer comes, the search finds exactly the
+/// 2-cost asset — not the same-cost asset beside it, and not the operation
+/// whose printed cost is also 2, because an operation has no rez cost to
+/// stand in the relation — and the found card lands installed AND rezzed with
+/// the credit pool untouched, which only "ignoring credit costs" allows.
+#[test]
+fn ob_finds_installs_and_rezzes_a_card_exactly_one_credit_cheaper() {
+    let mut vm = Vm::empty(6230);
+    tk::install_identity(
+        &mut vm,
+        card("Ob Superheavy Logistics: Extract. Export. Excel."),
+        Side::Corp,
+    );
+    let pricey =
+        tk::install_root(&mut vm, tk::vanilla_asset("Pricey Asset", 3, 2), ServerId::Remote(1), true);
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Trigger Button", vec![pricey]),
+        ServerId::Remote(2),
+        true,
+    );
+    // The filler goes on TOP (drawn first is pushed first), so the Corp's
+    // mandatory draw never takes a probe card.
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    let bargain = vm.new_object(tk::vanilla_asset("Bargain Asset", 2, 2), Zone::Deck(Side::Corp));
+    let same_cost = vm.new_object(tk::vanilla_asset("Same Cost Asset", 3, 2), Zone::Deck(Side::Corp));
+    let mut op = PrintedCard::vanilla("Cheap Operation", Side::Corp, CardType::Operation);
+    op.cost = Some(2);
+    let op = vm.new_object(op, Zone::Deck(Side::Corp));
+    for id in [bargain, same_cost, op] {
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .when(
+                Match::reaction().offering("extract export excel"),
+                Reply::take("extract export excel"),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![bargain]))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    // The trash-moment facts were recorded with the trash itself.
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardTrashed { obj, was_rezzed: true, during_install: false, .. }
+                if *obj == pricey
+        )),
+        "8.1.2: the record kept that the trashed card WAS rezzed, outside any install: {}",
+        t.tail(40)
+    );
+    // 8.7.2a: the relational criterion picked out exactly the 1-cheaper card.
+    let finds: Vec<_> = t.of_kind(Kind::Targets).into_iter().collect();
+    assert_eq!(finds.len(), 1, "one search find was put to the Corp: {}", t.tail(40));
+    assert!(finds[0].candidates().contains(&bargain), "the 2-cost asset is a candidate: {}", t.tail(40));
+    assert!(
+        !finds[0].candidates().contains(&same_cost),
+        "'exactly 1[credit] less' keeps the same-cost asset out: {}",
+        t.tail(40)
+    );
+    assert!(
+        !finds[0].candidates().contains(&op),
+        "an operation has no rez cost, so its printed cost of 2 stands in no relation: {}",
+        t.tail(40)
+    );
+    // 8.7.3: searching R&D shuffled it.
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::DeckShuffled { side: Side::Corp })),
+        "the search reshuffled R&D: {}",
+        t.tail(40)
+    );
+    // The found card landed installed AND rezzed…
+    assert!(
+        matches!(vm.st.objects[&bargain].zone, Zone::Root(ServerId::Remote(_))),
+        "the found card was installed into the declared root: {}",
+        t.tail(40)
+    );
+    assert!(vm.st.objects[&bargain].faceup, "…and rezzed: {}", t.tail(40));
+    // …with the Corp's credits unchanged: the 2[credit] rez cost (and any
+    // install cost) was a credit cost, and the card ignores those.
+    assert_eq!(
+        vm.st.corp.credits, 0,
+        "'ignoring credit costs': nothing was paid from a pool that had nothing: {}",
+        t.tail(40)
+    );
+}
+
+/// The condition's first stipulation: the trashed card must have been REZZED
+/// at the moment of the trash. The Corp trashes its own UNREZZED installed
+/// asset — `installed_only` would have been met, but 8.1.2's "rezzed" is
+/// stricter, so no offer comes and R&D is never searched.
+#[test]
+fn ob_makes_no_offer_when_the_trashed_card_was_unrezzed() {
+    let mut vm = Vm::empty(6231);
+    tk::install_identity(
+        &mut vm,
+        card("Ob Superheavy Logistics: Extract. Export. Excel."),
+        Side::Corp,
+    );
+    let hidden =
+        tk::install_root(&mut vm, tk::vanilla_asset("Hidden Asset", 3, 2), ServerId::Remote(1), false);
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Trigger Button", vec![hidden]),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 4);
+    let bargain = vm.new_object(tk::vanilla_asset("Bargain Asset", 2, 2), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(bargain);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&hidden].zone,
+        Zone::Discard(Side::Corp),
+        "the unrezzed asset was trashed: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardTrashed { obj, was_rezzed: false, .. } if *obj == hidden
+        )),
+        "8.1.2: the record kept that it was NOT rezzed: {}",
+        t.tail(40)
+    );
+    assert!(
+        !t.ever_offered("extract export excel"),
+        "no offer for an unrezzed trash: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&bargain].zone,
+        Zone::Deck(Side::Corp),
+        "and R&D was never searched: {}",
+        t.tail(40)
+    );
+}
+
+/// The condition's second stipulation: "except during installation" is
+/// 8.5.11a's like-card trash, the one the install procedure itself performs.
+/// The Corp installs an asset into a root that already holds a REZZED asset —
+/// the old one is trashed by step 8.5.16c, `was_rezzed` is true and would
+/// otherwise qualify, and the record's `during_install` is what keeps the
+/// offer from coming.
+#[test]
+fn ob_makes_no_offer_for_the_like_card_trash_of_an_install() {
+    let mut vm = Vm::empty(6232);
+    tk::install_identity(
+        &mut vm,
+        card("Ob Superheavy Logistics: Extract. Export. Excel."),
+        Side::Corp,
+    );
+    let old =
+        tk::install_root(&mut vm, tk::vanilla_asset("Old Asset", 3, 2), ServerId::Remote(1), true);
+    let newcomer = vm.new_object(tk::vanilla_asset("New Asset", 0, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(newcomer);
+    // The installing ability fixes the destination, so step 8.5.16c has a
+    // like card to trash when the new asset is placed.
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button(
+            "Slotter",
+            newcomer,
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1)),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 4);
+    let bargain = vm.new_object(tk::vanilla_asset("Bargain Asset", 2, 2), Zone::Deck(Side::Corp));
+    vm.st.deck.get_mut(&Side::Corp).unwrap().push(bargain);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-install: fixed card"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&old].zone,
+        Zone::Discard(Side::Corp),
+        "8.5.16c trashed the like card: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&newcomer].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "and the new asset took the root: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CardTrashed { obj, was_rezzed: true, during_install: true, .. }
+                if *obj == old
+        )),
+        "the record kept both facts: rezzed, and during an installation: {}",
+        t.tail(40)
+    );
+    assert!(
+        !t.ever_offered("extract export excel"),
+        "'except during installation' kept the offer from coming: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&bargain].zone,
+        Zone::Deck(Side::Corp),
+        "and R&D was never searched: {}",
+        t.tail(40)
+    );
+}
+
+/// "Once per turn →" is 9.3.6g's flag, spent by using the ability. One
+/// instruction trashes TWO rezzed 3-cost assets — 9.6.4b meets the singular
+/// condition once per card, so two occurrences are pending — and only one
+/// offer comes: taking the first spends the flag and the second occurrence
+/// finds it spent. The second 2-cost card stays in R&D.
+#[test]
+fn ob_offers_only_once_per_turn_however_many_rezzed_trashes_qualify() {
+    let mut vm = Vm::empty(6233);
+    tk::install_identity(
+        &mut vm,
+        card("Ob Superheavy Logistics: Extract. Export. Excel."),
+        Side::Corp,
+    );
+    let first =
+        tk::install_root(&mut vm, tk::vanilla_asset("First Asset", 3, 2), ServerId::Remote(1), true);
+    let second =
+        tk::install_root(&mut vm, tk::vanilla_asset("Second Asset", 3, 2), ServerId::Remote(2), true);
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Trigger Button", vec![first, second]),
+        ServerId::Remote(3),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    let bargain_a = vm.new_object(tk::vanilla_asset("Bargain A", 2, 2), Zone::Deck(Side::Corp));
+    let bargain_b = vm.new_object(tk::vanilla_asset("Bargain B", 2, 2), Zone::Deck(Side::Corp));
+    for id in [bargain_a, bargain_b] {
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .when(
+                Match::reaction().offering("extract export excel"),
+                Reply::take("extract export excel"),
+            )
+            .when(Match::targets().once(), Reply::Targets(vec![bargain_a]))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert!(
+        vm.st.objects[&first].zone == Zone::Discard(Side::Corp)
+            && vm.st.objects[&second].zone == Zone::Discard(Side::Corp),
+        "both rezzed assets were trashed: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.offers("extract export excel"),
+        1,
+        "9.3.6g: the flag was spent by the first use, so the second qualifying \
+         trash brought no second offer: {}",
+        t.tail(40)
+    );
+    assert!(
+        matches!(vm.st.objects[&bargain_a].zone, Zone::Root(ServerId::Remote(_)))
+            && vm.st.objects[&bargain_a].faceup,
+        "the one found card was installed and rezzed: {}",
+        t.tail(40)
+    );
+    assert!(
+        !matches!(vm.st.objects[&bargain_b].zone, Zone::Root(_)),
+        "and the other 2-cost card was never searched out and installed — the 8.7.3 \
+         shuffle may have put it anywhere in R&D, and the mandatory draw may then \
+         have drawn it, but no second search reached it: {}",
+        t.tail(40)
+    );
+}
+
+/// 8.7.2e lets a criteria search of a deck fail — and with NO card of the
+/// right printed rez cost in R&D there is nothing to put to the Corp at all:
+/// the search completes empty, 8.7.3 still shuffles R&D, and nothing is
+/// installed. The 2-cost OPERATION in R&D is the boundary: its printed cost
+/// is the right number, but an operation has no rez cost to compare.
+#[test]
+fn ob_search_completes_empty_when_no_rez_cost_matches() {
+    let mut vm = Vm::empty(6234);
+    tk::install_identity(
+        &mut vm,
+        card("Ob Superheavy Logistics: Extract. Export. Excel."),
+        Side::Corp,
+    );
+    let pricey =
+        tk::install_root(&mut vm, tk::vanilla_asset("Pricey Asset", 3, 2), ServerId::Remote(1), true);
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Trigger Button", vec![pricey]),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 3);
+    let too_cheap = vm.new_object(tk::vanilla_asset("Too Cheap Asset", 1, 2), Zone::Deck(Side::Corp));
+    let same_cost = vm.new_object(tk::vanilla_asset("Same Cost Asset", 3, 2), Zone::Deck(Side::Corp));
+    let mut op = PrintedCard::vanilla("Cheap Operation", Side::Corp, CardType::Operation);
+    op.cost = Some(2);
+    let op = vm.new_object(op, Zone::Deck(Side::Corp));
+    for id in [too_cheap, same_cost, op] {
+        vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+    }
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .when(
+                Match::reaction().offering("extract export excel"),
+                Reply::take("extract export excel"),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert!(t.took("extract export excel"), "the offer came and was taken: {}", t.tail(40));
+    assert!(
+        t.of_kind(Kind::Targets).is_empty(),
+        "no find was put to the Corp — no card stands in the relation: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::DeckShuffled { side: Side::Corp })),
+        "8.7.3: R&D was still shuffled: {}",
+        t.tail(40)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardInstalled { .. })),
+        "nothing was installed at all — the 8.7.3 shuffle may have moved the R&D \
+         cards around, but none of them reached the play area: {}",
+        t.tail(40)
+    );
+    for (id, name) in [(too_cheap, "1-cost asset"), (same_cost, "3-cost asset"), (op, "operation")] {
+        assert!(
+            !matches!(vm.st.objects[&id].zone, Zone::Root(_)),
+            "the {name} was not searched out of R&D: {}",
+            t.tail(40)
+        );
+    }
+}

@@ -734,6 +734,17 @@ pub enum Instruction {
         and_rez: bool,
         /// 1.16.5c: "ignoring all costs".
         ignore_costs: bool,
+        /// "…**ignoring credit costs**" (Ob Superheavy Logistics) — a
+        /// different axis from `ignore_costs`: 1.16.5c's "ignoring all costs"
+        /// the kernel reads as the INHERENT costs only (1.16.4 — an
+        /// additional rez cost is still paid, the Ob/Archer case written into
+        /// `InstallRezPayCost`), while this selects costs by their KIND and
+        /// cuts across 1.16.4's inherent/additional split: every CREDIT
+        /// component — the inherent install cost (8.5.11), the rez cost
+        /// (8.1.2d) of an install-and-rez, the credit part of an additional
+        /// cost — becomes 0, and the non-credit components of an additional
+        /// cost (an Archer-class forfeit) are STILL paid.
+        ignore_credit_costs: bool,
         /// 8.5.13c: a requirement imposed by the installing ability that
         /// must be verified by revealing a hidden card.
         reveal_check: Option<RevealCheck>,
@@ -1790,6 +1801,24 @@ pub enum TargetFilter {
     /// With no such card nothing matches, the same way
     /// [`TargetFilter::SameCardTypeAsTriggeringCard`] reaches nothing.
     SameNameAsTriggeringCard,
+    /// CR 1.15.4 + 1.16.4/8.7.2a: "…a card with a printed rez cost exactly
+    /// 1[credit] **less than the trashed card's** printed rez cost" (Ob
+    /// Superheavy Logistics) — a card whose PRINTED rez cost differs by
+    /// exactly `delta` from that of the card the OCCURRENCE that met this
+    /// ability's condition named. A relational atom beside
+    /// [`TargetFilter::SameNameAsTriggeringCard`], comparing a printed number
+    /// (2.3) the way that one compares the name: printed characteristics
+    /// travel with the card (1.17.8-adjacent), so the trashed card still
+    /// answers from the discard pile.
+    ///
+    /// "Printed REZ cost" is 2.3's cost said of the cards that rez at all
+    /// (8.1.2's assets, ice and upgrades): a side must HAVE one to stand in
+    /// the relation, so an operation, an agenda or a card with no printed
+    /// cost matches nothing — the same "reaches nothing" the other
+    /// triggering-card atoms get with no card. 8.7.2a is why the comparison
+    /// is a criterion at all: it is what the search may find, asked in the
+    /// shared filter vocabulary (§12 rule 5).
+    RezCostRelativeToTriggeringCard { delta: i64 },
     /// CR 2.15: "…1 resource **or** piece of hardware" (Barry "Baz" Wong) —
     /// a card has exactly one type, so several `CardTypeIs` criteria together
     /// would mean ALL of them and describe nothing. The type LIST is content

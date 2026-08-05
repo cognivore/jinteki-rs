@@ -645,6 +645,55 @@ pub fn bangun() -> Card {
 }
 
 
+/// Ob Superheavy Logistics: Extract. Export. Excel. — Identity: Corp.
+/// "Once per turn → When you trash a rezzed card, except during installation,
+///  you may search R&D for 1 card with a printed rez cost exactly 1[credit]
+///  less than the trashed card's printed rez cost. Install and rez the card
+///  you found, ignoring credit costs."
+///
+/// COMPLETE. "Once per turn →" is 9.3.6g's flag, and it has something to
+/// spend it with because the ability is OPTIONAL (9.1.6's second sentence —
+/// the Mercury shape). The condition stipulates two facts about the MOMENT
+/// of the trash, both read from the record because the state can no longer
+/// answer either: 8.1.2's "rezzed" (the card was a faceup installed Corp
+/// card then, whatever 10.3.1a has done to it since) and "except during
+/// installation", which is 8.5.11a's like-card trash — the one the install
+/// procedure itself performs.
+///
+/// The printed line splits where 9.11.4 says it does: (d) a search is its
+/// own instruction, and the second sentence is the install. "A printed rez
+/// cost exactly 1[credit] less than the trashed card's" is a relational
+/// question about a printed number (2.3), asked of the card the occurrence
+/// named (1.15.4) the way The Foundry asks about the name — both sides must
+/// HAVE a printed rez cost (8.1.2's assets, ice and upgrades), so an
+/// operation or an agenda matches nothing, and 8.7.2b narrows the find to
+/// what the install could take.
+///
+/// "Ignoring credit costs" selects cost components by KIND, cutting across
+/// 1.16.4's inherent/additional split: the install cost, the rez cost and
+/// the credit part of an additional cost all become 0, while an
+/// Archer-class forfeit is still paid — which is why it is not 1.16.5c's
+/// "ignoring all costs". The card states no destination, so the Corp
+/// declares one at step 8.5.16b (8.5.16's "or as normal").
+pub fn ob_superheavy_logistics() -> Card {
+    card("Ob Superheavy Logistics: Extract. Export. Excel.")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.")
+        .may_when_once_per_turn(
+            trashes_a_rezzed_card_except_during_install(Corp),
+            [
+                search_rnd(&[rez_cost_exactly_less_than_the_triggering_cards(1)], 1),
+                install_and_rez_found_ignoring_credit_costs(),
+            ],
+        )
+        .named("extract export excel")
+        .build()
+}
+
+
 pub fn identities() -> Vec<Card> {
     vec![
         sso_industries(),
@@ -664,5 +713,6 @@ pub fn identities() -> Vec<Card> {
         blue_sun(),
         earth_station_sea_headquarters(),
         bangun(),
+    ob_superheavy_logistics(),
     ]
 }

@@ -271,6 +271,11 @@ pub struct InstallProgress {
     pub dest: crate::instr::InstallDest,
     pub and_rez: bool,
     pub ignore_costs: bool,
+    /// "…ignoring credit costs" (Ob Superheavy Logistics) — every CREDIT
+    /// component of the install-and-rez becomes 0, non-credit components of
+    /// an additional cost are still paid. See
+    /// [`crate::instr::Instruction::InstallCard::ignore_credit_costs`].
+    pub ignore_credit_costs: bool,
     pub reveal_check: Option<crate::instr::RevealCheck>,
     /// The card came from a hidden/secret zone or was facedown (8.5.13
     /// reveal relevance).
@@ -313,7 +318,12 @@ pub struct InstallProgress {
 /// the search's own criteria.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FollowOn {
-    Install { dest: crate::instr::InstallDest, ignore_costs: bool, facedown: bool },
+    Install {
+        dest: crate::instr::InstallDest,
+        ignore_costs: bool,
+        ignore_credit_costs: bool,
+        facedown: bool,
+    },
     Play { ignore_costs: bool },
 }
 
@@ -7710,6 +7720,40 @@ impl Vm {
                             .any(|t| t.printed.name == o.printed.name)
                     })
             }
+            // 1.15.4 + 1.16.4: "…a printed rez cost exactly N[credit] less
+            // than the trashed card's printed rez cost" (Ob Superheavy
+            // Logistics) — the same walk to the ability frame's triggering
+            // cards, comparing 2.3's printed cost instead of the name. Both
+            // sides must be cards that rez at all (8.1.2's assets, ice and
+            // upgrades) and must HAVE a printed cost; the trashed card is
+            // still in `st.objects` after the trash, and printed numbers
+            // travel with it.
+            TargetFilter::RezCostRelativeToTriggeringCard { delta } => {
+                cite!("rule_inherent_and_additional_cost");
+                let printed_rez_cost = |t: &Object| -> Option<i64> {
+                    matches!(
+                        t.printed.card_type,
+                        CardType::Asset | CardType::Ice | CardType::Upgrade
+                    )
+                    .then_some(t.printed.cost)
+                    .flatten()
+                    .map(|c| c as i64)
+                };
+                let Some(mine) = printed_rez_cost(o) else { return false };
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(&af.triggering_cards),
+                        _ => None,
+                    })
+                    .is_some_and(|ts| {
+                        ts.iter()
+                            .filter_map(|t| self.st.objects.get(t))
+                            .filter_map(|t| printed_rez_cost(t))
+                            .any(|theirs| mine == theirs + delta)
+                    })
+            }
             TargetFilter::IceProtectingSourceServer => source
                 .and_then(|s| self.this_server(s))
                 .map(|sv| self.ice_at(sv).contains(&o.id))
@@ -8176,6 +8220,7 @@ impl Vm {
             dest,
             and_rez,
             ignore_costs,
+            ignore_credit_costs,
             reveal_check,
             reduce_total,
             reduce_install,
@@ -8241,6 +8286,7 @@ impl Vm {
             dest,
             and_rez,
             ignore_costs,
+            ignore_credit_costs,
             reveal_check,
             was_hidden,
             aborted: false,
@@ -8455,6 +8501,7 @@ impl Vm {
                 dest,
                 and_rez,
                 ignore_costs,
+                ignore_credit_costs: false,
                 reveal_check: None,
                 reduce_total: crate::instr::Quantity::c(0),
                 reduce_install: crate::instr::Quantity::c(0),
@@ -9127,7 +9174,9 @@ impl Vm {
     fn imminent_cost_credits(&self) -> i64 {
         cite!("rule_modifiable_value_cost");
         if let Some(p) = self.installs.last() {
-            if p.aborted || p.ignore_costs {
+            // "Ignoring credit costs" leaves no credits about to be paid,
+            // exactly as 1.16.5c's inherent ignorance does.
+            if p.aborted || p.ignore_costs || p.ignore_credit_costs {
                 return 0;
             }
             let payer = self.st.objects[&p.card].printed.side;
@@ -9150,7 +9199,11 @@ impl Vm {
         let payer = self.st.objects[&p.card].printed.side;
         // 1.16.6: a Patchwork-class reduction the player needs is used here,
         // and its own cost is part of the same all-at-once payment (1.16.10b).
-        let cost = if p.ignore_costs {
+        // "Ignoring credit costs" (Ob) empties this step entirely, because
+        // 8.5.11's install cost is credits and nothing else — the kernel
+        // models no printed additional install cost, whose NON-credit part
+        // this branch would otherwise have to keep paying.
+        let cost = if p.ignore_costs || p.ignore_credit_costs {
             Cost::free()
         } else {
             let (net, extra) = self.install_payment(p.card, p.dest, p.resolved_zone, payer, p.facedown);
@@ -9216,6 +9269,7 @@ impl Vm {
         card: ObjectId,
         dest: crate::instr::InstallDest,
         ignore_costs: bool,
+        ignore_credit_costs: bool,
         facedown: bool,
     ) -> bool {
         cite!("rule_valid_search_target_install_play");
@@ -9250,6 +9304,16 @@ impl Vm {
         }
         if ignore_costs {
             cite!("rule_ignore_all_costs");
+            return true;
+        }
+        // "Ignoring credit costs" (Ob): a findable card is one whose
+        // REMAINING non-credit costs are payable — and 8.5.11's install cost
+        // is credits and nothing else (the kernel models no printed
+        // additional install cost), so nothing remains and every candidate
+        // is affordable. The rez side never gates findability at all: 8.5.13d
+        // reveals a card the Corp turns out unable to rez (the Tucana
+        // example), Archer-class forfeits included.
+        if ignore_credit_costs {
             return true;
         }
         let payer = o.printed.side;
@@ -9350,8 +9414,8 @@ impl Vm {
                 criteria.iter().all(|f| self.filter_matches(o, *f, source))
             })
             .filter(|id| match follow_on {
-                Some(FollowOn::Install { dest, ignore_costs, facedown }) => {
-                    self.could_install_found_card(*id, dest, ignore_costs, facedown)
+                Some(FollowOn::Install { dest, ignore_costs, ignore_credit_costs, facedown }) => {
+                    self.could_install_found_card(*id, dest, ignore_costs, ignore_credit_costs, facedown)
                 }
                 Some(FollowOn::Play { ignore_costs }) => {
                     self.could_play_found_card(*id, ignore_costs)
@@ -9371,11 +9435,13 @@ impl Vm {
                 card: TargetSpec::FoundBySearch,
                 dest,
                 ignore_costs,
+                ignore_credit_costs,
                 facedown,
                 ..
             } => Some(FollowOn::Install {
                 dest: *dest,
                 ignore_costs: *ignore_costs,
+                ignore_credit_costs: *ignore_credit_costs,
                 facedown: *facedown,
             }),
             Instruction::PlayCard { card: TargetSpec::FoundBySearch, ignore_costs, .. } => {
@@ -11690,13 +11756,31 @@ impl Vm {
                 // put on the install cost comes off the rez cost here
                 // (1.16.2a: lower, then floor at 0).
                 let rez_reduction = p.reduce_total.saturating_sub(p.reduce_install);
-                let base_rez = if p.ignore_costs {
+                let base_rez = if p.ignore_costs || p.ignore_credit_costs {
+                    // 8.1.2d's inherent rez cost is credits, so "ignoring
+                    // credit costs" (Ob) empties it exactly as 1.16.5c does.
                     Cost::free()
                 } else {
                     cite!("rule_cost_calculation");
                     Cost::credits(self.rez_cost_credits(c).saturating_sub(rez_reduction))
                 };
-                let full_rez = match &self.st.objects[&c].printed.additional_rez_cost {
+                // "Ignoring credit costs" selects components by KIND, cutting
+                // across 1.16.4's inherent/additional split: an Archer-class
+                // additional rez cost loses its credit part and KEEPS its
+                // forfeits, where `ignore_costs` (1.16.5c as this kernel
+                // reads it, inherent-only) would leave the whole of it.
+                let additional = self
+                    .st
+                    .objects[&c]
+                    .printed
+                    .additional_rez_cost
+                    .clone()
+                    .map(|a| if p.ignore_credit_costs { a.without_credits() } else { a })
+                    // An additional cost that WAS only credits has nothing
+                    // left once they are ignored, so there is no payment to
+                    // put to the Corp at all.
+                    .filter(|a| !a.is_free());
+                let full_rez = match &additional {
                     Some(add) => base_rez.plus(add),
                     None => base_rez.clone(),
                 };
@@ -11713,7 +11797,6 @@ impl Vm {
                 // costs" of the inherent kind and may be declined; declining
                 // means the card is not rezzed (8.5.13d, the Ob/Archer
                 // example).
-                let additional = self.st.objects[&c].printed.additional_rez_cost.clone();
                 if let Some(add) = additional {
                     cite!("rule_inherent_and_additional_cost");
                     let base = base_rez.clone();
@@ -13227,6 +13310,21 @@ impl Vm {
         let mut has_mandatory = false;
         for (id, inst) in &self.instances {
             if inst.window == Some(wid) && inst.controller == side {
+                // 9.3.6g: "players cannot use that ability again during the
+                // same turn." Creation is gated on used-ness at the
+                // checkpoint scan, but two occurrences of one checkpoint
+                // create two instances BEFORE either is used — so the second
+                // stops being offered the moment the first spends the flag
+                // (Ob Superheavy Logistics: two rezzed trashes of one
+                // instruction). A mandatory instance is never "used" (9.1.6),
+                // so the flag does not gate it.
+                if !inst.mandatory
+                    && inst.def.has_flag(crate::ability::AbilityFlag::OncePerTurn)
+                    && self.once_per_turn_used.contains(&(inst.ability, inst.source_generation))
+                {
+                    cite!("rule_once_per_turn_flag");
+                    continue;
+                }
                 if inst.mandatory {
                     has_mandatory = true;
                 }
@@ -13257,6 +13355,15 @@ impl Vm {
         cite!("rule_trigger_conditional_ability_interrupt");
         for (id, inst) in &self.instances {
             if inst.window == Some(wid) && inst.controller == side {
+                // 9.3.6g, exactly as `reaction_options` reads it: an optional
+                // instance whose flag was spent this turn cannot be used.
+                if !inst.mandatory
+                    && inst.def.has_flag(crate::ability::AbilityFlag::OncePerTurn)
+                    && self.once_per_turn_used.contains(&(inst.ability, inst.source_generation))
+                {
+                    cite!("rule_once_per_turn_flag");
+                    continue;
+                }
                 if self.interrupt_relevant(&inst.def, &atoms, &ordinals, inst.ability.obj) {
                     if inst.mandatory {
                         has_mandatory_relevant = true;
@@ -14824,11 +14931,28 @@ impl Vm {
         // 7.1.2: whether this card was the one being accessed is a fact about
         // the moment of the trash, so it is recorded with it (René "Loup"
         // Arcemont class).
+        // 8.1.2: whether the card was REZZED — a faceup installed Corp card —
+        // is snapshotted BEFORE the move, because the move ends the installed
+        // state and 10.3.1a turns a Corp-trashed card facedown (Ob Superheavy
+        // Logistics class).
+        let was_rezzed = {
+            let o = &self.st.objects[&id];
+            self.is_installed(o) && is_corp_card(o.printed.card_type) && o.faceup
+        };
+        // 8.5.11a: an install procedure in progress means this is its
+        // like-card trash — the one "except during installation" excludes.
+        // Installing is a procedure with no timing structure (9.2.2e), so no
+        // ability-driven trash can run mid-install in this kernel; if an
+        // interrupt ever could, it would be read as during-install too (the
+        // approximation `GameChange::CardTrashed::during_install` records).
+        let during_install = !self.installs.is_empty();
         self.changes.record(GameChange::CardTrashed {
             obj: id,
             by,
             was_zone: was,
             while_accessed: self.st.accessed == Some(id),
+            was_rezzed,
+            during_install,
         });
         match self.replaced_trash_destination(id) {
             // 4.9: removed from the game instead of the discard pile.
@@ -16251,6 +16375,7 @@ impl Vm {
                         dest: crate::instr::InstallDest::DeclaredByInstaller,
                         and_rez: false,
                         ignore_costs: false,
+                        ignore_credit_costs: false,
                         reveal_check: None,
                         reduce_total: crate::instr::Quantity::Const(0),
                         reduce_install: crate::instr::Quantity::Const(0),

@@ -103,7 +103,30 @@ pub enum GameChange {
     /// card you are accessing" counts earlier trashes as they stood then, and
     /// the access they happened inside is long over by the time the count is
     /// taken.
-    CardTrashed { obj: ObjectId, by: Side, was_zone: Zone, while_accessed: bool },
+    ///
+    /// `was_rezzed` is CR 8.1.2's "a rezzed card" — the card was a faceup
+    /// installed Corp card at the moment of the trash ("when you trash a
+    /// **rezzed** card", Ob Superheavy Logistics). A fact of the same kind as
+    /// `was_zone`, recorded for the same reason: the card has moved (and a
+    /// Corp trash has turned it facedown, 10.3.1a) by the time any condition
+    /// is scanned, so the state can no longer answer it.
+    ///
+    /// `during_install` is CR 8.5.11a's like-card trash — the trash the
+    /// install procedure itself performs, which "except during installation"
+    /// (Ob again) excludes. Recorded as "an installation was in progress at
+    /// the moment of the trash", which in this kernel only the 8.5.16a
+    /// like-card trash can be: installing is a procedure with no timing
+    /// structure (9.2.2e), so no ability-driven trash can resolve mid-install.
+    /// If an interrupt ever could, this approximation would read it as
+    /// during-install too — noted honestly here rather than hidden.
+    CardTrashed {
+        obj: ObjectId,
+        by: Side,
+        was_zone: Zone,
+        while_accessed: bool,
+        was_rezzed: bool,
+        during_install: bool,
+    },
     /// A card was DISCARDED — moved to its owner's discard pile by a player
     /// rather than by a trash.
     ///

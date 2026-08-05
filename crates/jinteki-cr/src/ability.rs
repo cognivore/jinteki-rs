@@ -723,6 +723,16 @@ pub enum TriggerCond {
     ///   has always had, carried here as content because the singular
     ///   sentence ("you trash **a card** from R&D", Nuvem SA) is met once per
     ///   card (9.6.4b) and only the noun's number tells them apart.
+    /// - `rezzed_only` — CR 8.1.2's "a **rezzed** card" (Ob Superheavy
+    ///   Logistics), compared against the fact the record kept of the MOMENT
+    ///   of the trash: the card was a faceup installed Corp card then,
+    ///   whatever 10.3.1a has done to it since. Not `installed_only` plus a
+    ///   faceup test of the state — the state no longer says.
+    /// - `except_during_install` — the printed "**except during
+    ///   installation**" (Ob again), which is 8.5.11a's like-card trash: the
+    ///   trash the install procedure itself performs, excluded by comparing
+    ///   against the record's fact that an installation was in progress at
+    ///   the moment of the trash.
     CardTrashed {
         owner: Option<Side>,
         by: Option<Side>,
@@ -731,6 +741,8 @@ pub enum TriggerCond {
         while_accessed: bool,
         from_zone: Option<Zone>,
         at_least_one: bool,
+        rezzed_only: bool,
+        except_during_install: bool,
         requires: Vec<TriggerRequirement>,
     },
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
@@ -1311,6 +1323,15 @@ impl Cost {
             trash_matching: self.trash_matching.clone().or_else(|| other.trash_matching.clone()),
             x_restriction: self.x_restriction.clone().or_else(|| other.x_restriction.clone()),
         }
+    }
+    /// "…ignoring **credit** costs" (Ob Superheavy Logistics): the same cost
+    /// with its credit component removed and every other component kept. Costs
+    /// selected by KIND cut across 1.16.4's inherent/additional split — an
+    /// Archer-class additional rez cost keeps its forfeits and loses only its
+    /// credits — which is why this is a method on the cost rather than a
+    /// judgment about where the cost came from.
+    pub fn without_credits(&self) -> Cost {
+        Cost { credits: crate::instr::Quantity::c(0), ..self.clone() }
     }
 }
 
@@ -2984,9 +3005,18 @@ fn trigger_matches_dyn(
                 installed_only,
                 while_accessed,
                 from_zone,
+                rezzed_only,
+                except_during_install,
                 ..
             },
-            GameChange::CardTrashed { obj, was_zone, by: trasher, while_accessed: wa },
+            GameChange::CardTrashed {
+                obj,
+                was_zone,
+                by: trasher,
+                while_accessed: wa,
+                was_rezzed,
+                during_install,
+            },
         ) => {
             // 8.2.2a: only a trash that actually happened records this change.
             // The `of_types` narrowing is applied by the checkpoint scan,
@@ -2998,6 +3028,12 @@ fn trigger_matches_dyn(
                 && from_zone.is_none_or(|z| *was_zone == z)
                 // 7.1.2: the card was the one being accessed at the time.
                 && (!*while_accessed || *wa)
+                // 8.1.2: the card was REZZED at the moment of the trash, as
+                // the record kept it (Ob Superheavy Logistics class).
+                && (!*rezzed_only || *was_rezzed)
+                // 8.5.11a: the like-card trash of an install in progress is
+                // the one "except during installation" excludes.
+                && (!*except_during_install || !*during_install)
                 // 1.14.1: whose card it was.
                 && owner.is_none_or(|s| is_corp_card_side(trashed_is_corp(*obj)) == s)
                 // 1.14.5: who did the trashing.
