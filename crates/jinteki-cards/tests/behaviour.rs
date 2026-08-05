@@ -3871,6 +3871,49 @@ fn boomerang_breaks_only_its_chosen_ice_and_comes_back_from_the_heap() {
     );
 }
 
+/// CR 8.5.16b declares the install destination — and the Runner has none to
+/// declare. 8.5.4 puts programs, hardware and resources in the rig and
+/// nowhere else, so the declaration has one answer and no second answer is
+/// imaginable. It was being asked anyway, which put a prompt reading "Where
+/// does it go? / Your rig" and a click in front of every install the Runner
+/// ever made.
+///
+/// The Corp's declaration is untouched, and deliberately: which server, in it
+/// or protecting it, or a new remote, is a real choice, and a restriction
+/// that leaves one of them standing is a narrowed choice rather than the
+/// absence of one.
+#[test]
+fn a_runner_install_never_asks_where_because_the_rig_is_the_only_answer() {
+    let mut vm = Vm::empty(608);
+    let desperado = vm.new_object(card("Desperado"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(desperado);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(desperado)))
+            .stop_at_action(),
+    );
+    assert!(
+        t.of_kind(Kind::Destination).is_empty(),
+        "8.5.4: the rig is the only place it could go, so nobody was asked: {}",
+        t.tail(12)
+    );
+    assert_eq!(
+        vm.st.objects[&desperado].zone,
+        Zone::Rig,
+        "…and it went there regardless: {}",
+        t.tail(12)
+    );
+    assert_eq!(vm.st.runner.credits, 2, "8.5.16d: the 3[c] install cost was paid");
+}
+
 /// The same card with nothing to choose. CR 1.15.2b caps an announcement at
 /// the eligible targets that exist, so installing Boomerang onto a table with
 /// no ice on it announces NOTHING — and an announcement that could only ever

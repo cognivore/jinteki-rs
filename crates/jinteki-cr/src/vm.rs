@@ -1163,6 +1163,28 @@ impl Vm {
             DecisionSpec::ChooseCounters { count: 0, .. } => {
                 Some(DecisionAnswer::Counters(Vec::new()))
             }
+            // CR 8.5.16b declares an install destination, and for the Runner
+            // there has never been one to declare: 8.5.4 puts programs,
+            // hardware and resources in the rig and nowhere else. So every
+            // install the Runner makes was stopping to ask "Where does it go?
+            // / Your rig" — a whole prompt, and a click, for a question with
+            // one answer and no second answer imaginable.
+            //
+            // Deliberately narrower than "any single-option declaration". A
+            // CORP destination is a real choice — which server, in it or
+            // protecting it, or a new remote — and a restriction that happens
+            // to leave one of them standing (A Teia's "another remote
+            // server") is a narrowed choice, not the absence of one. The
+            // offered set is then load-bearing: it is how you can tell the
+            // restriction was applied at all. Runner hosting is left alone
+            // for the same reason — a card that may go on a host OR in the
+            // rig is offering both, and that is a question.
+            DecisionSpec::DeclareInstallDestination { options }
+                if options.as_slice() == [crate::instr::InstallDest::Rig] =>
+            {
+                cite!("rule_steps_installing_destination");
+                Some(DecisionAnswer::InstallDestination(crate::instr::InstallDest::Rig))
+            }
             _ => None,
         }
     }
