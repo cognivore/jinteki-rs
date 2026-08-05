@@ -19,4 +19,5 @@ pub mod lobby;
 pub mod local;
 pub mod mail;
 pub mod nrdb;
+pub mod timing;
 pub mod transcript;

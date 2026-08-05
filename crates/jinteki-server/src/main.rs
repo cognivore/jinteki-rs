@@ -24,6 +24,26 @@ fn build_rev() -> &'static str {
     option_env!("JINTEKI_BUILD_REV").unwrap_or("dev")
 }
 
+/// The id stamped into asset URLs. A deploy's is the build rev; a dev
+/// build's is minted per BOOT — the constant "dev" never changed the URLs,
+/// so a browser that had heuristically cached app.js would keep serving the
+/// stale copy without ever asking the server again.
+fn asset_rev() -> &'static str {
+    use std::sync::OnceLock;
+    static REV: OnceLock<String> = OnceLock::new();
+    REV.get_or_init(|| {
+        if build_rev() == "dev" {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            format!("dev-{t}")
+        } else {
+            build_rev().to_string()
+        }
+    })
+}
+
 /// Serve index.html with its asset URLs stamped with the build id. The file on
 /// disk carries the neutral `?v=dev`; the response carries `?v=<rev>`, so a
 /// deploy changes every asset URL and no stale copy can be reused. Read per
@@ -33,7 +53,7 @@ async fn index_page(dir: Arc<str>) -> axum::response::Response {
     match std::fs::read_to_string(&path) {
         Ok(html) => (
             [(axum::http::header::CACHE_CONTROL, "no-store")],
-            axum::response::Html(html.replace("?v=dev", &format!("?v={}", build_rev()))),
+            axum::response::Html(html.replace("?v=dev", &format!("?v={}", asset_rev()))),
         )
             .into_response(),
         Err(e) => {
@@ -112,7 +132,7 @@ async fn main() {
     }
 
     let ui_root: Arc<str> = Arc::from(ui_dir.as_str());
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/ws/local", any(ws_local))
         .route("/ws/bridge", any(ws_bridge))
         .route("/health", get(|| async { "ok" }))
@@ -133,6 +153,17 @@ async fn main() {
         .merge(api::router())
         .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true))
         .with_state(state);
+
+    // In a deploy the build id changes every asset URL, so caches can never
+    // go stale. A dev build's id is the constant "dev" — the URLs never
+    // change, so freshness has to come from headers instead: serve
+    // everything uncached, or an edited app.js keeps NOT arriving.
+    if build_rev() == "dev" {
+        app = app.layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        ));
+    }
 
     // Deployment mode (vacationvm): serve over a Unix socket that Caddy fronts.
     if let Ok(sock) = std::env::var("JINTEKI_SOCKET") {

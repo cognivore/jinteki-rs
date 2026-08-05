@@ -569,6 +569,11 @@ pub struct CrGame {
     /// seat's socket knows the push is for it.
     key: String,
     seed: u64,
+    /// The timing mode this game was created under (`crate::timing`): the
+    /// lobby's host chose it, the joiner consented at the ready check, and
+    /// the in-game timing enforcement reads it from HERE — this field is
+    /// the hand-off. Bot games run [`crate::timing::TimingConfig::none`].
+    pub timing: crate::timing::TimingConfig,
     pending: Option<Pending>,
     picked: Vec<ObjectId>,
     /// Who the engine last put on the clock — PRIORITY, as the board shows it.
@@ -802,7 +807,12 @@ fn greeting(g: &CrGame, side: Side) -> String {
     }
 }
 
-fn new_game(setup: GameSetup, seats: [SeatState; 2], bot_delay_ms: u64) -> CrGame {
+fn new_game(
+    setup: GameSetup,
+    seats: [SeatState; 2],
+    bot_delay_ms: u64,
+    timing: crate::timing::TimingConfig,
+) -> CrGame {
     let seed = setup.seed;
     let key = new_token();
     // The opening record carries what the game was BUILT from, so the
@@ -824,6 +834,7 @@ fn new_game(setup: GameSetup, seats: [SeatState; 2], bot_delay_ms: u64) -> CrGam
         seats,
         key,
         seed,
+        timing,
         pending: None,
         picked: Vec::new(),
         asked: None,
@@ -864,7 +875,8 @@ pub async fn create_session(setup: GameSetup, human: Side, bot_delay_ms: u64) ->
     let token = new_token();
     let mut seats = [SeatState::bot(), SeatState::bot()];
     seats[six(human)] = SeatState::human("you", None).with_token(token.clone());
-    let g = new_game(setup, seats.clone(), bot_delay_ms);
+    // A bot does not keep a clock: bot games are untimed, unroped.
+    let g = new_game(setup, seats.clone(), bot_delay_ms, crate::timing::TimingConfig::none());
     let game = Arc::new(Mutex::new(g));
     register(&game, &seats).await;
     token
@@ -873,10 +885,13 @@ pub async fn create_session(setup: GameSetup, human: Side, bot_delay_ms: u64) ->
 /// Create a two-human session: one VM, two seats, two resume tokens. A seat
 /// that already carries a token (the lobby mints the creator's when they sit
 /// down to wait) keeps it, so a waiting player's token survives the start.
+/// The `timing` is the lobby's — chosen by the host, consented to at the
+/// ready check — and lands on [`CrGame::timing`] for the enforcement to read.
 pub async fn create_two_human_session(
     setup: GameSetup,
     corp: SeatState,
     runner: SeatState,
+    timing: crate::timing::TimingConfig,
 ) -> (Arc<Mutex<CrGame>>, [String; 2]) {
     let mut seats = [corp, runner];
     for s in seats.iter_mut() {
@@ -888,7 +903,7 @@ pub async fn create_two_human_session(
         seats[0].token.clone().unwrap_or_default(),
         seats[1].token.clone().unwrap_or_default(),
     ];
-    let game = Arc::new(Mutex::new(new_game(setup, seats.clone(), 0)));
+    let game = Arc::new(Mutex::new(new_game(setup, seats.clone(), 0, timing)));
     register(&game, &seats).await;
     (game, tokens)
 }
@@ -2809,7 +2824,7 @@ mod tests {
     /// asking "what would this prompt look like".
     fn dealt_game() -> CrGame {
         let setup = eternal_setup(7).expect("a complete pair of decks is a game");
-        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0);
+        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0, crate::timing::TimingConfig::none());
         for _ in 0..20_000 {
             if g.vm.cards_in_zone(Zone::Hand(Side::Runner)).len() >= 2 {
                 break;
@@ -3202,7 +3217,7 @@ mod tests {
     #[test]
     fn a_discard_is_staged_and_only_a_confirmation_throws_the_cards_away() {
         let setup = eternal_setup(7).expect("a complete pair of decks is a game");
-        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0);
+        let mut g = new_game(setup, [SeatState::bot(), SeatState::human("tester", None)], 0, crate::timing::TimingConfig::none());
         let mut hand = Vec::new();
         for _ in 0..200_000 {
             match g.vm.step() {

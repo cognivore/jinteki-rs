@@ -150,7 +150,8 @@ fn small_setup(seed: u64) -> GameSetup {
 /// gate — the same call `local.rs` makes, with a deck pair that is entirely
 /// implemented today.
 async fn two_human_game(seed: u64) -> (String, String) {
-    let open = lobby::create("test table", "alice", None, Side::Corp, seed).await;
+    let open = lobby::create("test table", "alice", None, Side::Corp, None,
+        jinteki_server::timing::TimingConfig::default(), seed).await;
     let claimed = lobby::claim(&open.id).await.expect("the seat we just opened");
     let started = lobby::start(claimed, "bob", None, small_setup(seed)).await;
     (started.creator_token, started.token)
@@ -327,7 +328,8 @@ async fn lobby_create_is_gated_exactly_like_a_bot_start() {
 #[tokio::test]
 async fn lobby_lists_an_open_seat_and_join_honours_the_gate() {
     let addr = spawn_app().await;
-    let open = lobby::create("a game of two halves", "carol", None, Side::Corp, 11).await;
+    let open = lobby::create("a game of two halves", "carol", None, Side::Corp, None,
+        jinteki_server::timing::TimingConfig::default(), 11).await;
 
     let mut ws = open_ws(&addr).await;
     send(&mut ws, json!({"type":"lobby-list"})).await;
@@ -358,7 +360,24 @@ async fn lobby_lists_an_open_seat_and_join_honours_the_gate() {
     send(&mut ws, json!({"type":"lobby-join","gameid": open.id})).await;
     let frames = drain(&mut ws, 2000).await;
     if cr::readiness().ready {
-        assert!(frame(&frames, "session").is_some(), "both seats filled — a game");
+        // Both seats filled is a READY CHECK now, not yet a game: the
+        // joiner is seated at the table with a token, and nothing starts
+        // until both players ready up and the countdown runs out.
+        let p = frame(&frames, "lobby-pairing").expect("a ready-check table");
+        assert!(p["token"].as_str().unwrap().len() >= 16, "the joiner's own resume token");
+        let seats = p["pairing"]["seats"].as_array().unwrap();
+        assert_eq!(seats.len(), 2);
+        assert!(seats.iter().any(|s| s["name"] == json!("carol")));
+        assert_eq!(p["pairing"]["count"], Value::Null, "nobody is ready — no count");
+        assert!(frame(&frames, "session").is_none(), "a join is a ready check, not a start");
+        // Walking away puts carol back on the open list.
+        send(&mut ws, json!({"type":"lobby-cancel"})).await;
+        let frames = drain(&mut ws, 1200).await;
+        let list = frame(&frames, "lobby-list").unwrap();
+        assert!(
+            list["list"].as_array().unwrap().iter().any(|r| r["gameid"] == json!(open.id)),
+            "the joiner leaving reopens the creator's seat"
+        );
     } else {
         let err = frame(&frames, "error").expect("refused");
         assert!(err["cr_readiness"]["ready"] == json!(false));

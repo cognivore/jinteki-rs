@@ -146,11 +146,13 @@ function handle(m) {
         JSON.stringify({ token: m.token, side: m.side, engine: m.engine || "local" }));
       if (m.engine === "cr") mode = "cr";
       if (m.side) mySide = m.side;
-      // A waiting lobby seat that just became a game is a game now.
+      // A waiting seat or a ready-check table that just became a game is a
+      // game now.
       crWaitToken = null;
       crWaitId = null;
       $("crlobby-cancel").style.display = "none";
       $("crlobby-mine").textContent = "";
+      crPairingClear();
       break;
     case "state":
       S = m.state;
@@ -170,6 +172,8 @@ function handle(m) {
        from the bridge's, identical row shape, so the renderers stay thin. */
     case "lobby-list": renderCrLobbies(m.list || []); break;
     case "lobby-waiting": crWaiting(m); break;
+    case "lobby-pairing": crPairingRender(m); break;
+    case "lobby-gone": crPairingGone(); break;
     case "decks": renderDecks(m.list || []); break;
     case "reply":
       if (m.purpose === "join" || m.purpose === "watch") {
@@ -310,26 +314,117 @@ function showCrGap() {
   }
 }
 
-/* ── the eternal lobby: the same VM with a person in the other seat ──────
-   Creating picks a side and, with it, that side's eternal deck; joining
-   takes the seat and the deck still going begging. The completeness gate is
-   the SAME gate — the server refuses a create exactly as it refuses a bot
-   start, with the same payload, so the honest screen below is one screen. */
+/* ── Find a Game: the eternal lobby, with a ready check ──────────────────
+   Creating picks a side (and a deck for it); joining a listed lobby — or
+   "Play anyone", which autopairs with the oldest compatible seat — puts
+   both players at a ready-check table. Both ready, the SERVER counts
+   5-4-3-2-1 and drops both seats into the game; unready or leave cancels.
+   The completeness gate is the SAME gate — the server refuses a create
+   exactly as it refuses a bot start, so the honest screen is one screen.
+
+   Self-contained: `openFindGame()` (exported on window) is the whole entry
+   point, for whatever shell ends up mounting it. */
 let crWaitToken = null;
 let crWaitId = null;
+let crPairing = null;      // the ready-check table this client sits at
 
-$("btn-cr-lobby").onclick = () => {
+/* The lobby deck picker: GET /api/decks (contract {"decks":[{key,name,
+   builtin,legal,side…}]}) filtered per side. Until that catalog exists —
+   it is landing separately — the pickers fall back to the two eternal
+   decks, sent as no key at all, which is also what the server builds. */
+const CR_DEFAULT_DECK = { runner: "Mezzie's Andromeda", corp: "Mezzie's Making Stars" };
+let LOBBY_DECKS = { runner: [], corp: [] };
+
+async function loadLobbyDecks() {
+  let by = { runner: [], corp: [] };
+  try {
+    const r = await api("/api/decks");
+    (Array.isArray(r && r.decks) ? r.decks : []).forEach((d) => {
+      if (!d || !d.key || d.legal === false) return;
+      const side = d.side === "corp" ? "corp" : d.side === "runner" ? "runner" : null;
+      if (side) by[side].push({ key: d.key, name: d.name || d.key });
+    });
+  } catch (e) { /* no catalog is not an error — the fallback stands */ }
+  ["runner", "corp"].forEach((side) => {
+    if (!by[side].length) {
+      by[side] = [{ key: null, name: side === "runner" ? "estrike Regular Andromeda" : "Gauntlet" }];
+    }
+    const sel = $(`crlobby-deck-${side}`);
+    sel.textContent = "";
+    by[side].forEach((d) => {
+      const o = document.createElement("option");
+      o.value = d.key || "";
+      o.textContent = d.name;
+      sel.appendChild(o);
+    });
+    const dflt = by[side].find((d) => d.name === CR_DEFAULT_DECK[side]);
+    if (dflt) sel.value = dflt.key || "";
+  });
+  LOBBY_DECKS = by;
+}
+
+/* The chosen deck key for a side ("" = the default deck, sent as no key). */
+function crDeck(side) {
+  const sel = $(`crlobby-deck-${side === "corp" ? "corp" : "runner"}`);
+  return (sel && sel.value) || undefined;
+}
+
+/* ── the timing selector ─────────────────────────────────────────────────
+   Four modes; the default is Timed 30 minutes a side + Rope, which is also
+   the server's default for a create that says nothing. The object built
+   here IS the server's TimingConfig (timing.rs) on the wire. */
+function crTiming() {
+  const mode = $("crlobby-timing-mode").value;
+  const num = (id, dflt) => {
+    const v = parseInt($(id).value, 10);
+    return Number.isFinite(v) && v > 0 ? v : dflt;
+  };
+  const t = {};
+  if (mode.startsWith("timed")) t.main_clock_secs = num("crlobby-mins", 30) * 60;
+  if (mode.endsWith("rope")) {
+    t.rope = {
+      action_secs: num("crlobby-rope-action", 60),
+      decision_secs: num("crlobby-rope-decision", 10),
+      timeout_fuse_secs: num("crlobby-rope-fuse", 30),
+    };
+  }
+  return t;
+}
+$("crlobby-timing-mode").onchange = () => {
+  const mode = $("crlobby-timing-mode").value;
+  $("crlobby-mins-label").style.display = mode.startsWith("timed") ? "" : "none";
+  $("crlobby-rope-adv").style.display = mode.endsWith("rope") ? "" : "none";
+};
+function crDeckName(side, key) {
+  const d = (LOBBY_DECKS[side] || []).find((x) => (x.key || "") === (key || ""));
+  return d ? d.name : key || (side === "corp" ? "Gauntlet" : "estrike Regular Andromeda");
+}
+
+function openFindGame() {
   if (!CR_READY || !CR_READY.ready) { showCrGap(); return; }
   mode = "cr";
   show("screen-cr-lobby");
   $("crlobby-status").textContent = "connecting…";
+  loadLobbyDecks();
   connect("/ws/local", () => send({ type: "lobby-list" }));
-};
+}
+window.openFindGame = openFindGame;
+$("btn-cr-lobby").onclick = openFindGame;
 
 $("crlobby-back").onclick = () => { if (ws) ws.close(); show("screen-home"); };
 $("crlobby-refresh").onclick = () => send({ type: "lobby-list" });
 $("crlobby-create-runner").onclick = () => crCreate("runner");
 $("crlobby-create-corp").onclick = () => crCreate("corp");
+$("crlobby-anyone").onclick = () => {
+  $("crlobby-status").textContent = "finding an opponent…";
+  send({
+    type: "lobby-anyone",
+    decks: { runner: crDeck("runner") || null, corp: crDeck("corp") || null },
+    // Used only if nobody is waiting and a seat gets opened. NOTE: autopair
+    // itself seats you at ROPED tables only (the server's rule).
+    timing: crTiming(),
+  });
+};
 $("crlobby-cancel").onclick = () => {
   crWaitToken = null;
   crWaitId = null;
@@ -347,13 +442,17 @@ function crCreate(side) {
     side,
     title: $("crlobby-title").value,
     seed: Number.isFinite(seed) ? seed : undefined,
+    deck: crDeck(side),
+    timing: crTiming(),
   });
 }
 
 /* Your own seat, taken, waiting for someone to take the other. The token is
-   stored exactly like a game's, so closing the tab loses nothing. */
+   stored exactly like a game's, so a refresh loses nothing (but a CLOSED
+   socket withdraws the seat — a dead socket's invitation is a lie). */
 function crWaiting(m) {
   mode = "cr";
+  crPairingClear();
   crWaitToken = m.token || crWaitToken;
   crWaitId = (m.lobby || {}).gameid || crWaitId;
   if (crWaitToken) {
@@ -369,12 +468,109 @@ function crWaiting(m) {
   const row = el("div", "lobby-row");
   const t = el("div", "t");
   t.appendChild(el("b", "", g.title || "your game"));
+  const deck = g["deck-name"] || m.deck || "";
+  const wtiming = g["timing-label"] ? ` · ${g["timing-label"]}` : "";
   t.appendChild(el("small", "",
-    `you are the ${g.side || "?"} — ${m.deck || ""} · waiting for the ${g["open-side"] || "?"}`));
+    `you are the ${g.side || "?"} — ${deck}${wtiming} · waiting for the ${g["open-side"] || "?"}`));
   row.appendChild(t);
   row.appendChild(el("span", "chip", "waiting"));
   box.appendChild(row);
   send({ type: "lobby-list" });
+}
+
+/* ── the ready check ─────────────────────────────────────────────────────
+   Two players at one table, each with a Ready toggle; the countdown is the
+   server's voice (`pairing.count`), rendered huge and centered. */
+function crPairingClear() {
+  crPairing = null;
+  $("crlobby-pairing").style.display = "none";
+  $("crlobby-pairing").textContent = "";
+  $("crlobby-count").style.display = "none";
+}
+
+function crPairingRender(m) {
+  mode = "cr";
+  crPairing = m.pairing || {};
+  crWaitToken = null;
+  crWaitId = null;
+  const mine = (crPairing.seats || []).find((s) => s.you) || {};
+  if (m.token) {
+    localStorage.setItem("jinteki_local",
+      JSON.stringify({ token: m.token, side: mine.side, engine: "cr" }));
+  }
+  show("screen-cr-lobby");
+  $("crlobby-mine").textContent = "";
+  $("crlobby-cancel").style.display = "none";
+  $("crlobby-status").textContent = "ready check";
+
+  const box = $("crlobby-pairing");
+  box.textContent = "";
+  box.style.display = "";
+  box.appendChild(el("b", "pairing-title", crPairing.title || "your game"));
+  // The timing the host chose: the joiner reads it here, and readying up
+  // is consenting to it.
+  if (crPairing["timing-label"]) {
+    box.appendChild(el("small", "pair-timing", `Timing: ${crPairing["timing-label"]}`));
+  }
+  (crPairing.seats || []).forEach((s) => {
+    const row = el("div", "pair-row" + (s.you ? " me" : ""));
+    const t = el("div", "t");
+    t.appendChild(el("b", "", `${s.name || "?"}${s.you ? " (you)" : ""}`));
+    t.appendChild(el("small", "", `${s.side} · ${crDeckName(s.side, s.deck) || s["deck-name"] || ""}`));
+    row.appendChild(t);
+    row.appendChild(el("span", "chip" + (s.ready ? " ready" : ""), s.ready ? "READY" : "not ready"));
+    box.appendChild(row);
+  });
+  const actions = el("div", "pair-actions");
+  const ready = el("button", "big " + (mine.ready ? "" : "go"), mine.ready ? "Unready" : "Ready");
+  ready.onclick = () => send({ type: "lobby-ready", ready: !mine.ready });
+  actions.appendChild(ready);
+  const leave = el("button", "chip danger", "Leave");
+  leave.onclick = () => {
+    localStorage.removeItem("jinteki_local");
+    crPairingClear();
+    send({ type: "lobby-cancel" });
+    $("crlobby-status").textContent = "open games";
+  };
+  actions.appendChild(leave);
+  box.appendChild(actions);
+  crCountRender(crPairing.count);
+}
+
+/* 5…1, big and centered, with the one way out that is honest: unready.
+   The overlay's nodes are built ONCE and only the digit changes: a tick
+   must never replace the Cancel button mid-press, or the press lands on a
+   node that no longer exists and the click is silently swallowed. */
+function crCountRender(n) {
+  const o = $("crlobby-count");
+  if (n == null) { o.style.display = "none"; return; }
+  let num = o.querySelector(".count-num");
+  if (!num) {
+    o.textContent = "";
+    num = el("div", "count-num");
+    o.appendChild(num);
+    const cancel = el("button", "chip cancel-count", "Cancel");
+    cancel.onclick = () => send({ type: "lobby-ready", ready: false });
+    o.appendChild(cancel);
+  }
+  if (num.textContent !== String(n)) {
+    num.textContent = String(n);
+    // Restart the pulse for each spoken number.
+    num.style.animation = "none";
+    void num.offsetWidth;
+    num.style.animation = "";
+  }
+  o.style.display = "flex";
+}
+
+/* The table dissolved under us (the other player left, or the gate closed
+   between the count and the start): back to the list, honestly. */
+function crPairingGone() {
+  if (!crPairing) return;
+  crPairingClear();
+  localStorage.removeItem("jinteki_local");
+  toast("The table broke up — back to the lobby");
+  $("crlobby-status").textContent = "open games";
 }
 
 function renderCrLobbies(list) {
@@ -382,7 +578,7 @@ function renderCrLobbies(list) {
   box.textContent = "";
   // Your own seat is shown above, not offered back to you as a join.
   list = list.filter((g) => g.gameid !== crWaitId);
-  if (!crWaitToken) $("crlobby-status").textContent =
+  if (!crWaitToken && !crPairing) $("crlobby-status").textContent =
     list.length ? `${list.length} open game${list.length === 1 ? "" : "s"}` : "open games";
   list.forEach((g) => {
     const row = el("div", "lobby-row");
@@ -391,19 +587,21 @@ function renderCrLobbies(list) {
     const age = Math.max(0, g["age-seconds"] | 0);
     const ago = age < 60 ? `${age}s ago` : age < 3600 ? `${Math.round(age / 60)}m ago`
       : `${Math.round(age / 3600)}h ago`;
+    const hostDeck = crDeckName(g.side, g.deck) || g["deck-name"] || "";
+    const timing = g["timing-label"] ? ` · ${g["timing-label"]}` : "";
     t.appendChild(el("small", "",
-      `${g.creator || "?"} as ${g.side || "?"} · free seat: ${g["open-side"] || "?"} (${g["open-deck"] || ""}) · ${ago}`));
+      `${g.creator || "?"} as ${g.side || "?"} (${hostDeck}) · needs a ${g["open-side"] || "?"}${timing} · ${ago}`));
     row.appendChild(t);
     const join = el("button", "chip go", "Join");
     join.onclick = () => {
       $("crlobby-status").textContent = "joining…";
-      send({ type: "lobby-join", gameid: g.gameid });
+      send({ type: "lobby-join", gameid: g.gameid, deck: crDeck(g["open-side"]) });
     };
     row.appendChild(join);
     box.appendChild(row);
   });
   if (!list.length) {
-    box.appendChild(el("div", "lobby-row", "No open games — create one."));
+    box.appendChild(el("div", "lobby-row", "No open games — Play anyone, or create one."));
   }
 }
 

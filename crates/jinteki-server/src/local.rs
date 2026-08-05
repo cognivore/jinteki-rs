@@ -12,15 +12,27 @@
 //!     {"type":"action","command":"<jnet command>","args":{...}}
 //!     {"type":"say","msg":"..."}                          ← chat (CR games)
 //!     {"type":"lobby-list"}                               ← the CR lobby
-//!     {"type":"lobby-create","side":…,"title":…,"seed":…}
-//!     {"type":"lobby-join","gameid":"..."}
-//!     {"type":"lobby-cancel"}
+//!     {"type":"lobby-create","side":…,"title":…,"seed":…,"deck"?,"timing"?}
+//!     {"type":"lobby-join","gameid":"...","deck"?}
+//!     {"type":"lobby-anyone","decks"?:{"runner"?,"corp"?},"side"?,"seed"?,"timing"?}
+//!     {"type":"lobby-ready","ready":true|false}
+//!     {"type":"lobby-cancel"}          ← also leaves a ready-check table
 //!   server → client:
 //!     {"type":"session","token":"...","side":"runner"|"corp","engine"?:"cr"}
 //!     {"type":"state","state":{...jnet-shaped...},"actions":[...legal...]}
 //!     {"type":"error","error":"...","cr_readiness"?:{…}}
-//!     {"type":"lobby-list","list":[{gameid,title,creator,side,…}]}
+//!     {"type":"lobby-list","list":[{gameid,title,creator,side,deck,…}]}
 //!     {"type":"lobby-waiting","lobby":{…},"token":"..."}
+//!     {"type":"lobby-pairing","token":"...","pairing":{id,title,count,seats:[…]}}
+//!     {"type":"lobby-gone"}            ← your ready-check table dissolved
+//!
+//! A join is a READY CHECK, not a start: both players at the table toggle
+//! ready, the server counts 5,4,3,2,1 (one tick a second, cancelled by any
+//! unready or leave), and only the count reaching zero creates the game —
+//! through the same `cr::eternal_setup` gate and the same
+//! `cr::create_two_human_session` a game has always been created through.
+//! "lobby-anyone" autopairs: it claims the oldest open seat whose free side
+//! the joiner can play (sides must oppose), or opens a seat if none fits.
 //!
 //! TWO engines ride this one socket. `engine:"cr"` on the start message hosts
 //! a `jinteki-cr` VM (the Comprehensive Rules machine, eternal decks, the
@@ -155,13 +167,15 @@ async fn record_outcome_if_over(db: &Db, token: &str, g: &mut LocalGame) {
     );
 }
 
-/// Which engine a connection is attached to. The three are peers on the wire
+/// Which engine a connection is attached to. The four are peers on the wire
 /// and strangers everywhere else.
 enum Attached {
     Local(String, Arc<Mutex<LocalGame>>),
     Cr(crate::cr::Seat),
     /// A seat taken in the CR lobby, waiting for an opponent (its token).
     Waiting(String),
+    /// A seat at a ready-check table (its token, the pairing's id).
+    Paired { token: String, id: String },
 }
 
 /// The seat label the other player sees. The accounts subsystem owns the
@@ -176,9 +190,23 @@ async fn display_name(db: &Db, user: Option<&str>) -> String {
     }
 }
 
+/// This viewer's ready-check table, as a frame. The token rides along so
+/// the client can store it exactly like a game's (a refresh resumes into
+/// the same seat at the same table).
+async fn push_pairing(ws: &mut WebSocket, token: &str, p: &lobby::Pairing) {
+    let _ = ws
+        .send(Message::Text(
+            json!({"type":"lobby-pairing","token": token, "pairing": p.to_json(token)})
+                .to_string()
+                .into(),
+        ))
+        .await;
+}
+
 /// Answer a nudge: re-list the lobby if this socket is watching it, push this
-/// seat's own view if the nudge was about its game, and notice the moment a
-/// waiting seat becomes a game. Nothing here reads another seat's state.
+/// seat's own view if the nudge was about its game, notice the moment a
+/// waiting seat becomes a ready check, and the moment a ready check becomes a
+/// game. Nothing here reads another seat's state.
 async fn on_nudge(
     ws: &mut WebSocket,
     db: &Db,
@@ -192,8 +220,9 @@ async fn on_nudge(
         let list = lobby::list_json().await;
         let _ = ws.send(Message::Text(list.to_string().into())).await;
     }
-    // A waiting seat finds out it is a game the same way anyone would: by
-    // asking the registry whether its token resolves yet.
+    // A waiting seat finds out somebody sat down the same way anyone would:
+    // by asking the registries whether its token resolves yet. (The pair
+    // and the start both announce themselves with Nudge::Lobby.)
     if lobby_moved {
         if let Some(Attached::Waiting(token)) = attached.as_ref() {
             let token = token.clone();
@@ -203,6 +232,56 @@ async fn on_nudge(
                 *attached = Some(Attached::Cr(seat));
                 return;
             }
+            if let Some(p) = lobby::pairing_by_token(&token).await {
+                push_pairing(ws, &token, &p).await;
+                *attached = Some(Attached::Paired { token, id: p.id.clone() });
+                return;
+            }
+        }
+    }
+    // A seat at a ready-check table follows the table wherever it went: it
+    // became a game (attach), it moved (repaint), the joiner left and I am
+    // the creator (back to waiting), or it dissolved under me (gone). Only
+    // its OWN table's nudges move it — every transition out of a pairing
+    // announces itself with Nudge::Pair(id), so the list's churn is not a
+    // reason to repaint the table.
+    if let Some(Attached::Paired { token, id }) = attached.as_ref() {
+        if all || matches!(n, Some(Nudge::Pair(p)) if p == id) {
+            let token = token.clone();
+            if let Some(seat) = crate::cr::lookup(&token).await {
+                crate::cr::attach(ws, db, &token, &seat).await;
+                lobby::nudge(Nudge::Game(seat.key.clone()));
+                *attached = Some(Attached::Cr(seat));
+                return;
+            }
+            if let Some(p) = lobby::pairing_by_token(&token).await {
+                push_pairing(ws, &token, &p).await;
+                return;
+            }
+            if let Some(o) = lobby::by_token(&token).await {
+                let _ = ws
+                    .send(Message::Text(
+                        json!({
+                            "type": "lobby-waiting",
+                            "lobby": o.to_json(),
+                            "token": o.token,
+                            "side": lobby::side_key(o.side),
+                            "deck": lobby::deck_title(o.side),
+                        })
+                        .to_string()
+                        .into(),
+                    ))
+                    .await;
+                *attached = Some(Attached::Waiting(token));
+                return;
+            }
+            let _ = ws
+                .send(Message::Text(json!({"type":"lobby-gone"}).to_string().into()))
+                .await;
+            let list = lobby::list_json().await;
+            let _ = ws.send(Message::Text(list.to_string().into())).await;
+            *attached = None;
+            return;
         }
     }
     if let Some(Attached::Cr(seat)) = attached.as_ref() {
@@ -270,20 +349,31 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                     crate::cr::refuse_gate(&mut ws, &r).await;
                     continue;
                 }
-                // One open seat per person: creating again replaces the old.
+                // One seat per person: creating again replaces the old, and
+                // a ready-check table is walked away from first.
+                if let Some(Attached::Paired { token, .. }) = attached.as_ref() {
+                    lobby::leave_pairing(token).await;
+                    attached = None;
+                }
                 if let Some(Attached::Waiting(t)) = attached.as_ref() {
                     lobby::cancel(t).await;
                 }
                 let side = lobby::side_from_key(v["side"].as_str().unwrap_or("runner"));
                 let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+                let deck = v["deck"].as_str().map(String::from);
+                // Absent timing is the default mode (timed 30 + rope).
+                let timing = crate::timing::TimingConfig::from_wire(&v["timing"]);
                 let o = lobby::create(
                     v["title"].as_str().unwrap_or(""),
                     &me,
                     user.clone(),
                     side,
+                    deck,
+                    timing,
                     seed,
                 )
                 .await;
+                o.hold();
                 watching_lobby = true;
                 let _ = ws
                     .send(Message::Text(
@@ -301,59 +391,185 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                 attached = Some(Attached::Waiting(o.token.clone()));
             }
             Some("lobby-cancel") => {
-                if let Some(Attached::Waiting(t)) = attached.as_ref() {
-                    lobby::cancel(t).await;
-                    attached = None;
+                match attached.as_ref() {
+                    Some(Attached::Waiting(t)) => {
+                        lobby::cancel(t).await;
+                        attached = None;
+                    }
+                    // Cancel at a ready-check table is leaving it (which
+                    // also cancels any running countdown).
+                    Some(Attached::Paired { token, .. }) => {
+                        lobby::leave_pairing(token).await;
+                        attached = None;
+                    }
+                    _ => {}
                 }
+                watching_lobby = true;
                 let list = lobby::list_json().await;
                 let _ = ws.send(Message::Text(list.to_string().into())).await;
             }
             Some("lobby-join") => {
                 let id = v["gameid"].as_str().unwrap_or("");
+                let deck = v["deck"].as_str().map(String::from);
                 let Some(open) = lobby::claim(id).await else {
                     send_err(&mut ws, "that game is no longer open").await;
                     let list = lobby::list_json().await;
                     let _ = ws.send(Message::Text(list.to_string().into())).await;
                     continue;
                 };
-                // You are not your own opponent.
+                // Joining your own lobby is a no-op: the seat goes straight
+                // back and you are simply told you are still waiting.
                 if attached.as_ref().is_some_and(
                     |a| matches!(a, Attached::Waiting(t) if *t == open.token),
                 ) {
+                    let frame = json!({
+                        "type": "lobby-waiting",
+                        "lobby": open.to_json(),
+                        "token": open.token,
+                        "side": lobby::side_key(open.side),
+                        "deck": lobby::deck_title(open.side),
+                    });
                     lobby::restore(open).await;
-                    send_err(&mut ws, "that is your own game").await;
+                    let _ = ws.send(Message::Text(frame.to_string().into())).await;
                     continue;
                 }
-                // SYS-D-12 once more, because the gate is evaluated PER START.
-                let setup = match crate::cr::eternal_setup(open.seed) {
-                    Ok(s) => s,
-                    Err(r) => {
-                        lobby::restore(open).await;
-                        crate::cr::refuse_gate(&mut ws, &r).await;
-                        continue;
-                    }
+                // SYS-D-12 at the door (it is evaluated once more when the
+                // countdown reaches zero, because the gate is per START).
+                let r = crate::cr::readiness();
+                if !r.ready {
+                    lobby::restore(open).await;
+                    crate::cr::refuse_gate(&mut ws, &r).await;
+                    continue;
+                }
+                // One seat per person: taking this table gives up any seat
+                // or table you already held.
+                if let Some(Attached::Paired { token, .. }) = attached.as_ref() {
+                    lobby::leave_pairing(token).await;
+                }
+                if let Some(Attached::Waiting(t)) = attached.as_ref() {
+                    lobby::cancel(t).await;
+                }
+                // Both seats filled: the READY CHECK, not yet the game.
+                let p = lobby::pair(open, &me, user.clone(), deck).await;
+                let my_token = p.seat(p.joiner_side()).token.clone();
+                watching_lobby = true;
+                push_pairing(&mut ws, &my_token, &p).await;
+                attached = Some(Attached::Paired { token: my_token, id: p.id.clone() });
+            }
+            // "Play anyone": autopair with the oldest open seat whose free
+            // side this player can take — or open a seat if none fits.
+            Some("lobby-anyone") => {
+                if matches!(attached.as_ref(), Some(Attached::Cr(_)) | Some(Attached::Local(..)))
+                {
+                    send_err(&mut ws, "you are already in a game").await;
+                    continue;
+                }
+                let r = crate::cr::readiness();
+                if !r.ready {
+                    crate::cr::refuse_gate(&mut ws, &r).await;
+                    continue;
+                }
+                // {"decks":{"runner":key|null,"corp":key|null}} — a side is
+                // playable iff its entry exists; absent map means both, with
+                // each side's default deck.
+                let decks = &v["decks"];
+                let deck_for = |s: &str| decks[s].as_str().map(String::from);
+                let can_sides: Vec<jinteki_cr::object::Side> = match decks.as_object() {
+                    Some(m) => ["corp", "runner"]
+                        .into_iter()
+                        .filter(|s| m.contains_key(*s))
+                        .map(lobby::side_from_key)
+                        .collect(),
+                    None => vec![
+                        jinteki_cr::object::Side::Corp,
+                        jinteki_cr::object::Side::Runner,
+                    ],
                 };
-                let started = lobby::start(open, &me, user.clone(), setup).await;
-                // One `games` row per seat: each player's own token.
-                if let Some(uid) = user.as_deref() {
-                    crate::cr::record_start(&db, &started.token, uid, started.side, started.seed)
-                        .await;
+                if can_sides.is_empty() {
+                    send_err(&mut ws, "pick a deck for at least one side").await;
+                    continue;
                 }
-                if let Some(uid) = started.creator_user.as_deref() {
-                    crate::cr::record_start(
-                        &db,
-                        &started.creator_token,
-                        uid,
-                        started.creator_side,
-                        started.seed,
-                    )
-                    .await;
+                let my_open = match attached.as_ref() {
+                    Some(Attached::Waiting(t)) => Some(t.clone()),
+                    _ => None,
+                };
+                let my_pairing = match attached.as_ref() {
+                    Some(Attached::Paired { token, .. }) => Some(token.clone()),
+                    _ => None,
+                };
+                match lobby::claim_oldest_compatible(&can_sides, my_open.as_deref()).await {
+                    Some(open) => {
+                        // One seat per person: pairing up gives up whatever
+                        // seat or table this player already held.
+                        if let Some(t) = my_pairing.as_deref() {
+                            lobby::leave_pairing(t).await;
+                        }
+                        if let Some(t) = my_open.as_deref() {
+                            lobby::cancel(t).await;
+                        }
+                        let my_side = open.side.other();
+                        let deck = deck_for(lobby::side_key(my_side));
+                        let p = lobby::pair(open, &me, user.clone(), deck).await;
+                        let my_token = p.seat(my_side).token.clone();
+                        watching_lobby = true;
+                        push_pairing(&mut ws, &my_token, &p).await;
+                        attached =
+                            Some(Attached::Paired { token: my_token, id: p.id.clone() });
+                    }
+                    None if my_open.is_some() || my_pairing.is_some() => {
+                        // Nobody to pair with and this player already holds
+                        // a seat: keep waiting where they are.
+                        let list = lobby::list_json().await;
+                        let _ = ws.send(Message::Text(list.to_string().into())).await;
+                    }
+                    None => {
+                        // Nobody to play: open a seat and wait to be found.
+                        let side = match v["side"].as_str().map(lobby::side_from_key) {
+                            Some(s) if can_sides.contains(&s) => s,
+                            _ => can_sides[0],
+                        };
+                        let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+                        let deck = deck_for(lobby::side_key(side));
+                        let timing = crate::timing::TimingConfig::from_wire(&v["timing"]);
+                        let o = lobby::create("", &me, user.clone(), side, deck, timing, seed)
+                            .await;
+                        o.hold();
+                        watching_lobby = true;
+                        let _ = ws
+                            .send(Message::Text(
+                                json!({
+                                    "type": "lobby-waiting",
+                                    "lobby": o.to_json(),
+                                    "token": o.token,
+                                    "side": lobby::side_key(side),
+                                    "deck": lobby::deck_title(side),
+                                })
+                                .to_string()
+                                .into(),
+                            ))
+                            .await;
+                        attached = Some(Attached::Waiting(o.token.clone()));
+                    }
                 }
-                watching_lobby = false;
-                crate::cr::attach(&mut ws, &db, &started.token, &started.seat).await;
-                // Wake the creator: their seat is a game now.
-                lobby::nudge(Nudge::Game(started.key.clone()));
-                attached = Some(Attached::Cr(started.seat));
+            }
+            // The ready toggle. Both seats ready starts the server's count;
+            // the nudge bus repaints both tables either way.
+            Some("lobby-ready") => {
+                let Some(Attached::Paired { token, .. }) = attached.as_ref() else {
+                    send_err(&mut ws, "you are not at a table").await;
+                    continue;
+                };
+                let ready = v["ready"].as_bool().unwrap_or(true);
+                match lobby::set_ready(token, ready).await {
+                    lobby::ReadyOutcome::BothReadyNow(id) => {
+                        lobby::spawn_countdown(id, db.clone()).await;
+                    }
+                    lobby::ReadyOutcome::Updated(_) => {}
+                    lobby::ReadyOutcome::NotPaired => {
+                        send_err(&mut ws, "that table is gone").await;
+                        attached = None;
+                    }
+                }
             }
             // Chat: both players' logs, verbatim, attributed (CR games only —
             // the game log itself stays per-side).
@@ -502,9 +718,19 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                     attached = Some(Attached::Cr(seat));
                     continue;
                 }
+                // A token can also be a seat at a ready-check table — a
+                // refresh mid-check resumes into the same seat.
+                if let Some(p) = lobby::pairing_by_token(&token).await {
+                    p.hold(&token);
+                    watching_lobby = true;
+                    push_pairing(&mut ws, &token, &p).await;
+                    attached = Some(Attached::Paired { token, id: p.id.clone() });
+                    continue;
+                }
                 // A token can also be a seat still waiting for an opponent —
                 // create, close the tab, come back, still waiting.
                 if let Some(o) = lobby::by_token(&token).await {
+                    o.hold();
                     watching_lobby = true;
                     let _ = ws
                         .send(Message::Text(
@@ -559,6 +785,10 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                         send_err(&mut ws, "waiting for an opponent").await;
                         continue;
                     }
+                    Some(Attached::Paired { .. }) => {
+                        send_err(&mut ws, "the ready check has not finished").await;
+                        continue;
+                    }
                     None => {
                         send_err(&mut ws, "no game attached").await;
                         continue;
@@ -585,10 +815,21 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
 
     // The socket is gone. A seat with nobody in it is shown as exactly that
     // to the player still at the table — a held game is honest, a silently
-    // stalled one is not.
-    if let Some(Attached::Cr(seat)) = attached.as_ref() {
-        crate::cr::set_connected(seat, false).await;
-        lobby::nudge(Nudge::Game(seat.key.clone()));
+    // stalled one is not. A LOBBY seat, though, is only an invitation, and
+    // an invitation from a dead socket is a lie: it is withdrawn, and a
+    // ready-check table is walked away from (which cancels any countdown
+    // and puts a still-present creator back on the open list).
+    match attached.as_ref() {
+        Some(Attached::Cr(seat)) => {
+            crate::cr::set_connected(seat, false).await;
+            lobby::nudge(Nudge::Game(seat.key.clone()));
+        }
+        // Not an instant withdrawal: a refresh is also a dead socket, so
+        // the seat survives a grace period in case its player comes back.
+        Some(Attached::Waiting(token)) | Some(Attached::Paired { token, .. }) => {
+            lobby::drop_holder(token.clone());
+        }
+        _ => {}
     }
 }
 
