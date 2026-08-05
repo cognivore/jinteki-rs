@@ -1719,6 +1719,15 @@ function renderPrompt() {
   // on two consecutive prompts that happen to look alike.)
   const pkey = `${p.msg}|${choices.map((ch) => ch.uuid).join(",")}`;
   if (promptFanKey !== pkey) { promptFanKey = pkey; fanOf("prompt").focus = 0; }
+  promptBody(sheet, p, choices);
+  // THE LAW §6, checked rather than trusted: every prompt carries at least
+  // one thing the player can do. See `ensureAnswerable`.
+  ensureAnswerable(sheet, p);
+}
+
+/* Which shape of sheet this decision gets. Every branch ends with the sheet
+   drawn; `renderPrompt` is the one that then checks it can be answered. */
+function promptBody(sheet, p, choices) {
   if (p.arrange && p.arrange.length > 1) { renderArrangePrompt(sheet, p); return; }
   if (p["select-cards"]) { renderSelectPrompt(sheet, p, choices); return; }
   if (choices.some((ch) => ch.card)) { renderCardPrompt(sheet, p, choices); return; }
@@ -1744,6 +1753,39 @@ function renderPrompt() {
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
+}
+
+/* THE LAW §6: an empty answer is stated, never implied — AND IT IS ALWAYS
+   GIVABLE. A sheet that ended up with no card to tap and no button to press
+   is not a bad prompt, it is a hung game: it happened, from a live game, when
+   CR 1.15.2b clamped an announcement to the zero targets that existed and the
+   button that ends a selection was offered only for an explicit "up to".
+
+   The kernel now answers a decision with one legal answer itself
+   (`Vm::forced_answer`) and the server's "you may stop here" and its
+   willingness to honour it read one predicate — but this check exists
+   BECAUSE those are the layers that were wrong. The client must not depend
+   on the server never making a mistake, and "the sheet has something in it"
+   is a question the client can always ask of itself.
+
+   It is not an exception to §8's two taps: those are for choosing FROM a
+   pool, and this is the case where the pool is empty, which has no first tap
+   to make. */
+function ensureAnswerable(sheet, p) {
+  if (p["prompt-type"] === "waiting") return;   // it is not your move: nothing to do IS the answer
+  if (sheet.querySelector(".pbtns .chip:not(:disabled)")) return;   // a button you can press
+  if (sheet.querySelector(".fanrow .cardpick .card")) return;       // a card you can tap
+  // The board is answering it: the cards are lit behind this sheet (§3).
+  if (p["choices-onboard"] || p["select-onboard"]) return;
+  let btns = sheet.querySelector(".pbtns");
+  if (!btns) { btns = el("div", "pbtns"); sheet.appendChild(btns); }
+  // Prefer an answer the decision itself named; otherwise the only thing left
+  // to say about a choice with nothing in it is that you have seen it.
+  const ch = (p.choices || [])[0];
+  const b = el("button", "chip go", ch ? sym(String(ch.value)) : "OK");
+  b.onclick = ch ? () => act("choice", { choice: { uuid: ch.uuid } })
+                 : () => act("select-done", {});
+  btns.appendChild(b);
 }
 
 /* CR 4.6.7: the play area, on its own rail.
