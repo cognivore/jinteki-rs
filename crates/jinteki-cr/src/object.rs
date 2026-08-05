@@ -581,7 +581,22 @@ pub fn card_active(obj: &Object) -> bool {
             obj.faceup
         }
         Zone::Root(_) | Zone::Ice(_) => match obj.printed.side {
-            Side::Corp => obj.faceup,
+            // 1.8.3a: the Corp cards active here are the installed and
+            // REZZED ones, and 8.1.1 makes rezzed narrower than faceup: an
+            // asset, upgrade or piece of ice is rezzed if installed and
+            // faceup, but a faceup agenda is neither rezzed nor unrezzed —
+            // 3.2.3 keeps an agenda inactive while installed however it
+            // faces. A permission installing one faceup (BANGUN's "You may
+            // install agendas faceup") changes the status and not the
+            // activeness, which is all its printed "(This does not make
+            // their abilities active.)" restates. (3.2.3a's exception — an
+            // agenda whose OWN printed text directs the Corp to install it
+            // faceup — has no representative in this repo yet.)
+            Side::Corp => {
+                cite!("rule_rezzed_unrezzed");
+                cite!("rule_agendas_not_rezzed");
+                obj.faceup && obj.printed.card_type != CardType::Agenda
+            }
             Side::Runner => true,
         },
         // CR 1.5.4a / 1.8.3d: an identity in the pile is outside the game.

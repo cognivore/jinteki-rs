@@ -592,6 +592,59 @@ pub fn earth_station_ascending_to_orbit() -> Card {
 
 /// Every Weyland Consortium identity this module carries, in the order the
 /// queue reached them.
+/// BANGUN: When Disaster Strikes — Identity: Corp.
+/// "You may install agendas faceup. (This does not make their abilities
+///  active.) Whenever the Runner accesses a faceup installed agenda, do 2
+///  meat damage and give the Runner 1 tag."
+///
+/// COMPLETE. The first sentence is a PERMISSION, not an install ability: it
+/// is the opposite number of Apex's "you cannot install" declaration, stated
+/// about every install its controller performs — 5.2.6d's basic action
+/// included — and wanting the one thing that prohibition does not: a
+/// decision. Where 8.5.2 settles a Corp card's face facedown with nobody
+/// asked, the installer is asked at step 8.5.16a, and their answer is "the
+/// status it will have when the installation is complete". It is not
+/// 4.6.4d's stipulation, which the installing ability itself states and
+/// which asks no one.
+///
+/// The parenthetical restates the CR's own arrangement rather than adding
+/// one: 8.1.1 leaves a faceup agenda "neither rezzed nor unrezzed", and
+/// 3.2.3 keeps an agenda inactive while installed however it faces — so the
+/// faceup install changes the status and nothing else. (3.2.3a's exception
+/// is an agenda whose OWN printed text directs the faceup install; a third
+/// card's permission is not that.) What the status DOES change is what
+/// other sentences can see: SSO Industries' "all installed faceup agendas"
+/// stops answering 0, and this card's second sentence exists.
+///
+/// The second sentence is 7.3's access with the sentence's words about the
+/// card — "faceup installed" — as criteria on the occurrence, asked of the
+/// card's state at the access itself (the scan runs before 7.3.4's steal
+/// moves it, so the damage and tag land and the steal still completes). One
+/// sentence, so one instruction (9.11.3): the "and" is `combined`. "Do 2
+/// meat damage" is 10.4.1's Corp-does branch, exactly Builder of Nations'
+/// verb; a facedown-installed agenda meets nothing, and so does a faceup
+/// agenda accessed anywhere it is not installed (HQ, R&D, Archives).
+pub fn bangun() -> Card {
+    card("BANGUN: When Disaster Strikes")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Corp"])
+        .text("You may install agendas faceup. (This does not make their abilities active.)")
+        .text("Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.")
+        .declares([may_install_faceup(&[of_type(CardType::Agenda)])])
+        .when(
+            accesses_a_matching(
+                CardType::Agenda,
+                &[installed_corp_card(), non(facedown())],
+            ),
+            [combined([meat_damage(Corp, 2), give_tags(1)])],
+        )
+        .named("when disaster strikes")
+        .build()
+}
+
+
 pub fn identities() -> Vec<Card> {
     vec![
         sso_industries(),
@@ -610,5 +663,6 @@ pub fn identities() -> Vec<Card> {
         nuvem_sa(),
         blue_sun(),
         earth_station_sea_headquarters(),
+        bangun(),
     ]
 }

@@ -81,6 +81,9 @@ pub enum Kind {
     PsiBid,
     /// 1.16.2f: dividing a "total N less" modifier between two costs.
     CostDivision,
+    /// 8.5.16a: declaring the face of the card being installed, under an
+    /// active faceup permission (8.5.2 would otherwise settle it unasked).
+    InstallFace,
     /// 9.8.2c: declaring where granted subroutines go.
     SubOrder,
     /// 1.16.1 / 1.15.1b: choosing which cards pay a cost (not a target
@@ -128,6 +131,7 @@ impl Kind {
             DecisionSpec::TraceSpend { .. } => Kind::TraceSpend,
             DecisionSpec::PsiBid { .. } => Kind::PsiBid,
             DecisionSpec::DivideCostReduction { .. } => Kind::CostDivision,
+            DecisionSpec::InstallFaceup { .. } => Kind::InstallFace,
             DecisionSpec::DeclareSubroutineOrder { .. } => Kind::SubOrder,
             DecisionSpec::PaymentCards { .. } => Kind::PaymentCards,
             DecisionSpec::DeclareX { .. } => Kind::DeclareX,
@@ -395,6 +399,11 @@ impl Match {
     }
     pub fn cost_division() -> Match {
         Match::of(Kind::CostDivision)
+    }
+    /// 8.5.16a: the face declaration a faceup permission puts to the
+    /// installer. Answer with [`Reply::Optional`] — `true` installs faceup.
+    pub fn install_face() -> Match {
+        Match::of(Kind::InstallFace)
     }
     /// 1.16.1 / 1.15.1b: choosing which cards pay a cost.
     pub fn payment_cards() -> Match {
@@ -1251,6 +1260,9 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         // 1.16.2f: the neutral policy puts the whole modifier on the install
         // cost; plans that care declare the split themselves.
         DecisionSpec::DivideCostReduction { total } => DecisionAnswer::DivideReduction(*total),
+        // 8.5.16a: the neutral policy declines the faceup permission,
+        // leaving 8.5.2's facedown default; plans that install faceup say so.
+        DecisionSpec::InstallFaceup { .. } => DecisionAnswer::ResolveOptional(false),
         // 9.8.2c: the neutral policy puts the granted subroutines last, which
         // is where the category rules would have put an "after"-category
         // grant anyway; plans that care declare a position.

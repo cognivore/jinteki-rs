@@ -142,7 +142,18 @@ pub enum TriggerCond {
     /// `of_types` is the sentence's card-type stipulation ("whenever you
     /// access an agenda", Film Critic); empty means no stipulation, exactly
     /// as it does on [`TriggerCond::CorpRezzesCard`].
-    RunnerAccessesCard { of_types: Vec<crate::object::CardType> },
+    ///
+    /// `criteria` is anything else the sentence says about the card accessed
+    /// — "a **faceup installed** agenda" (BANGUN: When Disaster Strikes) — in
+    /// the shared filter vocabulary (§12 rule 5), exactly as
+    /// [`TriggerCond::CardPlayed`] carries it. It is asked of the card's
+    /// state at the access itself: the checkpoint scan that creates
+    /// instances runs on the step that made the card accessed (7.3.1),
+    /// before 7.3.4's steal moves it anywhere.
+    RunnerAccessesCard {
+        of_types: Vec<crate::object::CardType>,
+        criteria: Vec<crate::instr::TargetFilter>,
+    },
     /// "When the Runner encounters this ice."
     SelfEncountered,
     /// "Whenever the Runner encounters a piece of ice." (Runner-side class),
@@ -1582,6 +1593,29 @@ pub enum StaticDecl {
     /// describes the installee, so it is the shared filter vocabulary
     /// (§12 rule 5) and nothing else.
     CannotInstallMatching { criteria: Vec<crate::instr::TargetFilter> },
+    /// "You may install agendas faceup." (BANGUN: When Disaster Strikes; CR
+    /// 8.5.16a / 8.5.2.) The opposite number of
+    /// [`StaticDecl::CannotInstallMatching`]: a PERMISSION the declaring
+    /// player states about their own installs — every one they perform,
+    /// 5.2.6d's basic action included — rather than a prohibition. And where
+    /// a "cannot" needs nobody's assent, a "may" is somebody's choice: while
+    /// this is active and the described card's face would otherwise be
+    /// settled facedown by 8.5.2 with nobody asked, the installer is asked
+    /// at step 8.5.16a, and their answer is "the status it will have when
+    /// the installation is complete".
+    ///
+    /// Deliberately NOT 4.6.4d's stipulation — that one is stated by the
+    /// installing ability itself (`Instruction::InstallCard`'s `facedown`)
+    /// and asks no one. And it makes no card active: 8.1.1 leaves a faceup
+    /// agenda neither rezzed nor unrezzed, and 3.2.3 keeps an installed
+    /// agenda inactive however it faces, which is all the printed "(This
+    /// does not make their abilities active.)" restates. (3.2.3a's exception
+    /// is an agenda whose OWN printed text directs the faceup install — a
+    /// third card's permission is not that.)
+    ///
+    /// `criteria` is the sentence's description of the cards the permission
+    /// reaches, in the shared filter vocabulary (§12 rule 5).
+    MayInstallFaceup { criteria: Vec<crate::instr::TargetFilter> },
     /// "+N link" (Dyson Mem Chip class; the 9.6.5d link example).
     LinkBonus(i32),
     /// "This card is not trashed until another current is played or an agenda
@@ -2601,10 +2635,17 @@ fn trigger_matches_dyn(
         // checked by the checkpoint scan (it has the state access); this arm
         // only matches the change class.
         (TriggerCond::SelfAccessed { .. }, GameChange::CardAccessed { obj }) => *obj == source.id,
-        (TriggerCond::RunnerAccessesCard { of_types }, GameChange::CardAccessed { obj }) => {
+        (
+            TriggerCond::RunnerAccessesCard { of_types, criteria },
+            GameChange::CardAccessed { obj },
+        ) => {
             cite!("rule_accessing");
             cite!("rule_card_type_list");
-            of_types.is_empty() || card_type_of(*obj).is_some_and(|t| of_types.contains(&t))
+            (of_types.is_empty() || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
+                // "a faceup installed agenda" — the sentence's further words
+                // about the card, asked of its state at the access itself
+                // (the scan runs before 7.3.4's steal moves it).
+                && matches_criteria(*obj, criteria)
         }
         (TriggerCond::PlayerDrawsCards(side), GameChange::CardDrawn { side: s, .. }) => {
             cite!("rule_draw_procedure");

@@ -2089,7 +2089,14 @@ pub fn sabotage(n: i64) -> Instruction {
 /// "Whenever you access a <type>…" (9.6: the Runner's side of 7.3.6's
 /// access), with the sentence's card-type stipulation as content.
 pub fn accesses_a(of: CardType) -> TriggerCond {
-    TriggerCond::RunnerAccessesCard { of_types: vec![of] }
+    TriggerCond::RunnerAccessesCard { of_types: vec![of], criteria: Vec::new() }
+}
+/// "Whenever the Runner accesses a **faceup installed** agenda…" (BANGUN:
+/// When Disaster Strikes) — the same access occurrence with the sentence's
+/// further words about the card as criteria, in the shared filter vocabulary
+/// (§12 rule 5), asked of the card's state at the access itself.
+pub fn accesses_a_matching(of: CardType, criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::RunnerAccessesCard { of_types: vec![of], criteria: criteria.to_vec() }
 }
 /// "Whenever you install a card…" — 8.5's install, with no stipulation about
 /// what was installed.
@@ -2936,6 +2943,16 @@ pub fn can_be_advanced() -> StaticDecl {
 /// description of the cards it forbids.
 pub fn cannot_install(criteria: &[TargetFilter]) -> StaticDecl {
     StaticDecl::CannotInstallMatching { criteria: criteria.to_vec() }
+}
+/// "You may install agendas faceup." (BANGUN; CR 8.5.16a / 8.5.2 — the
+/// opposite number of [`cannot_install`]: a PERMISSION the declaring player
+/// states about every install they perform, 5.2.6d's basic action included.
+/// It installs nothing itself: where 8.5.2 would settle the placed card's
+/// face facedown with nobody asked, the installer is asked instead.) The
+/// criteria are the sentence's description of the cards the permission
+/// reaches.
+pub fn may_install_faceup(criteria: &[TargetFilter]) -> StaticDecl {
+    StaticDecl::MayInstallFaceup { criteria: criteria.to_vec() }
 }
 /// "Lower the install cost of the first <described card> you install each
 /// turn by N." (Kate "Mac" McCaffrey, Az McCaffrey.) The reduction happens of

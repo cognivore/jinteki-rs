@@ -647,7 +647,10 @@ pub fn film_critic() -> Card {
         .text("[click],[click]: Add an agenda hosted on Film Critic to your score area.")
         .declares([can_host(&[TargetFilter::CardTypeIs(CardType::Agenda)], Some(1))])
         .may_when(
-            TriggerCond::RunnerAccessesCard { of_types: vec![CardType::Agenda] },
+            TriggerCond::RunnerAccessesCard {
+                of_types: vec![CardType::Agenda],
+                criteria: Vec::new(),
+            },
             [host_accessed_on_self()],
         )
         .named("film critic: above the fray")

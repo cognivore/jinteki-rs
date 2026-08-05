@@ -136,17 +136,7 @@ kernel words, not card patches.
   is over. The card is not the problem — the action is, and moving the
   announcement in front of the payment is a change to 5.2's shape rather than
   a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
-- **A DECLARATION cannot offer the installer a choice of face.**
-  `Instruction::InstallCard` now carries the face an install leaves the card
-  with (`facedown`, 4.6.4d), so a stipulation about it can be made — but that
-  is a stipulation the installing ABILITY states, and "you may install agendas
-  faceup" is a permission a third card states about every install its
-  controller performs, 5.2.6d's basic action included. It is the opposite
-  number of `StaticDecl::CannotInstallMatching`, and it wants the one thing
-  that declaration does not: a decision, put to the installer at step 8.5.16a,
-  where 8.5.2 otherwise settles the face with nobody asked.
-  *(BANGUN: When Disaster Strikes, whose second sentence also wants
-  `TriggerCond::RunnerAccessesCard` to describe the card accessed.)*
+
 
 
 ## No longer a data gap: the back faces ride in cards.json now
@@ -180,9 +170,9 @@ Earth Station: SEA Headquarters was completed from exactly this data.
 ## Progress
 
 <<<<<<< HEAD
-- Implemented: **132 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **134 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 =======
-- Implemented: **130 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **134 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 >>>>>>> c442d78 (feat(carddata+cards): the back faces arrive from the source, and Earth Station flips)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
@@ -378,7 +368,7 @@ Module: `decks/identities/corp_nbn.rs`
 Module: `decks/identities/corp_weyland.rs`
 
 - [x] **Argus Security: Protection Guaranteed** — Whenever the Runner steals an agenda, they must take 1 tag or suffer 2 meat damage.
-- [ ] **BANGUN: When Disaster Strikes** — You may install agendas faceup. (This does not make their abilities active.) Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.
+- [x] **BANGUN: When Disaster Strikes** — You may install agendas faceup. (This does not make their abilities active.) Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.
 - [x] **Blue Sun: Powering the Future** — When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.
 - [x] **Earth Station: SEA Headquarters** — Limit 1 remote server. As an additional cost to run HQ, the Runner must pay 1[credit]. [click]: Flip this identity.
 - [x] **Fringe Applications: Tomorrow, Today** — Draft format only. If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.

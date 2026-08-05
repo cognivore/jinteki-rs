@@ -192,6 +192,13 @@ pub enum DecisionSpec {
     /// cost. The remainder comes off the rez cost, so one number is the whole
     /// declaration.
     DivideCostReduction { total: u32 },
+    /// CR 8.5.16a / 8.5.2: the face of the card being installed. 8.5.2 would
+    /// settle it with nobody asked (a Corp card enters play facedown); an
+    /// active faceup permission ("You may install agendas faceup", BANGUN)
+    /// makes it the installer's DECISION instead, asked as step 8.5.16a
+    /// places the card. Answer with `ResolveOptional(true)` to install the
+    /// card faceup, `false` to leave 8.5.2's facedown default.
+    InstallFaceup { card: ObjectId },
     /// CR 1.16.2c: announce the value of X for the cost about to be paid.
     /// `max` is the greatest value the ability's own restriction allows, so
     /// the legal answers are exactly `0..=max`.

@@ -227,6 +227,11 @@ pub enum DecisionCtx {
     /// 1.16.2f: the Corp divides an install-and-rez "total N less" modifier
     /// between the install cost and the rez cost.
     CostDivision,
+    /// CR 8.5.16a / 8.5.2: the installer declares the face of the card being
+    /// installed, under an active faceup permission
+    /// ([`StaticDecl::MayInstallFaceup`], BANGUN). The answer resumes step
+    /// (a) of the suspended installation.
+    InstallFace,
     /// 9.9.11: choose the order in which replacement effects apply.
     ReplacementOrder,
     /// CR 6.7.4c: apply an optional replacement effect, or decline it.
@@ -294,6 +299,13 @@ pub struct InstallProgress {
     /// installed FACEDOWN, so that is "the status it will have when the
     /// installation is complete" and step (a) places it that way.
     pub facedown: bool,
+    /// CR 8.5.16a / 8.5.2: the installer answered an active faceup
+    /// permission's Decision ("You may install agendas faceup", BANGUN)
+    /// with FACEUP, so that is the status the card will have when the
+    /// installation is complete — where 8.5.2 would otherwise settle a Corp
+    /// card facedown with nobody asked. Never set for a Runner card: 4.6.4c
+    /// already places those faceup and the permission has nothing to add.
+    pub faceup_by_permission: bool,
 }
 
 /// CR 8.7.2b: the instruction a search is "followed by", when it refers to
@@ -7235,6 +7247,190 @@ impl Vm {
         })
     }
 
+    /// CR 8.5.16a / 8.5.2: does an active [`StaticDecl::MayInstallFaceup`]
+    /// make the face of this install its installer's choice? "You may install
+    /// agendas faceup" (BANGUN) is stated about the declaring player's own
+    /// installs exactly as [`Vm::install_prohibited`]'s prohibition is, and —
+    /// since a card is installed by its own side (8.5.1) — reaches the cards
+    /// of the side the declaration's source is controlled by.
+    ///
+    /// Asked only where 8.5.2 would otherwise settle the face with nobody
+    /// asked: a Corp card's default is facedown. A Runner card is placed
+    /// faceup by 4.6.4c already, so the permission adds nothing there and no
+    /// question exists.
+    pub fn install_faceup_permitted(&self, card: ObjectId) -> bool {
+        cite!("rule_steps_installing_place");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        if o.printed.side != Side::Corp {
+            return false;
+        }
+        self.active_statics().iter().any(|(src, d)| match d {
+            StaticDecl::MayInstallFaceup { criteria } => {
+                self.st.objects.get(src).is_some_and(|s| s.controller == o.printed.side)
+                    && criteria.iter().all(|f| self.filter_matches(o, *f, Some(*src)))
+            }
+            _ => false,
+        })
+    }
+
+    /// Steps 8.5.16a-c proper: place the card into the play area with "the
+    /// status it will have when the installation is complete", resolve the
+    /// destination declared at 8.5.16b, and trash like cards. Split from the
+    /// `InstallStepPlace` instruction arm because an active faceup
+    /// permission (8.5.16a / 8.5.2, [`StaticDecl::MayInstallFaceup`]) can
+    /// suspend the step on a Decision, whose answer resumes exactly here.
+    /// `source_obj` is the resolving ability's source, which
+    /// [`crate::instr::InstallDest::InwardFromSource`] reads.
+    fn install_step_place(&mut self, source_obj: ObjectId) {
+        cite!("rule_steps_installing_place");
+        cite!("rule_steps_installing_destination");
+        cite!("rule_steps_installing_trash_like_cards");
+        let Some(p) = self.installs.last().cloned() else { return };
+        if p.aborted {
+            return;
+        }
+        let c = p.card;
+        // (b)-precondition: identify the destination. If it is invalid or
+        // cannot be identified, no installation can take place (8.5.14) —
+        // the card never even moves.
+        let resolved: Option<(Zone, Option<usize>)> = match p.dest {
+            crate::instr::InstallDest::Root(s) => Some((Zone::Root(s), None)),
+            crate::instr::InstallDest::NewRemoteRoot => {
+                cite!("rule_corp_install_choose_destination_server");
+                // 4.6.8f: a limit on remote servers makes "a new
+                // remote server" an unavailable destination, so the
+                // destination cannot be identified (8.5.14).
+                if !self.can_create_new_remote() {
+                    None
+                } else {
+                    let s = ServerId::Remote(self.next_remote);
+                    self.next_remote += 1;
+                    Some((Zone::Root(s), None))
+                }
+            }
+            crate::instr::InstallDest::Protecting(s) => {
+                cite!("rule_ice_outermost_position");
+                Some((Zone::Ice(s), None))
+            }
+            crate::instr::InstallDest::NewRemoteProtecting => {
+                // 8.5.2a: the new remote server is created at step
+                // 8.5.16e, with this ice protecting it.
+                cite!("rule_corp_install_choose_destination_server");
+                if !self.can_create_new_remote() {
+                    None
+                } else {
+                    let s = ServerId::Remote(self.next_remote);
+                    self.next_remote += 1;
+                    Some((Zone::Ice(s), None))
+                }
+            }
+            crate::instr::InstallDest::DeclaredByInstaller
+            | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
+            | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot
+            | crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer => {
+                // 8.5.16b replaced this with the declared destination
+                // before the instruction became imminent; reaching it
+                // here means no destination could be identified.
+                cite!("rule_install_to_invalid_destination");
+                None
+            }
+            crate::instr::InstallDest::InwardFromSource => {
+                // 6.2.2c: the new position goes inward from the
+                // source's own position. The source not protecting a
+                // server has no position from which "directly
+                // inward" can be evaluated (8.5.14).
+                cite!("rule_create_position_directly_inward");
+                self.position_of_ice(source_obj).and_then(|(s, pos)| {
+                    self.positions_inward_of(s, pos).map(|i| (Zone::Ice(s), Some(i)))
+                })
+            }
+            crate::instr::InstallDest::InnermostProtectingAttackedServer => {
+                // 6.2.2b: inward from the innermost already-existing
+                // position — index 0 of the server's sequence, which
+                // is also the right answer for a server with none.
+                // 6.1.2: outside a run there is no attacked server,
+                // so no destination can be identified (8.5.14).
+                cite!("rule_create_position_innermost");
+                self.run_ctx().map(|r| (Zone::Ice(r.server), Some(0)))
+            }
+            crate::instr::InstallDest::Rig
+            | crate::instr::InstallDest::RunnerChoiceHostOrRig => {
+                Some((Zone::Rig, None))
+            }
+            // 1.13.12: the hosted object moves to the host's zone.
+            crate::instr::InstallDest::HostedOn(h) => {
+                cite!("rule_hosted_object_same_zone_as_host");
+                self.st.objects.get(&h).map(|host| (host.zone, None))
+            }
+            crate::instr::InstallDest::BreachedServerRoot => {
+                self.breach_server().map(|s| (Zone::Root(s), None))
+            }
+        };
+        let Some((zone, ice_at)) = resolved else {
+            cite!("rule_install_to_invalid_destination");
+            if let Some(p) = self.installs.last_mut() {
+                p.aborted = true;
+            }
+            return;
+        };
+        // (a) place into the play area with its final faceup status;
+        // not yet installed or active.
+        // 8.5.2 puts a Corp card facedown and 4.6.4c a Runner card
+        // faceup; 4.6.4d is the exception the installing effect states
+        // (Apex), and 8.5.16a's declared status under an active faceup
+        // permission (BANGUN) is the other one — the installer chose it
+        // when this step suspended. The stipulation and the answer decide
+        // here and nowhere else.
+        let side = self.st.objects[&c].printed.side;
+        self.move_card(c, Zone::PlayArea(side));
+        {
+            cite!("rule_play_area_faceup_facedown");
+            let o = self.st.objects.get_mut(&c).unwrap();
+            o.staged = true;
+            o.faceup = match side {
+                Side::Runner => !p.facedown,
+                Side::Corp => p.faceup_by_permission,
+            };
+        }
+        // 6.2.2: for ice being installed, the position is created
+        // HERE — when the destination is declared — and the ice
+        // occupies it at step 8.5.16e.
+        let ice_position = match zone {
+            Zone::Ice(s) => {
+                let at = ice_at.unwrap_or_else(|| self.positions_at(s).len());
+                if ice_at.is_none() {
+                    cite!("rule_create_position_outermost");
+                }
+                Some(self.create_position(s, at))
+            }
+            _ => None,
+        };
+        if let Some(p) = self.installs.last_mut() {
+            p.resolved_zone = Some(zone);
+            p.ice_position = ice_position;
+        }
+        // (c) trash like cards — the MUST component of 8.5.6a.
+        if let Zone::Root(s) = zone {
+            let must_trash: Vec<ObjectId> = self
+                .st
+                .root
+                .get(&s)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|&other| self.like_cards(c, other))
+                .collect();
+            for t in must_trash {
+                cite!("rule_must_trash_cases_in_root_of_server");
+                // 8.5.7: trashed with the same faceup/facedown
+                // status they had while installed (trash_card keeps
+                // the flag).
+                cite!("rule_install_corp_cards_trashed_facedown_archives");
+                self.trash_card(t, Side::Corp);
+            }
+        }
+    }
+
     /// The same vocabulary asked of ONE object by id, as a conjunction — what
     /// a trigger condition's criteria stipulate about the card an occurrence
     /// names ("you play **a copy of <name>**"). An object the state no longer
@@ -7406,15 +7602,21 @@ impl Vm {
                     && o.zone == Zone::Rig
                     && o.printed.card_type == CardType::Resource
             }
-            // 8.1.2: a rezzed card is an installed faceup Corp card.
+            // 8.1.1: "an asset, upgrade, or piece of ice is rezzed if it is
+            // installed and faceup" — the agenda is missing from that list
+            // on purpose, because a faceup agenda (installed by BANGUN's
+            // permission) is "neither rezzed nor unrezzed".
             TargetFilter::Rezzed => {
                 cite!("rule_rezzed_unrezzed");
-                self.is_installed(o) && is_corp_card(o.printed.card_type) && o.faceup
+                self.is_installed(o)
+                    && is_corp_card(o.printed.card_type)
+                    && o.printed.card_type != CardType::Agenda
+                    && o.faceup
             }
-            // 8.1.2, the other half: an installed FACEDOWN Corp card. An
-            // agenda is never rezzed, so it is unrezzed for as long as it is
-            // installed — which is why the test is the negation of faceup and
-            // not "could have been rezzed but was not".
+            // 8.1.1, the other half: "an agenda, asset, upgrade, or piece of
+            // ice is unrezzed if it is installed and facedown" — the agenda
+            // IS on this list, and the faceup one is neither, so the test is
+            // the negation of faceup for every Corp type alike.
             TargetFilter::Unrezzed => {
                 cite!("rule_rezzed_unrezzed");
                 self.is_installed(o) && is_corp_card(o.printed.card_type) && !o.faceup
@@ -8034,6 +8236,9 @@ impl Vm {
             // 8.5.16a: the status the card will have when the installation is
             // complete, stated by the effect rather than by the card's side.
             facedown,
+            // 8.5.16a / 8.5.2: an active faceup permission's Decision can
+            // still overturn the facedown default at step (a).
+            faceup_by_permission: false,
         });
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.instructions[af.idx] = Instruction::InstallStepPlace;
@@ -11258,140 +11463,24 @@ impl Vm {
                     }
                     return;
                 }
-                // (b)-precondition: identify the destination. If it is
-                // invalid or cannot be identified, no installation can take
-                // place (8.5.14) — the card never even moves.
-                let resolved: Option<(Zone, Option<usize>)> = match p.dest {
-                    crate::instr::InstallDest::Root(s) => Some((Zone::Root(s), None)),
-                    crate::instr::InstallDest::NewRemoteRoot => {
-                        cite!("rule_corp_install_choose_destination_server");
-                        // 4.6.8f: a limit on remote servers makes "a new
-                        // remote server" an unavailable destination, so the
-                        // destination cannot be identified (8.5.14).
-                        if !self.can_create_new_remote() {
-                            None
-                        } else {
-                            let s = ServerId::Remote(self.next_remote);
-                            self.next_remote += 1;
-                            Some((Zone::Root(s), None))
-                        }
-                    }
-                    crate::instr::InstallDest::Protecting(s) => {
-                        cite!("rule_ice_outermost_position");
-                        Some((Zone::Ice(s), None))
-                    }
-                    crate::instr::InstallDest::NewRemoteProtecting => {
-                        // 8.5.2a: the new remote server is created at step
-                        // 8.5.16e, with this ice protecting it.
-                        cite!("rule_corp_install_choose_destination_server");
-                        if !self.can_create_new_remote() {
-                            None
-                        } else {
-                            let s = ServerId::Remote(self.next_remote);
-                            self.next_remote += 1;
-                            Some((Zone::Ice(s), None))
-                        }
-                    }
-                    crate::instr::InstallDest::DeclaredByInstaller
-                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
-                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot
-                    | crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer => {
-                        // 8.5.16b replaced this with the declared destination
-                        // before the instruction became imminent; reaching it
-                        // here means no destination could be identified.
-                        cite!("rule_install_to_invalid_destination");
-                        None
-                    }
-                    crate::instr::InstallDest::InwardFromSource => {
-                        // 6.2.2c: the new position goes inward from the
-                        // source's own position. The source not protecting a
-                        // server has no position from which "directly
-                        // inward" can be evaluated (8.5.14).
-                        cite!("rule_create_position_directly_inward");
-                        self.position_of_ice(source.obj).and_then(|(s, pos)| {
-                            self.positions_inward_of(s, pos).map(|i| (Zone::Ice(s), Some(i)))
-                        })
-                    }
-                    crate::instr::InstallDest::InnermostProtectingAttackedServer => {
-                        // 6.2.2b: inward from the innermost already-existing
-                        // position — index 0 of the server's sequence, which
-                        // is also the right answer for a server with none.
-                        // 6.1.2: outside a run there is no attacked server,
-                        // so no destination can be identified (8.5.14).
-                        cite!("rule_create_position_innermost");
-                        self.run_ctx().map(|r| (Zone::Ice(r.server), Some(0)))
-                    }
-                    crate::instr::InstallDest::Rig
-                    | crate::instr::InstallDest::RunnerChoiceHostOrRig => {
-                        Some((Zone::Rig, None))
-                    }
-                    // 1.13.12: the hosted object moves to the host's zone.
-                    crate::instr::InstallDest::HostedOn(h) => {
-                        cite!("rule_hosted_object_same_zone_as_host");
-                        self.st.objects.get(&h).map(|host| (host.zone, None))
-                    }
-                    crate::instr::InstallDest::BreachedServerRoot => {
-                        self.breach_server().map(|s| (Zone::Root(s), None))
-                    }
-                };
-                let Some((zone, ice_at)) = resolved else {
-                    cite!("rule_install_to_invalid_destination");
-                    if let Some(p) = self.installs.last_mut() {
-                        p.aborted = true;
-                    }
+                // 8.5.16a: "the status it will have when the installation is
+                // complete". 8.5.2 settles a Corp card facedown with nobody
+                // asked, and 4.6.4d's stipulation is the installing effect's
+                // own word; an active faceup permission ("You may install
+                // agendas faceup", BANGUN) is neither — it puts the face to
+                // the INSTALLER as a Decision, asked here, whose answer
+                // resumes the step. A stipulated facedown outranks the
+                // question: the effect already stated the status.
+                if !p.facedown && self.install_faceup_permitted(c) {
+                    let installer = self.st.objects[&c].printed.side;
+                    self.ask(
+                        installer,
+                        DecisionSpec::InstallFaceup { card: c },
+                        DecisionCtx::InstallFace,
+                    );
                     return;
-                };
-                // (a) place into the play area with its final faceup status;
-                // not yet installed or active.
-                // 8.5.2 puts a Corp card facedown and 4.6.4c a Runner card
-                // faceup; 4.6.4d is the exception, and the installing effect
-                // is what states it (Apex), so the stipulation decides here
-                // and nowhere else.
-                let side = self.st.objects[&c].printed.side;
-                self.move_card(c, Zone::PlayArea(side));
-                {
-                    cite!("rule_play_area_faceup_facedown");
-                    let o = self.st.objects.get_mut(&c).unwrap();
-                    o.staged = true;
-                    o.faceup = side == Side::Runner && !p.facedown;
                 }
-                // 6.2.2: for ice being installed, the position is created
-                // HERE — when the destination is declared — and the ice
-                // occupies it at step 8.5.16e.
-                let ice_position = match zone {
-                    Zone::Ice(s) => {
-                        let at = ice_at.unwrap_or_else(|| self.positions_at(s).len());
-                        if ice_at.is_none() {
-                            cite!("rule_create_position_outermost");
-                        }
-                        Some(self.create_position(s, at))
-                    }
-                    _ => None,
-                };
-                if let Some(p) = self.installs.last_mut() {
-                    p.resolved_zone = Some(zone);
-                    p.ice_position = ice_position;
-                }
-                // (c) trash like cards — the MUST component of 8.5.6a.
-                if let Zone::Root(s) = zone {
-                    let must_trash: Vec<ObjectId> = self
-                        .st
-                        .root
-                        .get(&s)
-                        .cloned()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter(|&other| self.like_cards(c, other))
-                        .collect();
-                    for t in must_trash {
-                        cite!("rule_must_trash_cases_in_root_of_server");
-                        // 8.5.7: trashed with the same faceup/facedown
-                        // status they had while installed (trash_card keeps
-                        // the flag).
-                        cite!("rule_install_corp_cards_trashed_facedown_archives");
-                        self.trash_card(t, Side::Corp);
-                    }
-                }
+                self.install_step_place(source.obj);
             }
             Instruction::InstallStepPayCost => {
                 cite!("rule_steps_installing_pay_install_cost");
@@ -15714,6 +15803,24 @@ impl Vm {
                         }
                     }
                 }
+            }
+            (DecisionCtx::InstallFace, DecisionAnswer::ResolveOptional(faceup)) => {
+                // 8.5.16a / 8.5.2: the installer's declared face — the
+                // permission granted the choice, and the answer is "the
+                // status it will have when the installation is complete".
+                // Step (a) of the suspended installation resumes here; its
+                // own phase bookkeeping (the procedural no-checkpoint after
+                // 8.5.16a) is untouched, since the InstallStepPlace
+                // instruction already advanced to Checkpoint when it asked.
+                cite!("rule_steps_installing_place");
+                if let Some(p) = self.installs.last_mut() {
+                    p.faceup_by_permission = faceup;
+                }
+                let source_obj = match self.frames.last() {
+                    Some(Frame::Ability(af)) => af.source.obj,
+                    _ => return,
+                };
+                self.install_step_place(source_obj);
             }
             (DecisionCtx::CostDivision, DecisionAnswer::DivideReduction(n)) => {
                 // 1.16.2f: "the numbers declared this way must be nonnegative

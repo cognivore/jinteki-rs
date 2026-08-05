@@ -1629,6 +1629,16 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             push(&mut p, "Yes".into(), DecisionAnswer::ResolveOptional(true));
             push(&mut p, "No".into(), DecisionAnswer::ResolveOptional(false));
         }
+        DecisionSpec::InstallFaceup { card } => {
+            p.msg = format!(
+                "Install {} faceup? (8.5.16a)",
+                name_of(vm, &view, *card)
+            );
+            // The question is about ONE card, so the card is the prompt.
+            p.focus = Some(Focus { card: *card, kind: "candidate", trash_cost: None });
+            push(&mut p, "Faceup".into(), DecisionAnswer::ResolveOptional(true));
+            push(&mut p, "Facedown".into(), DecisionAnswer::ResolveOptional(false));
+        }
         DecisionSpec::DeclareInstallDestination { options } => {
             p.msg = "Where does it go? (8.5.16b)".into();
             for d in options {

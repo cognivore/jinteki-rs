@@ -2378,7 +2378,7 @@ fn femme_choice_over(
 pub fn poetri_like(name: &'static str, n: u32) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerAccessesCard { of_types: Vec::new() },
+        TriggerCond::RunnerAccessesCard { of_types: Vec::new(), criteria: Vec::new() },
         vec![Instruction::InstallCard {
             card: TargetSpec::Choose {
                 count: Quantity::c(1),
@@ -2426,7 +2426,7 @@ pub fn must_trash_accessed_like(name: &'static str, trash_cost: u32) -> PrintedC
 pub fn must_trash_by_paying_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::RunnerAccessesCard { of_types: Vec::new() },
+        TriggerCond::RunnerAccessesCard { of_types: Vec::new(), criteria: Vec::new() },
         vec![Instruction::MustTrashAccessedCard {
             means: crate::instr::TrashMeans::PayingTheTrashCost,
         }],

@@ -12775,3 +12775,294 @@ fn earth_station_flips_for_a_click_and_the_back_taxes_remotes_until_hq_flips_it_
         t.tail(30)
     );
 }
+
+// ---------------------------------------------------------------------------
+// BANGUN: When Disaster Strikes
+// ---------------------------------------------------------------------------
+
+/// BANGUN, first sentence: "You may install agendas faceup." — the permission
+/// puts the face to the INSTALLER as a Decision at step 8.5.16a, where 8.5.2
+/// otherwise settles a Corp card facedown with nobody asked. Answered FACEUP:
+/// the installed agenda sits faceup — and its abilities stay INACTIVE, which
+/// is the printed parenthetical "(This does not make their abilities
+/// active.)" restating 8.1.1 (a faceup agenda is neither rezzed nor unrezzed)
+/// and 3.2.3 (an agenda is inactive while installed, however it faces).
+#[test]
+fn bangun_asks_the_installer_the_face_and_a_faceup_agenda_stays_inactive() {
+    let mut vm = Vm::empty(6140);
+    tk::install_identity(&mut vm, card("BANGUN: When Disaster Strikes"), Side::Corp);
+    // An agenda carrying a paid ability ("+1 to imminent meat damage") that a
+    // wrongly-ACTIVE faceup install would put into every paid window.
+    let agenda = vm.new_object(tk::cleaners_like("Loud Agenda"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(agenda)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::install_face().once(), Reply::Optional(true))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    let asked = t.of_kind(Kind::InstallFace);
+    assert_eq!(asked.len(), 1, "8.5.16a: the face was asked exactly once: {}", t.tail(20));
+    assert_eq!(
+        asked[0].side,
+        Side::Corp,
+        "…and put to the INSTALLER — the Corp installs its own cards (8.5.1): {}",
+        t.tail(20)
+    );
+    let o = &vm.st.objects[&agenda];
+    assert!(o.zone.is_installed(), "the install completed: {}", t.tail(20));
+    assert!(o.faceup, "the declared status held: the agenda sits FACEUP: {}", t.tail(20));
+    // 8.1.1 / 3.2.3: faceup, installed — and still inactive. `card_active` is
+    // 1.8.3's own surface, and the paid window never offered the ability.
+    assert!(
+        !jinteki_cr::object::card_active(o),
+        "3.2.3: an installed agenda is inactive however it faces: {}",
+        t.tail(20)
+    );
+    assert!(
+        t.entries.iter().all(|e| plan::count_labelled(e.options(), "cleaners") == 0),
+        "no window ever offered the faceup agenda's ability: {}",
+        t.tail(20)
+    );
+}
+
+/// BANGUN, the permission DECLINED: the answer is 8.5.2's default and the
+/// agenda goes in facedown — on which the second sentence's "faceup
+/// installed" describes nothing: the Runner's access does no damage, gives no
+/// tag, and the steal is the whole of what happens.
+#[test]
+fn bangun_declined_installs_facedown_and_that_access_triggers_nothing() {
+    let mut vm = Vm::empty(6141);
+    tk::install_identity(&mut vm, card("BANGUN: When Disaster Strikes"), Side::Corp);
+    let agenda = vm.new_object(tk::vanilla_agenda("Quiet Agenda", 3, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(agenda)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::install_face().once(), Reply::Optional(false))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(100)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the steal happened as on any facedown agenda: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.runner.tags, 0, "no tag — the card was not faceup: {}", t.tail(30));
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        4,
+        "and no meat damage either: {}",
+        t.tail(30)
+    );
+}
+
+/// BANGUN, second sentence: "Whenever the Runner accesses a faceup installed
+/// agenda, do 2 meat damage and give the Runner 1 tag." The damage is
+/// 10.4.1's Corp-does branch and the tag is a tag; both land AFTER the access
+/// in the log. The faceup agenda's own ability stays out of every window even
+/// as the damage resolves — the Corp's plan asks for it and is never offered
+/// it.
+#[test]
+fn bangun_faceup_agenda_access_costs_two_meat_and_a_tag() {
+    let mut vm = Vm::empty(6142);
+    tk::install_identity(&mut vm, card("BANGUN: When Disaster Strikes"), Side::Corp);
+    let agenda = vm.new_object(tk::cleaners_like("Loud Agenda"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(agenda)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::install_face().once(), Reply::Optional(true))
+            .always_uses("cleaners")
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(100)))
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "the tag landed: {}", t.tail(30));
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "2 meat damage — and not 3: the faceup agenda's '+1 meat' interrupt is \
+         INACTIVE even while damage it would love is imminent: {}",
+        t.tail(30)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::DamageSuffered { responsible: Side::Corp, amount: 2, .. }
+        )),
+        "10.4.1: 'do 2 meat damage' is the Corp-does branch: {}",
+        t.tail(30)
+    );
+    let access = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == agenda))
+        .expect("the agenda was accessed");
+    let damage = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .expect("the damage was suffered");
+    let tag = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagsTaken { .. }))
+        .expect("the tag was taken");
+    assert!(
+        access < damage && access < tag,
+        "the sentence's effects follow the access that met it: {}",
+        t.tail(30)
+    );
+    assert!(
+        t.entries.iter().all(|e| plan::count_labelled(e.options(), "cleaners") == 0),
+        "the plan asked for the agenda's ability at every window and was never \
+         offered it: {}",
+        t.tail(30)
+    );
+}
+
+/// BANGUN asks nothing about a non-agenda install: the permission's criteria
+/// describe agendas, so an asset's face is settled by 8.5.2 as ever — no
+/// decision exists, and the asset goes in facedown.
+#[test]
+fn bangun_puts_no_face_question_to_a_non_agenda_install() {
+    let mut vm = Vm::empty(6143);
+    tk::install_identity(&mut vm, card("BANGUN: When Disaster Strikes"), Side::Corp);
+    let asset = vm.new_object(tk::vanilla_asset("Some Asset", 0, 3), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(asset);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(asset)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        t.of_kind(Kind::InstallFace).is_empty(),
+        "the permission describes agendas and an asset is not one — 8.5.2 \
+         settles the face with nobody asked: {}",
+        t.tail(20)
+    );
+    let o = &vm.st.objects[&asset];
+    assert!(o.zone.is_installed(), "the install completed: {}", t.tail(20));
+    assert!(!o.faceup, "…facedown, as 8.5.2 says: {}", t.tail(20));
+}
+
+/// Stealing is access-driven and status-independent: the FACEUP agenda the
+/// Runner accesses is still stolen (7.3.4), and the steal completes AFTER the
+/// damage and the tag — BANGUN's instances resolve off the access before the
+/// steal step reaches the card.
+#[test]
+fn bangun_faceup_agenda_is_still_stolen_after_the_damage_and_tag() {
+    let mut vm = Vm::empty(6144);
+    tk::install_identity(&mut vm, card("BANGUN: When Disaster Strikes"), Side::Corp);
+    let agenda = vm.new_object(tk::vanilla_agenda("Prize", 3, 2), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::fill_hand(&mut vm, Side::Runner, 4);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(agenda)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .when(Match::install_face().once(), Reply::Optional(true))
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(100)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the faceup agenda was stolen: {}",
+        t.tail(30)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::AgendaStolen { obj, points: 2 } if *obj == agenda
+        )),
+        "and scored its printed points: {}",
+        t.tail(30)
+    );
+    let damage = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::DamageSuffered { .. }))
+        .expect("the damage was suffered");
+    let tag = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::TagsTaken { .. }))
+        .expect("the tag was taken");
+    let stolen = vm
+        .changes
+        .log
+        .iter()
+        .position(|c| matches!(c, GameChange::AgendaStolen { obj, .. } if *obj == agenda))
+        .expect("the agenda was stolen");
+    assert!(
+        damage < stolen && tag < stolen,
+        "the steal completed after the damage and the tag: {}",
+        t.tail(30)
+    );
+}
