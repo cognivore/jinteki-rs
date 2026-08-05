@@ -1014,7 +1014,6 @@ function fanHoverEdge(host, key, e) {
  * What is left here is the pointer's own convenience — hovering the outer
  * band of a fan LONGER than its window walks the focus that way, which no
  * touch device ever sees. */
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 function fanGestures(host, key) {
   // Attach ONCE per host: `renderFan` runs on every repaint and re-wiring
   // here would stack a listener per repaint.
@@ -1118,7 +1117,6 @@ function fanFit(total, band, fw, peek) {
  *   rail      — where the rail goes (an element), or null for none
  *   pin       — a cid the focus must sit on (a raised hand card)
  * The geometry comes from CSS custom properties, so it lives in one place. */
-const FOCUS_SCALE = 1.22;
 function renderFan(host, items, opts) {
   const key = opts.key;
   const f = fanOf(key);
@@ -1179,6 +1177,9 @@ function renderFan(host, items, opts) {
   const spread = Math.max(0, Math.min(1, (f.step - FAN_MIN_STEP) / Math.max(1, fw - FAN_MIN_STEP)));
   const tilt = (parseFloat(css.getPropertyValue("--ftilt")) || 1.2) * (1 - spread);
   const arc = (parseFloat(css.getPropertyValue("--farc")) || 1) * (1 - spread);
+  // The focus scale is the stylesheet's, because the stylesheet also has to
+  // reserve the headroom the scale grows into: one number, read twice.
+  const focusScale = parseFloat(css.getPropertyValue("--ffocus")) || 1.22;
 
   // Nothing here ever moves under a pointer: the row is laid out once and
   // stays exactly where it is (THE LAW §2, and the player's "no wobble").
@@ -1201,7 +1202,7 @@ function renderFan(host, items, opts) {
       const off = i - mid;
       const lift = Math.abs(off) * arc + (focused ? -8 : 0);
       slot.style.transform = `rotate(${(off * tilt).toFixed(2)}deg) translateY(${lift}px)` +
-        (focused ? ` scale(${FOCUS_SCALE})` : "");
+        (focused ? ` scale(${focusScale})` : "");
       if (focused) slot.classList.add("focused");
     }
     // MTGA: the card under the pointer IS the card you mean, and it rises out

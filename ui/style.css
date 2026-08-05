@@ -317,7 +317,8 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    is the sentence asking the question). The hand's box is a fixed height and
    bottom-aligned, so the same padding costs it nothing. */
 .fan { --fw: 64px; --fh: 89px; --fstep: 16px; --fpeek: 10px; --ftilt: 1.2; --farc: 1;
-  padding-top: calc(.22 * var(--fh) + 14px);
+  --ffocus: 1.22;
+  padding-top: calc((var(--ffocus) - 1) * var(--fh) + 14px);
   display: flex; justify-content: center; align-items: flex-end;
   /* Nothing here pans horizontally: a card list is static (§8's "no wobble"),
      so every horizontal gesture belongs to the page, and every vertical one. */
@@ -1087,4 +1088,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   /* Centre of [104, 100vw - 256] = 50vw - 76; the room is 100vw - 360. */
   .prompt-sheet { left: calc(50vw - 76px);
     --sheetw: min(max(260px, calc(var(--safew) - 372px)), 420px); }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────
+   DECLARED LAST so it wins on equal specificity. Nothing here changes where
+   anything ENDS UP — the focus still moves, the card is still dealt, the
+   sheet still appears. They simply arrive instead of travelling. The pulsing
+   outlines are handled the other way round, at their own rules: they are
+   only switched ON under `prefers-reduced-motion: no-preference`. */
+@media (prefers-reduced-motion: reduce) {
+  .cardpick, .card, .fanrow { transition: none; }
+  .card.deal { animation: none; }
+  .prompt-sheet, .action-sheet, .zoom-card, .phase-pill, .focus-panel { animation: none; }
 }
