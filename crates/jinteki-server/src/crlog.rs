@@ -183,7 +183,7 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
             card(*obj),
             installed_clause(vm, *obj)
         ),
-        GameChange::CardTrashed { obj, by, was_zone } => format!(
+        GameChange::CardTrashed { obj, by, was_zone, .. } => format!(
             "{}: trashes {} from {}.",
             side_name(*by),
             card(*obj),

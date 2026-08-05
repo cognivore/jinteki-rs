@@ -295,11 +295,79 @@ pub fn ryo_phoenix_ono() -> Card {
         .build()
 }
 
+/// Reina Roja: Freedom Fighter — Identity: Cyborg, G-mod. Link 1.
+/// "The first piece of ice the Corp rezzes each turn costs 1[credit] more to
+///  rez."
+///
+/// COMPLETE. A DECLARATION about an inherent cost (1.16.4a), the same one the
+/// McCaffreys state about installs and with the other polarity: 9.3.5 applies
+/// it continuously, so it is read wherever the rez cost is calculated — by
+/// 8.1.2d's payment and by the affordability question that decides whether
+/// the (R) option is offered at all, which is what makes an unaffordable ice
+/// stay unrezzed rather than be rezzed for free.
+///
+/// "The first … each turn" is 9.6.5c's ordinal read of the rez: the increase
+/// reaches the rez only while the Corp has rezzed no piece of ice yet this
+/// turn. It counts ICE rezzed, not cards — an asset rezzed first leaves the
+/// first piece of ice still the first piece of ice.
+///
+/// "The Corp rezzes" needs no words of its own: 8.1.4f makes rezzing the
+/// Corp's alone, which is what lets a RUNNER identity print a sentence about
+/// it.
+pub fn reina_roja() -> Card {
+    card("Reina Roja: Freedom Fighter")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Cyborg", "G-mod"])
+        .link(1)
+        .text("The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.")
+        .declares([first_rezzed_each_turn_costs_more(&[of_type(CardType::Ice)], 1)])
+        .build()
+}
+
+/// René "Loup" Arcemont: Party Animal — Identity: G-mod. Link 0.
+/// "The first time each turn you trash a card you are accessing, gain
+///  1[credit] and draw 1 card."
+///
+/// COMPLETE. The condition is 8.2's trash with two stipulations — 1.14.5's
+/// "YOU trash" and 7.1.2's "a card you are accessing" — and 9.6.5c's ordinal
+/// about the occurrence.
+///
+/// "A card you are accessing" names no zone and no card type: the accessed
+/// card may be in HQ, R&D, Archives or a server's root, and every one of them
+/// counts. It is not the same as "an installed card": a card trashed off the
+/// board while some OTHER card is being accessed does not meet it, and a card
+/// trashed out of HQ during a breach does.
+///
+/// Both ways of trashing it count, because the sentence distinguishes
+/// neither: 7.5.4's basic trash ability, paid for out of the access, and a
+/// card ability that trashes the accessed card.
+///
+/// "Gain 1[credit] and draw 1 card" is one printed sentence, so one
+/// instruction (9.11.3).
+pub fn rene_loup_arcemont() -> Card {
+    card("René \"Loup\" Arcemont: Party Animal")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["G-mod"])
+        .text("The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.")
+        .when_first_each_turn(
+            trashes_the_card_being_accessed(Runner),
+            [combined([gain(Runner, 1), draw(Runner, 1)])],
+        )
+        .named("party animal")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         alice_merchant(),
+        reina_roja(),
+        rene_loup_arcemont(),
         edward_kim(),
         esa_afontov(),
         maxx(),

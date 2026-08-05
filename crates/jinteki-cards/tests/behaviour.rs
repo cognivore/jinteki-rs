@@ -6683,3 +6683,347 @@ fn clicks_gained_by_the_runner(vm: &Vm) -> usize {
         .skip(1)
         .count()
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — CR 1.16.4a's inherent costs, moved by a declaration
+// ---------------------------------------------------------------------------
+
+/// Az McCaffrey: "The first job resource, connection resource, or piece of
+/// hardware you install each turn costs 1[credit] less to install."
+///
+/// Three installs in one turn prove all three halves of the sentence: a plain
+/// resource matches no alternative of the description, so it pays in full AND
+/// leaves the ordinal unspent; the job resource after it is "the first", so it
+/// pays one less; the piece of hardware after that is the second and pays in
+/// full. Nothing is ever offered to anyone — the reduction is automatic, not
+/// Patchwork's.
+#[test]
+fn az_mccaffrey_lowers_the_first_matching_install_of_the_turn_only() {
+    let mut vm = Vm::empty(6140);
+    tk::install_identity(&mut vm, card("Az McCaffrey: Mechanical Prodigy"), Side::Runner);
+    let mut mk = |name: &'static str, ty: CardType, subtype: Option<&'static str>| {
+        let mut c = tk::vanilla_runner_card(name, ty);
+        c.cost = Some(3);
+        if let Some(s) = subtype {
+            c.subtypes = vec![s];
+        }
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    let plain = mk("Plain Resource", CardType::Resource, None);
+    let job = mk("Job Resource", CardType::Resource, Some("Job"));
+    let hardware = mk("Some Hardware", CardType::Hardware, None);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    // 3 for the plain resource, 2 for the first matching install, 3 for the
+    // second — exactly, so a wrong number anywhere leaves credits behind or
+    // makes an install unaffordable.
+    vm.st.runner.credits = 8;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(plain)))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(job)))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(hardware)))
+            .stop_at_action(),
+    );
+    for c in [plain, job, hardware] {
+        assert_eq!(vm.st.objects[&c].zone, Zone::Rig, "{} was installed: {}", vm.st.objects[&c].printed.name, t.tail(40));
+    }
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "3 + 2 + 3: the description's own cards are the only ones lowered, and only the first of them: {}",
+        t.tail(40)
+    );
+}
+
+/// Kate "Mac" McCaffrey: "Lower the install cost of the first program or
+/// piece of hardware you install each turn by 1."
+///
+/// The same declaration about a different description. A resource is outside
+/// it and pays in full without spending the ordinal; the program after it is
+/// "the first" and pays one less; the hardware after that pays in full.
+#[test]
+fn kate_mac_mccaffrey_lowers_the_first_program_or_hardware_of_the_turn() {
+    let mut vm = Vm::empty(6141);
+    tk::install_identity(&mut vm, card("Kate \"Mac\" McCaffrey: Digital Tinker"), Side::Runner);
+    let mut mk = |name: &'static str, ty: CardType| {
+        let mut c = tk::vanilla_runner_card(name, ty);
+        c.cost = Some(3);
+        if ty == CardType::Program {
+            c.memory_cost = Some(1);
+        }
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    let resource = mk("Some Resource", CardType::Resource);
+    let program = mk("Some Program", CardType::Program);
+    let hardware = mk("Some Hardware", CardType::Hardware);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 8;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(resource)))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(program)))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(hardware)))
+            .stop_at_action(),
+    );
+    for c in [resource, program, hardware] {
+        assert_eq!(vm.st.objects[&c].zone, Zone::Rig, "{} was installed: {}", vm.st.objects[&c].printed.name, t.tail(40));
+    }
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "3 + 2 + 3: the resource is outside the description and the hardware is the second one inside it: {}",
+        t.tail(40)
+    );
+}
+
+/// Reina Roja: "The first piece of ice the Corp rezzes each turn costs
+/// 1[credit] more to rez."
+///
+/// The asset rezzed first is not a piece of ice, so it pays its printed cost
+/// and leaves the ordinal unspent; the first piece of ice pays one more; the
+/// second pays its printed cost. 8.1.2a is why the two pieces of ice are
+/// rezzed on approach and the asset is not: ice is rezzable only in the
+/// window 6.9.2b opens for the ice being approached.
+#[test]
+fn reina_roja_taxes_the_first_ice_rez_of_the_turn_only() {
+    let mut vm = Vm::empty(6142);
+    tk::install_identity(&mut vm, card("Reina Roja: Freedom Fighter"), Side::Runner);
+    let asset = tk::install_root(&mut vm, tk::vanilla_asset("Some Asset", 1, 2), ServerId::Remote(1), false);
+    let first = tk::install_ice(&mut vm, tk::etr_ice("First Ice", 2, 1), ServerId::Rnd, false);
+    let second = tk::install_ice(&mut vm, tk::etr_ice("Second Ice", 2, 1), ServerId::Hq, false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    // 1 for the asset, 3 for the first piece of ice, 2 for the second.
+    vm.st.corp.credits = 6;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::Take(Pick::Rez(asset)))
+            .when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    for c in [asset, first, second] {
+        assert!(vm.st.objects[&c].faceup, "{} was rezzed: {}", vm.st.objects[&c].printed.name, t.tail(40));
+    }
+    assert_eq!(
+        vm.st.corp.credits, 0,
+        "1 + 3 + 2: only ice is described, and only the first piece of it: {}",
+        t.tail(40)
+    );
+}
+
+/// Khan: "The first time you pass a piece of ice each turn, you may install
+/// an icebreaker from your hand, lowering the install cost by 1."
+///
+/// The pass is plain: the ice is not Khan's, nothing was broken on it and no
+/// subroutine of it resolved, and the sentence is still met. The icebreaker
+/// costs 3 and the Runner has 2, so the install proves the reduction as well
+/// as the condition — without it there is nothing to pay with.
+#[test]
+fn khan_installs_an_icebreaker_for_one_less_on_the_turns_first_pass() {
+    let mut vm = Vm::empty(6143);
+    tk::install_identity(&mut vm, card("Khan: Savvy Skiptracer"), Side::Runner);
+    tk::install_ice(&mut vm, tk::vanilla_ice("Some Ice", 0, 1), ServerId::Archives, true);
+    let breaker = {
+        let mut c = tk::vanilla_runner_card("Some Breaker", CardType::Program);
+        c.cost = Some(3);
+        c.memory_cost = Some(1);
+        c.subtypes = vec!["Icebreaker"];
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    let plain = {
+        let mut c = tk::vanilla_runner_card("Some Program", CardType::Program);
+        c.cost = Some(0);
+        c.memory_cost = Some(1);
+        let id = vm.new_object(c, Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    };
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::reaction().offering("skiptracer"), Reply::take("skiptracer"))
+            .when(Match::targets().once(), Reply::Targets(vec![breaker]))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&breaker].zone,
+        Zone::Rig,
+        "the icebreaker was installed off a plain pass: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "2 credits paid a 3-credit install: the ability lowered it by 1: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&plain].zone,
+        Zone::Hand(Side::Runner),
+        "and the program that is no icebreaker stayed in the grip: {}",
+        t.tail(40)
+    );
+}
+
+/// René "Loup" Arcemont: "The first time each turn you trash a card you are
+/// accessing, gain 1[credit] and draw 1 card."
+///
+/// Two remotes with a trashable asset each, run one after the other. The
+/// first trash pays and draws; the second, in the same turn, does neither —
+/// 9.6.5c's ordinal is about the occurrence, so it is spent by the first
+/// trash and never met again.
+///
+/// A trash that is not of the accessed card must NOT meet it, which is what
+/// the Corp asset the Runner never reaches is there to prove: it is trashed
+/// by the Corp's own ability during the same turn and pays nothing.
+#[test]
+fn rene_loup_arcemont_pays_for_the_first_accessed_trash_of_the_turn_only() {
+    let mut vm = Vm::empty(6144);
+    tk::install_identity(&mut vm, card("René \"Loup\" Arcemont: Party Animal"), Side::Runner);
+    let first = tk::install_root(&mut vm, tk::vanilla_asset("First Asset", 0, 1), ServerId::Remote(1), true);
+    let second = tk::install_root(&mut vm, tk::vanilla_asset("Second Asset", 0, 1), ServerId::Remote(2), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+    assert!(vm.st.hand[&Side::Runner].is_empty(), "the grip starts empty");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::of(Kind::MidAccess).once(), Reply::Take(Pick::BasicTrash))
+            .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+            .when(Match::of(Kind::MidAccess).once(), Reply::Take(Pick::BasicTrash))
+            .stop_at_action(),
+    );
+    for c in [first, second] {
+        assert_eq!(
+            vm.st.objects[&c].zone,
+            Zone::Discard(Side::Corp),
+            "{} was trashed out of the access: {}",
+            vm.st.objects[&c].printed.name,
+            t.tail(50)
+        );
+    }
+    // 5 credits, two trash costs of 1 each, one credit back from the ability.
+    assert_eq!(
+        vm.st.runner.credits, 4,
+        "one credit for the FIRST accessed trash and nothing for the second: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        1,
+        "and one card drawn, once: {}",
+        t.tail(50)
+    );
+}
+
+/// The other half of René "Loup" Arcemont's condition: a trash that is not of
+/// the card being accessed is not one of "the times", so it neither pays nor
+/// spends the ordinal.
+///
+/// The Runner trashes an installed program of their own with a card ability
+/// while no access is in progress, then runs and trashes an accessed asset.
+/// If the first trash had met the condition it would have taken the credit
+/// and the ordinal with it.
+#[test]
+fn rene_loup_arcemont_ignores_a_trash_outside_an_access() {
+    let mut vm = Vm::empty(6145);
+    tk::install_identity(&mut vm, card("René \"Loup\" Arcemont: Party Animal"), Side::Runner);
+    // A Runner card whose paid ability costs [trash] — a trash of a card with
+    // no access anywhere near it.
+    tk::install_rig(&mut vm, tk::trash_cost_ability_card("Aesop-like"));
+    let asset = tk::install_root(&mut vm, tk::vanilla_asset("Trashable", 0, 1), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().once(), Reply::take("trash-cost"))
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::of(Kind::MidAccess).once(), Reply::Take(Pick::BasicTrash))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&asset].zone,
+        Zone::Discard(Side::Corp),
+        "the accessed asset was trashed: {}",
+        t.tail(50)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        1,
+        "exactly one draw — from the accessed trash, not from the rig trash: {}",
+        t.tail(50)
+    );
+}
+
+/// Nasir Meidan: "Whenever you encounter a piece of ice after an approach
+/// during which that ice was rezzed, lose all credits in your credit pool.
+/// Gain credits equal to the rez cost of that ice."
+///
+/// One run past two pieces of ice. The outer one is rezzed on its approach,
+/// so the encounter takes the Runner's whole pool and gives back its rez
+/// cost; the inner one is already faceup when it is approached, so its
+/// encounter does nothing at all — which is the difference between "was
+/// rezzed during that approach" and "is rezzed".
+#[test]
+fn nasir_meidan_trades_the_pool_for_the_rez_cost_of_ice_rezzed_on_approach() {
+    let mut vm = Vm::empty(6146);
+    tk::install_identity(&mut vm, card("Nasir Meidan: Cyber Explorer"), Side::Runner);
+    // Innermost first: the already-faceup one, which the run reaches second.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Already Faceup", 1, 1), ServerId::Archives, true);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Rezzed On Approach", 4, 1), ServerId::Archives, false);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 9;
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Archives)).stop_at_action(),
+    );
+    assert!(vm.st.objects[&outer].faceup, "the outer ice was rezzed on its approach: {}", t.tail(50));
+    assert_eq!(
+        vm.st.runner.credits, 4,
+        "7 credits gone, 4 back — the outer ice's printed rez cost — and the faceup \
+         inner ice's encounter changed nothing: {}",
+        t.tail(50)
+    );
+}

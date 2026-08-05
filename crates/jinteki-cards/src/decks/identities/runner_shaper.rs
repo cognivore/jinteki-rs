@@ -299,11 +299,84 @@ pub fn the_collective() -> Card {
         .build()
 }
 
+/// Kate "Mac" McCaffrey: Digital Tinker — Identity: Natural. Link 1.
+/// "Lower the install cost of the first program or piece of hardware you
+///  install each turn by 1."
+///
+/// COMPLETE. The same declaration Az McCaffrey states about a different
+/// description, written in the other order: 9.3.5 applies it continuously,
+/// 8.7.2b's affordability query reads it, and it costs nothing and asks
+/// nothing — which is what separates it from Patchwork's 1.16.6 reduction.
+///
+/// "Program or piece of hardware" is 2.15's type alone, twice, so it is the
+/// "or" between single words of one kind rather than between descriptions.
+/// "The first … each turn" is 9.6.5c's ordinal read of the install, and
+/// 1.16.2a floors the lowered cost at 0.
+pub fn kate_mac_mccaffrey() -> Card {
+    card("Kate \"Mac\" McCaffrey: Digital Tinker")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .link(1)
+        .text("Lower the install cost of the first program or piece of hardware you install each turn by 1.")
+        .declares([first_installed_each_turn_costs_less(
+            &[of_any_type(&[CardType::Program, CardType::Hardware])],
+            1,
+        )])
+        .build()
+}
+
+/// Nasir Meidan: Cyber Explorer — Identity: Cyborg. Link 1.
+/// "Whenever you encounter a piece of ice after an approach during which that
+///  ice was rezzed, lose all credits in your credit pool. Gain credits equal
+///  to the rez cost of that ice."
+///
+/// COMPLETE. TWO printed sentences on one condition, so two instructions —
+/// and here the 9.11.3 boundary between them is the card: the loss finishes,
+/// a checkpoint occurs, and only then is the gain imminent, which is what
+/// makes the Runner momentarily broke rather than simply swapping one number
+/// for another.
+///
+/// "After an approach during which that ice was rezzed" is 9.6.5c's
+/// additional requirement listed inside the condition, asked of 6.9.2's
+/// Approach Ice Phase the encounter directly follows. An ice already faceup
+/// when it was approached does not meet it, and neither does one rezzed on an
+/// earlier approach of the same run — the sentence names the approach, not
+/// the ice's state.
+///
+/// "All credits in your credit pool" is 1.10.1's pool and nothing else: a
+/// credit hosted on a card is not in it (1.13.3) and is not lost.
+///
+/// "The rez cost of that ice" is 1.16.4a's inherent cost, printed on the
+/// card. It is not what the Corp paid: an ice rezzed for free through an
+/// ability still has a rez cost, and the sentence still names it.
+pub fn nasir_meidan() -> Card {
+    card("Nasir Meidan: Cyber Explorer")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Cyborg"])
+        .link(1)
+        .text("Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.")
+        .when(
+            encounters_ice_rezzed_on_its_approach(),
+            [
+                loses_credits(Runner, credits_in_pool_of(Runner)),
+                gain_q(Runner, rez_cost_of_the_encountered_ice()),
+            ],
+        )
+        .named("cyber explorer")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         akiko_nisei(),
+        kate_mac_mccaffrey(),
+        nasir_meidan(),
         exile(),
         hayley_kaplan(),
         rielle_kit_peddler(),

@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use crate::ability::{
     StaticCond,
     ability_active, is_corp_card, AbilityDef, AbilityFlag, AbilityInstance, AbilityKind,
-    AbilityRef, Condition, Cost, StaticDecl, TriggerCond, TurnScope,
+    AbilityRef, Condition, Cost, InherentCost, StaticDecl, TriggerCond, TurnScope,
 };
 use crate::checkpoint;
 use crate::decision::{
@@ -4094,6 +4094,19 @@ impl Vm {
                 cite!("rule_credit_pool");
                 self.st.player(*side).credits as i64
             }
+            // 1.16.4a: an inherent cost, printed on the card — so this is the
+            // ice's own number and not the payment's, and 9.12.2e makes it 0
+            // when there is no encounter to read it from.
+            Q::RezCostOfEncounteredIce => {
+                cite!("rule_inherent_rez_cost");
+                cite!("rule_ice_rez_cost");
+                self.st
+                    .encounter
+                    .as_ref()
+                    .and_then(|e| self.st.objects.get(&e.ice))
+                    .and_then(|o| o.printed.cost)
+                    .unwrap_or(0) as i64
+            }
             Q::Times(n, inner) => n * self.eval_quantity(inner, source),
             // 9.12.2a: "1 for every N" — the count of complete groups, so a
             // remainder buys nothing and there is never a negative count.
@@ -7586,6 +7599,28 @@ impl Vm {
                 cite!("rule_tagged");
                 self.st.runner.tags >= *n
             }
+            // 6.9.2b: the ice being encountered was rezzed during the
+            // approach this encounter directly follows. Read from the log:
+            // find where that ice was last approached, and ask whether it was
+            // rezzed after that point. A rez on an EARLIER approach is before
+            // it and does not count, which is the whole reason the faceup
+            // state cannot answer this.
+            R::EncounteredIceRezzedDuringApproach => {
+                cite!("rule_ice_rez_window");
+                cite!("rule_approach_ice_phase");
+                cite!("rule_open_information");
+                let Some(ice) = self.st.encounter.as_ref().map(|e| e.ice) else { return false };
+                let log = &self.changes.log;
+                let Some(approach) = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::IceApproached { ice: i } if *i == ice))
+                else {
+                    return false;
+                };
+                log[approach..]
+                    .iter()
+                    .any(|c| matches!(c, GameChange::CardRezzed { obj, .. } if *obj == ice))
+            }
             // 9.12.2: a calculated amount, read the same way every quantity
             // position reads one, compared against the printed threshold.
             R::QuantityAtLeast { amount, at_least } => {
@@ -7826,7 +7861,61 @@ impl Vm {
             crate::instr::InstallDest::HostedOn(h) => self.host_install_discount(h),
             _ => 0,
         };
-        base.saturating_sub(discount)
+        // 1.16.2a: a Kate "Mac" McCaffrey-class declaration lowers (or
+        // raises) the printed cost of its own accord, before anything the
+        // installer might choose to pay for.
+        self.apply_inherent_cost_mod(card, InherentCost::Install, base.saturating_sub(discount))
+    }
+
+    /// CR 8.1.2d / 1.16.9: what rezzing `card` costs — its printed cost with
+    /// every Reina Roja-class declaration applied (1.16.2a).
+    fn rez_cost_credits(&self, card: ObjectId) -> u32 {
+        cite!("rule_inherent_rez_cost");
+        let printed = self.st.objects[&card].printed.cost.unwrap_or(0);
+        self.apply_inherent_cost_mod(card, InherentCost::Rez, printed)
+    }
+
+    /// CR 1.16.2a / 1.16.4a: `base`, with every active
+    /// [`StaticDecl::InherentCostMod`] that describes `card` and names this
+    /// cost site applied — lowered or raised, then floored at 0.
+    ///
+    /// The printed ordinal ("the FIRST piece of ice the Corp rezzes each
+    /// turn") is read from the change log, which 10.2.1 makes open
+    /// information: the declaration reaches this install or rez only while no
+    /// earlier one this turn matched the same description. The cost is
+    /// calculated BEFORE the occurrence is recorded — 8.5.16d pays the
+    /// install cost two steps before `CardInstalled`, and the rez cost before
+    /// `CardRezzed` — so the card being priced is never one of the earlier
+    /// ones it is counted against.
+    fn apply_inherent_cost_mod(&self, card: ObjectId, which: InherentCost, base: u32) -> u32 {
+        cite!("rule_cost_calculation");
+        cite!("rule_inherent_cost");
+        let mut delta = 0i32;
+        for (src, d) in self.active_statics() {
+            let StaticDecl::InherentCostMod { which: w, criteria, amount, first_each_turn } = d
+            else {
+                continue;
+            };
+            if w != which || !self.object_matches_criteria(card, &criteria, Some(src)) {
+                continue;
+            }
+            if first_each_turn {
+                cite!("rule_open_information");
+                let earlier = self.changes.log[self.st.turn_log_start..].iter().any(|c| {
+                    let obj = match (which, c) {
+                        (InherentCost::Install, GameChange::CardInstalled { obj, .. }) => *obj,
+                        (InherentCost::Rez, GameChange::CardRezzed { obj, .. }) => *obj,
+                        _ => return false,
+                    };
+                    self.object_matches_criteria(obj, &criteria, Some(src))
+                });
+                if earlier {
+                    continue;
+                }
+            }
+            delta += amount;
+        }
+        (base as i32 + delta).max(0) as u32
     }
 
     /// CR 1.16.6 (Patchwork class): install-cost reductions a player controls
@@ -10170,13 +10259,7 @@ impl Vm {
                     Cost::free()
                 } else {
                     cite!("rule_cost_calculation");
-                    Cost::credits(
-                        self.st.objects[&c]
-                            .printed
-                            .cost
-                            .unwrap_or(0)
-                            .saturating_sub(rez_reduction),
-                    )
+                    Cost::credits(self.rez_cost_credits(c).saturating_sub(rez_reduction))
                 };
                 let full_rez = match &self.st.objects[&c].printed.additional_rez_cost {
                     Some(add) => base_rez.plus(add),
@@ -11806,7 +11889,7 @@ impl Vm {
     /// case where reading the pool would refuse the (R) option outright.
     pub fn rez_affordable(&self, card: ObjectId) -> bool {
         cite!("rule_inherent_rez_cost");
-        let printed = self.st.objects[&card].printed.cost.unwrap_or(0);
+        let printed = self.rez_cost_credits(card);
         if self.cost_payable(Side::Corp, card, &Cost::credits(printed)) {
             return true;
         }
@@ -13028,7 +13111,15 @@ impl Vm {
         // occurrence of that movement and can still meet trigger conditions
         // relating to that type of movement". Only 8.2.2a's fully replaced or
         // prevented trash records nothing, and that one never reaches here.
-        self.changes.record(GameChange::CardTrashed { obj: id, by, was_zone: was });
+        // 7.1.2: whether this card was the one being accessed is a fact about
+        // the moment of the trash, so it is recorded with it (René "Loup"
+        // Arcemont class).
+        self.changes.record(GameChange::CardTrashed {
+            obj: id,
+            by,
+            was_zone: was,
+            while_accessed: self.st.accessed == Some(id),
+        });
         match self.replaced_trash_destination(id) {
             // 4.9: removed from the game instead of the discard pile.
             Some(crate::instr::TrashDestination::RemovedFromGame) => {
@@ -13106,7 +13197,7 @@ impl Vm {
         cite!("rule_runner_cards_neither_rezzed_nor_unrezzed");
         cite!("rule_rez_procedure");
         if !ignore_costs {
-            let cost = Cost::credits(self.st.objects[&id].printed.cost.unwrap_or(0));
+            let cost = Cost::credits(self.rez_cost_credits(id));
             // The rez cost may take Decisions to pay (1.16.2e/1.10.3c), so the
             // rest of the procedure is the payment's continuation.
             self.begin_payment(Side::Corp, id, &cost, PaymentCont::Rez(id), None);
@@ -13931,7 +14022,7 @@ impl Vm {
                     let base = if p.ignore_costs {
                         Cost::free()
                     } else {
-                        Cost::credits(self.st.objects[&c].printed.cost.unwrap_or(0))
+                        Cost::credits(self.rez_cost_credits(c))
                     };
                     let add = self.st.objects[&c]
                         .printed

@@ -71,7 +71,15 @@ pub enum GameChange {
     /// prevents no damage (the Guru Davinder example).
     DamagePrevented { by: ObjectId, kind: DamageKind, amount: u32 },
     /// A card was trashed. `by` is the player whose effect trashed it.
-    CardTrashed { obj: ObjectId, by: Side, was_zone: Zone },
+    ///
+    /// `while_accessed` is CR 7.1.2's "a card you are accessing": the card
+    /// trashed WAS the card being accessed at the moment it was trashed. It
+    /// is recorded here rather than asked of the state later because 9.6.5c's
+    /// ordinal is answered of the PAST — "the first time each turn you trash a
+    /// card you are accessing" counts earlier trashes as they stood then, and
+    /// the access they happened inside is long over by the time the count is
+    /// taken.
+    CardTrashed { obj: ObjectId, by: Side, was_zone: Zone, while_accessed: bool },
     CardDiscarded { obj: ObjectId, side: Side },
     /// CR 8.5.16f. `from` is the zone the card is treated as having been
     /// installed FROM — 4.8.3 substitutes the pre-set-aside location for a

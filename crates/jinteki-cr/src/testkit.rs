@@ -3895,7 +3895,7 @@ pub fn metamorph_like(name: &'static str) -> PrintedCard {
 pub fn tatu_bola_like(name: &'static str, from_hq: ObjectId) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 1);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfPassed,
+        TriggerCond::IcePassed { this_ice: true, fully_broken: false, subs_resolved: false },
         vec![
             Instruction::SwapCards {
                 a: TargetSpec::SelfSource,
@@ -4133,7 +4133,7 @@ pub fn twins_ice(name: &'static str, strength: i32) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, strength);
     c.abilities = vec![
         AbilityDef::conditional(
-            TriggerCond::SelfPassed,
+            TriggerCond::IcePassed { this_ice: true, fully_broken: false, subs_resolved: false },
             vec![Instruction::ForceEncounter { ice: TargetSpec::SelfSource }],
             false,
         )
@@ -4549,6 +4549,7 @@ pub fn trash_counter_like(name: &'static str, of: Side) -> PrintedCard {
             by: None,
             of_types: vec![CardType::Program, CardType::Hardware],
             installed_only: true,
+            while_accessed: false,
         },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,
@@ -5370,6 +5371,7 @@ pub fn trash_reaction_asset(name: &'static str) -> PrintedCard {
             by: None,
             of_types: Vec::new(),
             installed_only: true,
+            while_accessed: false,
         },
         vec![Instruction::PlaceCounters {
             target: TargetSpec::SelfSource,
@@ -5902,7 +5904,7 @@ pub fn persephone_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::PassedIceWithResolvedSubroutines,
+        TriggerCond::IcePassed { this_ice: false, fully_broken: false, subs_resolved: true },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
         false,
     )
@@ -5917,7 +5919,7 @@ pub fn inversificator_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::PassedIceAfterFullyBreaking,
+        TriggerCond::IcePassed { this_ice: false, fully_broken: true, subs_resolved: false },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         false,
     )

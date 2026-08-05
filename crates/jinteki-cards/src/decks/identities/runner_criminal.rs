@@ -469,11 +469,91 @@ pub fn zahya_sadeghi() -> Card {
         .build()
 }
 
+/// Az McCaffrey: Mechanical Prodigy — Identity: Cyborg. Link 1.
+/// "The first job resource, connection resource, or piece of hardware you
+///  install each turn costs 1[credit] less to install."
+///
+/// COMPLETE. A DECLARATION, not an ability that resolves: 9.3.5 applies it
+/// continuously, and it is read wherever an install cost is calculated — by
+/// 8.7.2b's affordability query as much as by 8.5.16d's payment, which is
+/// what lets it make an otherwise unaffordable card installable.
+///
+/// The reduction is automatic. Nothing is paid for it and nothing is chosen,
+/// which is the whole difference from Patchwork's 1.16.6 reduction: that one
+/// is only available while its own cost is payable and the installer must
+/// decide to use it.
+///
+/// "Job resource, connection resource, or piece of hardware" is one
+/// description with three alternatives — 2.15's type AND 2.16's subtype for
+/// the first two, a type alone for the third — so it is the printed "or"
+/// between whole descriptions and not between single words.
+///
+/// "The first … each turn" is the same 9.6.5c ordinal a trigger condition
+/// states, read here of the install: the declaration reaches the install only
+/// while no earlier matching one has happened this turn. "You install" needs
+/// no words of its own — 2.15 partitions the card types by side, and
+/// resources and hardware are the Runner's.
+pub fn az_mccaffrey() -> Card {
+    card("Az McCaffrey: Mechanical Prodigy")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Cyborg"])
+        .link(1)
+        .text("The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.")
+        .declares([first_installed_each_turn_costs_less(
+            &[any_of(&[
+                &[of_type(CardType::Resource), with_subtype("Job")],
+                &[of_type(CardType::Resource), with_subtype("Connection")],
+                &[of_type(CardType::Hardware)],
+            ])],
+            1,
+        )])
+        .build()
+}
+
+/// Khan: Savvy Skiptracer — Identity: Natural. Link 0.
+/// "The first time you pass a piece of ice each turn, you may install an
+///  icebreaker from your hand, lowering the install cost by 1."
+///
+/// COMPLETE. The condition is run step 6.9.4a's pass with NO stipulation
+/// about it — not this card's ice, not one fully broken, not one whose
+/// subroutines resolved — and 9.6.5c's ordinal about the occurrence. A piece
+/// of ice bypassed without an encounter is still passed, and still meets it.
+///
+/// "Lowering the install cost by 1" is 1.16.6's reduction stated by the
+/// installing ability itself, so it needs no declaration and nothing is paid
+/// for it; 1.16.2a floors the lowered cost at 0. 9.11.4b is why the install
+/// is its own instruction.
+///
+/// "From your hand" names a zone, which is what lifts 1.15.2c's installed-
+/// cards default, and "an icebreaker" is 2.16's subtype.
+pub fn khan() -> Card {
+    card("Khan: Savvy Skiptracer")
+        .runner()
+        .identity()
+        .faction("Criminal")
+        .subtypes(&["Natural"])
+        .text("The first time you pass a piece of ice each turn, you may install an icebreaker from your hand, lowering the install cost by 1.")
+        .may_when_first_each_turn(
+            passes_any_ice(),
+            [install_paying_less(
+                choose(1, &[in_hand_of(Runner), with_subtype("Icebreaker")]),
+                InstallDest::RunnerChoiceHostOrRig,
+                1,
+            )],
+        )
+        .named("savvy skiptracer")
+        .build()
+}
+
 /// Every Criminal identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         amoral_scammer(),
+        az_mccaffrey(),
+        khan(),
         armand_geist_walker(),
         barry_baz_wong(),
         gabriel_santiago(),

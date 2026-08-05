@@ -150,6 +150,8 @@ pub const ANDROMEDA_PILE: &[&str] = &[
     "Mercury: Chrome Libertador",
     "MuslihaT: Multifarious Marketeer",
     "Zahya Sadeghi: Versatile Smuggler",
+    "Az McCaffrey: Mechanical Prodigy",
+    "Khan: Savvy Skiptracer",
 ];
 
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed

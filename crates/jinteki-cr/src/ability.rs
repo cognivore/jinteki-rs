@@ -422,20 +422,29 @@ pub enum TriggerCond {
     /// choice under `key`, so the condition is met only by a run on the
     /// server chosen for THIS turn — and never when no server was chosen.
     SuccessfulRunOnChosenServer { key: &'static str },
-    /// "When the Runner passes this ice…" (Tatu-Bola class). The pass happens
-    /// at run step 6.9.4a (`rule_pass_ice`).
-    SelfPassed,
-    /// CR 6.1.3f: "whenever you pass a piece of ice you fully broke during
-    /// that encounter" (Inversificator class). The scope is the encounter the
-    /// pass DIRECTLY follows (6.1.3e), so breaking the same ice earlier in the
-    /// run does not satisfy it.
-    PassedIceAfterFullyBreaking,
-    /// CR 9.8.9: "whenever you pass a piece of ice, if any of its subroutines
-    /// resolved during that encounter" (Persephone class). A subroutine
-    /// resolved through a 9.8.9 replacement still counts, because "the
-    /// replaced subroutine is treated as having the same source as the
-    /// original imminent subroutine".
-    PassedIceWithResolvedSubroutines,
+    /// "…passes a piece of ice." The pass happens at run step 6.9.4a
+    /// (`rule_pass_ice`), and every stipulation a printed sentence makes about
+    /// it is content on this one atom (§12 rule 2). All three `false` is a
+    /// sentence making none of them — the plain "the first time you pass a
+    /// piece of ice each turn" (Khan), which each of the stipulated readings
+    /// says something more than.
+    ///
+    /// - `this_ice` — the sentence is printed on the ice and speaks about it
+    ///   ("when the Runner passes THIS ice", Tatu-Bola class);
+    /// - `fully_broken` — CR 6.1.3f's "a piece of ice you fully broke during
+    ///   that encounter" (Inversificator class). The scope is the encounter
+    ///   the pass DIRECTLY follows (6.1.3e), so breaking the same ice earlier
+    ///   in the run does not satisfy it;
+    /// - `subs_resolved` — CR 9.8.9's "if any of its subroutines resolved
+    ///   during that encounter" (Persephone class). A subroutine resolved
+    ///   through a 9.8.9 replacement still counts, because "the replaced
+    ///   subroutine is treated as having the same source as the original
+    ///   imminent subroutine".
+    ///
+    /// The two encounter-scoped stipulations each require the pass to follow
+    /// an encounter at all; a pass with no encounter before it (a bypass)
+    /// meets neither, and meets the plain sentence.
+    IcePassed { this_ice: bool, fully_broken: bool, subs_resolved: bool },
     /// "After you resolve this operation/event…" (Oppo Research class). CR
     /// 8.6.7h: conditions related to finishing resolving a played card are
     /// met at that step, after the card has been trashed (8.6.7g) — which is
@@ -463,12 +472,19 @@ pub enum TriggerCond {
     ///   hardware");
     /// - `installed_only` — where it was trashed from. The printed "(from any
     ///   location)" is the parenthesis a card writes precisely because the
-    ///   usual reading is the installed one.
+    ///   usual reading is the installed one;
+    /// - `while_accessed` — CR 7.1.2's "a card you are accessing" (René
+    ///   "Loup" Arcemont). It is not a zone: the card may be trashed out of
+    ///   HQ, R&D, Archives or a server root, and what the sentence names is
+    ///   the ACCESS it was being trashed inside of. `installed_only` is
+    ///   therefore left `false` beside it, or the sentence would quietly say
+    ///   something narrower than it prints.
     CardTrashed {
         owner: Option<Side>,
         by: Option<Side>,
         of_types: Vec<CardType>,
         installed_only: bool,
+        while_accessed: bool,
     },
     /// "Whenever <side> spends 1 or more credits…" (GameNET class). CR
     /// 1.16.2b makes a calculated credit cost ONE payment, so this meets its
@@ -500,6 +516,22 @@ pub enum TurnScope {
     ThisTurn,
     /// The most recently COMPLETED turn of the side in question.
     LastCompletedTurn,
+}
+
+/// CR 1.16.4a: which of a card's INHERENT costs a modification reaches —
+/// "the costs to install, rez, or play a card, as printed on the card". The
+/// site is content on [`StaticDecl::InherentCostMod`] (§12 rule 2), not a
+/// declaration per site: "costs 1[credit] less to install" and "costs
+/// 1[credit] more to rez" are the same sentence about a different number.
+///
+/// 1.16.4a's third member, the play cost, has no variant because no card in
+/// the decks states a modification of one; it is added when one does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InherentCost {
+    /// CR 8.5.11: the install cost, paid at step 8.5.16d.
+    Install,
+    /// CR 8.1.2d: the rez cost, paid as part of the rez procedure.
+    Rez,
 }
 
 /// Which agendas a modification of the advancement requirement reaches. The
@@ -621,6 +653,18 @@ pub enum TriggerRequirement {
     /// after "+X strength" has already resolved. Written as the flag, the
     /// card could never pump itself up to a barrier it did not already match.
     CanInterfaceWithEncounteredIce { required_subtype: Option<&'static str> },
+    /// CR 6.9.2b: "…**after an approach during which that ice was rezzed**"
+    /// (Nasir Meidan). A 9.6.5c requirement listed inside an encounter
+    /// condition, asked of the approach the encounter directly follows: the
+    /// Approach Ice Phase is where the Corp may rez the ice it opened over,
+    /// so the question is whether THIS ice was rezzed between the approach
+    /// and the encounter.
+    ///
+    /// It is answered from the change log, which 10.2.1 makes open
+    /// information, and not from the ice's faceup state: an ice rezzed on an
+    /// EARLIER approach this run is faceup now and was not rezzed during the
+    /// approach that just ended, and the sentence must leave it alone.
+    EncounteredIceRezzedDuringApproach,
     /// CR 1.17.1: "…if the Runner has 3 or more agenda points" (Complete
     /// Image). The score of the named player as 9.12.1a computes it, so an
     /// agenda whose point value an active ability is modifying counts as
@@ -1066,6 +1110,41 @@ pub enum StaticDecl {
     /// reduction is only available while its own cost is payable, which is
     /// exactly what makes it part of 8.7.2b's affordability query.
     InstallDiscount { cost: Cost, amount: u32 },
+    /// CR 1.16.2a / 1.16.4a: "<the described cards> cost N more/less to
+    /// <install|rez>." (Kate "Mac" McCaffrey, Az McCaffrey, Reina Roja.) An
+    /// AUTOMATIC modification of an inherent cost, applied of its own accord
+    /// wherever that cost is calculated — contrast
+    /// [`StaticDecl::InstallDiscount`], which is Patchwork's: a reduction the
+    /// installer may PAY for and must therefore choose to use.
+    ///
+    /// `which` is 1.16.4a's cost site. The three inherent costs are one list
+    /// in the rules and a sentence modifying one is written exactly like a
+    /// sentence modifying another, so the site is content on this one
+    /// declaration (§12 rule 2) rather than a declaration each.
+    ///
+    /// `criteria` is what the sentence says about the cards, in the shared
+    /// filter vocabulary (§12 rule 5); `amount` carries the polarity, and
+    /// 1.16.2a lowers before flooring at 0.
+    ///
+    /// `first_each_turn` is the printed ordinal — "**the first** piece of ice
+    /// the Corp rezzes **each turn**", "**the first** program or piece of
+    /// hardware you install **each turn**". It describes the occurrence by
+    /// its position in the turn, exactly as 9.6.5c's ordinal does for a
+    /// trigger condition, and is read from the change log (10.2.1 makes the
+    /// history open information): the modification applies while no earlier
+    /// matching install or rez has happened this turn. One stipulation on one
+    /// declaration, never a declaration per ordinal (§12 rule 1).
+    ///
+    /// The sentence's "**you** install" needs no field of its own: 2.15
+    /// partitions the card types by side, so a description naming programs,
+    /// hardware and resources names Runner cards only, and only the Corp ever
+    /// rezzes anything at all (8.1.4f).
+    InherentCostMod {
+        which: InherentCost,
+        criteria: Vec<crate::instr::TargetFilter>,
+        amount: i32,
+        first_each_turn: bool,
+    },
     /// CR 9.10.5 / 9.9.9a: "Lingering effects that would modify <this card's
     /// host / this card's> strength instead expire at <duration>."
     /// (Gebrselassie class.) The ability keeps the corresponding lingering
@@ -1871,23 +1950,21 @@ pub fn trigger_matches(
             side == s && *credits > 0
         }
         (
-            TriggerCond::PassedIceAfterFullyBreaking,
-            GameChange::IcePassed { after_encounter, fully_broken, .. },
+            TriggerCond::IcePassed { this_ice, fully_broken, subs_resolved },
+            GameChange::IcePassed {
+                ice,
+                after_encounter,
+                fully_broken: fb,
+                subs_resolved: sr,
+            },
         ) => {
+            cite!("rule_pass_ice");
             cite!("rule_run_phase_after");
             cite!("rule_pass_after_breaking");
-            *after_encounter && *fully_broken
-        }
-        (
-            TriggerCond::PassedIceWithResolvedSubroutines,
-            GameChange::IcePassed { after_encounter, subs_resolved, .. },
-        ) => {
             cite!("rule_replace_subroutine_resolution");
-            *after_encounter && *subs_resolved
-        }
-        (TriggerCond::SelfPassed, GameChange::IcePassed { ice, .. }) => {
-            cite!("rule_pass_ice");
-            *ice == source.id
+            (!*this_ice || *ice == source.id)
+                && (!*fully_broken || (*after_encounter && *fb))
+                && (!*subs_resolved || (*after_encounter && *sr))
         }
         (TriggerCond::ThisServerBreached, GameChange::BreachBegan { server }) => {
             server_of_source == Some(*server)
@@ -2032,14 +2109,16 @@ pub fn trigger_matches(
             true
         }
         (
-            TriggerCond::CardTrashed { owner, by, installed_only, .. },
-            GameChange::CardTrashed { obj, was_zone, by: trasher },
+            TriggerCond::CardTrashed { owner, by, installed_only, while_accessed, .. },
+            GameChange::CardTrashed { obj, was_zone, by: trasher, while_accessed: wa },
         ) => {
             // 8.2.2a: only a trash that actually happened records this change.
             // The `of_types` narrowing is applied by the checkpoint scan,
             // which can read the trashed card's type.
             cite!("rule_cancelled_movement");
             (!*installed_only || was_zone.is_installed())
+                // 7.1.2: the card was the one being accessed at the time.
+                && (!*while_accessed || *wa)
                 // 1.14.1: whose card it was.
                 && owner.is_none_or(|s| is_corp_card_side(trashed_is_corp(*obj)) == s)
                 // 1.14.5: who did the trashing.

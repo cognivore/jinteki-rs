@@ -377,8 +377,8 @@ pub fn desperado() -> Card {
 ///  The first time each turn this program fully breaks a piece of ice, gain
 ///  2[credit]."
 ///
-/// UNIMPLEMENTED: the third sentence. `PassedIceAfterFullyBreaking` is the
-/// PASS that follows a full break, not the break itself.
+/// UNIMPLEMENTED: the third sentence. `IcePassed { fully_broken: true }` is
+/// the PASS that follows a full break, not the break itself.
 pub fn bukhgalter() -> Card {
     card("Bukhgalter")
         .runner()

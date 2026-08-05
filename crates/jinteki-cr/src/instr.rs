@@ -98,6 +98,15 @@ pub enum Quantity {
     /// named player's credit POOL, which 1.13.3 keeps distinct from any
     /// credits hosted on cards.
     CreditsInPoolOf(Side),
+    /// CR 1.16.4a: "the rez cost of that ice" (Nasir Meidan) — read off the
+    /// ice of the encounter in progress, which is 1.15.4's back-reference
+    /// [`TargetSpec::EncounteredIce`] asked for a number instead of a card.
+    ///
+    /// The rez cost is an inherent property of the CARD, printed on it, and
+    /// not a record of what the Corp paid: an ice rezzed for free through an
+    /// ability still has one, and the sentence still names it. Outside an
+    /// encounter there is no ice to read and the quantity is 0 (9.12.2e).
+    RezCostOfEncounteredIce,
     /// CR 9.9.6: "the number of cards you would draw" (The Class Act) — the
     /// modifiable value the IMMINENT instruction currently expects for
     /// effects of this class, read by an ability resolving in the interrupt

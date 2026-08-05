@@ -35,23 +35,12 @@ through — `git log` is where the history lives.
 Still wanted by identities other than the ones named, in every case: these are
 kernel words, not card patches.
 
-- **No automatic, described reduction of an install cost.**
-  `StaticDecl::InstallDiscount` is Patchwork's — a reduction the installer
-  may PAY for. Nothing declares a free one that applies of its own accord to
-  the first card each turn matching a description. *(Az McCaffrey: Mechanical
-  Prodigy; Kate "Mac" McCaffrey: Digital Tinker.)*
 - **No condition for discarding down to maximum hand size.**
   `Instruction::DiscardToHandSize` is 5.7.4's step and
   `TriggerCond::DiscardPhaseEnds` is the phase around it; neither is "whenever
   you discard cards to reach your maximum hand size", which names the discard
   itself and hands the cards discarded to the next sentence.
   *(Magdalene Keino-Chemutai: Cryptarchitect.)*
-- **No condition for passing a piece of ice, plainly.** `SelfPassed` scopes to
-  the source, and `PassedIceAfterFullyBreaking` /
-  `PassedIceWithResolvedSubroutines` each state something more than the pass.
-  A Runner-side "you
-  pass a piece of ice" is the same occurrence with neither stipulation.
-  *(Khan: Savvy Skiptracer.)*
 - **Jacking out is a run step, not an effect.** `Instruction::JackOutChoice`
   is 6.9.4c's step; a card that OFFERS the choice outside that step has
   nothing to denote into. *(Nero Severn: Information Broker.)*
@@ -122,6 +111,26 @@ kernel words, not card patches.
   10.14.6's construction whole and writes no change for 10.14.6c's reveal, so
   "whenever you and the Runner reveal secretly spent credits" has no
   occurrence to be met by. *(Nisei Division: The Next Generation.)*
+- **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
+  trash-a-resource action pays its click and its 2[credit] and only THEN
+  announces the resource, so an additional cost stated about *which* resource
+  (1.16.10) has nowhere to be paid: by the time the card is known the payment
+  is over. The card is not the problem — the action is, and moving the
+  announcement in front of the payment is a change to 5.2's shape rather than
+  a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
+- **A card cannot be INSTALLED facedown.** `TrashDestination::FacedownInPlay`
+  turns an already-installed Runner card facedown (8.1.4d, Harbinger), and
+  `TargetFilter::Facedown` can describe the result — but `Instruction::
+  InstallCard` has no such stipulation, so nothing puts a card into the rig
+  facedown in the first place. *(Apex: Invasive Predator, second sentence;
+  its first needs a described install PROHIBITION as well.)*
+- **Nothing is met by a run that WOULD be declared successful.** 9.9.3's
+  interrupt relevance is computed from the `EffectAtom`s of the imminent
+  instruction, and `Instruction::DeclareRunSuccessful` carries only a
+  structural atom — so there is no expected effect for a "would" condition to
+  be relevant to, and the ability that changes the attacked server one step
+  before 6.9.5 has no moment to fire in. *(Omar Keung: Conspiracy
+  Theorist.)*
 
 ## Not a kernel gap: the back faces have no printed text here
 
@@ -136,29 +145,30 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **70 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **76 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
 Armand "Geist" Walker, Barry "Baz" Wong, Iain Stirling, Silhouette, Gabriel
 Santiago, Los, Liza Talking Thunder, Laramy Fisk, Leela Patel, Nyusha "Sable"
-Sintashta, Virtual Intelligence, P.I., Mercury, MuslihaT, Zahya Sadeghi.
+Sintashta, Virtual Intelligence, P.I., Mercury, MuslihaT, Zahya Sadeghi,
+Az McCaffrey, Khan.
 
 
-## Runner — Criminal (17/22)
+## Runner — Criminal (19/22)
 
 Module: `decks/identities/runner_criminal.rs`
 
 - [x] **419: Amoral Scammer** — The first time the Corp installs a card each turn, you may expose that card unless the Corp pays 1[credit].
 - [x] **Andromeda: Dispossessed Ristie** — You draw a starting hand of 9 cards.
 - [x] **Armand "Geist" Walker: Tech Lord** — Whenever you use a [trash] ability, draw 1 card.
-- [ ] **Az McCaffrey: Mechanical Prodigy** — The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.
+- [x] **Az McCaffrey: Mechanical Prodigy** — The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.
 - [x] **Barry "Baz" Wong: Tri-Maf Veteran** — Whenever the Corp rezzes a piece of ice, you may install 1 resource or piece of hardware from your grip.
 - [ ] **Boris "Syfr" Kovac: Crafty Veteran** — Draft format only. If you have more [criminal] cards installed than any other faction, when your turn begins, remove 1 tag.
 - [x] **Gabriel Santiago: Consummate Professional** — The first time you make a successful run on HQ each turn, gain 2[credit].
 - [x] **Iain Stirling: Retired Spook** — When your turn begins, gain 2[credit] if the Corp has more scored agenda points than you.
 - [x] **Ken "Express" Tenma: Disappeared Clone** — The first time each turn you play a run event, gain 1[credit].
-- [ ] **Khan: Savvy Skiptracer** — The first time you pass a piece of ice each turn, you may install an icebreaker from your hand, lowering the install cost by 1.
+- [x] **Khan: Savvy Skiptracer** — The first time you pass a piece of ice each turn, you may install an icebreaker from your hand, lowering the install cost by 1.
 - [x] **Laramy Fisk: Savvy Investor** — The first time you make a successful run on a central server each turn, you may force the Corp to draw 1 card.
 - [x] **Leela Patel: Trained Pragmatist** — Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ.
 - [x] **Liza Talking Thunder: Prominent Legislator** — The first time you make a successful run on a central server each turn, draw 2 cards and take 1 tag.
@@ -172,7 +182,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (10/21)
+## Runner — Shaper (12/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -189,16 +199,16 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
 - [ ] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
 - [ ] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
-- [ ] **Kate "Mac" McCaffrey: Digital Tinker** — Lower the install cost of the first program or piece of hardware you install each turn by 1.
+- [x] **Kate "Mac" McCaffrey: Digital Tinker** — Lower the install cost of the first program or piece of hardware you install each turn by 1.
 - [ ] **Lat: Ethical Freelancer** — When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.
 - [ ] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.
-- [ ] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
+- [x] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
 - [x] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
 - [x] **The Collective: Williams, Wu, et al.** — The first time you perform the same action three times in a row each turn, gain [click].
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (10/19)
+## Runner — Anarch (12/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -213,8 +223,8 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **Null: Whistleblower** — Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.
 - [ ] **Omar Keung: Conspiracy Theorist** — Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.
 - [x] **Quetzal: Free Spirit** — Once per turn → 0[credit]: Break 1 barrier subroutine.
-- [ ] **Reina Roja: Freedom Fighter** — The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.
-- [ ] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.
+- [x] **Reina Roja: Freedom Fighter** — The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.
+- [x] **René "Loup" Arcemont: Party Animal** — The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.
 - [x] **Ryō "Phoenix" Ōno: Out of the Ashes** — The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.
 - [ ] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
 - [ ] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.

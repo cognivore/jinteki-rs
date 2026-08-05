@@ -140,7 +140,7 @@ use jinteki_cr::object::PrintedCard;
 // kernel's own types: a designer who outgrows the helpers below can reach
 // for them directly and is still inside the public vocabulary.
 pub use jinteki_cr::ability::{
-    Cost, ReqScope, StaticDecl, TriggerCond, TriggerRequirement, TurnScope,
+    Cost, InherentCost, ReqScope, StaticDecl, TriggerCond, TriggerRequirement, TurnScope,
 };
 pub use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
 pub use jinteki_cr::instr::{
@@ -740,7 +740,8 @@ fn trigger_word(t: &TriggerCond) -> &'static str {
         TriggerCond::SelfEmpty { .. } => "empty",
         TriggerCond::SelfEncountered => "encountered",
         TriggerCond::SelfAccessed { .. } => "accessed",
-        TriggerCond::SelfPassed => "passed",
+        TriggerCond::IcePassed { this_ice: true, .. } => "passed",
+        TriggerCond::IcePassed { .. } => "an ice was passed",
         TriggerCond::SelfPlayResolved => "resolved",
         TriggerCond::RunEnds { successful_only: true, .. } => "successful run ends",
         TriggerCond::RunEnds { .. } => "run ends",
@@ -1443,7 +1444,13 @@ pub fn accessed() -> TriggerCond {
 }
 /// "When the Runner passes this ice, …"
 pub fn passed() -> TriggerCond {
-    TriggerCond::SelfPassed
+    TriggerCond::IcePassed { this_ice: true, fully_broken: false, subs_resolved: false }
+}
+/// "…you pass a piece of ice…" — the pass with no stipulation at all: not
+/// this card's, not one fully broken, not one whose subroutines resolved
+/// (Khan). 6.9.4a's step and nothing else.
+pub fn passes_any_ice() -> TriggerCond {
+    TriggerCond::IcePassed { this_ice: false, fully_broken: false, subs_resolved: false }
 }
 /// "When this run ends, …"
 pub fn run_ends() -> TriggerCond {
@@ -1713,6 +1720,20 @@ pub fn trashes_a_from_anywhere(by: Side, of: CardType) -> TriggerCond {
         by: Some(by),
         of_types: vec![of],
         installed_only: false,
+        while_accessed: false,
+    }
+}
+/// "…you trash a card you are accessing…" (René "Loup" Arcemont) — 8.2's
+/// trash, naming the player who does it (1.14.5) and 7.1.2's access it
+/// happens inside of. No zone is named, because the accessed card can be in
+/// any of them.
+pub fn trashes_the_card_being_accessed(by: Side) -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: None,
+        by: Some(by),
+        of_types: Vec::new(),
+        installed_only: false,
+        while_accessed: true,
     }
 }
 /// "The first time you perform the same action three times in a row each
@@ -2131,6 +2152,28 @@ pub fn agendas_here_cost_less(n: i32) -> StaticDecl {
 pub fn can_be_advanced() -> StaticDecl {
     StaticDecl::CanBeAdvancedSelf
 }
+/// "Lower the install cost of the first <described card> you install each
+/// turn by N." (Kate "Mac" McCaffrey, Az McCaffrey.) The reduction happens of
+/// its own accord — nothing is paid for it and nothing is chosen, which is
+/// what distinguishes it from Patchwork's.
+pub fn first_installed_each_turn_costs_less(criteria: &[TargetFilter], n: i32) -> StaticDecl {
+    StaticDecl::InherentCostMod {
+        which: InherentCost::Install,
+        criteria: criteria.to_vec(),
+        amount: -n,
+        first_each_turn: true,
+    }
+}
+/// "The first <described card> the Corp rezzes each turn costs N[credit] more
+/// to rez." (Reina Roja.)
+pub fn first_rezzed_each_turn_costs_more(criteria: &[TargetFilter], n: i32) -> StaticDecl {
+    StaticDecl::InherentCostMod {
+        which: InherentCost::Rez,
+        criteria: criteria.to_vec(),
+        amount: n,
+        first_each_turn: true,
+    }
+}
 
 // ---- amounts that count things (9.12.2) -----------------------------------
 
@@ -2532,6 +2575,20 @@ pub fn psi_game(
 /// turn".
 pub fn encounters_any_ice() -> TriggerCond {
     TriggerCond::encounter_begins()
+}
+/// "Whenever you encounter a piece of ice **after an approach during which
+/// that ice was rezzed**, …" (Nasir Meidan) — the same encounter with 6.9.2b's
+/// rez window as a 9.6.5c requirement listed inside the condition.
+pub fn encounters_ice_rezzed_on_its_approach() -> TriggerCond {
+    TriggerCond::EncounterBegins {
+        of_subtypes: Vec::new(),
+        requires: vec![TriggerRequirement::EncounteredIceRezzedDuringApproach],
+    }
+}
+/// "…the rez cost of that ice." (Nasir Meidan) — the printed cost of the ice
+/// of the encounter in progress.
+pub fn rez_cost_of_the_encountered_ice() -> Quantity {
+    Quantity::RezCostOfEncounteredIce
 }
 /// "…it gains **code gate** for the remainder of this run." (Rielle "Kit"
 /// Peddler class; 2.16.5 counts instances, so a granted subtype coexists with
