@@ -82,15 +82,7 @@ kernel words, not card patches.
   them from. `TargetFilter::InIdentityPileOf` is 1.5.4a's pile and is the
   nearest thing; nothing says a card is brought alongside the deck for any
   other reason. *(Adam: Compulsive Hacker.)*
-- **A trash cannot be replaced by SETTING THE CARDS ASIDE.**
-  `StaticDecl::ReplaceTrashDestination` is 9.9.8b's replacement and its
-  destinations are the removed-from-game zone and 8.1.4d's facedown-in-play —
-  neither is 4.8's set-aside zone, and none of them is stated about "1 or more
-  cards" as one group the ability then looks through, removes one of and
-  returns. "Ignore this ability if you have already removed a card from the
-  game with it this turn" is 9.3.6g's once-per-turn flag said about a static
-  ability, which never resolves (9.4.1) and so never spends one.
-  *(Skorpios Defense Systems: Persuasive Power.)*
+
 - **A basic action's cost cannot depend on the card it acts on.** 5.2.6g's
   trash-a-resource action pays its click and its 2[credit] and only THEN
   announces the resource, so an additional cost stated about *which* resource
@@ -132,9 +124,9 @@ Earth Station: SEA Headquarters was completed from exactly this data.
 ## Progress
 
 <<<<<<< HEAD
-- Implemented: **136 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **137 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 =======
-- Implemented: **136 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **137 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 >>>>>>> c442d78 (feat(carddata+cards): the back faces arrive from the source, and Earth Station flips)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
@@ -340,7 +332,7 @@ Module: `decks/identities/corp_weyland.rs`
 - [x] **Nuvem SA: Law of the Land** — Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card. The first time you trash a card from R&D during each of your turns, gain 2[credit].
 - [x] **Ob Superheavy Logistics: Extract. Export. Excel.** — Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.
 - [x] **SSO Industries: Fueling Innovation** — When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.
-- [ ] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
+- [x] **Skorpios Defense Systems: Persuasive Power** — [interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.
 - [x] **The Outfit: Family Owned and Operated** — Whenever you take 1 or more bad publicity, gain 3[credit].
 - [x] **The Zwicky Group: Invisible Hands** — The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.
 - [x] **Titan Transnational: Investing In Your Future** — Whenever you score an agenda, you may place 1 agenda counter on it.

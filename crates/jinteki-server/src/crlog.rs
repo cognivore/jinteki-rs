@@ -398,6 +398,11 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         | GameChange::AccessEnded { .. }
         | GameChange::AllSubsBroken { .. }
         | GameChange::EncounterEnded { .. }
+        // The movements it attributes are already logged by their CardMoved
+        // lines ("… is removed from the game."); this record exists so a
+        // "removed a card from the game WITH IT this turn" sentence can ask
+        // whose ability removed.
+        | GameChange::CardsRemovedFromGame { .. }
         | GameChange::BreachEnded { .. } => return None,
     };
     Some(line)

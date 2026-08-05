@@ -694,6 +694,83 @@ pub fn ob_superheavy_logistics() -> Card {
 }
 
 
+/// Skorpios Defense Systems: Persuasive Power — Identity: Subsidiary.
+/// "[interrupt] → Whenever 1 or more Runner cards would be trashed (from any
+///  location), set those cards aside instead of adding them to the heap. You
+///  can look at those cards. You may remove 1 of them from the game. Then,
+///  add all of those cards that are still set aside to the heap. Ignore this
+///  ability if you have already removed a card from the game with it this
+///  turn."
+///
+/// COMPLETE. One printed ability: a 9.9.8b replacement of the trash movement,
+/// declared (`SetsTrashedCardsAside`) rather than resolved, because the
+/// movements it must reach include ones no interrupt window ever opens over —
+/// 10.4.2's damage trashes are not instructions, and 1.16.1a says paying a
+/// cost "cannot be modified or interrupted" while its trashes are still
+/// movements a replacement redirects. The printed [interrupt] marks what the
+/// sentence is (a "would be trashed" replacement); WHERE it applies is the
+/// movement itself, exactly as `ReplaceTrashDestination` already applies.
+///
+/// - **"1 or more Runner cards … (from any location)"** — `controlled_by
+///   (Runner)` is 1.14.2's player, the description that reaches an
+///   uninstalled card, and the parenthesis is `in_any_location()`, whose doc
+///   quotes this very card: without it 1.15.2c would leave the description
+///   meaning installed cards alone. "1 or more … cards" as ONE group is the
+///   declaration's own shape: every card of one trash occurrence — a
+///   multi-point damage's simultaneous trashes (10.4.3), a 1.16.2b aggregate
+///   cost, a plural trash instruction — joins the same 4.8.7 group, and the
+///   rest of the ability resolves ONCE over it.
+/// - **"set those cards aside instead of adding them to the heap"** — 4.8.2's
+///   zone, entered faceup (4.8.6: the ability does not say facedown). 8.2.2
+///   keeps the replaced trash an occurrence of trashing: it is recorded at
+///   the interception, so another card's "whenever a Runner card is trashed"
+///   still meets it — while the trashed card's own heap-active abilities
+///   (9.1.8b, I've Had Worse class) find themselves set aside instead of in
+///   the heap, and stay unmet, exactly as any other replaced destination
+///   leaves them.
+/// - **"You can look at those cards."** — 1.21.2's look, resolved for the
+///   Corp over the group. 4.8.6 has already turned the cards faceup, so the
+///   entitlement costs the Runner nothing they were keeping: every card here
+///   was bound for the open heap (4.4.4).
+/// - **"You may remove 1 of them from the game."** — §4.9, and the "may" is
+///   the announcement's floor: "up to 1" of the still-set-aside cards
+///   (1.15.2e makes zero choosable), there being nothing else the word could
+///   withhold.
+/// - **"Then, add all of those cards that are still set aside to the heap."**
+///   — the movement completing. An ADD (8.2), not a second trash: the trash
+///   was recorded on the way in. 4.8.3 reports the arrival as one movement
+///   from each card's real pre-set-aside location.
+/// - **"Ignore this ability if you have already removed a card from the game
+///   with it this turn."** — spent by the REMOVAL, not by the interception,
+///   and not 9.3.6g's once-per-turn flag: a static ability never resolves
+///   (9.4.1) and so never spends one. The declaration reads the change log
+///   instead (10.2.1): once a removal attributed to this card has removed a
+///   card this turn, later trashes pass by untouched, straight to the heap.
+///   A group set aside before the removal still completes — its follow-up is
+///   the movement finishing, not a new application — so in the corner where
+///   a second group forms while the first is still resolving, the second's
+///   own "you may remove" stands: the ability was not yet ignorable when it
+///   applied.
+pub fn skorpios_defense_systems() -> Card {
+    card("Skorpios Defense Systems: Persuasive Power")
+        .corp()
+        .identity()
+        .faction("Weyland Consortium")
+        .subtypes(&["Subsidiary"])
+        .text("[interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.")
+        .declares([set_trashed_aside_then_until_removed_with_it_this_turn(
+            &[controlled_by(Runner), in_any_location()],
+            [
+                look_at(still_set_aside_by_this_ability(), Corp),
+                remove_from_game(choose_up_to(1, &[set_aside_by_this_ability()])),
+                add_to_heap(still_set_aside_by_this_ability()),
+            ],
+        )])
+        .named("persuasive power")
+        .build()
+}
+
+
 pub fn identities() -> Vec<Card> {
     vec![
         sso_industries(),
@@ -713,6 +790,7 @@ pub fn identities() -> Vec<Card> {
         blue_sun(),
         earth_station_sea_headquarters(),
         bangun(),
-    ob_superheavy_logistics(),
+        ob_superheavy_logistics(),
+        skorpios_defense_systems(),
     ]
 }

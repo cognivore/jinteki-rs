@@ -911,6 +911,16 @@ pub enum Instruction {
     /// ability's search" (8.7.4), a fixed card and an announced choice are
     /// all one instruction.
     AddCardsToHand { cards: TargetSpec },
+    /// "Then, add all of those cards that are still set aside **to the
+    /// heap**." (Skorpios Defense Systems.) The same 8.2 movement
+    /// [`Instruction::AddCardsToHand`] makes, said to a pile instead of a
+    /// hand: "the heap" is 4.4.1's name for the Runner's discard pile, so the
+    /// destination is fixed by the word and only the cards are a position. It
+    /// is an ADD and not a trash — the trash occurred when the movement was
+    /// replaced (8.2.2 records it there), and this is that movement
+    /// completing, so a second `CardTrashed` here would count one occurrence
+    /// twice.
+    AddCardsToHeap { cards: TargetSpec },
     /// CR 1.17.3e / 1.17.3f / 10.1.3: "Add <cards> to <side>'s score area
     /// [as an agenda worth N agenda points]." An effect that DIRECTLY adds a
     /// card to a score area — the agenda (or the converted card) "is not
@@ -1159,6 +1169,7 @@ impl Instruction {
             | Instruction::PlayCard { card: spec, .. }
             | Instruction::MoveToDeck { card: spec, .. }
             | Instruction::AddCardsToHand { cards: spec }
+            | Instruction::AddCardsToHeap { cards: spec }
             | Instruction::AddToScoreArea { cards: spec, .. }
             | Instruction::MoveIce { ice: spec, .. }
             | Instruction::MoveRunnerToIce { ice: spec, .. }
@@ -1341,7 +1352,8 @@ impl Instruction {
             | Instruction::PlayStepActivate | Instruction::PlayStepResolve | Instruction::PlayStepFinish
             | Instruction::RemoveSelfFromGame | Instruction::SetAsideTopOfDeck { .. } | Instruction::ArrangeSetAside { .. }
             | Instruction::CorpRearrangesRnd | Instruction::MoveToDeck { .. } | Instruction::Search { .. }
-            | Instruction::AddCardsToHand { .. } | Instruction::AddToScoreArea { .. } | Instruction::TrashRandomFromHand { .. }
+            | Instruction::AddCardsToHand { .. } | Instruction::AddCardsToHeap { .. }
+            | Instruction::AddToScoreArea { .. } | Instruction::TrashRandomFromHand { .. }
             | Instruction::HostCards { .. } | Instruction::SwapCards { .. } | Instruction::MoveIce { .. }
             | Instruction::MoveRunnerToIce { .. } | Instruction::Sabotage { .. } | Instruction::RemoveCountersFromPlayer { .. }
             | Instruction::ReduceImminentCost { .. } | Instruction::IdentifyMark | Instruction::LoadCounters { .. }
@@ -1663,6 +1675,15 @@ pub enum TargetSpec {
     /// announced: nothing is chosen here, so this position requires no
     /// announcement, exactly as [`TargetSpec::TriggeringCard`] requires none.
     InstalledByThisAbility,
+    /// CR 4.8.7 + 1.15.4: "…all of those cards **that are still set aside**"
+    /// (Skorpios Defense Systems) — every card still in this ability's own
+    /// 4.8.7 set-aside group. The pointing twin of
+    /// [`TargetFilter::SetAsideByThisAbility`], and a position that requires
+    /// no announcement for the reason [`TargetSpec::FoundBySearch`] requires
+    /// none: the group was fixed when the cards were set aside, and "still"
+    /// is the zone — a card an earlier half moved somewhere else has left the
+    /// set-aside zone (4.8) and is no longer one of them.
+    StillSetAsideByThisAbility,
 }
 
 impl TargetSpec {
@@ -1688,7 +1709,8 @@ impl TargetSpec {
             | TargetSpec::EarlierTarget { .. }
             | TargetSpec::EarlierTargets
             | TargetSpec::EarlierTargetsExceptLatest
-            | TargetSpec::InstalledByThisAbility => 0,
+            | TargetSpec::InstalledByThisAbility
+            | TargetSpec::StillSetAsideByThisAbility => 0,
         }
     }
 }

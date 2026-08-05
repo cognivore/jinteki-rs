@@ -13628,3 +13628,350 @@ fn ob_search_completes_empty_when_no_rez_cost_matches() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Skorpios Defense Systems: Persuasive Power
+// ---------------------------------------------------------------------------
+
+/// Skorpios Defense Systems: "[interrupt] → Whenever 1 or more Runner cards
+/// would be trashed (from any location), set those cards aside instead of
+/// adding them to the heap. You can look at those cards. You may remove 1 of
+/// them from the game. Then, add all of those cards that are still set aside
+/// to the heap. …"
+///
+/// The single-card case, end to end: a Corp effect trashes one installed
+/// Runner resource, the replacement holds it out of the heap, and the Corp's
+/// one allowed removal takes it — so the heap never receives it, while 8.2.2
+/// keeps the trash an occurrence of trashing (the record is there for any
+/// condition that asks).
+#[test]
+fn skorpios_sets_a_trashed_runner_card_aside_and_removes_it_from_the_game() {
+    let mut vm = Vm::empty(6230);
+    tk::install_identity(&mut vm, card("Skorpios Defense Systems: Persuasive Power"), Side::Corp);
+    let r1 = tk::install_rig(
+        &mut vm,
+        tk::vanilla_runner_card("Sable Dossier", CardType::Resource),
+    );
+    tk::install_root(&mut vm, tk::corp_trash_button("Zap", vec![r1]), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .when(Match::targets().once(), Reply::Targets(vec![r1]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&r1].zone,
+        Zone::RemovedFromGame,
+        "§4.9: the Corp removed the set-aside card from the game: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.st.discard[&Side::Runner].is_empty(),
+        "…so the heap never received it — the movement's replacement held: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == r1)),
+        "8.2.2: the replaced trash is still an occurrence of trashing, and it is \
+         recorded as one: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.st.objects.values().all(|o| o.zone != Zone::SetAside),
+        "4.8: the set-aside zone is a temporary holding space, and the ability \
+         finished with it: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Targets).len(),
+        1,
+        "one interception, one removal announcement: {}",
+        t.tail(40)
+    );
+}
+
+/// "Whenever **1 or more** Runner cards would be trashed …, set **those
+/// cards** aside instead …" — a 2-point net damage trashes its cards
+/// simultaneously (10.4.3), so the sentence is met ONCE by the pair: one
+/// group set aside, one removal offered over it, and the survivor lands in
+/// the heap when the ability finishes. And while the group is set aside it is
+/// FACEUP (4.8.6 — the ability says nothing about facedown), so both players
+/// see it: "You can look at those cards" costs the Runner nothing they were
+/// keeping, every card here being bound for the open heap (4.4.4).
+#[test]
+fn skorpios_intercepts_a_multi_card_damage_trash_once_as_one_group() {
+    let mut vm = Vm::empty(6231);
+    tk::install_identity(&mut vm, card("Skorpios Defense Systems: Persuasive Power"), Side::Corp);
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt", 2), ServerId::Remote(1), true);
+    let a = vm.new_object(copy_card("Doppelgänger"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(a);
+    let b = vm.new_object(copy_card("Zamboni"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(b);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    // Halt at the removal announcement: the group is set aside right now.
+    let t0 = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("do net damage"))
+            .when(Match::targets(), Reply::Halt),
+        Plan::runner(),
+    );
+    for (label, id) in [("the first", a), ("the second", b)] {
+        assert_eq!(
+            vm.st.objects[&id].zone,
+            Zone::SetAside,
+            "{label} card of the pair is set aside while the ability resolves: {}",
+            t0.tail(40)
+        );
+        for side in [Side::Corp, Side::Runner] {
+            assert!(
+                vm.identity_visible_to(id, side),
+                "4.8.6: the group is faceup, so {side:?} sees {label} card: {}",
+                t0.tail(40)
+            );
+        }
+    }
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::targets().once(), Reply::Targets(vec![a]))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&a].zone,
+        Zone::RemovedFromGame,
+        "the Corp removed 1 of them — one card, out of the whole group: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&b].zone,
+        Zone::Discard(Side::Runner),
+        "…then all of those cards that are still set aside go to the heap: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Targets).len(),
+        1,
+        "10.4.3 trashes the pair simultaneously, so the sentence is met once and \
+         the removal is announced once — not once per card: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::DamageSuffered { cards, .. }
+                if cards.contains(&a) && cards.contains(&b)
+        )),
+        "8.2.2: the damage still trashed both cards, in one occurrence: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.st.objects.values().all(|o| o.zone != Zone::SetAside),
+        "and the set-aside zone is empty again: {}",
+        t.tail(40)
+    );
+}
+
+/// "You **may** remove 1 of them from the game." — 1.15.2e's "up to" makes
+/// zero choosable, and a Corp who declines removes nothing: the whole group
+/// completes the movement into the heap together.
+#[test]
+fn skorpios_declining_the_removal_sends_the_whole_group_to_the_heap() {
+    let mut vm = Vm::empty(6232);
+    tk::install_identity(&mut vm, card("Skorpios Defense Systems: Persuasive Power"), Side::Corp);
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt", 2), ServerId::Remote(1), true);
+    let a = vm.new_object(copy_card("Doppelgänger"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(a);
+    let b = vm.new_object(copy_card("Zamboni"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(b);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("do net damage"))
+            .when(Match::targets().once(), Reply::Targets(Vec::new()))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    for (label, id) in [("the first", a), ("the second", b)] {
+        assert_eq!(
+            vm.st.objects[&id].zone,
+            Zone::Discard(Side::Runner),
+            "{label} card reached the heap — nothing was removed: {}",
+            t.tail(40)
+        );
+    }
+    assert!(
+        vm.st.objects.values().all(|o| o.zone != Zone::RemovedFromGame),
+        "declining is choosing none, so no card left the game: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Targets).len(),
+        1,
+        "the choice was still offered — declining spends nothing: {}",
+        t.tail(40)
+    );
+}
+
+/// "Ignore this ability if you have already removed a card from the game with
+/// it this turn." — spent by the REMOVAL: after the Corp removes a card, a
+/// second trash the same turn passes by untouched, straight to the heap with
+/// nothing set aside and nothing asked; the turn ending hands the ability
+/// back.
+#[test]
+fn skorpios_is_ignored_for_the_rest_of_the_turn_once_it_removed_a_card() {
+    let mut vm = Vm::empty(6233);
+    tk::install_identity(&mut vm, card("Skorpios Defense Systems: Persuasive Power"), Side::Corp);
+    let r1 = tk::install_rig(
+        &mut vm,
+        tk::vanilla_runner_card("Sable Dossier", CardType::Resource),
+    );
+    tk::install_root(&mut vm, tk::corp_trash_button("Zap", vec![r1]), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt", 1), ServerId::Remote(2), true);
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    // Corp turn 1: trash the resource and remove it; then the damage trash
+    // the same turn is ignored — its card goes straight to the heap.
+    let t1 = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .when(Match::targets().once(), Reply::Targets(vec![r1]))
+            .when(Match::paid().once(), Reply::take("do net damage"))
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    assert_eq!(
+        vm.st.objects[&r1].zone,
+        Zone::RemovedFromGame,
+        "the first trash of the turn was intercepted and its card removed: {}",
+        t1.tail(40)
+    );
+    assert_eq!(
+        vm.st.discard[&Side::Runner].len(),
+        1,
+        "the second trash of the same turn passed by untouched — one grip card, \
+         straight to the heap: {}",
+        t1.tail(40)
+    );
+    assert_eq!(
+        t1.of_kind(Kind::Targets).len(),
+        1,
+        "…and nothing was asked about it: one removal announcement all turn: {}",
+        t1.tail(40)
+    );
+    assert!(
+        vm.st.objects.values().all(|o| o.zone != Zone::SetAside),
+        "nothing stayed set aside either — an ignored ability sets nothing aside: {}",
+        t1.tail(40)
+    );
+
+    // The Runner's turn passes; the Corp's next turn begins, and the ability
+    // is back: the same damage is intercepted and a second removal made.
+    let t2 = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("do net damage"))
+            .when(Match::targets().once(), Reply::Targets(grip.clone()))
+            .stop_at_action(),
+        Plan::runner().otherwise_click_credit(),
+    );
+
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's next turn came round: {}", t2.tail(40));
+    let removed_fillers =
+        grip.iter().filter(|g| vm.st.objects[g].zone == Zone::RemovedFromGame).count();
+    assert_eq!(
+        removed_fillers, 1,
+        "a new turn, a new removal — the ignore ran out with the turn: {}",
+        t2.tail(40)
+    );
+    assert_eq!(
+        vm.st.discard[&Side::Runner].len(),
+        1,
+        "…and the heap still holds only the card the IGNORED trash sent there: {}",
+        t2.tail(40)
+    );
+    assert_eq!(
+        t2.of_kind(Kind::Targets).len(),
+        1,
+        "one interception this turn, one announcement: {}",
+        t2.tail(40)
+    );
+}
+
+/// "Whenever 1 or more **Runner** cards would be trashed…" — a Corp card's
+/// trash is not described, so it is not replaced: the asset goes to Archives
+/// the ordinary way, with nothing set aside and nothing asked.
+#[test]
+fn skorpios_leaves_a_corp_card_trash_untouched() {
+    let mut vm = Vm::empty(6234);
+    tk::install_identity(&mut vm, card("Skorpios Defense Systems: Persuasive Power"), Side::Corp);
+    let asset = tk::install_root(
+        &mut vm,
+        tk::vanilla_asset("Warm Reception", 0, 3),
+        ServerId::Remote(1),
+        true,
+    );
+    tk::install_root(
+        &mut vm,
+        tk::corp_trash_button("Dump", vec![asset]),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("corp-trash: trash the set"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&asset].zone,
+        Zone::Discard(Side::Corp),
+        "1.19: the Corp card was trashed to Archives, with no replacement in the \
+         way: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        t.of_kind(Kind::Targets).len(),
+        0,
+        "no group, no removal announcement: {}",
+        t.tail(40)
+    );
+    assert!(
+        vm.st.objects.values().all(|o| o.zone != Zone::SetAside
+            && o.zone != Zone::RemovedFromGame),
+        "nothing was set aside and nothing left the game: {}",
+        t.tail(40)
+    );
+}

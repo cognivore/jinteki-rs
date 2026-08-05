@@ -896,6 +896,13 @@ pub fn draw(side: Side, n: u32) -> Instruction {
 pub fn add_to_hand(cards: TargetSpec) -> Instruction {
     Instruction::AddCardsToHand { cards }
 }
+/// "…add <cards> to the heap." (Skorpios Defense Systems.) The heap is
+/// 4.4.1's name for the Runner's discard pile, so the destination is fixed by
+/// the word. An ADD, not a trash: where the cards were trashed on the way in,
+/// the trash was recorded then (8.2.2), and this is the movement completing.
+pub fn add_to_heap(cards: TargetSpec) -> Instruction {
+    Instruction::AddCardsToHeap { cards }
+}
 /// "Add <cards> to <side>'s score area." (1.17.3e/f / 10.1.3.) A card added
 /// this way is NOT scored or stolen, so nothing a "when you score"/"when the
 /// Runner steals" condition could meet is recorded. `as_agenda` is 10.1.3's
@@ -1447,6 +1454,19 @@ pub fn top_of_heap(count: Quantity) -> TargetSpec {
 /// object, and this description stops reaching it.
 pub fn looked_at_by_this_ability() -> TargetFilter {
     TargetFilter::LookedAtByThisAbility
+}
+/// "…1 of them" — a card in this ability's own 4.8.7 set-aside group, still
+/// in the set-aside zone (Skorpios Defense Systems).
+pub fn set_aside_by_this_ability() -> TargetFilter {
+    TargetFilter::SetAsideByThisAbility
+}
+/// "…all of those cards that are still set aside" (Skorpios Defense Systems)
+/// — every card still in this ability's own 4.8.7 set-aside group, named
+/// with no announcement, the way [`TargetSpec::FoundBySearch`] names a
+/// search's finds. "Still" is the zone: a card an earlier half removed from
+/// the game has left the set-aside zone and is not among them.
+pub fn still_set_aside_by_this_ability() -> TargetSpec {
+    TargetSpec::StillSetAsideByThisAbility
 }
 /// "…**that program**", said of the card an earlier instruction of the SAME
 /// ability installed (Kabonesa Wu). CR 8.7.4's find is not 1.15.2's
@@ -2916,6 +2936,29 @@ pub fn removed_from_game_instead_of_trashed() -> StaticDecl {
     StaticDecl::ReplaceTrashDestination {
         criteria: vec![TargetFilter::IsSource],
         to: TrashDestination::RemovedFromGame,
+    }
+}
+/// "[interrupt] → Whenever 1 or more <described> cards would be trashed, set
+/// those cards aside instead of adding them to the heap. <then…> Ignore this
+/// ability if you have already removed a card from the game with it this
+/// turn." (Skorpios Defense Systems; 9.9.8b + 4.8.)
+///
+/// The cards of ONE trash occurrence are set aside together, faceup (4.8.6),
+/// as one 4.8.7 group, and `then` — the sentences after the replacement —
+/// resolves once over that group before the still-set-aside cards complete
+/// the movement. The last printed sentence is the helper's last word: the
+/// declaration stops applying for the rest of the turn once a removal made
+/// with it has removed a card (spent by the REMOVAL, not by the
+/// interception — 9.4.1's statics never resolve, so 9.3.6g's use-spent flag
+/// cannot be what it means; the change log answers instead, 10.2.1).
+pub fn set_trashed_aside_then_until_removed_with_it_this_turn(
+    criteria: &[TargetFilter],
+    then: impl IntoIterator<Item = Instruction>,
+) -> StaticDecl {
+    StaticDecl::SetsTrashedCardsAside {
+        criteria: criteria.to_vec(),
+        then: then.into_iter().collect(),
+        until_removed_with_it_this_turn: true,
     }
 }
 /// "This card is not trashed until another current is played or an agenda is

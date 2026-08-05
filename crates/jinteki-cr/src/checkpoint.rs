@@ -736,6 +736,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             // 8.5.16f + 9.6.13: and the cards its creator
                             // installed, which no announcement holds.
                             bound_installs: bound_installs.clone(),
+                            set_aside_group: None,
                         },
                     );
                     newly.push(id);
@@ -799,6 +800,7 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                         triggering_cards: Vec::new(),
                         bound_targets: bound_targets.clone(),
                         bound_installs: bound_installs.clone(),
+                        set_aside_group: None,
                     },
                 );
                 newly.push(id);

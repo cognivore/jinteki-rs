@@ -359,6 +359,23 @@ enum SetupPhase {
     Done,
 }
 
+/// CR 9.9.8b + 4.8.7: the group a `StaticDecl::SetsTrashedCardsAside`
+/// replacement is gathering — see [`Vm::pending_trash_set_aside`]. Everything
+/// the follow-up needs travels here, cloned at interception: 9.1.7 asks
+/// whether the DECLARATION applies at the moment of the replacement, and the
+/// movement it began must complete even if its source goes inactive before
+/// the checkpoint (the cards cannot stay set aside).
+pub struct PendingTrashSetAside {
+    /// The card whose declaration replaced the movement.
+    pub source: ObjectId,
+    /// Its controller — whose ability the follow-up frame resolves as.
+    pub controller: Side,
+    /// The 4.8.7 group the intercepted cards were set aside into.
+    pub group: u64,
+    /// The declaration's own remaining instructions, resolved over the group.
+    pub then: Vec<Instruction>,
+}
+
 pub struct Vm {
     pub st: CoreState,
     pub rng: ChaCha8Rng,
@@ -388,6 +405,17 @@ pub struct Vm {
     pub orphan_set_aside_counters: Vec<(CounterKind, u32)>,
     /// CR 9.5.5: set-aside cards left over — trashed at step 10.3.1g.
     pub set_aside_card_cleanup: Vec<ObjectId>,
+    /// CR 9.9.8b + 4.8.7: a trash-replacement group still being gathered — a
+    /// `StaticDecl::SetsTrashedCardsAside` declaration has set 1 or more
+    /// trashed cards aside and its `then` instructions have not been queued
+    /// yet. Every further matching card `Vm::trash_card` intercepts before
+    /// the next checkpoint joins the SAME group, which is how one occurrence
+    /// trashing several cards (a multi-point damage's 10.4.3 simultaneous
+    /// trashes, a 1.16.2b aggregate cost, a plural trash instruction) is
+    /// replaced ONCE, as the printed "1 or more cards" says. The checkpoint
+    /// that follows the occurrence mints the group's follow-up instance and
+    /// takes this.
+    pub pending_trash_set_aside: Option<PendingTrashSetAside>,
     /// In-progress trace attempt (10.8; NOT a timing structure, 9.2.2e).
     pub trace: Option<TraceState>,
     /// In-progress installations (8.5.16), innermost last. Installing is a
@@ -765,6 +793,7 @@ impl Vm {
             last_minimal_sets: None,
             orphan_set_aside_counters: Vec::new(),
             set_aside_card_cleanup: Vec::new(),
+            pending_trash_set_aside: None,
             trace: None,
             installs: Vec::new(),
             plays: Vec::new(),
@@ -2403,14 +2432,16 @@ impl Vm {
                 o.faceup || o.controller == side
             }
             // 4.8.6: cards set aside by an ability are faceup unless the
-            // ability said facedown; 4.8.7/8.3.3a: a facedown group belongs to
-            // the player carrying that effect out, and the opponent "cannot
-            // look at the set-aside cards during this process".
+            // ability said facedown — and a faceup card shows its face to
+            // both players wherever it is (1.21.1), a Skorpios-class group
+            // included. 4.8.7/8.3.3a: a FACEDOWN group belongs to the player
+            // carrying that effect out, and the opponent "cannot look at the
+            // set-aside cards during this process".
             Zone::SetAside => {
                 cite!("rule_set_aside_default_faceup");
                 cite!("rule_arrange_opponent");
                 match o.set_aside_group {
-                    Some(g) => g.by == side,
+                    Some(g) => o.faceup || g.by == side,
                     None => o.faceup || o.controller == side,
                 }
             }
@@ -2705,6 +2736,7 @@ impl Vm {
                     triggering_cards: Vec::new(),
                     bound_targets: Vec::new(),
                     bound_installs: Vec::new(),
+                    set_aside_group: None,
                 },
             );
             out.push(id);
@@ -2764,6 +2796,7 @@ impl Vm {
                 triggering_cards: Vec::new(),
                 bound_targets: Vec::new(),
                 bound_installs: Vec::new(),
+                set_aside_group: None,
             },
         );
         self.pending_from_effect.push(id);
@@ -2771,6 +2804,77 @@ impl Vm {
         if let Some(r) = self.run_ctx_mut() {
             r.if_successful = None;
         }
+    }
+
+    /// CR 9.9.8b + 4.8.7: the follow-up of a completed trash-replacement
+    /// group (Skorpios class) becomes pending, as a conditional instance in
+    /// the ordinary 9.6.14d way — [`Vm::pend_if_successful`]'s shape, for a
+    /// clause a DECLARATION carries rather than a run. Mandatory: the
+    /// replaced movement has to complete ("Then, add all of those cards that
+    /// are still set aside to the heap"), whatever the Corp declines inside
+    /// it.
+    fn pend_trash_set_aside_group(&mut self) {
+        let Some(p) = self.pending_trash_set_aside.take() else { return };
+        cite!("rule_instructed_to_resolve_conditional_ability");
+        cite!("rule_facedown_set_aside_distinct_groups");
+        let label = self
+            .st
+            .objects
+            .get(&p.source)
+            .map(|o| o.printed.name)
+            .unwrap_or("set-aside trash group");
+        let def = AbilityDef {
+            kind: AbilityKind::Conditional,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: p.then.clone(),
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            ordinal: None,
+            label,
+        };
+        // 1.15.4's plural: the cards the intercepted occurrence trashed —
+        // the group as it stands when the occurrence completed.
+        let cards: Vec<ObjectId> = self
+            .st
+            .objects
+            .values()
+            .filter(|o| {
+                o.zone == Zone::SetAside && o.set_aside_group.is_some_and(|g| g.id == p.group)
+            })
+            .map(|o| o.id)
+            .collect();
+        let id = self.next_instance_id();
+        cite!("rule_pending_instances");
+        let gen = self.generation(p.source);
+        self.instances.insert(
+            id,
+            AbilityInstance {
+                id,
+                // The instance resolves the declaration's own follow-up, not
+                // any printed conditional of the source, so the index is the
+                // rules-frame convention (as `PaymentCont::BasicAdvance`).
+                ability: AbilityRef { obj: p.source, index: usize::MAX },
+                def,
+                controller: p.controller,
+                mandatory: true,
+                window: None,
+                hangover: false,
+                independent: false,
+                source_generation: gen,
+                occurrence_group: 0,
+                from_lingering: None,
+                run_id: self.current_run.map(|(r, _, _)| r),
+                triggering_card: cards.first().copied(),
+                triggering_cards: cards,
+                bound_targets: Vec::new(),
+                bound_installs: Vec::new(),
+                set_aside_group: Some(p.group),
+            },
+        );
+        self.pending_from_effect.push(id);
     }
 
     /// CR 9.9.4b: the "…would be declared successful" interrupt the effect
@@ -2835,6 +2939,7 @@ impl Vm {
                 triggering_cards: Vec::new(),
                 bound_targets: Vec::new(),
                 bound_installs: Vec::new(),
+                set_aside_group: None,
             },
         );
         // The clause belongs to the run, and the run is declared successful
@@ -4939,6 +5044,7 @@ impl Vm {
             }
             Instruction::Search { .. }
             | Instruction::AddCardsToHand { .. }
+            | Instruction::AddCardsToHeap { .. }
             | Instruction::AddToScoreArea { .. }
             | Instruction::HostCards { .. }
             | Instruction::SwapCards { .. }
@@ -5336,6 +5442,7 @@ impl Vm {
                     triggering_cards: Vec::new(),
                     bound_targets: Vec::new(),
                     bound_installs: Vec::new(),
+                    set_aside_group: None,
                 },
             );
             pending_ids.push(id);
@@ -5823,7 +5930,13 @@ impl Vm {
             set_aside_cards: Vec::new(),
             found_cards: Vec::new(),
             looked_at: Vec::new(),
-            set_aside_group: None,
+            // 4.8.7 + 9.6.14d: a frame resolving a trash-replacement group's
+            // follow-up starts with the group its instance was bound to, so
+            // `SetAsideByThisAbility` reads it exactly as it reads a group an
+            // instruction of the frame itself set aside.
+            set_aside_group: instance
+                .and_then(|i| self.instances.get(&i))
+                .and_then(|i| i.set_aside_group),
             announced_x: None,
         }));
     }
@@ -11488,9 +11601,17 @@ impl Vm {
                 // §4.9: removed from the game.
                 cite!("sec_removed_from_game");
                 let ts = self.resolve_targets(targets, Some(source.obj), &imm.targets);
-                for t in ts {
-                    self.move_card(t, Zone::RemovedFromGame);
+                for t in &ts {
+                    self.move_card(*t, Zone::RemovedFromGame);
                 }
+                // The removal's own record, attributed: "…if you have already
+                // removed a card from the game WITH IT this turn" (Skorpios
+                // class) asks whose ability removed, and only the moment
+                // knows.
+                self.changes.record(GameChange::CardsRemovedFromGame {
+                    objs: ts,
+                    by_ability_of: Some(source.obj),
+                });
             }
             Instruction::ChooseCards { .. } => {
                 // 9.11.4c: the sentence only directed a player to choose, and
@@ -12258,6 +12379,22 @@ impl Vm {
                     self.move_card(t, Zone::Hand(owner));
                 }
             }
+            Instruction::AddCardsToHeap { cards } => {
+                // "Then, add all of those cards that are still set aside to
+                // the heap." (Skorpios class.) 4.4.1: the heap is the
+                // Runner's discard pile, so the destination is the word's. An
+                // ordinary 8.2 move, NOT a trash — 8.2.2 recorded the trash
+                // when the movement was replaced, and this is that movement
+                // completing: 4.8.3 makes the recorded move read from the
+                // card's real pre-set-aside location, so an ability that
+                // never named the set-aside zone sees one movement, straight
+                // to the heap.
+                cite!("rule_set_aside_zone_passthrough");
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                for t in targets {
+                    self.move_card(t, Zone::Discard(Side::Runner));
+                }
+            }
             Instruction::AddToScoreArea { cards, to, as_agenda } => {
                 // CR 1.17.3e/f: an effect that DIRECTLY adds a card to a
                 // score area — "that agenda is not considered scored or
@@ -12502,6 +12639,14 @@ impl Vm {
             TargetSpec::InstalledByThisAbility => {
                 cite!("rule_steps_installing_become_installed");
                 self.ability_installed_cards()
+            }
+            // CR 4.8.7: "all of those cards that are still set aside" — the
+            // cards still in this ability's own set-aside group. "Still" is
+            // the zone: a card an earlier half removed from the game has left
+            // the set-aside zone and is not among them.
+            TargetSpec::StillSetAsideByThisAbility => {
+                cite!("rule_facedown_set_aside_distinct_groups");
+                self.ability_set_aside_group_cards()
             }
         }
     }
@@ -14986,7 +15131,17 @@ impl Vm {
                 self.move_card(id, Zone::OutsideGame(owner));
                 self.st.objects.get_mut(&id).unwrap().faceup = true;
             }
-            None => self.move_card(id, Zone::Discard(owner)),
+            None => match self.trash_set_aside_declaration(id) {
+                // 9.9.8b + 4.8: "…set those cards aside instead of adding
+                // them to the heap" (Skorpios class) — the card joins the
+                // occurrence's group in the set-aside zone, and the
+                // declaration's own remaining instructions complete the
+                // movement after the checkpoint that follows.
+                Some((src, controller, then)) => {
+                    self.set_aside_instead_of_heap(id, was, src, controller, then)
+                }
+                None => self.move_card(id, Zone::Discard(owner)),
+            },
         }
     }
 
@@ -15007,6 +15162,134 @@ impl Vm {
             }
         }
         None
+    }
+
+    /// CR 9.9.8b + 4.8: is an active declaration replacing this card's trash
+    /// with a set-aside (Skorpios class)? Read where the movement happens, for
+    /// the reason [`Vm::replaced_trash_destination`] is — 10.4.2's damage
+    /// trashes are not instructions, and 1.16.1a's cost trashes cannot be
+    /// interrupted, yet both are movements a 9.9.8b replacement reaches.
+    ///
+    /// "Ignore this ability if you have already removed a card from the game
+    /// with it this turn": the declaration stops applying — no interception,
+    /// the card goes straight to the heap — once the change log carries a
+    /// removal attributed to this declaration's card this turn (10.2.1 open
+    /// information; 1.12.6's turn span). The flag is spent by the REMOVAL and
+    /// not by the interception: a static ability never resolves (9.4.1), so
+    /// 9.3.6g's use-spent flag cannot be what the sentence means.
+    fn trash_set_aside_declaration(
+        &self,
+        id: ObjectId,
+    ) -> Option<(ObjectId, Side, Vec<Instruction>)> {
+        cite!("rule_replacement_effect_from_static_ability");
+        cite!("sec_replacing_movements");
+        cite!("sec_set_aside");
+        let o = self.st.objects.get(&id)?;
+        for (src, d) in self.active_statics() {
+            let StaticDecl::SetsTrashedCardsAside {
+                criteria,
+                then,
+                until_removed_with_it_this_turn,
+            } = d
+            else {
+                continue;
+            };
+            if !criteria.iter().all(|f| self.filter_matches(o, *f, Some(src))) {
+                continue;
+            }
+            if until_removed_with_it_this_turn {
+                cite!("rule_open_information");
+                let spent = self.changes.log[self.st.turn_log_start..].iter().any(|c| {
+                    matches!(
+                        c,
+                        GameChange::CardsRemovedFromGame { objs, by_ability_of: Some(b) }
+                            if *b == src && !objs.is_empty()
+                    )
+                });
+                if spent {
+                    continue;
+                }
+            }
+            let controller = self.st.objects.get(&src).map(|s| s.controller)?;
+            return Some((src, controller, then));
+        }
+        None
+    }
+
+    /// CR 4.8.2 + 4.8.7: the replaced trash movement's first half — the card
+    /// leaves its zone for the set-aside zone, into the occurrence's ONE
+    /// group. Not [`Vm::move_card`]: a set-aside records no `CardMoved` (the
+    /// trash was recorded by the caller, 8.2.2, and 4.8.3 makes every ability
+    /// that does not name the set-aside zone see one movement, straight to
+    /// wherever the group's follow-up puts the card), exactly as 8.4.5a's
+    /// drawn set-aside records `CardDrawn` and no move.
+    fn set_aside_instead_of_heap(
+        &mut self,
+        id: ObjectId,
+        was: Zone,
+        src: ObjectId,
+        controller: Side,
+        then: Vec<Instruction>,
+    ) {
+        cite!("rule_set_aside");
+        cite!("rule_facedown_set_aside_distinct_groups");
+        // One occurrence, one group: every card this declaration intercepts
+        // before the next checkpoint joins the group already open for it.
+        let group = match &self.pending_trash_set_aside {
+            Some(p) if p.source == src => p.group,
+            _ => {
+                let g = self.st.next_set_aside_group;
+                self.st.next_set_aside_group += 1;
+                self.pending_trash_set_aside =
+                    Some(PendingTrashSetAside { source: src, controller, group: g, then });
+                g
+            }
+        };
+        // CR 1.21.6: a disclosure does not survive the move (as in move_card).
+        self.st.seen.forget(id);
+        // Leave every zone list, exactly as move_card would.
+        for v in self.st.deck.values_mut() {
+            v.retain(|&c| c != id);
+        }
+        for v in self.st.hand.values_mut() {
+            v.retain(|&c| c != id);
+        }
+        for v in self.st.discard.values_mut() {
+            v.retain(|&c| c != id);
+        }
+        for v in self.st.score_area.values_mut() {
+            v.retain(|&c| c != id);
+        }
+        self.vacate_ice(id);
+        for v in self.st.root.values_mut() {
+            v.retain(|&c| c != id);
+        }
+        // CR 4.6.6i: leaving a server still records it as "this server".
+        if let Zone::Root(s) | Zone::Ice(s) = was {
+            cite!("rule_this_server");
+            self.st.objects.get_mut(&id).unwrap().last_server = Some(s);
+        }
+        // CR 1.13.12: the moved card's own hosting relationship ends. Its
+        // guests stay put for 1.13.13's checkpoint, exactly as after a trash.
+        if let Some(h) = self.st.objects.get_mut(&id).and_then(|o| o.host.take()) {
+            cite!("rule_hosted_object_same_zone_as_host");
+            self.st.objects.get_mut(&id).unwrap().hosted_not_installed = false;
+            if let Some(host) = self.st.objects.get_mut(&h) {
+                host.hosted.retain(|&x| x != id);
+            }
+        }
+        let o = self.st.objects.get_mut(&id).unwrap();
+        // 4.8.3: where the card is treated as coming from, so the completing
+        // move reports one movement from the real location.
+        o.set_aside_from = Some(was);
+        o.zone = Zone::SetAside;
+        // 4.8.6: set aside by a card ability, and the ability says nothing
+        // about facedown — the cards are faceup, which is what "You can look
+        // at those cards" entitles.
+        cite!("rule_set_aside_default_faceup");
+        o.faceup = true;
+        o.set_aside_group =
+            Some(crate::view::SetAsideGroup { id: group, by: controller, drawn: false });
     }
 
     /// Rez: pay cost (checkpoint per 8.1.2e), turn faceup, active stamp.
@@ -15338,6 +15621,14 @@ impl Vm {
     /// Run a checkpoint; if instances were marked pending, immediately open
     /// a reaction window (10.3.2).
     pub fn checkpoint_and_react(&mut self, originating_structure: Option<u64>) {
+        // 9.9.8b + 4.8.7: a trash occurrence replaced with a set-aside is
+        // over — the trashing instruction/damage/payment reached its
+        // checkpoint — so the group is complete and the declaration's own
+        // remaining instructions resolve over it, as a mandatory instance in
+        // the same reaction window as any conditions the trash met (9.6.14d's
+        // pending-from-effect path). A later trash the same turn opens a NEW
+        // group.
+        self.pend_trash_set_aside_group();
         let newly = checkpoint::run_checkpoint(self);
         if let Some(result) = self.game_over {
             let _ = result;

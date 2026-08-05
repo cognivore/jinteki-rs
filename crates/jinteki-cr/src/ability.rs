@@ -1402,6 +1402,45 @@ pub enum StaticDecl {
         criteria: Vec<crate::instr::TargetFilter>,
         to: crate::instr::TrashDestination,
     },
+    /// CR 9.9.8b + 4.8: "[interrupt] → Whenever 1 or more <described> cards
+    /// would be trashed (from any location), set those cards aside instead of
+    /// adding them to the heap. …" (Skorpios Defense Systems class.)
+    ///
+    /// [`StaticDecl::ReplaceTrashDestination`]'s sibling, different in the two
+    /// ways that rule out writing it as one: the replaced destination is 4.8's
+    /// set-aside zone rather than a place a card can stay, and the sentence is
+    /// stated about "1 or more cards" as ONE GROUP — every matching card of
+    /// one trash occurrence is set aside into the same 4.8.7 group, and the
+    /// sentence's own remaining instructions (`then`) resolve ONCE over that
+    /// group, in a frame sourced to this declaration's card, before the
+    /// still-set-aside cards complete the movement. 8.2.2 still holds: each
+    /// card's trash is recorded when it is intercepted, so "is trashed"
+    /// conditions of OTHER cards are met exactly as they are for any replaced
+    /// trash, while the trashed card's own heap-active abilities (9.1.8b) find
+    /// it set aside instead of in the heap, and stay unmet.
+    ///
+    /// The cards are set aside FACEUP (4.8.6 — the ability does not instruct
+    /// facedown), which is what the printed "You can look at those cards"
+    /// entitles: a card headed for the open heap (4.4.4) shows its face on the
+    /// way through.
+    ///
+    /// `until_removed_with_it_this_turn` is the printed "Ignore this ability
+    /// if you have already removed a card from the game with it this turn". It
+    /// is NOT 9.3.6g's once-per-turn flag — 9.4.1 says a static ability never
+    /// resolves, so it never spends one — and it is not spent by the
+    /// interception either: the sentence names the REMOVAL. So it is read the
+    /// way [`StaticDecl::SelectsDamageTrashes`]'s `first_each_turn` is, from
+    /// the change log (10.2.1 open information): the declaration stops
+    /// applying for the rest of the turn once a
+    /// [`crate::change::GameChange::CardsRemovedFromGame`] attributed to this
+    /// declaration's card has removed at least one card this turn. A group
+    /// already set aside still completes — its `then` frame is the movement
+    /// finishing, not a new application.
+    SetsTrashedCardsAside {
+        criteria: Vec<crate::instr::TargetFilter>,
+        then: Vec<crate::instr::Instruction>,
+        until_removed_with_it_this_turn: bool,
+    },
     /// CR 9.8.9 / 9.9.8b: while this static ability is active, an imminent
     /// subroutine is replaced by the stated one (Tsakhia "Bankhar" Gantulga
     /// class). "The replaced subroutine is treated as having the same source
@@ -2293,6 +2332,16 @@ pub struct AbilityInstance {
     ///
     /// Empty for every instance not created that way.
     pub bound_installs: Vec<ObjectId>,
+    /// CR 4.8.7: the set-aside GROUP this instance resolves over — bound for
+    /// an instance minted by [`StaticDecl::SetsTrashedCardsAside`]'s
+    /// interception, whose cards were set aside before any frame existed. The
+    /// frame the instance resolves in starts with this as its own
+    /// [`crate::frames::AbilityFrame::set_aside_group`], so
+    /// [`crate::instr::TargetFilter::SetAsideByThisAbility`] and
+    /// [`crate::instr::TargetSpec::StillSetAsideByThisAbility`] read the group
+    /// exactly as they read one an instruction of the frame itself set aside.
+    /// `None` for every instance not created that way.
+    pub set_aside_group: Option<u64>,
 }
 
 /// CR 9.1.7 + 9.1.8: whether an ability is active. `encounter_ice` is the

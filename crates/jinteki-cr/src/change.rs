@@ -198,6 +198,17 @@ pub enum GameChange {
     /// new object — it never left the play area.
     CardDerezzed { obj: ObjectId },
     CardMoved { obj: ObjectId, from: Zone, to: Zone },
+    /// §4.9: an ability's resolution REMOVED cards from the game — the
+    /// `RemoveCardsFromGame` instruction's own record, beside the `CardMoved`s
+    /// the movements themselves record. `by_ability_of` is the card whose
+    /// ability performed the removal, recorded for the reason
+    /// [`GameChange::CardInstalled`]'s `by_ability_of` is: "Ignore this
+    /// ability if you have already removed a card from the game **with it**
+    /// this turn" (Skorpios Defense Systems) is a stipulation about WHOSE
+    /// ability removed, and the frame that did it is popped long before the
+    /// sentence asks. An announcement that chose nothing records an empty
+    /// `objs` — it removed no card, and answers for none.
+    CardsRemovedFromGame { objs: Vec<ObjectId>, by_ability_of: Option<ObjectId> },
     CounterPlaced { obj: ObjectId, kind: crate::object::CounterKind, amount: u32 },
     /// CR 1.18.1: a card was ADVANCED — an advancement counter was placed on
     /// it by an advance. 1.18.2: placing an advancement counter directly, or
