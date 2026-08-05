@@ -508,6 +508,10 @@ pub struct Payment {
     /// CR 1.10.3c: how many credits come from each allowed location, in the
     /// order `credit_locations` lists them.
     pub division: Option<Vec<u32>>,
+    /// CR 1.10.3c's division for a `spend_counters_any_source` component:
+    /// how many counters come off each of the payer's hosting cards, in the
+    /// order `counter_locations` lists them.
+    pub counter_division: Option<Vec<u32>>,
     /// Cards chosen for a `trash_from_hand` component.
     pub from_hand: Option<Vec<ObjectId>>,
     /// Agendas chosen for a `forfeit_agenda` component (8.2.5).
@@ -4655,6 +4659,25 @@ impl Vm {
                     .as_ref()
                     .and_then(|e| self.st.objects.get(&e.ice))
                     .and_then(|o| o.printed.cost)
+                    .unwrap_or(0) as i64
+            }
+            // 1.16.4 + 7.1.2: the printed rez-or-play cost of the card being
+            // accessed. Which cost it is is the card type's business (1.16.4a
+            // assets/ice/upgrades rez, 1.16.4b events/operations play) and
+            // both live in the same printed corner, so one read answers; an
+            // agenda has neither number (2.5) and reads 0, and 9.12.2e makes
+            // the whole thing 0 when there is no access to read it from.
+            Q::RezOrPlayCostOfAccessedCard => {
+                cite!("rule_inherent_rez_cost");
+                cite!("rule_card_types_with_rez_costs");
+                cite!("rule_card_types_with_play_costs");
+                self.st
+                    .accessed
+                    .and_then(|c| self.st.objects.get(&c))
+                    .and_then(|o| match o.printed.card_type {
+                        CardType::Agenda => None,
+                        _ => o.printed.cost,
+                    })
                     .unwrap_or(0) as i64
             }
             // 1.16.4a + 1.15.4: the printed rez cost of a card this ability
@@ -12527,6 +12550,19 @@ impl Vm {
                 .into_iter()
                 .collect(),
             TargetSpec::AccessedCard => self.st.accessed.into_iter().collect(),
+            // 7.1.2 + 1.15.2: the accessed card, if the sentence's
+            // stipulation describes it — "the NON-AGENDA card you are
+            // accessing" reaches nothing during the access of an agenda.
+            TargetSpec::AccessedCardMatching(criteria) => self
+                .st
+                .accessed
+                .filter(|c| {
+                    self.st.objects.get(c).is_some_and(|o| {
+                        criteria.iter().all(|f| self.filter_matches(o, *f, source))
+                    })
+                })
+                .into_iter()
+                .collect(),
             // 1.15.4: the card the condition's occurrence named. Read off the
             // innermost ability frame, which inherited it from the instance.
             TargetSpec::TriggeringCard => self
@@ -13577,12 +13613,24 @@ impl Vm {
             }
             for (i, a) in self.abilities_of(src.id) {
                 let a = &a;
+                // 9.3.6g: the once-per-turn flag is spent by USE — the
+                // trigger cost being paid (9.1.6a) — and holds in this
+                // window exactly as in every other one.
+                if a.has_flag(AbilityFlag::OncePerTurn)
+                    && self
+                        .once_per_turn_used
+                        .contains(&(AbilityRef { obj: src.id, index: i }, src.generation))
+                {
+                    cite!("rule_once_per_turn_flag");
+                    continue;
+                }
                 if a.kind == AbilityKind::Paid
                     && a.has_flag(AbilityFlag::Access)
                     && ability_active(src, a, None, self.st.accessed, threat)
                     && self.break_ability_timing_ok(a)
                     && !(in_archives
                         && crate::instr::could_trash_accessed_card(&a.instructions))
+                    && self.accessed_card_stipulations_met(src.id, &a.instructions)
                     && self.paid_ability_cost_payable(
                         Side::Runner,
                         src.id,
@@ -13644,12 +13692,49 @@ impl Vm {
 
     /// Would using this ability trash the card being accessed? A shallow scan
     /// of its instructions for a trash naming the accessed card — the same
-    /// shape 1.13.6b's scan uses (deviation 16).
+    /// shape 1.13.6b's scan uses (deviation 16). A stipulated reference
+    /// counts only when the stipulation reaches the card actually being
+    /// accessed, since otherwise the trash would act on nothing.
     fn ability_trashes_accessed_card(&self, ability: AbilityRef) -> bool {
         let Some(a) = self.ability_at(ability.obj, ability.index) else { return false };
-        a.instructions
-            .iter()
-            .any(|i| matches!(i, Instruction::TrashCards(TargetSpec::AccessedCard)))
+        a.instructions.iter().any(|i| match i {
+            Instruction::TrashCards(TargetSpec::AccessedCard) => true,
+            Instruction::TrashCards(TargetSpec::AccessedCardMatching(criteria)) => {
+                self.accessed_matches(criteria, Some(ability.obj))
+            }
+            _ => false,
+        })
+    }
+
+    /// CR 1.15.3 / 7.1.2: does the card being accessed meet these criteria?
+    /// False with no access in progress.
+    fn accessed_matches(
+        &self,
+        criteria: &[crate::instr::TargetFilter],
+        source: Option<ObjectId>,
+    ) -> bool {
+        self.st.accessed.is_some_and(|c| {
+            self.st
+                .objects
+                .get(&c)
+                .is_some_and(|o| criteria.iter().all(|f| self.filter_matches(o, *f, source)))
+        })
+    }
+
+    /// CR 1.15.3: an access-window ability whose instructions refer to the
+    /// accessed card WITH A STIPULATION ("the **non-agenda** card you are
+    /// accessing", Freedom Khumalo) describes nothing during an access the
+    /// stipulation does not reach — so the ability is not offered there,
+    /// exactly as a paid ability with no valid targets is not offered
+    /// anywhere else. A shallow scan, the same shape
+    /// [`crate::instr::could_trash_accessed_card`] uses.
+    fn accessed_card_stipulations_met(&self, source: ObjectId, instrs: &[Instruction]) -> bool {
+        instrs.iter().all(|i| match i {
+            Instruction::TrashCards(TargetSpec::AccessedCardMatching(criteria)) => {
+                self.accessed_matches(criteria, Some(source))
+            }
+            _ => true,
+        })
     }
 
     // ------------------------------------------------------------------
@@ -13787,6 +13872,26 @@ impl Vm {
         if let Some((kind, n)) = cost.spend_counters {
             cite!("rule_counters_default_from_bank");
             if self.st.objects[&source].counter(kind) < n {
+                return false;
+            }
+        }
+        // 1.16.2c + 1.16.1b: an any-source counter component of X, where
+        // "X must be equal to <quantity>" DETERMINES the value — the cost is
+        // payable iff the payer's cards host at least exactly-X counters of
+        // the kind between them. (With no equality stated the amount is
+        // whatever the quantity reads outside a payment — 1.16.2d makes a
+        // bare X read 0, always payable, and the payer announces upward from
+        // there under 1.16.1a's all-at-once bound.)
+        if let Some((kind, amount)) = &cost.spend_counters_any_source {
+            cite!("rule_cost_x");
+            let want = match &cost.x_restriction {
+                Some(crate::ability::XBound::Exactly(q)) => {
+                    self.eval_quantity(q, Some(source)).max(0) as u32
+                }
+                _ => self.eval_quantity(amount, Some(source)).max(0) as u32,
+            };
+            let avail: u32 = self.counter_locations(side, *kind).iter().map(|(_, n)| *n).sum();
+            if avail < want {
                 return false;
             }
         }
@@ -14202,6 +14307,7 @@ impl Vm {
             alternate_covers: 0,
             alternate_cost: Cost::free(),
             division: None,
+            counter_division: None,
             from_hand: None,
             forfeited: None,
             trashed: None,
@@ -14240,6 +14346,27 @@ impl Vm {
                 }
             }
         }
+        out
+    }
+
+    /// CR 1.10.3c's location list for an any-source counter component: each
+    /// of the payer's cards hosting counters of the kind, and how many are
+    /// there. No pool position — counters live on cards (1.9.1) — and the
+    /// cards are the ACTIVE ones, the same activity question
+    /// `credit_locations` asks of a hosted-credit card.
+    fn counter_locations(&self, side: Side, kind: CounterKind) -> Vec<(ObjectId, u32)> {
+        cite!("rule_spend_credits");
+        let mut out: Vec<(ObjectId, u32)> = self
+            .st
+            .objects
+            .values()
+            .filter(|o| o.controller == side && card_active(o))
+            .filter_map(|o| {
+                let n = o.counter(kind);
+                (n > 0).then_some((o.id, n))
+            })
+            .collect();
+        out.sort();
         out
     }
 
@@ -14293,19 +14420,23 @@ impl Vm {
         }
     }
 
-    /// CR 1.16.2c: the greatest value the payer may announce for X.
+    /// CR 1.16.2c: the greatest value the payer may announce for X, where
+    /// the stated restriction leaves them a choice at all.
     ///
     /// "The chosen value must follow any applicable restrictions" — a stated
-    /// restriction (Misdirection's "X must be no greater than the number of
-    /// tags") is one; and where none is stated the bound is what 1.16.1a
-    /// leaves: a cost must be paid all at once, so a value the payer could
-    /// not pay for would make the ability unusable (1.16.1b) rather than
-    /// legal. Both bounds apply when both exist.
+    /// upper bound (Misdirection's "X must be equal to or less than the
+    /// number of tags") is one; and where none is stated the bound is what
+    /// 1.16.1a leaves: a cost must be paid all at once, so a value the payer
+    /// could not pay for would make the ability unusable (1.16.1b) rather
+    /// than legal. Both bounds apply when both exist. An
+    /// [`XBound::Exactly`] restriction never reaches here — it leaves no
+    /// choice, so `advance_payment` announces the determined value without
+    /// asking.
     fn x_bound(&self, p: &Payment) -> u32 {
         cite!("rule_cost_x");
         cite!("rule_cost_restrictions");
         let mut max = self.spendable_credits(p.side);
-        if let Some(q) = &p.cost.x_restriction {
+        if let Some(crate::ability::XBound::AtMost(q)) = &p.cost.x_restriction {
             max = max.min(self.eval_quantity(q, Some(p.source)).max(0) as u32);
         }
         max
@@ -14316,16 +14447,26 @@ impl Vm {
         let Some(p) = self.payment.clone() else { return };
         // 1.16.2c: X is announced BEFORE the cost is paid.
         if p.announced_x.is_none() {
-            // 1.16.2c: the announcement is owed whenever the cost CONTAINS X
-            // — a stated restriction is an extra bound on the value, not what
-            // creates the choice (Corporate Troubleshooter states none).
-            if p.cost.credits.mentions_announced_x() || p.cost.x_restriction.is_some() {
+            // "X must be equal to <quantity>": the restriction DETERMINES
+            // the value, so the 1.16.2c announcement is made without a
+            // decision — there is exactly one legal value, and the same
+            // elision every other single-candidate choice gets applies.
+            if let Some(crate::ability::XBound::Exactly(q)) = &p.cost.x_restriction {
+                cite!("rule_cost_x");
+                let determined = self.eval_quantity(q, Some(p.source)).max(0) as u32;
+                if let Some(pm) = self.payment.as_mut() {
+                    pm.announced_x = Some(determined);
+                }
+            } else if p.cost.credits.mentions_announced_x() || p.cost.x_restriction.is_some() {
+                // 1.16.2c: the announcement is owed whenever the cost
+                // CONTAINS X — a stated restriction is an extra bound on the
+                // value, not what creates the choice (Corporate
+                // Troubleshooter states none).
                 cite!("rule_cost_x");
                 let max = self.x_bound(&p);
                 self.ask(p.side, DecisionSpec::DeclareX { max }, DecisionCtx::Payment);
                 return;
-            }
-            if let Some(pm) = self.payment.as_mut() {
+            } else if let Some(pm) = self.payment.as_mut() {
                 pm.announced_x = Some(0);
             }
         }
@@ -14405,6 +14546,45 @@ impl Vm {
                 pm.from_hand = Some(hand);
             }
         }
+        // 1.10.3c's division for an any-source counter component: which of
+        // the payer's hosting cards the counters come off. Asked before the
+        // credit division so `DecisionAnswer::Division` answers arrive in a
+        // fixed order.
+        if let Some((kind, amount)) = &p.cost.spend_counters_any_source {
+            if p.counter_division.is_none() {
+                cite!("rule_spend_credits");
+                // The announced X is in place by now, so the amount reads it.
+                let total = self.eval_quantity(amount, Some(p.source)).max(0) as u32;
+                let locations = self.counter_locations(p.side, *kind);
+                let available: u32 = locations.iter().map(|(_, n)| *n).sum();
+                // The choice is real only when there is more than one card
+                // and the payer is not spending every counter they have.
+                if locations.len() > 1 && total > 0 && total < available {
+                    self.ask(
+                        p.side,
+                        DecisionSpec::DivideCounterPayment { total, kind: *kind, locations },
+                        DecisionCtx::Payment,
+                    );
+                    return;
+                }
+                // One card, everything, or nothing: the division is forced,
+                // exactly as an all-candidates PaymentCards choice is.
+                let forced: Vec<u32> = {
+                    let mut left = total;
+                    locations
+                        .iter()
+                        .map(|(_, have)| {
+                            let take = (*have).min(left);
+                            left -= take;
+                            take
+                        })
+                        .collect()
+                };
+                if let Some(pm) = self.payment.as_mut() {
+                    pm.counter_division = Some(forced);
+                }
+            }
+        }
         // 1.10.3c: the division of the credits among the allowed locations.
         if p.division.is_none() {
             let total = self.payment_credits_from_locations(&p);
@@ -14480,7 +14660,17 @@ impl Vm {
             }
             DecisionAnswer::Division(v) => {
                 if let Some(pm) = self.payment.as_mut() {
-                    pm.division = Some(v);
+                    // The counter division is asked before the credit
+                    // division, so an unanswered counter component claims
+                    // the answer first — the same sequential dispatch
+                    // `Targets` uses above.
+                    if pm.cost.spend_counters_any_source.is_some()
+                        && pm.counter_division.is_none()
+                    {
+                        pm.counter_division = Some(v);
+                    } else {
+                        pm.division = Some(v);
+                    }
                 }
             }
             _ => {}
@@ -14512,6 +14702,14 @@ impl Vm {
         // 1.16.2b/c: the calculation — including any announced X — is
         // performed while the payment is still in progress.
         let want_credits = self.cost_credits(&p.cost, p.source);
+        // The same moment for an any-source counter amount: its quantity
+        // reads the announced X, which lives on the payment record.
+        let want_any_counters = p
+            .cost
+            .spend_counters_any_source
+            .as_ref()
+            .map(|(_, q)| self.eval_quantity(q, Some(p.source)).max(0) as u32)
+            .unwrap_or(0);
         self.payment = None;
         // 1.16.2c: the announced X belongs to this USE of the ability, so it
         // outlives the payment record that collected it.
@@ -14546,7 +14744,7 @@ impl Vm {
                 af.announced_x = p.announced_x;
             }
         }
-        self.pay_cost_committed(&p, want_credits);
+        self.pay_cost_committed(&p, want_credits, want_any_counters);
         self.resume_payment(p.cont);
     }
 
@@ -14587,7 +14785,7 @@ impl Vm {
         }
     }
 
-    fn pay_cost_committed(&mut self, p: &Payment, want_credits: u32) {
+    fn pay_cost_committed(&mut self, p: &Payment, want_credits: u32, want_any_counters: u32) {
         let (side, source, cost) = (p.side, p.source, &p.cost);
         cite!("rule_cost_zero");
         cite!("rule_checkpoint_after_paying_cost");
@@ -14633,6 +14831,52 @@ impl Vm {
             o.counters.insert(kind, have - spent);
             self.changes
                 .record(GameChange::CounterRemoved { obj: Some(source), kind, amount: spent });
+        }
+        // An any-source counter component: the counters come off the cards
+        // the payer divided them among (1.10.3c's procedure said about
+        // counters), back to the bank — one movement record per card, the
+        // same shape `spend_divided` gives credits. Anything a short or
+        // illegal division leaves unpaid is completed greedily, the way
+        // every other Decision is clamped.
+        if let Some((kind, _)) = cost.spend_counters_any_source {
+            cite!("rule_counters_default_from_bank");
+            cite!("rule_remove_spend_hosted_objects");
+            let locations = self.counter_locations(side, kind);
+            let v = p.counter_division.clone().unwrap_or_default();
+            let mut left = want_any_counters;
+            for (i, (obj, have)) in locations.iter().enumerate() {
+                if left == 0 {
+                    break;
+                }
+                let take = v.get(i).copied().unwrap_or(0).min(*have).min(left);
+                if take > 0 {
+                    let o = self.st.objects.get_mut(obj).unwrap();
+                    let have_now = *o.counters.get(&kind).unwrap_or(&0);
+                    o.counters.insert(kind, have_now - take.min(have_now));
+                    self.changes
+                        .record(GameChange::CounterRemoved { obj: Some(*obj), kind, amount: take });
+                    left -= take;
+                }
+            }
+            for (obj, _) in locations {
+                if left == 0 {
+                    break;
+                }
+                let have_now =
+                    self.st.objects.get(&obj).map(|o| o.counter(kind)).unwrap_or(0);
+                let take = have_now.min(left);
+                if take > 0 {
+                    self.st
+                        .objects
+                        .get_mut(&obj)
+                        .unwrap()
+                        .counters
+                        .insert(kind, have_now - take);
+                    self.changes
+                        .record(GameChange::CounterRemoved { obj: Some(obj), kind, amount: take });
+                    left -= take;
+                }
+            }
         }
         let mut trashed = Vec::new();
         if cost.trash_self {

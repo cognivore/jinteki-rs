@@ -533,6 +533,60 @@ pub fn topan() -> Card {
         .build()
 }
 
+/// Freedom Khumalo: Crypto-Anarchist — Identity: Cyborg. Link 0.
+/// "Access, once per turn → Any X virus counters: Trash the non-agenda card
+///  you are accessing. X must be equal to that card's rez or play cost."
+///
+/// COMPLETE. One paid ability whose every printed phrase is a different rule
+/// doing its own work.
+///
+/// "Access, once per turn →" is two flags on the one ability: 9.3.6b puts it
+/// in the mid-access window and nowhere else, and 9.3.6g's once-per-turn flag
+/// is spent by USE — 9.1.6a puts the use at the moment the trigger cost is
+/// paid — so an access where the ability is offered and declined leaves it
+/// usable at the next access the same turn, and a second use the same turn is
+/// never offered.
+///
+/// "Any X virus counters:" is 1.16.2c's X and 1.10.3c's division at once,
+/// and NEITHER half of Imp's "hosted virus counter:" cost (1.9.2 spends from
+/// the source, in a printed number). "Any" is which cards: the counters come
+/// from any of the Runner's cards, so which of them pay is the Runner's
+/// division, put to them exactly as the division of a credit payment among
+/// its locations already is. X is how many, and the last sentence's "X must
+/// be equal to" is a DIFFERENT relation from Misdirection's "equal to or
+/// less than": X is not chosen under a ceiling, it is determined — the only
+/// legal announcement is the accessed card's printed rez or play cost
+/// (1.16.4a for an asset, ice or upgrade; 1.16.4b for an operation), so the
+/// announcement is made with no decision put to anyone, and 1.16.1b makes
+/// the whole cost unpayable while the Runner's cards host fewer virus
+/// counters than that between them. A 0-cost card determines X = 0, and
+/// 1.16.1d pays a zero cost by announcing it — the trash then simply
+/// happens, which is the card's famous free-trash of 0-cost assets and
+/// operations.
+///
+/// "The non-agenda card you are accessing" is 7.1.2's accessed card with the
+/// sentence's stipulation riding on the reference: during the access of an
+/// agenda the description reaches nothing, so the ability is not offered at
+/// all — never "offered for X = 0" (an agenda has neither a rez nor a play
+/// cost to determine X with, and the sentence excludes it in words anyway).
+pub fn freedom_khumalo() -> Card {
+    card("Freedom Khumalo: Crypto-Anarchist")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Cyborg"])
+        .text("Access, once per turn → Any X virus counters: Trash the non-agenda card you are accessing. X must be equal to that card's rez or play cost.")
+        .paid_access_once_per_turn(
+            any_x_counters_equal_to(
+                CounterKind::Virus,
+                rez_or_play_cost_of_the_accessed_card(),
+            ),
+            [trash(accessed_card_matching(&[non(of_type(CardType::Agenda))]))],
+        )
+        .named("crypto-anarchist")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -553,5 +607,6 @@ pub fn identities() -> Vec<Card> {
         ryo_phoenix_ono(),
         omar_keung(),
         topan(),
+        freedom_khumalo(),
     ]
 }

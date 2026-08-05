@@ -13975,3 +13975,295 @@ fn skorpios_leaves_a_corp_card_trash_untouched() {
         t.tail(40)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Freedom Khumalo: Crypto-Anarchist
+// ---------------------------------------------------------------------------
+
+/// Freedom Khumalo: "Access, once per turn → Any X virus counters: Trash the
+/// non-agenda card you are accessing. X must be equal to that card's rez or
+/// play cost." — the whole sentence on a 2-cost asset, with the virus
+/// counters spread over TWO different cards.
+///
+/// "Any" is 1.10.3c's division said about counters: with 2 hosted on each of
+/// two cards and X determined at 2, which cards the 2 come from is a real
+/// choice, put to the Runner exactly as a credit payment's division is — and
+/// the answer 1+1 takes one counter off EACH card.
+#[test]
+fn freedom_khumalo_pays_x_across_two_cards_and_the_asset_falls() {
+    let mut vm = Vm::empty(6400);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    let asset =
+        tk::install_root(&mut vm, tk::vanilla_asset("Two-Cost Asset", 2, 9), ServerId::Remote(1), false);
+    let host_a = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host A", CardType::Program));
+    let host_b = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host B", CardType::Program));
+    tk::place_counters(&mut vm, host_a, CounterKind::Virus, 2);
+    tk::place_counters(&mut vm, host_b, CounterKind::Virus, 2);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::take("crypto-anarchist"))
+            // 1.10.3c: one counter from each host.
+            .when(Match::division().once(), Reply::Division(vec![1, 1]))
+            .when(Match::action(), Reply::Halt),
+    );
+    // The division was asked as a COUNTER division, for exactly X = 2.
+    let asked = t.entries.iter().find_map(|e| match &e.spec {
+        jinteki_cr::decision::DecisionSpec::DivideCounterPayment { total, kind, locations } => {
+            Some((*total, *kind, locations.clone()))
+        }
+        _ => None,
+    });
+    let (total, kind, locations) = asked.expect("the counter division was put to the Runner");
+    assert_eq!(total, 2, "X is the accessed card's printed rez cost");
+    assert_eq!(kind, CounterKind::Virus);
+    assert_eq!(
+        locations,
+        vec![(host_a, 2), (host_b, 2)],
+        "every card of the Runner's hosting virus counters is a location"
+    );
+    assert_eq!(
+        vm.st.objects[&asset].zone,
+        Zone::Discard(Side::Corp),
+        "the accessed asset was trashed: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&host_a].counter(CounterKind::Virus),
+        1,
+        "one virus counter came off Host A"
+    );
+    assert_eq!(
+        vm.st.objects[&host_b].counter(CounterKind::Virus),
+        1,
+        "…and one off Host B"
+    );
+}
+
+/// Freedom Khumalo: "X must be equal to that card's rez or play cost." —
+/// 1.16.2c's announcement with an EQUALITY restriction is not a choice under
+/// a ceiling: X is determined, so no DeclareX decision is ever put to the
+/// Runner, and a division answer trying to spend 3 on a 2-cost card is
+/// clamped to exactly 2. And where the determined X exceeds what the
+/// Runner's cards host between them, the cost is unpayable (1.16.1b) and the
+/// ability is not offered at all.
+#[test]
+fn freedom_khumalo_x_is_determined_not_chosen() {
+    // Scene one: 4 counters available (3 + 1), a 2-cost asset, a greedy
+    // division answer of [3, 0] — exactly 2 are spent, not 3.
+    let mut vm = Vm::empty(6401);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    let asset =
+        tk::install_root(&mut vm, tk::vanilla_asset("Two-Cost Asset", 2, 9), ServerId::Remote(1), false);
+    let host_a = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host A", CardType::Program));
+    let host_b = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host B", CardType::Program));
+    tk::place_counters(&mut vm, host_a, CounterKind::Virus, 3);
+    tk::place_counters(&mut vm, host_b, CounterKind::Virus, 1);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::take("crypto-anarchist"))
+            .when(Match::division().once(), Reply::Division(vec![3, 0]))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.entries.iter().any(|e| Kind::of(&e.spec) == Kind::DeclareX),
+        "X is determined by the equality, so no announcement decision exists: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.objects[&asset].zone, Zone::Discard(Side::Corp), "trashed for exactly 2");
+    assert_eq!(
+        vm.st.objects[&host_a].counter(CounterKind::Virus)
+            + vm.st.objects[&host_b].counter(CounterKind::Virus),
+        2,
+        "exactly 2 of the 4 counters were spent — a division answer cannot pay 3: {}",
+        t.tail(20)
+    );
+
+    // Scene two: a 5-cost asset over 3 available counters — X is determined
+    // at 5, the Runner cannot produce it, and the ability is never offered.
+    let mut vm = Vm::empty(6402);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    let pricey =
+        tk::install_root(&mut vm, tk::vanilla_asset("Five-Cost Asset", 5, 9), ServerId::Remote(1), false);
+    let host = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host", CardType::Program));
+    tk::place_counters(&mut vm, host, CounterKind::Virus, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.ever_offered("crypto-anarchist"),
+        "1.16.1b: exactly-5 cannot be produced from 3, so the cost is unpayable: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.objects[&pricey].zone, Zone::Root(ServerId::Remote(1)), "the asset stands");
+    assert_eq!(vm.st.objects[&host].counter(CounterKind::Virus), 3, "nothing was spent");
+}
+
+/// Freedom Khumalo on a 0-cost card: X is determined at 0, and CR 1.16.1d
+/// pays a cost of zero by announcing it — the payment is the announcement,
+/// so the trash simply happens, with no virus counter anywhere on the board.
+#[test]
+fn freedom_khumalo_trashes_a_zero_cost_card_for_free() {
+    let mut vm = Vm::empty(6403);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    let asset =
+        tk::install_root(&mut vm, tk::vanilla_asset("Zero-Cost Asset", 0, 9), ServerId::Remote(1), false);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::take("crypto-anarchist"))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.st.objects[&asset].zone,
+        Zone::Discard(Side::Corp),
+        "X = 0: the zero cost is paid by announcing it and the trash happens: {}",
+        t.tail(20)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::CounterRemoved { kind: CounterKind::Virus, .. }
+        )),
+        "no virus counter moved anywhere: {}",
+        t.tail(20)
+    );
+}
+
+/// Freedom Khumalo: "the **non-agenda** card you are accessing" — during the
+/// access of an agenda the stipulation describes nothing, so the ability is
+/// not offered at all (1.15.3): never "offered for X = 0", even though an
+/// agenda has no rez or play cost to determine X with.
+#[test]
+fn freedom_khumalo_is_not_offered_during_an_agenda_access() {
+    let mut vm = Vm::empty(6404);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    tk::install_root(&mut vm, tk::vanilla_agenda("Some Agenda", 3, 1), ServerId::Remote(1), false);
+    let host = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host", CardType::Program));
+    tk::place_counters(&mut vm, host, CounterKind::Virus, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.ever_offered("crypto-anarchist"),
+        "an agenda access is not described by the sentence: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.objects[&host].counter(CounterKind::Virus), 3, "nothing was spent");
+}
+
+/// Freedom Khumalo: "once per turn" — 9.3.6g's flag, spent by USE. After the
+/// first access of the turn spends it, the second access the same turn does
+/// not offer the ability at all, whatever the counters could still pay.
+#[test]
+fn freedom_khumalo_once_per_turn_second_access_gets_no_offer() {
+    let mut vm = Vm::empty(6405);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    tk::install_root(&mut vm, tk::vanilla_asset("First Target", 1, 9), ServerId::Remote(1), false);
+    let second =
+        tk::install_root(&mut vm, tk::vanilla_asset("Second Target", 1, 9), ServerId::Remote(2), false);
+    let host = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host", CardType::Program));
+    tk::place_counters(&mut vm, host, CounterKind::Virus, 4);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::mid_access().once(), Reply::take("crypto-anarchist"))
+            .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::RunBegan { .. })).count(),
+        2,
+        "both runs happened: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        plan::count_labelled(&offered_options(&t), "crypto-anarchist"),
+        1,
+        "9.3.6g: used on the first access, gone for the second: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&second].zone,
+        Zone::Root(ServerId::Remote(2)),
+        "the second asset stands"
+    );
+    assert_eq!(vm.st.objects[&host].counter(CounterKind::Virus), 3, "only the first X = 1 was spent");
+}
+
+/// Freedom Khumalo: the once-per-turn flag is spent by USE, not by an offer
+/// declined — CR 9.1.6a: "a paid ability is considered used once the trigger
+/// cost has been paid", and 9.3.6g's flag is spent by that use. An access
+/// where the Runner passes the mid-access window pays nothing, so the next
+/// access the same turn offers the ability again.
+#[test]
+fn freedom_khumalo_declined_offer_returns_the_same_turn() {
+    let mut vm = Vm::empty(6406);
+    tk::install_identity(&mut vm, card("Freedom Khumalo: Crypto-Anarchist"), Side::Runner);
+    tk::install_root(&mut vm, tk::vanilla_asset("First Target", 1, 9), ServerId::Remote(1), false);
+    let second =
+        tk::install_root(&mut vm, tk::vanilla_asset("Second Target", 1, 9), ServerId::Remote(2), false);
+    let host = tk::install_rig(&mut vm, tk::vanilla_runner_card("Virus Host", CardType::Program));
+    tk::place_counters(&mut vm, host, CounterKind::Virus, 4);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            // Offered, and declined: 9.1.6a — no trigger cost paid, no use.
+            .when(Match::mid_access().once(), Reply::Pass)
+            .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+            .when(Match::mid_access().once(), Reply::take("crypto-anarchist"))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::RunBegan { .. })).count(),
+        2,
+        "both runs happened: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        plan::count_labelled(&offered_options(&t), "crypto-anarchist"),
+        2,
+        "declining spends nothing, so the second access offers it again: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&second].zone,
+        Zone::Discard(Side::Corp),
+        "…and using it there trashes the second asset: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.objects[&host].counter(CounterKind::Virus), 3, "one counter for X = 1");
+}

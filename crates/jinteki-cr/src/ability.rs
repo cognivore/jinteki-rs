@@ -1164,6 +1164,25 @@ pub enum Condition {
     Static(StaticCond),
 }
 
+/// CR 1.16.2c: the RELATION an ability states between the value announced
+/// for X and a quantity. "The chosen value must follow any applicable
+/// restrictions" — and the printed restrictions are not all one relation:
+/// Misdirection's "X must be equal to **or less than** the number of tags"
+/// leaves the payer a choice under a ceiling, while Freedom Khumalo's "X must
+/// be equal to that card's rez or play cost" leaves no choice at all — X is
+/// not chosen, it is DETERMINED, and the cost is payable (1.16.1b) only if
+/// the payer can produce exactly that value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XBound {
+    /// "X must be equal to or less than <quantity>" — an upper bound on a
+    /// value the payer still picks (Misdirection class).
+    AtMost(crate::instr::Quantity),
+    /// "X must be equal to <quantity>" — the only legal announcement is the
+    /// quantity's value, so 1.16.2c's announcement is made without a
+    /// decision being put to anyone (Freedom Khumalo class).
+    Exactly(crate::instr::Quantity),
+}
+
 /// A cost (1.16.1: anything spent, resolved, or met to use an ability or
 /// apply an effect; must be payable all at once).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -1210,6 +1229,19 @@ pub struct Cost {
     /// The counters come off the ability's SOURCE, which is what makes an
     /// empty card's ability unusable rather than free.
     pub spend_counters: Option<(crate::object::CounterKind, u32)>,
+    /// CR 1.16.2c + 1.10.3c: "**Any** X <kind> counters:" (Freedom Khumalo)
+    /// — neither half of [`Cost::spend_counters`]: the amount is a quantity
+    /// position announced under 1.16.2c rather than a printed number, and
+    /// the counters come from ANY of the payer's cards rather than off the
+    /// source. Which cards they come from is the payer's division, put to
+    /// them exactly as 1.10.3c already puts the division of a credit payment
+    /// among its allowed locations ([`crate::decision::DecisionSpec::
+    /// DivideCounterPayment`]).
+    ///
+    /// 1.16.1b: the cost is payable only if the payer's cards host at least
+    /// the amount between them — and where an [`XBound::Exactly`]
+    /// restriction determines that amount, at least exactly that.
+    pub spend_counters_any_source: Option<(crate::object::CounterKind, crate::instr::Quantity)>,
     /// CR 8.2.5 / 4.9.3: "forfeit an agenda" as a cost (24/7 News Cycle
     /// class) — N agendas move from the payer's score area to the
     /// removed-from-game zone, their agenda points stop counting, and
@@ -1225,12 +1257,14 @@ pub struct Cost {
     /// effect being paid for unmet is not offered.
     pub trash_matching: Option<(u32, Vec<crate::instr::TargetFilter>)>,
     /// CR 1.16.2c: this cost contains the variable X, and the payer announces
-    /// a value for it BEFORE paying. The quantity is the restriction the
-    /// ability states on that value ("X must be equal to or less than the
-    /// number of tags the Runner has"); the announced value is read back by
-    /// [`crate::instr::Quantity::AnnouncedX`]. 1.16.2d: outside a payment,
-    /// `AnnouncedX` is 0.
-    pub x_restriction: Option<crate::instr::Quantity>,
+    /// a value for it BEFORE paying. The [`XBound`] is the restriction the
+    /// ability states on that value — an upper bound the payer chooses under
+    /// ("X must be equal to or less than the number of tags the Runner
+    /// has"), or an equality that determines it outright ("X must be equal
+    /// to that card's rez or play cost"); the announced value is read back
+    /// by [`crate::instr::Quantity::AnnouncedX`]. 1.16.2d: outside a
+    /// payment, `AnnouncedX` is 0.
+    pub x_restriction: Option<XBound>,
 }
 
 impl Cost {
@@ -1265,6 +1299,20 @@ impl Cost {
     pub fn spend_counters(kind: crate::object::CounterKind, n: u32) -> Self {
         Cost { spend_counters: Some((kind, n)), ..Default::default() }
     }
+    /// CR 1.16.2c + 1.10.3c: "**Any** X <kind> counters: … X must be equal
+    /// to <quantity>." (Freedom Khumalo.) The amount is X, announced by the
+    /// equality; the counters come from any of the payer's cards, divided by
+    /// the payer.
+    pub fn any_x_counters_equal_to(
+        kind: crate::object::CounterKind,
+        q: crate::instr::Quantity,
+    ) -> Self {
+        Cost {
+            spend_counters_any_source: Some((kind, crate::instr::Quantity::AnnouncedX)),
+            x_restriction: Some(XBound::Exactly(q)),
+            ..Default::default()
+        }
+    }
     /// CR 8.2.5: "forfeit N agendas" as a cost.
     pub fn forfeit_agenda(n: u32) -> Self {
         Cost { forfeit_agenda: n, ..Default::default() }
@@ -1273,12 +1321,13 @@ impl Cost {
     pub fn trash_matching(n: u32, criteria: Vec<crate::instr::TargetFilter>) -> Self {
         Cost { trash_matching: Some((n, criteria)), ..Default::default() }
     }
-    /// CR 1.16.2c: a cost of X, with the restriction the ability states on
-    /// the value the payer may announce.
+    /// CR 1.16.2c: a credit cost of X, with the stated restriction an upper
+    /// bound on the value the payer may announce ("X[credit]: … X must be
+    /// equal to or less than …").
     pub fn x(restriction: crate::instr::Quantity) -> Self {
         Cost {
             credits: crate::instr::Quantity::AnnouncedX,
-            x_restriction: Some(restriction),
+            x_restriction: Some(XBound::AtMost(restriction)),
             ..Default::default()
         }
     }
@@ -1319,6 +1368,10 @@ impl Cost {
             remove_self_from_game: self.remove_self_from_game || other.remove_self_from_game,
             trash_all_from_hand: self.trash_all_from_hand || other.trash_all_from_hand,
             spend_counters: self.spend_counters.or(other.spend_counters),
+            spend_counters_any_source: self
+                .spend_counters_any_source
+                .clone()
+                .or_else(|| other.spend_counters_any_source.clone()),
             forfeit_agenda: self.forfeit_agenda + other.forfeit_agenda,
             trash_matching: self.trash_matching.clone().or_else(|| other.trash_matching.clone()),
             x_restriction: self.x_restriction.clone().or_else(|| other.x_restriction.clone()),

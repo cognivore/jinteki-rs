@@ -218,6 +218,18 @@ pub enum DecisionSpec {
     /// and `Some(card)` credits hosted on that card; the answer is one number
     /// per location, in order, summing to `total`.
     DivideCreditPayment { total: u32, locations: Vec<(Option<ObjectId>, u32)> },
+    /// CR 1.10.3c's division, said about COUNTERS: "**Any** X <kind>
+    /// counters:" (Freedom Khumalo) spends them from any of the payer's
+    /// cards, so the payer divides the amount among the cards hosting that
+    /// kind exactly as they divide a credit payment among its locations.
+    /// There is no pool position — counters live on cards (1.9.1) — so every
+    /// location is a card; the answer is `Division`, one number per location,
+    /// in order, summing to `total`.
+    DivideCounterPayment {
+        total: u32,
+        kind: crate::object::CounterKind,
+        locations: Vec<(ObjectId, u32)>,
+    },
     /// CR 1.15.1b: "name a card" / "name a number" — the naming player says a
     /// value from an OPEN namespace. Not a target announcement: 1.15.1b puts
     /// this choice at the instruction's RESOLUTION, which is where it is

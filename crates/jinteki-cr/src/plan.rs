@@ -93,7 +93,8 @@ pub enum Kind {
     DeclareX,
     /// 1.16.2e: using (or not) an alternate way to pay part of a cost.
     AlternatePayment,
-    /// 1.10.3c: dividing a credit payment among the allowed locations.
+    /// 1.10.3c: dividing a payment — credits among the allowed locations,
+    /// or any-source counters among the cards hosting them.
     Division,
     /// 8.3.1/8.3.3: declaring the order of an arrangement.
     Arrange,
@@ -137,6 +138,7 @@ impl Kind {
             DecisionSpec::DeclareX { .. } => Kind::DeclareX,
             DecisionSpec::AlternatePayment { .. } => Kind::AlternatePayment,
             DecisionSpec::DivideCreditPayment { .. } => Kind::Division,
+            DecisionSpec::DivideCounterPayment { .. } => Kind::Division,
             DecisionSpec::ArrangeCards { .. } => Kind::Arrange,
             DecisionSpec::LoopCount { .. } => Kind::LoopCount,
             DecisionSpec::ChooseCounters { .. } => Kind::CounterTargets,
@@ -417,7 +419,8 @@ impl Match {
     pub fn alternate_payment() -> Match {
         Match::of(Kind::AlternatePayment)
     }
-    /// 1.10.3c: dividing a credit payment among the allowed locations.
+    /// 1.10.3c: dividing a payment among the allowed locations — a credit
+    /// payment's, or an any-source counter payment's.
     pub fn division() -> Match {
         Match::of(Kind::Division)
     }
@@ -1291,6 +1294,22 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
         // 1.10.3c: the neutral policy spends from the credit pool first,
         // which is what the kernel did before the division was a choice.
         DecisionSpec::DivideCreditPayment { total, locations } => {
+            let mut left = *total;
+            DecisionAnswer::Division(
+                locations
+                    .iter()
+                    .map(|(_, have)| {
+                        let take = (*have).min(left);
+                        left -= take;
+                        take
+                    })
+                    .collect(),
+            )
+        }
+        // The counter analog: the neutral policy spends from the front of
+        // the location list, the same greedy completion the kernel applies
+        // to a short division.
+        DecisionSpec::DivideCounterPayment { total, locations, .. } => {
             let mut left = *total;
             DecisionAnswer::Division(
                 locations

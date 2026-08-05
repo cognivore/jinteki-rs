@@ -1889,6 +1889,30 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 }
             }
         }
+        DecisionSpec::DivideCounterPayment { total, kind, locations } => {
+            p.msg = format!("Which cards do the {total} {kind:?} counters come from? (1.10.3c)");
+            // The same priority-order shape as the credit division above:
+            // one choice per "spend from here first".
+            for (i, _) in locations.iter().enumerate() {
+                let mut left = *total;
+                let mut div = vec![0u32; locations.len()];
+                let order = std::iter::once(i).chain((0..locations.len()).filter(|j| *j != i));
+                for j in order {
+                    let take = locations[j].1.min(left);
+                    div[j] = take;
+                    left -= take;
+                }
+                if left > 0 {
+                    continue;
+                }
+                push_on(
+                    &mut p,
+                    format!("{} first", name_of(vm, &view, locations[i].0)),
+                    DecisionAnswer::Division(div),
+                    locations[i].0,
+                );
+            }
+        }
         // Ordering declarations have no shape in this UI yet. They are offered
         // honestly, labelled as such, and answered by the engine's own neutral
         // policy — never silently.

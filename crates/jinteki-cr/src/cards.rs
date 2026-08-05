@@ -819,7 +819,7 @@ pub fn misdirection() -> PrintedCard {
     // 1.16.2c: X is announced when the cost is paid, and the Runner cannot
     // announce more than they can pay or more tags than they have.
     cost.credits = Quantity::AnnouncedX;
-    cost.x_restriction = Some(Quantity::RunnerTags);
+    cost.x_restriction = Some(crate::ability::XBound::AtMost(Quantity::RunnerTags));
     c.abilities = vec![AbilityDef::paid(
         cost,
         vec![Instruction::RemoveTags(Quantity::AnnouncedX)],

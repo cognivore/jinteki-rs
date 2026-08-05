@@ -62,17 +62,7 @@ kernel words, not card patches.
   cost trashes it), and none describes the outermost ice of a server the
   ability just chose. *(AgInfusion: New Miracles for a New World.)*
 
-- **A counter cost comes off the SOURCE, in a printed number.**
-  `Cost::spend_counters` is 1.9.2's "spend N counters hosted on this card"
-  (Imp), which is why an empty card's ability is unusable rather than free —
-  and "**any** X virus counters" is neither half of that: the count is
-  announced under 1.16.2c and the counters come from any of the payer's cards,
-  which needs a division put to the payer the way 1.10.3c's credits already
-  are. Two more words in the same sentence: `Cost::x_restriction` states the
-  bound as "X must be equal to **or less than**", and "X must be equal to" is
-  a different relation; and `Quantity` reads the rez cost of the ice being
-  ENCOUNTERED (Nasir) but not the printed rez-or-play cost of a card a
-  description names. *(Freedom Khumalo: Crypto-Anarchist.)*
+
 - **Nothing installs a card at the game's SETUP.**
   `PrintedCard::starting_hand_size`, `starting_credits` and
   `starting_bad_publicity` are 1.6's setup facts, and "you start the game with
@@ -123,11 +113,7 @@ Earth Station: SEA Headquarters was completed from exactly this data.
 
 ## Progress
 
-<<<<<<< HEAD
-- Implemented: **137 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
-=======
-- Implemented: **137 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
->>>>>>> c442d78 (feat(carddata+cards): the back faces arrive from the source, and Earth Station flips)
+- Implemented: **138 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -200,7 +186,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **Alice Merchant: Clan Agitator** — The first time you make a successful run on Archives each turn, the Corp must trash 1 card from HQ.
 - [x] **Edward Kim: Humanity's Hammer** — Trash the first operation you access each turn at no cost.
 - [x] **Esâ Afontov: Eco-Insurrectionist** — The first time each turn you suffer core damage, you may draw 1 card and sabotage 2. (The Corp trashes 2 cards of their choice from HQ and/or the top of R&D.)
-- [ ] **Freedom Khumalo: Crypto-Anarchist** — Access, once per turn → Any X virus counters: Trash the non-agenda card you are accessing. X must be equal to that card's rez or play cost.
+- [x] **Freedom Khumalo: Crypto-Anarchist** — Access, once per turn → Any X virus counters: Trash the non-agenda card you are accessing. X must be equal to that card's rez or play cost.
 - [ ] **Hoshiko Shiro: Untold Protagonist** — When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.
 - [x] **MaxX: Maximum Punk Rock** — When your turn begins, trash the top 2 cards of your stack. Draw 1 card.
 - [x] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.

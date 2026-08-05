@@ -551,6 +551,23 @@ impl CardBuilder {
             AbilityDef::paid(cost, instrs.into_iter().collect()).with_flag(AbilityFlag::Access),
         )
     }
+    /// "Access, once per turn → <cost>: …" (Freedom Khumalo) — the
+    /// mid-access flag (9.3.6b) and the once-per-turn flag (9.3.6g)
+    /// together. The once-per-turn flag is spent by USE — 9.1.6a puts the
+    /// use at the moment the trigger cost is paid — so an access where the
+    /// ability is offered and declined leaves it usable at the next access
+    /// the same turn.
+    pub fn paid_access_once_per_turn(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_flag(AbilityFlag::Access)
+                .with_flag(AbilityFlag::OncePerTurn),
+        )
+    }
     /// "[click]: Play this operation **from Archives**." — a paid ability
     /// whose printed words state WHERE its source works from, which CR 9.3.3c
     /// makes a restriction ("limits on when, where, or how often an ability
@@ -1417,6 +1434,14 @@ pub fn this_card() -> TargetSpec {
 pub fn accessed_card() -> TargetSpec {
     TargetSpec::AccessedCard
 }
+/// "the **non-agenda** card you are accessing" (Freedom Khumalo; 7.1.2) —
+/// the accessed card with the sentence's stipulation. Nothing is chosen: the
+/// access fixed the card, and the criteria only decide whether the
+/// description reaches it. During an access the stipulation does not
+/// describe, the ability is not offered at all.
+pub fn accessed_card_matching(criteria: &[TargetFilter]) -> TargetSpec {
+    TargetSpec::AccessedCardMatching(criteria.to_vec())
+}
 /// "it" / "that card" — the card the OCCURRENCE that met this ability's
 /// condition named (1.15.4). Nothing is announced: the condition fixed the
 /// card, exactly as an access fixes [`accessed_card`].
@@ -1623,6 +1648,17 @@ pub fn trash_this_card() -> Cost {
 /// (1.9.2), which is what makes an empty card's ability unusable.
 pub fn hosted_counters(kind: CounterKind, n: u32) -> Cost {
     Cost::spend_counters(kind, n)
+}
+/// "**Any** X <kind> counters: … X must be equal to <quantity>." (Freedom
+/// Khumalo; 1.16.2c + 1.10.3c.) Neither half of [`hosted_counters`]: the
+/// amount is X, DETERMINED by the equality rather than chosen, and the
+/// counters come from any of the payer's cards — which cards is the payer's
+/// division, put to them the way a credit payment's division already is.
+/// 1.16.1b: payable only if the payer's cards host at least exactly-X
+/// counters between them; a determined X of 0 is a zero cost, paid by
+/// announcing it (1.16.1d).
+pub fn any_x_counters_equal_to(kind: CounterKind, q: Quantity) -> Cost {
+    Cost::any_x_counters_equal_to(kind, q)
 }
 /// "Forfeit an agenda" as a cost (8.2.5).
 /// "…trash 1 card from your grip" as a cost (Null: Whistleblower; 1.16.10).
@@ -3638,6 +3674,15 @@ pub fn encounters_ice_rezzed_on_its_approach() -> TriggerCond {
 /// of the encounter in progress.
 pub fn rez_cost_of_the_encountered_ice() -> Quantity {
     Quantity::RezCostOfEncounteredIce
+}
+/// "…that card's **rez or play cost**", said of the card being accessed
+/// (Freedom Khumalo; 1.16.4). Which cost it is is the card type's business —
+/// 1.16.4a's rez cost for assets, ice and upgrades, 1.16.4b's play cost for
+/// events and operations — and both are the printed corner number. An agenda
+/// has neither and reads 0; a printed 0 reads 0 because the cost exists and
+/// is zero (1.16.1d pays it by announcing it).
+pub fn rez_or_play_cost_of_the_accessed_card() -> Quantity {
+    Quantity::RezOrPlayCostOfAccessedCard
 }
 /// "…gain credits equal to **its** rez cost." (Blue Sun) — the printed cost
 /// of a card this ability chose, [`earlier_choice`] asked for a number. `nth`

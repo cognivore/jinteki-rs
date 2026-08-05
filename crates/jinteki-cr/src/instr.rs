@@ -116,6 +116,23 @@ pub enum Quantity {
     /// same sentence's other half has yet to move the card. Printed cost,
     /// as ever; no such target reads 0 (9.12.2e).
     RezCostOfEarlierTarget { nth: usize },
+    /// CR 1.16.4 + 7.1.2: "that card's **rez or play cost**", said of the
+    /// card being ACCESSED (Freedom Khumalo) —
+    /// [`TargetSpec::AccessedCard`] asked for a number, exactly as
+    /// [`Quantity::RezCostOfEncounteredIce`] is
+    /// [`TargetSpec::EncounteredIce`] asked for one. Which cost the sentence
+    /// means is settled by the card's type: 1.16.4a gives assets, ice and
+    /// upgrades a rez cost and 1.16.4b gives events and operations a play
+    /// cost, both the number printed in the top corner — an inherent
+    /// property of the CARD, not a record of anything paid. A printed cost
+    /// of 0 reads as 0: the cost exists and is zero (1.16.1d pays it by
+    /// announcing it), which is not the same as having none.
+    ///
+    /// An agenda has neither a rez cost nor a play cost (2.5's card type
+    /// carries no such number), so it reads 0 here — and every printed
+    /// sentence naming this quantity excludes agendas anyway. Outside an
+    /// access there is no card to read and the quantity is 0 (9.12.2e).
+    RezOrPlayCostOfAccessedCard,
     /// CR 9.9.6: "the number of cards you would draw" (The Class Act) — the
     /// modifiable value the IMMINENT instruction currently expects for
     /// effects of this class, read by an ability resolving in the interrupt
@@ -1590,6 +1607,17 @@ pub enum TargetSpec {
     HostOfSource,
     /// The card currently being accessed.
     AccessedCard,
+    /// CR 7.1.2 + 1.15.2: "the **non-agenda** card you are accessing"
+    /// (Freedom Khumalo) — [`TargetSpec::AccessedCard`] with the sentence's
+    /// stipulation carried in the shared filter vocabulary (§12 rule 5).
+    /// Nothing is chosen: the access fixed the card, and the criteria only
+    /// decide whether the description reaches it. An accessed card the
+    /// criteria do not match is described by nothing, so the position
+    /// resolves to no objects — and an ability whose instructions refer to
+    /// the accessed card this way is not offered in the mid-access window
+    /// of an access it does not describe (1.15.3 / 9.1.10's no-potential
+    /// reading, enforced where the window gathers its options).
+    AccessedCardMatching(Vec<TargetFilter>),
     /// CR 9.10.3: the object remembered by this source's maintained choice
     /// under `key` (Femme Fatale's "that ice"). Resolves to nothing when no
     /// such choice is being maintained.
@@ -1700,6 +1728,7 @@ impl TargetSpec {
             | TargetSpec::SelfSource
             | TargetSpec::HostOfSource
             | TargetSpec::AccessedCard
+            | TargetSpec::AccessedCardMatching(_)
             | TargetSpec::MaintainedChoice(_)
             | TargetSpec::EncounteredIce
             | TargetSpec::TriggeringCard
@@ -2446,7 +2475,8 @@ pub fn could_break_subroutines(instrs: &[Instruction]) -> bool {
 pub fn could_trash_accessed_card(instrs: &[Instruction]) -> bool {
     cite!("rule_trash_in_archives");
     instrs.iter().any(|i| match i {
-        Instruction::TrashCards(TargetSpec::AccessedCard) => true,
+        Instruction::TrashCards(TargetSpec::AccessedCard)
+        | Instruction::TrashCards(TargetSpec::AccessedCardMatching(_)) => true,
         Instruction::MustTrashAccessedCard { .. } => true,
         Instruction::PerformedBy { instr, .. } | Instruction::DeclineableChoice(instr) => {
             could_trash_accessed_card(std::slice::from_ref(instr))
