@@ -576,15 +576,36 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .cardpick .card { position: relative; }
 .cardpick.focused { z-index: 4; }
 
-/* ARMED — the one card whose next tap commits. A THIRD thing, and not one of
-   the three in THE LAW §3: gold and green answer "what can I do", white
-   answers "is the game waiting on me", and this answers "what happens if I
-   tap again". It has to read as a held breath rather than a state of the
-   game, so it is a ring drawn outside the border and nothing else moves. */
-.card.armed { box-shadow: 0 0 0 3px #ffd76a, 0 0 16px rgba(255,215,106,.55); }
-.card.armed.usable { box-shadow: 0 0 0 3px #ffd76a, 0 0 16px rgba(57,255,136,.6); }
-.chip.cancel-armed { border-color: #ffd76a; color: #ffd76a; }
-@media (prefers-reduced-motion: reduce) { .card.armed { box-shadow: 0 0 0 3px #ffd76a; } }
+/* ARMED — the one thing whose next tap commits. WHITE, like `.staged` and
+   `.priority`, because it is the same white question: the game is waiting on
+   YOUR word, and the word is one more tap on this exact thing. Gold and
+   green answer "what can I do"; white answers "what is waited on". A ring
+   drawn OUTSIDE the border — the gold candidate outline stays visible under
+   it, so an armed target still reads as a target — and nothing else moves.
+   It lands wherever a question can: a card, an ice sliver, an identity
+   chip, a server column. */
+.card.armed { box-shadow: 0 0 0 3px #fff, 0 0 16px rgba(255,255,255,.6); }
+.card.armed.usable { box-shadow: 0 0 0 3px #fff, 0 0 16px rgba(57,255,136,.6); }
+.ice-sliver.armed { box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255,255,255,.6); }
+.idchip.armed { box-shadow: 0 0 0 2px #fff, 0 0 12px rgba(255,255,255,.6); }
+.chip.cancel-armed { border-color: #fff; color: #fff; }
+@media (prefers-reduced-motion: reduce) { .card.armed { box-shadow: 0 0 0 3px #fff; } }
+
+/* A SERVER as a candidate: the same grammar as a card, on a place. Gold =
+   you may pick it; the white ring = armed, tap again to commit. The
+   placeholder column stands for the remote a "new remote" answer would
+   create, drawn only while that answer is on offer. */
+.server.selectable { border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(232,185,63,.5); cursor: pointer; }
+.server.selectable.armed-target { border-color: #fff;
+  box-shadow: 0 0 0 2px #fff, 0 0 14px rgba(255,255,255,.55); }
+.server.newremote .central { border-style: dashed; color: var(--gold); }
+
+/* The rail's confirm hint: what is armed, said next to the Cancel that
+   un-arms it. Text, not a button — the confirming tap is on the board. */
+.armed-hint { color: #fff; font-size: 12px; align-self: center;
+  padding: 0 4px; max-width: 40vw; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 /* Tapping a focused card whose play is a QUESTION (install into which
    server?) raises it out of the fan while the sheet asks. */
 .fanrow > .cardpick.raised { transform: translateY(-40px) scale(1.6);
@@ -1144,11 +1165,6 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   color: var(--runner); font-weight: 800; }
 .reveal-overlay .zoom-card > .chip.go { align-self: flex-start; margin-top: 8px;
   min-height: 46px; font-size: 15px; font-weight: 700; padding: 12px 22px; }
-
-/* Where the board already holds the cards, the sheet holds only the words —
-   and says where to look, in the colour it is looking for. */
-.prompt-sheet .picker-hint.onboard { color: #39ff88; }
-.prompt-sheet .pbtns .chip.oncard { border-color: #39ff88; }
 
 /* Pile reader (Archives, score areas): tappable rows with thumbnails. */
 .zoom-card.pile { max-height: 86vh; overflow-y: auto; gap: 6px; }

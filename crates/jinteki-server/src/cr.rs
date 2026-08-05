@@ -1292,6 +1292,17 @@ async fn drive_inner(g: &mut CrGame, mut sink: Option<(&mut WebSocket, Side)>) {
                     }
                     let p = present(&g.vm, side, &spec);
                     g.picked.clear();
+                    // The waiting state is a LOG LINE, not a popup: "Hoshiko
+                    // Shiro: Untold Protagonist choosing target for install
+                    // (Simulchip)". The board carries the affordance (gold
+                    // candidates, the armed white ring); the log carries the
+                    // sentence, so a player who feels stuck can always open
+                    // it and read what the game is waiting for — and it goes
+                    // to BOTH logs, because at a physical table your opponent
+                    // can see you thinking too. Once per decision, here,
+                    // where the pending is installed — never per render.
+                    let lines = decision_wait_lines(&g.vm, side, &spec);
+                    g.say_each(lines);
                     g.pending = Some(p);
                     // The clock starts when the question is PUT, which is here.
                     g.timing_arm();
@@ -1521,6 +1532,23 @@ fn choice_card(vm: &Vm, a: &DecisionAnswer) -> Option<ObjectId> {
         // is the card holding it. All from one host, or it is not one card.
         DecisionAnswer::Counters(cs) => match cs.split_first() {
             Some((first, rest)) if rest.iter().all(|c| c.host == first.host) => Some(first.host),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The server a choice IS, where it is one — the board key the client draws
+/// that server under, so the gold can land on the server column itself
+/// (THE LAW §3: where the board can answer, ask it there). `"new"` stands
+/// for a remote that does not exist yet; the client draws a placeholder
+/// column for it. `None` for every choice that is not a place on the table.
+fn choice_server_key(a: &DecisionAnswer) -> Option<String> {
+    match a {
+        DecisionAnswer::AttackedServer(s) | DecisionAnswer::Server(s) => Some(server_key(*s)),
+        DecisionAnswer::InstallDestination(d) => match d {
+            InstallDest::Root(s) | InstallDest::Protecting(s) => Some(server_key(*s)),
+            InstallDest::NewRemoteRoot | InstallDest::NewRemoteProtecting => Some("new".into()),
             _ => None,
         },
         _ => None,
@@ -1786,6 +1814,80 @@ fn answer_now(g: &mut CrGame, a: DecisionAnswer) -> bool {
 // ───────────────────────────────────────────────────────────────────────────
 // DecisionSpec → the UI's prompt shapes
 // ───────────────────────────────────────────────────────────────────────────
+
+/// The waiting state, narrated: "{IDENTITY} {verb} {ABILITY} ({SOURCE})" —
+/// one line per viewer, rendered into both logs when a human's decision is
+/// installed. The reminder popups this replaces used to cover the very cards
+/// the question was about; the sentence they carried lives HERE now, and the
+/// board alone carries the affordance.
+///
+/// `ABILITY` is what the choice is for and `SOURCE` the card it is printed
+/// on; the parenthetical appears only when the two are not the same name
+/// (for a target choice the ability IS the card, so "choosing target for
+/// Simulchip" says everything once). Decisions that keep a real panel of
+/// their own (windows, option lists, traces, psi bids, arrangements) return
+/// no line: their panel is UI, not a reminder.
+fn decision_wait_lines(vm: &Vm, side: Side, spec: &DecisionSpec) -> [Option<String>; 2] {
+    use DecisionSpec as DS;
+    // (the sentence's verb, an action word where the ability is not a card —
+    //  "install" — so the source lands in the parentheses)
+    let (verb, action_word): (String, Option<&'static str>) = match spec {
+        DS::ChooseTargets { count, .. } => (
+            format!("choosing {} for", if *count > 1 { "targets" } else { "target" }),
+            None,
+        ),
+        DS::ChooseCounters { .. } => ("choosing counters for".into(), None),
+        DS::ChooseSubroutines { .. } => ("choosing subroutines for".into(), None),
+        DS::PaymentCards { label, .. } => (format!("choosing cards to {label} for"), None),
+        DS::DiscardCards { .. } => ("discarding down to maximum hand size".into(), None),
+        DS::ChooseCandidate { .. } => ("choosing a card to access".into(), None),
+        DS::DeclareInstallDestination { .. } => {
+            ("choosing a destination for".into(), Some("install"))
+        }
+        DS::InstallFaceup { .. } => ("choosing a face for".into(), Some("install")),
+        DS::DeclareAttackedServer { .. } | DS::ChooseServer { .. } => {
+            ("choosing a server for".into(), None)
+        }
+        DS::DivideCreditPayment { .. }
+        | DS::DivideCounterPayment { .. }
+        | DS::DivideCostReduction { .. } => ("dividing payment for".into(), None),
+        // Windows, option lists, mulligans, traces, psi bids, arrangements:
+        // real panels, not reminders — nothing to narrate.
+        _ => return [None, None],
+    };
+    let identity = vm
+        .identity_of(side)
+        .and_then(|id| vm.st.objects.get(&id))
+        .map(|o| o.printed.name.to_string())
+        .unwrap_or_else(|| side_name(side).to_string());
+    let source = vm.decision_source();
+    let mut out = [None, None];
+    for (i, viewer) in [Side::Corp, Side::Runner].into_iter().enumerate() {
+        // §10.2 per viewer, exactly as every other log line: a source card
+        // this reader may not see is "a card", never its name.
+        let src_name = source.map(|c| crate::crlog::card_name_for(vm, viewer, c));
+        // Only a verb that ends in "for" takes an object; a complete phrase
+        // ("discarding down to maximum hand size", "choosing a card to
+        // access") must not have a source glued on as if it were one.
+        let takes_object = verb.ends_with(" for");
+        let line = match (action_word, src_name.filter(|_| takes_object)) {
+            // "choosing a destination for install (Simulchip)"
+            (Some(act), Some(src)) => format!("{identity} {verb} {act} ({src})"),
+            // A basic action: no printed source to parenthesise.
+            (Some(act), None) => format!("{identity} {verb} {act}"),
+            // "choosing target for Simulchip" — ability and source are the
+            // same name, so it is said once.
+            (None, Some(src)) => format!("{identity} {verb} {src}"),
+            // No source at all: the verb phrase carries the whole of it,
+            // dropping a dangling "for" where the verb expected an object.
+            (None, None) => {
+                format!("{identity} {}", verb.strip_suffix(" for").unwrap_or(&verb))
+            }
+        };
+        out[i] = Some(line);
+    }
+    out
+}
 
 fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
     let view = vm.view_of(asked);
@@ -2631,33 +2733,39 @@ fn run_phase(vm: &Vm) -> &'static str {
     }
 }
 
-/// Is this card ALREADY ON `viewer`'S SCREEN, readable, where it lies?
+/// Is this card ALREADY ON `viewer`'S SCREEN, a node they could tap, where
+/// it lies?
 ///
 /// THE ONE NOTION. Both "the sheet may keep quiet and let the board answer"
 /// questions read off this and nothing else, so they cannot disagree: a
 /// prompt that hides its cards because the board has them, and a board that
 /// never draws them, is a question with no answer on screen anywhere.
 ///
-/// Two halves, and both are required:
+/// The test is that the zone is one the board DRAWS — the servers, the ice,
+/// the rig, the play-area rail, the viewer's own hand. A discard pile and a
+/// deck are counts you tap to open, and the score areas are an AP chip that
+/// opens a list, so a card in any of those is nowhere an outline could land.
+/// (The score area used to count as drawn, and did not, so a choice among
+/// scored agendas showed nothing and lit nothing.)
 ///
-/// * The zone is one the board DRAWS as cards — the servers, the ice, the
-///   rig, the play-area rail, the viewer's own hand. A discard pile and a
-///   deck are counts you tap to open, and the score areas are an AP chip
-///   that opens a list, so a card in any of those is nowhere an outline
-///   could land. (The score area used to count as drawn, and did not, so a
-///   choice among scored agendas showed nothing and lit nothing.)
-/// * The viewer may SEE it (§10.2). An unrezzed asset is drawn as a facedown
-///   rectangle: repeating it in the sheet is not a repetition at all, it is
-///   the only place its face appears. This is why the accessed card's reader
-///   survives — 7.1.2 hands the Runner a face the board would not show.
-fn on_screen(vm: &Vm, view: &View, viewer: Side, id: ObjectId) -> bool {
+/// What is deliberately NOT required is that the viewer may see the card's
+/// FACE. A facedown card the board draws — unrezzed ice, an unadvanced
+/// ambush — is still a physical node with an outline and a tap of its own,
+/// and it is a BETTER answer-carrier than any sheet copy could be: §10.2
+/// blanks the sheet's copy too (`card_json` sends it facedown), so the sheet
+/// can only offer three identical blank rectangles where the board offers
+/// the three actual places. Choosing among facedown cards by WHERE THEY LIE
+/// is how the physical game does it. Faces stay governed by §10.2 where
+/// faces are shown; this predicate is only about where the QUESTION lands —
+/// and the accessed card's reader survives independently, because 7.1.2
+/// hands the Runner a face, which is more than a place.
+fn on_screen(vm: &Vm, viewer: Side, id: ObjectId) -> bool {
     let Some(o) = vm.st.objects.get(&id) else { return false };
-    let drawn = match o.zone {
+    match o.zone {
         Zone::Root(_) | Zone::Ice(_) | Zone::Rig | Zone::PlayArea(_) => true,
         Zone::Hand(s) => s == viewer,
         _ => false,
-    };
-    drawn && view.sees(id)
+    }
 }
 
 fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
@@ -2706,11 +2814,11 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     // the board is not drawing.
     let option_cards: Vec<ObjectId> = p.choices.iter().filter_map(|(_, _, _, c)| *c).collect();
     let choices_onboard = !option_cards.is_empty()
-        && option_cards.iter().all(|c| on_screen(&g.vm, view, viewer, *c));
+        && option_cards.iter().all(|c| on_screen(&g.vm, viewer, *c));
     let mut obj = json!({
         "msg": msg,
         "prompt-type": "prompt",
-        "choices": p.choices.iter().map(|(u, l, _, card)| {
+        "choices": p.choices.iter().map(|(u, l, a, card)| {
             // The card the option LIVES ON, where it has one. Without this a
             // client can only render a wall of text buttons: nothing maps
             // "use this ability" back to the card it belongs to, so the board
@@ -2721,11 +2829,22 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             // heap, the opponent's HQ mid-access). `card_json` applies §10.2
             // itself: a card this viewer may not see travels as a FACEDOWN
             // card, which is what it looks like on the table too.
-            match card {
+            let mut ch = match card {
                 Some(c) => json!({"uuid": u, "value": l, "cid": c.0,
                                   "card": card_json(&g.vm, view, *c, view.sees(*c))}),
                 None => json!({"uuid": u, "value": l}),
+            };
+            // A choice that IS a server: carried as the board's own key, so
+            // the client can put the gold on the server column itself — a
+            // server is a place on the table, and a question about places is
+            // answered by tapping them, not by reading a chip that names one.
+            // Presentation only: the answer is still this uuid.
+            if let Some(k) = choice_server_key(a) {
+                if let Some(m) = ch.as_object_mut() {
+                    m.insert("server".into(), json!(k));
+                }
             }
+            ch
         }).collect::<Vec<_>>(),
         "select": p.select.is_some(),
         // A long list is only a SEARCH when the thing being searched is the
@@ -2738,6 +2857,17 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             DecisionSpec::NameValue { of: jinteki_cr::instr::NameSpace::CardName, .. }
         ),
         "choices-onboard": choices_onboard,
+        // These choices are DESTINATIONS/TARGETS, not abilities: a host to
+        // install onto, a server to run or install into. The board paints a
+        // target GOLD (THE LAW §3) where an ability would be green — the
+        // client cannot tell the two apart from the choice list alone, so the
+        // spec says which question this is. Presentation only.
+        "target-choices": matches!(
+            p.spec,
+            DecisionSpec::DeclareInstallDestination { .. }
+                | DecisionSpec::DeclareAttackedServer { .. }
+                | DecisionSpec::ChooseServer { .. }
+        ),
     });
     // Tapping a highlighted card is one of the two ways a target announcement
     // is answered, and the other one is the prompt itself — so the prompt
@@ -2754,7 +2884,7 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
         m.insert(
             "select-onboard".into(),
             json!(!s.candidates.is_empty()
-                && s.candidates.iter().all(|c| on_screen(&g.vm, view, viewer, *c))),
+                && s.candidates.iter().all(|c| on_screen(&g.vm, viewer, *c))),
         );
         m.insert(
             "select-cards".into(),
@@ -3442,39 +3572,43 @@ mod tests {
         );
     }
 
-    /// "On screen" is one notion, and it is not "may they see it" nor "is it
-    /// installed". A facedown card in a remote is DRAWN and unreadable; a
+    /// "On screen" is one notion, and it is "does the board draw this card
+    /// as a node you could tap" — nothing about faces. A facedown card in a
+    /// remote is DRAWN (a blank rectangle is still a place with an outline
+    /// and a tap, and it is how the physical game points at hidden cards); a
     /// scored agenda is READABLE and drawn nowhere (the score area is an AP
-    /// chip that opens a list). Either mistake produces the same bug: a
-    /// prompt that shows no cards over a board that lights none.
+    /// chip that opens a list). The old second half — "and the viewer may
+    /// see its face" — pushed three unrezzed ice into a sheet as three
+    /// identical blank thumbnails while the board stood there drawing the
+    /// three actual slivers: §10.2 blanks the sheet's copy exactly as it
+    /// blanks the board's, so requiring the face bought nothing and cost
+    /// the board the question.
     #[test]
-    fn on_screen_means_drawn_as_a_card_and_readable() {
+    fn on_screen_means_drawn_as_a_node() {
         let g = dealt_game();
-        let view = g.vm.view_of(Side::Runner);
         let mine = g.vm.cards_in_zone(Zone::Hand(Side::Runner))[0];
-        assert!(on_screen(&g.vm, &view, Side::Runner, mine), "your own hand is drawn");
+        assert!(on_screen(&g.vm, Side::Runner, mine), "your own hand is drawn");
         let theirs = g.vm.cards_in_zone(Zone::Hand(Side::Corp))[0];
-        assert!(!on_screen(&g.vm, &view, Side::Runner, theirs), "HQ is a count");
+        assert!(!on_screen(&g.vm, Side::Runner, theirs), "HQ is a count");
         let deep = g.vm.cards_in_zone(Zone::Deck(Side::Runner))[0];
-        assert!(!on_screen(&g.vm, &view, Side::Runner, deep), "the stack is a count");
+        assert!(!on_screen(&g.vm, Side::Runner, deep), "the stack is a count");
 
         let mut g = g;
-        // Installed facedown in a remote: drawn, but as a blank rectangle.
+        // Installed facedown in a remote: drawn as a blank rectangle — and a
+        // blank rectangle is a node. The question may land on it.
         {
             let o = g.vm.st.objects.get_mut(&theirs).expect("a card");
             o.zone = Zone::Root(ServerId::Remote(1));
             o.faceup = false;
         }
-        let view = g.vm.view_of(Side::Runner);
         assert!(
-            !on_screen(&g.vm, &view, Side::Runner, theirs),
-            "an unrezzed card's FACE is not on screen — the sheet is its only copy"
+            on_screen(&g.vm, Side::Runner, theirs),
+            "a facedown installed card is still a place you can tap"
         );
         {
             g.vm.st.objects.get_mut(&theirs).expect("a card").faceup = true;
         }
-        let view = g.vm.view_of(Side::Runner);
-        assert!(on_screen(&g.vm, &view, Side::Runner, theirs), "rezzed, it is");
+        assert!(on_screen(&g.vm, Side::Runner, theirs), "rezzed, it still is");
 
         // A scored agenda is open information and is drawn nowhere.
         {
@@ -3482,9 +3616,8 @@ mod tests {
             o.zone = Zone::ScoreArea(Side::Corp);
             o.faceup = true;
         }
-        let view = g.vm.view_of(Side::Runner);
         assert!(
-            !on_screen(&g.vm, &view, Side::Runner, theirs),
+            !on_screen(&g.vm, Side::Runner, theirs),
             "the score area is an AP chip, not a row of cards"
         );
     }

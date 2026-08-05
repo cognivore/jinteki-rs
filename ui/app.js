@@ -67,6 +67,9 @@ let prev = { credits: {}, clicks: {}, logn: 0 };
 /* The last state push's timing snapshot: `{ at: performance.now(), d: state.timing }`.
    Null in untimed games — every timing element hides off this. */
 let TIMING = null;
+/* Which decision the current arm/raise/lit intents belong to — see the
+ * "state" handler: a new decision throws stale intents away. */
+let lastDecisionKey = "";
 // Jitter control: deal-in animation fires only for cards never seen before,
 // and each board section re-renders only when its slice of state changed.
 let seenCids = new Set();
@@ -166,6 +169,23 @@ function handle(m) {
       // the 1s server sync corrects any drift.
       TIMING = S.timing ? { at: performance.now(), d: S.timing } : null;
       if (m.mode === "bridge" && m.side && m.side !== "spect") mySide = m.side;
+      // An armed thing is an intent AIMED AT A QUESTION, and it must die
+      // with that question: if a new decision arrived while something was
+      // still armed, a first tap on it would be taken for the confirming
+      // second — one tap, committed, on a question the player never armed
+      // anything for. Keyed by the choices' per-decision uuid stamp (the
+      // same stamp that keeps a stale choice tap from answering the next
+      // prompt), so a mere board repaint never disarms.
+      {
+        const p = myPrompt();
+        const dkey = p ? `${p.msg}|${(p.choices || []).map((c) => c.uuid).join(",")}` : "";
+        if (dkey !== lastDecisionKey) {
+          lastDecisionKey = dkey;
+          armed = null;
+          raised = null;
+          Object.keys(fans).forEach((k) => { fans[k].lit = false; });
+        }
+      }
       show("screen-game");
       enterGameChrome();
       render();
@@ -775,9 +795,64 @@ function glowClass(cid) {
     }
     return "selectable";
   }
-  if (promptChoicesFor(cid).length) return "usable";
+  if (promptChoicesFor(cid).length) {
+    // THE LAW §3: gold is a legal TARGET, green an ability. A choice that
+    // lives on a card is usually "use this ability" — green — but when the
+    // decision is a destination (install onto which host?) the card is a
+    // target, and the server says so (`target-choices`).
+    return (myPrompt() || {})["target-choices"] ? "selectable" : "usable";
+  }
   if (actionsFor(cid).length) return "legal";
   return "";
+}
+
+/* ── the BOARD QUESTION: a decision whose candidates the board is already
+   drawing — installed cards, cards in your own hand, servers. For these the
+   board is the prompt: candidates gold, the armed one WHITE, the second tap
+   commits. NO sheet appears — the sentence that used to float over the board
+   lives in the game log ("… choosing target for install (Simulchip)"), and
+   the choices that are not places on the board (Pass, Your rig, Done) dock
+   in the bottom action rail. */
+function boardQuestion(p) {
+  if (!p || p["prompt-type"] === "waiting") return false;
+  if (p.card && p.card.title) return false;          // a reader, not a reminder
+  if (p.arrange && p.arrange.length > 1) return false;
+  if (p.select) return p["select-onboard"] === true;
+  if (p["choices-onboard"] === true) return true;
+  // A server choice: every server is on the board by definition.
+  if ((p.choices || []).some((ch) => ch.server)) return true;
+  return false;
+}
+
+/* The uuid choices for one server column ("Server 2", "Protecting Server 2").
+   Keys are the board's own server keys; "new" is the remote that does not
+   exist yet, drawn as a placeholder column. */
+function serverChoices() {
+  const p = myPrompt();
+  const m = new Map();
+  if (!p || p["prompt-type"] === "waiting") return m;
+  (p.choices || []).forEach((ch) => {
+    if (!ch.server) return;
+    if (!m.has(ch.server)) m.set(ch.server, []);
+    m.get(ch.server).push(ch);
+  });
+  return m;
+}
+
+/* What the armed thing is CALLED, for the rail's confirm hint. */
+function armedName() {
+  if (armed == null) return "";
+  if (typeof armed === "string" && armed.startsWith("srv:")) {
+    const k = armed.slice(4);
+    return k === "new" ? "a new remote" : SERVER_NAME(k);
+  }
+  const p = myPrompt() || {};
+  const inSel = (p["select-cards"] || []).find((c) => c.cid === armed);
+  if (inSel) return inSel.title || "the facedown card";
+  const inCh = (p.choices || []).find((ch) => ch.cid === armed && ch.card);
+  if (inCh) return inCh.card.title || "the facedown card";
+  const el2 = document.querySelector(`.card[data-cid="${armed}"] .cname`);
+  return (el2 && el2.textContent) || "this card";
 }
 
 /* WHITE — a third thing, and not one of the three above (UX.md THE LAW §3).
@@ -885,9 +960,12 @@ function renderBars() {
   // looking like an opponent who is thinking very hard.
   const gone = S["opponent-connected"] === false;
   const who = (o.user && o.user.username) || "opponent";
+  // A waiting prompt IS the opponent deciding — the sheet that used to say
+  // so is gone (the log says it now), so the pulse must carry it alone.
+  const waitingP = !!myPrompt() && myPrompt()["prompt-type"] === "waiting";
   const thinking = gone
     ? `<span class="thinking offline">${esc(who)} disconnected — game held</span>`
-    : (!S.winner && S["active-player"] === oSide && !myPrompt() ? `<span class="thinking">thinking…</span>` : "");
+    : (!S.winner && (waitingP || (S["active-player"] === oSide && !myPrompt())) ? `<span class="thinking">thinking…</span>` : "");
   top.innerHTML = barHtml(o, oSide, true) + thinking;
   bot.innerHTML = barHtml(m, mySide, false);
   fitSideStats();
@@ -988,7 +1066,8 @@ function barHtml(st, side, isOpp) {
   // Both come from the same places every other card's do, so they cannot
   // say something the board does not.
   const glow = idt.cid != null ? glowClass(idt.cid) : "";
-  const chip = ["idchip", hasPriority(side) ? "priority" : "", glow]
+  const chip = ["idchip", hasPriority(side) ? "priority" : "", glow,
+    idt.cid != null && armed === idt.cid ? "armed" : ""]
     .filter(Boolean).join(" ");
   // The OPPONENT's main clock rides their seat rail (near their identity —
   // your own lives in the bottom-right time cluster). Text and classes are
@@ -1171,7 +1250,14 @@ document.addEventListener("click", (e) => {
   const chip = e.target.closest(".idchip");
   if (!chip || !S) return;
   const st = S[chip.dataset.side];
-  if (st && st.identity) onCardTap(st.identity, { identity: true }, chip);
+  if (!st || !st.identity) return;
+  const c = st.identity;
+  // The identity answers like any card, so it ARMS like any card: when the
+  // tap would answer a question (a target pick, an offered ability), the
+  // first tap is the white ring and the second is the one that commits.
+  const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
+  if (answerable && armed !== c.cid) { setArmed(c.cid); return; }
+  onCardTap(c, { identity: true }, chip);
 });
 
 // Tap AP to see the agendas behind the number (both sides' score areas are
@@ -1197,6 +1283,11 @@ function renderServers() {
   const servers = corp.servers || {};
   const runServer = S.run && S.run.server ? String(S.run.server[0]).replace(":", "") : null;
   const runPos = S.run ? S.run.position : null;
+  // A question about SERVERS is asked on the servers (THE LAW §3): the
+  // candidate columns wear the gold, the armed one the white ring, and the
+  // second tap commits — the same grammar as a card, because a server is a
+  // place on the table exactly as a card is.
+  const srvChoices = serverChoices();
   // Corp identity gets its own column (the runner's lives in the rig).
   if (corp.identity) {
     const idcol = document.createElement("div");
@@ -1216,6 +1307,11 @@ function renderServers() {
     const srv = servers[key];
     const col = document.createElement("div");
     col.className = "server" + (runServer === key ? " run-target" : "");
+    if (srvChoices.has(key)) {
+      col.classList.add("selectable");
+      if (armed === "srv:" + key) col.classList.add("armed-target");
+      wireServerTarget(col, key, srvChoices.get(key));
+    }
     const name = document.createElement("div");
     name.className = "sname"; name.textContent = SERVER_NAME(key);
     col.appendChild(name);
@@ -1226,7 +1322,9 @@ function renderServers() {
       box.className = "central";
       const n = key === "hq" ? (corp["hand-count"] ?? 0) : key === "rd" ? (corp["deck-count"] ?? 0) : (corp.discard || []).length;
       box.innerHTML = `<b>${n}</b><span>${key === "hq" ? "cards" : key === "rd" ? "cards" : "cards"}</span>`;
-      box.onclick = () => { if (key === "archives") zoomPile(corp.discard || [], `Archives (${(corp.discard || []).length})`); };
+      // While the column is a candidate, the tap ANSWERS; the pile stays
+      // readable from the seat rail's Archives stat.
+      box.onclick = () => { if (key === "archives" && !srvChoices.has(key)) zoomPile(corp.discard || [], `Archives (${(corp.discard || []).length})`); };
       col.appendChild(box);
       (srv.content || []).forEach((c) => col.appendChild(cardEl(c, { side: "corp" })));
     } else {
@@ -1272,8 +1370,14 @@ function renderServers() {
       sliver.addEventListener("pointerup", () => {
         clearTimeout(t);
         if (fired) return;
-        if (answerable) onCardTap(c, { ice: true }, sliver); else zoomCard(c);
+        if (answerable) {
+          // The same two taps every card takes: a sliver is still a card
+          // (THE LAW §5), and the choice it answers is just as final.
+          if (armed !== c.cid) { setArmed(c.cid); return; }
+          onCardTap(c, { ice: true }, sliver);
+        } else zoomCard(c);
       });
+      if (armed != null && c.cid === armed) sliver.classList.add("armed");
       sliver.addEventListener("pointerleave", () => clearTimeout(t));
       sliver.addEventListener("pointercancel", () => clearTimeout(t));
       sliver.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -1294,9 +1398,47 @@ function renderServers() {
     col.appendChild(stack);
     wrap.appendChild(col);
   });
+  // "A new remote server" is a candidate with no column to wear the gold —
+  // so it gets one: a placeholder at the row's end, exactly where the server
+  // it would create will appear. Same grammar: gold, tap to arm, tap to
+  // commit. Drawn only while the choice is on offer.
+  if (srvChoices.has("new")) {
+    const col = document.createElement("div");
+    col.className = "server newremote selectable";
+    if (armed === "srv:new") col.classList.add("armed-target");
+    const name = document.createElement("div");
+    name.className = "sname"; name.textContent = "New remote";
+    col.appendChild(name);
+    const box = document.createElement("div");
+    box.className = "central"; box.innerHTML = `<span>＋</span>`;
+    col.appendChild(box);
+    wireServerTarget(col, "new", srvChoices.get("new"));
+    wrap.appendChild(col);
+  }
   wrap.scrollLeft = scroll;
   wireServerScroll(wrap);
   updateServerChevrons(wrap);
+}
+
+/* A server column answering a question: the card grammar, on a place.
+   First tap arms (white ring, Cancel appears in the rail), a tap on the
+   armed column commits. One server can carry TWO choices — Asa Group's "the
+   root of or protecting the same server" — and then the committing tap asks
+   which, in a small sheet beside the column: that is a real fork the board
+   cannot draw two ways. */
+function wireServerTarget(col, key, chs) {
+  col.addEventListener("pointerup", (e) => {
+    // Cards and ice answer for themselves (their own arming gate).
+    if (e.target.closest && e.target.closest(".card, .ice-sliver")) return;
+    const k = "srv:" + key;
+    if (armed !== k) { setArmed(k); return; }
+    if (chs.length === 1) { act("choice", { choice: { uuid: chs[0].uuid } }); return; }
+    const r = col.getBoundingClientRect();
+    openSheet(chs.map((ch) => [
+      sym(String(ch.value)),
+      () => act("choice", { choice: { uuid: ch.uuid } }),
+    ]), Math.min(r.left, window.innerWidth - 200), Math.min(r.bottom + 6, window.innerHeight - 60 * chs.length - 20));
+  });
 }
 
 /* ── the server row SCROLLS, and says so ─────────────────────────────────
@@ -2392,7 +2534,10 @@ function closeSheet() { $("action-sheet").style.display = "none"; }
  * chrome that belongs to the very question the focus is part of. What is left
  * is bare board, and bare board is the answer "none". */
 const HOLDS_FOCUS = ".card, .action-sheet, .prompt-sheet, .fanrail, .railbtn, " +
-  "button, .fan-preview, .hover-preview, #zoom-overlay, #access-overlay, #reveal-overlay";
+  "button, .fan-preview, .hover-preview, #zoom-overlay, #access-overlay, #reveal-overlay, " +
+  // A candidate server column and the identity chip take the same two taps a
+  // card does; disarming on the press would eat the second tap's confirm.
+  ".server.selectable, .ice-sliver, .idchip";
 document.addEventListener("pointerdown", (e) => {
   const t = e.target;
   if (t.closest && t.closest(".card")) return;   // its own handler decides
@@ -2429,6 +2574,25 @@ function renderPrompt() {
   // A decision ABOUT a card puts the card itself in front of you.
   if (p.card && p.card.title) { sheet.style.display = "none"; renderAccessReader(p); return; }
   hideAccessReader();
+  // A BOARD QUESTION raises no sheet at all. The candidates are already on
+  // the table wearing gold; tapping one arms it WHITE, tapping it again
+  // commits; the sentence is a log line and the non-board options are chips
+  // in the action rail (`renderChips`). A popup here would cover the very
+  // cards it is asking about. EMPTIED, not just hidden — a display:none
+  // sheet still holds the previous question's buttons, and a button that
+  // exists but cannot be seen is exactly the thing a stray programmatic
+  // click (or a screen reader) finds.
+  if (boardQuestion(p)) { sheet.style.display = "none"; sheet.innerHTML = ""; return; }
+  // Waiting is not a question either: the seat rail already pulses
+  // "thinking…", the log says what they are deciding, and a sheet saying
+  // "Waiting for the Corp" only stands in front of the board. The one
+  // waiting state worth a sheet is a HELD game — a person gone, nothing
+  // pulsing, the game stopped for a reason worth stating.
+  if (p["prompt-type"] === "waiting" && !/disconnected|held/i.test(p.msg || "")) {
+    sheet.style.display = "none";
+    sheet.innerHTML = "";
+    return;
+  }
   sheet.style.display = "flex";
   sheet.classList.toggle("waiting", p["prompt-type"] === "waiting");
   const choices = p.choices || [];
@@ -2723,15 +2887,12 @@ const FAN_PICK_HINT = "Tap a card to focus it, tap it again to choose it.";
    to see it, or the option names no card at all — "No action", "Done") stay
    as chips underneath, so nothing is ever lost by rendering cards. */
 function renderCardPrompt(sheet, p, choices) {
-  // Where the board is ALREADY drawing every one of these cards, drawing them
-  // again in a sheet on top of the board is the same question twice — and the
-  // second copy covers the very cards it is asking about. A reaction window on
-  // Daily Casts, with Daily Casts sitting in the rig two inches away already
-  // outlined green, needs no picture of Daily Casts: it needs the sentence,
-  // the label, and the shimmer that is already there (THE LAW §3). The server
-  // decides, from the same `on_screen` the select path uses.
-  const onboard = p["choices-onboard"] === true;
-  const withCards = onboard ? [] : choices.filter((ch) => ch.card);
+  // Where the board is ALREADY drawing every one of these cards, the whole
+  // sheet stays down (`boardQuestion` in `renderPrompt` — the board answers,
+  // the rail carries the labels), so by the time this renderer runs the
+  // cards are somewhere the board cannot show and the fan is their only
+  // appearance.
+  const withCards = choices.filter((ch) => ch.card);
   const { row, hint, btns } = promptSheetFrame(sheet, p);
   renderFan(row, withCards, {
     key: "prompt",
@@ -2760,60 +2921,21 @@ function renderCardPrompt(sheet, p, choices) {
     }),
   });
   // AFTER the fan, not before it: `renderFan` empties its host, so a hint
-  // written first was deleted before it was ever seen — which is the whole
-  // of what an onboard prompt had to say about where to look.
-  if (onboard) {
-    hint.appendChild(el("div", "picker-hint onboard",
-      "Tap the card outlined in green — or use a label below."));
-  } else if (withCards.length) {
+  // written first was deleted before it was ever seen.
+  if (withCards.length) {
     // The same sentence a select prompt gets, because it is the same act:
     // one model for choosing a card out of a pool, everywhere (§7).
     hint.appendChild(el("div", "picker-hint", FAN_PICK_HINT));
   }
   // Everything that did not become a card: the options naming no card at all
-  // ("Pass", "No action"), and — when the board is already showing them — the
-  // LABELS of the options that do, which say what the ability actually does
-  // and which the card face cannot. Same uuid, so both paths are one answer.
-  choices.filter((ch) => onboard || !ch.card).forEach((ch) => {
+  // ("Pass", "No action").
+  choices.filter((ch) => !ch.card).forEach((ch) => {
     const b = document.createElement("button");
-    b.className = "chip" + (ch.card ? " oncard" : "");
+    b.className = "chip";
     b.textContent = sym(String(ch.value));
-    const commit = () => act("choice", { choice: { uuid: ch.uuid } });
-    if (ch.card) wireOptionCard(b, ch, commit);
-    else b.onclick = commit;
+    b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
-}
-
-/* An option that lives on a card, offered as a LABEL because the board is
-   already drawing the card (THE LAW §3). "Use the second ability" names
-   nothing on its own, and the green outline it belongs to may be at the far
-   end of the board — so pointing at the option shows the card it belongs to
-   in the same right-hand preview the fan uses, and holding it reads the card
-   in full, the same 420ms press that reads any card anywhere.
-
-   A chip is a 48px button, not a 16px strip of a fan, so it stays ONE tap:
-   the two-tap exists because a fan's resting cards are too small to tap
-   safely (THE LAW §8), and it would be pure friction here. The press timer
-   cancels the tap, so a read can never also commit. */
-function wireOptionCard(b, ch, commit) {
-  const preview = () => {
-    fanPreviewSet("prompt", ch.card, sym(String(ch.value)));
-    paintFanPreview();
-  };
-  let pressTimer = null, longFired = false;
-  b.addEventListener("mouseenter", preview);
-  b.addEventListener("pointerdown", () => {
-    preview();
-    longFired = false;
-    pressTimer = setTimeout(() => { longFired = true; zoomCard(ch.card); }, 420);
-  });
-  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) =>
-    b.addEventListener(ev, () => { clearTimeout(pressTimer); pressTimer = null; }));
-  // The read cancels the tap, never the other way round: the long-press that
-  // committed a choice has been shipped once already.
-  b.onclick = () => { if (!longFired) commit(); };
-  b.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
 /* The sheet's own skeleton: sentence, the fan's host, the fan's rail, the
@@ -2845,12 +2967,11 @@ function promptSheetFrame(sheet, p) {
    nothing. Picking accumulates until the count is met (or the player says
    they are done), exactly as tapping the board does. */
 function renderSelectPrompt(sheet, p, choices) {
-  // Where every candidate is already drawn on the board, the board is where
-  // the question is asked (§3) — repeating the cards in a sheet on top of
-  // them would be the same question twice, and on a phone it would cover the
-  // very cards it is asking about. The sheet keeps the sentence and the
-  // buttons that are not cards.
-  const cards = p["select-onboard"] ? [] : (p["select-cards"] || []);
+  // Where every candidate is already drawn on the board, no sheet rises at
+  // all (`boardQuestion`): the board asks, the rail carries Done and the
+  // rest. This renderer only ever sees the candidates the board CANNOT
+  // draw — a stack mid-search, the heap, HQ during an access.
+  const cards = p["select-cards"] || [];
   const picked = new Set(p["select-picked"] || []);
   // Discard is NOT a different interaction. It used to be: the taps "marked"
   // cards, which was a verb this UI used nowhere else and an affordance of
@@ -2889,17 +3010,9 @@ function renderSelectPrompt(sheet, p, choices) {
   });
   // §6: an empty answer is stated, never implied — a prompt asking for a card
   // when no card qualifies has to SAY so, or it is indistinguishable from a
-  // bug. (A board-answerable question is not empty: the cards are lit behind
-  // this sheet.)
-  if (!cards.length && !(p["select-cards"] || []).length) {
+  // bug.
+  if (!cards.length) {
     hint.appendChild(el("div", "picker-hint", "No card qualifies — there is nothing to choose."));
-  } else if (!cards.length) {
-    // The candidates are on the BOARD, where a card is a whole card and not a
-    // strip of one: there the tap that reaches it is the tap that takes it,
-    // and the two taps are the fan's answer to a fan's problem (THE LAW §8).
-    hint.appendChild(el("div", "picker-hint",
-      ready ? "The cards in white are the ones that go."
-      : "Tap a card outlined in gold on the board."));
   } else {
     hint.appendChild(el("div", "picker-hint", FAN_PICK_HINT));
   }
@@ -3272,6 +3385,37 @@ function renderChips() {
     b.textContent = "Cancel";
     b.onclick = () => { closeSheet(); disarm(); };
     bar.appendChild(b);
+  }
+  // A BOARD QUESTION docks everything that is not on the board HERE — the
+  // rail is chrome the player already owns, and it never stands over a card.
+  // The armed hint names what the next tap commits; the chips are the
+  // choices that are no place on the table (Pass, Your rig, Done) plus the
+  // select machinery (a discard's staging button, "Done (n chosen)").
+  const p = myPrompt();
+  if (p && boardQuestion(p)) {
+    if (armed != null) {
+      bar.appendChild(el("span", "armed-hint", `${armedName()} — tap again to confirm`));
+    }
+    (p.choices || []).filter((ch) => !ch.card && !ch.server).forEach((ch) => {
+      mk(sym(String(ch.value)), () => act("choice", { choice: { uuid: ch.uuid } }), "prompt-chip");
+    });
+    const picked = (p["select-picked"] || []).length;
+    if (p["select-kind"] === "discard") {
+      // 5.5.4c is irreversible: the staged set commits through this button
+      // and nothing else. Same gate as the sheet it replaces.
+      const ready = p["select-confirm"] === true;
+      const go = document.createElement("button");
+      go.className = "chip go confirm prompt-chip";
+      go.textContent = `Done — discard ${picked} card${picked === 1 ? "" : "s"}`;
+      go.disabled = !ready;
+      go.onclick = () => act("select-confirm", {});
+      bar.appendChild(go);
+      if (picked) mk("Start over", () => act("select-clear", {}), "prompt-chip");
+    } else if (p["select-done"]) {
+      const empty = !(p["select-cards"] || []).length;
+      mk(empty ? "OK" : `Done (${picked} chosen)`, () => act("select-done", {}), "go prompt-chip");
+    }
+    return;
   }
   if (native()) {
     if (has("credit")) mk("Gain 1 ⬡", () => act("credit"));

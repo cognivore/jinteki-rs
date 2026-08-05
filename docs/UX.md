@@ -29,7 +29,7 @@ conflict.
 
    A third colour answers a third question. Gold and green say *what you
    may do*; WHITE says *what the game is waiting on you for*, and it is
-   never an affordance. It lands in two places and means one thing:
+   never an affordance. It lands in three places and means one thing:
 
    * `.priority` on an identity — **that seat owes the next word**,
      continuously, including while they are only choosing an action on
@@ -38,15 +38,27 @@ conflict.
      is hidden under 640px), so the seat rail's `.idchip` is the copy that
      must always carry it.
    * `.staged` on a card — **chosen by you, not yet done**. See §7.
+   * `.armed` (a ring OUTSIDE the border, on a card, an ice sliver, an
+     identity chip or a server column) — **the next tap on this exact
+     thing commits**. The first tap on any candidate arms it; a tap on a
+     different candidate re-arms to that one; Escape or bare board
+     disarms; only the second tap on the armed thing answers. The ring is
+     outside the border so the gold candidate outline survives under it —
+     an armed target still reads as a target. See lesson 16.
 
    A hueless white, so neither amber nor acid green can be confused with it.
 
    The corollary: a prompt may only fall silent about a card **because the
    board is already showing it**. That test is the server's `on_screen`, one
    function, used by every prompt that considers keeping quiet — a zone the
-   board draws as cards *and* a face this viewer may see. If it were two
-   tests they would drift, and a drifted test is a question with no answer
-   anywhere on screen.
+   board draws as tappable nodes. The face is deliberately NOT part of the
+   test: a facedown card the board draws (unrezzed ice, an unadvanced
+   ambush) is still a place with an outline and a tap, and §10.2 blanks a
+   sheet's copy exactly as it blanks the board's — so requiring the face
+   only replaced three tappable slivers with three identical blank
+   thumbnails. Choosing among facedown cards by where they lie is how the
+   physical game does it. If this were two tests they would drift, and a
+   drifted test is a question with no answer anywhere on screen.
 
 3b. **Nothing that merely shows you something may hold the board hostage.**
    Every reader closes by tapping away from it — on pointer and on touch,
@@ -329,6 +341,31 @@ conflict.
     devtools spelunking can read what was never sent. Counters, outlines
     and the armed ring still overlay the back: WHERE a counter sits is
     open information (§11), and a back the game is waiting on still glows.
+16. **A board question is asked ON the board, and the log carries the
+    sentence.** When every candidate of a decision is something the board
+    is already drawing — installed cards, cards in your own hand, servers —
+    NO sheet appears at all. The popup that used to float over the table
+    saying "Choose a host" was a reminder, and it covered the very cards it
+    was asking about: three copies of the same icebreaker under a dialog
+    that names the icebreaker is the question at its least answerable. Now
+    the candidates wear the gold (a server column wears it on the column;
+    "a new remote" gets a placeholder column to wear it on), the first tap
+    arms one WHITE, and the second tap on the armed one commits — the same
+    two taps as everywhere else, and the tap is on the physical node, so
+    same-named copies are inherently told apart. What is not a place on the
+    board docks in the bottom action rail as chips (Pass, "Your rig", a
+    discard's Done, the Cancel that un-arms) — chrome the player already
+    owns, never over a card. And the sentence the popup used to carry is a
+    LOG LINE, written once when the decision is put, to both logs:
+    "{identity} choosing target for {ability} ({source})", the parenthesis
+    only when the source card is not the ability's own name — so a player
+    who feels stuck can always open the log and read what the game is
+    waiting for, and their opponent can see them thinking, exactly as at a
+    physical table. Bare "waiting for them" sheets died with the rest of
+    the reminders: the seat rail's pulse and the log line carry it. The
+    prompts that keep a panel are the ones whose candidates the board
+    CANNOT draw — hidden-zone picks, option lists, arrangements, divisions,
+    numbers — and a panel that is real UI is not a reminder.
 
 ## Deliberate deviations
 

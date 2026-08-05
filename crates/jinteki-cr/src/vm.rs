@@ -6649,6 +6649,14 @@ impl Vm {
         })
     }
 
+    /// The same source, for a DRIVER: when `step` suspends on a decision, this
+    /// is the card whose effect is waiting on the answer — what a narration
+    /// like "choosing target for install (Simulchip)" names in the
+    /// parentheses. `None` for a basic action, which has no printed source.
+    pub fn decision_source(&self) -> Option<ObjectId> {
+        self.current_source()
+    }
+
     /// 9.12.3c: can an option's effects be fully resolved right now?
     fn option_resolvable(&self, instrs: &[Instruction]) -> bool {
         instrs.iter().all(|i| match i {
