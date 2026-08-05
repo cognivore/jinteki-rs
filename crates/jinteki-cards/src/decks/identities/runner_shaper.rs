@@ -407,11 +407,117 @@ pub fn jamie_bzzz_micken() -> Card {
         .build()
 }
 
+/// Ele "Smoke" Scovak: Cynosure of the Net — Identity: G-mod, Stealth. Link 0.
+/// "1[recurring-credit]
+///  Use this credit to pay for using icebreakers."
+///
+/// COMPLETE. "1[recurring-credit]" is 1.10.5's shorthand: one credit is placed
+/// on the card as soon as it becomes active (1.10.5b — for an identity that is
+/// 1.6, since it is never installed and never rezzed) and topped back up to
+/// one at step 5.7.1c of every Runner turn, never past it (1.10.5d).
+///
+/// The second line is 1.10.3c — "credits hosted on cards may only be spent as
+/// the card's ability allows" — and what this card allows is one class of
+/// PAYMENT. 9.1.6a is what makes that class sayable: "a paid ability is
+/// considered used once the trigger cost has been paid", so a payment made
+/// for an icebreaker's paid ability IS paying for using that icebreaker. The
+/// cards are described with the ordinary filter words and 2.16's subtype, and
+/// no criterion names a zone — 1.15.2c reads that as the installed ones, which
+/// is the only place an icebreaker's interface abilities are offered from
+/// anyway.
+///
+/// 1.10.3a is why nothing here is about the counter: a credit taken from a
+/// card enters the credit pool like any other, so the restriction can only
+/// ever be on what the payment is FOR.
+pub fn ele_smoke_scovak() -> Card {
+    card("Ele \"Smoke\" Scovak: Cynosure of the Net")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["G-mod", "Stealth"])
+        .text("1[recurring-credit]")
+        .text("Use this credit to pay for using icebreakers.")
+        .recurring_credits(1)
+        .credits_only_for_using(&[with_subtype("Icebreaker")])
+        .build()
+}
+
+/// Lat: Ethical Freelancer — Identity: Natural. Link 1.
+/// "When your discard phase ends, if you have the same number of cards in
+///  your grip as the Corp has in HQ, you may draw 1 card."
+///
+/// COMPLETE. The condition is 5.7.4's discard phase ending, with whose it is
+/// named — a Runner identity saying "your" means the Runner's, and the Corp's
+/// discard phase ending does not meet it at all.
+///
+/// "The same number of cards in your grip as the Corp has in HQ" is 9.6.5c's
+/// additional requirement listed inside the condition, so it is checked when
+/// the condition would be met and not again when the ability resolves. It is
+/// two calculated quantities (9.12.2) compared against each other rather than
+/// against a printed number — the first comparison of that shape here — and
+/// each side is an ordinary count of matching cards whose criterion names the
+/// zone, which is what lifts 1.15.2c's installed-cards default.
+///
+/// Equality is what the sentence says, so equality is what is written: a grip
+/// of three against an HQ of five meets nothing, and neither does the reverse.
+pub fn lat_ethical_freelancer() -> Card {
+    card("Lat: Ethical Freelancer")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .link(1)
+        .text("When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.")
+        .may_when(
+            your_discard_phase_ends_if(
+                Runner,
+                &[same_number(per_card(in_hand_of(Runner)), per_card(in_hand_of(Corp)))],
+            ),
+            [draw(Runner, 1)],
+        )
+        .named("ethical freelancer")
+        .build()
+}
+
+/// Jesminder Sareen: Girl Behind the Curtain — Identity: Natural. Link 0.
+/// "[interrupt] → The first time each run you would take 1 or more tags,
+///  prevent 1 tag."
+///
+/// COMPLETE. "[interrupt] →" is 9.9.1's flag and "you would take 1 or more
+/// tags" is 9.9.4's would-condition, met by the expected effects of an
+/// imminent instruction that gives the Runner tags.
+///
+/// "Prevent 1 tag" is 9.9.6a: the number of tags the Runner would take is a
+/// VALUE, and decreasing it by 1 is the only way anything reduces a number of
+/// tags. The rules call that avoiding and the card calls it preventing; they
+/// are the same modification of the same value, and "(cannot be avoided)" is
+/// what a card prints when it wants to be immune to it.
+///
+/// "The first time each RUN" is 9.6.5c's ordinal with the span the sentence
+/// names. It is stated beside the condition rather than inside it, which is
+/// what lets one word say both spans — and it carries the run requirement by
+/// itself: outside a run there is no run to be the first time in, so a tag
+/// taken on the Corp's turn is never prevented.
+pub fn jesminder_sareen() -> Card {
+    card("Jesminder Sareen: Girl Behind the Curtain")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("[interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.")
+        .interrupt_first_each_run(would_take_tags(), [avoid_tags(1)])
+        .named("girl behind the curtain")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         jamie_bzzz_micken(),
+        ele_smoke_scovak(),
+        lat_ethical_freelancer(),
+        jesminder_sareen(),
         akiko_nisei(),
         kate_mac_mccaffrey(),
         nasir_meidan(),

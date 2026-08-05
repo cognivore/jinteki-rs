@@ -8703,3 +8703,303 @@ fn synapse_global_turns_a_removed_tag_into_a_free_install() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// The identity queue — CR 1.10.3c's restricted credits, and what a payment
+// is FOR
+// ---------------------------------------------------------------------------
+
+/// Ele "Smoke" Scovak: Cynosure of the Net — "1[recurring-credit] / Use this
+/// credit to pay for using icebreakers."
+///
+/// The Runner's pool is empty in both halves, so the recurring credit is the
+/// only thing that could pay — and 9.1.6a is what tells the two apart: paying
+/// a trigger cost is USING the card the ability is on, so the icebreaker's
+/// interface ability is payable and the identical ability on a program that
+/// is not an icebreaker is not offered at all.
+#[test]
+fn smoke_pays_for_using_icebreakers_and_nothing_else() {
+    for icebreaker in [true, false] {
+        let mut vm = Vm::empty(6180);
+        let smoke =
+            tk::install_identity(&mut vm, card("Ele \"Smoke\" Scovak: Cynosure of the Net"), Side::Runner);
+        // 3.9.5g/h: the breaker has to be big enough and of the right kind
+        // for the interface ability to be offered, so the ice is strength 0.
+        let ice = tk::install_ice(
+            &mut vm,
+            tk::subtyped_etr_ice("Some Sentry", "Sentry", 0, 0),
+            ServerId::Archives,
+            true,
+        );
+        let mut breaker = tk::vanilla_runner_card("Some Breaker", CardType::Program);
+        breaker.subtypes = if icebreaker { vec!["Icebreaker", "Killer"] } else { vec!["Killer"] };
+        breaker.strength = Some(1);
+        breaker.abilities = vec![jinteki_cr::ability::AbilityDef::paid(
+            jinteki_cr::ability::Cost::credits(1),
+            vec![Instruction::BreakSubroutines {
+                subs: jinteki_cr::instr::SubroutineSpec::Chosen {
+                    count: jinteki_cr::instr::Quantity::c(1),
+                    up_to: false,
+                },
+            }],
+        )
+        .with_flag(jinteki_cr::ability::AbilityFlag::Interface)
+        .with_timing(jinteki_cr::ability::TimingRestriction::EncounterOnly {
+            required_subtype: Some("Sentry"),
+            required_choice: None,
+        })
+        .labeled("interface: break 1 sentry subroutine")];
+        tk::install_rig(&mut vm, breaker);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .when(Match::paid(), Reply::take("interface: break 1 sentry subroutine"))
+                .stop_at_action(),
+        );
+        let broke = vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::SubroutineBroken { ice: i, .. } if *i == ice));
+        assert_eq!(
+            broke, icebreaker,
+            "icebreaker={icebreaker}: 1.10.3c allows the credit only for using an \
+             icebreaker: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&smoke].counter(CounterKind::Credit),
+            if icebreaker { 0 } else { 1 },
+            "icebreaker={icebreaker}: 1.10.3a — the credit left the card only for the \
+             payment it was allowed to make: {}",
+            t.tail(30)
+        );
+        assert_eq!(vm.st.runner.credits, 0, "nothing came out of the pool");
+    }
+}
+
+/// Whizzard: Master Gamer — "3[recurring-credit] / Use these credits to trash
+/// cards."
+///
+/// The same shape as Miss Bones with the other reading of the description.
+/// Miss Bones prints "installed cards" and 1.15.2c gives her that for free;
+/// Whizzard prints "cards", so the card in HQ being accessed — which is not
+/// installed — is trashable too. The pool is empty, so the recurring credits
+/// are the only thing that could pay either way.
+#[test]
+fn whizzard_pays_to_trash_a_card_anywhere_not_only_an_installed_one() {
+    for installed in [true, false] {
+        let mut vm = Vm::empty(6181);
+        let wz = tk::install_identity(&mut vm, card("Whizzard: Master Gamer"), Side::Runner);
+        let mut loot = PrintedCard::vanilla("Loot", Side::Corp, CardType::Asset);
+        loot.trash_cost = Some(3);
+        let (server, target) = if installed {
+            (ServerId::Remote(1), tk::install_root(&mut vm, loot, ServerId::Remote(1), true))
+        } else {
+            let id = vm.new_object(loot, Zone::Hand(Side::Corp));
+            vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
+            (ServerId::Hq, id)
+        };
+        tk::fill_deck(&mut vm, Side::Corp, 4);
+        tk::fill_deck(&mut vm, Side::Runner, 4);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(server))
+                .when(Match::of(Kind::MidAccess).once(), Reply::trash_accessed())
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&target].zone,
+            Zone::Discard(Side::Corp),
+            "installed={installed}: \"cards\" reaches the card wherever it is: {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.objects[&wz].counter(CounterKind::Credit),
+            0,
+            "installed={installed}: all three credits paid the 3[credit] trash cost: {}",
+            t.tail(16)
+        );
+        assert_eq!(vm.st.runner.credits, 0, "nothing came out of the pool");
+    }
+}
+
+/// NBN: Making News — "2[recurring-credit] / Use these credits during trace
+/// attempts."
+///
+/// The Corp's pool is empty, so the two hosted credits are the only thing
+/// that could raise the trace strength — and 10.8.6c is where the card allows
+/// them, so they do.
+#[test]
+fn making_news_pays_at_a_traces_spend_step() {
+    let mut vm = Vm::empty(6182);
+    let mn = tk::install_identity(&mut vm, card("NBN: Making News"), Side::Corp);
+    let ash = tk::install_root(&mut vm, tk::ash_like("Some Ash"), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::trace_spend(), Reply::Spend(2)),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::trace_spend(), Reply::Spend(0))
+            .stop_at_action(),
+    );
+    let _ = ash;
+    assert_eq!(
+        vm.st.objects[&mn].counter(CounterKind::Credit),
+        0,
+        "10.8.6c: both credits were spendable at the trace's spend step: {}",
+        t.tail(30)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CostPaid { side: Side::Corp, credits: 2, .. })),
+        "and the trace strength rose by exactly what was spent: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.corp.credits, 0, "nothing came out of the pool");
+}
+
+/// The other half of the same sentence: a rez is not a trace attempt, so the
+/// same two credits cannot pay for one. The control is the credit pool — two
+/// credits in the POOL rez the ice, two on the identity do not, with nothing
+/// else changed.
+#[test]
+fn making_news_credits_cannot_rez_a_piece_of_ice() {
+    for in_pool in [true, false] {
+        let mut vm = Vm::empty(6183);
+        let mn = tk::install_identity(&mut vm, card("NBN: Making News"), Side::Corp);
+        let wall = tk::install_ice(&mut vm, tk::etr_ice("Some Wall", 2, 1), ServerId::Rnd, false);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = if in_pool { 2 } else { 0 };
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid(), Reply::Take(Pick::RezApproachedIce)),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Rnd))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&wall].faceup, in_pool,
+            "in_pool={in_pool}: 1.10.3c — the hosted credits are for trace attempts \
+             and a rez is not one: {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&mn].counter(CounterKind::Credit),
+            2,
+            "in_pool={in_pool}: the identity's credits never moved: {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Lat: Ethical Freelancer — "When your discard phase ends, if you have the
+/// same number of cards in your grip as the Corp has in HQ, you may draw 1
+/// card."
+///
+/// Two calculated quantities compared against each other: one game where the
+/// grip and HQ match at the end of the Runner's discard phase and one where
+/// they do not, with nothing else changed.
+#[test]
+fn lat_draws_only_when_the_grip_and_hq_are_the_same_size() {
+    for matching in [true, false] {
+        let mut vm = Vm::empty(6183);
+        tk::install_identity(&mut vm, card("Lat: Ethical Freelancer"), Side::Runner);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_hand(&mut vm, Side::Corp, if matching { 3 } else { 4 });
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::action(), Reply::Halt),
+            Plan::runner()
+                .when(Match::action(), Reply::credit())
+                .when(Match::reaction(), Reply::take("ethical freelancer")),
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Runner's turn finished: {}", t.tail(24));
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            3 + usize::from(matching),
+            "matching={matching}: 9.6.5c's requirement is the whole of it: {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// A piece of ice whose only subroutine gives the Runner 1 tag — a tag that
+/// lands DURING a run, at a moment nothing else about the run depends on.
+fn tag_sub_ice(name: &'static str) -> PrintedCard {
+    let mut c = tk::vanilla_ice(name, 0, 0);
+    c.abilities = vec![jinteki_cr::ability::AbilityDef::subroutine(vec![
+        Instruction::GainTags { amount: 1, avoidable: true },
+    ])
+    .labeled("[sub] give the Runner 1 tag")];
+    c
+}
+
+/// Jesminder Sareen: Girl Behind the Curtain — "[interrupt] → The first time
+/// each run you would take 1 or more tags, prevent 1 tag."
+///
+/// The span is the whole of what is under test, so the two halves differ in
+/// nothing but how the two tags are spread over runs. Two tags in ONE run
+/// leaves one: the second is not the first time. One tag in each of TWO runs
+/// leaves none — which is exactly what a turn-scoped ordinal would get wrong.
+#[test]
+fn jesminder_prevents_the_first_tag_of_every_run() {
+    for one_run in [true, false] {
+        let mut vm = Vm::empty(6184);
+        tk::install_identity(
+            &mut vm,
+            card("Jesminder Sareen: Girl Behind the Curtain"),
+            Side::Runner,
+        );
+        tk::install_ice(&mut vm, tag_sub_ice("Tagger A"), ServerId::Archives, true);
+        if one_run {
+            tk::install_ice(&mut vm, tag_sub_ice("Tagger B"), ServerId::Archives, true);
+        }
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let runs = if one_run { 1 } else { 2 };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().times(runs), Reply::run(ServerId::Archives))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.runner.tags,
+            usize::from(one_run) as u32,
+            "one_run={one_run}: 9.6.5c's ordinal is counted over the RUN: {}",
+            t.tail(40)
+        );
+    }
+}

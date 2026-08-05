@@ -330,6 +330,20 @@ impl CardBuilder {
             Some(jinteki_cr::instr::CreditUse::TrashingCards(criteria.to_vec()));
         self
     }
+    /// "Use this credit **to pay for using icebreakers**." (Ele "Smoke"
+    /// Scovak; CR 1.10.3c + 9.1.6a.) The cards whose use the credits pay for
+    /// are described with the ordinary filter words.
+    pub fn credits_only_for_using(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::UsingAbilitiesOf(criteria.to_vec()));
+        self
+    }
+    /// "Use these credits **during trace attempts**." (NBN: Making News;
+    /// CR 1.10.3c + 10.8.6c/d.) The restriction names a moment and no card.
+    pub fn credits_only_during_trace_attempts(mut self) -> Self {
+        self.printed.hosted_credits_spendable = Some(jinteki_cr::instr::CreditUse::TraceAttempts);
+        self
+    }
 
     // ---- the printed text ------------------------------------------------
     /// One printed line of the card's text box, copied exactly. Call it once
@@ -635,6 +649,34 @@ impl CardBuilder {
         self.ability(
             AbilityDef::conditional(cond, instrs.into_iter().collect(), true)
                 .with_flag(AbilityFlag::Interrupt),
+        )
+    }
+    /// "[interrupt] → **The first time each turn** <trigger>, …" — 9.6.5c's
+    /// ordinal on an interrupt, which 9.9.5a reads of the IMMINENCE: the
+    /// ability is relevant only while the imminent instruction is the first
+    /// of its class this turn.
+    pub fn interrupt_first_each_turn(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
+                .with_flag(AbilityFlag::Interrupt)
+                .first_time_each_turn(),
+        )
+    }
+    /// "[interrupt] → **The first time each run** <trigger>, …" (Jesminder
+    /// Sareen) — the same ordinal counted over the run instead of the turn.
+    pub fn interrupt_first_each_run(
+        self,
+        cond: TriggerCond,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
+                .with_flag(AbilityFlag::Interrupt)
+                .first_time_each_run(),
         )
     }
     /// "[interrupt] → <cost>: …" — a PAID ability carrying the interrupt
@@ -1309,6 +1351,13 @@ pub fn in_identity_pile_of(side: Side) -> TargetFilter {
 pub fn faction_matching_identity_of(side: Side, same: bool) -> TargetFilter {
     TargetFilter::FactionMatchesIdentityOf { side, same }
 }
+/// "…**(from any location)**" (Skorpios Defense Systems), and the bare
+/// "cards" of a sentence that means every one of them wherever it sits
+/// (Whizzard). CR 1.15.2c: writing NO zone means the installed cards, so a
+/// card that means more than that has to say so — this is that word.
+pub fn in_any_location() -> TargetFilter {
+    TargetFilter::InAnyLocation
+}
 pub fn in_hand_of(side: Side) -> TargetFilter {
     TargetFilter::CardsInHandOf(side)
 }
@@ -1707,10 +1756,12 @@ pub fn your_discard_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> Tr
     TriggerCond::DiscardPhaseEnds { side: Some(side), requires: reqs.to_vec() }
 }
 /// "…you would draw any number of cards" (9.9.5a) — an [interrupt] trigger on
-/// a draw of `by`'s, `first` being the card's "the first time each turn".
-/// Naming the player is what keeps a Runner card off the Corp's draws.
-pub fn would_draw(by: Side, first: bool) -> TriggerCond {
-    TriggerCond::WouldDraw { by: Some(by), first_each_turn: first }
+/// a draw of `by`'s. Naming the player is what keeps a Runner card off the
+/// Corp's draws. The printed "the first time each turn" is the ability's
+/// ordinal ([`CardBuilder::interrupt_first_each_turn`]), where every
+/// condition's is.
+pub fn would_draw(by: Side) -> TriggerCond {
+    TriggerCond::WouldDraw { by: Some(by) }
 }
 /// "…if you scored this agenda this turn" (Breaking News class).
 pub fn self_scored_this_turn() -> TriggerRequirement {
@@ -1780,7 +1831,24 @@ pub fn prevent_all_damage(kind: DamageKind) -> Instruction {
 }
 /// "…would suffer <kind> damage" as an interrupt condition (9.9.4).
 pub fn would_damage(kind: DamageKind) -> TriggerCond {
-    TriggerCond::WouldDamage { kind: Some(kind), first_each_run: false }
+    TriggerCond::WouldDamage { kind: Some(kind) }
+}
+/// "…you would take 1 or more tags" as an interrupt condition (9.9.4). The
+/// sentence names no run — where a card's ordinal is counted over the run
+/// (Jesminder Sareen), the SPAN is what says so, not the condition.
+pub fn would_take_tags() -> TriggerCond {
+    TriggerCond::WouldTakeTags { during_run: false }
+}
+/// "…you would take 1 or more tags **during a run**" — the same condition
+/// with the run stated as part of it.
+pub fn would_take_tags_during_a_run() -> TriggerCond {
+    TriggerCond::WouldTakeTags { during_run: true }
+}
+/// "Prevent 1 tag." / "Avoid 1 tag." — CR 9.9.6a: a number of tags the
+/// Runner would take is a VALUE, and this is the only thing that decreases
+/// it. Both printed wordings are the same modification of the same value.
+pub fn avoid_tags(n: u32) -> Instruction {
+    Instruction::AvoidTags(n)
 }
 /// "Whenever the Runner suffers <kind> damage…" (10.4.1) — the kind is the
 /// sentence's stipulation, and [`suffers_any_damage`] is the sentence that
@@ -2540,6 +2608,12 @@ pub fn during_a_run() -> TriggerRequirement {
 }
 pub fn at_least(amount: Quantity, n: i64) -> TriggerRequirement {
     TriggerRequirement::QuantityAtLeast { amount, at_least: n }
+}
+/// "…if you have **the same number of** cards in your grip **as** the Corp
+/// has in HQ" (Lat) — two amounts compared against each other rather than
+/// against a printed number.
+pub fn same_number(left: Quantity, right: Quantity) -> TriggerRequirement {
+    TriggerRequirement::QuantitiesEqual { left, right }
 }
 /// "…for each credit lost" — the credits this ability has ACTUALLY caused
 /// `side` to lose, which 1.10.3b caps at what their pool held. That is what

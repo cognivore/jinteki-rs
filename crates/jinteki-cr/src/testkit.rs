@@ -472,14 +472,13 @@ pub fn tori_like(name: &'static str) -> PrintedCard {
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldDamage {
             kind: Some(DamageKind::Net),
-            first_each_run: true,
         })),
         cost: None,
         instructions: vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))],
         statics: Vec::new(),
         optional: true,
         timing: None,
-        first_each_turn: false,
+        ordinal: Some(crate::ability::OrdinalScope::Run),
         label: "tori: first net damage each run",
     }];
     c
@@ -511,7 +510,7 @@ pub fn jesminder_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: false, // the printed ability is mandatory
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label: "jesminder: avoid a tag during a run",
     }];
     c
@@ -617,7 +616,7 @@ pub fn parasite_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: false,
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label: "parasite: trash 0-strength host",
     }];
     c
@@ -892,13 +891,13 @@ pub fn class_act_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef {
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
-        condition: Some(Condition::Trigger(TriggerCond::WouldDraw { by: Some(Side::Runner), first_each_turn: true })),
+        condition: Some(Condition::Trigger(TriggerCond::WouldDraw { by: Some(Side::Runner) })),
         cost: None,
         instructions: vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
         statics: Vec::new(),
         optional: true,
         timing: None,
-        first_each_turn: false,
+        ordinal: Some(crate::ability::OrdinalScope::Turn),
         label: "class-act: on first would-draw",
     }];
     c
@@ -918,7 +917,7 @@ pub fn harbinger_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: true,
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label: "harbinger: when this would be trashed",
     }];
     c
@@ -1675,7 +1674,7 @@ pub fn operation(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Pri
             statics: Vec::new(),
             optional: false,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "play ability",
         }];
     }
@@ -1696,7 +1695,7 @@ pub fn event(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Printed
             statics: Vec::new(),
             optional: false,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "play ability",
         }];
     }
@@ -2175,7 +2174,7 @@ pub fn noh_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: true,
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label: "no-one-home: avoid 1 tag",
     }];
     c
@@ -3085,6 +3084,9 @@ pub fn install_identity(vm: &mut Vm, card: PrintedCard, side: Side) -> ObjectId 
     let o = vm.st.objects.get_mut(&id).unwrap();
     o.faceup = true;
     o.active_since = seq;
+    // 1.10.5b, exactly as `Vm::new_game` does it: an identity is active from
+    // the moment it is in the play area, so its recurring credits are there.
+    vm.place_recurring_credits(id);
     id
 }
 
@@ -3618,7 +3620,7 @@ pub fn morph_ice(name: &'static str, prints: &'static str, loses: &'static str) 
         statics: vec![StaticDecl::SubtypeModSelf { add: Vec::new(), remove: vec![loses] }],
         optional: false,
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label: "morph: lose 1 instance of a subtype",
     }];
     c
@@ -4041,7 +4043,7 @@ pub fn gamenet_like(name: &'static str) -> PrintedCard {
 pub fn guru_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::WouldDamage { kind: Some(DamageKind::Net), first_each_run: false },
+        TriggerCond::WouldDamage { kind: Some(DamageKind::Net) },
         vec![
             Instruction::PreventAllDamage { kind: DamageKind::Net },
             Instruction::NestedCostUnless {
@@ -4710,7 +4712,7 @@ pub fn oppo_research_like(name: &'static str) -> PrintedCard {
         statics: Vec::new(),
         optional: false,
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label,
     };
     c.abilities = vec![
@@ -5132,7 +5134,7 @@ pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
         statics: Vec::new(),
         optional: false,
         timing: None,
-        first_each_turn: false,
+        ordinal: None,
         label: "realloc: gain and derez for each",
     }];
     c

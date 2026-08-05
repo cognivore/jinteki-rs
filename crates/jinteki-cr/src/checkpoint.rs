@@ -483,11 +483,36 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     // card is reinstalled, which the printed sentence does
                     // not say. One stipulation, on the condition, for every
                     // condition (§12 rule 2).
-                    if def.first_each_turn {
+                    if let Some(scope) = def.ordinal {
                         cite!("rule_condition_requirements_part_of_condition");
                         cite!("rule_hidden_or_open_information");
                         let here = window_start + offset;
-                        let from = vm.st.turn_log_start.min(here);
+                        // The span the ordinal counts over is content on the
+                        // ordinal: a turn's is the turn's own history, and a
+                        // run's begins at the `RunBegan` this occurrence
+                        // sits after. Outside a run there is no span, so
+                        // nothing counts as a first time in one.
+                        let from = match scope {
+                            crate::ability::OrdinalScope::Turn => vm.st.turn_log_start.min(here),
+                            crate::ability::OrdinalScope::Run => {
+                                match vm.changes.log[..here].iter().rposition(|x| {
+                                    matches!(
+                                        x,
+                                        GameChange::RunBegan { .. } | GameChange::RunEnded { .. }
+                                    )
+                                }) {
+                                    Some(i)
+                                        if matches!(
+                                            vm.changes.log[i],
+                                            GameChange::RunBegan { .. }
+                                        ) =>
+                                    {
+                                        i
+                                    }
+                                    _ => continue,
+                                }
+                            }
+                        };
                         // 9.6.5c: a requirement listed inside the trigger
                         // condition is PART of the condition, so an earlier
                         // change that did not meet it was never one of "the

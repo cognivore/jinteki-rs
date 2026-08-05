@@ -1237,7 +1237,23 @@ scan of its instructions.
   and `Vm::CreditPurpose` is read off the payment's own continuation, which is
   where the kernel already recorded what the cost is being paid for. "Installed
   cards" needs no criterion: 1.15.2c already reads a description with no zone
-  criterion that way.
+  criterion that way. **Widened for the identity queue**: `CreditUse` also
+  carries `UsingAbilitiesOf(criteria)` (9.1.6a — paying a paid ability's
+  trigger cost IS using the card it is on, which is what "pay for using
+  icebreakers" describes) and `TraceAttempts` (10.8.6c/d, a restriction naming
+  a MOMENT and no card, so it needs no description at all). The purpose is now
+  stated where it is known rather than read off a payment that has not begun —
+  `Vm::paid_ability_cost_payable` at the four places a paid ability is
+  OFFERED, and `spendable_credits_for` at the trace's two spend steps —
+  because an offer and its payment answering differently would leave an
+  ability the restricted credits could pay for never offered at all.
+  `TargetFilter::InAnyLocation` is the other end of 1.15.2c, which a card
+  saying plain "cards" (Whizzard) needs and Miss Bones does not.
+- 5.2.6f's basic ADVANCE action takes its 1[credit] straight out of the pool
+  rather than through `Vm::begin_payment`, so hosted credits cannot pay for
+  one at all and no purpose can be attached to it (Weyland Consortium:
+  Because We Built It). See `docs/vm/IDENTITY-QUEUE.md` for why routing it
+  through a payment is a change to 5.2's shape rather than a new word.
 - starting hand size: `Vm::new_game` draws 5 (1.6.6) with no hook, so an
   identity cannot change it (Andromeda).
 - "while the Runner is accessing this ice in R&D, they must reveal it"

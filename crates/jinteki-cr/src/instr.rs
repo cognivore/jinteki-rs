@@ -1778,6 +1778,19 @@ pub enum TargetFilter {
     /// outside the game at all; 1.5.4b is the rule that says an ability
     /// naming an identity other than the current one means exactly these.
     InIdentityPileOf(Side),
+    /// CR 1.15.2c's other end: "…**(from any location)**" (Skorpios Defense
+    /// Systems), "…**in the heap, stack, grip, or any other location**"
+    /// (Chronos Protocol), and the bare "cards" of a sentence that plainly
+    /// means every one of them (Whizzard: "use these credits to trash
+    /// cards"). It is a zone specification — the widest one — so it lifts the
+    /// installed-cards default rather than narrowing anything, and it says
+    /// nothing at all about the card, which is why it matches every object
+    /// wherever it sits.
+    ///
+    /// Not the same as writing no criterion. A description with no criterion
+    /// naming a zone is 1.15.2c's installed cards, which is what Miss Bones
+    /// prints; this is what a card prints when it means the other thing.
+    InAnyLocation,
     /// CR 2.13: "…from the same faction" (Rebirth) / "…that does not match
     /// the faction of your identity" (DJ Fenris) — the card's faction (2.13.3
     /// gives every identity one) compared against the faction of the named
@@ -1908,6 +1921,9 @@ impl TargetFilter {
                 // 1.5.4a: the pile is a place, and naming it is the only way
                 // an ability can reach a card outside the game.
                 | TargetFilter::InIdentityPileOf(_)
+                // "from any location" names every zone at once, which is as
+                // explicit a specification as naming one of them.
+                | TargetFilter::InAnyLocation
                 // 1.15.4: the description fixes ONE card by identity, so
                 // there is no selection for 1.15.2c to restrict — the card an
                 // occurrence named is that card wherever it now is.
@@ -1952,8 +1968,21 @@ pub enum CreditUse {
     /// cards are described in the shared filter vocabulary (§12 rule 5), so
     /// 1.15.2c's default applies to the list as a whole: with no criterion
     /// naming a zone, the description reaches installed cards — which is
-    /// exactly what "installed cards" says.
+    /// exactly what "installed cards" says. Whizzard prints the other
+    /// reading, "use these credits to trash **cards**", which is
+    /// [`TargetFilter::InAnyLocation`] said in the same words.
     TrashingCards(Vec<TargetFilter>),
+    /// "Use this credit **to pay for using icebreakers**." (Ele "Smoke"
+    /// Scovak.) CR 9.1.6a: a paid ability is used once its trigger cost has
+    /// been paid, so a payment made for a card's paid ability IS paying for
+    /// using that card — and WHICH cards is the ordinary description
+    /// vocabulary (§12 rule 5), read exactly as it is anywhere else.
+    UsingAbilitiesOf(Vec<TargetFilter>),
+    /// "Use these credits **during trace attempts**." (NBN: Making News.)
+    /// CR 10.8.6c/d: the two spend steps of a trace attempt are the payment
+    /// this names, and it names no card at all — the restriction is on the
+    /// MOMENT, not on what is being paid for.
+    TraceAttempts,
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

@@ -361,11 +361,41 @@ pub fn rene_loup_arcemont() -> Card {
         .build()
 }
 
+/// Whizzard: Master Gamer — Identity: Natural. Link 0.
+/// "3[recurring-credit]
+///  Use these credits to trash cards."
+///
+/// COMPLETE. The first line is 1.10.5's shorthand — three credits placed on
+/// the identity as soon as it is active (1.10.5b), topped back up to three at
+/// step 5.7.1c of every Runner turn and never past it (1.10.5d) — and the
+/// second is 1.10.3c: hosted credits may only be spent as the card's ability
+/// allows, and this card allows one class of payment.
+///
+/// The whole of the second sentence is which cards it means. Miss Bones prints
+/// "installed cards" and needs no description at all, because 1.15.2c already
+/// reads a description naming no zone that way. This card prints "cards", and
+/// the card the Runner pays 7.5.4's basic trash ability for while breaching HQ
+/// or R&D is not installed — so the description has to say the wider thing out
+/// loud, and "from any location" is that word.
+pub fn whizzard() -> Card {
+    card("Whizzard: Master Gamer")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("3[recurring-credit]")
+        .text("Use these credits to trash cards.")
+        .recurring_credits(3)
+        .credits_only_for_trashing(&[in_any_location()])
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         alice_merchant(),
+        whizzard(),
         reina_roja(),
         rene_loup_arcemont(),
         edward_kim(),

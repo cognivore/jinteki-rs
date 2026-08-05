@@ -480,6 +480,15 @@ pub enum CreditPurpose {
     Unspecified,
     /// A payment made to trash this card (7.1.5's basic trash ability).
     Trashing(ObjectId),
+    /// CR 9.1.6a: "a paid ability is considered used once the trigger cost
+    /// has been paid" — so a payment made for this card's paid ability is a
+    /// payment for USING that card, which is what a sentence naming a class
+    /// of card to use ("using icebreakers") describes.
+    UsingAbilityOf(ObjectId),
+    /// CR 10.8.6c/d: credits spent at one of a trace attempt's two spend
+    /// steps. The purpose names no object because the sentence naming it
+    /// ("during trace attempts") names none either.
+    TraceAttempt,
 }
 
 /// What a completed payment goes on to do. Every payment has one, because a
@@ -563,6 +572,13 @@ impl Vm {
             if let Some(idc) = identity {
                 let id = vm.new_object(idc, Zone::PlayArea(side));
                 vm.st.objects.get_mut(&id).unwrap().faceup = true;
+                // 1.10.5b: recurring credits are placed as soon as the card
+                // becomes active. An identity is never installed and never
+                // rezzed — it is active from 1.6 onwards — so this is the
+                // only moment it has, and without it a "N[recurring]"
+                // identity would sit empty until its controller's first
+                // 5.6.1c/5.7.1c refill.
+                vm.place_recurring_credits(id);
             }
             for card in deck {
                 let id = vm.new_object(card, Zone::Deck(side));
@@ -2515,7 +2531,7 @@ impl Vm {
             statics: Vec::new(),
             optional: false,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label,
         };
         let id = self.next_instance_id();
@@ -4948,6 +4964,45 @@ impl Vm {
         true
     }
 
+    /// CR 9.9.5a + 9.6.5c: does the printed ordinal on this interrupt let it
+    /// be relevant to the imminence now open? An ability printing none always
+    /// can; one printing "the first time each turn/run" can only while the
+    /// imminence is the FIRST of its class in that span.
+    ///
+    /// The two spans read the two trackers `push_imminent` already keeps, so
+    /// the ordinal is one stipulation with its span as content (§12 rule 2)
+    /// rather than a field on whichever condition happened to want it. Where
+    /// several classes are named — "damage" is three of them — the EARLIEST
+    /// ordinal decides, because the sentence asks about the occurrence and
+    /// not about each class of it separately.
+    fn first_imminence_of(
+        &self,
+        def: &AbilityDef,
+        run_ordinals: &BTreeMap<u64, u32>,
+        class_wanted: impl Fn(EffectClass) -> bool,
+    ) -> bool {
+        let Some(scope) = def.ordinal else { return true };
+        cite!("rule_condition_requirements_part_of_condition");
+        // 6.1.1: outside a run there is no run to count over, so nothing can
+        // be the first time in one.
+        if scope == crate::ability::OrdinalScope::Run && self.current_run.is_none() {
+            return false;
+        }
+        let Some(imm) = self.imminents.last() else { return false };
+        let ord = imm
+            .atoms
+            .iter()
+            .filter(|a| class_wanted(a.class))
+            .filter_map(|a| match scope {
+                crate::ability::OrdinalScope::Run => run_ordinals.get(&class_key(a.class)),
+                crate::ability::OrdinalScope::Turn => imm.turn_ordinal.get(&class_key(a.class)),
+            })
+            .min()
+            .copied()
+            .unwrap_or(u32::MAX);
+        ord == 1
+    }
+
     /// CR 9.9.3: relevance of an interrupt to the imminent instruction.
     pub fn interrupt_relevant(
         &self,
@@ -4960,7 +5015,7 @@ impl Vm {
         // (d) "would" trigger conditions met by the expected effects.
         if let Some(Condition::Trigger(t)) = &def.condition {
             match t {
-                TriggerCond::WouldDamage { kind, first_each_run } => {
+                TriggerCond::WouldDamage { kind } => {
                     cite!("rule_would_relevant");
                     let hit = atoms.iter().any(|a| {
                         a.expected()
@@ -4970,20 +5025,11 @@ impl Vm {
                     if !hit {
                         return false;
                     }
-                    if *first_each_run {
-                        // 9.9.5a: only the FIRST imminence counts.
-                        let ord = atoms
-                            .iter()
-                            .filter(|a| matches!(a.class, EffectClass::Damage(_)))
-                            .filter_map(|a| run_ordinals.get(&class_key(a.class)))
-                            .min()
-                            .copied()
-                            .unwrap_or(u32::MAX);
-                        return ord == 1;
-                    }
-                    return true;
+                    return self.first_imminence_of(def, run_ordinals, |c| {
+                        matches!(c, EffectClass::Damage(_))
+                    });
                 }
-                TriggerCond::WouldDraw { by, first_each_turn } => {
+                TriggerCond::WouldDraw { by } => {
                     cite!("rule_would_relevant");
                     let hit = atoms.iter().any(|a| {
                         a.expected()
@@ -4993,17 +5039,8 @@ impl Vm {
                     if !hit {
                         return false;
                     }
-                    if *first_each_turn {
-                        // Turn-scope ordinal: only the first draw imminence.
-                        let ord = self
-                            .imminents
-                            .last()
-                            .and_then(|i| i.turn_ordinal.get(&class_key(EffectClass::Draw)))
-                            .copied()
-                            .unwrap_or(u32::MAX);
-                        return ord == 1;
-                    }
-                    return true;
+                    return self
+                        .first_imminence_of(def, run_ordinals, |c| c == EffectClass::Draw);
                 }
                 TriggerCond::WouldPayCost => {
                     // 9.9.6c's example: the interrupt modifies a play cost or
@@ -5043,7 +5080,8 @@ impl Vm {
                         // (10.3.6 example).
                         return false;
                     }
-                    return true;
+                    return self
+                        .first_imminence_of(def, run_ordinals, |c| c == EffectClass::TakeTags);
                 }
                 _ => return false,
             }
@@ -5181,7 +5219,11 @@ impl Vm {
                 if !self.break_ability_timing_ok(a) {
                     continue;
                 }
-                if !self.cost_payable(side, o.id, a.cost.as_ref().unwrap_or(&Cost::default())) {
+                if !self.paid_ability_cost_payable(
+                    side,
+                    o.id,
+                    a.cost.as_ref().unwrap_or(&Cost::default()),
+                ) {
                     continue;
                 }
                 if a.has_flag(AbilityFlag::OncePerTurn)
@@ -6899,6 +6941,14 @@ impl Vm {
                 cite!("rule_additional_identities_reference");
                 o.zone == Zone::OutsideGame(side)
             }
+            // 1.15.2c: "(from any location)" is a zone specification and says
+            // nothing else, so it lifts the installed-cards default and
+            // narrows nothing. Every object is in some location.
+            TargetFilter::InAnyLocation => {
+                cite!("rule_targets_must_be_in_play_area");
+                let _ = o;
+                true
+            }
             // 2.13.3: "each identity is associated with one faction". The
             // comparison is against the faction of that player's CURRENT
             // identity (3.1.1), read fresh, so a switch changes what every
@@ -7809,6 +7859,13 @@ impl Vm {
             R::QuantityAtMost { amount, at_most } => {
                 cite!("rule_calculated_quantity");
                 self.eval_quantity(amount, source) <= *at_most
+            }
+            // 9.12.2 twice over: "the same number of X as Y" is two amounts
+            // read the same way any quantity position reads one, and the
+            // sentence compares them to each other.
+            R::QuantitiesEqual { left, right } => {
+                cite!("rule_calculated_quantity");
+                self.eval_quantity(left, source) == self.eval_quantity(right, source)
             }
             // 6.1.1: a run is in progress. Nothing about which server, and
             // nothing about the run's outcome — only that there is one.
@@ -9098,7 +9155,7 @@ impl Vm {
             Instruction::TraceCorpSpend => {
                 cite!("step_trace_corp_spend_credits");
                 cite!("rule_trace_strength");
-                let max = self.spendable_credits(Side::Corp);
+                let max = self.spendable_credits_for(Side::Corp, CreditPurpose::TraceAttempt);
                 let strength = self.trace.as_ref().map(|t| t.trace_strength).unwrap_or(0);
                 self.ask(
                     Side::Corp,
@@ -9109,7 +9166,7 @@ impl Vm {
             Instruction::TraceRunnerSpend => {
                 cite!("step_trace_runner_spend_credits");
                 cite!("rule_link_strength");
-                let max = self.spendable_credits(Side::Runner);
+                let max = self.spendable_credits_for(Side::Runner, CreditPurpose::TraceAttempt);
                 let link = self.trace.as_ref().map(|t| t.link_strength).unwrap_or(0);
                 self.ask(
                     Side::Runner,
@@ -11721,7 +11778,7 @@ impl Vm {
                     cite!("rule_once_per_turn_flag");
                     continue;
                 }
-                if self.cost_payable(side, o.id, a.cost.as_ref().unwrap()) {
+                if self.paid_ability_cost_payable(side, o.id, a.cost.as_ref().unwrap()) {
                     out.push(ActionOption::CardAction {
                         ability: AbilityRef { obj: o.id, index: i },
                         label: a.label,
@@ -11884,7 +11941,11 @@ impl Vm {
                     cite!("rule_once_per_turn_flag");
                     continue;
                 }
-                if self.cost_payable(side, o.id, a.cost.as_ref().unwrap_or(&Cost::default())) {
+                if self.paid_ability_cost_payable(
+                    side,
+                    o.id,
+                    a.cost.as_ref().unwrap_or(&Cost::default()),
+                ) {
                     out.push(WindowOption::TriggerPaid {
                         ability: AbilityRef { obj: o.id, index: i },
                         label: a.label,
@@ -12041,7 +12102,7 @@ impl Vm {
                     && self.break_ability_timing_ok(a)
                     && !(in_archives
                         && crate::instr::could_trash_accessed_card(&a.instructions))
-                    && self.cost_payable(
+                    && self.paid_ability_cost_payable(
                         Side::Runner,
                         src.id,
                         a.cost.as_ref().unwrap_or(&Cost::default()),
@@ -12171,6 +12232,17 @@ impl Vm {
         self.cost_payable_under(side, source, cost, None)
     }
 
+    /// CR 9.5.1 + 1.10.3c: is this PAID ability's trigger cost payable? The
+    /// same question as [`Vm::cost_payable`] asked with the purpose already
+    /// known — 9.1.6a makes paying a trigger cost the act of using the card
+    /// the ability is on, so a card allowing its credits for "using
+    /// icebreakers" answers here exactly as it will when the payment runs.
+    /// Without it the offer and the payment would disagree, and an ability
+    /// the restricted credits could pay for would never be offered at all.
+    fn paid_ability_cost_payable(&self, side: Side, source: ObjectId, cost: &Cost) -> bool {
+        self.cost_payable_for(side, source, cost, None, CreditPurpose::UsingAbilityOf(source))
+    }
+
     /// CR 1.16.1c: the same question where the effect being paid for is
     /// subject to a restriction the payment must not break.
     pub fn cost_payable_under(
@@ -12179,6 +12251,19 @@ impl Vm {
         source: ObjectId,
         cost: &Cost,
         restriction: Option<&PaymentRestriction>,
+    ) -> bool {
+        self.cost_payable_for(side, source, cost, restriction, self.payment_purpose())
+    }
+
+    /// The whole question, with 1.10.3c's purpose stated rather than read off
+    /// a payment that has not begun.
+    fn cost_payable_for(
+        &self,
+        side: Side,
+        source: ObjectId,
+        cost: &Cost,
+        restriction: Option<&PaymentRestriction>,
+        purpose: CreditPurpose,
     ) -> bool {
         cite!("rule_cost");
         let p = self.st.player(side);
@@ -12190,7 +12275,7 @@ impl Vm {
             0
         } else {
             p.credits
-                + self.spendable_hosted_credits(side)
+                + self.spendable_hosted_credits_for(side, purpose)
                 + if side == Side::Runner && self.current_run.is_some() {
                     self.st.bp_fund
                 } else {
@@ -12270,17 +12355,18 @@ impl Vm {
                 if a.kind != AbilityKind::Conditional || a.optional || !a.is_interrupt() {
                     continue;
                 }
-                let Some(Condition::Trigger(TriggerCond::WouldDamage {
-                    kind: k,
-                    first_each_run,
-                })) = &a.condition
+                let Some(Condition::Trigger(TriggerCond::WouldDamage { kind: k })) = &a.condition
                 else {
                     continue;
                 };
                 if k.is_some_and(|k| k != kind) {
                     continue;
                 }
-                if *first_each_run && self.current_run.is_none() {
+                // 9.6.5c: an ordinal counted over the RUN has no span at all
+                // outside one, so nothing can be the first time in it.
+                if a.ordinal == Some(crate::ability::OrdinalScope::Run)
+                    && self.current_run.is_none()
+                {
                     continue;
                 }
                 let prevents = a.instructions.iter().any(|x| {
@@ -12310,11 +12396,19 @@ impl Vm {
     /// hosted credits on cards that allow spending them, minus prohibitions
     /// (RSVP class → 0).
     pub fn spendable_credits(&self, side: Side) -> u32 {
+        self.spendable_credits_for(side, self.payment_purpose())
+    }
+
+    /// The same question for a spend whose PURPOSE is known without a
+    /// [`Payment`] record to read it from — a trace attempt's two spend steps
+    /// (10.8.6c/d) are credits spent, not a cost paid, so nothing else would
+    /// tell a card restricted to that class of payment that it is allowed.
+    pub fn spendable_credits_for(&self, side: Side, purpose: CreditPurpose) -> u32 {
         if self.credits_prohibited(side) {
             cite!("rule_bid_possible");
             return 0;
         }
-        self.st.player(side).credits + self.spendable_hosted_credits(side)
+        self.st.player(side).credits + self.spendable_hosted_credits_for(side, purpose)
     }
 
     /// CR 9.3.4: an active declaration forbidding this player from spending
@@ -12327,15 +12421,11 @@ impl Vm {
     }
 
     /// CR 1.10.3c: credits hosted on this player's cards that the card's own
-    /// ability allows them to spend. 1.13.3 keeps them out of the credit
-    /// pool: they are never "on" the player.
-    fn spendable_hosted_credits(&self, side: Side) -> u32 {
-        self.spendable_hosted_credits_for(side, self.payment_purpose())
-    }
-
-    /// The same, for a payment whose PURPOSE is known — which is what decides
-    /// whether a card allowing its credits for one class of payment ("use
-    /// these credits to trash installed cards") allows them here.
+    /// ability allows them to spend for a payment made for this PURPOSE.
+    /// 1.13.3 keeps them out of the credit pool: they are never "on" the
+    /// player. The purpose is what decides whether a card allowing its
+    /// credits for one class of payment ("use these credits to trash
+    /// installed cards") allows them here.
     fn spendable_hosted_credits_for(&self, side: Side, purpose: CreditPurpose) -> u32 {
         cite!("rule_hosted_counters_not_on_player");
         self.st
@@ -12357,10 +12447,21 @@ impl Vm {
             (Some(crate::instr::CreditUse::TrashingCards(criteria)), CreditPurpose::Trashing(c)) => {
                 // The description reads exactly as it would anywhere else,
                 // 1.15.2c included: no criterion naming a zone means the
-                // installed cards, which is what "installed cards" says.
+                // installed cards, which is what "installed cards" says, and
+                // `InAnyLocation` is what a card saying plain "cards" prints.
                 self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
             }
             (Some(crate::instr::CreditUse::TrashingCards(_)), _) => false,
+            (
+                Some(crate::instr::CreditUse::UsingAbilitiesOf(criteria)),
+                CreditPurpose::UsingAbilityOf(c),
+            ) => {
+                cite!("rule_paid_ability_used_condition");
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::UsingAbilitiesOf(_)), _) => false,
+            (Some(crate::instr::CreditUse::TraceAttempts), CreditPurpose::TraceAttempt) => true,
+            (Some(crate::instr::CreditUse::TraceAttempts), _) => false,
         }
     }
 
@@ -12370,16 +12471,19 @@ impl Vm {
     /// asked about affordability in general, and a restricted card answers no.
     fn payment_purpose(&self) -> CreditPurpose {
         match self.payment.as_ref() {
-            Some(p) => Vm::purpose_of(&p.cont),
+            Some(p) => Vm::purpose_of(p),
             None => CreditPurpose::Unspecified,
         }
     }
 
-    /// The same question asked of a payment's continuation directly, which is
-    /// what `commit_payment` has left once the payment record is gone.
-    fn purpose_of(cont: &PaymentCont) -> CreditPurpose {
-        match cont {
-            PaymentCont::BasicTrash { card, .. } => CreditPurpose::Trashing(*card),
+    /// The same question asked of a payment record directly, which is what
+    /// `commit_payment` has once the payment is out of `self`.
+    fn purpose_of(p: &Payment) -> CreditPurpose {
+        match p.cont {
+            PaymentCont::BasicTrash { card, .. } => CreditPurpose::Trashing(card),
+            // 9.1.6a: paying a paid ability's trigger cost IS using the card
+            // the ability is on, and `Payment::source` is that card.
+            PaymentCont::TriggerCost => CreditPurpose::UsingAbilityOf(p.source),
             _ => CreditPurpose::Unspecified,
         }
     }
@@ -12771,7 +12875,7 @@ impl Vm {
         // 1.10.3c: the division of the credits among the allowed locations.
         if p.division.is_none() {
             let total = self.payment_credits_from_locations(&p);
-            let locations = self.credit_locations(p.side, Vm::purpose_of(&p.cont));
+            let locations = self.credit_locations(p.side, Vm::purpose_of(&p));
             let available: u32 = locations.iter().map(|(_, n)| *n).sum();
             // The choice is real only when there is more than one location and
             // the payer is not spending everything they have.
@@ -12963,7 +13067,7 @@ impl Vm {
         // 1.10.3c: the purpose travels with the payment record, so a card
         // that allows its credits for one class of payment answers the same
         // way when the division is ASKED and when it is spent.
-        let purpose = Vm::purpose_of(&p.cont);
+        let purpose = Vm::purpose_of(p);
         match &p.division {
             Some(v) => self.spend_divided(side, credits_to_pay, v, purpose),
             None => self.spend_flexible(side, credits_to_pay, purpose),
@@ -14392,8 +14496,8 @@ impl Vm {
             (DecisionCtx::TraceSpend(side), DecisionAnswer::SpendCredits(n)) => {
                 // 10.8.2/10.8.3: openly spend credits; this is a payment, so
                 // its checkpoint follows (10.3.4).
-                let n = n.min(self.spendable_credits(side));
-                self.spend_flexible(side, n, CreditPurpose::Unspecified);
+                let n = n.min(self.spendable_credits_for(side, CreditPurpose::TraceAttempt));
+                self.spend_flexible(side, n, CreditPurpose::TraceAttempt);
                 if n > 0 {
                     let cause = self.current_source();
                     self.changes.record(GameChange::CreditsLost { side, amount: n, source: cause });

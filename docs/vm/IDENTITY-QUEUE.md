@@ -44,10 +44,6 @@ kernel words, not card patches.
 - **Jacking out is a run step, not an effect.** `Instruction::JackOutChoice`
   is 6.9.4c's step; a card that OFFERS the choice outside that step has
   nothing to denote into. *(Nero Severn: Information Broker.)*
-- **No comparison between two calculated quantities.**
-  `TriggerRequirement::QuantityAtLeast` measures one amount against a printed
-  number; "the same number of cards in your grip as the Corp has in HQ" needs
-  two amounts and an equality. *(Lat: Ethical Freelancer.)*
 - **Nothing maintains the ORDER of the heap.** `TriggerRequirement::
   LargestFactionGroupIs` now says the faction-partition clause every
   draft-format identity opens with, so the rest of Wyvern's text is what is
@@ -55,18 +51,6 @@ kernel words, not card patches.
   discard pile as an ORDERED zone, and "shuffle the top card of your heap"
   wants a `TargetSpec` naming that top card — beside `TopOfDeck`, which is the
   same idea about the other pile. *(Wyvern: Chemically Enhanced.)*
-- **The ordinal "the first time each RUN" has no home.**
-  `AbilityDef::first_each_turn` is the turn-scoped one, and `WouldDamage`
-  carries `first_each_run` as content on that one condition. The scope is
-  content and belongs beside the ordinal, not on one condition.
-  *(Jesminder Sareen: Girl Behind the Curtain.)*
-- **A spending restriction cannot say "cards" without meaning INSTALLED
-  cards.** `CreditUse::TrashingCards` describes the trashable cards with the
-  ordinary filter words, and 1.15.2c's default for a description naming no
-  zone is the installed cards — which is what Miss Bones prints. Whizzard
-  prints "cards", and the Corp card a Runner trashes on access out of HQ or
-  R&D is not installed, so the existing words say something narrower than the
-  card does. *(Whizzard: Master Gamer.)*
 - **No ability sees the score areas' agenda-point totals as a WIN
   condition.** The kernel ends a game on a flatline or an empty R&D
   (`GameResult`); nothing anywhere counts agenda points towards 7 or asks how
@@ -116,19 +100,22 @@ kernel words, not card patches.
   actions only from the action phase's own step. *(MirrorMorph: Endless
   Iteration.)*
 - **An ordinal cannot be SHARED between two conditions.**
-  `AbilityDef::first_each_turn` belongs to one ability, and a sentence with
-  two conditions is written as two abilities (Leela Patel class) — which is
-  right until the sentence also says "the first time each turn", because then
-  each ability spends its own ordinal and the pair fires twice.
+  `AbilityDef::ordinal` belongs to one ability, and a sentence with two
+  conditions is written as two abilities (Leela Patel class) — which is right
+  until the sentence also says "the first time each turn", because then each
+  ability spends its own ordinal and the pair fires twice.
   *(Epiphany Analytica: Nations Undivided.)*
-- **A spending restriction cannot name a PURPOSE other than trashing.**
-  `CreditPurpose` has `Unspecified` and `Trashing` and nothing else, and the
-  purpose is derived from `PaymentCont`, which knows about rezzing, accessing
-  and basic-trashing only. "Use these credits during trace attempts", "to
-  advance ice", "to pay for using icebreakers" each need the payment to carry
-  a purpose it does not yet have. *(NBN: Making News; Weyland Consortium:
-  Because We Built It; Ele "Smoke" Scovak: Cynosure of the Net; Whizzard's is
-  the same gap seen from the description side.)*
+- **The basic ADVANCE action does not pay through a payment, so nothing about
+  it can carry a purpose.** `CreditPurpose` now says what a payment is for —
+  trashing a card, using a card's abilities (9.1.6a), a trace attempt's spend
+  steps — but 5.2.6f's 1[credit] is taken straight out of the Corp's pool by
+  `Vm::take_action`, so there is no `PaymentCont` to read a purpose from and
+  no 1.10.3c division for the payer to make. Routing it through
+  `Vm::begin_payment` is not a new word but a change to 5.2's shape, and it
+  would also make `GameChange::CostPaid` name the advanced card as the source
+  that caused the payment (9.1.4) — which a basic action has none of, so a
+  "whenever a Corp card ability causes…" condition would start meeting it.
+  *(Weyland Consortium: Because We Built It.)*
 - **A declaration cannot modify the strength of cards it DESCRIBES.**
   `StaticDecl::StrengthMod` reaches the source or its host, and the
   characteristic pipeline that would read a criteria-scoped one is the same
@@ -230,7 +217,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **104 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **109 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -270,7 +257,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (13/21)
+## Runner — Shaper (16/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -280,15 +267,15 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
 - [x] **Chaos Theory: Wünderkind** — +1[mu]
 - [ ] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
-- [ ] **Ele "Smoke" Scovak: Cynosure of the Net** — 1[recurring-credit] Use this credit to pay for using icebreakers.
+- [x] **Ele "Smoke" Scovak: Cynosure of the Net** — 1[recurring-credit] Use this credit to pay for using icebreakers.
 - [x] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
 - [x] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
 - [x] **Hiram "0mission" Svensson: Shadow of the Past** — Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.
 - [x] **Jamie "Bzzz" Micken: Techno Savant** — Draft format only. If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.
-- [ ] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
+- [x] **Jesminder Sareen: Girl Behind the Curtain** — [interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.
 - [ ] **Kabonesa Wu: Netspace Thrillseeker** — [click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.
 - [x] **Kate "Mac" McCaffrey: Digital Tinker** — Lower the install cost of the first program or piece of hardware you install each turn by 1.
-- [ ] **Lat: Ethical Freelancer** — When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.
+- [x] **Lat: Ethical Freelancer** — When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.
 - [ ] **Magdalene Keino-Chemutai: Cryptarchitect** — Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.
 - [x] **Nasir Meidan: Cyber Explorer** — Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.
 - [x] **Rielle "Kit" Peddler: Transhuman** — The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.
@@ -296,7 +283,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (12/19)
+## Runner — Anarch (13/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -317,7 +304,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [ ] **Sebastião Souza Pessoa: Activist Organizer** — Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less. As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.
 - [ ] **Topan: Ormas Leader** — Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.
 - [x] **Valencia Estevez: The Angel of Cayambe** — The Corp starts the game with 1 bad publicity.
-- [ ] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.
+- [x] **Whizzard: Master Gamer** — 3[recurring-credit] Use these credits to trash cards.
 - [ ] **Wyvern: Chemically Enhanced** — Draft format only. You must maintain the order of your heap. Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.
 
 ## Runner — Neutral (3/3)
@@ -396,7 +383,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (15/19)
+## Corp — NBN (16/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -409,7 +396,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Harishchandra Ent.: Where You're the Star** — While the Runner is tagged, they play with the grip revealed.
 - [x] **Information Dynamics: All You Need To Know** — Draft format only. If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.
 - [x] **NBN: Controlling the Message** — The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).
-- [ ] **NBN: Making News** — 2[recurring-credit] Use these credits during trace attempts.
+- [x] **NBN: Making News** — 2[recurring-credit] Use these credits during trace attempts.
 - [x] **NBN: Reality Plus** — The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.
 - [x] **NBN: The World is Yours*** — Your maximum hand size is increased by 1.
 - [x] **Near-Earth Hub: Broadcast Center** — The first time each turn you create a remote server, draw 1 card.

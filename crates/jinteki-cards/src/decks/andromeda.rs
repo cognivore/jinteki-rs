@@ -726,8 +726,8 @@ pub fn the_class_act() -> Card {
             [draw(Runner, 4)],
         )
         .named("the class act: settling in")
-        .interrupt(
-            would_draw(Runner, true),
+        .interrupt_first_each_turn(
+            would_draw(Runner),
             [
                 look_at(top_of_stack(plus(cards_you_would_draw(), amount(1))), Runner),
                 add_to_deck(choose(1, &[looked_at_by_this_ability()]), false),

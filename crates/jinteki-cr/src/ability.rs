@@ -123,7 +123,7 @@ pub enum TriggerCond {
     /// self-reference.
     ///
     /// The printed ordinal "**the first time each turn** you play …" is
-    /// [`AbilityDef::first_each_turn`], not a field here: it is the same
+    /// [`AbilityDef::ordinal`], not a field here: it is the same
     /// 9.6.5c stipulation for every condition, so it lives once beside the
     /// condition instead of once per variant (§12 rule 2).
     CardPlayed {
@@ -171,7 +171,9 @@ pub enum TriggerCond {
     /// [`TriggerCond::CardPlayed`]. Without it a Runner card would interrupt
     /// the Corp's mandatory draw, and 9.9.5a's "first time each turn" would
     /// be spent by it.
-    WouldDraw { by: Option<Side>, first_each_turn: bool },
+    /// The printed ordinal is [`AbilityDef::ordinal`], which is where every
+    /// condition's is (§12 rule 2).
+    WouldDraw { by: Option<Side> },
     /// CR 8.4.2: "abilities with trigger conditions related to cards being
     /// drawn can act on them" — met once per card drawn, while the drawn
     /// cards are still set aside (8.4.2a), which is what lets a Daily-Business
@@ -373,7 +375,9 @@ pub enum TriggerCond {
     CardInstalledFrom { side: Side, from: Zone, of_types: Vec<CardType> },
     /// Interrupt trigger: "…would do damage" (ordinal: Some(1) = "the first
     /// time each run you would…", Tori Hanzō class).
-    WouldDamage { kind: Option<DamageKind>, first_each_run: bool },
+    /// The printed ordinal — "the first time each RUN you would suffer net
+    /// damage" — is [`AbilityDef::ordinal`], carrying its own span.
+    WouldDamage { kind: Option<DamageKind> },
     /// CR 9.9.9c: interrupt trigger — "when the Runner would steal this
     /// agenda" (Project Vacheron class). Met by the expected effect of the
     /// access step that adds the agenda to the Runner's score area.
@@ -693,6 +697,17 @@ pub enum TriggerRequirement {
     /// direction is part of what the sentence says, and "at most 0" is the
     /// only way a count says "none".
     QuantityAtMost { amount: crate::instr::Quantity, at_most: i64 },
+    /// "…if you have **the same number of** cards in your grip **as** the
+    /// Corp has in HQ" (Lat: Ethical Freelancer) — two calculated amounts
+    /// (9.12.2) compared against each other rather than against a printed
+    /// number. A third atom beside `QuantityAtLeast` and `QuantityAtMost` for
+    /// the reason those two are separate: the direction is part of what the
+    /// sentence says, and equality is the direction this one says.
+    ///
+    /// Both sides are the shared quantity language (§12 rule 6), so nothing
+    /// here knows about grips or HQs; a card comparing any two amounts it can
+    /// name is this same atom.
+    QuantitiesEqual { left: crate::instr::Quantity, right: crate::instr::Quantity },
     /// "…**during a run**" (Mercury) — CR 6.1.1: a run is in progress. Not a
     /// question about the run's server or its success, only that there is
     /// one; a breach can happen without a run (7.2), which is exactly the
@@ -1600,6 +1615,12 @@ pub struct AbilityDef {
     /// the condition and is therefore checked when the condition would be
     /// met, not when the ability is used.
     ///
+    /// The SPAN the ordinal counts over is content on the ordinal (§12
+    /// rule 2), not a field on any one condition: "the first time each turn"
+    /// and "the first time each run" are the same stipulation about the same
+    /// occurrence with a different span, so every condition says both or
+    /// neither. `None` is a sentence printing no ordinal at all.
+    ///
     /// Deliberately NOT [`AbilityFlag::OncePerTurn`]. 9.3.6g's flag is spent
     /// by USING the ability, 9.1.6 says players never use an entirely
     /// mandatory ability, and 1.12.2's Vaporframe Fabricator example makes
@@ -1608,9 +1629,22 @@ pub struct AbilityDef {
     /// fresh when its card was reinstalled the same turn. The occurrence is
     /// counted from the game history instead, which 10.2.1 makes open
     /// information.
-    pub first_each_turn: bool,
+    pub ordinal: Option<OrdinalScope>,
     /// Human-readable tag for tests/logs.
     pub label: &'static str,
+}
+
+/// CR 9.6.5c: the span an ordinal stipulation counts over — "the first time
+/// **each turn**" against "the first time **each run**". Content on
+/// [`AbilityDef::ordinal`], because the two sentences differ in nothing else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrdinalScope {
+    /// "…each turn" — counted from the current turn's beginning (10.2.1's
+    /// open history; 1.12.6).
+    Turn,
+    /// "…each run" — counted from the run in progress beginning. Outside a
+    /// run there is no span at all, so nothing can be the first time in it.
+    Run,
 }
 
 impl AbilityDef {
@@ -1624,7 +1658,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "",
         }
     }
@@ -1640,7 +1674,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional: true,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "",
         }
     }
@@ -1658,7 +1692,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional: false,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "",
         }
     }
@@ -1673,7 +1707,7 @@ impl AbilityDef {
             statics: Vec::new(),
             optional: false,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "",
         }
     }
@@ -1688,7 +1722,7 @@ impl AbilityDef {
             statics,
             optional: false,
             timing: None,
-            first_each_turn: false,
+            ordinal: None,
             label: "",
         }
     }
@@ -1705,10 +1739,19 @@ impl AbilityDef {
 
     /// CR 9.6.5c: "**the first time each turn** <the condition>" — the
     /// printed ordinal, stipulated on the condition rather than on the use
-    /// (9.1.6/9.3.6g; see [`AbilityDef::first_each_turn`]).
+    /// (9.1.6/9.3.6g; see [`AbilityDef::ordinal`]).
     pub fn first_time_each_turn(mut self) -> Self {
         cite!("rule_condition_requirements_part_of_condition");
-        self.first_each_turn = true;
+        self.ordinal = Some(OrdinalScope::Turn);
+        self
+    }
+
+    /// CR 9.6.5c again, with the other span: "**the first time each run**
+    /// <the condition>" (Jesminder Sareen). The same stipulation about the
+    /// same occurrence — only what it is counted over differs.
+    pub fn first_time_each_run(mut self) -> Self {
+        cite!("rule_condition_requirements_part_of_condition");
+        self.ordinal = Some(OrdinalScope::Run);
         self
     }
 

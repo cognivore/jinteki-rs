@@ -430,11 +430,44 @@ pub fn synapse_global() -> Card {
         .build()
 }
 
+/// NBN: Making News — Identity: Megacorp.
+/// "2[recurring-credit]
+///  Use these credits during trace attempts."
+///
+/// COMPLETE. The first line is 1.10.5's shorthand — two credits on the
+/// identity from the moment it is active (1.10.5b, which for an identity is
+/// 1.6: it is never installed and never rezzed), refilled to two at step
+/// 5.6.1c of every Corp turn and never past it (1.10.5d).
+///
+/// The second line is 1.10.3c, and it names a MOMENT rather than a card: the
+/// credits are allowed at 10.8.6c and 10.8.6d, the two steps of a trace
+/// attempt where credits are spent, and nowhere else. That is why it needs no
+/// description — unlike "to trash cards" or "to pay for using icebreakers",
+/// there is no object for a description to be about.
+///
+/// 10.8.6c is the Corp's own step, but the restriction says nothing about
+/// whose spend it is: the sentence is about the payment, and only the Corp
+/// ever has this card's credits to spend anyway (1.10.3c reaches only the
+/// controller's own cards).
+pub fn nbn_making_news() -> Card {
+    card("NBN: Making News")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Megacorp"])
+        .text("2[recurring-credit]")
+        .text("Use these credits during trace attempts.")
+        .recurring_credits(2)
+        .credits_only_during_trace_attempts()
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
     vec![
         nbn_controlling_the_message(),
+        nbn_making_news(),
         gamenet(),
         synapse_global(),
         near_earth_hub(),
