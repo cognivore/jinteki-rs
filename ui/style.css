@@ -311,7 +311,13 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    because at nine crowded cards a steep one puts the outer cards off the
    bottom of the screen. Both are scaled down by `renderFan` as the row
    spreads: cards standing clear of each other on a table lie flat. */
+/* The focused slot is lifted 8px and scaled from its BOTTOM edge, so it grows
+   upward out of the row by 0.22 of its own height — headroom the fan has to
+   own, or the card climbs into whatever is above it (in a prompt sheet, that
+   is the sentence asking the question). The hand's box is a fixed height and
+   bottom-aligned, so the same padding costs it nothing. */
 .fan { --fw: 64px; --fh: 89px; --fstep: 16px; --fpeek: 10px; --ftilt: 1.2; --farc: 1;
+  padding-top: calc(.22 * var(--fh) + 14px);
   display: flex; justify-content: center; align-items: flex-end;
   /* Nothing here pans horizontally: a card list is static (§8's "no wobble"),
      so every horizontal gesture belongs to the page, and every vertical one. */
@@ -448,7 +454,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    hover-scroll, the two taps: one mechanism, one geometry, two
    callers, so they cannot drift apart. `.cardprompt` says only where the
    row sits inside the sheet. */
-.cardprompt { padding: 6px 2px 2px;
+.cardprompt { padding-left: 2px; padding-right: 2px; padding-bottom: 2px;
   max-width: calc(var(--sheetw, 480px) - 28px); }
 /* Every fan's slot, the hand's included. The slot carries the whole of the
    fan's geometry — tilt, dip, focus scale, all inline from `renderFan` — so
