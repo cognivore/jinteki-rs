@@ -1611,6 +1611,27 @@ pub enum StaticDecl {
     /// already announced — which is why the cost can be asked per server at
     /// all.
     AdditionalRunActionCost { cost: Cost, on: crate::instr::RunServerSet },
+    /// CR 1.16.2 / 5.2.5a: "The Runner pays 1[credit] more when spending a
+    /// [click] to remove a tag **(not through a card ability)**" (SYNC,
+    /// front) and "You may pay 2[credit] fewer when spending a [click] to
+    /// trash a resource (not through a card ability)" (SYNC, back) — a
+    /// modification of the CREDIT part of one basic action's printed cost
+    /// (5.2.7g's remove-tag 2[credit], 5.2.6g's trash-resource 2[credit]).
+    ///
+    /// The parenthetical is the declaration's whole scope: 5.2.5a identifies
+    /// actions BY the basic action they are, so naming the basic action
+    /// reaches every taking of it and no card ability, however similar that
+    /// ability's text — which is why the reader lives at the two places the
+    /// basic action's credits are counted and paid, and nowhere else.
+    ///
+    /// `action` is which basic action the sentence names and `amount`
+    /// carries the polarity, both content (§12 rule 2); 1.16.2a floors the
+    /// modified value at 0. The back's "may": the reduction costs nothing,
+    /// so declining it is never anything but a smaller credit pool — the
+    /// same affordable-anyway choice `Vm::install_payment` already declines
+    /// to offer (its KERNEL APPROXIMATION note), and this declaration keeps
+    /// to that precedent: the reduction applies of its own accord.
+    BasicActionCostMod { action: crate::change::BasicAction, amount: i32 },
     /// CR 9.12.3a/e: "You must make a run with your first [click] each turn."
     /// (Always Be Running class.) A requirement on the action window, not an
     /// effect: while it holds, the only actions offered are runs. 9.12.3e:

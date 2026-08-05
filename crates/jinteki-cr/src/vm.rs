@@ -4538,6 +4538,44 @@ impl Vm {
                     .sum()
             }
             Q::AccessesThisRun => self.accesses_this_run() as i64,
+            // 7.3.6 over 1.12.6's turn window: `CardAccessed` is recorded at
+            // the one step where an access is actually performed
+            // (`StepKind::CardBecomesAccessed`), so counting those records
+            // since the turn began IS "accesses actually performed this
+            // turn" — an access replaced by another effect never reached
+            // that step and left no record to count.
+            Q::AccessesThisTurn => {
+                cite!("rule_number_of_accesses");
+                cite!("rule_hidden_or_open_information");
+                self.changes.log[self.st.turn_log_start..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::CardAccessed { .. }))
+                    .count() as i64
+            }
+            // 1.20.4a: "unused [mu]" is the CR's own calculated value — the
+            // memory limit as modified (1.20.2) minus the memory costs of
+            // installed programs (1.20.3), counted exactly as the checkpoint
+            // counts them: a facedown card in the rig is not a program and
+            // has no memory cost (8.1.4a). Negative while the Runner is
+            // over-limit mid-resolution, which "at most 0" reads as full.
+            Q::UnusedMemory => {
+                cite!("rule_memory_counting_mu_ignores_restrictions");
+                cite!("rule_memory_limit");
+                cite!("rule_memory_cost");
+                cite!("rule_facedown_runner_cards_are_blank");
+                let used: i64 = self
+                    .st
+                    .objects
+                    .values()
+                    .filter(|o| {
+                        o.zone == Zone::Rig
+                            && o.faceup
+                            && o.printed.card_type == CardType::Program
+                    })
+                    .map(|o| o.printed.memory_cost.unwrap_or(0) as i64)
+                    .sum();
+                self.memory_limit() as i64 - used
+            }
             // 9.9.6: "the number of cards you would draw" — the modifiable
             // value of the instruction this interrupt window was opened over.
             Q::ImminentValueOf(class) => self.imminent_value_of(*class),
@@ -13070,7 +13108,11 @@ impl Vm {
                 }
                 out.push(ActionOption::BasicRun { server });
             }
-            if self.st.runner.tags > 0 && self.st.runner.credits >= 2 {
+            // 5.2.7g's printed 2[credit], as modified (SYNC's front face
+            // says "pays 1[credit] more … (not through a card ability)",
+            // which names this action and no ability).
+            let cost = self.basic_action_credits(crate::change::BasicAction::RemoveTag, 2);
+            if self.st.runner.tags > 0 && self.st.runner.credits >= cost {
                 cite!("runner_basic_action_remove_tag");
                 out.push(ActionOption::BasicRemoveTag);
             }
@@ -13153,8 +13195,14 @@ impl Vm {
             cite!("corp_basic_action_trash_resource");
             cite!("rule_tagged_trash_resource");
             cite!("rule_tagged");
+            // 5.2.6g's printed 2[credit], as modified (SYNC's back face says
+            // "pay 2[credit] fewer … (not through a card ability)", which
+            // names this action and no ability; 1.16.2a floors at 0) — and
+            // the tag gate reads the CONSIDERED count (Acme, 9.3.7a).
+            let trash_cost =
+                self.basic_action_credits(crate::change::BasicAction::TrashResource, 2);
             if self.considered_runner_tags() > 0
-                && self.st.corp.credits >= 2
+                && self.st.corp.credits >= trash_cost
                 && self.st.objects.values().any(|o| {
                     o.zone == Zone::Rig
                         && o.printed.card_type == CardType::Resource
@@ -15771,6 +15819,27 @@ impl Vm {
         of(Side::Corp).max(of(Side::Runner))
     }
 
+    /// CR 1.16.2 / 5.2.5a: the credit part of one basic action's cost, as
+    /// modified — `base` is the printed 2[credit] (5.2.7g remove-tag, 5.2.6g
+    /// trash-resource) and every active `BasicActionCostMod` naming this
+    /// basic action moves it (SYNC's two faces). 1.16.2a floors at 0. The
+    /// declaration names the BASIC ACTION (5.2.5a's identity), which is the
+    /// printed "(not through a card ability)": a card ability that removes a
+    /// tag or trashes a resource is not this action and never reads this.
+    pub fn basic_action_credits(&self, action: crate::change::BasicAction, base: u32) -> u32 {
+        cite!("rule_modified_costs");
+        cite!("rule_same_actions");
+        let mut n = base as i32;
+        for (_, d) in self.active_statics() {
+            if let StaticDecl::BasicActionCostMod { action: a, amount } = d {
+                if a == action {
+                    n += amount;
+                }
+            }
+        }
+        n.max(0) as u32
+    }
+
     pub fn memory_limit(&self) -> i32 {
         cite!("rule_memory_limit");
         let mut m = self.st.runner.memory_limit_base;
@@ -16864,9 +16933,20 @@ impl Vm {
             }
             ActionOption::BasicRemoveTag => {
                 cite!("runner_basic_action_remove_tag");
+                // 5.2.7g's 2[credit] as modified (SYNC front's "+1 … not
+                // through a card ability" names this action; 1.16.2a floors
+                // at 0, and a cost of 0 credits moves none and records none).
+                cite!("rule_modified_costs");
+                let cost = self.basic_action_credits(crate::change::BasicAction::RemoveTag, 2);
                 self.spend_click(side);
-                self.st.runner.credits -= 2;
-                self.changes.record(GameChange::CreditsLost { side, amount: 2, source: None });
+                if cost > 0 {
+                    self.st.runner.credits -= cost;
+                    self.changes.record(GameChange::CreditsLost {
+                        side,
+                        amount: cost,
+                        source: None,
+                    });
+                }
                 self.checkpoint_and_react(None);
                 self.st.runner.tags -= 1;
                 self.changes.record(GameChange::TagRemoved);
@@ -16949,12 +17029,25 @@ impl Vm {
                 // resources, which is exactly what the criteria say.
                 cite!("corp_basic_action_trash_resource");
                 cite!("rule_tagged_trash_resource");
+                // 5.2.6g's 2[credit] as modified (SYNC back's "pay 2[credit]
+                // fewer … not through a card ability" names this action;
+                // 1.16.2a floors at 0, and 0 credits move none and record no
+                // loss — the cost payment itself still happened).
+                cite!("rule_modified_costs");
+                let cost =
+                    self.basic_action_credits(crate::change::BasicAction::TrashResource, 2);
                 self.spend_click(side);
-                self.st.player_mut(side).credits -= 2;
-                self.changes.record(GameChange::CreditsLost { side, amount: 2, source: None });
+                if cost > 0 {
+                    self.st.player_mut(side).credits -= cost;
+                    self.changes.record(GameChange::CreditsLost {
+                        side,
+                        amount: cost,
+                        source: None,
+                    });
+                }
                 self.changes.record(GameChange::CostPaid {
                     side,
-                    credits: 2,
+                    credits: cost,
                     clicks: 0,
                     trashed: Vec::new(),
                     source: None,

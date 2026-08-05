@@ -1893,6 +1893,17 @@ pub fn makes_successful_run() -> TriggerCond {
         requires: Vec::new(),
     }
 }
+/// "Whenever you make a successful run, **if <state>**, …" (Dewi
+/// Subrotoputri's "if your [mu] is full") — 6.8.4's successful run carrying
+/// 9.6.5c's additional requirement, read against the game state at the
+/// occurrence.
+pub fn makes_successful_run_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    TriggerCond::MakesSuccessfulRun {
+        on: None,
+        after_subroutine_resolved: false,
+        requires: reqs.to_vec(),
+    }
+}
 /// "…a run becomes successful **after a subroutine resolved during that
 /// run**" (Ryō "Phoenix" Ōno) — a stipulation about the occurrence itself,
 /// inside what a printed ordinal counts: a successful run with no subroutine
@@ -2561,6 +2572,27 @@ pub fn additional_cost_to_run(servers: &[ServerId], c: Cost) -> StaticDecl {
 pub fn additional_cost_to_run_a_remote_server(c: Cost) -> StaticDecl {
     StaticDecl::AdditionalRunActionCost { cost: c, on: jinteki_cr::instr::RunServerSet::AnyRemote }
 }
+/// "The Runner pays 1[credit] more when spending a [click] to remove a tag
+/// **(not through a card ability)**." (SYNC, front face; 1.16.2 / 5.2.7g.)
+/// The parenthetical is the declaration's whole scope: it names the BASIC
+/// ACTION (5.2.5a's identity), so it reaches every taking of that action and
+/// no card ability, however alike that ability's text.
+pub fn remove_tag_basic_action_costs_more(n: i32) -> StaticDecl {
+    StaticDecl::BasicActionCostMod {
+        action: jinteki_cr::change::BasicAction::RemoveTag,
+        amount: n,
+    }
+}
+/// "You may pay 2[credit] fewer when spending a [click] to trash a resource
+/// (not through a card ability)." (SYNC, back face; 1.16.2 / 5.2.6g.) The
+/// same declaration about the other basic action, with the polarity the
+/// sentence prints; 1.16.2a floors the modified cost at 0.
+pub fn trash_resource_basic_action_costs_less(n: i32) -> StaticDecl {
+    StaticDecl::BasicActionCostMod {
+        action: jinteki_cr::change::BasicAction::TrashResource,
+        amount: -n,
+    }
+}
 /// "…1 resource **or** piece of hardware" (2.15) — the type LIST as one
 /// description word, because a card has exactly one type and several
 /// [`of_type`] words together would mean all of them.
@@ -3222,6 +3254,20 @@ pub fn revealed_this_encounter() -> TargetFilter {
 /// 7.3.6).
 pub fn accesses_this_run() -> Quantity {
     Quantity::AccessesThisRun
+}
+/// "…if you accessed a card this turn" / "…if you did not access any cards
+/// this turn" (Hoshiko Shiro's two faces; 7.3.6 over the turn's history
+/// window) — pair with [`at_least`] 1 for the first and [`at_most`] 0 for
+/// the second, the direction the sentence prints.
+pub fn accesses_this_turn() -> Quantity {
+    Quantity::AccessesThisTurn
+}
+/// "…if your [mu] is full" / "…if you have at least 1 unused [mu]" (Dewi
+/// Subrotoputri's two faces) — CR 1.20.4a's own calculated value, the memory
+/// limit minus installed programs' memory costs. "Full" is [`at_most`] 0
+/// unused; "at least 1 unused" is [`at_least`] 1.
+pub fn unused_mu() -> Quantity {
+    Quantity::UnusedMemory
 }
 /// "…the subroutines you broke during that run" (Mercury; 9.8.7).
 pub fn subroutines_broken_this_run() -> Quantity {

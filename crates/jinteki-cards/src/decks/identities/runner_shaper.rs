@@ -690,6 +690,62 @@ pub fn magdalene_keino_chemutai() -> Card {
         .build()
 }
 
+/// Dewi Subrotoputri: Pedagogical Dhalang — Identity: Natural. Link 0.
+/// "Whenever you make a successful run, if your [mu] is full, you may flip
+///  this identity and gain 1[credit]."
+///
+/// COMPLETE, both faces. The condition is 6.8.4's successful run carrying
+/// 9.6.5c's additional requirement, asked at the occurrence. "Your [mu] is
+/// full" is CR 1.20.4a's own calculated value — the UNUSED [mu], the memory
+/// limit (1.20.2, as modified) minus installed programs' memory costs
+/// (1.20.3) — at most 0: no unused memory is what "full" says, and 1.20.4a
+/// rules the calculation ignores requirements about how restricted [mu] can
+/// be filled.
+///
+/// "You may flip this identity and gain 1[credit]" is one declinable
+/// sentence (9.6.9), so ONE combined instruction: declining declines both,
+/// accepting flips AND pays — never one without the other.
+pub fn dewi_subrotoputri() -> Card {
+    card("Dewi Subrotoputri: Pedagogical Dhalang")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].")
+        .may_when(
+            makes_successful_run_if(&[at_most(unused_mu(), 0)]),
+            [combined([flip_identity(Runner), gain(Runner, 1)])],
+        )
+        .named("dewi: flip and gain 1")
+        .flip_face(dewi_subrotoputri_shadow_guide())
+        .build()
+}
+
+/// Dewi Subrotoputri: Shadow Guide — Identity: Natural; the back face of
+/// Dewi Subrotoputri: Pedagogical Dhalang (oracle: netrunner-cards-json v2,
+/// `faces[0]`).
+/// "Whenever you make a successful run, if you have at least 1 unused [mu],
+///  you may flip this identity and draw 1 card."
+///
+/// The front's condition with the threshold at the other end: the same
+/// 1.20.4a unused-[mu] value, at least 1 — a rig with room sends the dhalang
+/// back behind the screen. The same declinable one-sentence shape, drawing
+/// where the front paid.
+pub fn dewi_subrotoputri_shadow_guide() -> Card {
+    card("Dewi Subrotoputri: Shadow Guide")
+        .runner()
+        .identity()
+        .faction("Shaper")
+        .subtypes(&["Natural"])
+        .text("Whenever you make a successful run, if you have at least 1 unused [mu], you may flip this identity and draw 1 card.")
+        .may_when(
+            makes_successful_run_if(&[at_least(unused_mu(), 1)]),
+            [combined([flip_identity(Runner), draw(Runner, 1)])],
+        )
+        .named("shadow guide: flip and draw 1")
+        .build()
+}
+
 /// Every Shaper identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -712,5 +768,6 @@ pub fn identities() -> Vec<Card> {
         the_collective(),
         magdalene_keino_chemutai(),
         kabonesa_wu(),
+        dewi_subrotoputri(),
     ]
 }

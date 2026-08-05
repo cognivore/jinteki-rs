@@ -12962,6 +12962,155 @@ fn bangun_faceup_agenda_access_costs_two_meat_and_a_tag() {
     );
 }
 
+/// Hoshiko, front face: "When your turn ends, if you accessed a card this
+/// turn, gain 2[credit] and flip this identity." — one sentence, so the gain
+/// and the flip land together at the turn's end, and 9.6.5c reads the
+/// requirement AT that occurrence: an R&D access earlier in the turn is what
+/// makes it true.
+#[test]
+fn hoshiko_gains_2_and_flips_together_when_an_access_turn_ends() {
+    let mut vm = Vm::empty(6400);
+    let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner().when(Match::action().once(), Reply::run(ServerId::Rnd)),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        1,
+        "flipped exactly once, at the turn's end: {}",
+        t.tail(16)
+    );
+    assert!(vm.st.objects[&id].flipped, "the back face is up");
+    // 5 + 3 (remaining basic credits after the run's click) + 2 (Hoshiko).
+    assert_eq!(
+        vm.st.runner.credits,
+        10,
+        "the gain 2 arrived with the flip — one instruction, not two: {}",
+        t.tail(16)
+    );
+}
+
+/// Hoshiko, front face, the requirement FALSE: a turn spent clicking for
+/// credits ends with no access in its history, so nothing fires — no gain,
+/// no flip.
+#[test]
+fn hoshiko_stays_put_when_a_turn_without_access_ends() {
+    let mut vm = Vm::empty(6401);
+    let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::IdentityFlipped { .. })),
+        "no access this turn, so no flip: {}",
+        t.tail(16)
+    );
+    assert!(!vm.st.objects[&id].flipped, "the front face is still up");
+    assert_eq!(vm.st.runner.credits, 9, "5 + 4 basic credits and nothing from Hoshiko");
+}
+
+/// Mahou Shoujo (the back face): "When your turn begins, draw 1 card and
+/// lose 1[credit]." — mandatory, and one sentence: the draw and the loss
+/// arrive together at the turn's begin.
+#[test]
+fn hoshiko_back_draws_and_loses_1_when_the_turn_begins() {
+    let mut vm = Vm::empty(6402);
+    let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
+    // Setup state: the identity begins on its back face (as after an access
+    // turn) — placement, not effect-by-fiat.
+    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stopping_at_the_rest(),
+        Plan::runner().stop_at_action(),
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 1, "drew 1 at turn begin: {}", t.tail(12));
+    assert_eq!(vm.st.runner.credits, 4, "…and lost 1[credit] with it: {}", t.tail(12));
+}
+
+/// Mahou Shoujo at 0[credit]: CR 1.10.3b — a forced loss moves as many
+/// credits as the pool holds and no more, so the Runner at 0 loses nothing
+/// and the mandatory draw still happens.
+#[test]
+fn hoshiko_back_at_zero_credits_still_draws_and_loses_nothing() {
+    let mut vm = Vm::empty(6403);
+    let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
+    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stopping_at_the_rest(),
+        Plan::runner().stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        1,
+        "the draw is not hostage to the loss: {}",
+        t.tail(12)
+    );
+    assert_eq!(vm.st.runner.credits, 0, "1.10.3b: a pool of 0 loses 0");
+}
+
+/// Hoshiko, the whole round trip: an access turn ends and she flips out
+/// (gaining 2); the next turn opens with Mahou Shoujo's draw-and-lose, is
+/// spent NOT accessing, and its end flips her home — "if you did not access
+/// any cards this turn" is the front's question with the answer the back
+/// wants.
+#[test]
+fn hoshiko_round_trip_flips_out_on_access_and_home_on_none() {
+    let mut vm = Vm::empty(6404);
+    let id = tk::install_identity(&mut vm, card("Hoshiko Shiro: Untold Protagonist"), Side::Runner);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        // The Corp's whole turn between the Runner's two: three basic
+        // credits, then a halt when the Runner's second turn has ended.
+        Plan::corp()
+            .when(Match::action().times(3), Reply::credit())
+            .when(Match::action(), Reply::Halt),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Rnd))
+            .when(Match::action(), Reply::credit()),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        2,
+        "flipped out at the first turn's end and home at the second's: {}",
+        t.tail(30)
+    );
+    assert!(!vm.st.objects[&id].flipped, "the front face is up again");
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        1,
+        "Mahou Shoujo's morning drew exactly once — the front has no such line: {}",
+        t.tail(30)
+    );
+}
+
 /// BANGUN asks nothing about a non-agenda install: the permission's criteria
 /// describe agendas, so an asset's face is settled by 8.5.2 as ever — no
 /// decision exists, and the asset goes in facedown.
@@ -14266,4 +14415,226 @@ fn freedom_khumalo_declined_offer_returns_the_same_turn() {
         t.tail(30)
     );
     assert_eq!(vm.st.objects[&host].counter(CounterKind::Virus), 3, "one counter for X = 1");
+}
+
+/// Dewi, front face: "Whenever you make a successful run, if your [mu] is
+/// full, you may flip this identity and gain 1[credit]." — with 4 of 4[mu]
+/// filled the offer is made, and accepting flips AND gains as one sentence.
+#[test]
+fn dewi_flips_and_gains_when_mu_is_full() {
+    let mut vm = Vm::empty(6410);
+    let id =
+        tk::install_identity(&mut vm, card("Dewi Subrotoputri: Pedagogical Dhalang"), Side::Runner);
+    let mut prog = tk::vanilla_runner_card("Fat Program", CardType::Program);
+    prog.memory_cost = Some(4);
+    tk::install_rig(&mut vm, prog);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stopping_at_the_rest(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::reaction().once(), Reply::take("dewi"))
+            .stop_at_action(),
+    );
+    assert!(vm.st.objects[&id].flipped, "flipped to Shadow Guide: {}", t.tail(16));
+    assert_eq!(vm.st.runner.credits, 6, "…and gained 1 with the flip: {}", t.tail(16));
+}
+
+/// Dewi, front face, the requirement FALSE: with unused [mu] the run
+/// succeeds and nothing is offered at all — 9.6.5c's requirement is part of
+/// the condition, so the ability never pends.
+#[test]
+fn dewi_makes_no_offer_while_mu_is_not_full() {
+    let mut vm = Vm::empty(6411);
+    let id =
+        tk::install_identity(&mut vm, card("Dewi Subrotoputri: Pedagogical Dhalang"), Side::Runner);
+    let mut prog = tk::vanilla_runner_card("Slim Program", CardType::Program);
+    prog.memory_cost = Some(3);
+    tk::install_rig(&mut vm, prog);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stopping_at_the_rest(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert!(!t.ever_offered("dewi"), "1 unused [mu] is not full: {}", t.tail(16));
+    assert!(!vm.st.objects[&id].flipped, "the front face is still up");
+    assert_eq!(vm.st.runner.credits, 5, "and no credit arrived");
+}
+
+/// Shadow Guide (the back face): "Whenever you make a successful run, if you
+/// have at least 1 unused [mu], you may flip this identity and draw 1 card."
+/// — the front's question with the threshold at the other end, drawing where
+/// the front paid.
+#[test]
+fn dewi_back_flips_home_and_draws_with_unused_mu() {
+    let mut vm = Vm::empty(6412);
+    let id =
+        tk::install_identity(&mut vm, card("Dewi Subrotoputri: Pedagogical Dhalang"), Side::Runner);
+    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    let mut prog = tk::vanilla_runner_card("Slim Program", CardType::Program);
+    prog.memory_cost = Some(3);
+    tk::install_rig(&mut vm, prog);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stopping_at_the_rest(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .when(Match::reaction().once(), Reply::take("shadow guide"))
+            .stop_at_action(),
+    );
+    assert!(!vm.st.objects[&id].flipped, "flipped home to the front face: {}", t.tail(16));
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        1,
+        "…and drew 1 with the flip — the back's own line: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.runner.credits, 5, "the back draws; the front's gain is not its line");
+}
+
+/// SYNC, front face: "The Runner pays 1[credit] more when spending a [click]
+/// to remove a tag (not through a card ability)." — 5.2.7g's basic action
+/// costs 3, and exactly 3 is enough.
+#[test]
+fn sync_front_taxes_the_basic_remove_tag() {
+    let mut vm = Vm::empty(6420);
+    tk::install_identity(&mut vm, card("SYNC: Everything, Everywhere"), Side::Corp);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::RemoveTag))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(vm.st.runner.tags, 0, "the tag came off: {}", t.tail(12));
+    assert_eq!(vm.st.runner.credits, 0, "…for 3[credit]: the printed 2 plus SYNC's 1");
+}
+
+/// SYNC, front face, the other edge of the tax: with 2[credit] the modified
+/// cost is out of reach, so 5.2.7g is not offered at all (1.16.1) — the plan
+/// falls through to its halt and the tag stays.
+#[test]
+fn sync_front_tax_puts_the_action_out_of_a_2_credit_reach() {
+    let mut vm = Vm::empty(6421);
+    tk::install_identity(&mut vm, card("SYNC: Everything, Everywhere"), Side::Corp);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stopping_at_the_rest(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::RemoveTag))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(vm.st.runner.tags, 1, "2[credit] no longer buys the action: {}", t.tail(12));
+    assert_eq!(vm.st.runner.credits, 2, "nothing was paid");
+}
+
+/// SYNC, back face: "You may pay 2[credit] fewer when spending a [click] to
+/// trash a resource (not through a card ability)." — 5.2.6g's 2[credit]
+/// floors at 0 (1.16.2a), so a Corp with 1[credit] can take the action and
+/// pays nothing.
+#[test]
+fn sync_back_discounts_the_basic_trash_resource_to_zero() {
+    let mut vm = Vm::empty(6422);
+    let id = tk::install_identity(&mut vm, card("SYNC: Everything, Everywhere"), Side::Corp);
+    vm.st.objects.get_mut(&id).unwrap().flipped = true;
+    let res =
+        tk::install_rig(&mut vm, tk::vanilla_runner_card("Doomed Resource", CardType::Resource));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.tags = 1;
+    vm.st.corp.credits = 1;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::TrashResource))
+            .when(Match::action(), Reply::Halt),
+        Plan::runner().stopping_at_the_rest(),
+    );
+    assert_eq!(
+        vm.st.objects[&res].zone,
+        Zone::Discard(Side::Runner),
+        "the resource went to the heap: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        1,
+        "1[credit] was enough because the discounted cost is 0 — below the \
+         printed 2 the action would have refused: {}",
+        t.tail(16)
+    );
+}
+
+/// SYNC, both faces: "[click]: Flip this identity." on each side, and each
+/// side's static is its OWN printed sentence — after the Corp's click-flip
+/// the front's tag tax is gone (the basic remove-tag is 2 again), and the
+/// back's trash discount has taken over; the second click turns it home.
+#[test]
+fn sync_flips_for_a_click_and_each_face_keeps_its_own_static() {
+    let mut vm = Vm::empty(6423);
+    let id = tk::install_identity(&mut vm, card("SYNC: Everything, Everywhere"), Side::Corp);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.tags = 1;
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::take("sync: flip"))
+            .when(Match::action().times(2), Reply::credit())
+            .when(Match::action().once(), Reply::take("sync: flip home"))
+            .when(Match::action(), Reply::Halt),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::RemoveTag))
+            .when(Match::action(), Reply::credit()),
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::IdentityFlipped { .. })).count(),
+        2,
+        "one flip out, one flip home — a [click] each: {}",
+        t.tail(30)
+    );
+    assert!(!vm.st.objects[&id].flipped, "the front face is up again");
+    assert_eq!(vm.st.runner.tags, 0, "with the back showing, the tag tax was gone: {}", t.tail(30));
+    // 2 − 2 (the printed price, untaxed with the back up) + 3 basic credits.
+    assert_eq!(
+        vm.st.runner.credits,
+        3,
+        "…so 2[credit] bought the basic action at its printed price: {}",
+        t.tail(30)
+    );
 }

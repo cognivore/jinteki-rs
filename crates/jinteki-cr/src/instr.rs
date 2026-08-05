@@ -64,6 +64,23 @@ pub enum Quantity {
     /// access that was replaced by another effect never happened and is not
     /// counted.
     AccessesThisRun,
+    /// CR 7.3.6 / 1.12.6: "…if you accessed a card this turn" (Hoshiko
+    /// Shiro) — the number of accesses ACTUALLY PERFORMED since the current
+    /// turn began, [`Quantity::AccessesThisRun`]'s count over the turn's
+    /// history window instead of the run's, read from the change log (10.2.1
+    /// open information). The threshold and its direction are content on
+    /// whatever asks (§12 rule 2): "you accessed a card this turn" is this
+    /// at least 1, and "you did not access any cards this turn" is this at
+    /// most 0 — the only way a count says "none".
+    AccessesThisTurn,
+    /// CR 1.20.4a: the Runner's UNUSED [mu] — the memory limit (1.20.2, as
+    /// modified) minus the total memory cost of installed programs (1.20.3),
+    /// which 1.20.4a names as a calculated value directly and rules that it
+    /// ignores requirements about how restricted [mu] can be filled. "Your
+    /// [mu] is full" (Dewi Subrotoputri, front) is this at most 0; "you have
+    /// at least 1 unused [mu]" (the back) is this at least 1 — thresholds and
+    /// directions as content (§12 rule 2), like every other quantity.
+    UnusedMemory,
     /// CR 1.12.6: "for each piece of ice you passed during this run" — the
     /// number of DISTINCT ice objects the Runner passed, counted by reviewing
     /// the game history. An object that no longer exists in the present game

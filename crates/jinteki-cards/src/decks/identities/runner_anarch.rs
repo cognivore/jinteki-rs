@@ -587,6 +587,77 @@ pub fn freedom_khumalo() -> Card {
         .build()
 }
 
+/// Hoshiko Shiro: Untold Protagonist — Identity: Natural. Link 0.
+/// "When your turn ends, if you accessed a card this turn, gain 2[credit]
+///  and flip this identity."
+///
+/// COMPLETE, both faces. The condition is 5.7.2's formal end of the turn
+/// carrying 9.6.5c's additional requirement, and 9.6.5c is why the question
+/// is asked AT the turn-end occurrence rather than when the accesses
+/// happened: "you accessed a card this turn" is `Quantity::AccessesThisTurn`
+/// at least 1 — 7.3.6's count of accesses actually performed, read over
+/// 1.12.6's turn window from the change log (10.2.1 open information), so an
+/// access that was replaced by another effect never counts.
+///
+/// "Gain 2[credit] and flip this identity" is one printed sentence, so ONE
+/// instruction (9.11.3) — the gain and the flip land together or not at all.
+/// `Instruction::FlipIdentity` is rule_identity_double_sided's turn-over:
+/// the 10.3.1a checkpoint after it re-derives every ability from the face
+/// now showing, so Mahou Shoujo's morning line is live by the Runner's next
+/// turn begin.
+pub fn hoshiko_shiro() -> Card {
+    card("Hoshiko Shiro: Untold Protagonist")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.")
+        .when(
+            turn_ends_if(Runner, &[at_least(accesses_this_turn(), 1)]),
+            [combined([gain(Runner, 2), flip_identity(Runner)])],
+        )
+        .named("hoshiko: gain 2 and flip")
+        .flip_face(hoshiko_shiro_mahou_shoujo())
+        .build()
+}
+
+/// Hoshiko Shiro: Mahou Shoujo — Identity: Natural; the back face of Hoshiko
+/// Shiro: Untold Protagonist (oracle: netrunner-cards-json v2, `faces[0]`).
+/// "When your turn begins, draw 1 card and lose 1[credit].
+///  When your turn ends, if you did not access any cards this turn, flip
+///  this identity."
+///
+/// The morning line is MANDATORY — no "may" — and one sentence, so one
+/// combined instruction: the draw and the loss arrive together. 1.10.3b is
+/// what a loss at 0[credit] does: a forced loss moves as many credits as the
+/// pool holds and no more, so the Runner at 0 loses nothing and still draws.
+///
+/// The second line is the front's condition with the answer the sentence
+/// wants — "did not access any cards this turn" is the same
+/// `Quantity::AccessesThisTurn` at most 0, the only way a count says "none"
+/// — and flipping home is mandatory: a turn spent not running sends Hoshiko
+/// back to the quiet face.
+pub fn hoshiko_shiro_mahou_shoujo() -> Card {
+    card("Hoshiko Shiro: Mahou Shoujo")
+        .runner()
+        .identity()
+        .faction("Anarch")
+        .subtypes(&["Natural"])
+        .text("When your turn begins, draw 1 card and lose 1[credit].")
+        .text("When your turn ends, if you did not access any cards this turn, flip this identity.")
+        .when(
+            turn_begins(Runner),
+            [combined([draw(Runner, 1), lose(Runner, 1)])],
+        )
+        .named("mahou shoujo: draw 1 and lose 1")
+        .when(
+            turn_ends_if(Runner, &[at_most(accesses_this_turn(), 0)]),
+            [flip_identity(Runner)],
+        )
+        .named("mahou shoujo: flip home")
+        .build()
+}
+
 /// Every Anarch identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -608,5 +679,6 @@ pub fn identities() -> Vec<Card> {
         omar_keung(),
         topan(),
         freedom_khumalo(),
+        hoshiko_shiro(),
     ]
 }

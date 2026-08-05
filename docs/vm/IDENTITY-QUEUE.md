@@ -97,10 +97,6 @@ in `coverage.json`'s `_provenance`. So the double-siders' backs are now
 SYS-D-10-copyable from this repo, and each waits only on what it always
 really waited on:
 
-- **Hoshiko Shiro: Untold Protagonist**, **Dewi Subrotoputri: Pedagogical
-  Dhalang**, **SYNC: Everything, Everywhere** — their small kernel words
-  (Hoshiko's did-not-access-this-turn condition, Dewi's unused-[mu]
-  requirement, SYNC's remove-tag cost modifier).
 - **Jinteki Biotech: Life Imagined**, **Méliès U: Only the Brightest** — the
   N-faces word: `PrintedCard::flip_face` is one back, and these carry three
   (`faces[3]`), chosen rather than toggled.
@@ -109,11 +105,24 @@ really waited on:
   the anomaly is ignored, not worked around — no faces key, no
   special-casing, until upstream fixes the data.
 
-Earth Station: SEA Headquarters was completed from exactly this data.
+Earth Station: SEA Headquarters was completed from exactly this data, and the
+three that waited on small kernel words followed it — **Hoshiko Shiro**
+(`Quantity::AccessesThisTurn`, 7.3.6's actually-performed count over 1.12.6's
+turn window, so "accessed a card this turn" is at-least-1 and "did not access
+any cards" is at-most-0 of the same amount), **Dewi Subrotoputri**
+(`Quantity::UnusedMemory`, CR 1.20.4a's own calculated value — limit minus
+installed programs' memory costs — so "[mu] is full" is at-most-0 unused and
+the back's "at least 1 unused" is at-least-1), and **SYNC: Everything,
+Everywhere** (`StaticDecl::BasicActionCostMod`, a 1.16.2 modification of the
+credit part of one basic action's cost, read where 5.2.7g's remove-tag and
+5.2.6g's trash-resource count and pay their credits — "(not through a card
+ability)" is 5.2.5a's action identity, and the back's "may pay fewer" keeps to
+`Vm::install_payment`'s affordable-anyway precedent). SYNC's back face keeps
+the front's name: its `faces[0].title` is null in the source data.
 
 ## Progress
 
-- Implemented: **138 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **141 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -153,7 +162,7 @@ Module: `decks/identities/runner_criminal.rs`
 - [x] **Virtual Intelligence, P.I.: "You Can Call Me Vic"** — Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.
 - [x] **Zahya Sadeghi: Versatile Smuggler** — Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.
 
-## Runner — Shaper (19/21)
+## Runner — Shaper (20/21)
 
 Module: `decks/identities/runner_shaper.rs`
 
@@ -162,7 +171,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [ ] **Ayla "Bios" Rahim: Simulant Specialist** — Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack. [click]: Add 1 card set aside with this identity to your grip.
 - [x] **Captain Padma Isbister: Intrepid Explorer** — The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)
 - [x] **Chaos Theory: Wünderkind** — +1[mu]
-- [ ] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
+- [x] **Dewi Subrotoputri: Pedagogical Dhalang** — Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].
 - [x] **Ele "Smoke" Scovak: Cynosure of the Net** — 1[recurring-credit] Use this credit to pay for using icebreakers.
 - [x] **Exile: Streethawk** — Whenever you install a program from your heap, draw 1 card.
 - [x] **Hayley Kaplan: Universal Scholar** — The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).
@@ -179,7 +188,7 @@ Module: `decks/identities/runner_shaper.rs`
 - [x] **The Professor: Keeper of Knowledge** — The first copy of each program in this deck does not count against your influence limit.
 - [x] **Tāo Salonga: Telepresence Magician** — Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.
 
-## Runner — Anarch (16/19)
+## Runner — Anarch (17/19)
 
 Module: `decks/identities/runner_anarch.rs`
 
@@ -187,7 +196,7 @@ Module: `decks/identities/runner_anarch.rs`
 - [x] **Edward Kim: Humanity's Hammer** — Trash the first operation you access each turn at no cost.
 - [x] **Esâ Afontov: Eco-Insurrectionist** — The first time each turn you suffer core damage, you may draw 1 card and sabotage 2. (The Corp trashes 2 cards of their choice from HQ and/or the top of R&D.)
 - [x] **Freedom Khumalo: Crypto-Anarchist** — Access, once per turn → Any X virus counters: Trash the non-agenda card you are accessing. X must be equal to that card's rez or play cost.
-- [ ] **Hoshiko Shiro: Untold Protagonist** — When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.
+- [x] **Hoshiko Shiro: Untold Protagonist** — When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.
 - [x] **MaxX: Maximum Punk Rock** — When your turn begins, trash the top 2 cards of your stack. Draw 1 card.
 - [x] **Nathaniel "Gnat" Hall: One-of-a-Kind** — When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.
 - [x] **Noise: Hacker Extraordinaire** — Whenever you install a virus program, the Corp trashes the top card of R&D.
@@ -279,7 +288,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 
-## Corp — NBN (17/19)
+## Corp — NBN (18/19)
 
 Module: `decks/identities/corp_nbn.rs`
 
@@ -299,7 +308,7 @@ Module: `decks/identities/corp_nbn.rs`
 - [x] **Nebula Talent Management: Making Stars** — When your action phase ends, if you played an operation this turn, gain 1[credit] and flip this identity.
 - [x] **New Angeles Sol: Your News** — Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).
 - [x] **Pravdivost Consulting: Political Solutions** — The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.
-- [ ] **SYNC: Everything, Everywhere** — [click]: Flip this identity. The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).
+- [x] **SYNC: Everything, Everywhere** — [click]: Flip this identity. The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).
 - [x] **Spark Agency: Worldswide Reach** — The first time each turn you rez an advertisement, the Runner loses 1[credit].
 - [x] **Synapse Global: Faster than Thought** — The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs. [click], remove 1 tag: Gain 2[credit].
 

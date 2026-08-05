@@ -518,6 +518,70 @@ pub fn epiphany_analytica() -> Card {
         .build()
 }
 
+/// SYNC: Everything, Everywhere — Identity: Division.
+/// "[click]: Flip this identity.
+///  The Runner pays 1[credit] more when spending a [click] to remove a tag
+///  (not through a card ability)."
+///
+/// COMPLETE, both faces. The first line is Earth Station's paid ability: the
+/// whole cost is the [click], and `Instruction::FlipIdentity` is
+/// rule_identity_double_sided's turn-over — the 10.3.1a checkpoint after it
+/// re-derives every ability from the face now showing, so the tax below ends
+/// the moment the card turns.
+///
+/// The second line is `StaticDecl::BasicActionCostMod`: a modification
+/// (1.16.2) of the credit part of 5.2.7g's basic remove-tag action, +1 for
+/// the printed "pays 1[credit] more". The parenthetical "(not through a card
+/// ability)" is the declaration's whole scope — 5.2.5a identifies actions by
+/// the basic action they are, so naming it reaches every taking of that
+/// action and no card ability, which is why the reader lives exactly where
+/// the basic action counts and pays its credits.
+pub fn sync_everything_everywhere() -> Card {
+    card("SYNC: Everything, Everywhere")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("[click]: Flip this identity.")
+        .text("The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).")
+        .paid(clicks(1), [flip_identity(Corp)])
+        .named("sync: flip")
+        .declares([remove_tag_basic_action_costs_more(1)])
+        .named("sync: the tag tax")
+        .flip_face(sync_everything_everywhere_flipped())
+        .build()
+}
+
+/// SYNC: Everything, Everywhere — Identity: Division; the back face of the
+/// same card (oracle: netrunner-cards-json v2, `faces[0]` — its `title` is
+/// null, so the back keeps the front's name).
+/// "[click]: Flip this identity.
+///  You may pay 2[credit] fewer when spending a [click] to trash a resource
+///  (not through a card ability)."
+///
+/// The same [click] on this side turns the card home. The second line is the
+/// same `StaticDecl::BasicActionCostMod` about 5.2.6g's basic trash-resource
+/// action, −2, floored at 0 by 1.16.2a; the parenthetical scopes it to the
+/// basic action exactly as the front's does. The printed "may": the
+/// reduction costs nothing, so declining it is never anything but a smaller
+/// credit pool — the same affordable-anyway choice the kernel's install
+/// payments already decline to offer (`Vm::install_payment`'s KERNEL
+/// APPROXIMATION note), so the reduction applies of its own accord.
+pub fn sync_everything_everywhere_flipped() -> Card {
+    card("SYNC: Everything, Everywhere")
+        .corp()
+        .identity()
+        .faction("NBN")
+        .subtypes(&["Division"])
+        .text("[click]: Flip this identity.")
+        .text("You may pay 2[credit] fewer when spending a [click] to trash a resource (not through a card ability).")
+        .paid(clicks(1), [flip_identity(Corp)])
+        .named("sync: flip home")
+        .declares([trash_resource_basic_action_costs_less(2)])
+        .named("sync: the trash discount")
+        .build()
+}
+
 /// Every NBN identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -538,6 +602,7 @@ pub fn identities() -> Vec<Card> {
         pravdivost_consulting(),
         spark_agency(),
         acme_consulting(),
+        sync_everything_everywhere(),
     ]
 }
 
