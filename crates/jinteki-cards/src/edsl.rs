@@ -977,6 +977,14 @@ pub fn lose(side: Side, n: u32) -> Instruction {
 pub fn draw(side: Side, n: u32) -> Instruction {
     Instruction::Draw(side, Quantity::c(n as i64))
 }
+/// "For each …, draw 1 card." — the same draw with a CALCULATED count
+/// (9.12.2), which is [`draw`]'s relationship to [`gain_q`]'s to [`gain`].
+/// 9.12.2c is why it is one draw of N cards rather than N draws of one: a
+/// calculated quantity aggregates into a single effect, so an ability
+/// watching for a draw sees one.
+pub fn draw_q(side: Side, n: Quantity) -> Instruction {
+    Instruction::Draw(side, n)
+}
 /// "Draw until you have N cards in HQ." (NEXT Design; 8.4 + 9.12.2.) A
 /// draw-up-to is a draw whose count is calculated when it resolves — the
 /// printed target minus the hand as it then stands, floored at zero — so a
@@ -1775,6 +1783,12 @@ pub fn in_hand_of(side: Side) -> TargetFilter {
 pub fn in_score_area_of(side: Side) -> TargetFilter {
     TargetFilter::InScoreAreaOf(side)
 }
+/// "…**this** card" — the description that reaches the ability's own source
+/// and nothing else (1.15.4). [`other_than_this_card`]'s opposite polarity,
+/// and the same one word.
+pub fn this_very_card() -> TargetFilter {
+    TargetFilter::IsSource
+}
 pub fn other_than_this_card() -> TargetFilter {
     TargetFilter::OtherThanSource
 }
@@ -2470,6 +2484,30 @@ pub fn installs_a_card_in_a_remote_server(side: Side) -> TriggerCond {
         requires: Vec::new(),
     }
 }
+/// "…you install a card **in the root of** a remote server…" (Estelle Moon
+/// class) — the narrower of the two location words, which says nothing about
+/// ice protecting that server.
+///
+/// ANNOTATED SHAPE. The location stipulation the kernel carries is 4.6.6's
+/// ONE word, "in the root of or protecting", so the narrowing is written as
+/// the card types a root can hold. That is not an approximation, it is the
+/// same set said the other way round: 4.6.6e allows a remote root exactly
+/// "1 asset or agenda and any number of upgrades", and 4.6.9d puts every
+/// installed piece of ice in a position PROTECTING a server and never in a
+/// root — so "installed into a remote server, and an agenda, asset or
+/// upgrade" and "installed in the root of a remote server" reach the same
+/// installs. The general capability wanted — the location as content on the
+/// one condition, so the two readings are one word with a narrower value —
+/// is on MEZZIE-QUEUE.md's Blockers.
+pub fn installs_a_card_in_the_root_of_a_remote_server(side: Side) -> TriggerCond {
+    TriggerCond::CardInstalledBy {
+        side,
+        of_types: vec![CardType::Agenda, CardType::Asset, CardType::Upgrade],
+        of_subtypes: Vec::new(),
+        into_remote_server: true,
+        requires: Vec::new(),
+    }
+}
 /// "If you have more [shaper] cards installed than any other faction, when
 ///  you install a card…" (Jamie "Bzzz" Micken) — the same install condition
 /// carrying 9.6.5c's additional requirement.
@@ -2941,6 +2979,23 @@ pub fn corp_rezzes_matching(
         criteria: criteria.to_vec(),
         requires: reqs.to_vec(),
     }
+}
+/// "Whenever you rez a card…" (Lakshmi Smartfabrics class) — 8.1.2's rez with
+/// nothing at all said about the card, which is what makes it met by every
+/// rez the Corp makes INCLUDING the rez of the card printing it: 8.1.3 turns
+/// the card faceup and active before the rez finishes, so the ability is
+/// there to be met by its own occurrence.
+pub fn corp_rezzes_a_card() -> TriggerCond {
+    corp_rezzes_matching(&[], &[])
+}
+/// "When you rez this asset, …" (Marilyn Campaign class) — the same 8.1.2
+/// condition with the description narrowed to this very card, which is the
+/// only thing the printed word "this" adds. Written as content on the shared
+/// condition rather than as a second condition, because "a card", "an
+/// **ice**" and "**this** asset" are one sentence with three descriptions in
+/// it (§12 rule 2).
+pub fn self_rezzed() -> TriggerCond {
+    corp_rezzes_matching(&[this_very_card()], &[])
 }
 /// "Whenever <side> loses or spends [click] during a run…" (Seidr class;
 /// 5.2.1 keeps a click SPENT and a click LOST apart, and this sentence names
@@ -3937,6 +3992,34 @@ pub fn when_this_card_is_uninstalled(
         def: Box::new(
             AbilityDef::conditional(
                 TriggerCond::SelfUninstalled,
+                instrs.into_iter().collect(),
+                false,
+            )
+            .labeled(label),
+        ),
+        // 9.6.13c: no stated duration — it exists until it first resolves.
+        duration: WantedDuration::UntilResolved,
+    }
+}
+/// "When <player>'s next turn begins, <do this>" as a DELAYED conditional
+/// (9.6.13) — an ability created now that waits for the next beginning of
+/// that player's turn. [`when_your_turn_ends`]'s sibling in every respect but
+/// which end of a turn it names: the trigger is content, the shape is one.
+///
+/// The printed word "next" is 9.6.13c and not a stipulation of its own — with
+/// no stated duration the ability exists until it first resolves, so the FIRST
+/// turn beginning after it was created is the only one it can ever see, and a
+/// second use of the same card arms a second ability rather than re-arming
+/// this one.
+pub fn when_the_next_turn_begins_of(
+    side: Side,
+    label: &'static str,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::CreateDelayedConditional {
+        def: Box::new(
+            AbilityDef::conditional(
+                TriggerCond::TurnBegins { side, requires: Vec::new() },
                 instrs.into_iter().collect(),
                 false,
             )

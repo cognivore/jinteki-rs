@@ -38,7 +38,7 @@ Identity is COMPLETE. Printed text below is from
       "[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters. / While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“"
 - [ ] **Project Vitruvius** ×3 — agenda · Research · adv 3/2
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
-- [ ] **Estelle Moon** ×3 — asset · Executive · cost 2, trash 3
+- [x] **Estelle Moon** ×3 — asset · Executive · cost 2, trash 3
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
 - [ ] **Jeeves Model Bioroids** ×1 — asset · Alliance · cost 2, trash 5
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
@@ -46,7 +46,7 @@ Identity is COMPLETE. Printed text below is from
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
 - [ ] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
       "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. <em>(It is still considered trashed.)</em>"
-- [ ] **MCA Austerity Policy** ×2 — asset · cost 1, trash 3
+- [x] **MCA Austerity Policy** ×2 — asset · cost 1, trash 3
       "Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click]. / [click], [trash], 3 hosted power counters: Gain [click][click][click][click]."
 - [ ] **Mumba Temple** ×3 — asset · Alliance - Facility · cost 1, trash 3
       "This card costs 0 influence if you have 15 or fewer ice in your deck. / 2[recurring-credit] / Use these credits to rez cards."
@@ -174,7 +174,9 @@ drawing, running — added as variants of `ProhibitedAction` rather than as new
 prohibition atoms.
 
 Wants it: **Vertigo** ("they cannot steal or trash Corp cards for the
-remainder of this run").
+remainder of this run"); **Lakshmi Smartfabrics** ("the Runner cannot steal
+copies of that agenda for the remainder of this turn" — stealing again, with a
+turn for its duration instead of a run).
 
 ### A quantity that reads a player's click pool (CR 1.11)
 
@@ -189,6 +191,91 @@ supply the threshold and the polarity.
 
 Wants it: **Vertigo** (same sentence as above — it needs both this and the
 prohibition).
+
+### A trigger condition over the CLICKS spent on one action (CR 5.2.1 / 1.11.3b)
+
+The trigger vocabulary counts ACTIONS — `SameActionInARow { side, count }` (The
+Collective) and `DifferentActionsThisTurn` (MirrorMorph) — and has no condition
+about how many [click] a player has SPENT on one action within a turn. The two
+counts are not the same count and neither implies the other: 5.2.6h's basic
+purge is ONE action costing three clicks, and a double operation followed by an
+ordinary one is TWO actions costing three between them, and both meet a "spend
+3[click] on the same action" sentence while meeting no count of repeated
+actions at all. Written with the words that exist, such a card fires strictly
+less often than it should — a silent under-trigger, which is the reason the
+sentence is marked rather than approximated.
+
+Wanted: one condition over clicks SPENT (5.2.1, and 1.11.3b's insistence that
+spending and losing are not the same word), with the threshold and the "same
+action" grouping as content on it, so "the first time you spend N[click] on the
+same action each turn" is that condition paired with the ordinal
+`when_first_each_turn` already supplies.
+
+Wants it: **Jeeves Model Bioroids** (its only sentence that does anything; the
+alliance line is a 1.4.5 deckbuilding restriction and denotes into nothing).
+
+### A trash whose destination an ABILITY redirects (CR 9.9.8a-b / 8.2.2)
+
+The kernel replaces a trash's destination in exactly one shape:
+`StaticDecl::ReplaceTrashDestination`, read where the movement happens,
+mandatory, with `TrashDestination` naming two places — removed from game (4.9)
+and turned facedown in play (8.1.4d). A card printing "[interrupt] → when this
+card would be trashed, you may put it somewhere else instead of adding it to
+<the discard pile>" has neither the optionality nor the destination, and
+writing it with the static would make every trash of that card a redirect
+whether its controller wanted one or not.
+
+Wanted: the destination as CONTENT on the one atom — a player's deck (shuffled
+in, 4.2.3), a hand, the set-aside zone — added as variants of
+`TrashDestination` rather than as new replacement atoms; and the same
+replacement expressible from a card's own optional interrupt (9.9.8a) as well
+as from a static (9.9.8b), so the printed "you may" is one flag on the existing
+word and not a second mechanism. 8.2.2 is what every shape of it must keep: the
+card is still trashed and conditions about being trashed are still met — only
+where it lands changes, which is exactly what these cards' parenthetical says.
+
+Wants it: **Marilyn Campaign** ("you may shuffle it into R&D instead of adding
+it to Archives").
+
+### A description stipulating agenda points, or the X announced for the cost (CR 2.4.2 / 1.16.2c / 1.15.2)
+
+The description vocabulary can say a card's type, its subtypes, its name, its
+printed cost at most N, the counters on it, and its rez cost relative to a
+triggering card. It cannot say a card's AGENDA POINTS, and nothing in it can be
+compared against the X a player announced for the ability's own trigger cost
+(1.16.2c) — the announced X is readable as a *quantity* and never as a
+stipulation a described card has to satisfy.
+
+Wanted: agenda points as one more characteristic the shared filter vocabulary
+reads, and one comparison position whose two sides are quantities — so "an
+agenda worth X points", "a card with printed cost X" and "ice with strength X
+or lower" are one word with different content, and not a filter apiece.
+
+Wants it: **Lakshmi Smartfabrics** ("Reveal an agenda worth X points from HQ" —
+which also needs the prohibition above, so the sentence waits on both).
+
+### The install LOCATION as content on the install condition (CR 4.6.6e / 4.6.9d)
+
+NOT blocking any card, but found here and wanted.
+`TriggerCond::CardInstalledBy` carries one location word as a bool,
+`into_remote_server`, and 4.6.6b makes that word "in the root of **or**
+protecting" — one location, deliberately. A card saying only "in the root of a
+remote server" is narrower, and there is no value to give the position that
+says so.
+
+Wanted: the location as content — root only, protecting only, root or
+protecting, and central as readily as remote — one position with a value,
+rather than a second flag beside the first.
+
+Until then the narrower sentence is written long-hand, as the wider location
+with the three card types a root can hold (4.6.6e allows a remote root exactly
+"1 asset or agenda and any number of upgrades"; 4.6.9d puts every installed
+piece of ice in a position protecting a server). That reaches the same installs
+and is not an approximation — it is the same set said the other way round — and
+**Estelle Moon** is ticked and tested on that shape, annotated in its doc
+comment and in `installs_a_card_in_the_root_of_a_remote_server`. The behaviour
+test runs the same two install actions into roots and into ice positions and
+asserts the payout differs.
 
 ### A swap whose two sides are described SEPARATELY (CR 8.8.1 / 8.8.2 / 1.15.4)
 

@@ -16,6 +16,260 @@
 use crate::edsl::*;
 
 // ---------------------------------------------------------------------------
+// Assets
+// ---------------------------------------------------------------------------
+
+/// Estelle Moon — Asset: Executive. Rez 2, trash 3. ◆
+/// "Whenever you install a card in the root of a remote server, place 1 power
+///  counter on this asset.
+///  <strong>[trash]:</strong> For each power counter on this asset, gain
+///  2[credit] and draw 1 card."
+///
+/// COMPLETE. Two printed sentences: a conditional ability that counts, and a
+/// paid ability that spends what was counted.
+///
+/// The count is the card. "For each power counter on this asset" is 9.12.2's
+/// calculated quantity, read when the ability RESOLVES and not when it was
+/// used — and 9.12.2c is what settles the shape the UFAQ was asked about
+/// (three counters: six credits and THREE cards, not six credits and one):
+/// a calculated quantity aggregates into a single effect, so this is one gain
+/// of 2×N and one draw of N, in one instruction, because 9.11.3 makes "gain
+/// 2[credit] and draw 1 card" one sentence and `combined(…)` is how a
+/// sentence with two effects is written.
+///
+/// 9.5.5 is what keeps the number from being zero. The [trash] trigger cost
+/// uninstalls the source before the effects resolve, and the counters would
+/// go to the bank with it — so the rule sets them aside as the cost is paid
+/// and they are "still considered to be hosted" for this ability's own
+/// effects. Nothing on the card says so; the rule says so for every card
+/// shaped like this.
+///
+/// ANNOTATED SHAPE. "In the root of a remote server" is written as the
+/// install condition's remote-server location narrowed by the three card
+/// types a root can hold. See [`installs_a_card_in_the_root_of_a_remote_server`]:
+/// 4.6.6e and 4.6.9d make that the same set of installs and not an
+/// approximation of it — ice is never in a root and an agenda, asset or
+/// upgrade never protects a server — but the kernel's location word is still
+/// the wider "in the root of or protecting", and the narrower one it wants is
+/// on MEZZIE-QUEUE.md's Blockers.
+pub fn estelle_moon() -> Card {
+    card("Estelle Moon")
+        .corp()
+        .asset()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Executive"])
+        .cost(2)
+        .trash_cost(3)
+        .unique()
+        .text("Whenever you install a card in the root of a remote server, place 1 power counter on this asset.")
+        .text("<strong>[trash]:</strong> For each power counter on this asset, gain 2[credit] and draw 1 card.")
+        .when(installs_a_card_in_the_root_of_a_remote_server(Corp), [place(CounterKind::Power, 1)])
+        .named("a counter for every remote install")
+        .paid(
+            trash_this_card(),
+            [combined([
+                gain_q(Corp, times(2, per_hosted_counter(CounterKind::Power))),
+                draw_q(Corp, per_hosted_counter(CounterKind::Power)),
+            ])],
+        )
+        .named("cash the counters in")
+        .build()
+}
+
+/// Jeeves Model Bioroids — Asset: Alliance. Rez 2, trash 5. ◆
+/// "This card costs 0 influence if you have 6 or more
+///  non-<strong>alliance</strong> [haas-bioroid] cards in your deck.
+///  The first time you spend 3[click] on the same action each turn, gain
+///  [click]."
+///
+/// UNIMPLEMENTED: the second sentence, which is the whole of what this card
+/// does at the table.
+///
+/// The alliance line is not a sentence this card does. Like "Limit 1 per
+/// deck" it is a deckbuilding restriction on influence (1.4.5) — it changes
+/// what may go in a deck, and nothing about it is ever asked during a game.
+/// It is carried as printed text and denotes into nothing, which is the same
+/// treatment Salem's Hospitality already has.
+///
+/// "The first time you spend 3[click] on the same action each turn" counts
+/// CLICKS, and the trigger vocabulary counts ACTIONS. The nearest words are
+/// The Collective's "the same action three times in a row" and MirrorMorph's
+/// "three different actions", and neither is this sentence: 5.2.6h's basic
+/// purge action is ONE action costing three clicks and meets Jeeves, and a
+/// double operation followed by an ordinary one is TWO actions costing three
+/// clicks between them and meets Jeeves — both of which the official rulings
+/// list, and neither of which is any number of repeated actions. Written with
+/// the words that exist the card would silently fire less often than it
+/// should, so it is marked instead. The general capability wanted is on
+/// MEZZIE-QUEUE.md's Blockers.
+pub fn jeeves_model_bioroids() -> Card {
+    card("Jeeves Model Bioroids")
+        .corp()
+        .asset()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Alliance"])
+        .cost(2)
+        .trash_cost(5)
+        .unique()
+        .text("This card costs 0 influence if you have 6 or more non-<strong>alliance</strong> [haas-bioroid] cards in your deck.")
+        .text("The first time you spend 3[click] on the same action each turn, gain [click].")
+        .unimplemented("The first time you spend 3[click] on the same action each turn, gain [click].")
+        .build()
+}
+
+/// Lakshmi Smartfabrics — Asset. Rez 1, trash 3.
+/// "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics.
+///  <strong>X hosted power counters:</strong> Reveal an agenda worth X points
+///  from HQ. The Runner cannot steal copies of that agenda for the remainder
+///  of this turn."
+///
+/// PARTIAL: the counting works; the ability that spends the counters does
+/// not.
+///
+/// The first sentence says nothing whatever about the card rezzed, so it is
+/// met by every rez the Corp makes — including this card's own. The UFAQ was
+/// asked exactly that ("does Lakshmi get a power counter when it is rezzed?")
+/// and the answer is yes: 8.1.3 turns the card faceup and active as part of
+/// the rez, so the ability is there in time to be met by the occurrence that
+/// activated it.
+///
+/// The paid ability is marked, on two counts that are each enough on their
+/// own. "The Runner cannot steal copies of that agenda for the remainder of
+/// this turn" is 9.10.1's prohibition, and the prohibition vocabulary names
+/// scoring and rezzing and nothing else — stealing (7.5) is not among the
+/// acts a card can forbid, and 1.2.2 gives a "cannot" precedence over every
+/// permission, so a wrong one is not a small error. And "an agenda worth X
+/// points" is a description stipulating a characteristic — the card's agenda
+/// points, compared against the X announced for the cost (1.16.2c) — which
+/// the description vocabulary cannot say either. Both are on
+/// MEZZIE-QUEUE.md's Blockers as general capabilities.
+pub fn lakshmi_smartfabrics() -> Card {
+    card("Lakshmi Smartfabrics")
+        .corp()
+        .asset()
+        .faction("Haas-Bioroid")
+        .cost(1)
+        .trash_cost(3)
+        .text("Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics.")
+        .text("<strong>X hosted power counters:</strong> Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
+        .when(corp_rezzes_a_card(), [place(CounterKind::Power, 1)])
+        .named("a counter for every rez")
+        .unimplemented("<strong>X hosted power counters:</strong> Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
+        .build()
+}
+
+/// Marilyn Campaign — Asset: Advertisement. Rez 2, trash 3.
+/// "When you rez this asset, load 8[credit] onto it. When it is empty, trash
+///  it.
+///  When your turn begins, take 2[credit] from this asset.
+///  [interrupt] → When this asset would be trashed, you may shuffle it into
+///  R&D instead of adding it to Archives. <em>(It is still considered
+///  trashed.)</em>"
+///
+/// PARTIAL: the campaign pays out and empties itself; the escape into R&D is
+/// marked.
+///
+/// The first printed line is two sentences and two abilities, which is what
+/// Daily Casts already is on the Runner's side of the table — LOADING (1.9.4)
+/// is what links the "when it is empty" ability to this card, so an asset
+/// that had credits placed on it some other way would never trash itself.
+/// The one word that differs from Daily Casts is the trigger: "when you rez
+/// this asset" rather than "when you install this resource", because a Corp
+/// card installed facedown is inactive (9.1.8) and has no ability to meet
+/// anything with until it is rezzed.
+///
+/// "Take 2[credit] from this asset" is 1.10.3a and not a gain of 2 from the
+/// bank: the credits move from the card into the pool, which is why the card
+/// runs out. An asset holding only 1 gives the 1 it has.
+///
+/// UNIMPLEMENTED: the interrupt. It is a 9.9.8a replacement of where a trash
+/// puts the card, and the kernel replaces a trash destination in exactly one
+/// shape — a static declaration, mandatory, naming the removed-from-game zone
+/// or a facedown card in play. Marilyn needs the destination to be a deck and
+/// needs the replacement to be one the Corp MAY decline, and neither is
+/// content on the word that exists. Writing it with what is there would make
+/// every trash of this card a shuffle whether the Corp wanted it or not; 8.2.2
+/// is the part both readings must keep, and the parenthetical restates it —
+/// the card is still trashed, only where it lands changes. The general
+/// capability wanted is on MEZZIE-QUEUE.md's Blockers.
+pub fn marilyn_campaign() -> Card {
+    card("Marilyn Campaign")
+        .corp()
+        .asset()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Advertisement"])
+        .cost(2)
+        .trash_cost(3)
+        .text("When you rez this asset, load 8[credit] onto it. When it is empty, trash it.")
+        .text("When your turn begins, take 2[credit] from this asset.")
+        .text("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. <em>(It is still considered trashed.)</em>")
+        .when(self_rezzed(), [load(CounterKind::Credit, 8)])
+        .named("load eight on the rez")
+        .when(empty_of(CounterKind::Credit), [trash_self()])
+        .named("empty, so gone")
+        .when(turn_begins(Corp), [take_hosted_credits(this_card(), 2, Corp)])
+        .named("two a turn")
+        .unimplemented("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. <em>(It is still considered trashed.)</em>")
+        .build()
+}
+
+/// MCA Austerity Policy — Asset. Rez 1, trash 3. ◆
+/// "Once per turn → [click]<strong>:</strong> Place 1 power counter on this
+///  asset. When the Runner's next turn begins, they lose [click].
+///  [click], [trash], <strong>3 hosted power counters:</strong> Gain
+///  [click][click][click][click]."
+///
+/// COMPLETE. Two paid abilities; the first carries 9.3.6g's once-per-turn
+/// flag and the second, as the UFAQ says in so many words, does not — so the
+/// Corp may cash the card in on the same turn the third counter lands.
+///
+/// The first ability is TWO instructions, because 9.11.3 makes each sentence
+/// one: the counter is placed, and then a delayed conditional ability
+/// (9.6.13) is created that waits for the Runner's next turn to begin. It has
+/// no stated duration, so 9.6.13c has it exist until it first resolves — a
+/// second use on a later Corp turn arms a second one rather than re-arming
+/// this. The click the Runner then loses is 1.11.3b's LOSS and not a spend:
+/// the two are not synonymous for meeting conditions, a Runner with none left
+/// simply stays at zero, and this is why the sentence needs no way for one
+/// player's ability to reach into the other's pool — nothing here is
+/// controlled by the Runner or paid by them. 1.14.4 leaves both abilities with
+/// the Corp throughout, which is the default and not a departure from it.
+///
+/// The second ability's cost is three costs paid as one (1.16.10b), and 9.5.5
+/// is what makes it payable at all: the [trash] uninstalls the source, so the
+/// three hosted counters are set aside as the whole cost is paid rather than
+/// returning to the bank ahead of the counters half.
+pub fn mca_austerity_policy() -> Card {
+    card("MCA Austerity Policy")
+        .corp()
+        .asset()
+        .faction("Haas-Bioroid")
+        .cost(1)
+        .trash_cost(3)
+        .unique()
+        .text("Once per turn → [click]<strong>:</strong> Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click].")
+        .text("[click], [trash], <strong>3 hosted power counters:</strong> Gain [click][click][click][click].")
+        .paid_once_per_turn(
+            clicks(1),
+            [
+                place(CounterKind::Power, 1),
+                when_the_next_turn_begins_of(
+                    Runner,
+                    "mca austerity policy: the runner loses a click",
+                    [lose_clicks(Runner, 1)],
+                ),
+            ],
+        )
+        .named("a counter, and a click off the runner")
+        .paid(
+            clicks(1).plus_cost(trash_this_card()).plus_cost(hosted_counters(CounterKind::Power, 3)),
+            [gain_clicks(Corp, 4)],
+        )
+        .named("cash in for four clicks")
+        .build()
+}
+
+// ---------------------------------------------------------------------------
 // Ice
 // ---------------------------------------------------------------------------
 
@@ -296,6 +550,11 @@ pub fn tour_guide() -> Card {
 pub fn deck() -> Vec<Card> {
     vec![
         super::identities::corp_haas_bioroid::asa_group(),
+        estelle_moon(),
+        jeeves_model_bioroids(),
+        lakshmi_smartfabrics(),
+        marilyn_campaign(),
+        mca_austerity_policy(),
         super::gauntlet::rashida_jaheem(),
         tatu_bola(),
         vanilla(),

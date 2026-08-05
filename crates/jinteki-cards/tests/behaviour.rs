@@ -17376,3 +17376,353 @@ fn tatu_bola_trades_places_with_hq_and_only_then_gains_four() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Mezzie's Asa — the assets
+// ---------------------------------------------------------------------------
+
+/// Estelle Moon: "Whenever you install a card in the root of a remote server,
+/// place 1 power counter on this asset." / "[trash]: For each power counter
+/// on this asset, gain 2[credit] and draw 1 card."
+///
+/// The same two install actions twice, changing only WHERE the cards go: into
+/// the roots of two new remotes, or protecting two new remotes. 4.6.6e and
+/// 4.6.9d are the whole of the difference and the payout is where it shows —
+/// four credits and two cards against nothing whatever.
+///
+/// 9.5.5 is the other half: the [trash] cost uninstalls the source before the
+/// effects resolve, and the counters are still counted because the rule sets
+/// them aside as the cost is paid.
+#[test]
+fn estelle_moon_counts_remote_roots_and_not_the_ice_in_front_of_them() {
+    for into_roots in [false, true] {
+        let mut vm = Vm::empty(9120);
+        let em = tk::install_root(&mut vm, card("Estelle Moon"), ServerId::Remote(1), true);
+        let (c1, c2) = if into_roots {
+            (
+                vm.new_object(tk::vanilla_asset("Branch Office", 0, 2), Zone::Hand(Side::Corp)),
+                vm.new_object(tk::vanilla_asset("Field Office", 0, 2), Zone::Hand(Side::Corp)),
+            )
+        } else {
+            (
+                vm.new_object(tk::vanilla_ice("Outer Guard", 0, 1), Zone::Hand(Side::Corp)),
+                vm.new_object(tk::vanilla_ice("Inner Guard", 0, 1), Zone::Hand(Side::Corp)),
+            )
+        };
+        vm.st.hand.get_mut(&Side::Corp).unwrap().extend([c1, c2]);
+        tk::fill_deck(&mut vm, Side::Corp, 10);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        // Both destinations create a brand-new remote (8.5.2a/8.5.2d), so
+        // neither arm pays 8.5.11a's per-ice install cost and the two arms
+        // differ in nothing but the location word.
+        let dest = if into_roots {
+            jinteki_cr::instr::InstallDest::NewRemoteRoot
+        } else {
+            jinteki_cr::instr::InstallDest::NewRemoteProtecting
+        };
+        vm.start_turn(Side::Corp);
+
+        let t1 = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(c1)))
+                .when(Match::destination().once(), Reply::Destination(dest))
+                .when(Match::action(), Reply::Halt),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.objects[&em].counter(CounterKind::Power),
+            u32::from(into_roots),
+            "one install, and the counter arrives only for the root (into_roots={into_roots}): {}",
+            t1.tail(20)
+        );
+
+        let credits_before = vm.st.corp.credits;
+        let hand_before = vm.st.hand[&Side::Corp].len();
+        let t2 = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(c2)))
+                .when(Match::destination().once(), Reply::Destination(dest))
+                .when(Match::paid().once(), Reply::take("estelle moon: cash the counters in"))
+                .when(Match::action(), Reply::Halt),
+            Plan::runner(),
+        );
+        let counters = if into_roots { 2u32 } else { 0 };
+        assert_eq!(
+            vm.st.objects[&em].zone,
+            Zone::Discard(Side::Corp),
+            "the [trash] trigger cost was paid whatever the count was \
+             (into_roots={into_roots}): {}",
+            t2.tail(24)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            credits_before + 2 * counters,
+            "2[credit] for each of the {counters} counters (into_roots={into_roots}): {}",
+            t2.tail(24)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            hand_before - 1 + counters as usize,
+            "one card left HQ to be installed and {counters} came back \
+             (into_roots={into_roots}): {}",
+            t2.tail(24)
+        );
+    }
+}
+
+/// Lakshmi Smartfabrics: "Whenever you rez a card, place 1 power counter on
+/// Lakshmi Smartfabrics."
+///
+/// The sentence says nothing at all about the card rezzed, so the card's own
+/// rez counts — which is what the UFAQ was asked, and 8.1.3 is why: the card
+/// is faceup and active before the rez finishes, so the ability is there to
+/// be met by the occurrence that activated it. The second arm rezzes one more
+/// card and the count follows it.
+#[test]
+fn lakshmi_smartfabrics_counts_its_own_rez_and_every_other() {
+    for rez_the_neighbour in [false, true] {
+        let mut vm = Vm::empty(9121);
+        let lak =
+            tk::install_root(&mut vm, card_partial("Lakshmi Smartfabrics"), ServerId::Remote(1), false);
+        let other =
+            tk::install_root(&mut vm, tk::vanilla_asset("Sample Room", 1, 2), ServerId::Remote(2), false);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        let mut corp = Plan::corp().when(Match::paid().once(), Reply::rez(lak));
+        if rez_the_neighbour {
+            corp = corp.when(Match::paid().once(), Reply::rez(other));
+        }
+        let t = plan::play(&mut vm, corp.stop_at_action(), Plan::runner());
+
+        assert!(
+            vm.st.objects[&lak].faceup,
+            "the asset was rezzed (rez_the_neighbour={rez_the_neighbour}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.objects[&other].faceup, rez_the_neighbour,
+            "the neighbour was rezzed exactly when the plan rezzed it \
+             (rez_the_neighbour={rez_the_neighbour}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.objects[&lak].counter(CounterKind::Power),
+            1 + u32::from(rez_the_neighbour),
+            "one counter for its own rez, and one more for the neighbour's \
+             (rez_the_neighbour={rez_the_neighbour}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Marilyn Campaign: "When you rez this asset, load 8[credit] onto it."
+///
+/// The trigger is the REZ and not the install, because a Corp card installed
+/// facedown is inactive (9.1.8) and has no ability to meet anything with. The
+/// two arms are the same board with the same asset in it, rezzed or not, and
+/// the credits on the card are the difference.
+///
+/// The rez is made during the RUNNER's turn, where the Corp rezzes cards as
+/// freely as on its own (8.1.1) and where nothing else on this card can move
+/// a credit: "when your turn begins" names the CORP's turn, so the 8 loaded
+/// here are the 8 the rez put there and not a payout's leavings.
+#[test]
+fn marilyn_campaign_loads_eight_credits_when_it_is_rezzed_and_not_before() {
+    for rez_it in [false, true] {
+        let mut vm = Vm::empty(9122);
+        let mc = tk::install_root(&mut vm, card_partial("Marilyn Campaign"), ServerId::Remote(1), false);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let mut corp = Plan::corp();
+        if rez_it {
+            corp = corp.when(Match::paid().once(), Reply::rez(mc));
+        }
+        let t = plan::play(&mut vm, corp, Plan::runner().stop_at_action());
+
+        assert_eq!(
+            vm.st.objects[&mc].faceup, rez_it,
+            "the asset was rezzed exactly when the plan rezzed it (rez_it={rez_it}): {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.objects[&mc].counter(CounterKind::Credit),
+            if rez_it { 8 } else { 0 },
+            "1.9.4: the 8[credit] are loaded by the rez and by nothing else (rez_it={rez_it}): {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if rez_it { 3 } else { 5 },
+            "the 2[credit] rez cost left the pool and none of the loaded credits arrived in it \
+             (rez_it={rez_it}): {}",
+            t.tail(16)
+        );
+    }
+}
+
+/// Marilyn Campaign: "When it is empty, trash it." / "When your turn begins,
+/// take 2[credit] from this asset."
+///
+/// LOADING is what links the "empty" ability to the card (1.9.4), so both
+/// ends are asserted from a loaded card: a payout that moves credits off the
+/// card and into the pool (1.10.3a — a gain, which is why the card runs out),
+/// and the self-trash once the last of them has gone.
+#[test]
+fn marilyn_campaign_pays_two_a_turn_and_trashes_itself_when_empty() {
+    for (start_credits, left, trashed) in [(8u32, 6u32, false), (2u32, 0u32, true)] {
+        let mut vm = Vm::empty(9123);
+        let mc = tk::install_root(&mut vm, card_partial("Marilyn Campaign"), ServerId::Remote(1), true);
+        let o = vm.st.objects.get_mut(&mc).unwrap();
+        o.counters.insert(CounterKind::Credit, start_credits);
+        o.loaded_kinds.insert(CounterKind::Credit);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+
+        assert_eq!(
+            vm.st.corp.credits, 2,
+            "1.10.3a: the credits left the card for the pool (start_credits={start_credits}): {}",
+            t.tail(16)
+        );
+        if trashed {
+            assert_eq!(
+                vm.st.objects[&mc].zone,
+                Zone::Discard(Side::Corp),
+                "emptied, so it trashed itself (start_credits={start_credits}): {}",
+                t.tail(16)
+            );
+        } else {
+            assert_eq!(
+                vm.st.objects[&mc].counter(CounterKind::Credit),
+                left,
+                "two off the card, the rest still on it (start_credits={start_credits}): {}",
+                t.tail(16)
+            );
+            assert_ne!(
+                vm.st.objects[&mc].zone,
+                Zone::Discard(Side::Corp),
+                "not empty yet, so still installed (start_credits={start_credits}): {}",
+                t.tail(16)
+            );
+        }
+    }
+}
+
+/// MCA Austerity Policy: "Once per turn → [click]: Place 1 power counter on
+/// this asset. When the Runner's next turn begins, they lose [click]."
+///
+/// The delayed conditional (9.6.13) is armed on the Corp's turn and resolves
+/// at the beginning of the Runner's, and what it does is 1.11.3b's LOSS — so
+/// the observable consequence is a whole action the Runner never gets. Both
+/// arms spend every click the Runner has on the basic credit action (5.2.7b),
+/// and the credits they end with count the clicks for us: four against three.
+#[test]
+fn mca_austerity_policy_costs_the_runner_a_click_next_turn() {
+    for corp_uses_it in [false, true] {
+        let mut vm = Vm::empty(9124);
+        let mca = tk::install_root(&mut vm, card("MCA Austerity Policy"), ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        vm.st.corp.credits = 5;
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        // 1.11.3c: an ability whose trigger cost begins with [click] is an
+        // ACTION, so it is offered in the action window and not in a paid one.
+        let mut corp = Plan::corp();
+        if corp_uses_it {
+            corp = corp.when(
+                Match::action().once(),
+                Reply::take("mca austerity policy: a counter, and a click off the runner"),
+            );
+        }
+        let t = plan::play(
+            &mut vm,
+            // The Corp's turn runs out, the Runner's whole turn passes, and
+            // the driver stops at the Corp's next action window.
+            corp.when(Match::action().nth(if corp_uses_it { 3 } else { 4 }), Reply::Halt)
+                .otherwise_click_credit(),
+            Plan::runner().otherwise_click_credit(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&mca].counter(CounterKind::Power),
+            u32::from(corp_uses_it),
+            "the counter is placed exactly when the ability is used \
+             (corp_uses_it={corp_uses_it}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            if corp_uses_it { 3 } else { 4 },
+            "1.11.3b: a click LOST at the start of the turn is an action the Runner never takes \
+             (corp_uses_it={corp_uses_it}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// MCA Austerity Policy: "[click], [trash], 3 hosted power counters: Gain
+/// [click][click][click][click]."
+///
+/// 1.16.1b decides both arms: the cost is three costs paid as one (1.16.10b)
+/// and a card hosting only two counters cannot pay it at all, so the ability
+/// is not there to be used. Where it can be paid, 9.5.5 is what makes it
+/// payable — the [trash] uninstalls the source, so the counters are set aside
+/// as the whole cost is paid rather than going back to the bank first.
+///
+/// The Corp spends every click it has left on the basic credit action, so the
+/// credits it finishes with are the clicks it had: 3 − 1 spent + 4 gained
+/// against a plain 3.
+#[test]
+fn mca_austerity_policy_cashes_in_for_four_clicks_only_with_three_counters() {
+    for counters in [2u32, 3u32] {
+        let mut vm = Vm::empty(9125);
+        let mca = tk::install_root(&mut vm, card("MCA Austerity Policy"), ServerId::Remote(1), true);
+        vm.st.objects.get_mut(&mca).unwrap().counters.insert(CounterKind::Power, counters);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(
+                    Match::action().once(),
+                    Reply::take("mca austerity policy: cash in for four clicks"),
+                )
+                .otherwise_click_credit(),
+            Plan::runner().when(Match::action(), Reply::Halt),
+        );
+
+        let payable = counters == 3;
+        assert_eq!(
+            vm.st.objects[&mca].zone == Zone::Discard(Side::Corp),
+            payable,
+            "1.16.1b: the [trash] happens only where the whole cost could be paid \
+             (counters={counters}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if payable { 6 } else { 3 },
+            "the clicks the Corp ended up with, counted in basic credit actions \
+             (counters={counters}): {}",
+            t.tail(30)
+        );
+    }
+}
