@@ -3059,7 +3059,7 @@ impl Vm {
             .get(&c.source.obj)
             .map(|o| o.printed.name)
             .unwrap_or("if successful");
-        let def = AbilityDef {
+        let def = AbilityDef { controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: None,
@@ -3120,7 +3120,7 @@ impl Vm {
             .get(&p.source)
             .map(|o| o.printed.name)
             .unwrap_or("set-aside trash group");
-        let def = AbilityDef {
+        let def = AbilityDef { controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: None,
@@ -3199,7 +3199,7 @@ impl Vm {
             .get(&c.source.obj)
             .map(|o| o.printed.name)
             .unwrap_or("if the run would be declared successful");
-        let def = AbilityDef {
+        let def = AbilityDef { controller: None,
             kind: AbilityKind::Conditional,
             flags: vec![AbilityFlag::Interrupt],
             condition: Some(Condition::Trigger(TriggerCond::WouldDeclareRunSuccessful)),
@@ -6102,11 +6102,18 @@ impl Vm {
         let mut out = Vec::new();
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            if o.controller != side {
-                continue;
-            }
             for (i, a) in self.abilities_of(o.id) {
                 let a = &a;
+                // CR 1.14.4: "a player can only use abilities they control",
+                // and 1.14.4b lets a printed sentence name that player even
+                // when they do not control the source. So this is a question
+                // about the ABILITY, not about the card it is printed on —
+                // which is what makes every Bioroid's "[cost]: Break ...
+                // Only the Runner can use this ability" expressible at all.
+                cite!("rule_controller_ability");
+                if a.controller_or(o.controller) != side {
+                    continue;
+                }
                 if a.kind != AbilityKind::Paid || !a.is_interrupt() {
                     continue;
                 }
@@ -14005,11 +14012,18 @@ impl Vm {
         // Card actions ([click]-cost paid abilities, 5.2.1).
         let threat = self.threat_level();
         for o in self.st.objects.values() {
-            if o.controller != side {
-                continue;
-            }
             for (i, a) in self.abilities_of(o.id) {
                 let a = &a;
+                // CR 1.14.4: "a player can only use abilities they control",
+                // and 1.14.4b lets a printed sentence name that player even
+                // when they do not control the source. So this is a question
+                // about the ABILITY, not about the card it is printed on —
+                // which is what makes every Bioroid's "[cost]: Break ...
+                // Only the Runner can use this ability" expressible at all.
+                cite!("rule_controller_ability");
+                if a.controller_or(o.controller) != side {
+                    continue;
+                }
                 if !a.is_action() {
                     continue;
                 }
@@ -14123,11 +14137,18 @@ impl Vm {
         let threat = self.threat_level();
         // (P): regular paid abilities (not actions/interrupts/mid-access).
         for o in self.st.objects.values() {
-            if o.controller != side {
-                continue;
-            }
             for (i, a) in self.abilities_of(o.id) {
                 let a = &a;
+                // CR 1.14.4: "a player can only use abilities they control",
+                // and 1.14.4b lets a printed sentence name that player even
+                // when they do not control the source. So this is a question
+                // about the ABILITY, not about the card it is printed on —
+                // which is what makes every Bioroid's "[cost]: Break ...
+                // Only the Runner can use this ability" expressible at all.
+                cite!("rule_controller_ability");
+                if a.controller_or(o.controller) != side {
+                    continue;
+                }
                 if a.kind != AbilityKind::Paid
                     || a.is_action()
                     || a.is_interrupt()

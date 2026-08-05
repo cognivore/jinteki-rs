@@ -500,6 +500,27 @@ impl CardBuilder {
     pub fn paid(self, cost: Cost, instrs: impl IntoIterator<Item = Instruction>) -> Self {
         self.ability(AbilityDef::paid(cost, instrs.into_iter().collect()))
     }
+    /// "…: … **Only the Runner can use this ability.**" — a paid ability on a
+    /// card whose controller is NOT the player who may use it (CR 1.14.4b).
+    ///
+    /// 1.14.4 gives an ability to its source's controller "by default";
+    /// 1.14.4b lets a printed sentence name someone else, and then that player
+    /// controls it "even if they do not control its source". Both halves
+    /// follow: the named player is offered it, and the source's controller is
+    /// not. 1.14.5 hands the effects and the choices to the named player, and
+    /// 1.14.3 makes them pay out of their own pool — so a Bioroid's break
+    /// costs the RUNNER clicks even though the ice is the Corp's.
+    ///
+    /// The side is CONTENT on the ability (§12 rule 2), not a card-shaped
+    /// exception: any ability may name any player.
+    pub fn paid_used_only_by(
+        self,
+        user: Side,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(AbilityDef::paid(cost, instrs.into_iter().collect()).used_only_by(user))
+    }
     /// "Once per turn → [click], 1[credit]: …" — a paid ability carrying
     /// 9.3.6g's once-per-turn flag, which is spent by USING the ability and
     /// comes back when the turn ends.

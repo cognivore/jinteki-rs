@@ -485,7 +485,7 @@ pub fn trash_set_button(name: &'static str, targets: Vec<ObjectId>) -> PrintedCa
 /// marker (gain 0 credits) — the test asserts availability, not the effect.
 pub fn tori_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldDamage {
@@ -519,7 +519,7 @@ pub fn feedback_like(name: &'static str) -> PrintedCard {
 /// relevance requires a run in progress (10.3.6 example).
 pub fn jesminder_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldTakeTags { during_run: true })),
@@ -625,7 +625,7 @@ pub fn pump_breaker(name: &'static str, base_strength: i32) -> PrintedCard {
 pub fn parasite_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(1);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: Vec::new(),
         condition: Some(Condition::Static(StaticCond::HostStrengthAtMost(0))),
@@ -906,7 +906,7 @@ pub fn lockdown_like(name: &'static str) -> PrintedCard {
 /// of cards…" — a conditional interrupt relevant to imminent draws (9.9.3d).
 pub fn class_act_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldDraw { by: Some(Side::Runner) })),
@@ -926,7 +926,7 @@ pub fn class_act_like(name: &'static str) -> PrintedCard {
 pub fn harbinger_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(0);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::SelfWouldBeTrashed)),
@@ -1703,7 +1703,7 @@ pub fn operation(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Pri
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
     c.cost = Some(cost);
     if !instrs.is_empty() {
-        c.abilities = vec![AbilityDef {
+        c.abilities = vec![AbilityDef { controller: None,
             kind: crate::ability::AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -1724,7 +1724,7 @@ pub fn event(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Printed
     let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Event);
     c.cost = Some(cost);
     if !instrs.is_empty() {
-        c.abilities = vec![AbilityDef {
+        c.abilities = vec![AbilityDef { controller: None,
             kind: crate::ability::AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -2209,7 +2209,7 @@ pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {
 /// opened (9.9.4b/c).
 pub fn noh_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldTakeTags { during_run: false })),
@@ -3679,7 +3679,7 @@ pub fn tinkering_like(name: &'static str) -> PrintedCard {
 pub fn morph_ice(name: &'static str, prints: &'static str, loses: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 3, 3);
     c.subtypes = vec![prints];
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Static,
         flags: Vec::new(),
         condition: None,
@@ -4535,7 +4535,7 @@ pub fn nanisivik_like(name: &'static str) -> PrintedCard {
 pub fn attini_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 3);
     c.abilities = vec![
-        AbilityDef {
+        AbilityDef { controller: None,
             condition: Some(Condition::Static(StaticCond::SourceAbilityResolving)),
             ..AbilityDef::static_ability(vec![StaticDecl::CannotSpendCredits(Side::Runner)])
         }
@@ -4817,7 +4817,7 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
 pub fn oppo_research_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
     c.cost = Some(0);
-    let play_ability = |instrs: Vec<Instruction>, label: &'static str| AbilityDef {
+    let play_ability = |instrs: Vec<Instruction>, label: &'static str| AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Play,
         flags: Vec::new(),
         condition: None,
@@ -5235,7 +5235,7 @@ pub fn virtuoso_like(name: &'static str, server: ServerId) -> PrintedCard {
 pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
     c.cost = Some(0);
-    c.abilities = vec![AbilityDef {
+    c.abilities = vec![AbilityDef { controller: None,
         kind: crate::ability::AbilityKind::Play,
         flags: Vec::new(),
         condition: None,
@@ -6236,5 +6236,38 @@ pub fn tag_shedder(name: &'static str) -> PrintedCard {
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(1))],
     )
     .labeled("tag shedder: remove a tag to gain 1 credit")];
+    c
+}
+
+/// Bioroid shape (CR 1.14.4b): a piece of ice with one subroutine and a paid
+/// ability printed ON THE CORP'S CARD that only the RUNNER can use —
+/// "Lose [click]: Break 1 subroutine on this ice. Only the Runner can use
+/// this ability."
+///
+/// 1.14.4 makes the controller of an ability the controller of its source **by
+/// default**; 1.14.4b is the sentence that overrides the default, and this is
+/// the shape every Bioroid in the game is written in. The break costs the
+/// RUNNER a click, because 1.14.5 gives the effects to the ability's
+/// controller and 1.14.3 makes a player pay costs with objects they control.
+pub fn bioroid_ice(name: &'static str, rez: u32, strength: i32) -> PrintedCard {
+    let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Ice);
+    c.cost = Some(rez);
+    c.strength = Some(strength);
+    c.subtypes = vec!["Code Gate", "Bioroid"];
+    c.abilities = vec![
+        AbilityDef::paid(
+            Cost::lose_clicks(1),
+            vec![Instruction::BreakSubroutines {
+                subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
+            }],
+        )
+        .used_only_by(Side::Runner)
+        .with_timing(TimingRestriction::EncounterOnly {
+            required_subtype: None,
+            required_choice: None,
+        })
+        .labeled("bioroid: lose [click] to break 1 subroutine"),
+        AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
+    ];
     c
 }
