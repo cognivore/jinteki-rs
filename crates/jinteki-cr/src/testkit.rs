@@ -2745,6 +2745,7 @@ pub fn near_earth_hub_like(name: &'static str) -> PrintedCard {
             side: Side::Corp,
             of_types: Vec::new(),
             of_subtypes: Vec::new(),
+            into_remote_server: false,
             requires: Vec::new(),
         },
         vec![Instruction::Draw(Side::Corp, 1)],
@@ -3962,6 +3963,7 @@ pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> P
             side: Side::Corp,
             of_types: Vec::new(),
             of_subtypes: Vec::new(),
+            into_remote_server: false,
             requires: Vec::new(),
         },
         vec![Instruction::InstallCard {

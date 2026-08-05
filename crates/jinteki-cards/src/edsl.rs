@@ -2036,6 +2036,19 @@ pub fn installs_a_card(side: Side) -> TriggerCond {
         side,
         of_types: Vec::new(),
         of_subtypes: Vec::new(),
+        into_remote_server: false,
+        requires: Vec::new(),
+    }
+}
+/// "…you install a card **in the root of or protecting a remote server**…"
+/// (A Teia) — the same install condition with 4.6.6b's one location word
+/// narrowed by 4.6.8 to the remotes. Nothing is said about the card.
+pub fn installs_a_card_in_a_remote_server(side: Side) -> TriggerCond {
+    TriggerCond::CardInstalledBy {
+        side,
+        of_types: Vec::new(),
+        of_subtypes: Vec::new(),
+        into_remote_server: true,
         requires: Vec::new(),
     }
 }
@@ -2047,6 +2060,7 @@ pub fn installs_a_card_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCon
         side,
         of_types: Vec::new(),
         of_subtypes: Vec::new(),
+        into_remote_server: false,
         requires: reqs.to_vec(),
     }
 }
@@ -2057,6 +2071,7 @@ pub fn installs_a_subtyped(side: Side, of: CardType, subtype: &'static str) -> T
         side,
         of_types: vec![of],
         of_subtypes: vec![subtype],
+        into_remote_server: false,
         requires: Vec::new(),
     }
 }
@@ -2067,6 +2082,7 @@ pub fn installs_a(side: Side, of: CardType) -> TriggerCond {
         side,
         of_types: vec![of],
         of_subtypes: Vec::new(),
+        into_remote_server: false,
         requires: Vec::new(),
     }
 }
@@ -2241,6 +2257,13 @@ pub fn max_hand_size_mod(n: i32) -> StaticDecl {
 /// Division class — the same declaration, with the other scope.)
 pub fn each_players_max_hand_size_mod(n: i32) -> StaticDecl {
     StaticDecl::MaxHandSizeMod { whose: jinteki_cr::ability::DeclSubject::EachPlayer, amount: n }
+}
+/// "Limit N remote servers." (A Teia; CR 4.6.8f.) A restriction (9.3.4) read
+/// at step 8.5.16b: while it is active, a destination that would create a new
+/// remote beyond the limit is not one the Corp may declare, so an install that
+/// has no other destination identifies none at all (8.5.14).
+pub fn remote_server_limit(n: u32) -> StaticDecl {
+    StaticDecl::RemoteServerLimit(n)
 }
 /// "Your maximum hand size **is equal to** <amount>." (Cerebral Imaging.) CR
 /// 9.12.1a applies an effect that SETS a value before every effect that
@@ -3004,6 +3027,12 @@ pub fn cannot_be(
 /// span covers the rest of this turn and the whole of the opponent's.)
 pub fn until_next_turn_begins_of(side: Side) -> WantedDuration {
     WantedDuration::UntilNextTurnBeginsOf(side)
+}
+/// "…**this turn**." (A Teia.) The shorter of the two spans beside
+/// [`until_next_turn_begins_of`]: it ends with the turn being played, whoever
+/// is playing it.
+pub fn this_turn() -> WantedDuration {
+    WantedDuration::ThisTurn
 }
 /// "When this run ends, …" as a DELAYED conditional (9.6.13) — an ability
 /// created now that waits for the run to end, which is what a card trashed to

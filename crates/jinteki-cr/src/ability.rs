@@ -517,10 +517,24 @@ pub enum TriggerCond {
     /// `requires` is 9.6.5c's additional stipulation — "…**if** you have more
     /// [shaper] cards installed than any other faction, when you install a
     /// card" (Jamie "Bzzz" Micken).
+    ///
+    /// `into_remote_server` is CR 4.6.6b + 4.6.8: "…you install a card **in
+    /// the root of or protecting a remote server**" (A Teia). The sentence
+    /// stipulates nothing about the card and everything about WHERE it went,
+    /// which is why it is not one of `of_types`/`of_subtypes` and not a
+    /// description of the object either — 4.6.6b makes a server the cards in
+    /// its root TOGETHER WITH the ice protecting it, so "in the root of or
+    /// protecting" is one location and not two, and 4.6.8 is what makes
+    /// "remote" a distinction it can draw. It is answered from
+    /// [`crate::change::GameChange::CardInstalled::to`] rather than of the
+    /// card's zone now, because 9.6.5c's ordinal scan asks this same condition
+    /// of EARLIER changes and the card can have moved since. `false` is a
+    /// sentence making no such stipulation.
     CardInstalledBy {
         side: Side,
         of_types: Vec<CardType>,
         of_subtypes: Vec<&'static str>,
+        into_remote_server: bool,
         requires: Vec<TriggerRequirement>,
     },
     /// "Whenever you make a successful run on the chosen server…" (Security
@@ -2883,7 +2897,7 @@ fn trigger_matches_dyn(
         }
         (
             TriggerCond::CardInstalledFrom { side, from, of_types },
-            GameChange::CardInstalled { side: s, from: f, obj },
+            GameChange::CardInstalled { side: s, from: f, obj, .. },
         ) => {
             // 4.8.3: `from` is the location the card is TREATED as having come
             // from, so an Exile-class "whenever you install a program from
@@ -2896,14 +2910,26 @@ fn trigger_matches_dyn(
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
         }
         (
-            TriggerCond::CardInstalledBy { side, of_types, of_subtypes, .. },
-            GameChange::CardInstalled { side: s, obj, .. },
+            TriggerCond::CardInstalledBy { side, of_types, of_subtypes, into_remote_server, .. },
+            GameChange::CardInstalled { side: s, obj, to, .. },
         ) => {
             // 2.15/2.16: the stipulations, asked of the card the change names.
             side == s
                 && (of_types.is_empty()
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
                 && of_subtypes.iter().all(|s| has_subtype(*obj, s))
+                // 4.6.6b + 4.6.8: where the install went, read from the record
+                // so that a card which has since moved still answers for the
+                // install it made.
+                && (!*into_remote_server || {
+                    cite!("rule_remote_server");
+                    cite!("rule_server_root");
+                    matches!(
+                        to,
+                        crate::object::Zone::Root(crate::object::ServerId::Remote(_))
+                            | crate::object::Zone::Ice(crate::object::ServerId::Remote(_))
+                    )
+                })
         }
         (
             TriggerCond::SuccessfulRunOnChosenServer { .. },

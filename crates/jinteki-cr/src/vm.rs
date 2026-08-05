@@ -6124,7 +6124,8 @@ impl Vm {
                 // the declaration is still the installer's and still its own
                 // slot. The same for a half of it fixed and the server not.
                 | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
-                | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot => 1,
+                | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot
+                | crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer => 1,
                 _ => usize::from(card.announcement_slots() == 0),
             },
             _ => 0,
@@ -6510,7 +6511,8 @@ impl Vm {
                 dest:
                     dest @ (crate::instr::InstallDest::DeclaredByInstaller
                     | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
-                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot),
+                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot
+                    | crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer),
                 ..
             } => {
                 cite!("rule_steps_installing_destination");
@@ -6541,6 +6543,31 @@ impl Vm {
                     options.retain(|d| {
                         matches!(d, crate::instr::InstallDest::Root(s) if !s.is_central())
                             || matches!(d, crate::instr::InstallDest::NewRemoteRoot)
+                    });
+                }
+                // 1.15.4 inverted, 4.6.8 kept: "another remote server" — every
+                // remote but the one the occurrence's card is in, in both of
+                // 4.6.6b's halves, with 8.5.2a's brand-new remote qualifying
+                // without comparison because it is not a server anything is in
+                // yet. With no such card, or one in no server, "another" has
+                // nothing to be other than and 8.5.14 stops the install.
+                if matches!(
+                    dest,
+                    crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer
+                ) {
+                    cite!("rule_server_root");
+                    cite!("rule_remote_server");
+                    let same = af.triggering_card.and_then(|t| self.server_of(t));
+                    options.retain(|d| {
+                        same.is_some()
+                            && (matches!(
+                                Self::dest_server(*d),
+                                Some(s) if !s.is_central() && Some(s) != same
+                            ) || matches!(
+                                d,
+                                crate::instr::InstallDest::NewRemoteRoot
+                                    | crate::instr::InstallDest::NewRemoteProtecting
+                            ))
                     });
                 }
                 if options.is_empty() {
@@ -6887,6 +6914,11 @@ impl Vm {
                 // 8.8.4b: the joining card was not installed a moment ago; it
                 // comes from wherever the swap took it from.
                 from: zx,
+                // 8.8.4b: "the exact position the first occupied" — the
+                // joining card became installed where the LEAVING one was, so
+                // that zone is this install's destination. No step 8.5.16b ran
+                // to declare one.
+                to: if xi { zx } else { zy },
             });
         }
         if let (Zone::ScoreArea(sx), Zone::ScoreArea(sy)) = (zx, zy) {
@@ -10929,7 +10961,8 @@ impl Vm {
                     }
                     crate::instr::InstallDest::DeclaredByInstaller
                     | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
-                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot => {
+                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot
+                    | crate::instr::InstallDest::DeclaredByInstallerInAnotherRemoteServer => {
                         // 8.5.16b replaced this with the declared destination
                         // before the instruction became imminent; reaching it
                         // here means no destination could be identified.
@@ -11118,7 +11151,17 @@ impl Vm {
                 // (f) "when installed" conditions meet their trigger
                 // conditions; the install effect is complete.
                 let side = self.st.objects[&c].printed.side;
-                self.changes.record(GameChange::CardInstalled { obj: c, side, from: p.from_zone });
+                // 8.5.16b's destination, read off the card now that step (e)
+                // has placed it — 1.13.12 puts a hosted card in its host's
+                // zone, so a card hosted at install time records the server
+                // 4.6.6b puts the host in.
+                let to = self.st.objects[&c].zone;
+                self.changes.record(GameChange::CardInstalled {
+                    obj: c,
+                    side,
+                    from: p.from_zone,
+                    to,
+                });
                 // The installing ability now knows which card it installed —
                 // "…and install it … if THAT PROGRAM is still installed"
                 // (Kabonesa Wu). Recorded here rather than at step (a) because

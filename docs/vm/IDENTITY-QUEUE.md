@@ -166,21 +166,6 @@ kernel words, not card patches.
   is over. The card is not the problem — the action is, and moving the
   announcement in front of the payment is a change to 5.2's shape rather than
   a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
-- **A destination cannot be narrowed to the servers OTHER than one.**
-  `InstallDest::DeclaredByInstallerInRemoteRoot` is 8.5.16b's declaration
-  narrowed to 4.6.8's remote roots, and
-  `DeclaredByInstallerInServerOfTriggeringCard` is it narrowed to the server
-  the occurrence's card is in — but "in the root of or protecting **another**
-  remote server" is that comparison INVERTED, and there is no variant for it.
-  The same sentence wants one more word: its condition stipulates WHERE the
-  install went ("you install a card in the root of or protecting a remote
-  server"), and `TriggerCond::CardInstalledBy` carries the card's type and
-  subtypes but no description of the card at all —
-  `TargetFilter::InRemoteServer` is the description it would take.
-  Everything else about the card is now sayable:
-  `StaticDecl::RemoteServerLimit` is "limit 2 remote servers", and "you cannot
-  score the second card this turn" is `LingeringSpec::Prohibit` with
-  `WantedDuration::ThisTurn`. *(A Teia: IP Recovery.)*
 - **A DECLARATION cannot offer the installer a choice of face.**
   `Instruction::InstallCard` now carries the face an install leaves the card
   with (`facedown`, 4.6.4d), so a stipulation about it can be made — but that
@@ -207,7 +192,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **127 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **128 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -347,11 +332,11 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (16/21)
+## Corp — Jinteki (17/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
-- [ ] **A Teia: IP Recovery** — Limit 2 remote servers. The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.
+- [x] **A Teia: IP Recovery** — Limit 2 remote servers. The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.
 - [ ] **AU Co.: The Gold Standard in Clones** — Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity. When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.
 - [ ] **AgInfusion: New Miracles for a New World** — Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.
 - [x] **Chronos Protocol: Selective Mind-mapping** — For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.

@@ -644,6 +644,75 @@ pub fn saraswati_mnemonics() -> Card {
         .build()
 }
 
+/// A Teia: IP Recovery — Identity: Division.
+/// "Limit 2 remote servers.
+///  The first time each turn you install a card in the root of or protecting a
+///  remote server, you may install 1 card from HQ in the root of or protecting
+///  another remote server, ignoring all costs. You cannot score the second
+///  card this turn."
+///
+/// COMPLETE. Two printed lines: a static declaration and a conditional
+/// ability whose second sentence is a second instruction.
+///
+/// "Limit 2 remote servers" is 4.6.8f, permanently true and asked of nobody —
+/// so a static declaration (9.4.1), read at install step 8.5.16b. It is a
+/// restriction (9.3.4) on the DESTINATION and not a prohibition on installing:
+/// with two remotes already up, a card that could go somewhere else still
+/// goes there, and a card that could not identifies no destination at all
+/// (8.5.14).
+///
+/// The condition says nothing about the card installed and everything about
+/// where it went. 4.6.6b makes a server the cards in its root TOGETHER WITH
+/// the ice protecting it, so "in the root of or protecting" is one location
+/// word rather than two, and 4.6.8 is what makes "remote" a distinction it can
+/// draw. That is a fact about the MOMENT of the install, so the condition
+/// reads the record and not the card's zone now — which is what keeps 9.6.5c's
+/// ordinal honest when the card that spent it is trashed later the same turn.
+///
+/// "Another remote server" is 1.15.4's back-reference INVERTED: the one server
+/// this destination will not take is the one the occurrence's card is in.
+/// Both of 4.6.6b's halves stay open, so the Corp declares the server and
+/// whether the card goes in its root or protects it; 8.5.2a's brand-new remote
+/// qualifies without comparison, since a server that does not exist yet is not
+/// one anything is in — and the first line is exactly what can rule it out.
+///
+/// "Ignoring all costs" is 1.16.5c: every element goes, 8.5.11a's 1[credit]
+/// per piece of ice already protecting the destination server included.
+///
+/// The last sentence is a lingering effect (9.10.1) rather than a static
+/// declaration, for Saraswati Mnemonics' reason: "the second card" NAMES the
+/// card this ability installed instead of describing it, so another copy is
+/// untouched. 1.2.2 gives it precedence, and the (S) option is simply not
+/// offered for that card until the turn ends. Declining the "you may" installs
+/// nothing, and then the sentence points at nothing and prohibits nothing.
+pub fn a_teia() -> Card {
+    card("A Teia: IP Recovery")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("Limit 2 remote servers.")
+        .text("The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.")
+        .declares([remote_server_limit(2)])
+        .named("limit 2 remote servers")
+        .may_when_first_each_turn(
+            installs_a_card_in_a_remote_server(Corp),
+            [
+                install_ignoring_all_costs(
+                    choose(1, &[in_hand_of(Corp)]),
+                    InstallDest::DeclaredByInstallerInAnotherRemoteServer,
+                ),
+                cannot_be(
+                    the_card_this_ability_installed(),
+                    &[ProhibitedAction::Score],
+                    this_turn(),
+                ),
+            ],
+        )
+        .named("ip recovery")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -664,5 +733,6 @@ pub fn identities() -> Vec<Card> {
         mti_mwekundu(),
         chronos_protocol_selective_mind_mapping(),
         saraswati_mnemonics(),
+        a_teia(),
     ]
 }
