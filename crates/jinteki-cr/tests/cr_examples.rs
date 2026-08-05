@@ -2437,6 +2437,64 @@ fn example_rule_mandatory_choice_1() {
     );
 }
 
+/// NOT a transcribed CR example — a regression, kept beside the 9.12.3 examples
+/// it is about. 9.12.3c + 5.2.3, applied
+/// to the requirement itself rather than to a subroutine's options. An
+/// Always-Be-Running-class card says the Runner must run with their first
+/// [click], and an Off-the-Grid-class upgrade in every central root makes
+/// every server one the Runner cannot initiate a run on (6.3.2a). No run is
+/// resolvable, so the "must" does nothing and the ordinary basic actions come
+/// back — 5.2.3's "basic actions they can ALWAYS perform".
+///
+/// The alternative is an action window with no options in it, which is the
+/// worst state the machine can reach: the client draws no prompt and no
+/// buttons for an action window, so the board would sit there looking
+/// completely normal with the turn unable to advance and nothing to click.
+#[test]
+fn an_unsatisfiable_must_run_still_leaves_the_basic_actions() {
+    let mut vm = Vm::empty(1366);
+    for s in [ServerId::Hq, ServerId::Rnd, ServerId::Archives] {
+        tk::install_root(&mut vm, tk::off_the_grid_like("OffTheGrid-like"), s, true);
+    }
+    tk::install_rig(&mut vm, tk::always_be_running_like("ABR-like"));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::credit()).stop_at_action(),
+    );
+    let first = t
+        .windows(Kind::Action, Side::Runner)
+        .first()
+        .copied()
+        .expect("the Runner's first action window");
+    assert!(
+        !first.actions().is_empty(),
+        "5.2.3: a player always has their basic actions; an empty action \
+         window cannot be answered and cannot be seen: {:?}",
+        first.actions()
+    );
+    assert!(
+        !first.actions().iter().any(|a| matches!(a, ActionOption::BasicRun { .. })),
+        "6.3.2a: and no run among them, since every server forbids initiation: {:?}",
+        first.actions()
+    );
+    assert!(
+        first.actions().iter().any(|a| matches!(a, ActionOption::BasicCredit)),
+        "9.12.3c: the unsatisfiable 'must' does nothing, so the basic actions \
+         are offered as usual: {:?}",
+        first.actions()
+    );
+    assert_eq!(
+        vm.st.runner.credits, 6,
+        "…and the click was spendable on one of them: {}",
+        t.tail(10)
+    );
+}
+
 /// example_rule_mandatory_choice_effects_can_be_modified_1 (9.12.3d): the
 /// Runner chooses "take 1 tag" on a Data-Raven-class encounter, then avoids
 /// the tag with a Decoy-class interrupt — the run does NOT end.

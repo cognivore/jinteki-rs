@@ -1697,9 +1697,15 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 for (k, l) in candidates {
                     push(&mut p, sym_label(l), DecisionAnswer::Subroutines(vec![*k]));
                 }
-            } else {
+            } else if *count > 0 {
                 // Break-from-the-top, and every contiguous run of `count`:
                 // enough to say "break these", without a reorderable list.
+                // `count` must be non-zero here: `count - 1` is unsigned, and
+                // at zero it underflows — a panic in debug and a wrap to
+                // `usize::MAX` in release. 1.15.2b clamps this count to the
+                // subroutines that exist, so zero is a state the kernel can
+                // produce (an ability announcing against ice whose
+                // subroutines are all broken already).
                 for start in 0..candidates.len().saturating_sub(*count as usize - 1) {
                     let chunk: Vec<_> = candidates[start..start + *count as usize].to_vec();
                     let label = chunk
@@ -1714,7 +1720,12 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                     );
                 }
             }
-            if *up_to {
+            // …and the empty announcement is an answer whenever it is a legal
+            // one: an explicit "up to", or a count 1.15.2b already clamped to
+            // nothing. Without the second case a zero-count announcement
+            // renders no buttons at all, which is the dead end this whole
+            // change is about.
+            if *up_to || *count == 0 {
                 push(&mut p, "None".into(), DecisionAnswer::Subroutines(Vec::new()));
             }
         }

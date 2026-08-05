@@ -12552,8 +12552,21 @@ impl Vm {
         // not satisfy it rather than resolving anything.
         if self.must_run_with_first_click(side) {
             cite!("rule_must_with_choice");
-            out.retain(|o| matches!(o, ActionOption::BasicRun { .. }));
-            return out;
+            let runs: Vec<ActionOption> =
+                out.iter().filter(|o| matches!(o, ActionOption::BasicRun { .. })).cloned().collect();
+            // 9.12.3c: a "must" that offers no fully resolvable choice does
+            // nothing — and 5.2.3 says the basic actions can ALWAYS be
+            // performed, so a requirement cannot leave a player with no
+            // action at all. It can when every server is off limits (6.3.2a),
+            // and an empty action window is the worst shape in the game: the
+            // client draws no sheet and no buttons for one, so the board just
+            // sits there looking normal with the turn unable to advance.
+            if runs.is_empty() {
+                cite!("rule_mandatory_choice");
+                cite!("rule_basic_actions");
+                return out;
+            }
+            return runs;
         }
         // Card actions ([click]-cost paid abilities, 5.2.1).
         let threat = self.threat_level();
