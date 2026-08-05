@@ -512,6 +512,17 @@ function crPairingRender(m) {
   if (crPairing["timing-label"]) {
     box.appendChild(el("small", "pair-timing", `Timing: ${crPairing["timing-label"]}`));
   }
+  // CR 1.4.2 at the countdown's door: a refused deck reads its problems
+  // here — the same sentences the deck builder shows.
+  if (crPairing.refusal) {
+    const r = crPairing.refusal;
+    const strip = el("div", "pair-refusal");
+    strip.appendChild(el("b", "", r.message || "This deck cannot be played."));
+    (r.problems || []).forEach((pb) => {
+      strip.appendChild(el("small", "", pb.message || pb.code || ""));
+    });
+    box.appendChild(strip);
+  }
   (crPairing.seats || []).forEach((s) => {
     const row = el("div", "pair-row" + (s.you ? " me" : ""));
     const t = el("div", "t");

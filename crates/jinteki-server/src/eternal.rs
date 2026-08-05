@@ -238,16 +238,9 @@ pub fn catalog_json() -> Value {
             if draft_only(c) {
                 continue;
             }
-<<<<<<< HEAD
-            // CR 1.4.1a: The Catalyst and The Syndicate "are not legal for
-            // play under the full deck construction rules" — starter-pack
-            // identities, in the pool for the STARTER decks only, so the
-            // constructed-deck catalog never offers them. They remain
-            // implemented and playable through any preset that carries them.
-=======
             // CR 1.4.1a: the starter-pack identities are not legal for
-            // constructed play; the builder never offers them.
->>>>>>> 6803dce (fix(cards+server): the catalog reaches every definition, and CR 1.4.1a holds by id)
+            // constructed play; the builder never offers them. They remain
+            // implemented and playable through any preset that carries them.
             if starter_pack_only(c) {
                 continue;
             }

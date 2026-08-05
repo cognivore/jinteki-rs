@@ -76,7 +76,29 @@ fn builtin_cards(spec: &DeckSpec) -> (String, BTreeMap<String, u32>) {
 }
 
 fn builtin_spec(key: &str) -> Option<&'static DeckSpec> {
-    cr::deck_specs().into_iter().find(|s| s.key == key)
+    cr::deck_specs()
+        .into_iter()
+        .find(|s| s.key == key || display_slug(s.display_name) == key)
+}
+
+/// The display name as a key-shaped slug ("Mezzie's Making Stars" →
+/// "mezzie-s-making-stars" family, tolerant of the picker's own collapse to
+/// "mezzie-making-stars"): a client that keys a builtin by its shown name
+/// still seats the right deck. Canonical keys stay canonical everywhere the
+/// server speaks; this is an accepted spelling at the door, not a second id.
+fn display_slug(name: &str) -> String {
+    let mut out = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if !out.ends_with('-') && !out.is_empty() {
+            out.push('-');
+        }
+    }
+    let collapsed = out.trim_matches('-').to_string();
+    // The picker drops the possessive's orphaned "s" ("mezzie-s-…" →
+    // "mezzie-…"); accept both spellings.
+    collapsed.replace("-s-", "-")
 }
 
 pub fn is_builtin_key(key: &str) -> bool {

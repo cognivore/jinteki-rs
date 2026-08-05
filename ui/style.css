@@ -1427,3 +1427,10 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   .zoom-overlay .zoom-card:not(:has(.zart)) { display: flex;
     flex-direction: column; width: min(92vw, 480px); }
 }
+
+/* A deck refused at the ready check: the builder's own problems, in red. */
+.pair-refusal {
+  border: 1px solid #b33; border-radius: 8px; padding: 6px 10px; margin: 6px 0;
+  display: flex; flex-direction: column; gap: 2px; color: #e88;
+}
+.pair-refusal b { color: #f5a; }

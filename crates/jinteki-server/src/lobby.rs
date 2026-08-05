@@ -373,6 +373,9 @@ pub struct Pairing {
     /// knows it was cancelled. This is the ONLY cancellation channel.
     generation: u64,
     seq: u64,
+    /// A deck refusal from the countdown's door (CR 1.4.2), shown at the
+    /// table until a ready toggles; `DeckRefusal::to_json()` shape.
+    pub refusal: Option<serde_json::Value>,
 }
 
 impl Pairing {
@@ -400,6 +403,10 @@ impl Pairing {
             "timing-label": self.timing.label(),
             "count": self.count,
             "seats": seats,
+            // CR 1.4.2 at the countdown's door: a seat whose chosen deck was
+            // refused reads the builder's own problems here; readying again
+            // clears it (the deck must change first, or it refuses again).
+            "refusal": self.refusal,
         })
     }
     fn seat_of(&self, token: &str) -> Option<Side> {
@@ -472,6 +479,7 @@ pub async fn pair(
         count: None,
         generation: 0,
         seq: open.seq,
+        refusal: None,
     };
     pairings().lock().await.insert(p.id.clone(), p.clone());
     nudge(Nudge::Lobby);
@@ -514,6 +522,7 @@ pub async fn set_ready(token: &str, ready: bool) -> ReadyOutcome {
     let side = p.seat_of(token).expect("found by seat_of");
     let was_both = p.both_ready();
     p.seats[ix(side)].ready = ready;
+    p.refusal = None;
     let id = p.id.clone();
     if !ready {
         p.generation += 1;
@@ -685,21 +694,57 @@ pub async fn spawn_countdown(id: String, db: Arc<Db>) {
 /// through. A gate refusal dissolves the table honestly rather than leaving
 /// two ready players in front of a stuck 1.
 async fn finish_countdown(id: &str, gen: u64, db: &Arc<Db>) {
-    let setup = {
+    // Copy what resolving needs, then let go of the registry: the db lock
+    // must never nest inside the pairings lock (the ws handlers take them
+    // in the other order), and `finish_pairing_with` re-checks generation
+    // and readiness anyway, so a table that moved re-refuses honestly.
+    let (choices, seed) = {
         let reg = pairings();
         let map = reg.lock().await;
         let Some(p) = map.get(id) else { return };
         if p.generation != gen || !p.both_ready() {
             return;
         }
-        match cr::eternal_setup(p.seed) {
-            Ok(s) => s,
-            Err(_) => {
-                drop(map);
-                let _ = leave_pairing_dissolve(id).await;
-                return;
+        let choices = [Side::Corp, Side::Runner].map(|side| {
+            let s = &p.seats[ix(side)];
+            (
+                s.deck.clone().unwrap_or_else(|| default_deck_key(side).to_string()),
+                s.user.clone().unwrap_or_default(),
+            )
+        });
+        (choices, p.seed)
+    };
+    // CR 1.4.2 at this door: each seat's CHOSEN deck resolves — the builtin
+    // defaults when none was chosen — and an illegal or unbuildable one
+    // refuses the start with the builder's own problems instead of seating
+    // a deck the rules forbid. The old whole-gate (`cr::eternal_setup`)
+    // lives on inside `resolve_builtin`, which refuses Unbuildable on any
+    // incomplete card.
+    let setup = {
+        let conn = db.lock().await;
+        let mut resolved: [Option<crate::eternal_decks::TableDeck>; 2] = [None, None];
+        let mut refused: Option<serde_json::Value> = None;
+        for side in [Side::Corp, Side::Runner] {
+            let (key, owner) = &choices[ix(side)];
+            match crate::eternal_decks::resolve_for_table(&conn, key, owner, side) {
+                Ok(d) => resolved[ix(side)] = Some(d),
+                Err(r) => {
+                    refused = Some(r.to_json());
+                    break;
+                }
             }
         }
+        drop(conn);
+        if let Some(r) = refused {
+            refuse_pairing_start(id, r).await;
+            return;
+        }
+        let [corp, runner] = resolved;
+        cr::setup_from(
+            corp.expect("resolved just above"),
+            runner.expect("resolved just above"),
+            seed,
+        )
     };
     if let Some(started) = finish_pairing_with(id, gen, setup).await {
         for side in [Side::Corp, Side::Runner] {
@@ -709,6 +754,32 @@ async fn finish_countdown(id: &str, gen: u64, db: &Arc<Db>) {
             }
         }
     }
+}
+
+/// The side's deck when a seat chose none: the two shipped eternal decks.
+fn default_deck_key(side: Side) -> &'static str {
+    match side {
+        Side::Corp => "gauntlet",
+        Side::Runner => "andromeda",
+    }
+}
+
+/// A deck refused at the countdown's door: the table survives, both seats
+/// unready, and the refusal is shown where the ready check is (readying
+/// again clears it — and refuses again unless the deck changed).
+async fn refuse_pairing_start(id: &str, refusal: serde_json::Value) {
+    {
+        let reg = pairings();
+        let mut map = reg.lock().await;
+        let Some(p) = map.get_mut(id) else { return };
+        for side in [Side::Corp, Side::Runner] {
+            p.seats[ix(side)].ready = false;
+        }
+        p.generation += 1;
+        p.count = None;
+        p.refusal = Some(refusal);
+    }
+    nudge(Nudge::Pair(id.to_string()));
 }
 
 /// Dissolve a pairing outright (both players get `lobby-gone`).
