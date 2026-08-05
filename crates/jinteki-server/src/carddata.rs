@@ -9,11 +9,20 @@
 //! need: `by_title`, `by_code` (latest printings), `by_previous_code`
 //! (reference lookup parity: `web/nrdb.clj:29-31`).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 static CARDS_JSON: &str = include_str!("../../jinteki-core/carddata/cards.json");
+
+/// One back face of a double-sided card (CR 1.4): the printed title and text
+/// of that face, in face order. `title` is nullable in the data — SYNC's back
+/// carries text but no distinct title.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Face {
+    pub title: Option<String>,
+    pub text: Option<String>,
+}
 
 /// One card title, latest printing, with deck-construction fields.
 #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +63,10 @@ pub struct Card {
     /// two never-NSG promo identities).
     #[serde(default)]
     pub nsg_id: Option<String>,
+    /// CR 1.4 double-sided cards: every back face, in face order. Empty for
+    /// single-faced cards. The reader offers each of these one tap away.
+    #[serde(default)]
+    pub faces: Vec<Face>,
 }
 
 impl Card {

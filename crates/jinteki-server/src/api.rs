@@ -574,6 +574,9 @@ async fn api_cards(Query(q): Query<HashMap<String, String>>) -> Response {
                 "subtypes": c.subtypes,
                 "cost": c.cost,
                 "text": crate::cr::oracle_text(&c.title),
+                // CR 1.4: a double-sided card's back faces, in face order,
+                // so the editor's reader can show them too. Empty for most.
+                "faces": c.faces,
             })
         })
         .collect();

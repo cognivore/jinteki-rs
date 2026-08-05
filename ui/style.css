@@ -1410,4 +1410,20 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     border-bottom: 1px solid var(--line); padding-bottom: 6px; }
   .builder-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
   .aspect { width: min(300px, 86vw); min-height: 0; }
+/* ── The FACE SWITCHER (CR 1.4 double-sided cards) ──────────────────────
+   Inside the reader chrome, above the card: one tab per face when a card
+   has several backs, a single ↺ toggle when it has exactly one. Tapping a
+   tab turns the reader over in place — overlay only, nothing reflows — and
+   every tap that is not on the switcher still closes the reader (§3b). */
+.facetabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.facetabs .facetab { min-height: 40px; padding: 8px 14px; font-size: 13px;
+  background: var(--bg2); border-color: var(--gold); color: var(--gold); }
+.facetabs .facetab.on { background: var(--gold); color: #241c04;
+  font-weight: 800; }
+/* A back face is text-rendered (the art is the front's), so a reader showing
+   one has no image to build the landscape grid around: it falls back to the
+   stacked column instead of keeping an empty art column. */
+@media (orientation: landscape) {
+  .zoom-overlay .zoom-card:not(:has(.zart)) { display: flex;
+    flex-direction: column; width: min(92vw, 480px); }
 }

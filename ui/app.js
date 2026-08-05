@@ -1989,23 +1989,50 @@ function sliverBadges(c) {
     .join("")}</span>`;
 }
 
-/* ── card info (shared by hover preview and long-press zoom) ─────────── */
-function cardInfoHtml(c) {
+/* ── card info (shared by hover preview and long-press zoom) ───────────
+   FACES (CR 1.4): a double-sided card's data carries `faces:[{title,text}]`
+   (back faces, in face order) and — on a board card — `flipped`, the index
+   of the back that is UP. `face` here is a READER index: 0 = front,
+   k = faces[k-1]. Every renderer defaults to the face the table is showing,
+   so a flipped identity previews and reads as what it now is. */
+function cardFaces(c) { return Array.isArray(c.faces) ? c.faces : []; }
+/* The face currently showing, as a reader index. Absent/invalid `flipped`
+   means the front — a server that does not send flip state gets the front
+   by construction. */
+function showingFace(c) {
+  const n = cardFaces(c).length;
+  if (!n || typeof c.flipped !== "number") return 0;
+  return c.flipped >= 0 && c.flipped < n ? c.flipped + 1 : 0;
+}
+/* A back face has no printed title of its own on some cards (SYNC): it is
+   still a face, and it still needs a name to be picked by. */
+function faceTitle(c, face) {
+  if (face === 0) return c.title || "Facedown card";
+  const f = cardFaces(c)[face - 1] || {};
+  return f.title || "Other face";
+}
+function cardInfoHtml(c, face) {
+  if (face === undefined) face = showingFace(c);
+  const back = face > 0 ? cardFaces(c)[face - 1] || {} : null;
   const lines = [];
-  if (c.type) lines.push(c.type + (c.subtypes && c.subtypes.length ? " — " + c.subtypes.join(" · ") : ""));
+  // The type is the card's on every face; the subtypes are printed on the
+  // front and stay with it.
+  if (c.type) lines.push(c.type + (!back && c.subtypes && c.subtypes.length ? " — " + c.subtypes.join(" · ") : ""));
   if (c.cost != null) lines.push("Cost " + c.cost + (c.strength != null ? " · Strength " + c.strength : ""));
   else if (c.strength != null) lines.push("Strength " + c.strength);
   if (c.advancementcost != null) lines.push(`Adv req ${c.advancementcost} · ${c.agendapoints} pts`);
   if (c["trash-cost"] != null) lines.push("Trash cost " + c["trash-cost"]);
   for (const [, hint, text] of counterItems(c)) lines.push(`${hint}: ${text}`);
   if (c.implementation) lines.push("⚠ " + c.implementation);
-  const art = c.code
+  // The art is the front face's; a back face is text-rendered, like the
+  // card pool itself (UX.md: no art is a rendering, not a gap).
+  const art = c.code && !back
     ? `<img class="zart" src="${cardImgUrl(c.code)}" alt="" onerror="this.remove()">`
     : "";
-  return `${art}<h3>${c.title || "Facedown card"}</h3>
+  return `${art}<h3>${faceTitle(c, face)}</h3>
     <div class="zline">${lines.join("<br>")}</div>
-    <div class="ztext">${sym(c.text || "")}</div>
-    ${(c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
+    <div class="ztext">${sym((back ? back.text : c.text) || "")}</div>
+    ${back ? "" : (c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
 }
 
 /* The hover preview is the one thing on screen a click CANNOT close: it is
@@ -3223,13 +3250,45 @@ let zoomShowing = null;
 function zoomCard(c) {
   hideHoverPreview();
   const o = $("zoom-overlay");
+  // The overlay is born inside #screen-game; reparent it to <body> once so
+  // the reader can cover ANY screen — the deck editor long-presses cards
+  // too, and a reader opened under a hidden screen is a reader that never
+  // happened. Idempotent, same move as showStrictRefusal's.
+  if (o.parentElement !== document.body) document.body.appendChild(o);
   const key = c.cid != null ? "c" + c.cid : "t" + (c.title || "");
   if (o.style.display === "flex" && zoomShowing === key) return;
   zoomShowing = key;
   o.style.display = "flex";
-  o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}</div>
+  // The reader opens on the face the table is showing (a flipped identity
+  // opens on its back); the switcher is how you look at the others.
+  paintZoomFace(o, c, showingFace(c));
+  // The switcher lives INSIDE the reader chrome: a tap on it turns the
+  // card over, every other tap still closes (THE LAW §3b).
+  dismissOnTapAway(o, (e) => !!e.target.closest(".facetabs"));
+}
+
+/* The FACE SWITCHER (CR 1.4): one tab per face when a card has several
+   backs (Biotech, Méliès), a single ↺ toggle when it has exactly one
+   (Nebula, Hoshiko, …). Switching repaints the whole reader — title, type
+   line, text, art region — inside the same overlay: no reflow, no second
+   reader. Single-faced cards get no chrome at all. */
+function faceTabsHtml(c, face) {
+  const backs = cardFaces(c);
+  if (!backs.length) return "";
+  if (backs.length === 1) {
+    const other = face === 0 ? 1 : 0;
+    return `<div class="facetabs"><button class="chip facetab" data-face="${other}">↺ ${esc(faceTitle(c, other))}</button></div>`;
+  }
+  const tab = (i) =>
+    `<button class="chip facetab${i === face ? " on" : ""}" data-face="${i}">${esc(faceTitle(c, i))}</button>`;
+  return `<div class="facetabs">${[...Array(backs.length + 1).keys()].map(tab).join("")}</div>`;
+}
+function paintZoomFace(o, c, face) {
+  o.innerHTML = `<div class="zoom-card">${faceTabsHtml(c, face)}${cardInfoHtml(c, face)}</div>
     <div class="tapaway">tap anywhere to close</div>`;
-  dismissOnTapAway(o, null);
+  o.querySelectorAll(".facetab").forEach((b) => {
+    b.onclick = () => paintZoomFace(o, c, +b.dataset.face);
+  });
 }
 
 function zoomPile(cards, title) {

@@ -2673,6 +2673,17 @@ fn card_json(vm: &Vm, view: &View, id: ObjectId, visible: bool) -> Value {
     m.insert("title".into(), json!(p.name));
     if let Some(c) = crate::carddata::by_title(p.name) {
         m.insert("code".into(), json!(c.code));
+        // CR 1.4 double-siders: every face the card prints, in face order,
+        // so the reader can show the one the player asks for. Additive —
+        // absent for the single-faced majority.
+        if !c.faces.is_empty() {
+            m.insert("faces".into(), json!(c.faces));
+        }
+    }
+    // Which back is UP right now (an index into `faces`); absent = front.
+    // The reader opens on the face the table is actually showing.
+    if let Some(f) = o.flipped {
+        m.insert("flipped".into(), json!(f));
     }
     if let Some(t) = oracle_text(p.name) {
         m.insert("text".into(), json!(t));
