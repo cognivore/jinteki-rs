@@ -27,7 +27,7 @@ use crate::frames::{
 };
 pub use crate::ability::SubKey;
 use crate::instr::{Contained, Instruction, TargetFilter, TargetSpec};
-use crate::lingering::{Duration, LingeringEffect, Payload};
+use crate::lingering::{Duration, LingeringEffect, Payload, ProhibitedAction};
 use crate::change::{ActionIdentity, BasicAction, ChangeBuffer, GameChange};
 use crate::object::{
     card_active, CardType, CounterKind, IcePosition, Object, ObjectId, PrintedCard, ServerId, Side,
@@ -2005,11 +2005,34 @@ impl Vm {
         cite!("rule_cannot_precedence");
         cite!("rule_score_not_an_action");
         let Some(o) = self.st.objects.get(&card) else { return false };
+        if self.act_prohibited(card, ProhibitedAction::Score) {
+            return true;
+        }
         self.active_statics().iter().any(|(obj, d)| match d {
             StaticDecl::CannotScoreMatching { criteria } => {
                 criteria.iter().all(|f| self.filter_matches(o, *f, Some(*obj)))
             }
             _ => false,
+        })
+    }
+
+    /// CR 1.2.2 / 8.1.2: is the Corp prohibited from rezzing this card? Asked
+    /// wherever a rez is offered (the (R) options of a paid ability window)
+    /// and wherever one is directed (an ability that rezzes, and 8.5.15's
+    /// install-and-rez), because "cannot" takes precedence over all of them.
+    pub fn rez_prohibited(&self, card: ObjectId) -> bool {
+        cite!("rule_cannot_precedence");
+        cite!("sec_rez");
+        self.act_prohibited(card, ProhibitedAction::Rez)
+    }
+
+    /// CR 9.10.1: does a lingering effect forbid this act on this object right
+    /// now? The prohibition names the card, so it is read here and not through
+    /// the description machinery a static declaration uses.
+    fn act_prohibited(&self, card: ObjectId, act: ProhibitedAction) -> bool {
+        self.lingering.iter().any(|l| {
+            matches!(&l.payload, Payload::Prohibited { target, actions }
+                if *target == card && actions.contains(&act))
         })
     }
 
@@ -6099,8 +6122,9 @@ impl Vm {
                 crate::instr::InstallDest::DeclaredByInstaller
                 // 8.5.16b: the server is fixed but the half of it is not, so
                 // the declaration is still the installer's and still its own
-                // slot.
-                | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard => 1,
+                // slot. The same for a half of it fixed and the server not.
+                | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
+                | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot => 1,
                 _ => usize::from(card.announcement_slots() == 0),
             },
             _ => 0,
@@ -6485,7 +6509,8 @@ impl Vm {
                 card,
                 dest:
                     dest @ (crate::instr::InstallDest::DeclaredByInstaller
-                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard),
+                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
+                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot),
                 ..
             } => {
                 cite!("rule_steps_installing_destination");
@@ -6505,6 +6530,18 @@ impl Vm {
                     cite!("rule_server_root");
                     let same = af.triggering_card.and_then(|t| self.server_of(t));
                     options.retain(|d| same.is_some() && Self::dest_server(*d) == same);
+                }
+                // 4.6.8 + 4.6.6b: "the root of a remote server" — the two
+                // halves of the ordinary declaration the sentence keeps, with
+                // 8.5.2a's new remote among them because 4.6.8d creates it at
+                // install step 8.5.16e like any other.
+                if matches!(dest, crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot) {
+                    cite!("rule_server_root");
+                    cite!("rule_remote_server");
+                    options.retain(|d| {
+                        matches!(d, crate::instr::InstallDest::Root(s) if !s.is_central())
+                            || matches!(d, crate::instr::InstallDest::NewRemoteRoot)
+                    });
                 }
                 if options.is_empty() {
                     None
@@ -9852,8 +9889,26 @@ impl Vm {
                     }
                     return;
                 }
+                // 1.2.2: the same per-target shape — the prohibition is about
+                // each named card, so a sentence naming several makes one
+                // effect each and a sentence naming none makes none at all.
+                if let crate::instr::LingeringSpec::Prohibit { targets, actions } = payload {
+                    cite!("rule_cannot_precedence");
+                    for t in self.resolve_targets(targets, Some(source.obj), &imm.targets) {
+                        let id = self.next_lingering;
+                        self.next_lingering += 1;
+                        self.lingering.push(LingeringEffect::new(
+                            id,
+                            source.obj,
+                            Payload::Prohibited { target: t, actions: actions.clone() },
+                            dur,
+                        ));
+                    }
+                    return;
+                }
                 let payload = match payload {
-                    crate::instr::LingeringSpec::CannotUseAbilitiesOf(_) => unreachable!(),
+                    crate::instr::LingeringSpec::CannotUseAbilitiesOf(_)
+                    | crate::instr::LingeringSpec::Prohibit { .. } => unreachable!(),
                     crate::instr::LingeringSpec::PreventAllDamage => Payload::DamagePreventionAll,
                     crate::instr::LingeringSpec::Replacement { applies_to, with, optional } => {
                         // 9.9.8c: a replacement effect can be created ahead
@@ -10873,7 +10928,8 @@ impl Vm {
                         }
                     }
                     crate::instr::InstallDest::DeclaredByInstaller
-                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard => {
+                    | crate::instr::InstallDest::DeclaredByInstallerInServerOfTriggeringCard
+                    | crate::instr::InstallDest::DeclaredByInstallerInRemoteRoot => {
                         // 8.5.16b replaced this with the declared destination
                         // before the instruction became imminent; reaching it
                         // here means no destination could be identified.
@@ -12560,6 +12616,7 @@ impl Vm {
                     && matches!(o.zone, Zone::Root(_))
                     && matches!(o.printed.card_type, CardType::Asset | CardType::Upgrade)
                     && self.rez_affordable(o.id)
+                    && !self.rez_prohibited(o.id)
                 {
                     out.push(WindowOption::Rez { card: o.id });
                 }
@@ -12569,7 +12626,10 @@ impl Vm {
             cite!("rule_paid_ability_window_corp_rez_ice");
             if let Some(r) = self.run_ctx() {
                 if let Some(ice) = self.approached_ice(r) {
-                    if !self.st.objects[&ice].faceup && self.rez_affordable(ice) {
+                    if !self.st.objects[&ice].faceup
+                        && self.rez_affordable(ice)
+                        && !self.rez_prohibited(ice)
+                    {
                         out.push(WindowOption::RezApproachedIce { card: ice });
                     }
                 }
@@ -14265,6 +14325,13 @@ impl Vm {
         cite!("rule_rez_in_paw");
         cite!("rule_runner_cards_neither_rezzed_nor_unrezzed");
         cite!("rule_rez_procedure");
+        // 1.2.2: an ability directing this rez loses to one saying it cannot
+        // happen, so the procedure is refused here as well as being withheld
+        // from the windows that offer it.
+        if self.rez_prohibited(id) {
+            cite!("rule_cannot_precedence");
+            return;
+        }
         if !ignore_costs {
             // 1.16.2a: the default value, then the increases, then the
             // reductions, and never below zero.

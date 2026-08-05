@@ -6,7 +6,7 @@
 
 use crate::ability::AbilityDef;
 use crate::effects::EffectClass;
-use crate::object::{ObjectId, ServerId};
+use crate::object::{ObjectId, ServerId, Side};
 
 /// Durations are bound to *specific structure instances* so a later run/turn
 /// does not resurrect an expired effect.
@@ -19,6 +19,14 @@ pub enum Duration {
     Run(u64),
     /// "…until the end of the turn" — bound to a turn sequence number.
     Turn(u64),
+    /// "…until **your next turn begins**" — a span 5.1 makes longer than
+    /// [`Duration::Turn`] by exactly one turn: it runs through the rest of the
+    /// turn it was created in, through the whole of the opponent's, and ends
+    /// the moment `side`'s next turn begins. `after` is the turn sequence
+    /// number in progress when it was created, so the effect expires at the
+    /// first checkpoint of a LATER turn whose active player is `side` — which
+    /// is 5.6.1's beginning of that turn, before anything in it happens.
+    UntilNextTurnBeginsOf { side: Side, after: u64 },
     /// 9.6.13c: delayed conditional with no stated duration — until the next
     /// time it resolves.
     UntilResolved,
@@ -112,6 +120,19 @@ pub enum Payload {
     /// offered in any window — and, since paid abilities are always optional
     /// (9.5.3), a 9.12.3a "must" cannot force one that is prohibited.
     CannotUseAbilitiesOf(ObjectId),
+    /// CR 1.2.2: "you cannot <do these things to> **that card**" for a
+    /// duration (Saraswati Mnemonics class). A prohibition about ONE named
+    /// object rather than about a description, which is what makes it a
+    /// lingering effect and not [`crate::ability::StaticDecl`]'s
+    /// `CannotScoreMatching`: the card is fixed when the ability that created
+    /// the effect resolved, so a second copy of the same card installed later
+    /// is untouched by it.
+    ///
+    /// WHICH things are forbidden is content on the one atom (§12 rule 2) —
+    /// a sentence naming two of them (Saraswati names scoring and rezzing) is
+    /// one prohibition, not two effects, and one that names only scoring
+    /// (A Teia) is the same atom with a shorter list.
+    Prohibited { target: ObjectId, actions: Vec<ProhibitedAction> },
     /// CR 8.6.6c: a played card kept in the play area instead of being
     /// trashed at 8.6.7g; when one of the indicated effects occurs, the
     /// effect expires at checkpoint step 10.3.1b and the card is trashed as
@@ -139,6 +160,18 @@ pub enum Payload {
     /// "Access N additional cards" (The Maker's Eye / Seidr class; adds to
     /// the 7.3.6 random access limit at step 7.5.3).
     AdditionalAccess { server: ServerId, extra: u32 },
+}
+
+/// CR 1.2.2: the things a "cannot" ability can forbid a player doing to one
+/// named object. One variant per act the CR states as its own procedure, so a
+/// printed sentence names them and never describes them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProhibitedAction {
+    /// CR 1.17.3 / 5.4: scoring the agenda. The (S) option is not offered at
+    /// all — 1.2.2 gives the "cannot" precedence over the permission.
+    Score,
+    /// CR 8.1.2: rezzing the card, wherever a rez is offered or directed.
+    Rez,
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary
@@ -246,6 +279,7 @@ impl LingeringEffect {
         current_encounter: Option<u64>,
         current_run: Option<u64>,
         current_turn: u64,
+        current_turn_side: Side,
         source_active: bool,
     ) -> bool {
         cite!("step_checkpoint_duration_abilities");
@@ -253,11 +287,25 @@ impl LingeringEffect {
             // 3.9.5c: both the stated and the implicit duration must expire.
             cite!("rule_icebreaker_strength_increase_specified");
             cite!("rule_ice_strength_modification_duration");
-            if !expired_one(also, current_encounter, current_run, current_turn, source_active) {
+            if !expired_one(
+                also,
+                current_encounter,
+                current_run,
+                current_turn,
+                current_turn_side,
+                source_active,
+            ) {
                 return false;
             }
         }
-        expired_one(self.duration, current_encounter, current_run, current_turn, source_active)
+        expired_one(
+            self.duration,
+            current_encounter,
+            current_run,
+            current_turn,
+            current_turn_side,
+            source_active,
+        )
     }
 }
 
@@ -266,6 +314,7 @@ fn expired_one(
     current_encounter: Option<u64>,
     current_run: Option<u64>,
     current_turn: u64,
+    current_turn_side: Side,
     source_active: bool,
 ) -> bool {
     {
@@ -273,6 +322,13 @@ fn expired_one(
             Duration::Encounter(e) => current_encounter != Some(e),
             Duration::Run(r) => current_run != Some(r),
             Duration::Turn(t) => current_turn != t,
+            // 5.1: the turns alternate, so "your next turn" is the first LATER
+            // turn whose active player is the named side. Reading the active
+            // player rather than counting two turns forward is what keeps the
+            // span right for an effect created during the OTHER player's turn.
+            Duration::UntilNextTurnBeginsOf { side, after } => {
+                current_turn > after && current_turn_side == side
+            }
             Duration::UntilResolved => false, // removed on resolution instead
             Duration::WhileSourceActive => !source_active,
             Duration::ExpiredImmediately => true,
@@ -302,6 +358,11 @@ pub fn bind_duration(
             None => Duration::ExpiredImmediately,
         },
         WantedDuration::ThisTurn => Duration::Turn(current_turn),
+        // 9.10.4 has nothing to bind here: a turn is always in progress, and
+        // the span reaches past the end of this one by construction.
+        WantedDuration::UntilNextTurnBeginsOf(side) => {
+            Duration::UntilNextTurnBeginsOf { side, after: current_turn }
+        }
         WantedDuration::UntilResolved => Duration::UntilResolved,
         WantedDuration::WhileSourceActive => Duration::WhileSourceActive,
     }
@@ -313,6 +374,10 @@ pub enum WantedDuration {
     ThisEncounter,
     ThisRun,
     ThisTurn,
+    /// "…until **your** next turn begins." The side is written by the card
+    /// layer because "your" is the ability's controller and every EDSL
+    /// sentence names its side the same way (`gain(Corp, 1)`).
+    UntilNextTurnBeginsOf(Side),
     UntilResolved,
     WhileSourceActive,
 }

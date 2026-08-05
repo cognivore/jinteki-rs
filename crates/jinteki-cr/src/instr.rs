@@ -1410,6 +1410,16 @@ pub enum LingeringSpec {
     /// run" (Hudson 1.0 class). The bound is a quantity position (§12 rule 6)
     /// evaluated when the effect is created.
     AccessLimit { limit: Quantity },
+    /// CR 1.2.2: "you cannot <do these things to> **that card** [for a
+    /// duration]" (Saraswati Mnemonics class). The cards are a POSITION and
+    /// the forbidden acts are content (§12 rule 2), so one sentence naming
+    /// two of them is one effect per card and not two effects.
+    ///
+    /// Like [`LingeringSpec::CannotUseAbilitiesOf`] the position DESCRIBES its
+    /// objects rather than targeting them (9.10.1), so nothing is announced:
+    /// "that card" is the card an earlier instruction of the same ability
+    /// installed, which 8.5.16f records and 1.15.2 never saw.
+    Prohibit { targets: TargetSpec, actions: Vec<crate::lingering::ProhibitedAction> },
 }
 
 /// CR 9.8.2/9.8.3: what an ability grants when it grants subroutines.
@@ -2194,6 +2204,17 @@ pub enum InstallDest {
     /// With no such card, or with one in no server at all, no destination can
     /// be identified and 8.5.14 stops the install.
     DeclaredByInstallerInServerOfTriggeringCard,
+    /// CR 8.5.16b + 4.6.8: "…in the root of **a remote server**" (Saraswati
+    /// Mnemonics). The installer still declares WHICH remote — 4.6.8's remotes
+    /// are created during play, so a card written before the game cannot name
+    /// one — but the declaration is narrowed to 4.6.6b's root half and to the
+    /// remote servers, with 8.5.2a's brand-new remote among the options.
+    ///
+    /// A card that could occupy no such root (a piece of ice, or an asset
+    /// where every remote root already holds one and no new remote may be
+    /// created) leaves no destination to identify, and 8.5.14 stops the
+    /// install.
+    DeclaredByInstallerInRemoteRoot,
     /// Runner installs with no stated destination: the rig (8.5.4). Named
     /// for the 1.13.6a choice every install offers — a card whose ability
     /// describes what it can host is an eligible destination, so the

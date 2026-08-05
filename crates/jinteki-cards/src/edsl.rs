@@ -160,7 +160,7 @@ use jinteki_cr::object::PrintedCard;
 pub use jinteki_cr::ability::{
     Cost, InherentCost, ReqScope, StaticDecl, TriggerCond, TriggerRequirement, TurnScope,
 };
-pub use jinteki_cr::lingering::{ReplacementTransform, WantedDuration};
+pub use jinteki_cr::lingering::{ProhibitedAction, ReplacementTransform, WantedDuration};
 pub use jinteki_cr::instr::{
     InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, SubroutineSpec,
     TargetFilter, TargetSpec, TrashDestination,
@@ -2983,6 +2983,27 @@ pub fn choose_and_remember(key: &'static str, count: i64, criteria: &[TargetFilt
 /// "…**that ice**", "…the chosen card" — the object this card remembers.
 pub fn the_remembered(key: &'static str) -> TargetSpec {
     TargetSpec::MaintainedChoice(key)
+}
+/// "You cannot <act on> **that card** [for a duration]." (Saraswati
+/// Mnemonics; CR 1.2.2 + 9.10.1.) The card is NAMED rather than described, so
+/// this is a lingering effect about one object and not a declaration about
+/// every card a description reaches — a second copy installed later is
+/// untouched. The acts the sentence names are a list because one sentence can
+/// name several ("score **or** rez") and that is still one prohibition.
+pub fn cannot_be(
+    target: TargetSpec,
+    actions: &[ProhibitedAction],
+    duration: WantedDuration,
+) -> Instruction {
+    Instruction::CreateLingeringEffect {
+        payload: LingeringSpec::Prohibit { targets: target, actions: actions.to_vec() },
+        duration,
+    }
+}
+/// "…until **your** next turn begins." (CR 5.1: the turns alternate, so this
+/// span covers the rest of this turn and the whole of the opponent's.)
+pub fn until_next_turn_begins_of(side: Side) -> WantedDuration {
+    WantedDuration::UntilNextTurnBeginsOf(side)
 }
 /// "When this run ends, …" as a DELAYED conditional (9.6.13) — an ability
 /// created now that waits for the run to end, which is what a card trashed to

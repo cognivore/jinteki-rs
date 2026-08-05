@@ -166,19 +166,21 @@ kernel words, not card patches.
   is over. The card is not the problem — the action is, and moving the
   announcement in front of the payment is a change to 5.2's shape rather than
   a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
-- **A prohibition cannot name one card for a stated span, and none of them
-  names a REZ.** `StaticDecl::CannotScoreMatching` describes the agendas that
-  cannot be scored in the ordinary words — which is how Clot's "during the
-  same turn they installed that agenda" is said — but "you cannot score or rez
-  THAT card until your next turn begins" needs two things it has none of: a
-  declaration about rezzing beside the one about scoring, and a span —
-  `WantedDuration` stops at `ThisTurn`, and the rez half bites during the
-  OPPONENT's turn, which is past the end of it. ("That card" itself is sayable:
-  `TargetFilter::InstalledByThisAbility` is the card the same ability's earlier
-  instruction installed.)
-  *(Saraswati Mnemonics: Endless Exploration; A Teia: IP Recovery, whose "you
-  cannot score the second card this turn" is the same sentence with the
-  shorter span and no rez half.)*
+- **A destination cannot be narrowed to the servers OTHER than one.**
+  `InstallDest::DeclaredByInstallerInRemoteRoot` is 8.5.16b's declaration
+  narrowed to 4.6.8's remote roots, and
+  `DeclaredByInstallerInServerOfTriggeringCard` is it narrowed to the server
+  the occurrence's card is in — but "in the root of or protecting **another**
+  remote server" is that comparison INVERTED, and there is no variant for it.
+  The same sentence wants one more word: its condition stipulates WHERE the
+  install went ("you install a card in the root of or protecting a remote
+  server"), and `TriggerCond::CardInstalledBy` carries the card's type and
+  subtypes but no description of the card at all —
+  `TargetFilter::InRemoteServer` is the description it would take.
+  Everything else about the card is now sayable:
+  `StaticDecl::RemoteServerLimit` is "limit 2 remote servers", and "you cannot
+  score the second card this turn" is `LingeringSpec::Prohibit` with
+  `WantedDuration::ThisTurn`. *(A Teia: IP Recovery.)*
 - **A DECLARATION cannot offer the installer a choice of face.**
   `Instruction::InstallCard` now carries the face an install leaves the card
   with (`facedown`, 4.6.4d), so a stipulation about it can be made — but that
@@ -205,7 +207,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **126 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **127 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -345,7 +347,7 @@ Module: `decks/identities/corp_haas_bioroid.rs`
 - [x] **Thule Subsea: Safety Below** — Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].
 - [x] **Thunderbolt Armaments: Peace Through Power** — Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.
 
-## Corp — Jinteki (15/21)
+## Corp — Jinteki (16/21)
 
 Module: `decks/identities/corp_jinteki.rs`
 
@@ -367,7 +369,7 @@ Module: `decks/identities/corp_jinteki.rs`
 - [x] **Nisei Division: The Next Generation** — Whenever you and the Runner reveal secretly spent credits, gain 1[credit].
 - [x] **PT Untaian: Life's Building Blocks** — When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)
 - [x] **Pālanā Foods: Sustainable Growth** — The first time each turn the Runner draws a card, gain 1[credit].
-- [ ] **Saraswati Mnemonics: Endless Exploration** — [click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.
+- [x] **Saraswati Mnemonics: Endless Exploration** — [click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.
 - [x] **Synthetic Systems: The World Re-imagined** — Draft format only. If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.
 - [x] **Tennin Institute: The Secrets Within** — When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.
 

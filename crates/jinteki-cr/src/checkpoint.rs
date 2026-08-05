@@ -873,6 +873,9 @@ fn step_b_durations(vm: &mut Vm) {
     let current_encounter = vm.st.encounter.as_ref().map(|e| e.id);
     let current_run = vm.current_run.map(|(r, _, _)| r);
     let current_turn = vm.st.turn_seq;
+    // 5.1: whose turn it is, which is what a duration reaching past the end of
+    // this one is measured against.
+    let current_turn_side = vm.st.turn_side;
     // CR 9.12.5c: a persisted ability expires when the reaction window after
     // its run's `step_run_complete` closes — observable as: the bound run is
     // over, no window is open, and no instance of it is still pending or
@@ -927,7 +930,13 @@ fn step_b_durations(vm: &mut Vm) {
         }
         let Payload::StrengthMod { target, .. } = l.payload else { continue };
         let source_active = vm.st.objects.get(&l.source).map(card_active).unwrap_or(false);
-        if !l.expired(current_encounter, current_run, current_turn, source_active) {
+        if !l.expired(
+            current_encounter,
+            current_run,
+            current_turn,
+            current_turn_side,
+            source_active,
+        ) {
             continue;
         }
         if let Some((_, until)) = extenders.iter().find(|(t, _)| *t == target) {
@@ -960,7 +969,7 @@ fn step_b_durations(vm: &mut Vm) {
             return !(run_over && !still_needed);
         }
         let source_active = objects.get(&l.source).map(card_active).unwrap_or(false);
-        !l.expired(current_encounter, current_run, current_turn, source_active)
+        !l.expired(current_encounter, current_run, current_turn, current_turn_side, source_active)
     });
 }
 

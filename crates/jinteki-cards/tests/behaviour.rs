@@ -10932,3 +10932,234 @@ fn omar_keung_is_not_offered_when_the_run_cannot_be_declared_successful() {
         t.tail(40)
     );
 }
+
+/// Every `WindowOption` this transcript ever put in front of a player. The
+/// prohibition Saraswati creates is a "cannot", so what it changes is what is
+/// OFFERED (1.2.2), and that is where it has to be read.
+fn offered_options(t: &plan::Transcript) -> Vec<jinteki_cr::decision::WindowOption> {
+    t.entries.iter().flat_map(|e| e.options().iter().cloned()).collect()
+}
+
+/// Saraswati Mnemonics: "[click], 1[credit]: Install 1 card from HQ in the
+/// root of a remote server, then place 1 advancement counter on it. You
+/// cannot score or rez that card until your next turn begins."
+///
+/// The install half and the rez half of the prohibition. The card is an
+/// upgrade, so 8.5.16b's declaration has real alternatives to be narrowed
+/// from — every central root and a position protecting each server — and only
+/// the remote roots survive. The upgrade then costs 0 to rez and still cannot
+/// be, all the way to the end of the Corp's turn, while the asset sharing its
+/// root is offered throughout: the difference between them is the effect and
+/// not the window.
+#[test]
+fn saraswati_mnemonics_installs_into_a_remote_root_and_holds_the_rez_off() {
+    let mut vm = Vm::empty(6211);
+    tk::install_identity(&mut vm, card("Saraswati Mnemonics: Endless Exploration"), Side::Corp);
+    // An existing remote, so "a remote server" has something to name besides
+    // the one 8.5.2a would create.
+    let neighbour =
+        tk::install_root(&mut vm, tk::vanilla_asset("Neighbour", 0, 2), ServerId::Remote(1), false);
+    let upgrade = vm.new_object(tk::vanilla_upgrade("Held Upgrade", 0), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(upgrade);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().offering("endless exploration").once(), Reply::take("endless exploration"))
+            .when(Match::targets().once(), Reply::Targets(vec![upgrade]))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1))),
+            )
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    let offered_dests: Vec<jinteki_cr::instr::InstallDest> = t
+        .of_kind(Kind::Destination)
+        .first()
+        .map(|e| match &e.spec {
+            jinteki_cr::decision::DecisionSpec::DeclareInstallDestination { options } => {
+                options.clone()
+            }
+            other => panic!("a destination declaration, not {other:?}"),
+        })
+        .unwrap_or_else(|| panic!("the installer declared a destination: {}", t.tail(40)));
+    assert!(
+        offered_dests.iter().all(|d| matches!(
+            d,
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(_))
+                | jinteki_cr::instr::InstallDest::NewRemoteRoot
+        )),
+        "4.6.8 + 4.6.6b: only the roots of remote servers are on offer, though an \
+         upgrade could otherwise occupy every central root and protect any server: \
+         {offered_dests:?}"
+    );
+    assert!(
+        offered_dests.contains(&jinteki_cr::instr::InstallDest::NewRemoteRoot),
+        "8.5.2a's brand-new remote is one of them: {offered_dests:?}"
+    );
+
+    assert_eq!(
+        vm.st.objects[&upgrade].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "the card from HQ went to the root the Corp declared: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&upgrade].counter(CounterKind::Advancement),
+        1,
+        "…and the same instruction placed the advancement counter on it: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 6,
+        "5 - 1 for the trigger cost, then two basic credit actions: the [click] and \
+         the 1[credit] are the whole cost, and an upgrade has no install cost: {}",
+        t.tail(40)
+    );
+
+    let options = offered_options(&t);
+    assert!(
+        !options.iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Rez { card } if *card == upgrade
+        )),
+        "1.2.2: the (R) option is never offered for that card, though its rez cost \
+         is 0: {}",
+        t.tail(40)
+    );
+    assert!(
+        options.iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Rez { card } if *card == neighbour
+        )),
+        "and the asset in the same root IS offered, so it is the prohibition and not \
+         the window: {}",
+        t.tail(40)
+    );
+
+    // The middle of the duration, which is what makes it longer than "this
+    // turn": the Runner runs the server the upgrade is in, the Corp gets the
+    // (R) windows that run opens, and the upgrade is still not among what
+    // they are offered.
+    let t2 = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(vm.st.turn_side, Side::Runner, "still the Runner's turn: {}", t2.tail(40));
+    let during_the_run = offered_options(&t2);
+    assert!(
+        during_the_run.iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Rez { card } if *card == neighbour
+        )),
+        "the run opened (R) windows on that server: {}",
+        t2.tail(40)
+    );
+    assert!(
+        !during_the_run.iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Rez { card } if *card == upgrade
+        )),
+        "…and the prohibition reaches through the whole of the OPPONENT's turn, \
+         which is what makes it longer than 'this turn': {}",
+        t2.tail(40)
+    );
+
+    // The far end: the Corp's next turn begins and the effect is gone before
+    // anything in that turn happens.
+    let t3 = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner().otherwise_click_credit(),
+    );
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's next turn came round: {}", t3.tail(40));
+    assert!(
+        offered_options(&t3).iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Rez { card } if *card == upgrade
+        )),
+        "…and the (R) option is back the moment that turn begins: {}",
+        t3.tail(40)
+    );
+}
+
+/// The score half of the same sentence, and the reason the counter matters:
+/// a 1/1 agenda installed by this ability meets its advancement requirement
+/// the instant the ability places the counter, and still cannot be scored
+/// this turn.
+#[test]
+fn saraswati_mnemonics_withholds_the_score_until_her_next_turn() {
+    let mut vm = Vm::empty(6212);
+    tk::install_identity(&mut vm, card("Saraswati Mnemonics: Endless Exploration"), Side::Corp);
+    let agenda = vm.new_object(tk::vanilla_agenda("Quick Agenda", 1, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(agenda);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().offering("endless exploration").once(), Reply::take("endless exploration"))
+            .when(Match::targets().once(), Reply::Targets(vec![agenda]))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::NewRemoteRoot),
+            )
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    let Zone::Root(remote) = vm.st.objects[&agenda].zone else {
+        panic!("the agenda is in a server root: {}", t.tail(40))
+    };
+    assert!(matches!(remote, ServerId::Remote(_)), "a remote one: {}", t.tail(40));
+    assert_eq!(
+        vm.st.objects[&agenda].counter(CounterKind::Advancement),
+        1,
+        "1.18.2: the counter is PLACED, and it meets the 1-advancement requirement: {}",
+        t.tail(40)
+    );
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::CardAdvanced { .. })),
+        "…placed, not advanced, so nothing that reads an advancement is met: {}",
+        t.tail(40)
+    );
+    assert!(
+        !offered_options(&t).iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Score { card } if *card == agenda
+        )),
+        "1.2.2: the (S) option is withheld for the rest of the turn even though \
+         1.17.3 would otherwise offer it: {}",
+        t.tail(40)
+    );
+
+    let t2 = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action(), Reply::Halt),
+        Plan::runner().otherwise_click_credit(),
+    );
+    assert_eq!(vm.st.turn_side, Side::Corp, "the Corp's next turn came round: {}", t2.tail(40));
+    assert!(
+        offered_options(&t2).iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Score { card } if *card == agenda
+        )),
+        "…and 'until your next turn begins' has run out by the first window of it: {}",
+        t2.tail(40)
+    );
+}

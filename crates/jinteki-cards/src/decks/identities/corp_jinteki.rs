@@ -576,6 +576,74 @@ pub fn chronos_protocol_selective_mind_mapping() -> Card {
         .build()
 }
 
+/// Saraswati Mnemonics: Endless Exploration — Identity: Division.
+/// "[click], 1[credit]: Install 1 card from HQ in the root of a remote server,
+///  then place 1 advancement counter on it. You cannot score or rez that card
+///  until your next turn begins."
+///
+/// COMPLETE. One paid ability whose trigger cost is everything printed before
+/// the colon, and two instructions after it.
+///
+/// The first sentence is ONE instruction. 9.11.4b splits a sentence at every
+/// install "after the first" and there is only one here, and "then" is not
+/// among 9.11.4's exceptions at all — so the install and the placement are a
+/// single instruction, which is what `combined` says.
+///
+/// "In the root of a remote server" is 8.5.16b's declaration with 4.6.8's
+/// remotes as the only servers on offer and 4.6.6b's root as the only half of
+/// them, 8.5.2a's brand-new remote included: the Corp still says WHICH, because
+/// a remote server is created during play and a card written before the game
+/// cannot name one. A card that could occupy no such root — a piece of ice —
+/// leaves no destination to identify, and 8.5.14 is what stops the install
+/// then; the sentence says "1 card" and describes nothing else, so the
+/// announcement is HQ and the legality is the destination's business.
+///
+/// 1.18.2: the counter is PLACED, not advanced, so this never meets a "whenever
+/// you advance a card" condition and never pays a Built-to-Last-class ability.
+///
+/// The second sentence is a lingering effect (9.10.1) and not a static
+/// declaration, because "that card" NAMES the card the first instruction
+/// installed rather than describing it — another copy of the same card is
+/// untouched. 1.2.2 gives it precedence over every ability that would score or
+/// rez: the (S) and (R) options are simply not offered for it, and an ability
+/// directing either is refused.
+///
+/// "Until your next turn begins" is a span 5.1 makes longer than "this turn" by
+/// exactly one turn — through the rest of this turn, through the whole of the
+/// Runner's, and gone the moment the Corp's next turn begins, which is before
+/// anything in that turn can happen.
+pub fn saraswati_mnemonics() -> Card {
+    card("Saraswati Mnemonics: Endless Exploration")
+        .corp()
+        .identity()
+        .faction("Jinteki")
+        .subtypes(&["Division"])
+        .text("[click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.")
+        .paid(
+            clicks(1).plus_cost(credits(1)),
+            [
+                combined([
+                    install(
+                        choose(1, &[in_hand_of(Corp)]),
+                        InstallDest::DeclaredByInstallerInRemoteRoot,
+                    ),
+                    place_on(
+                        the_card_this_ability_installed(),
+                        CounterKind::Advancement,
+                        1,
+                    ),
+                ]),
+                cannot_be(
+                    the_card_this_ability_installed(),
+                    &[ProhibitedAction::Score, ProhibitedAction::Rez],
+                    until_next_turn_begins_of(Corp),
+                ),
+            ],
+        )
+        .named("endless exploration")
+        .build()
+}
+
 /// Every Jinteki identity this module carries, in the order the queue reached
 /// them.
 pub fn identities() -> Vec<Card> {
@@ -595,5 +663,6 @@ pub fn identities() -> Vec<Card> {
         tennin_institute(),
         mti_mwekundu(),
         chronos_protocol_selective_mind_mapping(),
+        saraswati_mnemonics(),
     ]
 }
