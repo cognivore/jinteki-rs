@@ -1184,7 +1184,6 @@ fn architects_of_tomorrow_derez_does_not_rewrite_the_spent_pass() {
 
 /// Null (CR 9.3.6g via 9.1.6b): paying the optional cost IS using the
 /// ability, so the second encounter of the same turn must offer nothing.
-#[ignore = "audit 2026-08-05 finding 2: the may_pay path never spends the once-per-turn flag; un-ignore with the kernel fix"]
 #[test]
 fn null_whistleblower_paying_spends_the_flag_for_the_turn() {
     let mut vm = Vm::empty(8015);
