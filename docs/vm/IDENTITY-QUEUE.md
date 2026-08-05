@@ -197,12 +197,6 @@ kernel words, not card patches.
   is over. The card is not the problem — the action is, and moving the
   announcement in front of the payment is a change to 5.2's shape rather than
   a new word. *(Sebastião Souza Pessoa: Activist Organizer, second sentence.)*
-- **A card cannot be INSTALLED facedown.** `TrashDestination::FacedownInPlay`
-  turns an already-installed Runner card facedown (8.1.4d, Harbinger), and
-  `TargetFilter::Facedown` can describe the result — but `Instruction::
-  InstallCard` has no such stipulation, so nothing puts a card into the rig
-  facedown in the first place. *(Apex: Invasive Predator, second sentence;
-  its first needs a described install PROHIBITION as well.)*
 - **Nothing is met by a run that WOULD be declared successful.** 9.9.3's
   interrupt relevance is computed from the `EffectAtom`s of the imminent
   instruction, and `Instruction::DeclareRunSuccessful` carries only a
@@ -233,14 +227,15 @@ kernel words, not card patches.
   *(Saraswati Mnemonics: Endless Exploration; A Teia: IP Recovery, whose "you
   cannot score the second card this turn" is the same sentence with the
   shorter span and no rez half.)*
-- **An install cannot be told to leave the card FACEUP.**
-  `Instruction::InstallCard` stipulates 8.5.15's rez (`and_rez`) and 1.16.5c's
-  costs and nothing at all about the card's face, and 8.1.2 leaves an
-  installed Corp card facedown until it is rezzed — an agenda can never be
-  rezzed, so "you may install agendas faceup" has no stipulation to make. It
-  is the other half of the Apex entry above: one wants a Runner card installed
-  facedown, this one a Corp card installed faceup, and `TrashDestination::
-  FacedownInPlay` is the same word said about a card already installed.
+- **A DECLARATION cannot offer the installer a choice of face.**
+  `Instruction::InstallCard` now carries the face an install leaves the card
+  with (`facedown`, 4.6.4d), so a stipulation about it can be made — but that
+  is a stipulation the installing ABILITY states, and "you may install agendas
+  faceup" is a permission a third card states about every install its
+  controller performs, 5.2.6d's basic action included. It is the opposite
+  number of `StaticDecl::CannotInstallMatching`, and it wants the one thing
+  that declaration does not: a decision, put to the installer at step 8.5.16a,
+  where 8.5.2 otherwise settles the face with nobody asked.
   *(BANGUN: When Disaster Strikes, whose second sentence also wants
   `TriggerCond::RunnerAccessesCard` to describe the card accessed.)*
 - **A declaration cannot be scoped to ONE occurrence, or offered.**
@@ -267,7 +262,7 @@ Nebula Talent Management's back face, was sourced before this was noticed.)*
 
 ## Progress
 
-- Implemented: **116 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
+- Implemented: **117 / 150**  (the count of ticked boxes below — `grep -c "^- \[x\]"`)
 
 Enlisted in CR 1.5.4a's Andromeda pile (`jinteki-server`'s `cr::ANDROMEDA_PILE`),
 so Rebirth reaches them at the table: every COMPLETE Criminal — Ken Tenma, 419,
@@ -371,11 +366,11 @@ Module: `decks/identities/runner_adam.rs`
 
 - [ ] **Adam: Compulsive Hacker** — You start the game with 3 different directive cards installed (these cards are not considered part of your deck).
 
-## Runner — Apex (0/1)
+## Runner — Apex (1/1)
 
 Module: `decks/identities/runner_apex.rs`
 
-- [ ] **Apex: Invasive Predator** — You cannot install non-virtual resources. When your turn begins, you may install 1 card from your grip facedown.
+- [x] **Apex: Invasive Predator** — You cannot install non-virtual resources. When your turn begins, you may install 1 card from your grip facedown.
 
 ## Runner — Sunny Lebeau (1/1)
 

@@ -704,6 +704,21 @@ pub enum Instruction {
         /// plain install. A quantity position (§12 rule 6); 0 is no
         /// reduction. 1.16.2a floors the result at 0.
         reduce_install: Quantity,
+        /// CR 4.6.4d / 8.1.4: "install 1 card from your grip **facedown**"
+        /// (Apex). 8.5.16a places the card "with the same faceup or facedown
+        /// status it will have when the installation is complete", and every
+        /// install so far has taken that status from the card's side alone —
+        /// 8.5.2's Corp cards facedown, 4.6.4c's Runner cards faceup. This is
+        /// the stipulation an ability makes about it instead, so it is
+        /// content on the install (§12 rule 2) rather than an instruction of
+        /// its own: 8.1.4d's turning-facedown is a different thing done to a
+        /// card that is ALREADY installed.
+        ///
+        /// It follows 8.1.4a that the installed card has no characteristics
+        /// at all — no name, no card type, no cost — which is why 8.5.11a
+        /// gives "facedown Runner cards" no install cost in the same breath
+        /// as agendas and upgrades.
+        facedown: bool,
     },
     /// 8.5.5: an effect installing more than one card — the cards are chosen
     /// and installed ONE AT A TIME, each as a separate instruction

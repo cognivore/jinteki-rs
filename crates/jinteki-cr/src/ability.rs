@@ -1327,6 +1327,18 @@ pub enum StaticDecl {
     /// source cannot be installed at all. Active while the source is
     /// inactive (9.1.8c).
     InstallOnlyHostedOn(Vec<crate::instr::TargetFilter>),
+    /// "You cannot install <description>." (Apex; CR 1.2.2.) A prohibition
+    /// stated by the declaring player ABOUT THEIR OWN installs — "you" — so
+    /// it describes cards and says nothing about which ability would install
+    /// them: 1.2.2's "cannot" takes precedence over anything that directs one,
+    /// including 5.2.7d's basic action.
+    ///
+    /// Deliberately not a variant of [`StaticDecl::InstallOnlyHostedOn`],
+    /// which is 1.13.6c's restriction printed on the card being installed and
+    /// describes DESTINATIONS. This one is printed on a third card and
+    /// describes the installee, so it is the shared filter vocabulary
+    /// (§12 rule 5) and nothing else.
+    CannotInstallMatching { criteria: Vec<crate::instr::TargetFilter> },
     /// "+N link" (Dyson Mem Chip class; the 9.6.5d link example).
     LinkBonus(i32),
     /// "This card is not trashed until another current is played or an agenda

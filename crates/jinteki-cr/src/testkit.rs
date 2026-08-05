@@ -1496,6 +1496,7 @@ pub fn corp_install_button(
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
     .labeled("corp-install: fixed card")];
@@ -1522,6 +1523,7 @@ pub fn corp_install_rez_button(
             reveal_check,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
     .labeled("corp-install-rez: fixed card")];
@@ -1540,6 +1542,7 @@ pub fn bran_like(name: &'static str, installee: ObjectId) -> PrintedCard {
         reveal_check: None,
         reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
     }])
     .labeled("[sub] install ice directly inward")];
     c
@@ -1593,6 +1596,7 @@ pub fn reaper_like(name: &'static str, installee: ObjectId) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
         ],
         true,
@@ -1628,6 +1632,7 @@ pub fn adt_button(name: &'static str, installee: ObjectId) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
     .labeled("adt: install and rez ignoring costs")];
@@ -1649,6 +1654,7 @@ pub fn ganked_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
         true,
     )
@@ -1899,6 +1905,7 @@ pub fn supplier_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
         true,
     )
@@ -2153,6 +2160,7 @@ pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
         true,
     )
@@ -2363,6 +2371,7 @@ pub fn poetri_like(name: &'static str, n: u32) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
         false,
     )
@@ -2611,6 +2620,7 @@ pub fn artist_colony_like(name: &'static str) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
         ],
     )
@@ -2640,6 +2650,7 @@ pub fn smc_like(name: &'static str) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
         ],
     )
@@ -2684,6 +2695,7 @@ pub fn tucana_like(name: &'static str, server: ServerId) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
         ],
     )
@@ -2713,6 +2725,7 @@ pub fn tech_startup_like(name: &'static str) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
         ],
     )
@@ -2959,6 +2972,7 @@ pub fn ip_enforcement_like(name: &'static str) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
 }
@@ -3535,6 +3549,7 @@ pub fn howler_like(name: &'static str, protecting: ServerId) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         },
         Instruction::CreateDelayedConditional {
             def: Box::new(
@@ -3750,6 +3765,7 @@ pub fn priority_construction_like(name: &'static str, protecting: ServerId) -> P
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
             Instruction::PlaceCounters {
                 target: TargetSpec::EarlierTarget { nth: 0 },
@@ -3796,6 +3812,7 @@ pub fn drafter_like(name: &'static str, installee: ObjectId, server: ServerId) -
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         },
         Instruction::TrashCards(TargetSpec::Choose {
             count: Quantity::c(2),
@@ -3955,6 +3972,7 @@ pub fn a_teia_like(name: &'static str, installee: ObjectId, into: ServerId) -> P
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
         true,
     )
@@ -3984,6 +4002,7 @@ pub fn total_discount_install_rez(
             reveal_check: None,
             reduce_total: Quantity::c(total),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
     .labeled("tucana-total: install and rez for a total less")];
@@ -4282,6 +4301,7 @@ pub fn mushin_like(name: &'static str, card: ObjectId, server: ServerId) -> Prin
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
             Instruction::PlaceCounters {
                 target: TargetSpec::Objects(vec![card]),
@@ -4684,6 +4704,7 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         })),
     ])
     .labeled("[sub] look at the top of R&D and install one of those cards")];
@@ -4940,6 +4961,7 @@ pub fn test_run_like(name: &'static str, zone: Zone) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             },
         ],
     )
@@ -4969,6 +4991,7 @@ pub fn heap_install_button(name: &'static str) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
     .labeled("heap install: install 1 card from the heap")];
@@ -5199,6 +5222,7 @@ pub fn street_peddler_like(name: &'static str) -> PrintedCard {
                 reveal_check: None,
                 reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
             }],
         )
         .labeled("peddler: install one of the hosted cards"),
@@ -5781,6 +5805,7 @@ pub fn install_from_hq_button(name: &'static str) -> PrintedCard {
             reveal_check: None,
             reduce_total: Quantity::c(0),
             reduce_install: Quantity::c(0),
+            facedown: false,
         }],
     )
     .labeled("install-hq: install a card from HQ in a new remote")];

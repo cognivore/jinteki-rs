@@ -1000,11 +1000,16 @@ fn step_e_restrictions(vm: &mut Vm) {
     // Memory limit: installed programs' total memory cost must fit.
     cite!("rule_memory_limit");
     let limit = vm.memory_limit().max(0) as u32;
+    // 8.1.4a: "installed Runner cards that are facedown do not have any
+    // characteristics (name, card type, faction, cost, subtypes, influence,
+    // etc)" — so a facedown card in the rig is not a program and has no
+    // memory cost to count, however the card was printed.
+    cite!("rule_facedown_runner_cards_are_blank");
     let programs: Vec<(ObjectId, u32)> = vm
         .st
         .objects
         .values()
-        .filter(|o| o.zone == Zone::Rig && o.printed.card_type == CardType::Program)
+        .filter(|o| o.zone == Zone::Rig && o.faceup && o.printed.card_type == CardType::Program)
         .map(|o| (o.id, o.printed.memory_cost.unwrap_or(0)))
         .collect();
     let total: u32 = programs.iter().map(|(_, m)| m).sum();

@@ -276,6 +276,10 @@ pub struct InstallProgress {
     /// — its location at step 8.5.16a, with a set-aside card reported as
     /// coming from wherever it was before it was set aside.
     pub from_zone: Zone,
+    /// CR 4.6.4d / 8.5.16a: the installing effect stipulated that the card is
+    /// installed FACEDOWN, so that is "the status it will have when the
+    /// installation is complete" and step (a) places it that way.
+    pub facedown: bool,
 }
 
 /// CR 8.7.2b: the instruction a search is "followed by", when it refers to
@@ -283,7 +287,7 @@ pub struct InstallProgress {
 /// the search's own criteria.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FollowOn {
-    Install { dest: crate::instr::InstallDest, ignore_costs: bool },
+    Install { dest: crate::instr::InstallDest, ignore_costs: bool, facedown: bool },
     Play { ignore_costs: bool },
 }
 
@@ -6077,7 +6081,16 @@ impl Vm {
             | (Instruction::MoveSetAsideCounters { .. }, 0)
                 if !*up_to =>
             {
-                let candidates = self.filter_candidates(criteria, af.controller);
+                let mut candidates = self.filter_candidates(criteria, af.controller);
+                // 1.2.2: a card a "cannot install" declaration describes is
+                // not a card this instruction could install, so it is not a
+                // valid target for it (1.15.3) — the restriction belongs to
+                // the INSTRUCTION and not to the card's printed description,
+                // exactly as 1.21.4's "only unrezzed cards can be exposed"
+                // does one arm above.
+                if matches!(instr, Instruction::InstallCard { .. }) {
+                    candidates.retain(|c| !self.install_prohibited(*c));
+                }
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
                 Some((af.controller, self.announcement(candidates, want)))
             }
@@ -6352,7 +6365,10 @@ impl Vm {
                 // exists — the illegality is checked before the installation
                 // process begins.
                 let destination_ok = self.install_destination_available(*id);
-                class_ok && rez_ok && afford && destination_ok
+                // 1.2.2: and a card a "cannot install" declaration describes
+                // cannot be chosen at all.
+                let permitted = !self.install_prohibited(*id);
+                class_ok && rez_ok && afford && destination_ok && permitted
             })
             .collect()
     }
@@ -6715,6 +6731,29 @@ impl Vm {
             None => true,
             Some(hosts) => !hosts.is_empty(),
         }
+    }
+
+    /// CR 1.2.2: is an active [`StaticDecl::CannotInstallMatching`] saying
+    /// this card cannot be installed? "You cannot install non-**virtual**
+    /// resources" (Apex) is stated about the declaring player's own installs,
+    /// so the declaration reaches only the cards that player would install —
+    /// which, since a card is installed by its own side (8.5.1), is the side
+    /// the declaration's source is controlled by.
+    ///
+    /// Asked wherever an install could be offered or announced, because a
+    /// "cannot" is not a cost that fails: the install is never available at
+    /// all, so a card it forbids is not a candidate, not an action option and
+    /// not a legal find.
+    pub fn install_prohibited(&self, card: ObjectId) -> bool {
+        cite!("rule_cannot_precedence");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        self.active_statics().iter().any(|(src, d)| match d {
+            StaticDecl::CannotInstallMatching { criteria } => {
+                self.st.objects.get(src).is_some_and(|s| s.controller == o.printed.side)
+                    && criteria.iter().all(|f| self.filter_matches(o, *f, Some(*src)))
+            }
+            _ => false,
+        })
     }
 
     /// The same vocabulary asked of ONE object by id, as a conjunction — what
@@ -7350,6 +7389,7 @@ impl Vm {
             reveal_check,
             reduce_total,
             reduce_install,
+            facedown,
         } = instr
         else {
             unreachable!()
@@ -7440,6 +7480,9 @@ impl Vm {
                     o.zone
                 }
             },
+            // 8.5.16a: the status the card will have when the installation is
+            // complete, stated by the effect rather than by the card's side.
+            facedown,
         });
         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
             af.instructions[af.idx] = Instruction::InstallStepPlace;
@@ -7622,6 +7665,7 @@ impl Vm {
                 reveal_check: None,
                 reduce_total: crate::instr::Quantity::c(0),
                 reduce_install: crate::instr::Quantity::c(0),
+                facedown: false,
             };
             af.instructions.insert(
                 af.idx + 1,
@@ -8127,10 +8171,20 @@ impl Vm {
         card: ObjectId,
         dest: crate::instr::InstallDest,
         resolved: Option<Zone>,
+        facedown: bool,
     ) -> u32 {
         cite!("sec_install_cost");
         cite!("rule_install_cost_link");
         let o = &self.st.objects[&card];
+        // 8.5.11a lists "facedown Runner cards" beside assets, agendas and
+        // upgrades as the cards that have no install cost — which follows
+        // 8.1.4a, since a card with no characteristics has no printed cost to
+        // read. It is the INSTALL that is facedown, not the card, so the
+        // question is asked of the stipulation and not of the object (whose
+        // face at this point is still whatever its zone gave it).
+        if facedown && o.printed.side == Side::Runner {
+            return 0;
+        }
         let base = match o.printed.card_type {
             // 1 credit per ice already protecting the destination server.
             CardType::Ice => {
@@ -8245,7 +8299,7 @@ impl Vm {
                 return 0;
             }
             let payer = self.st.objects[&p.card].printed.side;
-            let (net, _) = self.install_payment(p.card, p.dest, p.resolved_zone, payer);
+            let (net, _) = self.install_payment(p.card, p.dest, p.resolved_zone, payer, p.facedown);
             return net.saturating_sub(p.reduce_install) as i64;
         }
         if let Some(pl) = self.plays.last() {
@@ -8267,7 +8321,7 @@ impl Vm {
         let cost = if p.ignore_costs {
             Cost::free()
         } else {
-            let (net, extra) = self.install_payment(p.card, p.dest, p.resolved_zone, payer);
+            let (net, extra) = self.install_payment(p.card, p.dest, p.resolved_zone, payer, p.facedown);
             // 1.16.2a: apply the lowering effect, then floor at 0. 9.9.6c: an
             // interrupt that modified the value while the instruction was
             // imminent has already produced the final number.
@@ -8285,9 +8339,10 @@ impl Vm {
         dest: crate::instr::InstallDest,
         resolved: Option<Zone>,
         payer: Side,
+        facedown: bool,
     ) -> (u32, Cost) {
         cite!("rule_install_cost");
-        let mut net = self.install_cost_at(card, dest, resolved);
+        let mut net = self.install_cost_at(card, dest, resolved, facedown);
         let mut extra = Cost::free();
         let mut pool: Vec<(ObjectId, Cost, u32)> = self.install_discounts(payer);
         pool.sort_by_key(|(_, _, amount)| std::cmp::Reverse(*amount));
@@ -8329,22 +8384,32 @@ impl Vm {
         card: ObjectId,
         dest: crate::instr::InstallDest,
         ignore_costs: bool,
+        facedown: bool,
     ) -> bool {
         cite!("rule_valid_search_target_install_play");
         let Some(o) = self.st.objects.get(&card) else { return false };
-        // 8.5.1/8.5.3: only these card types are ever installed.
+        // 8.5.1/8.5.3: only these card types are ever installed — unless the
+        // install is a facedown one, where 8.1.4a leaves the card with no
+        // card type to be judged by at all.
         cite!("rule_installing");
-        let installable = match o.printed.card_type {
-            CardType::Agenda | CardType::Asset | CardType::Ice | CardType::Upgrade => {
-                o.printed.side == Side::Corp
-            }
-            CardType::Program | CardType::Hardware | CardType::Resource => {
-                o.printed.side == Side::Runner
-            }
-            // Events, operations and identities can never be installed.
-            CardType::Event | CardType::Operation | CardType::Identity => false,
-        };
+        let installable = facedown
+            || match o.printed.card_type {
+                CardType::Agenda | CardType::Asset | CardType::Ice | CardType::Upgrade => {
+                    o.printed.side == Side::Corp
+                }
+                CardType::Program | CardType::Hardware | CardType::Resource => {
+                    o.printed.side == Side::Runner
+                }
+                // Events, operations and identities can never be installed.
+                CardType::Event | CardType::Operation | CardType::Identity => false,
+            };
         if !installable {
+            return false;
+        }
+        // 1.2.2: a "cannot" takes precedence over the ability directing the
+        // install, so a card a declaration forbids installing is not one this
+        // search could find either.
+        if self.install_prohibited(card) {
             return false;
         }
         // 1.13.6c: no valid host means the card cannot be installed at all.
@@ -8356,7 +8421,7 @@ impl Vm {
             return true;
         }
         let payer = o.printed.side;
-        let (net, extra) = self.install_payment(card, dest, None, payer);
+        let (net, extra) = self.install_payment(card, dest, None, payer, facedown);
         self.cost_payable(payer, card, &extra.plus(&Cost::credits(net)))
     }
 
@@ -8453,8 +8518,8 @@ impl Vm {
                 criteria.iter().all(|f| self.filter_matches(o, *f, source))
             })
             .filter(|id| match follow_on {
-                Some(FollowOn::Install { dest, ignore_costs }) => {
-                    self.could_install_found_card(*id, dest, ignore_costs)
+                Some(FollowOn::Install { dest, ignore_costs, facedown }) => {
+                    self.could_install_found_card(*id, dest, ignore_costs, facedown)
                 }
                 Some(FollowOn::Play { ignore_costs }) => {
                     self.could_play_found_card(*id, ignore_costs)
@@ -8474,8 +8539,13 @@ impl Vm {
                 card: TargetSpec::FoundBySearch,
                 dest,
                 ignore_costs,
+                facedown,
                 ..
-            } => Some(FollowOn::Install { dest: *dest, ignore_costs: *ignore_costs }),
+            } => Some(FollowOn::Install {
+                dest: *dest,
+                ignore_costs: *ignore_costs,
+                facedown: *facedown,
+            }),
             Instruction::PlayCard { card: TargetSpec::FoundBySearch, ignore_costs, .. } => {
                 Some(FollowOn::Play { ignore_costs: *ignore_costs })
             }
@@ -10376,6 +10446,20 @@ impl Vm {
                     return;
                 }
                 let c = p.card;
+                // 1.2.2: a "cannot install" declaration takes precedence over
+                // whatever directed this install, so no installation takes
+                // place — the card never even moves. Announce-time candidacy
+                // already keeps such a card from being chosen; this is the
+                // backstop for an install whose card was fixed rather than
+                // announced, and for one the declaration only reached after
+                // the announcement.
+                if self.install_prohibited(c) {
+                    cite!("rule_cannot_precedence");
+                    if let Some(p) = self.installs.last_mut() {
+                        p.aborted = true;
+                    }
+                    return;
+                }
                 // (b)-precondition: identify the destination. If it is
                 // invalid or cannot be identified, no installation can take
                 // place (8.5.14) — the card never even moves.
@@ -10450,12 +10534,17 @@ impl Vm {
                 };
                 // (a) place into the play area with its final faceup status;
                 // not yet installed or active.
+                // 8.5.2 puts a Corp card facedown and 4.6.4c a Runner card
+                // faceup; 4.6.4d is the exception, and the installing effect
+                // is what states it (Apex), so the stipulation decides here
+                // and nowhere else.
                 let side = self.st.objects[&c].printed.side;
                 self.move_card(c, Zone::PlayArea(side));
                 {
+                    cite!("rule_play_area_faceup_facedown");
                     let o = self.st.objects.get_mut(&c).unwrap();
                     o.staged = true;
-                    o.faceup = side == Side::Runner;
+                    o.faceup = side == Side::Runner && !p.facedown;
                 }
                 // 6.2.2: for ice being installed, the position is created
                 // HERE — when the destination is declared — and the ice
@@ -11707,6 +11796,13 @@ impl Vm {
             if !installable(self.st.objects[&c].printed.card_type) {
                 continue;
             }
+            // 1.2.2: the basic action directs an install, and a "cannot
+            // install" declaration takes precedence over it — so the action
+            // is not offered for a card the declaration describes at all.
+            if self.install_prohibited(c) {
+                cite!("rule_cannot_precedence");
+                continue;
+            }
             let dests = self.install_destinations_for(c, side);
             if dests.is_empty() {
                 continue;
@@ -11720,8 +11816,10 @@ impl Vm {
             // affordable; 8.5.16b then declares which.
             cite!("rule_inherent_cost_aggregates");
             cite!("rule_cost");
+            // 5.2.6d/5.2.7d state nothing about the card's face, so 8.5.2 and
+            // 4.6.4c settle it and 8.5.11a's facedown case cannot arise here.
             let affordable = dests.iter().any(|d| {
-                let (net, extra) = self.install_payment(c, *d, None, side);
+                let (net, extra) = self.install_payment(c, *d, None, side, false);
                 self.cost_payable(side, c, &extra.plus(&Cost::credits(net)))
             });
             if !affordable {
@@ -14843,6 +14941,7 @@ impl Vm {
                         reveal_check: None,
                         reduce_total: crate::instr::Quantity::Const(0),
                         reduce_install: crate::instr::Quantity::Const(0),
+                        facedown: false,
                     }],
                     None,
                     None,

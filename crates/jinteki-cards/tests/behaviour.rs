@@ -9505,3 +9505,199 @@ fn arissana_is_not_offered_outside_a_run() {
         t.tail(40)
     );
 }
+
+/// Apex: "When your turn begins, you may install 1 card from your grip
+/// facedown."
+///
+/// The whole of the sentence is in the last word. What goes into the rig is
+/// an EVENT — a card 8.5.1 never installs — because 8.1.4a leaves a facedown
+/// installed Runner card with no card type to be judged by; and nothing is
+/// paid for it, because 8.5.11a gives a facedown Runner card no install cost
+/// however expensive the card is printed. The description names no type for
+/// the same reason, so the grip is offered whole.
+#[test]
+fn apex_installs_any_card_of_the_grip_facedown_and_pays_nothing_for_it() {
+    let mut vm = Vm::empty(6187);
+    tk::install_identity(&mut vm, card("Apex: Invasive Predator"), Side::Runner);
+    let mut ev = tk::vanilla_runner_card("Some Event", CardType::Event);
+    ev.cost = Some(4);
+    let event = vm.new_object(ev, Zone::Hand(Side::Runner));
+    let mut prog = tk::vanilla_runner_card("Some Program", CardType::Program);
+    prog.cost = Some(3);
+    prog.memory_cost = Some(5);
+    let program = vm.new_object(prog, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([event, program]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().offering("invasive predator"), Reply::take("invasive predator"))
+            .when(Match::targets().once(), Reply::target(event))
+            .stop_at_action(),
+    );
+    let announced = t.of_kind(Kind::Targets);
+    assert_eq!(announced.len(), 1, "one card was chosen from the grip: {}", t.tail(30));
+    let candidates = announced[0].candidates();
+    assert!(
+        candidates.contains(&event) && candidates.contains(&program),
+        "the description names no card type, so an event is as installable as a program: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.objects[&event].zone,
+        Zone::Rig,
+        "the event was installed: {}",
+        t.tail(30)
+    );
+    assert!(
+        !vm.st.objects[&event].faceup,
+        "8.5.16a placed it with the status the effect stipulated: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 0,
+        "8.5.11a: a facedown Runner card has no install cost, so its printed 4 was never asked for: {}",
+        t.tail(30)
+    );
+}
+
+/// The same sentence, with the memory limit watching (CR 8.1.4a).
+///
+/// A program installed facedown has no card type and no memory cost, so the
+/// 1.20.2 limit of 4 does not see it — installing a 5[mu] program facedown
+/// must not trash anything.
+#[test]
+fn apexs_facedown_program_costs_no_memory() {
+    let mut vm = Vm::empty(6188);
+    tk::install_identity(&mut vm, card("Apex: Invasive Predator"), Side::Runner);
+    let mut prog = tk::vanilla_runner_card("Some Program", CardType::Program);
+    prog.cost = Some(0);
+    prog.memory_cost = Some(5);
+    let program = vm.new_object(prog, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(program);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().offering("invasive predator"), Reply::take("invasive predator"))
+            .when(Match::targets().once(), Reply::target(program))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&program].zone,
+        Zone::Rig,
+        "5[mu] over a limit of 4, and it stayed installed — a facedown card is not a program: {}",
+        t.tail(30)
+    );
+}
+
+/// Apex: "You cannot install non-virtual resources."
+///
+/// CR 1.2.2: the "cannot" takes precedence over the ability that directs the
+/// install, so the basic action (5.2.7d) is not offered for a resource the
+/// sentence describes — and a **virtual** one, which it does not describe, is
+/// offered as normal.
+#[test]
+fn apex_cannot_install_a_resource_that_is_not_virtual() {
+    let mut vm = Vm::empty(6189);
+    tk::install_identity(&mut vm, card("Apex: Invasive Predator"), Side::Runner);
+    let mut plain = tk::vanilla_runner_card("Some Resource", CardType::Resource);
+    plain.cost = Some(0);
+    let plain = vm.new_object(plain, Zone::Hand(Side::Runner));
+    let mut virt = tk::vanilla_runner_card("Some Virtual Resource", CardType::Resource);
+    virt.cost = Some(0);
+    virt.subtypes = vec!["Virtual"];
+    let virt = vm.new_object(virt, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([plain, virt]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().offering("invasive predator"), Reply::Pass)
+            .stop_at_action(),
+    );
+    let actions = t.of_kind(Kind::Action);
+    assert!(!actions.is_empty(), "the action window was reached: {}", t.tail(30));
+    let offered: Vec<_> = actions[0]
+        .actions()
+        .iter()
+        .filter_map(|a| match a {
+            jinteki_cr::decision::ActionOption::BasicInstall { card } => Some(*card),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        offered.contains(&virt),
+        "a virtual resource is not what the sentence forbids: {}",
+        t.tail(30)
+    );
+    assert!(
+        !offered.contains(&plain),
+        "and a non-virtual one cannot be installed at all: {}",
+        t.tail(30)
+    );
+}
+
+/// Where Apex's two sentences meet: the prohibition still bites on the
+/// facedown install.
+///
+/// 8.1.4a blanks a facedown Runner card that is INSTALLED, and 8.5.16a says
+/// the card it has just placed facedown "is not yet installed or active" — so
+/// at the 1.15.2 announcement the card is still a non-virtual resource, and
+/// 1.2.2 gives the "cannot" precedence over the install the identity's own
+/// second sentence directs. The virtual resource beside it is offered, which
+/// is what keeps this an assertion about the description and not about the
+/// facedown install refusing resources.
+#[test]
+fn apexs_facedown_install_still_cannot_take_a_non_virtual_resource() {
+    let mut vm = Vm::empty(6190);
+    tk::install_identity(&mut vm, card("Apex: Invasive Predator"), Side::Runner);
+    let mut plain = tk::vanilla_runner_card("Some Resource", CardType::Resource);
+    plain.cost = Some(0);
+    let plain = vm.new_object(plain, Zone::Hand(Side::Runner));
+    let mut virt = tk::vanilla_runner_card("Some Virtual Resource", CardType::Resource);
+    virt.cost = Some(0);
+    virt.subtypes = vec!["Virtual"];
+    let virt = vm.new_object(virt, Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([plain, virt]);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().offering("invasive predator"), Reply::take("invasive predator"))
+            .when(Match::targets().once(), Reply::target(virt))
+            .stop_at_action(),
+    );
+    let announced = t.of_kind(Kind::Targets);
+    assert_eq!(announced.len(), 1, "the identity announced its card: {}", t.tail(30));
+    let candidates = announced[0].candidates();
+    assert!(
+        !candidates.contains(&plain),
+        "the card is still a non-virtual resource while it is being chosen: {}",
+        t.tail(30)
+    );
+    assert!(
+        candidates.contains(&virt),
+        "and a virtual one, which the sentence does not describe, is offered: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.st.objects[&virt].zone, Zone::Rig, "it went in facedown: {}", t.tail(30));
+    assert!(!vm.st.objects[&virt].faceup, "facedown: {}", t.tail(30));
+}

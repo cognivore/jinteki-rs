@@ -26,6 +26,7 @@ pub mod corp_nbn;
 pub mod corp_neutral;
 pub mod corp_weyland;
 pub mod runner_anarch;
+pub mod runner_apex;
 pub mod runner_criminal;
 pub mod runner_neutral;
 pub mod runner_shaper;
@@ -37,6 +38,7 @@ pub fn cards() -> Vec<Card> {
     all.extend(runner_shaper::identities());
     all.extend(runner_anarch::identities());
     all.extend(runner_neutral::identities());
+    all.extend(runner_apex::identities());
     all.extend(runner_sunny::identities());
     all.extend(corp_haas_bioroid::identities());
     all.extend(corp_jinteki::identities());

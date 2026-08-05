@@ -1130,6 +1130,7 @@ pub fn install(card: TargetSpec, dest: InstallDest) -> Instruction {
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
+        facedown: false,
     }
 }
 /// "Install <a card>, **ignoring all costs**." (Synapse Global; 1.16.5c —
@@ -1145,6 +1146,7 @@ pub fn install_ignoring_all_costs(card: TargetSpec, dest: InstallDest) -> Instru
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(0),
+        facedown: false,
     }
 }
 /// "Install <a card>, paying N[credit] less." (1.16.6 — a reduction of the
@@ -1158,6 +1160,23 @@ pub fn install_paying_less(card: TargetSpec, dest: InstallDest, less: i64) -> In
         reveal_check: None,
         reduce_total: Quantity::c(0),
         reduce_install: Quantity::c(less),
+        facedown: false,
+    }
+}
+/// "Install 1 card from your grip **facedown**." (Apex; CR 4.6.4d / 8.1.4.)
+/// The card goes into the rig with no characteristics at all (8.1.4a), which
+/// is why it costs nothing to install (8.5.11a) and why the description
+/// beside it need not name a card type: a facedown card has none.
+pub fn install_facedown(card: TargetSpec, dest: InstallDest) -> Instruction {
+    Instruction::InstallCard {
+        card,
+        dest,
+        and_rez: false,
+        ignore_costs: false,
+        reveal_check: None,
+        reduce_total: Quantity::c(0),
+        reduce_install: Quantity::c(0),
+        facedown: true,
     }
 }
 /// "You may play N operations from HQ." (8.6.3 — chosen one at a time, and
@@ -2611,6 +2630,13 @@ pub fn cannot_initiate_runs_on_remote_servers() -> StaticDecl {
 }
 pub fn can_be_advanced() -> StaticDecl {
     StaticDecl::CanBeAdvancedSelf
+}
+/// "You cannot install **non-virtual** resources." (Apex; CR 1.2.2 — a
+/// "cannot" takes precedence over every ability that would direct the
+/// install, including the basic action.) The criteria are the sentence's
+/// description of the cards it forbids.
+pub fn cannot_install(criteria: &[TargetFilter]) -> StaticDecl {
+    StaticDecl::CannotInstallMatching { criteria: criteria.to_vec() }
 }
 /// "Lower the install cost of the first <described card> you install each
 /// turn by N." (Kate "Mac" McCaffrey, Az McCaffrey.) The reduction happens of

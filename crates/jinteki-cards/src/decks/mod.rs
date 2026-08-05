@@ -69,6 +69,10 @@ pub const SOURCES: &[(&str, &str)] = &[
         include_str!("identities/runner_neutral.rs"),
     ),
     (
+        "identities/runner_apex.rs",
+        include_str!("identities/runner_apex.rs"),
+    ),
+    (
         "identities/runner_sunny.rs",
         include_str!("identities/runner_sunny.rs"),
     ),
