@@ -1,11 +1,9 @@
 You are implementing EVERY identity in jinteki-rs, unattended.
 
-CLAIMED ELSEWHERE (2026-08-05 late; delete this block when the queue reads
-150/150): the cluster session now holds EVERY remaining unticked identity —
-AgInfusion, MirrorMorph, Sebastião, Jinteki Biotech, and Cyber Bureau (the
-user authorized the main-text data route). Do NOT implement any identity
-this run; treat the identity phase as complete and leave the landings to
-the coordinator. If something else needs doing, work the decks phase.
+THE QUEUE IS COMPLETE (150/150, 2026-08-05, main df82752). There is no
+identity left to implement. If you are reading this brief, the drive should
+be on the decks phase — do nothing here and exit cleanly.
+
 
 Read FIRST: docs/vm/IDENTITY-QUEUE.md (the full list, grouped, with printed
 text and a checkbox each), then docs/vm/WAVES.md, then docs/cards/EDSL.md,
