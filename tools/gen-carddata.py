@@ -9,6 +9,8 @@ Pipeline (see docs/CARD-COVERAGE.md):
     ▼
   crates/jinteki-core/carddata/cards.json      printed data for EVERY card
   crates/jinteki-core/carddata/coverage.json   per-title implementation coverage
+  crates/jinteki-core/carddata/formats.json    format legality (eternal), from
+                                               the NSG clone's v2 format data
   docs/CARD-COVERAGE.md                        generated human summary
 
 Back faces: the EDN STRIPS double-sided cards' back-face text — its :faces
@@ -54,6 +56,7 @@ REFERENCE_CARDS_DIR = os.path.join(
 CARDDB_RS = os.path.join(REPO, "crates", "jinteki-core", "src", "carddb.rs")
 OUT_CARDS = os.path.join(REPO, "crates", "jinteki-core", "carddata", "cards.json")
 OUT_COVERAGE = os.path.join(REPO, "crates", "jinteki-core", "carddata", "coverage.json")
+OUT_FORMATS = os.path.join(REPO, "crates", "jinteki-core", "carddata", "formats.json")
 OUT_DOC = os.path.join(REPO, "docs", "CARD-COVERAGE.md")
 
 # ── tolerant EDN reader ─────────────────────────────────────────────────────
@@ -346,6 +349,108 @@ def nsg_clone_commit(clone_dir):
     ).strip()
 
 
+# ── NSG v2 card ids & format legality ───────────────────────────────────────
+#
+# Format data (card pools, ban lists, the eternal points list) lives only in
+# the NSG clone's v2 tree and speaks in v2 card ids. Those ids and the EDN's
+# :normalizedtitle come from the same titles but disagree on punctuation:
+# the EDN keeps apostrophes as separators ("aesop-s-pawnshop"), v2 drops them
+# ("aesops_pawnshop"). The join key is therefore the title slug collapsed to
+# lowercase alphanumerics — verified collision-free on both sides (a
+# collision is a hard error below, never a silent mis-join).
+
+
+def collapse_key(s):
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def load_v2_card_ids(clone_dir):
+    """{collapse_key: v2 card id} for every card the clone carries."""
+    cards_dir = os.path.join(clone_dir, "v2", "cards")
+    out = {}
+    for fname in sorted(os.listdir(cards_dir)):
+        if not fname.endswith(".json"):
+            continue
+        with open(os.path.join(cards_dir, fname), encoding="utf-8") as f:
+            cid = json.load(f)["id"]
+        k = collapse_key(cid)
+        if k in out:
+            sys.exit(f"error: v2 card ids collide under the collapse key: {out[k]} / {cid}")
+        out[k] = cid
+    return out
+
+
+def build_eternal_format(clone_dir):
+    """The active eternal snapshot, resolved to a self-contained legality
+    blob: restriction (bans, points, point limit) + the card pool expanded to
+    concrete v2 card ids.
+
+    The joins, as the v2 tree actually links them:
+      formats/eternal.json  snapshots[].active        → restriction_id, card_pool_id
+      card_pools/<pool>.json[0]                       → card_cycle_ids + card_set_ids
+      card_sets.json[].card_cycle_id                  → sets belonging to those cycles
+      printings/<set_id>.json[].card_id               → the cards printed in a set
+    (v2/cards/*.json carry no set membership; printings are the set↔card join.)
+    """
+    v2 = os.path.join(clone_dir, "v2")
+
+    def load(*parts):
+        with open(os.path.join(v2, *parts), encoding="utf-8") as f:
+            return json.load(f)
+
+    fmt = load("formats", "eternal.json")
+    active = [s for s in fmt["snapshots"] if s.get("active")]
+    if len(active) != 1:
+        sys.exit(f"error: expected exactly one active eternal snapshot, found {len(active)}")
+    snapshot = active[0]
+    restriction_id = snapshot["restriction_id"]
+    card_pool_id = snapshot["card_pool_id"]
+
+    restriction = load("restrictions", "eternal", f"{restriction_id}.json")
+    if restriction["id"] != restriction_id:
+        sys.exit(f"error: restriction file {restriction_id} declares id {restriction['id']!r}")
+
+    pools = load("card_pools", f"{card_pool_id}.json")
+    pool = next((p for p in pools if p["id"] == card_pool_id), None)
+    if pool is None:
+        sys.exit(f"error: card pool {card_pool_id!r} not found in its file")
+    cycle_ids = set(pool.get("card_cycle_ids") or [])
+    set_ids = set(pool.get("card_set_ids") or [])
+    for s in load("card_sets.json"):
+        if s["card_cycle_id"] in cycle_ids:
+            set_ids.add(s["id"])
+
+    legal_cards = set()
+    for sid in sorted(set_ids):
+        path = os.path.join(v2, "printings", f"{sid}.json")
+        if not os.path.isfile(path):
+            sys.exit(f"error: card pool {card_pool_id!r} names set {sid!r} with no printings file")
+        for printing in load("printings", f"{sid}.json"):
+            legal_cards.add(printing["card_id"])
+
+    banned = sorted(restriction.get("banned") or [])
+    points = OrderedDict(
+        (tier, sorted(ids))
+        for tier, ids in sorted(
+            (restriction.get("points") or {}).items(), key=lambda kv: int(kv[0])
+        )
+    )
+    for cid in banned + [c for ids in points.values() for c in ids]:
+        if cid not in legal_cards:
+            sys.exit(f"error: restriction {restriction_id} names {cid!r}, absent from the card pool")
+
+    return OrderedDict(
+        [
+            ("restriction_id", restriction_id),
+            ("point_limit", restriction["point_limit"]),
+            ("banned", banned),
+            ("points", points),
+            ("card_pool_id", card_pool_id),
+            ("legal_cards", sorted(legal_cards)),
+        ]
+    )
+
+
 # ── card normalization ──────────────────────────────────────────────────────
 
 
@@ -465,6 +570,48 @@ def main():
             f"{sorted(set(v2_faces) - joined)}"
         )
 
+    # NSG v2 card id per card (format legality speaks v2 ids; see
+    # build_eternal_format). Collapse-key join; a card the v2 tree does not
+    # carry (player aids, two never-NSG promo identities) gets null.
+    v2_ids = load_v2_card_ids(NSG_CLONE)
+    nsg_matched = 0
+    for c in cards:
+        cid = v2_ids.get(collapse_key(c.get("slug") or c["title"]))
+        c["nsg_id"] = cid
+        if cid:
+            nsg_matched += 1
+    print(f"  NSG v2 ids: {nsg_matched}/{len(cards)} cards joined", file=sys.stderr)
+
+    # Format legality: the active eternal snapshot, expanded and pinned.
+    eternal = build_eternal_format(NSG_CLONE)
+    our_nsg_ids = {c["nsg_id"] for c in cards if c["nsg_id"]}
+    restriction_ids = set(eternal["banned"]) | {
+        cid for ids in eternal["points"].values() for cid in ids
+    }
+    missing = sorted(restriction_ids - our_nsg_ids)
+    if missing:
+        sys.exit(f"error: eternal restriction names cards our card data cannot resolve: {missing}")
+    formats = OrderedDict(
+        [
+            (
+                "_provenance",
+                OrderedDict(
+                    [
+                        ("generator", "tools/gen-carddata.py"),
+                        ("source", f"netrunner-cards-json v2 @ {nsg_commit}"),
+                    ]
+                ),
+            ),
+            ("eternal", eternal),
+        ]
+    )
+    print(
+        f"  eternal: restriction {eternal['restriction_id']}, "
+        f"{len(eternal['legal_cards'])} legal cards, "
+        f"{len(eternal['banned'])} banned, point limit {eternal['point_limit']}",
+        file=sys.stderr,
+    )
+
     # Coverage sources.
     defcards = scan_defcards(REFERENCE_CARDS_DIR)
     rs_titles = scan_rust_behaviors(CARDDB_RS)
@@ -521,6 +668,9 @@ def main():
         f.write("\n")
     with open(OUT_COVERAGE, "w", encoding="utf-8") as f:
         json.dump(coverage, f, ensure_ascii=False, indent=1)
+        f.write("\n")
+    with open(OUT_FORMATS, "w", encoding="utf-8") as f:
+        json.dump(formats, f, ensure_ascii=False, indent=1)
         f.write("\n")
 
     # ── docs/CARD-COVERAGE.md ───────────────────────────────────────────────
@@ -644,7 +794,7 @@ def main():
         f.write("\n".join(lines))
 
     print(
-        f"wrote {OUT_CARDS} ({total} cards), {OUT_COVERAGE}, {OUT_DOC}",
+        f"wrote {OUT_CARDS} ({total} cards), {OUT_COVERAGE}, {OUT_FORMATS}, {OUT_DOC}",
         file=sys.stderr,
     )
     print(

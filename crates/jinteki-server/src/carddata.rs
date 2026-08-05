@@ -43,6 +43,17 @@ pub struct Card {
     /// Banned in the standard format (`:format {:standard {:banned true}}`).
     #[serde(default)]
     pub standard_banned: bool,
+    /// Printed card text (oracle, HTML-ish markup as the EDN carries it).
+    #[serde(default)]
+    pub text: Option<String>,
+    /// The EDN `:normalizedtitle` slug (hyphenated).
+    #[serde(default)]
+    pub slug: Option<String>,
+    /// The NSG v2 card id — the vocabulary format legality (formats.json)
+    /// speaks. None for cards the NSG v2 tree does not carry (player aids,
+    /// two never-NSG promo identities).
+    #[serde(default)]
+    pub nsg_id: Option<String>,
 }
 
 impl Card {
@@ -63,6 +74,7 @@ struct Indexes {
     by_title: HashMap<&'static str, &'static Card>,
     by_code: HashMap<&'static str, &'static Card>,
     by_previous_code: HashMap<&'static str, &'static Card>,
+    by_nsg_id: HashMap<&'static str, &'static Card>,
 }
 
 fn indexes() -> &'static Indexes {
@@ -71,14 +83,18 @@ fn indexes() -> &'static Indexes {
         let mut by_title = HashMap::new();
         let mut by_code = HashMap::new();
         let mut by_previous_code = HashMap::new();
+        let mut by_nsg_id = HashMap::new();
         for c in cards() {
             by_title.insert(c.title.as_str(), c);
             by_code.insert(c.code.as_str(), c);
             for pc in &c.previous_codes {
                 by_previous_code.insert(pc.as_str(), c);
             }
+            if let Some(id) = c.nsg_id.as_deref() {
+                by_nsg_id.insert(id, c);
+            }
         }
-        Indexes { by_title, by_code, by_previous_code }
+        Indexes { by_title, by_code, by_previous_code, by_nsg_id }
     })
 }
 
@@ -95,6 +111,12 @@ pub fn by_code(code: &str) -> Option<&'static Card> {
 /// Card by an earlier printing's code (NRDB import of old decklists).
 pub fn by_previous_code(code: &str) -> Option<&'static Card> {
     indexes().by_previous_code.get(code).copied()
+}
+
+/// Card by NSG v2 id — the id vocabulary of formats.json and the eternal
+/// catalog/deck API.
+pub fn by_nsg_id(id: &str) -> Option<&'static Card> {
+    indexes().by_nsg_id.get(id).copied()
 }
 
 /// Resolve an NRDB code: latest printings first, then previous printings.

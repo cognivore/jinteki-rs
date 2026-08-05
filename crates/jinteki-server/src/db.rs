@@ -13,7 +13,9 @@ use std::path::Path;
 use tokio::sync::{Mutex, MutexGuard};
 
 /// Numbered migrations, applied in order inside one transaction each.
-/// Version 1 is the normative DDL from ACCOUNTS-AND-DECKS.md §5.2.
+/// Version 1 is the normative DDL from ACCOUNTS-AND-DECKS.md §5.2; version 2
+/// adds user-built Eternal decks (the `/api/decks` contract — decks stored
+/// in the catalog's card-id vocabulary, `{"<id>": count}`).
 const MIGRATIONS: &[(i64, &str)] = &[(
     1,
     r#"
@@ -96,6 +98,20 @@ CREATE TABLE audit (
   action  TEXT NOT NULL,
   detail  TEXT             -- JSON; NEVER contains raw tokens or full emails
 );
+"#,
+), (
+    2,
+    r#"
+CREATE TABLE eternal_decks (
+  id          TEXT PRIMARY KEY,               -- public key is 'user-'||id
+  owner_id    TEXT NOT NULL REFERENCES users(id),
+  name        TEXT NOT NULL,                  -- <=120 chars
+  identity    TEXT NOT NULL,                  -- catalog card id (NSG v2 slug)
+  cards_json  TEXT NOT NULL,                  -- {"<id>": count, ...} verbatim
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX idx_eternal_decks_owner ON eternal_decks(owner_id, updated_at DESC);
 "#,
 )];
 
@@ -227,7 +243,16 @@ mod tests {
     fn migrations_apply_once_and_schema_exists() {
         let db = Db::open_in_memory().unwrap();
         let conn = db.blocking_lock();
-        for table in ["users", "sessions", "claims", "merges", "decks", "games", "audit"] {
+        for table in [
+            "users",
+            "sessions",
+            "claims",
+            "merges",
+            "decks",
+            "games",
+            "audit",
+            "eternal_decks",
+        ] {
             let n: i64 = conn
                 .query_row(
                     "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1",
@@ -240,7 +265,7 @@ mod tests {
         let v: i64 = conn
             .query_row("SELECT max(version) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, 2);
     }
 
     #[test]

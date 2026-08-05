@@ -60,7 +60,7 @@ async fn me_mints_anon_once_and_cookie_persists_identity() {
 }
 
 #[tokio::test]
-async fn library_seeded_fork_and_deck_crud_flow() {
+async fn library_seeded_and_forkable() {
     let (base, _db) = spawn_app().await;
     let c = client();
 
@@ -78,63 +78,114 @@ async fn library_seeded_fork_and_deck_crud_flow() {
         .send().await.unwrap().json().await.unwrap();
     assert!(forked["name"].as_str().unwrap().ends_with("(fork)"));
     assert_eq!(forked["source"]["kind"], "fork");
+}
 
-    // It shows in my decks, with playable + legality roll-ups.
+/// The exact eternal deck contract: catalog, defaults-first list with
+/// display names, CRUD keyed `user-<id>`, save-even-if-illegal, built-in 403.
+#[tokio::test]
+async fn eternal_catalog_and_deck_contract() {
+    let (base, _db) = spawn_app().await;
+    let c = client();
+
+    // Catalog: eternal only, identities split out, draft-only never listed.
+    let cat: serde_json::Value = c
+        .get(format!("{base}/api/catalog?format=eternal")).send().await.unwrap()
+        .json().await.unwrap();
+    assert_eq!(cat["format"], "eternal");
+    assert_eq!(cat["point_limit"], 7);
+    let identities = cat["identities"].as_array().unwrap();
+    assert!(identities.iter().all(|i| i["draft_only"] == false));
+    assert!(!identities.iter().any(|i| i["id"] == "boris_syfr_kovac_crafty_veteran"),
+        "draft-only identities never appear for Eternal");
+    assert!(cat["cards"].as_array().unwrap().iter().any(|x| x["id"] == "sure_gamble"));
+    let unknown = c.get(format!("{base}/api/catalog?format=startup")).send().await.unwrap();
+    assert_eq!(unknown.status(), 400);
+
+    // Deck list: the two defaults first, display-named, builtin:true.
     let mine: serde_json::Value = c.get(format!("{base}/api/decks")).send().await.unwrap()
         .json().await.unwrap();
-    assert_eq!(mine.as_array().unwrap().len(), 1);
-    assert!(mine[0]["playable"]["behavior"].as_u64().unwrap() > 0);
+    let decks = mine["decks"].as_array().unwrap();
+    assert_eq!(decks[0]["key"], "andromeda");
+    assert_eq!(decks[0]["name"], "Mezzie's Andromeda");
+    assert_eq!(decks[0]["builtin"], true);
+    assert_eq!(decks[1]["key"], "gauntlet");
+    assert_eq!(decks[1]["name"], "Mezzie's Making Stars");
+    assert_eq!(decks[1]["builtin"], true);
+    assert_eq!(decks.len(), 2, "a fresh account has only the defaults");
 
-    // Create a deck by hand; server re-canonicalizes codes.
+    // A built-in reads whole, in catalog ids, and refuses writes.
+    let gauntlet: serde_json::Value = c
+        .get(format!("{base}/api/decks/gauntlet")).send().await.unwrap()
+        .json().await.unwrap();
+    assert_eq!(gauntlet["identity"], "nebula_talent_management_making_stars");
+    assert_eq!(gauntlet["cards"]["jackson_howard"], 3);
+    assert_eq!(gauntlet["legal"], true);
+    let del = c.delete(format!("{base}/api/decks/gauntlet")).send().await.unwrap();
+    assert_eq!(del.status(), 403, "built-ins cannot be deleted");
+    let put = c.put(format!("{base}/api/decks/andromeda"))
+        .json(&serde_json::json!({
+            "name": "x", "identity": "andromeda_dispossessed_ristie", "cards": {}
+        }))
+        .send().await.unwrap();
+    assert_eq!(put.status(), 403, "built-ins cannot be edited");
+
+    // Create: saves even if illegal, marked; unknown ids get problems, not 400.
     let created: serde_json::Value = c
         .post(format!("{base}/api/decks"))
         .json(&serde_json::json!({
             "name": "smoke",
-            "identity": {"title": "Hoshiko Shiro: Untold Protagonist"},
-            "cards": [{"title": "Sure Gamble", "qty": 3}],
+            "identity": "hoshiko_shiro_untold_protagonist",
+            "cards": {"sure_gamble": 3, "definitely_not_a_card": 1},
         }))
         .send().await.unwrap().json().await.unwrap();
-    let deck_id = created["id"].as_str().unwrap().to_string();
-    assert_eq!(created["cards"][0]["code"], "30030", "code force-set to latest printing");
-    assert_eq!(created["validation"]["legal"], false, "3 cards < min deck size");
-    assert!(created["validation"]["problems"].as_array().unwrap().iter()
-        .any(|p| p["code"] == "deck-size"));
+    let key = created["key"].as_str().unwrap().to_string();
+    assert!(key.starts_with("user-"));
+    assert_eq!(created["legal"], false);
+    let problems = created["problems"].as_array().unwrap();
+    assert!(problems.iter().any(|p| p["code"] == "deck_size"));
+    assert!(problems.iter().any(|p| p["code"] == "unsupported"
+        && p["card"] == "definitely_not_a_card"));
 
-    // Unknown titles are rejected naming the offender.
-    let bad = c
-        .post(format!("{base}/api/decks"))
-        .json(&serde_json::json!({
-            "name": "bad", "identity": {"title": "Hoshiko Shiro: Untold Protagonist"},
-            "cards": [{"title": "Definitely Fake Card", "qty": 1}],
-        }))
-        .send().await.unwrap();
-    assert_eq!(bad.status(), 400);
-    assert!(bad.json::<serde_json::Value>().await.unwrap()["error"]
-        .as_str().unwrap().contains("Definitely Fake Card"));
+    // It joins the list after the defaults.
+    let mine: serde_json::Value = c.get(format!("{base}/api/decks")).send().await.unwrap()
+        .json().await.unwrap();
+    let decks = mine["decks"].as_array().unwrap();
+    assert_eq!(decks.len(), 3);
+    assert_eq!(decks[2]["key"], key.as_str());
+    assert_eq!(decks[2]["builtin"], false);
+    assert_eq!(decks[2]["legal"], false);
 
-    // Update, read, delete.
+    // Update, read whole, delete.
     let updated: serde_json::Value = c
-        .put(format!("{base}/api/decks/{deck_id}"))
+        .put(format!("{base}/api/decks/{key}"))
         .json(&serde_json::json!({
             "name": "smoke v2",
-            "identity": {"title": "Hoshiko Shiro: Untold Protagonist"},
-            "cards": [{"title": "Sure Gamble", "qty": 2}],
+            "identity": "hoshiko_shiro_untold_protagonist",
+            "cards": {"sure_gamble": 2},
         }))
         .send().await.unwrap().json().await.unwrap();
-    assert_eq!(updated["name"], "smoke v2");
-    let got = c.get(format!("{base}/api/decks/{deck_id}")).send().await.unwrap();
-    assert_eq!(got.status(), 200);
-    let del = c.delete(format!("{base}/api/decks/{deck_id}")).send().await.unwrap();
+    assert_eq!(updated["key"], key.as_str());
+    let got: serde_json::Value = c.get(format!("{base}/api/decks/{key}")).send().await.unwrap()
+        .json().await.unwrap();
+    assert_eq!(got["name"], "smoke v2");
+    assert_eq!(got["cards"]["sure_gamble"], 2);
+
+    // Another client cannot read my deck (ownership).
+    let other = client();
+    other.get(format!("{base}/api/me")).send().await.unwrap();
+    let denied = other.get(format!("{base}/api/decks/{key}")).send().await.unwrap();
+    assert_eq!(denied.status(), 404);
+
+    let del = c.delete(format!("{base}/api/decks/{key}")).send().await.unwrap();
     assert_eq!(del.status(), 200);
-    let gone = c.get(format!("{base}/api/decks/{deck_id}")).send().await.unwrap();
+    let gone = c.get(format!("{base}/api/decks/{key}")).send().await.unwrap();
     assert_eq!(gone.status(), 404);
 
-    // Another client cannot read my remaining deck (ownership).
-    let other = client();
-    let fork_id = mine[0]["id"].as_str().unwrap();
-    other.get(format!("{base}/api/me")).send().await.unwrap();
-    let denied = other.get(format!("{base}/api/decks/{fork_id}")).send().await.unwrap();
-    assert_eq!(denied.status(), 404);
+    // Malformed shape (not deck content) is the one 400.
+    let bad = c.post(format!("{base}/api/decks"))
+        .json(&serde_json::json!({"name": "", "identity": "x", "cards": {}}))
+        .send().await.unwrap();
+    assert_eq!(bad.status(), 400);
 }
 
 #[tokio::test]

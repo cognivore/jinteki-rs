@@ -9,6 +9,8 @@
 use crate::auth::{self, SessionUser};
 use crate::db::{audit, sha256_hex, Db};
 use crate::decks;
+use crate::eternal;
+use crate::eternal_decks::{self, WriteOutcome};
 use crate::guard::{client_ip, Guard, IpVerdict};
 use crate::mail::Mailer;
 use crate::nrdb;
@@ -119,6 +121,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/auth/logout", post(api_logout))
         .route("/api/profile", put(api_profile))
         .route("/api/account", delete(api_account_delete))
+        .route("/api/catalog", get(api_catalog))
         .route("/api/decks", get(api_decks_list).post(api_decks_create))
         .route(
             "/api/decks/{id}",
@@ -301,7 +304,28 @@ async fn api_account_delete(State(st): State<AppState>, headers: HeaderMap) -> R
     resp
 }
 
-// ── deck endpoints ─────────────────────────────────────────────────────────
+// ── eternal catalog + deck endpoints ───────────────────────────────────────
+//
+// The exact deck-builder contract:
+//   GET    /api/catalog?format=eternal → {"format","point_limit","identities","cards"}
+//   GET    /api/decks                  → {"decks":[…]} — defaults first, builtin:true
+//   POST   /api/decks                  → {"key","legal","problems"} (saves even if illegal)
+//   GET    /api/decks/<key>            → {"key","name","identity","cards","legal","problems"}
+//   PUT    /api/decks/<key>            → as POST; built-ins 403
+//   DELETE /api/decks/<key>            → {"ok":true}; built-ins 403
+// Card ids throughout are the catalog's NSG v2 slugs (`eternal.rs`).
+
+/// The Eternal deck-builder catalog: engine-supported ∩ card pool, with ban
+/// flags, points-list values and the draft-only exclusion (`eternal.rs`).
+async fn api_catalog(Query(q): Query<HashMap<String, String>>) -> Response {
+    match q.get("format").map(String::as_str).unwrap_or("eternal") {
+        "eternal" => Json(eternal::catalog_json()).into_response(),
+        other => err(
+            StatusCode::BAD_REQUEST,
+            &format!("unknown format \"{other}\" — this server serves \"eternal\""),
+        ),
+    }
+}
 
 async fn api_decks_list(State(st): State<AppState>, headers: HeaderMap) -> Response {
     let (su, cookie) = match session_or_mint(&st, &headers).await {
@@ -309,8 +333,14 @@ async fn api_decks_list(State(st): State<AppState>, headers: HeaderMap) -> Respo
         Err(e) => return e,
     };
     let conn = st.db.lock().await;
-    let list = decks::list_mine(&conn, &su.user_id);
-    with_cookie(Json(json!(list)).into_response(), cookie)
+    let list = eternal_decks::list_json(&conn, &su.user_id);
+    with_cookie(Json(list).into_response(), cookie)
+}
+
+fn parse_eternal_draft(body: Value) -> Result<eternal_decks::EternalDraft, Response> {
+    let draft: eternal_decks::EternalDraft = serde_json::from_value(body)
+        .map_err(|e| err(StatusCode::BAD_REQUEST, &format!("bad deck payload: {e}")))?;
+    draft.checked().map_err(|msg| err(StatusCode::BAD_REQUEST, &msg))
 }
 
 async fn api_decks_create(
@@ -322,16 +352,14 @@ async fn api_decks_create(
         Ok(x) => x,
         Err(e) => return e,
     };
-    let draft: decks::DeckDraft = match serde_json::from_value(body) {
+    let draft = match parse_eternal_draft(body) {
         Ok(d) => d,
-        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("bad deck payload: {e}")),
-    };
-    let canonical = match decks::canonicalize(&draft) {
-        Ok(c) => c,
-        Err(msg) => return err(StatusCode::BAD_REQUEST, &msg),
+        Err(e) => return e,
     };
     let conn = st.db.lock().await;
-    match decks::insert(&conn, &su.user_id, &canonical) {
+    // Saved even if illegal (marked by `legal` + `problems`): a deck under
+    // construction is still the player's deck.
+    match eternal_decks::create(&conn, &su.user_id, &draft) {
         Ok(v) => with_cookie(Json(v).into_response(), cookie),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, &format!("db error: {e}")),
     }
@@ -340,14 +368,15 @@ async fn api_decks_create(
 async fn api_deck_get(
     State(st): State<AppState>,
     headers: HeaderMap,
-    Path(id): Path<String>,
+    Path(key): Path<String>,
 ) -> Response {
-    let Some(su) = session_of(&st, &headers).await else {
-        return err(StatusCode::UNAUTHORIZED, "no session");
+    let (su, cookie) = match session_or_mint(&st, &headers).await {
+        Ok(x) => x,
+        Err(e) => return e,
     };
     let conn = st.db.lock().await;
-    match decks::get_owned_json(&conn, &id, &su.user_id) {
-        Some(v) => Json(v).into_response(),
+    match eternal_decks::get_json(&conn, &key, &su.user_id) {
+        Some(v) => with_cookie(Json(v).into_response(), cookie),
         None => err(StatusCode::NOT_FOUND, "no such deck"),
     }
 }
@@ -355,40 +384,39 @@ async fn api_deck_get(
 async fn api_deck_put(
     State(st): State<AppState>,
     headers: HeaderMap,
-    Path(id): Path<String>,
+    Path(key): Path<String>,
     Json(body): Json<Value>,
 ) -> Response {
-    let Some(su) = session_of(&st, &headers).await else {
-        return err(StatusCode::UNAUTHORIZED, "no session");
+    let (su, cookie) = match session_or_mint(&st, &headers).await {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let draft: decks::DeckDraft = match serde_json::from_value(body) {
+    let draft = match parse_eternal_draft(body) {
         Ok(d) => d,
-        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("bad deck payload: {e}")),
-    };
-    let canonical = match decks::canonicalize(&draft) {
-        Ok(c) => c,
-        Err(msg) => return err(StatusCode::BAD_REQUEST, &msg),
+        Err(e) => return e,
     };
     let conn = st.db.lock().await;
-    match decks::update(&conn, &id, &su.user_id, &canonical) {
-        Some(v) => Json(v).into_response(),
-        None => err(StatusCode::NOT_FOUND, "no such deck"),
+    match eternal_decks::update(&conn, &key, &su.user_id, &draft) {
+        WriteOutcome::Ok(v) => with_cookie(Json(v).into_response(), cookie),
+        WriteOutcome::Builtin => err(StatusCode::FORBIDDEN, "built-in decks cannot be edited"),
+        WriteOutcome::NotFound => err(StatusCode::NOT_FOUND, "no such deck"),
     }
 }
 
 async fn api_deck_delete(
     State(st): State<AppState>,
     headers: HeaderMap,
-    Path(id): Path<String>,
+    Path(key): Path<String>,
 ) -> Response {
-    let Some(su) = session_of(&st, &headers).await else {
-        return err(StatusCode::UNAUTHORIZED, "no session");
+    let (su, cookie) = match session_or_mint(&st, &headers).await {
+        Ok(x) => x,
+        Err(e) => return e,
     };
     let conn = st.db.lock().await;
-    if decks::delete(&conn, &id, &su.user_id) {
-        Json(json!({ "ok": true })).into_response()
-    } else {
-        err(StatusCode::NOT_FOUND, "no such deck")
+    match eternal_decks::delete(&conn, &key, &su.user_id) {
+        WriteOutcome::Ok(v) => with_cookie(Json(v).into_response(), cookie),
+        WriteOutcome::Builtin => err(StatusCode::FORBIDDEN, "built-in decks cannot be deleted"),
+        WriteOutcome::NotFound => err(StatusCode::NOT_FOUND, "no such deck"),
     }
 }
 

@@ -344,7 +344,11 @@ async fn lobby_lists_an_open_seat_and_join_honours_the_gate() {
     assert_eq!(row["creator"], json!("carol"));
     assert_eq!(row["side"], json!("corp"), "the side the creator took");
     assert_eq!(row["open-side"], json!("runner"), "the seat going begging");
-    assert_eq!(row["open-deck"], json!(cr::ANDROMEDA.title), "…and its deck");
+    assert_eq!(
+        row["open-deck"],
+        json!(cr::ANDROMEDA.display_name),
+        "…and its deck, by its display name"
+    );
     assert_eq!(row["started"], json!(false));
     assert_eq!(row["format"], json!("eternal"));
     // Bridge-shaped players array, so a lobby row renders with one renderer.

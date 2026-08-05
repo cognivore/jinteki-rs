@@ -306,10 +306,12 @@ fn side_name(s: Side) -> &'static str {
     }
 }
 /// The eternal deck that comes with a seat — picking a side picks a deck.
+/// Display layer: players see the deck's display name, never its internal
+/// key or printed provenance title.
 pub fn deck_title(s: Side) -> &'static str {
     match s {
-        Side::Corp => cr::GAUNTLET.title,
-        Side::Runner => cr::ANDROMEDA.title,
+        Side::Corp => cr::GAUNTLET.display_name,
+        Side::Runner => cr::ANDROMEDA.display_name,
     }
 }
 
@@ -333,7 +335,11 @@ mod tests {
         assert_eq!(row["creator"], json!("guest-abcd"));
         assert_eq!(row["side"], json!("corp"));
         assert_eq!(row["open-side"], json!("runner"));
-        assert_eq!(row["open-deck"], json!(cr::ANDROMEDA.title));
+        assert_eq!(
+            row["open-deck"],
+            json!("Mezzie's Andromeda"),
+            "the open seat advertises the display name"
+        );
         assert!(cancel(&o.token).await);
         let list = list_json().await;
         assert!(!list["list"]

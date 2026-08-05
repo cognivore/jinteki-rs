@@ -157,17 +157,25 @@ pub const ANDROMEDA_PILE: &[&str] = &[
     // Complete, and enlisted for the same reason as the rest — with the one
     // caveat that its first printed line is "Draft format only." and Andromeda
     // is not a draft deck. Format legality is settled before the game begins
-    // (1.4.2) and nothing reads it afterwards, so it changes no play here; a
-    // pile that wanted to honour it would filter on that printed line, which
-    // is a decision about deck construction and not about this card.
+    // (1.4.2), so the ETERNAL table filters him out: `eternal_pile` drops
+    // draft-format and out-of-pool identities before they reach the VM's
+    // 1.5.4a pile, while the card itself stays carried, complete, and gated
+    // by `readiness()` exactly like every other pile card.
     "Boris \"Syfr\" Kovac: Crafty Veteran",
 ];
 
 /// One of the two eternal decks: the `jinteki-cards` module name, the printed
-/// deck name, the list with its copy counts, and CR 1.5.4a's pile.
+/// deck name, the display name, the list with its copy counts, and CR
+/// 1.5.4a's pile.
 pub struct DeckSpec {
+    /// INTERNAL key — load-bearing (`jinteki_cards::deck_named`, tests, the
+    /// lobby protocol). Never shown to players.
     pub key: &'static str,
+    /// The printed deck name, kept for provenance.
     pub title: &'static str,
+    /// What players see wherever the deck is named (deck list, lobby,
+    /// readiness) — the display layer over the unchanging internal key.
+    pub display_name: &'static str,
     pub side: Side,
     pub list: &'static [(&'static str, u32)],
     /// CR 1.5.4a: additional identities brought along with the deck. One
@@ -179,6 +187,7 @@ pub struct DeckSpec {
 pub const ANDROMEDA: DeckSpec = DeckSpec {
     key: "andromeda",
     title: "estrike Regular Andromeda",
+    display_name: "Mezzie's Andromeda",
     side: Side::Runner,
     list: ANDROMEDA_LIST,
     pile: ANDROMEDA_PILE,
@@ -186,6 +195,7 @@ pub const ANDROMEDA: DeckSpec = DeckSpec {
 pub const GAUNTLET: DeckSpec = DeckSpec {
     key: "gauntlet",
     title: "Gauntlet",
+    display_name: "Mezzie's Making Stars",
     side: Side::Corp,
     list: GAUNTLET_LIST,
     // 1.5.4a: the pile is the Runner's.
@@ -215,6 +225,8 @@ pub struct MissingCard {
 pub struct DeckReadiness {
     pub key: &'static str,
     pub title: &'static str,
+    /// The player-facing deck name (the display layer over `key`).
+    pub display_name: &'static str,
     pub side: &'static str,
     pub identity: String,
     /// Distinct cards in the deck (what the fraction counts).
@@ -330,6 +342,7 @@ pub fn readiness() -> Readiness {
         r.decks.push(DeckReadiness {
             key: spec.key,
             title: spec.title,
+            display_name: spec.display_name,
             side: side_key(spec.side),
             identity,
             distinct: cards.len() + spec.pile.len(),
@@ -341,8 +354,25 @@ pub fn readiness() -> Readiness {
     r
 }
 
+/// The titles of a deck's CR 1.5.4a pile as an ETERNAL table carries it:
+/// the spec's pile minus identities the format itself would not seat —
+/// draft-format cards (Boris "Syfr" Kovac's "Draft format only." line) and
+/// identities outside the eternal card pool. Format legality is settled
+/// before the game begins (CR 1.4.2), so an identity illegal in the format
+/// is not among "the identity cards brought along with their deck" at an
+/// eternal table, and Rebirth/DJ Fenris cannot reach it. The card stays
+/// implemented and readiness-gated; only this surface filters it.
+pub fn eternal_pile(spec: &DeckSpec) -> Vec<&'static str> {
+    spec.pile
+        .iter()
+        .copied()
+        .filter(|t| crate::eternal::identity_playable(t))
+        .collect()
+}
+
 /// Expand one deck into one `PrintedCard` per COPY, plus the identity and
-/// CR 1.5.4a's pile of additional identities.
+/// CR 1.5.4a's pile of additional identities (filtered for the eternal
+/// format — the only format this table serves).
 /// Refuses (via the caller's gate) rather than dropping anything.
 fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>, Vec<PrintedCard>) {
     let mut deck = Vec::new();
@@ -360,12 +390,12 @@ fn expand(spec: &DeckSpec) -> (Vec<PrintedCard>, Option<PrintedCard>, Vec<Printe
         }
     }
     // 1.5.4a: one copy of each named identity, in the order the spec names
-    // them. The pile never enters a zone, so nothing is shuffled into it.
+    // them, format-filtered. The pile never enters a zone, so nothing is
+    // shuffled into it.
     let carried = jinteki_cards::pile_named(spec.key).unwrap_or_default();
-    let pile = spec
-        .pile
-        .iter()
-        .filter_map(|t| carried.iter().find(|c| c.name() == *t))
+    let pile = eternal_pile(spec)
+        .into_iter()
+        .filter_map(|t| carried.iter().find(|c| c.name() == t))
         .map(|c| c.printed.clone())
         .collect();
     (deck, identity, pile)
@@ -2734,6 +2764,37 @@ mod tests {
         assert!(setup.runner_identity.is_some(), "Andromeda sits down");
         assert_eq!(setup.corp_deck.len(), 49, "the printed Gauntlet list, by copies");
         assert_eq!(setup.runner_deck.len(), 45, "the printed Andromeda list, by copies");
+    }
+
+    /// The eternal table filter on CR 1.5.4a's pile: Boris "Syfr" Kovac is
+    /// printed "Draft format only." and sits outside the eternal card pool,
+    /// so Rebirth/DJ Fenris must not be able to reach him at this table —
+    /// while the card itself STAYS implemented, complete, and in the
+    /// readiness-gated pile.
+    #[test]
+    fn boris_is_filtered_from_the_eternal_table_but_stays_implemented() {
+        const BORIS: &str = "Boris \"Syfr\" Kovac: Crafty Veteran";
+        // The spec's pile still carries him (the deck brings the card along)…
+        assert!(ANDROMEDA_PILE.contains(&BORIS));
+        let carried = jinteki_cards::pile_named("andromeda").expect("pile exists");
+        let boris = carried.iter().find(|c| c.name() == BORIS).expect("still carried");
+        assert!(boris.is_complete(), "only the surface filters him, not the card layer");
+        // …but the eternal table's pile does not seat him.
+        let filtered = eternal_pile(&ANDROMEDA);
+        assert!(!filtered.contains(&BORIS), "no Rebirth into a draft-only identity");
+        assert!(
+            filtered.contains(&"Ken \"Express\" Tenma: Disappeared Clone"),
+            "pool-legal Criminals stay reachable"
+        );
+        // And the VM setup agrees: the additional-identities pile a game is
+        // dealt never contains him.
+        let setup = eternal_setup(3).expect("a complete pair of decks is a game");
+        let pile = setup
+            .additional_identities
+            .get(&Side::Runner)
+            .expect("the Runner brings a pile");
+        assert!(!pile.iter().any(|c| c.name == BORIS));
+        assert_eq!(pile.len(), filtered.len(), "everything else still arrives");
     }
 
     #[test]
