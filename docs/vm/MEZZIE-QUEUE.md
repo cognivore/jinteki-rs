@@ -91,7 +91,7 @@ Identity is COMPLETE.
       "This card is not trashed until another current is played or an agenda is scored. / As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."
 - [ ] **I've Had Worse** ×3 — event · cost 1
       "Draw 3 cards. / Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."
-- [ ] **Inject** ×3 — event · cost 1
+- [x] **Inject** ×3 — event · cost 1
       "Reveal the top 4 cards of your stack and trash all programs revealed. Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip."
 - [x] **Levy AR Lab Access** ×1 — event · cost 5
       "Shuffle your grip and heap into your stack. Draw 5 cards. Remove Levy AR Lab Access from the game instead of trashing it."
@@ -540,32 +540,34 @@ or meat damage, draw 3 cards" — the kind half); **Steelskin Scarring** ("When
 this event is trashed from your grip or stack, you may draw 2 cards" — the zone
 half and the scope). Both cards' "Draw 3 cards" is done and tested.
 
-### The cards THIS ABILITY revealed, and the cards it trashed (CR 1.21.3 / 9.12.2a)
+### The cards THIS ABILITY revealed — LANDED (CR 1.21.6)
 
-1.21.2's LOOK records what it looked at on the resolving ability, which is what
-`TargetFilter::LookedAtByThisAbility` reads and what lets a later instruction
-say "1 of those cards". 1.21.3's REVEAL records nothing, and 1.21.5 keeps the
-two words distinct, so a sentence that reveals cards and then refers back to
-them — "the rest of the revealed cards" — has nothing to refer to. Naming the
-same window of the deck again reaches different cards, because an earlier half
-of the sentence already moved some of them.
+`TargetFilter::RevealedByThisAbility`, the twin of `LookedAtByThisAbility`:
+1.21.6 is ONE rule over two verbs — "if a resolving ability directs one or both
+players to look at **or reveal** a card or set of cards, each such card remains
+visible … until the entire ability is finished resolving" — so the reveal keeps
+its cards on the resolving ability's frame exactly as the look does. Kept as a
+second criterion rather than a polarity on the first because 1.21.5 says the
+two "are not the same", which is the split the kernel already makes everywhere
+else (one instruction and one `GameChange` per verb). **Inject** is written and
+ticked.
 
-Beside it, and for the same sentence, no quantity counts "each card trashed
-this way": `CreditsLostThisAbility` is the shape (what this ability ACTUALLY
-did, not what it asked for) and there is no trash twin. `unlisted.rs` records
-the same want against **Embezzle**, which is the other card it blocks.
+The other half of this entry was never missing, and finding that out is what
+made Inject a one-word card. "Gain 1[credit] for each program **trashed**" does
+NOT want a new quantity: it is the cards this ability ANNOUNCED (1.15.4, which
+the trash's own announcement fills) that are now in the heap —
+`per_card_matching(&[among_earlier_choices(), in_heap()])`. That is exact where
+a count of the revealed programs would not be: 9.9.7's prevention is what makes
+"asked for" and "actually trashed" differ, and the heap is where the difference
+shows. **Embezzle** (`unlisted.rs`) still wants the random-reveal half —
+`Instruction::RevealRandomFromHand` announces nothing and takes no `TargetSpec`,
+so neither 1.15.4's record nor 1.21.6's reaches its cards.
 
-Wanted: the reveal keeping its cards on the resolving ability the way the look
-does, readable as a description; and one quantity over what this ability
-actually trashed, with the description as content.
-
-Wants it: **Inject** ("Gain 1[credit] for each program trashed, and add the
-rest of the revealed cards to your grip" — the reveal and the trash are done
-and tested); **Embezzle**, already recorded in `unlisted.rs`; **Lakshmi
-Smartfabrics** ("The Runner cannot steal **copies of that agenda**" — the
-prohibition is written and takes a description, and what the description has
-to say is "cards with the same name as the card this ability revealed", which
-is this word read for a characteristic instead of for identity).
+**Lakshmi Smartfabrics** keeps this as one of its two blockers, and it is the
+NAME half rather than the identity half: "copies of that agenda" is every card
+sharing a characteristic with the revealed one, and the filter vocabulary can
+say "the card this ability revealed" (now) and "a card with this printed name"
+(`HasName`) and not "a card with the same name as that one".
 
 ### A count of the agendas STOLEN inside a window (CR 7.5 / 1.12.6)
 

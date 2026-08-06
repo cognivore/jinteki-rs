@@ -149,25 +149,38 @@ pub fn ive_had_worse() -> Card {
 ///  Gain 1[credit] for each program trashed, and add the rest of the revealed
 ///  cards to your grip."
 ///
-/// PARTIAL — the first sentence, which is the whole of the reveal and the
-/// trash; the payout is marked.
+/// COMPLETE.
 ///
-/// 9.11.3 is why the first sentence is ONE instruction with two effects rather
-/// than two: "reveal … **and** trash …" joins them, so one checkpoint and one
-/// reaction window cover both, and `combined` is the atom for that. 1.15.2
-/// announces the trash's targets before either half resolves, which is exactly
-/// what lets the description name cards that are still on top of the stack —
-/// 1.15.2c's play-area default lifts because "the top 4 cards of your stack"
-/// names a zone (4.2.1).
+/// THREE instructions, and 9.11.4e is what makes the first sentence two of
+/// them rather than 9.11.3's one: "some older cards direct a player to look at
+/// or **reveal** a set of cards in the same sentence as the effects that will
+/// be performed upon those cards — treat these sentences as if making the
+/// cards visible to the relevant player(s) is the end of an instruction." So
+/// the reveal ends an instruction, a checkpoint occurs with the cards visible,
+/// and the trash is the next one. That order is load-bearing here and not
+/// bookkeeping: the trash describes its cards as the ones the reveal made
+/// visible, so it cannot be announced until the reveal has resolved.
 ///
-/// The second sentence needs two things the vocabulary does not have, and they
-/// are the same thing twice: a way to name THE CARDS THIS ABILITY REVEALED
-/// after the instruction that revealed them has finished. 1.21.3's reveal
-/// records nothing on the resolving ability — `LookedAtByThisAbility` is the
-/// record 1.21.2's LOOK keeps, and 1.21.5 keeps the two words distinct — so
-/// neither "for each program trashed" nor "the rest of the revealed cards" has
-/// anything to refer back to. Counting the top of the stack again would count
-/// different cards, because the trash already moved some of them.
+/// 1.21.6 is the rule the whole card turns on — "each such card remains
+/// visible to the relevant player(s) until the entire ability is finished
+/// resolving or the card moves to a different location". That is one rule over
+/// look AND reveal, and it is what lets the third instruction still say "the
+/// revealed cards" two instructions later. 1.15.2c's play-area default lifts
+/// for the criterion because the cards are wherever 1.21.3a put them back —
+/// the stack.
+///
+/// The last sentence is 9.11.3's one instruction with two effects, so
+/// `combined`, and both of its halves are said about what actually happened
+/// rather than about what was asked for:
+///
+/// * "for each program **trashed**" counts the cards this ability ANNOUNCED
+///   (1.15.4) that are now in the heap. The announcement is the trash's own,
+///   so the count is the programs it named; the heap is where they went. A
+///   count of the revealed programs would be the number the ability asked for,
+///   and 9.9.7's prevention is exactly what can make the two differ.
+/// * "the rest of the revealed cards" is the revealed cards the trash did NOT
+///   name — 1.15.4's record, negated, which is the same shape AU Co. and Steve
+///   Cambridge already use for a printed "the other card".
 pub fn inject() -> Card {
     card("Inject")
         .runner()
@@ -175,17 +188,19 @@ pub fn inject() -> Card {
         .faction("Anarch")
         .cost(1)
         .text("Reveal the top 4 cards of your stack and trash all programs revealed. Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip.")
-        .play([combined([
-            reveal(top_of_stack(amount(4))),
+        .play([
             // 4.2.1 + 1.15.2c: the zone is named, so the description reaches
-            // the stack; `TopOfDeckOf` is the criterion form of the same
-            // window `top_of_stack` names as a fixed group.
-            trash(all_matching(&[
-                TargetFilter::TopOfDeckOf { side: Runner, n: 4 },
-                of_type(CardType::Program),
-            ])),
-        ])])
-        .unimplemented("Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip.")
+            // the stack.
+            reveal(top_of_stack(amount(4))),
+            trash(all_matching(&[revealed_by_this_ability(), of_type(CardType::Program)])),
+            combined([
+                gain_q(Runner, per_card_matching(&[among_earlier_choices(), in_heap()])),
+                add_to_hand(all_matching(&[
+                    revealed_by_this_ability(),
+                    non(among_earlier_choices()),
+                ])),
+            ]),
+        ])
         .build()
 }
 

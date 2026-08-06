@@ -2277,6 +2277,29 @@ pub enum TargetFilter {
     /// — no longer matches, so the ability can no longer act on it. A
     /// zone-naming criterion, so 1.15.2c's play-area restriction lifts.
     LookedAtByThisAbility,
+    /// CR 1.21.6 / 1.12.3: a card THIS ability REVEALED — "the rest of **the
+    /// revealed cards**" (Inject), "copies of **that agenda**" (Lakshmi
+    /// Smartfabrics).
+    ///
+    /// 1.21.6 is one rule over two verbs, so the reveal keeps its cards on the
+    /// resolving ability exactly as 1.21.2's look does, and this criterion
+    /// reads that record the way [`TargetFilter::LookedAtByThisAbility`] reads
+    /// its own. What keeps them two criteria and not one with a polarity is
+    /// 1.21.5: looking, revealing, exposing and accessing "are not the same,
+    /// even if they would be performed similarly at times", and the kernel
+    /// already says so everywhere else — one instruction and one
+    /// [`crate::change::GameChange`] per verb. A sentence saying "the revealed
+    /// cards" must not reach a card this ability only looked at.
+    ///
+    /// Distinct from [`TargetFilter::RevealedThisEncounter`], which is scoped
+    /// to the ENCOUNTER (Slot Machine's later subroutines read a reveal made
+    /// by an earlier ability) and answers nothing outside one.
+    ///
+    /// A zone-naming criterion, so 1.15.2c's play-area restriction lifts: the
+    /// cards it describes are wherever the reveal left them — 1.21.3a puts a
+    /// card back exactly as it was — which for a reveal off the top of a deck
+    /// is the deck.
+    RevealedByThisAbility,
     /// CR 8.5.16f + 1.15.4: "…**that program**", said of the card THIS
     /// ability's own earlier instruction installed (Kabonesa Wu). The card was
     /// never announced — 8.7.4's find is not 1.15.2's announcement, so the
@@ -2556,6 +2579,11 @@ impl TargetFilter {
                 | TargetFilter::SetAsideWithSource
                 | TargetFilter::DrawnCards
                 | TargetFilter::LookedAtByThisAbility
+                // 1.21.6 + 1.21.3a: the reveal puts each card back exactly
+                // where it was, so the cards this criterion describes are
+                // wherever that is — the top of a deck, a hand — and 1.15.2c
+                // would otherwise see none of them.
+                | TargetFilter::RevealedByThisAbility
                 // 1.15.4: the description fixes the cards by identity, the
                 // same way the triggering-card criteria below do, so there is
                 // no selection left for 1.15.2c to restrict.

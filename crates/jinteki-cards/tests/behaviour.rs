@@ -19724,25 +19724,24 @@ fn steelskin_scarring_draws_three() {
 }
 
 /// Inject: "Reveal the top 4 cards of your stack and trash all programs
-/// revealed."
+/// revealed. Gain 1[credit] for each program trashed, and add the rest of the
+/// revealed cards to your grip."
 ///
-/// PARTIAL — the payout sentence is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear. The first sentence is asserted whole: the top
-/// four are shown to both players (1.21.3), the two programs among them go to
-/// the heap, and the two that are not programs stay exactly where they were —
-/// which is what makes the trash a description and not a mill.
+/// The whole card, on one board. The top four are shown to both players
+/// (1.21.3); the two programs among them go to the heap and the two that are
+/// not stay where they were, which is what makes the trash a description and
+/// not a mill; two credits arrive, one per program trashed; and the two
+/// survivors — and NOTHING from deeper in the stack — end up in the grip.
+///
+/// The last assertion is the one 1.21.6 earns. "The rest of the revealed
+/// cards" is the four this ability revealed minus the two it named for the
+/// trash, and by the time that sentence resolves the top of the stack is two
+/// cards further down: a description reading the stack again would take the
+/// two fillers instead. They are asserted to be exactly where they started.
 #[test]
-fn inject_reveals_four_and_trashes_only_the_programs() {
-    let inj = jinteki_cards::find("Inject").expect("Inject is in the card layer");
-    assert_eq!(
-        inj.unimplemented,
-        vec!["Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip."],
-        "exactly one printed sentence is still unsayable"
-    );
-
+fn inject_reveals_four_trashes_the_programs_and_banks_the_rest() {
     let mut vm = Vm::empty(9409);
-    let card_id = vm.new_object(card_partial("Inject"), Zone::Hand(Side::Runner));
+    let card_id = vm.new_object(card("Inject"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
     // The stack from the TOP down: the four the card reveals — program,
     // resource, program, resource.
@@ -19760,8 +19759,9 @@ fn inject_reveals_four_and_trashes_only_the_programs() {
     })
     .collect();
     // …and two more below the window the card reaches, so "the top 4" is a
-    // real window and not the whole stack.
-    tk::fill_deck(&mut vm, Side::Runner, 2);
+    // real window and not the whole stack — and so "the rest of the revealed
+    // cards" has something wrong it could reach.
+    let below = tk::fill_deck(&mut vm, Side::Runner, 2);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     vm.st.runner.credits = 1;
     vm.start_turn(Side::Runner);
@@ -19780,14 +19780,6 @@ fn inject_reveals_four_and_trashes_only_the_programs() {
             t.tail(20)
         );
     }
-    for r in [top[1], top[3]] {
-        assert_eq!(
-            vm.st.objects[&r].zone,
-            Zone::Deck(Side::Runner),
-            "…and nothing else moved, which is what \"all programs revealed\" says: {}",
-            t.tail(20)
-        );
-    }
     assert!(
         vm.changes
             .log
@@ -19798,6 +19790,30 @@ fn inject_reveals_four_and_trashes_only_the_programs() {
         "1.21.3: all four were revealed, not just the ones that moved: {}",
         t.tail(20)
     );
+    assert_eq!(
+        vm.st.runner.credits,
+        1 - 1 + 2,
+        "1[credit] for each of the two programs trashed, after the 1[credit] play cost: {}",
+        t.tail(20)
+    );
+    for r in [top[1], top[3]] {
+        assert_eq!(
+            vm.st.objects[&r].zone,
+            Zone::Hand(Side::Runner),
+            "1.21.6: the revealed cards the trash did not name are \"the rest\": {}",
+            t.tail(20)
+        );
+    }
+    for b in &below {
+        assert_eq!(
+            vm.st.objects[b].zone,
+            Zone::Deck(Side::Runner),
+            "…and the cards below the window were never revealed, so they are not \"the \
+             rest\" — a description reading the top of the stack again would have taken \
+             them: {}",
+            t.tail(20)
+        );
+    }
 }
 
 /// Mad Dash: "Run any server."

@@ -1727,6 +1727,16 @@ pub fn top_of_heap(count: Quantity) -> TargetSpec {
 pub fn looked_at_by_this_ability() -> TargetFilter {
     TargetFilter::LookedAtByThisAbility
 }
+/// "…the **revealed** cards" (Inject), "…**that agenda**" said of the one this
+/// ability revealed (Lakshmi Smartfabrics) — CR 1.21.6, which keeps a revealed
+/// card visible to the resolving ability exactly as it keeps a looked-at one.
+/// The twin of [`looked_at_by_this_ability`], and not interchangeable with it:
+/// 1.21.5 says looking and revealing "are not the same". CR 1.12.3 applies the
+/// same way — a card that moves to an unknown location becomes a new object and
+/// this description stops reaching it.
+pub fn revealed_by_this_ability() -> TargetFilter {
+    TargetFilter::RevealedByThisAbility
+}
 /// "…1 of them" — a card in this ability's own 4.8.7 set-aside group, still
 /// in the set-aside zone (Skorpios Defense Systems).
 pub fn set_aside_by_this_ability() -> TargetFilter {

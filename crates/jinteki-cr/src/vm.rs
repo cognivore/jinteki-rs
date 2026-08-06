@@ -6447,6 +6447,7 @@ impl Vm {
             set_aside_cards: Vec::new(),
             found_cards: Vec::new(),
             looked_at: Vec::new(),
+            revealed: Vec::new(),
             // 4.8.7 + 9.6.14d: a frame resolving a trash-replacement group's
             // follow-up starts with the group its instance was bound to, so
             // `SetAsideByThisAbility` reads it exactly as it reads a group an
@@ -8328,6 +8329,25 @@ impl Vm {
                     .find_map(|fr| match fr {
                         Frame::Ability(af) => {
                             Some(af.looked_at.iter().any(|(id, g)| *id == o.id && *g == gen))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+            }
+            // 1.21.6: the cards this ability REVEALED, read from the same
+            // frame record for the same reason — and kept apart from the
+            // looked-at ones because 1.21.5 keeps the two verbs apart.
+            TargetFilter::RevealedByThisAbility => {
+                cite!("rule_remain_visible");
+                cite!("rule_look_reveal_expose_access_distinct");
+                cite!("rule_object_move_location");
+                let gen = self.generation(o.id);
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|fr| match fr {
+                        Frame::Ability(af) => {
+                            Some(af.revealed.iter().any(|(id, g)| *id == o.id && *g == gen))
                         }
                         _ => None,
                     })
@@ -11934,6 +11954,23 @@ impl Vm {
                 cite!("rule_reveal_not_turn_faceup");
                 cite!("rule_look_reveal_expose_access_distinct");
                 let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                // 1.21.6: each revealed card "remains visible … until the
+                // entire ability is finished resolving or the card moves to a
+                // different location", which is the same record 1.21.2's look
+                // keeps and what lets a later sentence say "the revealed
+                // cards". 1.12.3 supplies the generation stamp: a card moved
+                // to an unknown location becomes a NEW object, so the stale
+                // entry stops matching.
+                cite!("rule_remain_visible");
+                cite!("rule_object_move_location");
+                let stamped: Vec<(ObjectId, u32)> = targets
+                    .iter()
+                    .filter(|t| self.st.objects.contains_key(t))
+                    .map(|t| (*t, self.generation(*t)))
+                    .collect();
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    af.revealed.extend(stamped);
+                }
                 for t in targets {
                     if !self.st.objects.contains_key(&t) {
                         continue;
