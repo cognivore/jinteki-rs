@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jinteki-rs — UI tests</title>
+<!-- THE STYLESHEET UNDER TEST. Not a copy of it, not a description of it:
+     the file the game ships, so a rule that changes changes this page. -->
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { font: 13px/1.5 ui-monospace, monospace; background: #0b0f18; color: #e8ecf5;
+         margin: 0; padding: 16px 16px 60px; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { color: #8b95ab; margin-bottom: 16px; }
+  .case { border: 1px solid #223; border-radius: 10px; padding: 12px; margin: 12px 0; }
+  .case h2 { font-size: 13px; margin: 0 0 8px; color: #9fb4d8; }
+  .stage { position: relative; background: #0e1424; border: 1px dashed #2a3350;
+           border-radius: 8px; padding: 14px; margin-bottom: 10px;
+           display: flex; align-items: flex-start; gap: 10px; }
+  .res { white-space: pre-wrap; }
+  .pass { color: #5fd39b; } .fail { color: #ff6b6b; font-weight: 700; }
+  #summary { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px;
+             background: #0b0f18; border-top: 1px solid #223; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>jinteki-rs — UI tests</h1>
+<div class="sub">Layout laws asserted against the shipped <code>style.css</code>, in a real
+browser, at real sizes. Open this page (it is served at
+<code>/dev-fixtures/ui-tests.html</code>) — green is green.</div>
+<div id="cases"></div>
+<div id="summary">running…</div>
+
+<script>
+/* ── the harness ────────────────────────────────────────────────────────
+   Small on purpose. A UI law is a statement about GEOMETRY — what covers
+   what, what is inside what, which way a stack runs — and the only honest
+   way to check one is to lay the real markup out under the real stylesheet
+   and measure it. No DOM stub can do that: a stub would be asserting my
+   description of the CSS rather than the CSS. */
+const results = [];
+function suite(name, build, checks) {
+  const wrap = document.createElement("div");
+  wrap.className = "case";
+  wrap.innerHTML = `<h2>${name}</h2><div class="stage"></div><div class="res"></div>`;
+  document.getElementById("cases").appendChild(wrap);
+  const stage = wrap.querySelector(".stage");
+  const ctx = build(stage) || {};
+  const out = [];
+  const t = {
+    ok(cond, msg) {
+      results.push(!!cond);
+      out.push(`${cond ? "PASS" : "FAIL"}  ${msg}`);
+    },
+    near(a, b, tol, msg) { t.ok(Math.abs(a - b) <= tol, `${msg} (${a.toFixed(1)} ≈ ${b} ±${tol})`); },
+  };
+  try { checks(t, ctx, stage); } catch (e) { t.ok(false, "threw: " + e.message); }
+  wrap.querySelector(".res").innerHTML = out
+    .map((l) => `<div class="${l.startsWith("PASS") ? "pass" : "fail"}">${l}</div>`).join("");
+}
+const rect = (e) => e.getBoundingClientRect();
+const card = (cls, name) => {
+  const d = document.createElement("div");
+  d.className = "card" + (cls ? " " + cls : "");
+  d.innerHTML = `<div class="cname">${name || "Card"}</div>`;
+  return d;
+};
+
+/* ── 1. A card carrying cards is ONE footprint (CR 1.13.1) ───────────── */
+suite("Hosting: the host is the top card, what it carries is tucked behind", (stage) => {
+  const mk = (n) => {
+    const box = document.createElement("div");
+    box.className = "hosting";
+    const stack = document.createElement("div");
+    stack.className = "host-stack";
+    const step = Math.min(7, 14 / n);
+    for (let i = 0; i < n; i++) {
+      const k = card("", "Hosted " + (i + 1));
+      const d = Math.round((i + 1) * step);
+      k.style.transform = `translate(${d}px, ${d}px)`;
+      stack.appendChild(k);
+    }
+    box.appendChild(stack);
+    box.appendChild(card("", "Cupellation"));
+    box.style.setProperty("--peek", "14px");
+    stage.appendChild(box);
+    return box;
+  };
+  const bare = card("", "Daily Casts");
+  stage.appendChild(bare);
+  return { one: mk(1), five: mk(5), bare };
+}, (t, c) => {
+  const host = (box) => box.querySelector(":scope > .card");
+  const kids = (box) => [...box.querySelectorAll(".host-stack .card")];
+
+  // THE HOST IS THE TOP CARD — asserted the way a finger asks it, by
+  // hit-testing the middle of the host. A z-index comparison would not do:
+  // the carried cards inherit `auto` inside their own stacking context, so
+  // the numbers say nothing about what a tap actually lands on.
+  const h = rect(host(c.five)), k0 = rect(kids(c.five)[0]);
+  const hit = document.elementFromPoint(h.x + h.width / 2, h.y + h.height / 2);
+  t.ok(hit === host(c.five) || host(c.five).contains(hit),
+    "a tap in the middle of the host lands on the host, not on what it carries");
+  t.ok(k0.x > h.x && k0.y > h.y, "a carried card is stepped down-and-right, so its edge shows");
+
+  // Every carried card shows an edge — none is perfectly hidden by another.
+  const xs = kids(c.five).map((e) => Math.round(rect(e).x));
+  t.ok(new Set(xs).size === xs.length, `all five carried cards show a distinct edge (${xs.join(",")})`);
+
+  // ONE FOOTPRINT: five carried cards take no more room than one.
+  const w1 = rect(c.one).width + parseFloat(getComputedStyle(c.one).marginRight);
+  const w5 = rect(c.five).width + parseFloat(getComputedStyle(c.five).marginRight);
+  t.near(w5, w1, 1.5, "a card holding five is no wider than a card holding one");
+  t.ok(w5 <= rect(c.bare).width + 16, "and no wider than a bare card plus the peek");
+
+  // The carried cards stay INSIDE the reserved box: nothing spills onto a
+  // neighbour, which is what made the rig a wall of cards.
+  const box = rect(c.five);
+  const spill = kids(c.five).some((e) => rect(e).right > box.right + 15 || rect(e).bottom > box.bottom + 15);
+  t.ok(!spill, "nothing spills past the room the box reserved");
+
+  // A card carrying nothing gets no box at all.
+  t.ok(!c.bare.closest(".hosting"), "a card carrying nothing is drawn as a plain card");
+});
+
+/* ── 2. Counters sit dead centre, and cannot eat a tap ───────────────── */
+suite("Counters: dead centre on the card, transparent to taps", (stage) => {
+  const c = card("", "Ice Wall");
+  c.innerHTML += `<div class="badges tight">
+    <div class="badge adv">3</div><div class="badge cred">⬡2</div><div class="badge vir">☣1</div></div>`;
+  stage.appendChild(c);
+  return { c };
+}, (t, ctx) => {
+  const cr = rect(ctx.c);
+  const discs = [...ctx.c.querySelectorAll(".badge")].map(rect);
+  const cx = cr.x + cr.width / 2, cy = cr.y + cr.height / 2;
+  const mid = discs.map((d) => d.y + d.height / 2);
+  t.near(Math.min(...mid), cy, 2, "the discs sit on the card's vertical centre");
+  const spanL = Math.min(...discs.map((d) => d.x)), spanR = Math.max(...discs.map((d) => d.right));
+  t.near((spanL + spanR) / 2, cx, 2, "and are centred horizontally as a group");
+  t.ok(discs.every((d) => d.x >= cr.x && d.right <= cr.right && d.y >= cr.y && d.bottom <= cr.bottom),
+    "every disc is inside the card");
+  t.ok(getComputedStyle(ctx.c.querySelector(".badges")).pointerEvents === "none",
+    "the badge box cannot eat a tap meant for the card");
+});
+
+/* ── 3. The ice stack turns around with its seat ─────────────────────── */
+suite("Ice order: outermost nearest the Runner, in BOTH seats", (stage) => {
+  const board = document.createElement("div");
+  board.id = "board-probe";
+  const srv = document.createElement("div");
+  srv.className = "server";
+  srv.innerHTML = `<div class="sname">HQ</div><div class="ice-stack">
+    <div class="ice-sliver">innermost</div><div class="ice-sliver">outermost</div></div>`;
+  board.appendChild(srv);
+  stage.appendChild(board);
+  return { board, stack: srv.querySelector(".ice-stack") };
+}, (t, c) => {
+  // The rules the real board carries, applied to the probe by hand: the
+  // page cannot host a second #board, so the two class hooks are asserted
+  // through the same selectors the stylesheet writes.
+  c.board.className = "";
+  const runnerSeat = getComputedStyle(c.stack).flexDirection;
+  const real = document.createElement("div");
+  real.id = "board"; real.className = "flipped"; real.style.display = "none";
+  const clone = c.stack.parentElement.cloneNode(true);
+  real.appendChild(clone);
+  document.body.appendChild(real);
+  const corpSeat = getComputedStyle(clone.querySelector(".ice-stack")).flexDirection;
+  real.remove();
+  t.ok(runnerSeat === "column", `the Runner's seat runs innermost-first (${runnerSeat})`);
+  t.ok(corpSeat === "column-reverse", `the Corp's seat turns it around (${corpSeat})`);
+});
+
+/* ── 4. Readers and sheets are bounded and scrollable ────────────────── */
+suite("Nothing that lists things can run off the screen", (stage) => {
+  const ov = document.createElement("div");
+  ov.className = "zoom-overlay"; ov.style.position = "relative"; ov.style.inset = "auto";
+  ov.style.height = "220px";
+  const pile = document.createElement("div");
+  pile.className = "zoom-card pile";
+  pile.innerHTML = "<h3>Heap (30)</h3>" +
+    Array.from({ length: 30 }, (_, i) => `<div class="pilerow"><span class="pilename">Card ${i + 1}</span></div>`).join("");
+  ov.appendChild(pile);
+  stage.appendChild(ov);
+  const sheet = document.createElement("div");
+  sheet.className = "action-sheet"; sheet.style.position = "relative";
+  sheet.innerHTML = Array.from({ length: 12 }, (_, i) => `<button class="chip">Server ${i + 1}</button>`).join("");
+  stage.appendChild(sheet);
+  return { pile, sheet };
+}, (t, c) => {
+  t.ok(getComputedStyle(c.pile).overflowY === "auto", "the pile reader scrolls");
+  t.ok(c.pile.scrollHeight > c.pile.clientHeight, "and it has somewhere to scroll to");
+  t.ok(getComputedStyle(c.pile).touchAction === "pan-y", "the browser owns the pan (a drag is not a tap)");
+  t.ok(getComputedStyle(c.sheet).overflowY === "auto", "a long action sheet scrolls");
+  t.ok(parseFloat(getComputedStyle(c.sheet).maxHeight) <= window.innerHeight,
+    "and can never be taller than the screen");
+});
+
+const passed = results.filter(Boolean).length;
+const el = document.getElementById("summary");
+el.textContent = `${passed}/${results.length} passed`;
+el.className = passed === results.length ? "pass" : "fail";
+</script>
+</body>
+</html>

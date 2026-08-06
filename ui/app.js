@@ -2137,10 +2137,19 @@ function renderFocus() {
  * next to the resources the Runner had actually installed. Five of them and
  * the rig was a wall of cards belonging to the other player.
  *
- * They are drawn where they are: a COMPACT stack tucked under the host, at
- * half size, each one overlapping the last. Still cards (THE LAW §5) — they
- * press to read and they carry their own counters — just never mistakable
- * for something installed in its own right. */
+ * They are drawn where they are, in the idiom every card game with
+ * attachments has used for thirty years: the host is the TOP CARD and what
+ * it carries is tucked behind it, stepped so each shows an edge — Magic's
+ * aura and equipment. Still cards (THE LAW §5): they press to read and they
+ * carry their own counters. Never loose, and never mistakable for something
+ * installed in its own right.
+ *
+ * `hostOnBoard` names the sites that ACTUALLY draw a `hostBox` — the rig,
+ * a server's root, a piece of ice. It is not a fallback and not a taste
+ * question: a card is skipped where it appears loose only because something
+ * else is drawing it, and a card whose host is drawn nowhere would
+ * otherwise leave the table altogether, which is the one outcome worse than
+ * drawing it in the wrong place. */
 function eachBoardList(fn) {
   const runner = S.runner || {}, corp = S.corp || {};
   const rig = runner.rig || {};
@@ -2155,32 +2164,53 @@ function hostedOn(cid) {
   eachBoardList((list) => (list || []).forEach((c) => { if (c && c.host === cid) out.push(c); }));
   return out;
 }
-/* Is the host itself on this board? A hosted card is drawn ON its host, so
-   it is skipped wherever it appears loose — but only if that host is being
-   drawn. Anything else and the card would simply disappear off the table,
-   which is a worse bug than the one being fixed. */
+/* Is this host drawn as a `hostBox` — the rig, a server's root, a piece of
+   ice? Those are the three sites that put a card's carried cards on it, and
+   they are exactly the sites whose loose copies may therefore be skipped.
+   The identity chip and the effects rail are not among them, so a card
+   hosted THERE keeps its own place rather than vanishing. */
 function hostOnBoard(cid) {
   if (cid == null || !S) return false;
-  let found = false;
-  eachBoardList((list) => { if (!found && (list || []).some((c) => c && c.cid === cid)) found = true; });
   const runner = S.runner || {}, corp = S.corp || {};
-  return found
-    || !!(runner.identity && runner.identity.cid === cid)
-    || !!(corp.identity && corp.identity.cid === cid);
+  const rig = runner.rig || {};
+  const has = (l) => (l || []).some((c) => c && c.cid === cid);
+  return ["program", "hardware", "resource"].some((k) => has(rig[k]))
+    || Object.values(corp.servers || {}).some((s) => s && (has(s.content) || has(s.ices)));
 }
 function drawnElsewhere(c) { return !!c && c.host != null && hostOnBoard(c.host); }
-/* The host and everything it carries, as one thing the row lays out. Returns
-   the bare card when it is carrying nothing, so the common case adds no box
-   and no class to reason about. */
+/* The host and everything it carries, as ONE thing the row lays out — the
+   host on top, the carried cards stepped behind it. Returns the bare card
+   when it is carrying nothing, so the common case adds no box and no class
+   to reason about.
+
+   The step shrinks with the count (and so does the box's reserved peek), so
+   a card holding five occupies no more of the row than a card holding one:
+   the footprint is the HOST's, always, which is what makes a rig of hosts
+   readable at phone width. */
+const HOST_PEEK = 14;      // px of board the tuck may use, at any count
 function hostBox(c, opts) {
   const host = cardEl(c, opts);
   const kids = hostedOn(c.cid);
   if (!kids.length) return host;
   const box = el("div", "hosting");
-  box.appendChild(host);
   const stack = el("div", "host-stack");
-  kids.forEach((k) => stack.appendChild(cardEl(k, { side: (opts && opts.side) || "runner", hosted: true })));
+  const step = Math.min(7, HOST_PEEK / kids.length);
+  kids.forEach((k, i) => {
+    const kid = cardEl(k, { side: (opts && opts.side) || "runner", hosted: true });
+    const d = Math.round((i + 1) * step);
+    kid.style.transform = `translate(${d}px, ${d}px)`;
+    stack.appendChild(kid);
+  });
+  // Behind first, host last: the host is the top card in the DOM as well as
+  // in z-index, so a tap that lands on both resolves to the host.
   box.appendChild(stack);
+  box.appendChild(host);
+  // The peek is CONSTANT, not a function of the count: the step shrinks so
+  // that five fit in the same room as one, and the room is reserved whole
+  // either way. A box that grew with what it was holding would move its
+  // neighbours every time a card was picked up, which is the reflow this
+  // whole layout exists to avoid (THE LAW §2).
+  box.style.setProperty("--peek", `${HOST_PEEK}px`);
   return box;
 }
 

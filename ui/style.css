@@ -308,25 +308,34 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 
 /* ── A CARD CARRYING CARDS (CR 1.13.1) ──────────────────────────────────
    "The hosted card is considered to be in the same location as the card
-   hosting it." So it is drawn ON its host and never loose in the zone: a
-   COMPACT stack tucked under the host at half size, each one overlapping
-   the last, so a Cupellation holding five Corp cards is one card's worth of
-   board and not five. They are still cards — press to read, own counters —
-   just plainly subordinate to the card carrying them. */
-.hosting { display: flex; flex-direction: column; align-items: center; gap: 2px;
-  flex-shrink: 0; }
-.host-stack { display: flex; flex-direction: row; align-items: flex-start;
-  padding-left: 2px; max-width: 64px; }
-.host-stack .card { width: 32px; height: 44px; padding: 2px; font-size: 6.5px;
-  border-width: 1px; border-radius: 5px; }
-.host-stack .card + .card { margin-left: -24px; }
-/* The topmost of a tuck is the one whose face is whole, and the one a tap
-   is most likely aimed at, so it comes forward. */
-.host-stack .card:last-child { z-index: 3; }
+   hosting it." Every card game with attachments draws this the same way and
+   has for thirty years: the HOST IS THE TOP CARD, and what it carries is
+   tucked behind it, stepped so each one shows an edge — Magic's aura and
+   equipment idiom, which players already read without being told.
+
+   So: one footprint, whatever it is carrying. The host sits whole and on
+   top; the carried cards are full-size cards behind it (they are cards, not
+   decorations — they press to read and carry their own counters), offset by
+   a step JS shrinks as the count grows, so five never sprawls further than
+   one. The box reserves exactly the peek, so a row of hosts does not reflow
+   when one of them picks something up. */
+.hosting { position: relative; flex-shrink: 0;
+  width: 64px; height: 88px; margin: 0 var(--peek, 14px) var(--peek, 14px) 0; }
+.hosting > .card { position: absolute; inset: 0; z-index: 3; }
+.host-stack { position: absolute; inset: 0; z-index: 1; }
+.host-stack .card { position: absolute; top: 0; left: 0; }
+/* Armed or answerable, a carried card comes forward far enough to be read
+   and hit — the same "the card the next tap acts on is unmistakable" rule
+   the tucked root stack follows. */
 .host-stack .card.armed, .host-stack .card.selectable { z-index: 4; }
-.host-stack .card .ctype, .host-stack .card .subs { display: none; }
-/* On an ice sliver the stack hangs under the chip it belongs to. */
-.host-stack.on-ice { margin: 1px 0 3px 10px; }
+/* An ice sliver is a chip, not a footprint, so what it carries hangs under
+   it rather than behind it — the one place the box cannot be the host's own
+   outline. Still one column, still stepped. */
+.host-stack.on-ice { position: static; display: flex; margin: 1px 0 2px 10px; }
+.host-stack.on-ice .card { position: relative; width: 30px; height: 42px;
+  padding: 2px; font-size: 6.5px; border-width: 1px; border-radius: 5px;
+  transform: none !important; }
+.host-stack.on-ice .card + .card { margin-left: -22px; }
 
 /* rig */
 .rig { display: flex; flex-direction: column; gap: 4px; padding: 4px 10px; height: 100%; }
