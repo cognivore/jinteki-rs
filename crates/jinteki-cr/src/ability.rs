@@ -1490,13 +1490,18 @@ impl Cost {
     }
     /// CR 1.9.2 + 1.16.2c: "**X hosted <kind> counters:**" (Lakshmi
     /// Smartfabrics) — the same component with the amount ANNOUNCED rather
-    /// than printed. 1.16.1a bounds the announcement: the payer can only
-    /// announce a value the source actually hosts, which is what
-    /// [`XBound::AtMost`] says here.
+    /// than printed.
+    ///
+    /// It states no [`XBound`], and that is deliberate: `x_restriction` is
+    /// the restriction an ABILITY states on the value ("X must be equal to or
+    /// less than the number of tags the Runner has"), and this card states
+    /// none. What bounds the announcement is 1.16.1a — a cost must be payable
+    /// all at once — and for a counter component that is how many the SOURCE
+    /// hosts, which `Vm::x_bound` reads from the component itself. Writing it
+    /// as a stated restriction would put a rule of the game on the card.
     pub fn spend_x_counters(kind: crate::object::CounterKind) -> Self {
         Cost {
             spend_counters: Some((kind, crate::instr::Quantity::AnnouncedX)),
-            x_restriction: Some(XBound::AtMost(crate::instr::Quantity::CountersOnSource(kind))),
             ..Default::default()
         }
     }
