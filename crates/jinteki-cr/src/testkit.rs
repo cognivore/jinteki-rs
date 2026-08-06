@@ -2968,13 +2968,14 @@ pub fn madani_like(name: &'static str, count: u32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::paid(
         Cost { clicks: 1, ..Cost::default() },
+        // "**Up to** N programs": the ceiling is N and the floor is zero.
         vec![Instruction::HostCards {
             cards: TargetSpec::Choose {
                 count: Quantity::c(count as i64),
                 criteria: vec![
                     crate::instr::TargetFilter::CardsInHandOf(Side::Runner),
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
-                ], up_to: false },
+                ], up_to: true },
             host: TargetSpec::SelfSource,
             faceup: false,
         }],
@@ -4896,14 +4897,17 @@ pub fn clone_suffrage_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
-        vec![Instruction::AddCardsToHand {
+        // "**You may** add…": 9.6.9's optional component asks its own yes/no,
+        // and the choice underneath it is the ordinary mandatory one — a card
+        // must be named once the Corp has said yes.
+        vec![Instruction::DeclineableChoice(Box::new(Instruction::AddCardsToHand {
             cards: TargetSpec::Choose {
                 count: Quantity::c(1),
                 criteria: vec![
                     crate::instr::TargetFilter::InDiscardOf(Side::Corp),
                     crate::instr::TargetFilter::CardTypeIs(CardType::Operation),
                 ], up_to: false },
-        }],
+        }))],
     )
     .labeled("clone-suffrage: add an operation from Archives to HQ")];
     c

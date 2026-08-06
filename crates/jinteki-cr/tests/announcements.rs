@@ -414,3 +414,257 @@ fn the_play_from_grip_shape_uses_only_public_vocabulary() {
     assert_eq!(c.abilities[0].instructions.len(), 1);
     let _ = Side::Runner;
 }
+
+// ---------------------------------------------------------------------------
+// The floor. A seventh instance of the same design defect: not "which
+// positions announce", but "how many the announcement demands".
+// ---------------------------------------------------------------------------
+
+/// One piece of ice, one subroutine, one carrier — the shortest route from a
+/// printed sentence to the announcement it owes.
+fn carrier_ice(body: Vec<Instruction>) -> jinteki_cr::object::PrintedCard {
+    let mut c = tk::vanilla_ice("Carrier", 0, 0);
+    c.abilities =
+        vec![jinteki_cr::ability::AbilityDef::subroutine(body).labeled("[sub] the sentence")];
+    c
+}
+
+/// Every `ChooseTargets` the Corp is put, with candidates on it, from a run
+/// into a piece of ice whose one subroutine is `body`. The Corp answers every
+/// choice with NOTHING — the answer the production game sent — so a floor
+/// that is really there has to put it back (1.15.2e; there is no "your answer
+/// was illegal" path).
+fn corp_announcements(body: Vec<Instruction>) -> Vec<(u32, bool, u32)> {
+    let mut vm = Vm::empty(1218);
+    tk::install_ice(&mut vm, carrier_ice(body), jinteki_cr::object::ServerId::Hq, true);
+    tk::install_rig(&mut vm, tk::vanilla_runner_card("Card A", CardType::Program));
+    tk::install_rig(&mut vm, tk::vanilla_runner_card("Card B", CardType::Resource));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 9;
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            // The optionality the printed word DOES state is taken, so that
+            // what is left underneath is only the choice itself.
+            .when(Match::optional(), Reply::Optional(true))
+            .when(Match::nested_cost(), Reply::PayCost(true))
+            .when(Match::targets(), Reply::Targets(Vec::new())),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(jinteki_cr::object::ServerId::Hq))
+            .stop_at_action(),
+    );
+    t.windows(Kind::Targets, Side::Corp)
+        .iter()
+        .filter_map(|e| match &e.spec {
+            jinteki_cr::decision::DecisionSpec::ChooseTargets { candidates, count, up_to, min, .. }
+                if !candidates.is_empty() =>
+            {
+                Some((*count, *up_to, *min))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The instruction under test, with the same mandatory description in it, in
+/// every carrier that could plausibly be blamed for making it optional.
+fn carriers(instr: Instruction) -> Vec<(&'static str, Vec<Instruction>)> {
+    vec![
+        ("plainly, in a subroutine", vec![instr.clone()]),
+        (
+            "in a trace's success branch",
+            vec![Instruction::Trace {
+                base: Quantity::c(6),
+                if_successful: vec![instr.clone()],
+                if_unsuccessful: Vec::new(),
+                determined_min: None,
+            }],
+        ),
+        (
+            "behind a 1.16.11a 'you may pay'",
+            vec![Instruction::NestedCostThen {
+                cost: jinteki_cr::ability::Cost::credits(1),
+                effect: Box::new(instr.clone()),
+                payer: None,
+            }],
+        ),
+        ("behind a 9.6.9 'you may'", vec![Instruction::DeclineableChoice(Box::new(instr.clone()))]),
+        (
+            "inside a 9.6.5d 'if <state>'",
+            vec![Instruction::IfMet {
+                requires: Vec::new(),
+                then: vec![instr],
+                otherwise: Vec::new(),
+            }],
+        ),
+    ]
+}
+
+/// Archangel's defect, generalised. "Add 1 installed Runner card to the grip"
+/// prints no "may" and no "up to", and reached the Corp as `up_to: true,
+/// min: 0` — so a Corp that meant to pick a card picked none and a successful
+/// Trace[6] did nothing (production transcript 17a23ebf, seq 1218).
+///
+/// The rule the fix asserts is one line long: **a description's floor comes
+/// from the description**. Nothing else — not the destination the cards are
+/// moving to, not a `may` the sentence is nested in, not the branch of a
+/// trace it sits in — may lower it. The three instructions whose own arm in
+/// `Vm::announce_position` did lower it (`AddCardsToHand`, `HostCards`,
+/// `AddToScoreArea`) are checked here beside three that never did, so the
+/// property is stated about the machinery and not about the fix.
+#[test]
+fn a_mandatory_choice_keeps_its_floor_through_every_carrier() {
+    let one = TargetSpec::Choose {
+        count: Quantity::c(1),
+        criteria: vec![TargetFilter::InstalledRunnerCard],
+        up_to: false,
+    };
+    let sentences: Vec<(&'static str, Instruction)> = vec![
+        // The three that used to drop the floor, by destination.
+        ("add 1 installed Runner card to the grip", Instruction::AddCardsToHand {
+            cards: one.clone(),
+        }),
+        ("host 1 installed Runner card on this ice", Instruction::HostCards {
+            cards: one.clone(),
+            host: TargetSpec::SelfSource,
+            faceup: false,
+        }),
+        ("add 1 installed Runner card to your score area", Instruction::AddToScoreArea {
+            cards: one.clone(),
+            to: Side::Corp,
+            as_agenda: Some(1),
+        }),
+        // And the ones that never did — the control that makes this a
+        // property of the machinery rather than a re-statement of the diff.
+        ("trash 1 installed Runner card", Instruction::TrashCards(one.clone())),
+        ("add 1 installed Runner card to the top of the stack", Instruction::MoveToDeck {
+            card: one.clone(),
+            top: true,
+        }),
+        ("remove 1 installed Runner card from the game", Instruction::RemoveCardsFromGame {
+            targets: one.clone(),
+        }),
+        ("add 1 installed Runner card to the heap", Instruction::AddCardsToHeap {
+            cards: one.clone(),
+        }),
+        ("shuffle 1 installed Runner card into the stack", Instruction::ShuffleCardsIntoDeck {
+            targets: one.clone(),
+            to: Side::Runner,
+        }),
+        ("place 1 power counter on 1 installed Runner card", Instruction::PlaceCounters {
+            target: one.clone(),
+            kind: jinteki_cr::object::CounterKind::Power,
+            amount: Quantity::c(1),
+        }),
+        ("reveal 1 installed Runner card", Instruction::RevealCards { cards: one.clone() }),
+    ];
+    for (sentence, instr) in sentences {
+        for (carrier, body) in carriers(instr) {
+            let asked = corp_announcements(body);
+            assert_eq!(
+                asked.len(),
+                1,
+                "\"{sentence}\" {carrier}: the sentence is reached and asks once"
+            );
+            for (count, up_to, min) in asked {
+                assert_eq!(count, 1, "\"{sentence}\" {carrier}: the sentence counts out one card");
+                assert!(!up_to, "\"{sentence}\" {carrier}: no 'up to' is printed");
+                assert_eq!(
+                    min, 1,
+                    "\"{sentence}\" {carrier}: 1.15.2e, with candidates on the board, \
+                     one card must be announced"
+                );
+            }
+        }
+    }
+}
+
+/// The mirror, so the fix cannot over-correct: a description that DOES print
+/// "up to" keeps its zero floor in exactly the same carriers. Optionality is
+/// the printed word's business — `up_to` for "up to N", a 9.6.9 optional
+/// component for "you may" — and both must still reach the player.
+#[test]
+fn an_optional_choice_keeps_its_zero_floor_through_the_same_carriers() {
+    let up_to_one = TargetSpec::Choose {
+        count: Quantity::c(1),
+        criteria: vec![TargetFilter::InstalledRunnerCard],
+        up_to: true,
+    };
+    let sentences: Vec<(&'static str, Instruction)> = vec![
+        ("add up to 1 installed Runner card to the grip", Instruction::AddCardsToHand {
+            cards: up_to_one.clone(),
+        }),
+        ("host up to 1 installed Runner card on this ice", Instruction::HostCards {
+            cards: up_to_one.clone(),
+            host: TargetSpec::SelfSource,
+            faceup: false,
+        }),
+        ("trash up to 1 installed Runner card", Instruction::TrashCards(up_to_one.clone())),
+    ];
+    for (sentence, instr) in sentences {
+        for (carrier, body) in carriers(instr) {
+            let asked = corp_announcements(body);
+            assert_eq!(
+                asked.len(),
+                1,
+                "\"{sentence}\" {carrier}: the sentence is reached and asks once"
+            );
+            for (count, up_to, min) in asked {
+                assert_eq!(count, 1, "\"{sentence}\" {carrier}: the ceiling is one card");
+                assert!(up_to, "\"{sentence}\" {carrier}: 'up to' is printed and must survive");
+                assert_eq!(min, 0, "\"{sentence}\" {carrier}: 'up to N' floors at zero");
+            }
+        }
+    }
+}
+
+/// And the 9.6.9 half of the mirror: a "you may" wrapped around a MANDATORY
+/// choice must still ask the yes/no. The optionality lives in its own
+/// decision, which is why it has no business also living in the choice.
+#[test]
+fn a_may_around_a_mandatory_choice_still_asks_the_yes_no() {
+    let mut vm = Vm::empty(1219);
+    tk::install_ice(
+        &mut vm,
+        carrier_ice(vec![Instruction::DeclineableChoice(Box::new(Instruction::AddCardsToHand {
+            cards: TargetSpec::Choose {
+                count: Quantity::c(1),
+                criteria: vec![TargetFilter::InstalledRunnerCard],
+                up_to: false,
+            },
+        }))]),
+        jinteki_cr::object::ServerId::Hq,
+        true,
+    );
+    let prog = tk::install_rig(&mut vm, tk::vanilla_runner_card("Card A", CardType::Program));
+    let res = tk::install_rig(&mut vm, tk::vanilla_runner_card("Card B", CardType::Resource));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    // The Corp declines the "may": nothing is chosen, and nothing moves.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::optional(), Reply::Optional(false)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(jinteki_cr::object::ServerId::Hq))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        t.windows(Kind::Optional, Side::Corp).len(),
+        1,
+        "9.6.9: the optional component asks its own yes/no: {}",
+        t.tail(12)
+    );
+    assert!(
+        t.windows(Kind::Targets, Side::Corp).is_empty(),
+        "a declined 'may' announces nothing: {}",
+        t.tail(12)
+    );
+    assert_eq!(vm.st.objects[&prog].zone, Zone::Rig, "and moves nothing");
+    assert_eq!(vm.st.objects[&res].zone, Zone::Rig, "and moves nothing");
+}
