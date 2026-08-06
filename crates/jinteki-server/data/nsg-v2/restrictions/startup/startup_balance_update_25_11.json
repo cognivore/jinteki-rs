@@ -1,0 +1,15 @@
+{
+  "banned": [
+    "cleaver",
+    "coalescence",
+    "nbn_reality_plus",
+    "pharos",
+    "s_dobrado",
+    "tributary"
+  ],
+  "date_start": "2025-11-03",
+  "format_id": "startup",
+  "id": "startup_balance_update_25_11",
+  "max_3_point_agendas": 4,
+  "name": "Startup Balance Update 25.11"
+}

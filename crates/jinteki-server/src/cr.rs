@@ -27,6 +27,7 @@
 //! wire at all, not even a card id.
 
 use crate::db::Db;
+use crate::format::Format;
 use crate::timing::{PopOutcome, TimingConfig, TimingParams, TimingState};
 use axum::extract::ws::{Message, WebSocket};
 use jinteki_cr::ability::AbilityRef;
@@ -183,6 +184,34 @@ pub struct DeckSpec {
     /// entry per card — the pile is a set of distinct identities, not a list
     /// with copy counts.
     pub pile: &'static [&'static str],
+    /// The narrowest tournament format whose CURRENT card pool contains every
+    /// card of `list` and `pile` — this deck's most likely competitive home.
+    ///
+    /// Metadata, not a gate: we serve Eternal and only Eternal today, and
+    /// nothing about play consults this. It is recorded now so that a
+    /// Standard or Startup shelf can be built later by reading a field
+    /// instead of re-deriving a card pool.
+    ///
+    /// COMPUTED, not asserted. `crates/jinteki-server/tests/formats.rs`
+    /// rebuilds each format's current pool from the vendored NSG data and
+    /// fails the build if what is written here is not what the deck's
+    /// contents say. A deck that gains a card outside its pool breaks the
+    /// build rather than lying here.
+    pub format: Format,
+    /// The banlist the deck's AUTHOR built against, as NetrunnerDB reports it
+    /// (`mwl_code` on a decklist).
+    ///
+    /// This is a CLAIM ABOUT INTENT, where `format` is a fact about contents,
+    /// and the two are recorded separately on purpose. `None` means NRDB
+    /// reports no `mwl_code`, or the deck has no NRDB provenance at all — the
+    /// two seated decks were transcribed from a deck photo. Which case it is,
+    /// per deck, is in the comment beside each constant.
+    ///
+    /// The guard cross-checks it: an `mwl_code` names a restriction, a
+    /// restriction names a format, and that format must be at least as wide
+    /// as the computed one. A deck whose contents need Eternal but whose
+    /// author claims a Standard banlist is a contradiction, not a nuance.
+    pub mwl_code: Option<&'static str>,
 }
 
 pub const ANDROMEDA: DeckSpec = DeckSpec {
@@ -192,6 +221,13 @@ pub const ANDROMEDA: DeckSpec = DeckSpec {
     side: Side::Runner,
     list: ANDROMEDA_LIST,
     pile: ANDROMEDA_PILE,
+    // Account Siphon, Desperado, Andromeda herself: fourteen of the deck's
+    // own cards, and fourteen of the pile's identities, rotated out of
+    // Standard long ago.
+    format: Format::Eternal,
+    // Transcribed from the deck photo, not imported: no NetrunnerDB decklist
+    // stands behind it, so there is no author's banlist to record.
+    mwl_code: None,
 };
 pub const GAUNTLET: DeckSpec = DeckSpec {
     key: "gauntlet",
@@ -201,10 +237,232 @@ pub const GAUNTLET: DeckSpec = DeckSpec {
     list: GAUNTLET_LIST,
     // 1.5.4a: the pile is the Runner's.
     pile: &[],
+    // AstroScript, Jackson Howard, Breaking News — eighteen cards outside the
+    // Standard pool.
+    format: Format::Eternal,
+    // Deck photo, as above.
+    mwl_code: None,
 };
 
+/// The two decks the CR mode seats, and the odometer the campaign ratchets to
+/// zero partial cards. `readiness()` gates a game on THESE — deliberately not
+/// on [`carried_decks`], whose other members are mid-queue and would make the
+/// table unstartable.
 pub fn deck_specs() -> [&'static DeckSpec; 2] {
     [&ANDROMEDA, &GAUNTLET]
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// The decks we carry but do not seat
+// ───────────────────────────────────────────────────────────────────────────
+//
+// Mid-queue lists (docs/vm/MEZZIE-QUEUE.md, docs/vm/DECK-OF-THE-WEEK.md).
+// They are here for one reason: a deck's format is a property of the printed
+// LIST, not of how much of it the card layer has implemented, so the list is
+// what the format guard has to read. Nothing seats them and `readiness()`
+// does not see them.
+
+/// Mezzie's Valencia — "Wack", 50 cards + identity (`tools/priority-decks.json`
+/// W3, transcribed here in the same shape as the two seated decks).
+pub const MEZZIE_VALENCIA_LIST: &[(&str, u32)] = &[
+    ("Valencia Estevez: The Angel of Cayambe", 1),
+    // Events (26)
+    ("Blackmail", 3),
+    ("Hacktivist Meeting", 3),
+    ("I've Had Worse", 3),
+    ("Inject", 3),
+    ("Levy AR Lab Access", 1),
+    ("Mad Dash", 1),
+    ("Moshing", 3),
+    ("Raindrops Cut Stone", 2),
+    ("Rebirth", 1),
+    ("Steelskin Scarring", 3),
+    ("Stimhack", 1),
+    ("Sure Gamble", 2),
+    // Hardware (7)
+    ("Boomerang", 2),
+    ("Desperado", 2),
+    ("Zer0", 3),
+    // Programs (7)
+    ("Black Orchestra", 2),
+    ("MKUltra", 2),
+    ("Paperclip", 2),
+    ("Rezeki", 1),
+    // Resources (10)
+    ("Clan Vengeance", 3),
+    ("Mystic Maemi", 3),
+    ("Same Old Thing", 1),
+    ("Tsakhia \"Bankhar\" Gantulga", 3),
+];
+
+/// Mezzie's Asa — "post flood asa", 49 cards + identity
+/// (`tools/priority-decks.json` W4).
+pub const MEZZIE_ASA_LIST: &[(&str, u32)] = &[
+    ("Asa Group: Security Through Vigilance", 1),
+    // Agendas (8)
+    ("Global Food Initiative", 1),
+    ("Luminal Transubstantiation", 1),
+    ("Project Vacheron", 3),
+    ("Project Vitruvius", 3),
+    // Assets (15)
+    ("Estelle Moon", 3),
+    ("Jeeves Model Bioroids", 1),
+    ("Lakshmi Smartfabrics", 2),
+    ("MCA Austerity Policy", 2),
+    ("Marilyn Campaign", 1),
+    ("Mumba Temple", 3),
+    ("Rashida Jaheem", 3),
+    ("Spin Doctor", 3),
+    // Ice (12)
+    ("Drafter", 2),
+    ("Fairchild 3.0", 2),
+    ("Tatu-Bola", 1),
+    ("Tour Guide", 3),
+    ("Vanilla", 3),
+    ("Vertigo", 1),
+    // Operations (9)
+    ("Enhanced Login Protocol", 2),
+    ("Flood the Market", 1),
+    ("Friends in High Places", 3),
+    ("Fully Operational", 3),
+    // Upgrades (2)
+    ("Ash 2X3ZB9CY", 1),
+    ("Manegarm Skunkworks", 1),
+];
+
+/// Deck of the week — "Boring.dec", NetrunnerDB #97714, 44 cards + identity.
+/// Transcribed from that decklist's `cards` map (NRDB codes resolved to
+/// printed titles through the vendored printings).
+pub const NOTW_RESTORING_HUMANITY_LIST: &[(&str, u32)] = &[
+    ("Jinteki: Restoring Humanity", 1),
+    // Agendas (7)
+    ("Fujii Asset Retrieval", 1),
+    ("Proprionegation", 3),
+    ("Send a Message", 3),
+    // Assets (6)
+    ("Charlotte Caçador", 3),
+    ("Spin Doctor", 3),
+    // Ice (14)
+    ("Brân 1.0", 3),
+    ("Empiricist", 3),
+    ("Flyswatter", 2),
+    ("Knowledge Seeker", 3),
+    ("Tatu-Bola", 3),
+    // Operations (9)
+    ("Hansei Review", 3),
+    ("Hedge Fund", 3),
+    ("Seamless Launch", 3),
+    // Upgrades (8)
+    ("Anoetic Void", 3),
+    ("La Costa Grid", 3),
+    ("Mavirus", 2),
+];
+
+/// Deck of the week — "kit costume party", NetrunnerDB #97727, 45 cards +
+/// identity.
+pub const NOTW_SABLE_LIST: &[(&str, u32)] = &[
+    ("Nyusha \"Sable\" Sintashta: Symphonic Prodigy", 1),
+    // Events (15)
+    ("Always Have a Backup Plan", 3),
+    ("Carpe Diem", 3),
+    ("Clean Getaway", 3),
+    ("Mutual Favor", 3),
+    ("S-Dobrado", 3),
+    // Hardware (13)
+    ("Boomerang", 3),
+    ("Buffer Drive", 3),
+    ("Jeitinho", 3),
+    ("Swift", 2),
+    // NSG's `title` prints a curly apostrophe here and its `stripped_title`
+    // a straight one; the card database is generated from the EDN, which
+    // uses the straight one, and no card name in `jinteki-cards` carries a
+    // curly apostrophe. This list speaks the card layer's spelling, as every
+    // other list here does.
+    ("The Wizard's Chest", 2),
+    // Programs (3)
+    ("Carmen", 1),
+    ("Curupira", 1),
+    ("Hyperbaric", 1),
+    // Resources (14)
+    ("Asmund Pudlat", 3),
+    ("Backstitching", 3),
+    ("The Back", 2),
+    ("The Class Act", 3),
+    ("Verbal Plasticity", 3),
+];
+
+pub const MEZZIE_VALENCIA: DeckSpec = DeckSpec {
+    key: "mezzie_valencia",
+    title: "Wack",
+    display_name: "Mezzie's Valencia",
+    side: Side::Runner,
+    list: MEZZIE_VALENCIA_LIST,
+    pile: &[],
+    // Blackmail, Same Old Thing, Valencia herself: sixteen cards outside
+    // Standard.
+    format: Format::Eternal,
+    // No NetrunnerDB id was recorded for this list when it entered the
+    // campaign (tools/priority-decks.json), so no author's banlist either.
+    mwl_code: None,
+};
+pub const MEZZIE_ASA: DeckSpec = DeckSpec {
+    key: "mezzie_asa",
+    title: "post flood asa",
+    display_name: "Mezzie's Asa",
+    side: Side::Corp,
+    list: MEZZIE_ASA_LIST,
+    pile: &[],
+    // Jeeves, Mumba Temple, Ash 2X3ZB9CY: sixteen cards outside Standard.
+    format: Format::Eternal,
+    // No NetrunnerDB id recorded, as above.
+    mwl_code: None,
+};
+pub const NOTW_RESTORING_HUMANITY: DeckSpec = DeckSpec {
+    key: "notw_restoring_humanity",
+    title: "Boring.dec: King of Swiss, 12th overall at Cascadia, 4-0-1",
+    display_name: "Boring.dec",
+    side: Side::Corp,
+    list: NOTW_RESTORING_HUMANITY_LIST,
+    pile: &[],
+    // A Standard tournament list, and the computation agrees: every card is
+    // in the Standard pool, five are outside Startup's.
+    format: Format::Standard,
+    // NRDB #97714 reports this. It resolves to the standard restriction
+    // dated 2026-08-01 — the same snapshot the pool computation lands on.
+    mwl_code: Some("standard-balance-update-26-08"),
+};
+pub const NOTW_SABLE: DeckSpec = DeckSpec {
+    key: "notw_sable",
+    title: "kit costume party",
+    display_name: "kit costume party",
+    side: Side::Runner,
+    list: NOTW_SABLE_LIST,
+    pile: &[],
+    // Standard: fifteen cards outside the Startup pool, none outside
+    // Standard's.
+    format: Format::Standard,
+    // NRDB #97727 reports `mwl_code: null` — the author declared nothing.
+    // The contents still say Standard; intent and contents simply do not
+    // conflict here, because intent was never stated.
+    mwl_code: None,
+};
+
+/// Every deck this repository carries a printed list for — the two seated
+/// decks, Mezzie's two, and the two decks of the week.
+///
+/// This is the format guard's input, and the only thing that reads it. It is
+/// NOT [`deck_specs`]: seating a mid-queue deck would fail the completeness
+/// gate, and a deck's FORMAT is a fact about the printed list that holds
+/// whether or not the card layer has caught up with it.
+pub fn carried_decks() -> [&'static DeckSpec; 6] {
+    [
+        &ANDROMEDA,
+        &GAUNTLET,
+        &MEZZIE_VALENCIA,
+        &MEZZIE_ASA,
+        &NOTW_RESTORING_HUMANITY,
+        &NOTW_SABLE,
+    ]
 }
 
 // ───────────────────────────────────────────────────────────────────────────
