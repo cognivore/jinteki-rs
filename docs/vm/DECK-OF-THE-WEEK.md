@@ -8,6 +8,35 @@ on a board (SYS-D-12 — one partial card and the deck is unplayable).
 Cards already implemented are REUSED, never rewritten. The repository has 272
 card definitions; check `jinteki_cards::find` before writing anything.
 
+## Format
+
+Both decks are **Standard**, computed from NSG's current card pools
+(`crates/jinteki-server/data/nsg-v2/`, vendored verbatim) rather than taken on
+the authors' word. The narrowest format whose pool holds every card of a list
+is that deck's most likely competitive home:
+
+| deck | NRDB | format | outside Startup | outside Standard | author's `mwl_code` |
+| --- | --- | --- | --- | --- | --- |
+| Boring.dec | #97714 | `standard` | 5 of 17 | 0 | `standard-balance-update-26-08` |
+| kit costume party | #97727 | `standard` | 15 of 19 | 0 | none — NRDB reports `null` |
+
+The two sources agree where both speak. Boring.dec's `mwl_code` resolves to
+the Standard restriction dated 2026-08-01, which is the restriction on
+Standard's latest snapshot — the author built against the current Standard
+banlist, and the contents are Standard-legal. "kit costume party" declares no
+banlist at all, so there is nothing to contradict; its contents say Standard
+on their own.
+
+Neither is Startup-legal, so the interesting case a Standard list that is
+*also* Startup-legal would present does not arise this week.
+
+Recorded in `crates/jinteki-server/src/cr.rs` as
+`NOTW_RESTORING_HUMANITY.format` and `NOTW_SABLE.format`, typed
+`format::Format` and not a string, with the author's claim beside it as
+`mwl_code`. `crates/jinteki-server/tests/formats.rs` recomputes both on every
+build. Metadata only: we serve Eternal and only Eternal, and nothing about
+play consults this.
+
 ---
 
 ## Boring.dec: King of Swiss, 12th overall at Cascadia, 4-0-1  (NRDB #97714)

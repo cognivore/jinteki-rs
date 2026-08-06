@@ -20,6 +20,32 @@ checks the first two; the third is on the wave that wrote it.
 - `crates/jinteki-cards/src/decks/mezzie_asa.rs` — Asa Group: Security Through Vigilance
 - `crates/jinteki-cards/src/decks/mezzie_valencia.rs` — Valencia Estevez: The Angel of Cayambe
 
+## Format
+
+Both decks are **Eternal**, computed — not assumed — from NSG's current card
+pools (`crates/jinteki-server/data/nsg-v2/`, vendored verbatim). The narrowest
+format whose pool holds every card of a list is that deck's most likely
+competitive home; for these two the pools say:
+
+| deck | format | outside Standard | outside Startup | author's `mwl_code` |
+| --- | --- | --- | --- | --- |
+| Mezzie's Asa — "post flood asa" | `eternal` | 16 of 25 | 20 of 25 | none recorded |
+| Mezzie's Valencia — "Wack" | `eternal` | 16 of 24 | 23 of 24 | none recorded |
+
+Neither list entered the campaign with a NetrunnerDB id
+(`tools/priority-decks.json` records the cards and nothing else), so there is
+no author's banlist to cross-check the computation against — the contents are
+the only evidence, and they are unambiguous. Jeeves Model Bioroids, Mumba
+Temple and Ash 2X3ZB9CY on the Corp side, Blackmail, Same Old Thing and
+Valencia herself on the Runner side, all rotated out of Standard long ago.
+
+Recorded in `crates/jinteki-server/src/cr.rs` as `MEZZIE_ASA.format` and
+`MEZZIE_VALENCIA.format`, typed `format::Format` and not a string.
+`crates/jinteki-server/tests/formats.rs` recomputes both on every build, so a
+list that gains a card outside its pool fails the build rather than lying
+here. Metadata only: we serve Eternal and only Eternal, and nothing about
+play consults this.
+
 Cards shared with a finished deck are already done — reuse the existing
 function, never write a second copy of a card.
 
