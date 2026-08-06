@@ -2005,10 +2005,50 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             } else {
                 "Paid ability window (9.2.7).".into()
             };
+            // THE LAST CALL. CR 5.6.2 runs the action phase as a LOOP: step
+            // (a) is this window, step (b) takes an action "if the Corp has
+            // any unspent [click]" and otherwise "skip to (d)", and step (c)
+            // returns to (a). So with no click left this window is the final
+            // one of the action phase — passing it ends the phase, and a
+            // fully advanced agenda sitting in a remote is never scored.
+            //
+            // The engine had this right and the button lied by omission: a
+            // bare "Pass" spent the last chance to score in one tap, with
+            // nothing on screen saying it was the last chance (reported from
+            // a real game: five advancement counters, no clicks, no way
+            // back). Naming what the button ENDS is the whole fix — the
+            // green "Score X" is right beside it, and a player who reads
+            // "Pass — end your action phase" does not misfire. No second
+            // confirm: passing a window is an ordinary act at every other
+            // window, and ceremony on all of them would teach nothing.
+            let scoreable: Vec<ObjectId> = options
+                .iter()
+                .filter_map(|o| match o {
+                    WindowOption::Score { card } => Some(*card),
+                    _ => None,
+                })
+                .collect();
+            // In the DRAW phase window (5.6.1b) the Corp has just been given
+            // their clicks by 5.6.1a, so "no click left" identifies 5.6.2a
+            // and nothing else.
+            let last_call = !scoreable.is_empty() && vm.st.corp.clicks == 0;
+            if last_call {
+                let names: Vec<String> =
+                    scoreable.iter().map(|c| name_of(vm, &view, *c)).collect();
+                p.msg.push_str(&format!(
+                    " No [click] left: this is the last window of your action phase, so passing \
+                     leaves {} unscored.",
+                    names.join(" and ")
+                ));
+            }
             for o in options {
                 push(&mut p, window_label(vm, &view, o), DecisionAnswer::Take(o.clone()));
             }
-            push(&mut p, "Pass".into(), DecisionAnswer::Pass);
+            push(
+                &mut p,
+                if last_call { "Pass — end your action phase".into() } else { "Pass".to_string() },
+                DecisionAnswer::Pass,
+            );
         }
         DecisionSpec::ReactionWindow { options, can_pass } => {
             p.msg = "Reaction window (9.2.8) — trigger an ability?".into();
@@ -3906,6 +3946,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// CR 5.6.2: the LAST paid ability window of the action phase says so.
+    ///
+    /// The action phase is a loop — (a) this window, (b) take an action "if
+    /// the Corp has any unspent [click]" and otherwise "skip to (d)", (c)
+    /// back to (a) — so with no click left, passing this window ends the
+    /// phase and a fully advanced agenda is never scored. Reported from a
+    /// real game: five advancement counters, no clicks, and one tap on a
+    /// bare "Pass" spent the score with nothing on screen saying so.
+    #[test]
+    fn the_last_window_of_the_action_phase_says_what_passing_costs() {
+        use jinteki_cr::window::PawClasses;
+        let mut g = dealt_game();
+        let agenda = g
+            .vm
+            .st
+            .objects
+            .values()
+            .find(|o| o.printed.card_type == CardType::Agenda)
+            .expect("an agenda somewhere")
+            .id;
+        g.vm.move_card(agenda, Zone::Root(ServerId::Remote(1)));
+        let spec = DecisionSpec::PaidWindow {
+            classes: PawClasses::prs(),
+            options: vec![WindowOption::Score { card: agenda }],
+        };
+        let name = g.vm.st.objects[&agenda].printed.name;
+
+        // With clicks in hand, another action window follows: an ordinary Pass.
+        g.vm.st.corp.clicks = 2;
+        let p = present(&g.vm, Side::Corp, &spec);
+        let labels: Vec<&str> = p.choices.iter().map(|(_, l, _, _)| l.as_str()).collect();
+        assert!(labels.contains(&"Pass"), "an ordinary window passes plainly: {labels:?}");
+        assert!(!p.msg.contains("last window"), "nothing is being lost yet: {}", p.msg);
+
+        // With none, this is the last call — and both the sentence and the
+        // button say what the tap ENDS, naming the agenda it would strand.
+        g.vm.st.corp.clicks = 0;
+        let p = present(&g.vm, Side::Corp, &spec);
+        let labels: Vec<&str> = p.choices.iter().map(|(_, l, _, _)| l.as_str()).collect();
+        assert!(
+            labels.contains(&"Pass — end your action phase"),
+            "the button names what it ends: {labels:?}"
+        );
+        assert!(p.msg.contains("last window of your action phase"), "the sentence says so: {}", p.msg);
+        assert!(p.msg.contains(name), "and names the agenda left unscored: {}", p.msg);
+        assert!(
+            labels.iter().any(|l| l.starts_with("Score ")),
+            "the score is still on the table: {labels:?}"
+        );
     }
 
     /// A FACEDOWN INSTALLED CARD, ON THE WIRE, from both seats.
