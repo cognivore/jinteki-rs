@@ -17855,13 +17855,28 @@ fn lakshmi_smartfabrics_stops_the_runner_stealing_copies_of_what_it_revealed() {
              for X=2 (same_name={same_name}): {}",
             t.tail(30)
         );
+        assert_eq!(
+            t.first_window(Kind::DeclareX, Side::Corp).x_max(),
+            Some(2),
+            "1.16.1a: the announcement is bounded by what THIS CARD hosts — 2 \
+             power counters — and not by the Corp's 5[credit] \
+             (same_name={same_name}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            t.first_window(Kind::Targets, Side::Corp).candidates(),
+            [two],
+            "2.5.1 + 1.16.2c: 'an agenda worth X points' reaches the 2-pointer \
+             and not the 1-pointer sharing HQ with it, because X was announced \
+             as 2 (same_name={same_name}): {}",
+            t.tail(30)
+        );
         assert!(
             vm.changes
                 .log
                 .iter()
                 .any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == two)),
-            "2.5.1: the agenda worth X points is the one revealed, and the \
-             1-pointer beside it in HQ is not (same_name={same_name}): {}",
+            "…and that is the card revealed (same_name={same_name}): {}",
             t.tail(30)
         );
         assert_eq!(
