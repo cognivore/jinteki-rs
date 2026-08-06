@@ -4309,6 +4309,16 @@ function renderChips() {
       mk(abilityText(ch.value, ch.card && ch.card.title, true), () => act("choice", { choice: { uuid: ch.uuid } }), "prompt-chip");
     });
     const picked = (p["select-picked"] || []).length;
+    // A FLOOR SAYS SO. A mandatory choice renders no "Done" at all until it
+    // is met (the server only offers one when the selection is complete), so
+    // a player who has armed a card and is looking for the button has
+    // nothing on screen telling them the question is not answered yet — the
+    // Archangel shape, where one more tap was all that was owed. The count
+    // is stated wherever it is short, whether or not a Done exists.
+    const floor = (p["select-min"] ?? 0) - picked;
+    if (floor > 0 && (p["select-cards"] || []).length) {
+      bar.appendChild(el("span", "armed-hint", `Choose ${floor} more`));
+    }
     if (p["select-kind"] === "discard") {
       // 5.5.4c is irreversible: the staged set commits through this button
       // and nothing else. Same gate as the sheet it replaces.

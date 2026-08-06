@@ -3876,6 +3876,59 @@ mod tests {
         }
     }
 
+    /// CR 1.13.1: "the hosted card is considered to be in the same location
+    /// as the card hosting it". The zone lists are flat, so WHERE a card sits
+    /// is the only thing that can tell a client to draw it on its host — and
+    /// without it a Corp card hosted on Cupellation was pushed into the
+    /// Runner's rig (the fallback bucket for anything that is not a program
+    /// or hardware) and drawn full size beside the resources they had
+    /// actually installed.
+    ///
+    /// 4.6.2/10.2.3a make location open information, so it travels on a
+    /// FACEDOWN card too: the opponent may not know what it is, but they may
+    /// know it is there and what it is sitting on.
+    #[test]
+    fn a_hosted_card_says_which_card_it_is_on() {
+        let mut g = dealt_game();
+        let ice = g.vm.new_object(
+            PrintedCard::vanilla("Host Wall", Side::Corp, CardType::Ice),
+            Zone::Ice(ServerId::Hq),
+        );
+        g.vm.place_ice_outermost(ice, ServerId::Hq);
+        // The rig is membership by zone, so this card IS in it.
+        let boom = g.vm.new_object(
+            PrintedCard::vanilla("Hosted Thing", Side::Runner, CardType::Hardware),
+            Zone::Rig,
+        );
+        g.vm.st.objects.get_mut(&boom).unwrap().host = Some(ice);
+        g.vm.st.objects.get_mut(&boom).unwrap().faceup = true;
+        g.vm.st.objects.get_mut(&ice).unwrap().faceup = true;
+
+        for viewer in [Side::Runner, Side::Corp] {
+            let out = state_json(&g, viewer);
+            let hw = out["runner"]["rig"]["hardware"]
+                .as_array()
+                .expect("the rig's hardware row");
+            let hosted = hw
+                .iter()
+                .find(|c| c["cid"] == json!(boom.0))
+                .unwrap_or_else(|| panic!("the hosted card still travels ({viewer:?}): {out:#?}"));
+            assert_eq!(
+                hosted["host"],
+                json!(ice.0),
+                "and says which card it is on ({viewer:?})"
+            );
+        }
+
+        // A card carrying nothing says nothing: `host` is absent, not null,
+        // so the client's "is this drawn elsewhere" test stays a plain
+        // presence check.
+        let out = state_json(&g, Side::Runner);
+        let ices = out["corp"]["servers"]["hq"]["ices"].as_array().expect("HQ's ice");
+        let host_card = ices.iter().find(|c| c["cid"] == json!(ice.0)).expect("the ice");
+        assert!(host_card.get("host").is_none(), "the host has no host: {host_card:#?}");
+    }
+
     /// A game stepped far enough that the opening hands exist, with every
     /// decision answered by the engine's own neutral policy — the fixture for
     /// asking "what would this prompt look like".
