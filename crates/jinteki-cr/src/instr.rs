@@ -73,6 +73,28 @@ pub enum Quantity {
     /// at least 1, and "you did not access any cards this turn" is this at
     /// most 0 — the only way a count says "none".
     AccessesThisTurn,
+    /// CR 7.5 / 1.12.6: the number of agendas the Runner STOLE inside a
+    /// history window — "if you stole an agenda during that run" (Mad Dash),
+    /// "for each agenda you stole this turn".
+    ///
+    /// 7.5's steal is an occurrence, and `TriggerCond::RunnerStealsAgenda` is
+    /// met by it as it happens. This is the other question, the one a "when
+    /// this run ends" ability has to put: not "is a steal happening" but "did
+    /// one happen inside this span". A condition met during the run is no
+    /// answer to it, because by the time the later ability resolves the
+    /// occurrence is over.
+    ///
+    /// The WINDOW is content (§12 rule 2), which is what
+    /// [`Quantity::AccessesThisRun`] and [`Quantity::AccessesThisTurn`] are
+    /// the older two-variant spelling of: the count is the same count, and a
+    /// run and a turn are two spans of the same 1.12.6 history review. Read
+    /// from the change log, which 10.2.1 makes open information.
+    ///
+    /// Only the Runner steals (7.5), so there is no side to carry. The
+    /// threshold and its direction are content on whatever asks: "you stole
+    /// an agenda" is this at least 1, and "you stole no agendas" is this at
+    /// most 0.
+    AgendasStolen(HistoryWindow),
     /// CR 1.20.4a: the Runner's UNUSED [mu] — the memory limit (1.20.2, as
     /// modified) minus the total memory cost of installed programs (1.20.3),
     /// which 1.20.4a names as a calculated value directly and rules that it
@@ -270,6 +292,26 @@ impl Quantity {
             Box::new(Quantity::Times(per, Box::new(Quantity::CountersOnSource(kind)))),
         )
     }
+}
+
+/// CR 1.12.6: the SPAN of game history a count reviews — "during that run"
+/// against "this turn".
+///
+/// Content on the quantity that counts (§12 rule 2), never a quantity per
+/// span: a sentence asking how many of something happened differs from its
+/// neighbour in the span alone. Both spans are marks into the change log,
+/// which 10.2.1 makes open information — `Vm::st.run_log_start` and
+/// `Vm::st.turn_log_start`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryWindow {
+    /// "…during that run" — from the run in progress beginning, or from the
+    /// run that just ended, for a "when this run ends" ability. Outside a run
+    /// the mark is stale and the count is whatever the last run left; a
+    /// sentence saying "that run" is only ever asked inside or at the end of
+    /// one.
+    ThisRun,
+    /// "…this turn" — from the current turn beginning (5.1).
+    ThisTurn,
 }
 
 /// The shared SERVER-filter language: the stipulations a sentence makes about

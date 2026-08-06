@@ -4907,6 +4907,24 @@ impl Vm {
                     .filter(|c| matches!(c, GameChange::CardAccessed { .. }))
                     .count() as i64
             }
+            // 7.5 over 1.12.6's window: `AgendaStolen` is recorded at step
+            // 7.2.3, where the steal actually happens, so counting those
+            // records since the window began IS "the agendas you stole" — an
+            // access whose steal a 1.2.2 "cannot" forbade left no record.
+            Q::AgendasStolen(window) => {
+                cite!("movement_steal");
+                cite!("rule_score_steal");
+                cite!("rule_previous_object");
+                cite!("rule_hidden_or_open_information");
+                let from = match window {
+                    crate::instr::HistoryWindow::ThisRun => self.st.run_log_start,
+                    crate::instr::HistoryWindow::ThisTurn => self.st.turn_log_start,
+                };
+                self.changes.log[from.min(self.changes.log.len())..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::AgendaStolen { .. }))
+                    .count() as i64
+            }
             // 1.20.4a: "unused [mu]" is the CR's own calculated value — the
             // memory limit as modified (1.20.2) minus the memory costs of
             // installed programs (1.20.3), counted exactly as the checkpoint

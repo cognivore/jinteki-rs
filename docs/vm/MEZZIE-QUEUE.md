@@ -95,7 +95,7 @@ Identity is COMPLETE.
       "Reveal the top 4 cards of your stack and trash all programs revealed. Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip."
 - [x] **Levy AR Lab Access** ×1 — event · cost 5
       "Shuffle your grip and heap into your stack. Draw 5 cards. Remove Levy AR Lab Access from the game instead of trashing it."
-- [ ] **Mad Dash** ×1 — event · Run · cost 0
+- [x] **Mad Dash** ×1 — event · Run · cost 0
       "Run any server. When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point. Otherwise, suffer 1 meat damage."
 - [x] **Moshing** ×3 — event · cost 0
       "As an additional cost to play this event, trash 3 cards from your grip. / Gain 3[credit] and draw 3 cards."
@@ -569,23 +569,15 @@ sharing a characteristic with the revealed one, and the filter vocabulary can
 say "the card this ability revealed" (now) and "a card with this printed name"
 (`HasName`) and not "a card with the same name as that one".
 
-### A count of the agendas STOLEN inside a window (CR 7.5 / 1.12.6)
+### A count of the agendas STOLEN inside a window — LANDED (CR 7.5 / 1.12.6)
 
-The history quantities count accesses (`AccessesThisRun`, `AccessesThisTurn`),
-subroutines broken and resolved, and ice passed. Nothing counts STEALS.
-7.5's steal is recorded as it happens — `TriggerCond::RunnerStealsAgenda` is
-met by the occurrence — but a "when this run ends" ability asks about the run's
-HISTORY, and a condition met during the run is not a question a later ability
-can put.
-
-Wanted: one quantity counting the agendas stolen since the window began, with
-the window (run or turn) as content, exactly as `AccessesThisRun` and
-`AccessesThisTurn` are one count over two windows; the existing `at_least`
-supplies "if you stole an agenda".
-
-Wants it: **Mad Dash** ("if you stole an agenda during that run"; the run is
-done and tested, and `add_to_score_area(this_card(), Runner, Some(1))` says the
-rest of the branch — 1.17.3e/f keeps it an ADD and not a steal).
+`Quantity::AgendasStolen(HistoryWindow)`, read from the change log where
+`AccessesThisRun` and `SubroutinesBrokenThisRun` are read from it. The window
+is CONTENT on the one quantity rather than a variant per span — which is what
+those two neighbours are the older spelling of — so "during that run" and "this
+turn" are one count. Only the Runner steals (7.5), so no side rides on it.
+`HistoryWindow` is 1.12.6's span as a named thing, and it is the position any
+later history count should take. **Mad Dash** is written and ticked.
 
 ### A trigger condition met when a SUBROUTINE RESOLVES (CR 9.8.10)
 

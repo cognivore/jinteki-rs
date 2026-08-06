@@ -19816,58 +19816,93 @@ fn inject_reveals_four_trashes_the_programs_and_banks_the_rest() {
     }
 }
 
-/// Mad Dash: "Run any server."
+/// Mad Dash: "Run any server. When that run ends, if you stole an agenda
+/// during that run, add this event to your score area as an agenda worth 1
+/// agenda point. Otherwise, suffer 1 meat damage."
 ///
-/// PARTIAL — the pay-off is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the markers
-/// cannot quietly disappear. The run itself is 6.9.1a's announcement over
-/// every server, and it costs nothing — this event's play cost is 0, so the
-/// Runner's credit pool is untouched by it.
+/// Both branches, on one board that differs only in which server the Runner
+/// names. The remote holds a loose agenda and Archives is empty, so the run
+/// the Runner announces decides whether a steal happens — and the card's
+/// question is asked afterwards, of the run's HISTORY, which is the whole
+/// point of it being a count and not a trigger condition.
+///
+/// The negative branch is asserted by the card the meat damage takes out of
+/// the grip (10.4.2a), and the positive one by the event reaching the score
+/// area with a point on it while the grip is untouched. 1.17.3e/f is asserted
+/// too, in the form that matters: Mad Dash is ADDED, so it is not stolen —
+/// only the agenda the Runner actually stole is recorded as a steal.
 #[test]
-fn mad_dash_runs_a_server_the_runner_names() {
-    let md = jinteki_cards::find("Mad Dash").expect("Mad Dash is in the card layer");
-    assert_eq!(
-        md.unimplemented,
-        vec![
-            "When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point.",
-            "Otherwise, suffer 1 meat damage.",
-        ],
-        "exactly two printed sentences are still unsayable"
-    );
+fn mad_dash_pays_out_on_the_steal_and_bites_without_one() {
+    for (server, stole) in [(ServerId::Archives, false), (ServerId::Remote(1), true)] {
+        let mut vm = Vm::empty(9410);
+        let card_id = vm.new_object(card("Mad Dash"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Loose Agenda", 3, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        // Three more cards in the grip, so a meat damage has something to take.
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+        let grip_before = vm.st.hand[&Side::Runner].len();
 
-    let mut vm = Vm::empty(9410);
-    let card_id = vm.new_object(card_partial("Mad Dash"), Zone::Hand(Side::Runner));
-    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
-    tk::fill_hand(&mut vm, Side::Corp, 3);
-    tk::fill_deck(&mut vm, Side::Corp, 5);
-    tk::fill_deck(&mut vm, Side::Runner, 5);
-    vm.st.runner.credits = 0;
-    vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(card_id))
+                .when(Match::attacked_server().once(), Reply::Server(server))
+                .stop_at_action(),
+        );
 
-    let t = plan::play(
-        &mut vm,
-        Plan::corp(),
-        Plan::runner()
-            .when(Match::action().once(), Reply::play_card(card_id))
-            .when(Match::attacked_server().once(), Reply::Server(ServerId::Rnd))
-            .stop_at_action(),
-    );
-    assert!(
-        vm.changes.log.iter().any(|c| matches!(
-            c,
-            GameChange::RunDeclaredSuccessful { server: ServerId::Rnd, .. }
-        )),
-        "the run went to the server the Runner named: {}",
-        t.tail(20)
-    );
-    // The pay-off is unsayable, and the marker is what says so — the event is
-    // trashed at 8.6.7g like any other, rather than reaching a score area.
-    assert_eq!(
-        vm.st.objects[&card_id].zone,
-        Zone::Discard(Side::Runner),
-        "and no branch of the marked sentence ran: {}",
-        t.tail(20)
-    );
+        assert_eq!(
+            vm.st.objects[&agenda].zone == Zone::ScoreArea(Side::Runner),
+            stole,
+            "the run only reached the agenda on the remote (server={server:?}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.objects[&card_id].zone,
+            if stole { Zone::ScoreArea(Side::Runner) } else { Zone::Discard(Side::Runner) },
+            "10.1.3: the event is added to the score area as an agenda only where a steal \
+             happened during the run (stole={stole}): {}",
+            t.tail(24)
+        );
+        // grip_before counted Mad Dash itself, which the play took out either
+        // way; the meat damage is the second card gone.
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            if stole { grip_before - 1 } else { grip_before - 2 },
+            "10.4.2a: the other branch trashes a randomly-chosen card from the grip \
+             (stole={stole}): {}",
+            t.tail(24)
+        );
+        if stole {
+            assert_eq!(
+                vm.score(Side::Runner),
+                3,
+                "2 for the agenda stolen, 1 for the event added as an agenda: {}",
+                t.tail(24)
+            );
+            assert_eq!(
+                vm.changes
+                    .log
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::AgendaStolen { .. }))
+                    .count(),
+                1,
+                "1.17.3e/f: a card ADDED to a score area is not stolen, so Mad Dash \
+                 records no second steal: {}",
+                t.tail(24)
+            );
+        }
+    }
 }
 
 /// Raindrops Cut Stone: "Run any server." / "When that run ends, draw 1 card

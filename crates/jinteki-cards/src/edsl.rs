@@ -3756,6 +3756,23 @@ pub fn accesses_this_run() -> Quantity {
 pub fn accesses_this_turn() -> Quantity {
     Quantity::AccessesThisTurn
 }
+/// "…if you stole an agenda **during that run**" (Mad Dash; CR 7.5 over
+/// 1.12.6's run window) — how many agendas the Runner stole since the run
+/// began. Pair it with [`at_least`] 1 for the printed "if you stole an
+/// agenda"; a sentence saying "you stole no agendas" is [`at_most`] 0.
+///
+/// Not `TriggerCond::RunnerStealsAgenda`, and the difference is which
+/// question is being asked: that condition is met BY a steal as it happens,
+/// and a "when this run ends" ability asks about the run's history, which no
+/// occurrence during the run can answer for it.
+pub fn agendas_stolen_this_run() -> Quantity {
+    Quantity::AgendasStolen(jinteki_cr::instr::HistoryWindow::ThisRun)
+}
+/// "…for each agenda you stole **this turn**" — the same count over 1.12.6's
+/// turn window.
+pub fn agendas_stolen_this_turn() -> Quantity {
+    Quantity::AgendasStolen(jinteki_cr::instr::HistoryWindow::ThisTurn)
+}
 /// "…if your [mu] is full" / "…if you have at least 1 unused [mu]" (Dewi
 /// Subrotoputri's two faces) — CR 1.20.4a's own calculated value, the memory
 /// limit minus installed programs' memory costs. "Full" is [`at_most`] 0

@@ -253,25 +253,36 @@ pub fn levy_ar_lab_access() -> Card {
 ///  run, add this event to your score area as an agenda worth 1 agenda point.
 ///  Otherwise, suffer 1 meat damage."
 ///
-/// PARTIAL — the run; the pay-off is marked.
+/// COMPLETE.
 ///
 /// The run is 6.9.1a's announcement with no server named, so the Runner
 /// declares the attacked one as the run is initiated.
 ///
-/// Everything after it waits on ONE missing question: "if you stole an agenda
-/// during that run". 7.5's steal is recorded — `TriggerCond::RunnerStealsAgenda`
-/// reads the occurrence as it happens — but a "when this run ends" ability
-/// asks about the run's HISTORY, and the requirement vocabulary has no term
-/// counting steals inside a window the way `AccessesThisRun` counts accesses
-/// or `SubroutinesBrokenThisRun` counts breaks. Without it the branch cannot
-/// be chosen, and a card that guessed would either hand out an agenda point it
-/// did not earn or do a meat damage it did not deserve.
+/// The pay-off is a CONDITIONAL ability of the card rather than an instruction
+/// after the run, for the reason Raindrops Cut Stone's is: 4.6.4e keeps a
+/// played event active in the play area for the whole of its resolution and
+/// 5.2.2b suspends that resolution until the run ends, so the event is still
+/// there — and still able to be added to a score area — when "when that run
+/// ends" is met.
 ///
-/// (`add_to_score_area(this_card(), Runner, Some(1))` says the rest of the
-/// first branch, and 1.17.3e/f is what makes it an ADD and not a steal: a card
+/// "If you stole an agenda during that run" is a question about the run's
+/// HISTORY, and that is the whole reason it is not
+/// `TriggerCond::RunnerStealsAgenda`: 7.5's steal is an occurrence, met as it
+/// happens, and by the time this ability resolves the occurrence is over.
+/// `agendas_stolen_this_run` is 1.12.6's review of the same record.
+///
+/// "Otherwise" is 1.16.11d's word for the other branch of the SAME condition,
+/// so the two printed sentences are one `IfMet` with two branches rather than
+/// two instructions — the shape Mutual Favor's printed "if you do not" already
+/// takes. Written as two instructions the negative branch would need its own
+/// requirement, and 9.6.5d would re-ask it after the first branch had already
+/// added the card to a score area.
+///
+/// 1.17.3e/f is what makes the first branch an ADD and not a steal: a card
 /// added to a score area is not stolen, so nothing that watches for a steal
-/// sees this. It is left out only because the condition that reaches it
-/// cannot be stated.)
+/// sees this — including this card's own condition, which has already been
+/// answered by then. 10.1.3's conversion is `as_agenda`: an EVENT becomes an
+/// agenda worth 1 point.
 pub fn mad_dash() -> Card {
     card("Mad Dash")
         .runner()
@@ -281,8 +292,15 @@ pub fn mad_dash() -> Card {
         .cost(0)
         .text("Run any server. When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point. Otherwise, suffer 1 meat damage.")
         .play([run_any_server([])])
-        .unimplemented("When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point.")
-        .unimplemented("Otherwise, suffer 1 meat damage.")
+        .when(
+            run_ends(),
+            [if_met_else(
+                &[at_least(agendas_stolen_this_run(), 1)],
+                [add_to_score_area(this_card(), Runner, Some(1))],
+                [meat_damage(Runner, 1)],
+            )],
+        )
+        .named("when that run ends")
         .build()
 }
 
