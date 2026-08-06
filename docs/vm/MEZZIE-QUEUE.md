@@ -113,7 +113,7 @@ Identity is COMPLETE.
       "When you install this hardware, choose 1 installed piece of ice. Use this hardware only during encounters with that ice. / [trash]: Break up to 2 subroutines. When this run ends, if it was successful, you may shuffle 1 copy of Boomerang from your heap into your stack."
 - [x] **Desperado** ◆ ×2 — hardware · Console · cost 3
       "+1[mu] / Gain 1[credit] whenever you make a successful run. / Limit 1 console per player."
-- [ ] **Zer0** ◆ ×3 — hardware · cost 1
+- [x] **Zer0** ◆ ×3 — hardware · cost 1
       "Once per turn → [click], suffer 1 net damage: Gain 1[credit] and draw 2 cards."
 - [ ] **Clan Vengeance** ×3 — resource · Clan · cost 3
       "Whenever you suffer any amount of damage, place 1 power counter on Clan Vengeance. / [trash]: Trash 1 card from HQ at random for each power counter on Clan Vengeance."
@@ -123,13 +123,13 @@ Identity is COMPLETE.
       "[click], [click], [trash]: Play an event from your heap (paying its play cost)."
 - [ ] **Tsakhia "Bankhar" Gantulga** ◆ ×3 — resource · Connection · cost 1
       "When your turn begins, you may choose a server. / During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve "[subroutine] Do 1 net damage."."
-- [ ] **Black Orchestra** ×2 — program · Icebreaker - Decoder · cost 3, str 2
+- [x] **Black Orchestra** ×2 — program · Icebreaker - Decoder · cost 3, str 2
       "Whenever you encounter a code gate, you may install this program from your heap. / 3[credit]: +2 strength. Then, if this program can interface with the code gate you are encountering, break up to 2 subroutines."
-- [ ] **MKUltra** ×2 — program · Icebreaker - Killer · cost 2, str 1
+- [x] **MKUltra** ×2 — program · Icebreaker - Killer · cost 2, str 1
       "Whenever you encounter a sentry, you may install this program from your heap. / 3[credit]: +2 strength. Then, if this program can interface with the sentry you are encountering, break up to 2 subroutines."
 - [x] **Paperclip** ×2 — program · Icebreaker - Fracter · cost 4, str 1
       "Whenever you encounter a barrier, you may install this program from your heap. / X[credit]: +X strength. Then, if this program can interface with the barrier you are encountering, break up to X subroutines."
-- [ ] **Rezeki** ×1 — program · cost 2
+- [x] **Rezeki** ×1 — program · cost 2
       "When your turn begins, gain 1[credit]."
 
 ---

@@ -17726,3 +17726,308 @@ fn mca_austerity_policy_cashes_in_for_four_clicks_only_with_three_counters() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Mezzie's Valencia (docs/vm/MEZZIE-QUEUE.md) — programs and hardware
+// ---------------------------------------------------------------------------
+
+/// Black Orchestra: "Whenever you encounter a code gate, you may install this
+/// program from your heap." / "3[credit]: +2 strength. Then, if this program
+/// can interface with the code gate you are encountering, break up to 2
+/// subroutines."
+///
+/// Both halves of the sentence, on a board. CR 9.1.8b is what lets the first
+/// one act from a zone 4.4.4 makes inactive; 9.6.5d is what puts the
+/// interface question after "+2 strength", so a printed 2 that could never
+/// have matched a strength-4 code gate when the ability was offered breaks
+/// its subroutine anyway.
+///
+/// The code gate carries two subroutines and the Runner announces one of
+/// them, which is what "up to 2" allows (9.8.6). The other resolves: the run
+/// carrying on past a broken "End the run" is the printed promise, and the
+/// 5[credit] the second subroutine hands over is the proof that the encounter
+/// did not stop where the Corp wanted it to.
+#[test]
+fn black_orchestra_installs_itself_from_the_heap_and_breaks_the_code_gate() {
+    for breaks in [false, true] {
+        let mut vm = Vm::empty(9301);
+        let gate = tk::install_ice(&mut vm, tk::little_engine_like("Sunburst"), ServerId::Hq, true);
+        vm.st.objects.get_mut(&gate).unwrap().printed.subtypes = vec!["Code Gate"];
+        let bo = vm.new_object(card("Black Orchestra"), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(bo);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        vm.st.runner.credits = 8;
+        vm.start_turn(Side::Runner);
+
+        let mut runner = Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(
+                Match::reaction().offering("black orchestra: out of the heap").once(),
+                Reply::take("black orchestra: out of the heap"),
+            )
+            .when(Match::destination(), Reply::Destination(jinteki_cr::instr::InstallDest::Rig));
+        if breaks {
+            runner = runner
+                .when(Match::paid().once(), Reply::take("black orchestra: pump and break"))
+                .when(Match::sub_targets().once(), Reply::SubroutineNamed("End the run"));
+        }
+        let t = plan::play(&mut vm, Plan::corp(), runner.stop_at_action());
+
+        // The install is the same in both arms: 9.1.8b does not depend on what
+        // the Runner does next.
+        assert_eq!(
+            vm.st.objects[&bo].zone,
+            Zone::Rig,
+            "9.1.8b: the ability worked from the heap (breaks={breaks}): {}",
+            t.tail(24)
+        );
+        let broken = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::SubroutineBroken { .. }))
+            .count();
+        assert_eq!(
+            broken,
+            usize::from(breaks),
+            "9.6.5d: strength 2 + 2 clears the strength-4 code gate at RESOLUTION, \
+             and only the arm that used the ability broke anything (breaks={breaks}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+            breaks,
+            "the broken \"End the run\" did not end the run (breaks={breaks}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            // 8 − 3 install, then − 3 for the ability and + 5 from the
+            // subroutine the Runner left unbroken.
+            if breaks { 7 } else { 5 },
+            "the unannounced subroutine still resolved, which it could only do \
+             on the far side of the broken one (breaks={breaks}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// MKUltra: "Whenever you encounter a sentry, you may install this program
+/// from your heap." / "3[credit]: +2 strength. Then, if this program can
+/// interface with the sentry you are encountering, break up to 2
+/// subroutines."
+///
+/// The same two sentences as Black Orchestra with a different subtype, so
+/// what is under test here is the OTHER thing 9.6.5d decides: how many times
+/// the ability has to be used before the break can happen at all. MKUltra's
+/// printed 1 against a strength-4 sentry is 3 after one use and 5 after two,
+/// and 3.9.5g is the comparison — so the first arm pays 3[credit], pumps, and
+/// breaks nothing, while the second pays 6 and gets through.
+#[test]
+fn mkultra_breaks_the_sentry_only_once_it_has_pumped_high_enough() {
+    for uses in [1usize, 2usize] {
+        let mut vm = Vm::empty(9302);
+        let sentry = tk::install_ice(&mut vm, tk::etr_ice("Grim Visage", 0, 4), ServerId::Hq, true);
+        vm.st.objects.get_mut(&sentry).unwrap().printed.subtypes = vec!["Sentry"];
+        let mk = vm.new_object(card("MKUltra"), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(mk);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        vm.st.runner.credits = 10;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Hq))
+                .when(
+                    Match::reaction().offering("mkultra: out of the heap").once(),
+                    Reply::take("mkultra: out of the heap"),
+                )
+                .when(Match::destination(), Reply::Destination(jinteki_cr::instr::InstallDest::Rig))
+                .when(Match::paid().times(uses), Reply::take("mkultra: pump and break"))
+                .when(Match::sub_targets().once(), Reply::SubroutineNamed("End the run"))
+                .stop_at_action(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&mk].zone,
+            Zone::Rig,
+            "9.1.8b: the encounter installed it out of the heap (uses={uses}): {}",
+            t.tail(28)
+        );
+        let broke = uses == 2;
+        assert_eq!(
+            vm.changes
+                .log
+                .iter()
+                .filter(|c| matches!(c, GameChange::SubroutineBroken { .. }))
+                .count(),
+            usize::from(broke),
+            "3.9.5g/9.6.5d: strength 1 + 2 is under the sentry's 4 and breaks nothing; \
+             1 + 2 + 2 is over it and breaks (uses={uses}): {}",
+            t.tail(28)
+        );
+        assert_eq!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+            broke,
+            "the run continued exactly where the subroutine was broken (uses={uses}): {}",
+            t.tail(28)
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            // 10 − 2 install − 3 per use.
+            if broke { 2 } else { 5 },
+            "each use of the ability cost 3[credit] whether or not it broke anything \
+             (uses={uses}): {}",
+            t.tail(28)
+        );
+    }
+}
+
+/// Zer0: "Once per turn → [click], suffer 1 net damage: Gain 1[credit] and
+/// draw 2 cards."
+///
+/// Everything left of the colon is cost (1.16.1) and everything right of it
+/// is effect, and the drive is three of the Runner's turns so that both
+/// halves of 9.3.6g's flag are observed: it is spent by USING (9.1.6), so the
+/// second action window of a turn is not offered it — and it is spent per
+/// TURN, so the next turn is.
+///
+/// The Runner's other clicks go on runs against an empty Archives, which pay
+/// nothing, so the credit pool at the end counts Zer0's payouts and nothing
+/// else.
+#[test]
+fn zer0_costs_a_click_and_a_card_and_pays_once_each_turn() {
+    const ZER0: &str = "zer0: bleed for a credit and two cards";
+    let mut vm = Vm::empty(9303);
+    let z = tk::install_rig(&mut vm, card("Zer0"));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 12);
+    tk::fill_deck(&mut vm, Side::Corp, 12);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().offering(ZER0).times(2), Reply::take(ZER0))
+            // The third turn's offer is where the drive stops: reaching it is
+            // itself the assertion that a new turn hands the flag back.
+            .when(Match::action().offering(ZER0), Reply::Halt)
+            .when(Match::action(), Reply::run(ServerId::Archives)),
+    );
+
+    assert_eq!(
+        t.times_taken(ZER0),
+        2,
+        "9.3.6g: once per turn, on each of two turns: {}",
+        t.tail(20)
+    );
+    // 1.11.3c put the ability in the ACTION window, so the offers are counted
+    // among that window's options rather than among a paid window's.
+    let offered = t
+        .windows(Kind::Action, Side::Runner)
+        .iter()
+        .filter(|e| {
+            e.actions()
+                .iter()
+                .any(|o| matches!(o, ActionOption::CardAction { label, .. } if label.contains(ZER0)))
+        })
+        .count();
+    assert_eq!(
+        offered, 3,
+        "9.1.6: USING it spends the flag, so of the Runner's action windows only \
+         the first of each turn offers it: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        t.windows(Kind::Action, Side::Runner).len(),
+        9,
+        "1.11.3c: an ability whose cost begins with [click] is an ACTION — two full \
+         turns of four windows, and the first of the third: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        2,
+        "\"Gain 1[credit]\", twice, and nothing else on the board pays: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.discard[&Side::Runner].len(),
+        2,
+        "1.16.1: the net damage was PAID, one card each time, before anything was \
+         gained: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        5,
+        "\"draw 2 cards\", twice, against a grip of 3 the two damage costs took \
+         one card each from: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&z].zone,
+        Zone::Rig,
+        "the hardware is a cost the Runner pays with, not one it spends: {}",
+        t.tail(20)
+    );
+}
+
+/// Rezeki: "When your turn begins, gain 1[credit]."
+///
+/// A CONDITIONAL ability (9.6.1), not a static declaration: 9.4.1's statics
+/// "continuously affect the game" and "do not resolve", and this one names a
+/// moment and resolves at it. The drive starts on the CORP's turn, so both
+/// halves of that are observable — two Runner turns pay 1 each, and the two
+/// Corp turns in between pay nothing, because "your" is a stipulation on the
+/// condition (9.6.5c) and not decoration.
+///
+/// The Runner's clicks go on runs against an empty Archives, which pay
+/// nothing, so the pool counts Rezeki's payouts alone.
+#[test]
+fn rezeki_pays_when_the_runners_turn_begins_and_never_on_the_corps() {
+    let mut vm = Vm::empty(9304);
+    let rz = tk::install_rig(&mut vm, card("Rezeki"));
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 12);
+    tk::fill_deck(&mut vm, Side::Runner, 12);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().nth(5), Reply::Halt)
+            .when(Match::action(), Reply::run(ServerId::Archives)),
+    );
+
+    assert_eq!(
+        vm.st.objects[&rz].zone,
+        Zone::Rig,
+        "the program is still installed and still active: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        2,
+        "9.6.1: one credit at the beginning of each of the Runner's two turns — and \
+         9.6.5c's \"your\": the two Corp turns in between paid nothing, which a \
+         count of 4 would have caught: {}",
+        t.tail(20)
+    );
+}
