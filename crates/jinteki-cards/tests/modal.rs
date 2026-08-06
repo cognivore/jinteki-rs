@@ -219,6 +219,61 @@ struct TestFn {
     doors: bool,
 }
 
+/// The body with every `assert…!(…)` and `panic!(…)` invocation removed.
+///
+/// A test that ASSERTS the offered options names them:
+/// `assert_eq!(options, &["take 1 tag", "end the run"], …)`. That is a claim
+/// about what the VM put on the table, not a drive — and counting it as one
+/// would let a test assert an option exists while never taking it, which is a
+/// weaker thing than this guard is for. Only what a test could hand to
+/// `ChooseNamed` counts, so the claims come out first.
+fn without_assertions(body: &str) -> String {
+    // Byte-wise: the source holds non-ASCII prose (− and …), and only whole
+    // macro invocations are ever skipped, which begin and end on ASCII — so
+    // what is copied stays valid UTF-8.
+    let b = body.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let is_macro = ["assert!", "assert_eq!", "assert_ne!", "panic!", "unreachable!"]
+            .iter()
+            .find(|m| b[i..].starts_with(m.as_bytes()))
+            // Not the tail of a longer identifier (`debug_assert!`).
+            .filter(|_| i == 0 || !b[i - 1].is_ascii_alphanumeric());
+        let Some(m) = is_macro else {
+            out.push(b[i]);
+            i += 1;
+            continue;
+        };
+        // Skip the invocation whole, matching its delimiters and stepping over
+        // string literals so a `(` inside a message does not confuse the count.
+        let mut j = i + m.len();
+        let mut depth = 0i32;
+        while j < b.len() {
+            match b[j] {
+                b'"' => {
+                    j += 1;
+                    while j < b.len() && b[j] != b'"' {
+                        j += if b[j] == b'\\' { 2 } else { 1 };
+                    }
+                }
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        j += 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        i = j;
+    }
+    String::from_utf8(out).expect("whole macro invocations were skipped, so the rest is UTF-8")
+}
+
 /// Every string literal in a slice of source, un-escaped only as far as the
 /// suite needs (no `\"` appears inside a label).
 fn string_literals(src: &str) -> Vec<String> {
@@ -272,7 +327,7 @@ fn test_functions() -> Vec<TestFn> {
             }
             j += 1;
         }
-        let literals = string_literals(&body);
+        let literals = string_literals(&without_assertions(&body));
         let mut cards = BTreeSet::new();
         for m in ["card(\"", "card_partial(\""] {
             let mut from = 0;
