@@ -1316,7 +1316,12 @@ function ZONE(side, which) {
 // readable by either player — the Runner's heap especially, since installing
 // and shuffling out of it is ordinary play.
 document.addEventListener("click", (e) => {
-  const stat = e.target.closest('.stat[data-stat="discard"]');
+  // Matched on the ATTRIBUTE, not on `.stat[data-stat=…]`: the discard span
+  // lives inside `.stat.zones` and carries `tappable` alone, so the compound
+  // selector matched nothing and both discard piles were unopenable — a
+  // reader with a `title` promising a tap and no tap behind it. The sibling
+  // AP handler happens to work only because that span is itself a `.stat`.
+  const stat = e.target.closest('[data-stat="discard"]');
   if (!stat || !S) return;
   const side = stat.dataset.side;
   const st = S[side] || {};
@@ -1444,13 +1449,14 @@ function renderServers() {
       // for everyone), and the sliver is the only copy of this card drawn.
       sliver.innerHTML = `<span class="iname">${rezzed ? c.title : "?"}</span>` + sliverBadges(c) +
         (rezzed ? `<span class="imeta">${c.strength ?? ""}${subsN ? " · " + "↳".repeat(subsN) : ""}</span>` : "");
-      let t = null, fired = false;
       // A tap answers where there is something to answer; otherwise it reads.
       const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
-      sliver.addEventListener("pointerdown", () => { fired = false; t = setTimeout(() => { fired = true; if (sliver.isConnected) zoomCard(c); }, 380); });
+      const press = pressToRead(sliver, 380, () => zoomCard(c));
       sliver.addEventListener("pointerup", () => {
-        clearTimeout(t);
-        if (fired) return;
+        // A press that opened the reader is not also a tap, and a finger that
+        // travelled was panning the server row — neither answers a question
+        // as final as arming a target.
+        if (press.fired() || press.travelled()) return;
         if (answerable) {
           // The same two taps every card takes: a sliver is still a card
           // (THE LAW §5), and the choice it answers is just as final.
@@ -1459,9 +1465,6 @@ function renderServers() {
         } else zoomCard(c);
       });
       if (armed != null && c.cid === armed) sliver.classList.add("armed");
-      sliver.addEventListener("pointerleave", () => clearTimeout(t));
-      sliver.addEventListener("pointercancel", () => clearTimeout(t));
-      sliver.addEventListener("contextmenu", (e) => e.preventDefault());
       // THE LAW §5: a chip is still a card — hover reads it on a pointer
       // device, exactly as hovering the card it stands for would.
       if (hoverCapable) {
@@ -1748,6 +1751,97 @@ function fanMove(key, d) { fanGoto(key, fanOf(key).focus + d); }
  * Keyed by CARD, because that is the thing that survives a redraw. The
  * element is only where the events happened to land. */
 const PRESS = { cid: null, timer: null, x: 0, y: 0, long: false };
+
+/* ── A DRAG IS NOT A PRESS ───────────────────────────────────────────────
+ *
+ * Every long-press in this UI is a timer started on `pointerdown`, and a
+ * timer nobody cancels fires. Scrolling a list is a pointerdown followed by
+ * a lot of movement and, eventually, a release somewhere else entirely — so
+ * every attempt to scroll the builder's pool, or a pile, or the deck list,
+ * spent 420ms holding still-enough and then opened a full-screen reader on
+ * whatever card the finger had started on. The player asked to scroll and
+ * got a card in their face; on a phone that is most of the gestures they
+ * make. `cardEl` already watched for this (it has the fan's tap grammar to
+ * protect); the ice slivers, `attachZoom` and the builder grid did not.
+ *
+ * Three ways a pending press is called off, because no one of them is
+ * enough on its own:
+ *   1. MOVEMENT past `FAN_SLOP`, measured from where the finger landed.
+ *      This is the one that always works — it needs no cooperation from the
+ *      browser and it fires while the gesture is still being made.
+ *   2. `pointercancel` / `touchcancel`, which is what a browser sends when
+ *      it takes a pan gesture over for itself. It arrives without any
+ *      `pointermove` on the element at all when the scroller is native, and
+ *      it is why the stylesheet names `touch-action: pan-y` on the
+ *      scrollers — an axis the browser has claimed is a gesture it will tell
+ *      us it claimed.
+ *   3. `scroll` on ANY ancestor, in the capture phase (scroll events do not
+ *      bubble, but they do capture). Momentum scrolling, a scrollbar drag, a
+ *      wheel, a keyboard PageDown: something moved under the finger, so
+ *      whatever the press was aimed at is not where it was aimed any more.
+ *
+ * A press that has ALREADY opened its reader is untouched by all three —
+ * cancelling is only ever about the timer, never about the overlay. And a
+ * press cancelled here is not a tap either: the same slop test guards the
+ * `pointerup` handlers, so one gesture still resolves to exactly one meaning.
+ */
+const PENDING_PRESSES = new Set();
+function cancelPendingPresses() {
+  // Copied first: a canceller removes itself from the set as it runs.
+  for (const cancel of [...PENDING_PRESSES]) cancel();
+  PENDING_PRESSES.clear();
+}
+document.addEventListener("scroll", cancelPendingPresses, true);
+document.addEventListener("pointercancel", cancelPendingPresses, true);
+document.addEventListener("touchcancel", cancelPendingPresses, true);
+
+/* ONE press machine for everything that stands for a card but is not drawn by
+ * `cardEl` — the ice slivers, the pile and deck-editor rows, the builder's
+ * grid. They had three near-copies of this timer between them and three
+ * different sets of things that cancelled it; this is the one set.
+ *
+ * `isConnected` is kept from every one of those copies: a press whose element
+ * is replaced mid-hold (a tap on a pile row rebuilds the overlay under the
+ * finger) never hears its own release, and a stranded timer opening a second
+ * reader over the first is the "spawns, races itself, and pops again" bug.
+ * Returns the two questions a caller's `pointerup` has to ask. */
+function pressToRead(elm, ms, fire) {
+  let t = null, fired = false, moved = false, sx = 0, sy = 0;
+  const stop = () => {
+    if (t) clearTimeout(t);
+    t = null;
+    PENDING_PRESSES.delete(stop);
+  };
+  elm.addEventListener("pointerdown", (e) => {
+    stop();
+    fired = false; moved = false;
+    sx = e.clientX; sy = e.clientY;
+    PENDING_PRESSES.add(stop);
+    t = setTimeout(() => {
+      t = null;
+      PENDING_PRESSES.delete(stop);
+      fired = true;
+      if (elm.isConnected) fire();
+    }, ms);
+  });
+  elm.addEventListener("pointermove", (e) => {
+    if (moved || (!t && !fired)) return;
+    if (Math.abs(e.clientX - sx) > FAN_SLOP || Math.abs(e.clientY - sy) > FAN_SLOP) {
+      moved = true;
+      stop();
+    }
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) =>
+    elm.addEventListener(ev, stop));
+  // The read gesture is ours, not iOS's selection callout.
+  elm.addEventListener("contextmenu", (e) => e.preventDefault());
+  return {
+    /** Did this press already open the reader? Then the release is not a tap. */
+    fired: () => fired,
+    /** Did the finger travel? Then it was a scroll, and neither is this. */
+    travelled: () => moved,
+  };
+}
 
 let fanTapUntil = 0;
 function fanSuppressesTap() { return performance.now() < fanTapUntil; }
@@ -2249,6 +2343,7 @@ function cardEl(c, opts) {
   // closure keyed by the element — see `PRESS` — because the element does not
   // survive long enough to be a reliable place to keep it.
   el.__cancelPress = () => {
+    PENDING_PRESSES.delete(el.__cancelPress);
     if (PRESS.cid !== c.cid) return;
     clearTimeout(PRESS.timer); PRESS.timer = null; PRESS.cid = null;
   };
@@ -2256,11 +2351,21 @@ function cardEl(c, opts) {
     clearTimeout(PRESS.timer);
     PRESS.cid = c.cid; PRESS.long = false;
     PRESS.x = e.clientX; PRESS.y = e.clientY;
+    // The card's own `pointermove` catches a finger that wanders; this catches
+    // the two cases where no move is ever delivered here — a native scroller
+    // taking the pan (`pointercancel`) and an ancestor scrolling under the
+    // card (`scroll`, captured at the document). A card in the builder's grid
+    // or a pile reader sits in exactly such a scroller.
+    PENDING_PRESSES.add(el.__cancelPress);
     // `isConnected`: a re-render that replaces this card mid-press strands
     // the timer (the replacement never hears the pointerup), and a stranded
     // timer opening a reader nobody asked for is the double-spawn race.
     PRESS.timer = setTimeout(() => {
+      PRESS.timer = null;
+      PENDING_PRESSES.delete(el.__cancelPress);
       PRESS.long = true;
+      // A press that has already opened its reader is DONE, not pending:
+      // nothing below may reach back and close what the player asked for.
       if (el.isConnected) zoomCard(c);
     }, 420);
   });
@@ -2276,6 +2381,7 @@ function cardEl(c, opts) {
   });
   el.addEventListener("pointerup", (e) => {
     clearTimeout(PRESS.timer); PRESS.timer = null;
+    PENDING_PRESSES.delete(el.__cancelPress);
     const wasPressed = PRESS.cid === c.cid; PRESS.cid = null;
     // A TAP is a press and a release in about the same place, on the same
     // card. Anything else is a drag or a page pan — and in a fan a drag does
@@ -4044,19 +4150,9 @@ function renderEditor() {
    text, counters and subroutines stripped, which is exactly the reading the
    press was asking for. */
 function attachZoom(elm, c) {
-  let t = null;
-  // The guard is `isConnected`: a press whose element is replaced mid-hold
-  // (a tap on a pile row opens the reader ON the down and rebuilds the
-  // overlay under the finger) loses its pointerup forever, so the timer
-  // outlives its element and fired a SECOND reader over the first — the
-  // "spawns, races itself, and pops again" a player reported. An element
-  // that has left the DOM has no press to honour.
-  elm.addEventListener("pointerdown", () => {
-    clearTimeout(t);
-    t = setTimeout(() => { if (elm.isConnected) zoomCard(c); }, 420);
-  });
-  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => elm.addEventListener(ev, () => clearTimeout(t)));
-  elm.addEventListener("contextmenu", (e) => e.preventDefault());
+  // A pile row and a deck-editor row both live in LISTS the player scrolls,
+  // so this is the site the drag-opens-a-reader bug bit hardest.
+  return pressToRead(elm, 420, () => zoomCard(c));
 }
 
 function renderValidStrip() {
@@ -4878,17 +4974,13 @@ function builderCardEl(cc, opts) {
    The catalog carries construction fields, not rules text; the reader shows
    what it has and the art carries the words. */
 function builderRead(elm, cc) {
-  let t = null;
-  let long = false;
-  elm.addEventListener("pointerdown", () => {
-    long = false;
-    clearTimeout(t);
-    t = setTimeout(() => { long = true; if (elm.isConnected) builderZoom(cc); }, 420);
-  });
-  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) =>
-    elm.addEventListener(ev, () => clearTimeout(t)));
-  elm.addEventListener("contextmenu", (e) => e.preventDefault());
-  elm.__wasLongPress = () => long;
+  const press = pressToRead(elm, 420, () => builderZoom(cc));
+  // The grid this lives in is the longest scroller in the app, so a drag that
+  // ends on a card must not count as a click on it either: `click` fires after
+  // the release wherever the pointer went down and up on the same element, and
+  // "add a copy of this card to my deck" is not what the player asked for by
+  // flicking the pool. Both questions, one flag, checked by every caller.
+  elm.__wasLongPress = () => press.fired() || press.travelled();
 }
 function builderZoom(cc) {
   const o = $("zoom-overlay");

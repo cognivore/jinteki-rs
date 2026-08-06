@@ -31,9 +31,36 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 .screen { display: none; position: fixed; inset: 0; }
 .screen.active { display: block; }
 
+/* Every scroller in this UI is a THUMB's scroller. Three properties, in one
+   place, on all of them:
+   · `-webkit-overflow-scrolling: touch` — momentum on the older iOS WebKits
+     that still need it asked for;
+   · `overscroll-behavior: contain` — a list that reaches its end does not
+     hand the rest of the gesture to whatever is behind it. Nothing behind it
+     scrolls (`html, body { overflow: hidden }`), so all chaining ever bought
+     was iOS rubber-banding the entire app off its own edge;
+   · `touch-action: pan-y` — the BROWSER owns the vertical pan. That is not
+     only about smoothness: a pan the browser has taken is a pan that fires
+     `pointercancel`, which is one of the two ways a pending long-press gets
+     called off (see `pressToRead` in app.js). The global `*` rule says
+     `manipulation`, which permits panning but leaves every axis in play;
+     naming the one axis a vertical list has lets the browser claim the
+     gesture at once instead of waiting to see where the finger goes.
+   Horizontal scrollers are deliberately NOT in this list: `.servers`,
+   `.rig-row` and `.arrangerow` own their own axis and keep it. */
+.home-wrap, .findgame-body, .deck-rows, .edit-body, .builder-deck, .builder-grid,
+.log-lines, .bottom-sheet, .deck-picker, .picker-list, .picker-preview,
+#play-rail, .zoom-overlay .zoom-card {
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+
 /* ── Home ─────────────────────────────────────────────────────────────── */
+/* `safe` centering: centred while the content fits, start-aligned the moment
+   it does not. Plain `center` overflows a scroll container in BOTH directions
+   and `scrollTop` cannot go negative, so the half that spills off the top is
+   unreachable at any scroll position — the logo and the account chip on a
+   short landscape phone. No effect at all on the case that fits. */
 .home-wrap { height: 100%; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 10px; padding: 16px; overflow-y: auto; }
+  justify-content: safe center; gap: 10px; padding: 16px; overflow-y: auto; }
 .logo { font-size: 44px; margin: 0; letter-spacing: -2px; }
 .logo span { color: var(--legal); }
 .tagline { margin: 0 0 10px; color: var(--dim); }
@@ -69,8 +96,18 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 #screen-cr-gap .ztext { color: var(--dim); font-style: italic; }
 
 /* ── Lobby ────────────────────────────────────────────────────────────── */
-#screen-lobby, #screen-cr-lobby { display: none; flex-direction: column; padding: 10px; gap: 10px; }
-#screen-lobby.active, #screen-cr-lobby.active { display: flex; }
+/* The SCREEN scrolls here, not the list inside it. The list used to be the
+   only scroller (`flex: 1`) under a stack of siblings that all keep
+   `min-height: auto` and so refuse to shrink — the timing selectors wrapped
+   over three rows on a phone, and a ready-check refusal adds a panel of
+   problems — and on a 402px-wide portrait phone that stack squeezed the list
+   of open games to a measured clientHeight of ZERO with 584px inside it. A
+   list nobody can see or scroll to is the lobby's whole content gone. Chrome
+   plus one list is the case where one page-level scroll is simply right. */
+#screen-lobby, #screen-cr-lobby { display: none; flex-direction: column;
+  padding: 10px 10px calc(10px + var(--sab)); gap: 10px; }
+#screen-lobby.active, #screen-cr-lobby.active { display: flex; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
 .lobby-bar { display: flex; align-items: center; gap: 10px; }
 #lobby-status, #crlobby-status { color: var(--dim); flex: 1; text-align: center; }
 /* Your own waiting seat, above the list of everyone else's. */
@@ -78,7 +115,9 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .lobby-create { display: flex; gap: 8px; flex-wrap: wrap; }
 .lobby-create input { flex: 1; min-width: 140px; background: var(--bg2); border: 1px solid var(--line);
   color: var(--text); border-radius: 10px; padding: 10px; }
-.lobby-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+/* Its height is its content's; the screen above is what scrolls. */
+.lobby-list { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+.lobby-list > * { flex: 0 0 auto; }
 .lobby-row { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
   padding: 12px; display: flex; align-items: center; gap: 10px; }
 .lobby-row .t { flex: 1; }
@@ -176,7 +215,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* servers */
 .servers { display: flex; gap: 10px; height: 100%; overflow-x: auto; padding: 4px 10px;
   align-items: flex-start; scroll-snap-type: x proximity; }
-.server { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 86px;
+.server { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 108px;
   scroll-snap-align: center; padding: 4px; border-radius: 12px; border: 1px solid transparent; }
 .server.run-target { border-color: var(--danger); background: rgba(255,92,92,.08);
   animation: runpulse 1.2s infinite; }
@@ -186,7 +225,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center;
   justify-content: center; font-size: 11px; color: var(--dim); }
 .server .central b { color: var(--text); font-size: 15px; }
-.ice-stack { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+/* The gap is what says "these are TWO pieces of ice". At 3px a stack of four
+   read as one striped bar; the vertical budget is the tight one here (the
+   zone-half clips, it does not scroll), so the separation buys one pixel and
+   the legibility comes out of the WIDTH below. */
+.ice-stack { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 
 /* rig */
 .rig { display: flex; flex-direction: column; gap: 4px; padding: 4px 10px; height: 100%; }
@@ -773,8 +816,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .gameover-overlay h1 { margin: 0; font-size: 40px; }
 .gameover-overlay .why { color: var(--dim); }
 
-/* compact ice slivers (MTGA aura-stack style) */
-.ice-sliver { width: 82px; min-height: 16px; border-radius: 4px; background: var(--bg2);
+/* compact ice slivers (MTGA aura-stack style).
+   WIDTH is the axis that was free and the axis that was starving. A sliver
+   carries no art — it is a name, its counters and its strength — so "tell two
+   pieces of ice apart" is entirely a question of how much of the name fits,
+   and at 82px (66px on a landscape phone) the answer was "Eni…" and "Tol…".
+   Widening costs nothing the board owns: the server row already pans
+   horizontally and says so with its chevrons (lesson 15), whereas the stack's
+   height is clipped by `.zone-half`, which does not scroll. So the name gets
+   the room and the stack keeps its depth. */
+.ice-sliver { width: 104px; min-height: 18px; border-radius: 4px; background: var(--bg2);
   border: 1px solid var(--line); font-size: 9.5px; padding: 1px 5px; display: flex;
   justify-content: space-between; align-items: center; color: var(--dim); cursor: pointer; }
 .ice-sliver .iname { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -900,10 +951,13 @@ button.go.alt { background: var(--gold); color: #2a2005; }
      font shrinks them with it — one number, not a second set per breakpoint. */
   .card { width: 52px; height: 72px; font-size: 8.5px; border-radius: 6px; }
   .card.ice { width: 72px; height: 46px; }
-  .server { min-width: 72px; gap: 2px; }
+  .server { min-width: 96px; gap: 2px; }
   .server .central { width: 62px; height: 42px; font-size: 10px; }
   .server .central b { font-size: 13px; }
-  .ice-sliver { width: 66px; min-height: 14px; font-size: 8.5px; }
+  /* Wider and a point larger, so the name is a name and not three letters
+     and an ellipsis; the height is left where the depth of the stack needs
+     it, because the zone-half clips and does not scroll. */
+  .ice-sliver { width: 92px; min-height: 14px; font-size: 9.5px; }
   .identity-col { display: none !important; }
   .rig .rowlabel { display: none; }
   .rig-row { min-height: 48px; }
@@ -1438,11 +1492,22 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .builder-problems .problem { color: var(--danger); font-size: 13px;
   border: 1px solid var(--danger); border-radius: 8px; padding: 6px 10px;
   background: rgba(255,92,92,.07); }
+/* `min-height: 0` on EVERY flex child that contains a scroller, not just on
+   the ones that scroll themselves. A flex item defaults to `min-height: auto`,
+   which floors it at its own content's height — so `.builder-pool`, whose
+   overflow is visible, grew to the full 1446px of the card grid inside a
+   777px body, handed the grid unlimited height, and left `.builder-grid` with
+   `scrollHeight === clientHeight`: a scroll container with nothing to scroll.
+   The deck panel escaped that only because being a scroll container makes its
+   own `auto` compute to 0. Nothing scrolled anywhere else either, because
+   `.screen` is `position: fixed` under `html, body { overflow: hidden }`, so
+   the spill had no page scroll to fall back on. This one property is the
+   whole portrait bug. */
 .builder-body { flex: 1; min-height: 0; display: flex; gap: 12px; }
-.builder-deck { flex: 0 0 340px; min-width: 0; overflow-y: auto; display: flex;
+.builder-deck { flex: 0 0 340px; min-width: 0; min-height: 0; overflow-y: auto; display: flex;
   flex-direction: column; gap: 6px; padding-right: 2px;
   border-right: 1px solid var(--line); }
-.builder-pool { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.builder-pool { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
 .builder-filters { display: flex; flex-direction: column; gap: 6px; }
 .builder-filters input { background: var(--bg2); border: 1px solid var(--line);
   border-radius: 8px; color: var(--text); padding: 10px 12px; font-size: 15px; }
@@ -1453,7 +1518,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* The pool: every card IS a card (THE LAW §1) — the game's .card box at a
    readable size, in a grid that scrolls. Tap adds a copy; long-press reads. */
 .builder-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px;
   padding: 4px 2px calc(16px + var(--sab)); align-content: start; }
 .builder-grid .card { width: 100%; height: auto; aspect-ratio: 64 / 89;
   font-size: 11px; cursor: pointer; }
@@ -1517,17 +1582,39 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   padding: 10px 10px calc(10px + var(--sab)); }
 .idpicker .chip.seg.on[data-pickside="corp"] { border-color: var(--corp); color: var(--corp); }
 .idpicker .chip.seg.on[data-pickside="runner"] { border-color: var(--runner); color: var(--runner); }
-#idpicker-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+#idpicker-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 #idpicker-grid .idlabel { font-size: 11px; color: var(--dim); text-align: center;
   padding-top: 3px; overflow: hidden; text-overflow: ellipsis; }
 
-/* Phone portrait: the two panes stack; the meters stay pinned above both. */
+/* Phone portrait: the two panes stack, and EACH keeps a scroll of its own.
+   TWO panes rather than one page-level scroll, deliberately: both lists are
+   unbounded — a 45-card deck above a catalogue of thousands — so a single
+   page scroll would bury the first card of the pool under the whole decklist
+   and the decklist under a scrollback of cards. Two panes let each be reached
+   without traversing the other, and the deck you are building stays on screen
+   while you browse the pool, which is the whole point of the screen.
+   The deck panel is `0 1 auto` capped at 38% rather than a flat `0 0 38%`: a
+   three-card draft should not reserve a third of the phone for empty space,
+   and a full list is capped and scrolls inside the cap.
+   The pool's `min-height: 0` is inherited from the base rule above — it is
+   what makes the grid's own scroll work at all. */
 @media (max-width: 700px) {
   .builder-body { flex-direction: column; }
-  .builder-deck { flex: 0 0 38%; border-right: none;
+  .builder-deck { flex: 0 1 auto; max-height: 38%; min-height: 0;
+    border-right: none;
     border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-  .builder-grid { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
+  /* THE LAW §1: these are CARDS, and art you cannot resolve is a card the
+     player has to read the title off instead — which is the list-of-titles
+     the LAW exists to forbid. The phone used to shrink the pool below the
+     desktop's own card (88px against 104px); now it does not shrink it at
+     all, and the columns fall out three-wide with air between them instead
+     of four-wide and touching. 104 + 10 is chosen to still be THREE columns
+     on the narrowest phone we draw for (375px SE: 351px of content against
+     3×104 + 2×10 = 332) rather than dropping to two on the common widths. */
+  .builder-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
   .aspect { width: min(300px, 86vw); min-height: 0; }
+}
+
 /* ── The FACE SWITCHER (CR 1.4 double-sided cards) ──────────────────────
    Inside the reader chrome, above the card: one tab per face when a card
    has several backs, a single ↺ toggle when it has exactly one. Tapping a
