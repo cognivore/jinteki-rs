@@ -1799,6 +1799,22 @@ pub enum LingeringSpec {
         by: Option<Side>,
         actions: Vec<crate::lingering::ProhibitedAction>,
     },
+    /// CR 1.13.3 waived: "**hosted credits are considered to be in your credit
+    /// pool**" for a duration (Stimhack). The cards are DESCRIBED in the
+    /// shared filter vocabulary, so "hosted credits" said of this card is
+    /// [`TargetFilter::IsSource`] and a sentence about a class of card is the
+    /// same effect with different content.
+    ///
+    /// Distinct from every [`CreditUse`] allowance, and the distinction is the
+    /// whole of it. `CreditUse` says what hosted credits may be SPENT on
+    /// (1.10.3c). 1.13.3 says something else — hosted counters "do not count
+    /// as 'on' a player or as objects a player 'has'" — and this waives that:
+    /// the credits are then read by everything that reads the pool, so a
+    /// forced 1.10.3b loss takes them and a quantity asking how many credits
+    /// the player has counts them. `CreditUse::AnyPayment` reaches every
+    /// payment and none of those READS, which is a silent under-reach
+    /// wherever the pool is counted rather than spent.
+    HostedCreditsAsPool { cards: Vec<TargetFilter> },
 }
 
 /// CR 1.2.2: how a printed "cannot" picks the cards it is about, as written

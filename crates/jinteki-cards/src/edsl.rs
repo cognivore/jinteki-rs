@@ -4056,6 +4056,25 @@ pub fn cannot_act_on_matching(
         duration,
     }
 }
+/// "**During that run, hosted credits are considered to be in your credit
+/// pool.**" (Stimhack; CR 1.13.3 waived for a duration.)
+///
+/// It is not a [`CardBuilder::credits_spendable_on_anything`] allowance under
+/// another name, and the difference is the whole of the sentence. 1.10.3c's
+/// allowances say what hosted credits may be SPENT on; 1.13.3 says hosted
+/// counters are not "on" the player at all, and this waives THAT — so the
+/// credits are read by everything that reads the pool: a forced 1.10.3b loss
+/// takes them, and a quantity asking how many credits the player has counts
+/// them. An allowance reaches every payment and none of those reads.
+pub fn hosted_credits_count_as_pool_credits(
+    criteria: &[TargetFilter],
+    duration: WantedDuration,
+) -> Instruction {
+    Instruction::CreateLingeringEffect {
+        payload: LingeringSpec::HostedCreditsAsPool { cards: criteria.to_vec() },
+        duration,
+    }
+}
 /// "…until **your** next turn begins." (CR 5.1: the turns alternate, so this
 /// span covers the rest of this turn and the whole of the opponent's.)
 pub fn until_next_turn_begins_of(side: Side) -> WantedDuration {

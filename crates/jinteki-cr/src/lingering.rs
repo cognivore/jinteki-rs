@@ -176,6 +176,15 @@ pub enum Payload {
     /// "Access N additional cards" (The Maker's Eye / Seidr class; adds to
     /// the 7.3.6 random access limit at step 7.5.3).
     AdditionalAccess { server: ServerId, extra: u32 },
+    /// CR 1.13.3 waived: the credits hosted on the cards this description
+    /// reaches "are considered to be in your credit pool" while the effect
+    /// lives (Stimhack). `side` is whose pool.
+    ///
+    /// A description rather than a named object, re-read wherever the pool is,
+    /// for the reason [`ProhibitionScope::Matching`] is one: 9.10.1 gives the
+    /// effect a life independent of its source, and the sentence is about a
+    /// class of card and not about one object fixed when it resolved.
+    HostedCreditsAsPool { side: Side, criteria: Vec<crate::instr::TargetFilter> },
 }
 
 /// CR 1.2.2: WHICH CARDS a "cannot" is about — the scope of the prohibition,

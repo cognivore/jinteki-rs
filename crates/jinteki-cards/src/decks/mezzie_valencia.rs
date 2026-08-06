@@ -456,7 +456,7 @@ pub fn steelskin_scarring() -> Card {
 ///  hosted credits are considered to be in your credit pool. When that run
 ///  ends, suffer 1 core damage. This damage cannot be prevented."
 ///
-/// PARTIAL — three of its four sentences; the credit pool is marked.
+/// COMPLETE.
 ///
 /// "Place 9[credit] on this event, then run any server" joins its two effects
 /// with "THEN", and that word is why they are two instructions rather than
@@ -480,16 +480,21 @@ pub fn steelskin_scarring() -> Card {
 /// 4.6.4e keeps the event active in the play area for its whole resolution and
 /// "when that run ends" names 6.10's moment rather than "afterwards".
 ///
-/// "Hosted credits are considered to be in your credit pool" is marked, and
-/// the near miss is worth naming: `CreditUse::AnyPayment` would let the nine
-/// credits pay for anything, which is most of what the sentence is FOR. It is
-/// not what the sentence SAYS. 1.13.3 keeps hosted credits out of the pool
-/// entirely — they are never "on" the player — and this card waives exactly
-/// that, so the credits are read by anything that reads the pool: a forced
-/// 1.10.3b loss during the run takes them, and a quantity asking how many
-/// credits the Runner has counts them. `CreditUse` cannot say so, and neither
-/// can any lingering effect, so writing the permission alone would be a
+/// "Hosted credits are considered to be in your credit pool" is 1.13.3 WAIVED,
+/// and the near miss is worth naming: `CreditUse::AnyPayment` would let the
+/// nine credits pay for anything, which is most of what the sentence is FOR.
+/// It is not what the sentence SAYS. 1.13.3 keeps hosted credits out of the
+/// pool entirely — they are never "on" the player — and this card waives
+/// exactly that, so the credits are read by anything that reads the pool: a
+/// forced 1.10.3b loss during the run takes them, and a quantity asking how
+/// many credits the Runner has counts them. The permission alone would be a
 /// silent UNDER-reach in every one of those places.
+///
+/// The sentence rides on the RUN, for the reason Blackmail's does: 5.2.2b
+/// suspends this ability until the run completes, so an instruction written
+/// after it would create a "this run" effect with no run left to bind to
+/// (9.10.4). "Then" already put the placement before the run, which is the
+/// only order that leaves anything for the effect to be about.
 pub fn stimhack() -> Card {
     card("Stimhack")
         .runner()
@@ -498,7 +503,13 @@ pub fn stimhack() -> Card {
         .subtypes(&["Run"])
         .cost(0)
         .text("Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented.")
-        .play([place(CounterKind::Credit, 9), run_any_server([])])
+        .play([
+            place(CounterKind::Credit, 9),
+            run_any_server_during_which([hosted_credits_count_as_pool_credits(
+                &[this_very_card()],
+                WantedDuration::ThisRun,
+            )]),
+        ])
         .when(
             run_ends(),
             [Instruction::DamageUnpreventable {
@@ -508,7 +519,6 @@ pub fn stimhack() -> Card {
             }],
         )
         .named("when that run ends")
-        .unimplemented("During that run, hosted credits are considered to be in your credit pool.")
         .build()
 }
 

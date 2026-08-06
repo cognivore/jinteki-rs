@@ -105,7 +105,7 @@ Identity is COMPLETE.
       "Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it. / Limit 1 per deck."
 - [x] **Steelskin Scarring** ×3 — event · cost 1
       "Draw 3 cards. / When this event is trashed from your grip or stack, you may draw 2 cards."
-- [ ] **Stimhack** ×1 — event · Run · cost 0
+- [x] **Stimhack** ×1 — event · Run · cost 0
       "Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented."
 - [x] **Sure Gamble** ×2 — event · cost 5
       "Gain 9[credit]."
@@ -524,27 +524,14 @@ resolves from the ice; and 6.10's run-ending subroutine resolved before it
 ended the run. **Raindrops Cut Stone** is written and ticked, with the
 run-ending arm as its own board.
 
-### Hosted credits TREATED AS pool credits, for a duration (CR 1.13.3 / 1.10.1)
+### Hosted credits TREATED AS pool credits — LANDED (CR 1.13.3)
 
-Distinct from the `CreditUse` entry above, and the distinction is the whole of
-it. `CreditUse` says what hosted credits may be SPENT on (1.10.3c). 1.13.3 says
-something else — hosted credits are not "on" the player at all — and a card
-saying they are considered to be in the credit pool waives that: the credits
-are then read by everything that reads the pool, so a forced 1.10.3b loss
-during the named window takes them, and a quantity asking how many credits the
-Runner has counts them.
-
-Writing the permission alone (`CreditUse::AnyPayment`) reaches every payment
-and none of those reads — a silent UNDER-reach wherever the pool is counted
-rather than spent, which is why it is not offered as the near-enough answer.
-
-Wanted: one lingering effect treating a described card's hosted credits as pool
-credits, with the duration as content — the one place 1.13.3's separation is
-read, so "during that run" and any other span are the same word.
-
-Wants it: **Stimhack** ("During that run, hosted credits are considered to be
-in your credit pool"; the placement, the run, and the unpreventable core
-damage are done and tested).
+`LingeringSpec::HostedCreditsAsPool { cards }` with the duration as content,
+and `Vm::pool_credits` as the ONE place the pool is read. That is the whole
+difference from a `CreditUse` allowance, which the card's own doc comment had
+already argued: an allowance is read where credits are SPENT, and this is read
+where they are COUNTED — by `Quantity::CreditsInPoolOf`, by 1.10.3b's forced
+loss, and by every affordability question. **Stimhack** is written and ticked.
 
 ### A static declaration scoped to an ENCOUNTER, carrying an ordinal (CR 6.5 / 9.3.7a)
 

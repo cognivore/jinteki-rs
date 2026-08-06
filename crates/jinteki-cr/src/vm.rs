@@ -5139,8 +5139,11 @@ impl Vm {
             // 1.10.1: the named player's credit POOL — 1.13.3 keeps credits
             // hosted on cards out of it.
             Q::CreditsInPoolOf(side) => {
+                // 1.13.3 keeps credits hosted on cards out of the pool —
+                // unless a lingering effect has said they are considered to be
+                // in it, which is exactly the read `CreditUse` cannot reach.
                 cite!("rule_credit_pool");
-                self.st.player(*side).credits as i64
+                self.pool_credits(*side) as i64
             }
             // 1.11.3a/b: the number of clicks the player HAS — increased by a
             // gain, reduced by a loss or a spend, and read where the sentence
@@ -10603,12 +10606,47 @@ impl Vm {
                 // populations apart).
                 cite!("rule_lose_credits");
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
-                    let have = self.st.player(*side).credits;
-                    let n = (a.value.max(0) as u32).min(have);
-                    self.st.player_mut(*side).credits -= n;
+                    let have = self.pool_credits(*side);
+                    let mut n = (a.value.max(0) as u32).min(have);
+                    let from_pool = n.min(self.st.player(*side).credits);
+                    self.st.player_mut(*side).credits -= from_pool;
+                    n -= from_pool;
+                    // 1.13.3 waived: credits considered to be IN the pool are
+                    // reachable by a forced loss, which is the whole reason
+                    // this is not a 1.10.3c allowance — an allowance is about
+                    // spending and a loss is not a spend (1.10.3b).
+                    if n > 0 {
+                        let pooled: Vec<ObjectId> = self
+                            .st
+                            .objects
+                            .values()
+                            .filter(|o| {
+                                o.controller == *side
+                                    && card_active(o)
+                                    && self.hosted_credits_pooled(o, *side)
+                                    && o.counter(CounterKind::Credit) > 0
+                            })
+                            .map(|o| o.id)
+                            .collect();
+                        for c in pooled {
+                            if n == 0 {
+                                break;
+                            }
+                            let have = self.st.objects[&c].counter(CounterKind::Credit);
+                            let take = have.min(n);
+                            self.st
+                                .objects
+                                .get_mut(&c)
+                                .unwrap()
+                                .counters
+                                .insert(CounterKind::Credit, have - take);
+                            n -= take;
+                        }
+                    }
+                    let lost = (a.value.max(0) as u32).min(have) - n;
                     self.changes.record(GameChange::CreditsLost {
                         side: *side,
-                        amount: n,
+                        amount: lost,
                         source: Some(source.obj),
                     });
                 }
@@ -11641,6 +11679,16 @@ impl Vm {
                     }
                     crate::instr::LingeringSpec::AdditionalAccess { server, extra } => {
                         Payload::AdditionalAccess { server: *server, extra: *extra }
+                    }
+                    crate::instr::LingeringSpec::HostedCreditsAsPool { cards } => {
+                        // 1.13.3 waived for the duration: the description is
+                        // carried, not resolved, so it is re-read wherever the
+                        // pool is read.
+                        cite!("rule_hosted_counters_not_on_player");
+                        Payload::HostedCreditsAsPool {
+                            side: controller,
+                            criteria: cards.clone(),
+                        }
                     }
                 };
                 let id = self.next_lingering;
@@ -14808,7 +14856,9 @@ impl Vm {
             // — a card whose ability names one class of payment ("use these
             // credits to trash installed cards") answers for the card being
             // trashed, not in general.
-            let avail = self.st.runner.credits
+            // 1.13.3, waived where a card says so: `pool_credits` is the pool
+            // plus anything an effect has made "considered to be in" it.
+            let avail = self.pool_credits(Side::Runner)
                 + self.st.bp_fund
                 + self.spendable_hosted_credits_for(
                     Side::Runner,
@@ -15114,7 +15164,8 @@ impl Vm {
         let credits_avail = if self.credits_prohibited(side) {
             0
         } else {
-            p.credits
+            // 1.13.3, waived where a card says so.
+            self.pool_credits(side)
                 + self.spendable_hosted_credits_for(side, purpose)
                 + if side == Side::Runner && self.current_run.is_some() {
                     self.st.bp_fund
@@ -15268,7 +15319,11 @@ impl Vm {
             cite!("rule_bid_possible");
             return 0;
         }
-        self.st.player(side).credits + self.spendable_hosted_credits_for(side, purpose)
+        // 1.13.3 waived: credits considered to be in the pool are counted by
+        // `pool_credits`, and `spendable_hosted_credits_for` only adds the
+        // ones a 1.10.3c allowance reaches — the two populations do not
+        // overlap, because `credit_locations` offers a card once.
+        self.pool_credits(side) + self.spendable_hosted_credits_for(side, purpose)
     }
 
     /// CR 9.3.4: an active declaration forbidding this player from spending
@@ -15292,6 +15347,10 @@ impl Vm {
             .objects
             .values()
             .filter(|o| o.controller == side && card_active(o))
+            // 1.13.3 waived: a card whose credits are already counted as POOL
+            // credits is not counted again here, so the two populations stay
+            // disjoint and `credit_locations` offers each card once.
+            .filter(|o| !self.hosted_credits_pooled(o, side))
             .filter(|o| self.hosted_credits_allowed(o, purpose))
             .map(|o| o.counter(CounterKind::Credit))
             .sum()
@@ -15629,7 +15688,13 @@ impl Vm {
         cite!("rule_spend_credits");
         let mut out = vec![(None, self.st.player(side).credits)];
         for o in self.st.objects.values() {
-            if o.controller == side && card_active(o) && self.hosted_credits_allowed(o, purpose) {
+            if o.controller == side
+                && card_active(o)
+                // 1.13.3 waived: credits considered to be IN the pool need no
+                // 1.10.3c allowance, because they are not being spent from a
+                // card at all.
+                && (self.hosted_credits_allowed(o, purpose) || self.hosted_credits_pooled(o, side))
+            {
                 let n = o.counter(CounterKind::Credit);
                 if n > 0 {
                     out.push((Some(o.id), n));
@@ -15637,6 +15702,41 @@ impl Vm {
             }
         }
         out
+    }
+
+    /// CR 1.13.3, waived by a lingering effect: are the credits hosted on this
+    /// card "considered to be in" `side`'s credit pool right now?
+    ///
+    /// The description is re-read here rather than resolved when the effect
+    /// was created, which is what makes it a description (9.10.1).
+    pub fn hosted_credits_pooled(&self, o: &Object, side: Side) -> bool {
+        cite!("rule_hosted_counters_not_on_player");
+        self.lingering.iter().any(|l| match &l.payload {
+            Payload::HostedCreditsAsPool { side: whose, criteria } => {
+                *whose == side && self.description_reaches(o, criteria, l.source)
+            }
+            _ => false,
+        })
+    }
+
+    /// CR 1.10.1 + 1.13.3: the credits in a player's pool, plus any a
+    /// lingering effect has made "considered to be in" it. Every reader of the
+    /// pool goes through this, which is the difference between this word and
+    /// a 1.10.3c allowance: an allowance is read where credits are SPENT, and
+    /// this is read where they are COUNTED.
+    pub fn pool_credits(&self, side: Side) -> u32 {
+        cite!("rule_credit_pool");
+        cite!("rule_hosted_counters_not_on_player");
+        let hosted: u32 = self
+            .st
+            .objects
+            .values()
+            .filter(|o| {
+                o.controller == side && card_active(o) && self.hosted_credits_pooled(o, side)
+            })
+            .map(|o| o.counter(CounterKind::Credit))
+            .sum();
+        self.st.player(side).credits + hosted
     }
 
     /// CR 1.10.3c's location list for an any-source counter component: each

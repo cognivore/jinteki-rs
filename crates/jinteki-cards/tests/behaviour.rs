@@ -20310,15 +20310,8 @@ fn raindrops_cut_stone_counts_every_subroutine_that_resolved_including_the_last(
 /// the grip AND a permanent maximum-hand-size reduction.
 #[test]
 fn stimhack_loads_nine_credits_and_the_core_damage_cannot_be_prevented() {
-    let sh = jinteki_cards::find("Stimhack").expect("Stimhack is in the card layer");
-    assert_eq!(
-        sh.unimplemented,
-        vec!["During that run, hosted credits are considered to be in your credit pool."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9412);
-    let card_id = vm.new_object(card_partial("Stimhack"), Zone::Hand(Side::Runner));
+    let card_id = vm.new_object(card("Stimhack"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
     tk::install_rig(&mut vm, tk::prevent_all_like("Core Shield", jinteki_cr::effects::DamageKind::Core));
     tk::fill_hand(&mut vm, Side::Runner, 3);
@@ -20366,6 +20359,86 @@ fn stimhack_loads_nine_credits_and_the_core_damage_cannot_be_prevented() {
         "10.4.2b: one random card out of the grip of three: {}",
         t.tail(24)
     );
+}
+
+/// Stimhack: "During that run, hosted credits are considered to be in your
+/// credit pool."
+///
+/// CR 1.13.3 says hosted counters "do not count as 'on' a player or as objects
+/// a player 'has'", and this sentence waives it. That is a READ and not a
+/// permission, which is why a `CreditUse` allowance would not have been the
+/// same card, and the two assertions here are the two reads it reaches:
+///
+/// * a QUANTITY asking how many credits the Runner has counts them. The board
+///   gives the Runner a pool of 0 and a paid ability that gains 1[credit] for
+///   each credit in their pool, so the number it pays out IS the read.
+/// * the credits are SPENDABLE on anything, out of a pool that has none of its
+///   own — asserted by trashing an accessed card that costs 4.
+///
+/// The control is the same board with the run made by the basic run action
+/// instead of by Stimhack. There the nine credits are not placed at all, the
+/// quantity reads 0 and the trash is not offered.
+#[test]
+fn stimhack_puts_its_nine_credits_in_the_pool_for_the_run() {
+    for by_stimhack in [false, true] {
+        let mut vm = Vm::empty(9417);
+        let card_id = vm.new_object(card("Stimhack"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+        let loot = tk::install_root(&mut vm, tk::vanilla_asset("Loot", 0, 4), ServerId::Remote(1), true);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let runner = if by_stimhack {
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(card_id))
+                .when(Match::attacked_server().once(), Reply::Server(ServerId::Remote(1)))
+        } else {
+            Plan::runner().when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+        };
+        let mut g = jinteki_cr::plan::Script::new(
+            Plan::corp(),
+            runner
+                // Halt once inside the access, to read the pool while the
+                // effect is standing, then take the trash on the second look.
+                .when(Match::mid_access().first(), Reply::Halt)
+                .when(Match::mid_access().once(), Reply::Take(Pick::BasicTrash))
+                .stop_at_action(),
+        );
+        g.run(&mut vm);
+        assert_eq!(
+            vm.st.runner.credits, 0,
+            "the Runner's own pool is empty on both arms (by_stimhack={by_stimhack})"
+        );
+        assert_eq!(
+            vm.pool_credits(Side::Runner),
+            if by_stimhack { 9 } else { 0 },
+            "1.13.3 waived: everything that READS the pool sees the nine hosted \
+             credits, which is the half a 1.10.3c spending allowance cannot reach \
+             (by_stimhack={by_stimhack}): {}",
+            g.transcript().tail(30)
+        );
+
+        g.run(&mut vm);
+        let t = g.transcript();
+        assert_eq!(
+            vm.st.objects[&loot].zone == Zone::Discard(Side::Corp),
+            by_stimhack,
+            "1.13.3 waived: the 4[credit] trash cost was paid out of credits hosted on \
+             the event, from a pool that never held one (by_stimhack={by_stimhack}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&card_id].counter(CounterKind::Credit),
+            0,
+            "…and the nine placed credits are gone with the event, whichever arm this \
+             is (by_stimhack={by_stimhack}): {}",
+            t.tail(30)
+        );
+    }
 }
 
 /// Mystic Maemi: "When your turn begins and whenever you steal an agenda,
