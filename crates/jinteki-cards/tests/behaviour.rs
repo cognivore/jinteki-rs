@@ -9779,7 +9779,7 @@ fn smoke_pays_for_using_icebreakers_and_nothing_else() {
         .with_flag(jinteki_cr::ability::AbilityFlag::Interface)
         .with_timing(jinteki_cr::ability::TimingRestriction::EncounterOnly {
             required_subtype: Some("Sentry"),
-            required_choice: None,
+            required_choice: None, required_self: false,
         })
         .labeled("interface: break 1 sentry subroutine")];
         tk::install_rig(&mut vm, breaker);
@@ -17187,6 +17187,182 @@ fn vertigo_subroutine_takes_a_click_off_the_runner() {
     );
 }
 
+/// Fairchild 3.0: "Lose [click][click][click]: Break up to 3 subroutines on
+/// this ice. **Only the Runner can use this ability.**"
+///
+/// The last clause is CR 1.14.4b — "some abilities state that they can only
+/// be used by a specific player; the specified player controls each such
+/// ability, **even if they do not control its source**" — and it is asserted
+/// in both directions, because the rule it modifies has two halves. 1.14.4
+/// gives an ability to its source's controller *by default* and lets a player
+/// use "only abilities they control", so naming the Runner does two things at
+/// once: the Runner is offered it, and the Corp — who owns the ice it is
+/// printed on — never is.
+///
+/// 1.14.3 is the third assertion: "a player can only pay costs using objects
+/// they control". The three clicks come out of the RUNNER's pool, which is
+/// shown twice over — the Runner's pool empties, and a Runner who is one
+/// click short is not offered the ability at all (1.16.1), while the Corp's
+/// pool is 0 in both arms and could never have paid for anything.
+///
+/// 5.2.1a is what makes any of it reachable: "other costs can contain [click]
+/// symbols without denoting an action", so a cost beginning with *Lose* is
+/// used in a paid window (9.5.1) rather than an action window — and an
+/// encounter, which is where 9.5.6a confines a break ability, has paid windows
+/// and no action windows.
+#[test]
+fn fairchild_3_0_break_is_the_runners_ability_paid_from_the_runners_own_pool() {
+    // Enough clicks: 4 allotted − 1 for the run action leaves exactly 3.
+    let mut vm = Vm::empty(9110);
+    tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
+    let prog = tk::install_rig(&mut vm, tk::vanilla_runner_card("Sacrifice", CardType::Program));
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+    assert_eq!(vm.st.corp.clicks, 0, "1.11.2: the Corp has no clicks during the Runner's turn");
+
+    // The Corp's first action window is the stopping point, so the transcript
+    // is exactly the Runner's turn.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().offering("bioroid break").once(), Reply::take("bioroid break"))
+            // The subroutine announcement falls through to the neutral
+            // policy, which takes the first `count` offered — all three.
+            .stop_at_action(),
+    );
+
+    // 1.14.4b, first half: the named player controls it and is offered it.
+    assert!(
+        t.ever_offered_to(Side::Runner, "bioroid break"),
+        "1.14.4b: 'Only the Runner can use this ability' gives the Runner an \
+         ability printed on the Corp's ice: {}",
+        t.tail(24)
+    );
+    // 1.14.4b, second half: and takes it away from the source's controller.
+    assert!(
+        !t.ever_offered_to(Side::Corp, "bioroid break"),
+        "1.14.4/1.14.4b: a player can only use abilities they control, and \
+         this one is no longer the Corp's even though the ice is: {}",
+        t.tail(24)
+    );
+    // 1.14.3: the cost is paid with objects the ability's controller
+    // controls — three clicks off the RUNNER, recorded as a loss (1.11.3b).
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::ClicksLost { side: Side::Runner, amount: 3 })),
+        "1.14.3/5.2.1a: the three clicks were LOST by the RUNNER — the ability's \
+         controller pays it, not the controller of the ice: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.clicks, 0,
+        "1.11.2b: 4 allotted − 1 spent on the run action − 3 lost to the break: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        t.windows(Kind::Action, Side::Runner).len(),
+        1,
+        "…and an emptied pool is the observable half of it: the Runner got one \
+         action window all turn, because the break took the other three: {}",
+        t.tail(24)
+    );
+    // And what the sentence promises happened: three subroutines broken, so
+    // none of the three resolved.
+    assert_eq!(
+        vm.st.runner.credits, 7,
+        "both 'pay 3[credit] or trash' subroutines were broken, so neither ran: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&prog].zone,
+        Zone::Rig,
+        "the installed card the second subroutine could have taken is still installed: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.core_damage, 0,
+        "the third subroutine was broken too, so no core damage: {}",
+        t.tail(24)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "…and it could not end the run either: {}",
+        t.tail(24)
+    );
+
+    // One click short. Nothing else changes — and the Corp still has 0
+    // clicks, so if the pool consulted were the source controller's the
+    // ability could never be offered at all.
+    let mut vm = Vm::empty(9111);
+    tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::options(), Reply::ChooseNamed("end the run")),
+        Plan::runner()
+            // A basic credit first, so only 2[click] are left at the encounter.
+            .when(Match::action().once(), Reply::credit())
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(Match::paid().offering("bioroid break").once(), Reply::take("bioroid break"))
+            .stop_at_action(),
+    );
+    assert!(
+        !t.ever_offered("bioroid break"),
+        "1.16.1: with 2[click] left the Runner cannot pay a 3[click] cost, so \
+         the ability is not offered to anyone: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 2,
+        "8 − 3 − 3: unbroken, the two mandatory-choice subroutines resolved: {}",
+        t.tail(24)
+    );
+
+    // "…on THIS ice" (9.5.6c). Vanilla stands in front of Fairchild, so the
+    // encounter the Runner reaches first is with a different piece of ice —
+    // and the ability that refers to *this* one is not offered there, nor is
+    // Vanilla's subroutine ever a candidate for it.
+    let mut vm = Vm::empty(9112);
+    tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
+    tk::install_ice(&mut vm, card("Vanilla"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 7;
+    vm.start_turn(Side::Runner);
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    assert!(
+        !t.ever_offered("bioroid break"),
+        "9.5.6c: 'break up to 3 subroutines on THIS ice' refers to the \
+         encountered ice as being this card, so an encounter with Vanilla \
+         does not meet the stipulation: {}",
+        t.tail(24)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "…and with nothing to break it with, Vanilla's own subroutine ended \
+         the run: {}",
+        t.tail(24)
+    );
+}
+
 /// Fairchild 3.0: "[subroutine] The Runner must pay 3[credit] or trash 1 of
 /// their installed cards." — printed twice.
 ///
@@ -17195,20 +17371,13 @@ fn vertigo_subroutine_takes_a_click_off_the_runner() {
 /// one such option and pays; a Runner who cannot afford 3 has exactly one and
 /// trashes.
 ///
-/// PARTIAL — the bioroid break ability is unsayable (see the card's doc
-/// comment and MEZZIE-QUEUE.md's Blockers).
+/// 9.5.3 makes the bioroid break ability optional, and these Runners decline
+/// it, so the subroutines are left to resolve.
 #[test]
 fn fairchild_3_0_subroutines_are_a_mandatory_choice() {
-    let fairchild = jinteki_cards::find("Fairchild 3.0").expect("Fairchild 3.0 is in the card layer");
-    assert_eq!(
-        fairchild.unimplemented,
-        vec!["Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability."],
-        "exactly one printed line is still unsayable"
-    );
-
     // Rich, empty rig: only "pay 3[credit]" is fully resolvable, twice.
     let mut vm = Vm::empty(9106);
-    tk::install_ice(&mut vm, card_partial("Fairchild 3.0"), ServerId::Hq, true);
+    tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -17229,7 +17398,7 @@ fn fairchild_3_0_subroutines_are_a_mandatory_choice() {
     // SECOND subroutine then has no resolvable option at all — 9.12.3c says
     // such an ability does nothing, so the 2[credit] survives.
     let mut vm = Vm::empty(9107);
-    tk::install_ice(&mut vm, card_partial("Fairchild 3.0"), ServerId::Hq, true);
+    tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
     let prog = tk::install_rig(&mut vm, tk::vanilla_runner_card("Sacrifice", CardType::Program));
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -17264,7 +17433,7 @@ fn fairchild_3_0_subroutines_are_a_mandatory_choice() {
 fn fairchild_3_0_lets_the_corp_pick_damage_or_the_end_of_the_run() {
     for corp_ends_it in [false, true] {
         let mut vm = Vm::empty(9108);
-        tk::install_ice(&mut vm, card_partial("Fairchild 3.0"), ServerId::Hq, true);
+        tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
         tk::fill_hand(&mut vm, Side::Corp, 3);
         tk::fill_deck(&mut vm, Side::Corp, 5);
         tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -19608,3 +19777,4 @@ fn bankhar_chooses_a_server_when_the_turn_begins_and_remembers_it() {
         t.tail(20)
     );
 }
+

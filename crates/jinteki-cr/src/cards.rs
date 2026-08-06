@@ -884,7 +884,7 @@ pub fn mimic() -> PrintedCard {
     .with_flag(AbilityFlag::Interface)
     .with_timing(crate::ability::TimingRestriction::EncounterOnly {
         required_subtype: Some("Sentry"),
-        required_choice: None,
+        required_choice: None, required_self: false,
     })
     .labeled("mimic: break 1 sentry subroutine")];
     c
@@ -919,7 +919,7 @@ pub fn corroder() -> PrintedCard {
         .with_flag(AbilityFlag::Interface)
         .with_timing(crate::ability::TimingRestriction::EncounterOnly {
             required_subtype: Some("Barrier"),
-            required_choice: None,
+            required_choice: None, required_self: false,
         })
         .labeled("corroder: break 1 barrier subroutine"),
         AbilityDef::paid(

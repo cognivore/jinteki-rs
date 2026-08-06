@@ -1457,11 +1457,23 @@ pub enum TimingRestriction {
     /// stipulation: "use this hardware only during encounters with THAT ICE"
     /// (Boomerang) names the ice its source is maintaining a choice of, so
     /// the ability is usable only while the ice being encountered is that
-    /// one. Both stipulations are content on this one atom (§12 rule 2), and
-    /// `None` in each is a sentence that makes no such stipulation.
+    /// one.
+    ///
+    /// `required_self` is the narrowest stipulation of the three and the
+    /// commonest printed: "break up to 3 subroutines on **this ice**" refers
+    /// to the encountered ice as being this very card, so 9.5.6c confines the
+    /// ability to an encounter with its own source. Without it a break
+    /// ability printed on a piece of ice reaches whatever ice is being
+    /// encountered instead — which is not a smaller card than the printed one
+    /// but a much larger one, since every Bioroid would become a breaker for
+    /// the whole board.
+    ///
+    /// All three stipulations are content on this one atom (§12 rule 2), and
+    /// the empty value of each is a sentence that makes no such stipulation.
     EncounterOnly {
         required_subtype: Option<&'static str>,
         required_choice: Option<&'static str>,
+        required_self: bool,
     },
     /// 9.5.6b: usable only during the Approach Ice Phase, with the
     /// approached ice matching all stipulations used in referring to it.

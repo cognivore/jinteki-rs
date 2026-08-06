@@ -14303,9 +14303,19 @@ impl Vm {
                     Some(crate::ability::TimingRestriction::EncounterOnly {
                         required_subtype,
                         required_choice,
+                        required_self,
                     }) => {
                         cite!("rule_paid_ability_refers_to_encountered_ice");
                         let Some(e) = self.st.encounter.as_ref().map(|e| e.ice) else { continue };
+                        // 9.5.6c: "…only during an encounter with a piece of
+                        // ice that meets all stipulations used in referring to
+                        // it". "Subroutines on THIS ice" refers to the
+                        // encountered ice as being this card, so no other
+                        // encounter qualifies — which is what stops a break
+                        // ability printed on ice from reaching the whole board.
+                        if required_self && e != o.id {
+                            continue;
+                        }
                         if let Some(sub) = required_subtype {
                             if !self.has_subtype(e, sub) {
                                 continue;
