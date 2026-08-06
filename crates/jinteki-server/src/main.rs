@@ -6,7 +6,9 @@
 //! Games ride one WebSocket per session (JSON text frames with a `type`
 //! field); auth and decks ride plain HTTP JSON under /api/*.
 
-use jinteki_server::{api, auth, bridge, cr, db, decks, guard, lobby, local, mail, transcript};
+use jinteki_server::{
+    api, auth, bridge, cardimg, cr, db, decks, guard, lobby, local, mail, transcript,
+};
 
 use axum::{
     extract::ws::WebSocketUpgrade,
@@ -87,6 +89,14 @@ async fn main() {
         Some(dir) => tracing::info!("game transcripts at {}", dir.display()),
         None => tracing::warn!("game transcripts disabled"),
     }
+    // Card art is ours: a local cache beside the database, filled from
+    // upstream once per printing and served from `/img/card/<code>.jpg`. It
+    // lives in the RUNTIME data dir, so it survives restarts and never enters
+    // a nix build. The pre-warm below is spawned, never awaited.
+    match cardimg::configure(&data_dir) {
+        Some(dir) => tracing::info!("card art cached at {}", dir.display()),
+        None => tracing::warn!("card art cache disabled — images fetched per request"),
+    }
     {
         let conn = db.lock().await;
         auth::ensure_system_user(&conn).expect("system user");
@@ -96,6 +106,10 @@ async fn main() {
     // The game timer: chess clocks and the rope tick server-side, here and
     // nowhere else (`cr::timing_tick`). Untimed games are never touched.
     cr::spawn_timing_ticker(db.clone());
+
+    // Fill the art cache with the whole catalog in the background, a few
+    // requests a second. Idempotent: a warm cache does nothing.
+    cardimg::spawn_prewarm();
 
     let http = reqwest::Client::new();
     let state = api::AppState {
@@ -155,8 +169,7 @@ async fn main() {
             move || index_page(d.clone())
         }))
         .merge(api::router())
-        .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true))
-        .with_state(state);
+        .fallback_service(ServeDir::new(ui_dir).append_index_html_on_directories(true));
 
     // In a deploy the build id changes every asset URL, so caches can never
     // go stale. A dev build's id is the constant "dev" — the URLs never
@@ -168,6 +181,14 @@ async fn main() {
             axum::http::HeaderValue::from_static("no-store"),
         ));
     }
+
+    // Card art is merged AFTER that layer, and only routes present when a
+    // layer is applied are wrapped by it (axum's `Router::layer`). A card's
+    // art is the one thing here that genuinely never changes for a given
+    // URL, so it keeps its own `immutable` headers even in a dev build —
+    // otherwise every reload of the builder re-downloads two thousand
+    // images the browser already had.
+    let app = app.merge(cardimg::router()).with_state(state);
 
     // Deployment mode (vacationvm): serve over a Unix socket that Caddy fronts.
     if let Ok(sock) = std::env::var("JINTEKI_SOCKET") {
