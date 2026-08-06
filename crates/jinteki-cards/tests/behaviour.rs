@@ -1301,6 +1301,19 @@ fn account_siphon_replaces_the_breach_and_pays_what_was_actually_lost() {
             "the breach was replaced, so nothing in HQ was accessed"
         );
         assert!(
+            !vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::BreachBegan { server: ServerId::Hq })),
+            "9.9.2b: the breach it replaced did NOT also happen: {}",
+            t.tail(14)
+        );
+        assert!(
+            !vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { .. })),
+            "and no card was accessed at all: {}",
+            t.tail(14)
+        );
+        assert!(
             vm.changes
                 .log
                 .iter()
@@ -2399,6 +2412,134 @@ fn pinhole_threads_into_another_root_and_cannot_steal() {
     );
     assert_eq!(vm.st.objects[&agenda].zone, Zone::Root(ServerId::Remote(2)), "not stolen, not trashed");
     assert_eq!(vm.score(Side::Runner), 0);
+    // "…you cannot steal or trash it during this access" — 1.2.2 removes both
+    // OPTIONS, so neither is recorded and the basic trash ability (7.1.5) is
+    // never even offered for it.
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::AgendaStolen { obj, .. } if *obj == agenda)),
+        "the steal was refused during the access: {}",
+        t.tail(20)
+    );
+    assert!(
+        !t.entries.iter().any(|e| e
+            .options()
+            .iter()
+            .any(|o| matches!(
+                o,
+                jinteki_cr::decision::WindowOption::BasicTrash { card, .. } if *card == agenda
+            ))),
+        "the basic trash ability was never offered for it: {}",
+        t.tail(20)
+    );
+    // "Instead of breaching the attacked server": Remote(1) is never breached,
+    // so its rezzed root card is never accessed either.
+    assert!(
+        !vm.changes.log.iter().any(
+            |c| matches!(c, GameChange::BreachBegan { server } if *server == ServerId::Remote(1))
+        ),
+        "the attacked server was NOT breached: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardAccessed { .. })).count(),
+        1,
+        "exactly one access happened — the replacement's, not a breach's: {}",
+        t.tail(20)
+    );
+}
+
+/// Pinhole Threading on R&D — the shape a production game actually reached.
+///
+/// "Instead of breaching the attacked server" is CR 9.9.2's replacement: the
+/// breach DOES NOT HAPPEN. A transcript once showed the Pinhole access AND
+/// then `BreachBegan { server: Rnd }` right after it, which handed the Runner
+/// a second access and a stolen agenda off the top of R&D.
+#[test]
+fn pinhole_on_rnd_does_not_also_breach_the_attacked_server() {
+    let mut vm = Vm::empty(4604);
+    let asset = tk::install_root(&mut vm, tk::corp_filler("Decoy-Asset"), ServerId::Remote(1), true);
+    let ph = vm.new_object(card("Pinhole Threading"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(ph);
+    // Every card in R&D is an agenda the Runner would steal on access, so a
+    // breach that happens at all is impossible to miss.
+    let rnd: Vec<ObjectId> = (0..4)
+        .map(|i| {
+            let name: &'static str = Box::leak(format!("R&D Agenda {i}").into_boxed_str());
+            let id = vm.new_object(tk::vanilla_agenda(name, 3, 3), Zone::Deck(Side::Corp));
+            vm.st.deck.get_mut(&Side::Corp).unwrap().push(id);
+            id
+        })
+        .collect();
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    vm.st.runner.credits = 9;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(ph))
+            .when(Match::of(Kind::AttackedServer).once(), Reply::Server(ServerId::Rnd))
+            .when(Match::targets().once(), Reply::Targets(vec![asset]))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == asset)),
+        "the replacement's access happened: {}",
+        t.tail(24)
+    );
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::BreachBegan { server } if *server == ServerId::Rnd)),
+        "R&D was NOT breached — the breach was replaced: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.changes.log.iter().filter(|c| matches!(c, GameChange::CardAccessed { .. })).count(),
+        1,
+        "exactly one card was accessed: {}",
+        t.tail(24)
+    );
+    assert_eq!(vm.score(Side::Runner), 0, "nothing was stolen out of R&D: {}", t.tail(24));
+    for id in rnd {
+        assert_eq!(vm.st.objects[&id].zone, Zone::Deck(Side::Corp), "R&D is untouched");
+    }
+}
+
+/// The ratchet for the whole "instead of breaching" class.
+///
+/// Pinhole Threading shipped a breach replacement that did not suppress the
+/// breach, and no test noticed because the assertions asked what the card DID
+/// rather than what it PREVENTED. Every card that replaces the Breach effect
+/// class is listed here beside the test that proves its breach does not also
+/// happen; a new one has to join the list, which is where its author is told
+/// to write that assertion. (`jinteki-cr/tests/replacement_effects.rs` holds
+/// the class to the same rule at the kernel level, for every effect class.)
+#[test]
+fn every_instead_of_breaching_card_is_proved_not_to_breach() {
+    const COVERED: &[(&str, &str)] = &[
+        ("Account Siphon", "account_siphon_replaces_the_breach_and_pays_what_was_actually_lost"),
+        ("Pinhole Threading", "pinhole_on_rnd_does_not_also_breach_the_attacked_server"),
+    ];
+    let mut found: Vec<String> = jinteki_cards::all_cards()
+        .into_iter()
+        .filter(|c| {
+            format!("{:?}", c.printed.abilities).contains("Replacement { applies_to: Breach")
+        })
+        .map(|c| c.printed.name.to_string())
+        .collect();
+    // A card listed by two decks is one card.
+    found.sort();
+    found.dedup();
+    let mut listed: Vec<String> = COVERED.iter().map(|(n, _)| n.to_string()).collect();
+    listed.sort();
+    assert_eq!(
+        found, listed,
+        "a card replaces the breach without a test that the breach does not also happen \
+         (found {found:?}, listed {listed:?})"
+    );
 }
 
 // ---------------------------------------------------------------------------
