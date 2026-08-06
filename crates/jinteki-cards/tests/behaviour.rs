@@ -18767,3 +18767,803 @@ fn manegarm_skunkworks_is_still_only_its_printed_text() {
         "…so it denotes into nothing: an approximation would show up here as an ability"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Mezzie's Valencia — the events and resources of her own list
+// ---------------------------------------------------------------------------
+
+/// Moshing: "As an additional cost to play this event, trash 3 cards from
+/// your grip." / "Gain 3[credit] and draw 3 cards."
+///
+/// The 1.16.10 cost is what is under test, in both directions. With three
+/// spare cards in the grip the Runner announces which three go (1.15.2), pays
+/// them at step 8.6.7c, and only then gains and draws — so a grip of four
+/// (Moshing plus three) ends the play holding exactly the three cards the
+/// draw brought. With a grip of two, 1.16.1b makes the cost unpayable and the
+/// basic play action does not offer the card at all: that is the half an
+/// "instruction" reading of the sentence would get wrong, because an
+/// instruction would have played the event and then trashed what it could.
+#[test]
+fn moshing_pays_three_grip_cards_before_it_gains_or_draws() {
+    for spare in [3usize, 1] {
+        let mut vm = Vm::empty(9401);
+        let mosh = vm.new_object(card("Moshing"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(mosh);
+        let fodder = tk::fill_hand(&mut vm, Side::Runner, spare);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(mosh))
+                .when(Match::payment_cards().once(), Reply::Targets(fodder.clone()))
+                .stop_at_action(),
+        );
+
+        if spare < 3 {
+            assert_eq!(
+                vm.st.objects[&mosh].zone,
+                Zone::Hand(Side::Runner),
+                "1.16.1b: three cards cannot be trashed out of a grip that holds \
+                 two in all, so the play was never offered: {}",
+                t.tail(16)
+            );
+            assert_eq!(vm.st.runner.credits, 0, "and nothing was gained: {}", t.tail(16));
+            continue;
+        }
+
+        assert_eq!(
+            vm.st.runner.credits, 3,
+            "0 − the 0[credit] play cost + 3 gained: {}",
+            t.tail(20)
+        );
+        for f in &fodder {
+            assert_eq!(
+                vm.st.objects[f].zone,
+                Zone::Discard(Side::Runner),
+                "the three announced cards paid the 1.16.10 cost: {}",
+                t.tail(20)
+            );
+        }
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            3,
+            "the grip is exactly the three cards the draw brought: {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Levy AR Lab Access: "Shuffle your grip and heap into your stack. Draw 5
+/// cards. Remove Levy AR Lab Access from the game instead of trashing it."
+///
+/// All three sentences on one board. The grip and the heap are named
+/// together as one description (`any_of`), so both zones empty into the stack
+/// before a single card is drawn — which is the only reason the five cards
+/// can come off a stack that started with one. 8.6.7a is why Levy itself is
+/// not among them: it is in the play area while its own ability resolves. And
+/// 8.2.2's replaced destination is read off the zone it ends in — removed
+/// from the game, not the heap it would otherwise have been shuffled back
+/// out of.
+#[test]
+fn levy_shuffles_the_grip_and_heap_into_the_stack_before_drawing_five() {
+    let mut vm = Vm::empty(9402);
+    let levy = vm.new_object(card("Levy AR Lab Access"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(levy);
+    let grip = tk::fill_hand(&mut vm, Side::Runner, 2);
+    let heap: Vec<ObjectId> = (0..4)
+        .map(|i| {
+            let name: &'static str = Box::leak(format!("burnt-{i}").into_boxed_str());
+            let id = vm.new_object(tk::runner_filler(name), Zone::Discard(Side::Runner));
+            vm.st.discard.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        })
+        .collect();
+    tk::fill_deck(&mut vm, Side::Runner, 1);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(levy))
+            .stop_at_action(),
+    );
+
+    assert!(
+        vm.st.discard[&Side::Runner].is_empty(),
+        "8.3: the heap went into the stack, all of it: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        5,
+        "1 card left in the stack + 2 from the grip + 4 from the heap = 7, \
+         and 5 of them were drawn: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.deck[&Side::Runner].len(),
+        2,
+        "…leaving 2 behind, which is the arithmetic only a shuffle BEFORE the \
+         draw produces: {}",
+        t.tail(20)
+    );
+    // Every card that was in the grip or the heap is now in one of the two
+    // places the shuffle and the draw can have put it.
+    for c in grip.iter().chain(heap.iter()) {
+        assert!(
+            matches!(
+                vm.st.objects[c].zone,
+                Zone::Deck(Side::Runner) | Zone::Hand(Side::Runner)
+            ),
+            "{:?} left its zone for the stack: {}",
+            vm.st.objects[c].zone,
+            t.tail(20)
+        );
+    }
+    assert_eq!(
+        vm.st.objects[&levy].zone,
+        Zone::RemovedFromGame,
+        "8.2.2 / 8.6.7g: still trashed, but removed from the game instead of \
+         landing in the heap: {}",
+        t.tail(20)
+    );
+}
+
+/// Clan Vengeance: "Whenever you suffer any amount of damage, place 1 power
+/// counter on Clan Vengeance." / "[trash]: Trash 1 card from HQ at random for
+/// each power counter on Clan Vengeance."
+///
+/// Both sentences on one board, and the arithmetic is what proves them apart.
+/// The Corp does 2 net damage and then 1: that is TWO occurrences, so two
+/// counters — one per occurrence and not one per point, which is 9.12.2c
+/// aggregating a damage instruction into a single effect. Then the [trash]
+/// ability takes exactly two cards out of HQ, which is only possible if
+/// 9.5.5's set-aside counters are still counted after the cost has already
+/// put the resource in the heap.
+#[test]
+fn clan_vengeance_counts_occurrences_and_spends_them_from_the_heap() {
+    const VENGEANCE: &str = "clan vengeance: trash HQ at random, one card per counter";
+    let mut vm = Vm::empty(9403);
+    let cv = tk::install_rig(&mut vm, card("Clan Vengeance"));
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt Two", 2), ServerId::Remote(1), true);
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt One", 1), ServerId::Remote(2), true);
+    tk::fill_hand(&mut vm, Side::Runner, 6);
+    tk::fill_hand(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().offering("do net damage").times(2), Reply::take("do net damage"))
+            .stop_at_action(),
+        Plan::runner()
+            // The ability costs no [click], so 9.1.6/1.11.3c offer it in a PAID
+            // window. Halt at the first offer to read the counters, then take it.
+            .when(Match::paid().offering(VENGEANCE).first(), Reply::Halt)
+            .when(Match::paid().offering(VENGEANCE).once(), Reply::take(VENGEANCE))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&cv].counter(CounterKind::Power),
+        2,
+        "two damage OCCURRENCES, two counters — not three for three points: {}",
+        g.transcript().tail(30)
+    );
+    let hq_before: Vec<ObjectId> = vm.st.hand[&Side::Corp].clone();
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&cv].zone,
+        Zone::Discard(Side::Runner),
+        "the [trash] trigger cost was paid: {}",
+        g.transcript().tail(30)
+    );
+    let trashed = hq_before
+        .iter()
+        .filter(|c| vm.st.objects[c].zone == Zone::Discard(Side::Corp))
+        .count();
+    assert_eq!(
+        trashed, 2,
+        "9.5.5: the counters set aside by the [trash] cost are still counted, \
+         so exactly 2 cards left HQ: {}",
+        g.transcript().tail(30)
+    );
+}
+
+/// Same Old Thing: "[click], [click], [trash]: Play an event from your heap
+/// (paying its play cost)."
+///
+/// The heap is the point. 4.4.4 leaves the cards there inactive, and 9.1.8b is
+/// what lets an installed resource's ability name them anyway — so a Sure
+/// Gamble that has already been played once is played again, out of the
+/// discard pile, and the parenthetical's play cost is really paid: the Runner
+/// starts on 5 and ends on 9, which is 5 − 5 + 9 and not 5 + 9.
+#[test]
+fn same_old_thing_replays_an_event_out_of_the_heap_paying_for_it() {
+    const SOT: &str = "same old thing: replay an event out of the heap";
+    let mut vm = Vm::empty(9404);
+    let sot = tk::install_rig(&mut vm, card("Same Old Thing"));
+    let gamble = vm.new_object(card("Sure Gamble"), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(gamble);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().offering(SOT).once(), Reply::take(SOT))
+            .when(Match::targets().once(), Reply::target(gamble))
+            .stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.st.runner.credits, 9,
+        "5 − Sure Gamble's 5[credit] play cost + 9: the parenthetical is 8.6.7b \
+         and it was charged: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&sot].zone,
+        Zone::Discard(Side::Runner),
+        "the [trash] half of the trigger cost was paid: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&gamble].zone,
+        Zone::Discard(Side::Runner),
+        "…and the event resolved and was trashed again at 8.6.7g: {}",
+        t.tail(24)
+    );
+}
+
+/// Blackmail: "Run any server." (the run half of its second printed line.)
+///
+/// PARTIAL — the play restriction and the rez prohibition are unsayable (see
+/// the card's doc comment and MEZZIE-QUEUE.md's Blockers), and the test says
+/// so out loud so the markers cannot quietly disappear. What IS expressed is
+/// 6.9.1a's announcement over every server: the effect names none, so the
+/// Runner declares the attacked one as the run is initiated.
+#[test]
+fn blackmail_runs_a_server_the_runner_names() {
+    let bm = jinteki_cards::find("Blackmail").expect("Blackmail is in the card layer");
+    assert_eq!(
+        bm.unimplemented,
+        vec![
+            "Play only if the Corp has at least 1 bad publicity.",
+            "The Corp cannot rez ice during that run.",
+        ],
+        "exactly two printed sentences are still unsayable"
+    );
+
+    let mut vm = Vm::empty(9405);
+    let card_id = vm.new_object(card_partial("Blackmail"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(card_id))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Archives, .. }
+        )),
+        "the run went to the server the Runner named: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.runner.credits, 2, "3 − the 1[credit] play cost: {}", t.tail(16));
+}
+
+/// Hacktivist Meeting: "This card is not trashed until another current is
+/// played or an agenda is scored."
+///
+/// PARTIAL — the additional cost to rez is unsayable (see the card's doc
+/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
+/// the marker cannot quietly disappear. The sentence that IS expressed is the
+/// one that keeps the card on the table: played, it stays in the play area
+/// instead of being trashed at step 8.6.7g (3.7.1b / 8.6.6c), and the Corp
+/// scoring an agenda is what ends it.
+#[test]
+fn hacktivist_meeting_stays_in_the_play_area_until_an_agenda_is_scored() {
+    let hm = jinteki_cards::find("Hacktivist Meeting").expect("Hacktivist Meeting is in the card layer");
+    assert_eq!(
+        hm.unimplemented,
+        vec!["As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9406);
+    let card_id = vm.new_object(card_partial("Hacktivist Meeting"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::vanilla_agenda("Ready Agenda", 3, 1),
+        ServerId::Remote(1),
+        false,
+    );
+    vm.st.objects.get_mut(&agenda).unwrap().counters.insert(CounterKind::Advancement, 3);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp().when(Match::paid(), Reply::score(agenda)).stop_at_action(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(card_id))
+            .when(Match::action().first(), Reply::Halt)
+            .otherwise_click_credit(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&card_id].zone,
+        Zone::PlayArea(Side::Runner),
+        "8.6.6c: not trashed at step 8.6.7g: {}",
+        g.transcript().tail(16)
+    );
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the Corp scored it: {}",
+        g.transcript().tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&card_id].zone,
+        Zone::Discard(Side::Runner),
+        "3.7.1b: the score ended the lingering effect and the current was trashed: {}",
+        g.transcript().tail(24)
+    );
+}
+
+/// I've Had Worse: "Draw 3 cards."
+///
+/// PARTIAL — "Whenever I've Had Worse is trashed by taking net or meat
+/// damage, draw 3 cards." is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear.
+#[test]
+fn ive_had_worse_draws_three() {
+    let ihw = jinteki_cards::find("I've Had Worse").expect("I've Had Worse is in the card layer");
+    assert_eq!(
+        ihw.unimplemented,
+        vec!["Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9407);
+    let card_id = vm.new_object(card_partial("I've Had Worse"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::play_card(card_id)).stop_at_action(),
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 3, "three cards drawn: {}", t.tail(12));
+    assert_eq!(vm.st.runner.credits, 0, "1 − the 1[credit] play cost: {}", t.tail(12));
+}
+
+/// Steelskin Scarring: "Draw 3 cards."
+///
+/// PARTIAL — "When this event is trashed from your grip or stack, you may
+/// draw 2 cards." is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear.
+#[test]
+fn steelskin_scarring_draws_three() {
+    let ss = jinteki_cards::find("Steelskin Scarring").expect("Steelskin Scarring is in the card layer");
+    assert_eq!(
+        ss.unimplemented,
+        vec!["When this event is trashed from your grip or stack, you may draw 2 cards."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9408);
+    let card_id = vm.new_object(card_partial("Steelskin Scarring"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::play_card(card_id)).stop_at_action(),
+    );
+    assert_eq!(vm.st.hand[&Side::Runner].len(), 3, "three cards drawn: {}", t.tail(12));
+}
+
+/// Inject: "Reveal the top 4 cards of your stack and trash all programs
+/// revealed."
+///
+/// PARTIAL — the payout sentence is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear. The first sentence is asserted whole: the top
+/// four are shown to both players (1.21.3), the two programs among them go to
+/// the heap, and the two that are not programs stay exactly where they were —
+/// which is what makes the trash a description and not a mill.
+#[test]
+fn inject_reveals_four_and_trashes_only_the_programs() {
+    let inj = jinteki_cards::find("Inject").expect("Inject is in the card layer");
+    assert_eq!(
+        inj.unimplemented,
+        vec!["Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9409);
+    let card_id = vm.new_object(card_partial("Inject"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    // The stack from the TOP down: the four the card reveals — program,
+    // resource, program, resource.
+    let top: Vec<ObjectId> = [
+        ("Injected Program A", CardType::Program),
+        ("Injected Resource A", CardType::Resource),
+        ("Injected Program B", CardType::Program),
+        ("Injected Resource B", CardType::Resource),
+    ]
+    .into_iter()
+    .map(|(name, ty)| {
+        let id = vm.new_object(tk::vanilla_runner_card(name, ty), Zone::Deck(Side::Runner));
+        vm.st.deck.get_mut(&Side::Runner).unwrap().push(id);
+        id
+    })
+    .collect();
+    // …and two more below the window the card reaches, so "the top 4" is a
+    // real window and not the whole stack.
+    tk::fill_deck(&mut vm, Side::Runner, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::play_card(card_id)).stop_at_action(),
+    );
+
+    for p in [top[0], top[2]] {
+        assert_eq!(
+            vm.st.objects[&p].zone,
+            Zone::Discard(Side::Runner),
+            "every program among the four revealed was trashed: {}",
+            t.tail(20)
+        );
+    }
+    for r in [top[1], top[3]] {
+        assert_eq!(
+            vm.st.objects[&r].zone,
+            Zone::Deck(Side::Runner),
+            "…and nothing else moved, which is what \"all programs revealed\" says: {}",
+            t.tail(20)
+        );
+    }
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::CardRevealed { .. }))
+            .count()
+            >= 4,
+        "1.21.3: all four were revealed, not just the ones that moved: {}",
+        t.tail(20)
+    );
+}
+
+/// Mad Dash: "Run any server."
+///
+/// PARTIAL — the pay-off is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the markers
+/// cannot quietly disappear. The run itself is 6.9.1a's announcement over
+/// every server, and it costs nothing — this event's play cost is 0, so the
+/// Runner's credit pool is untouched by it.
+#[test]
+fn mad_dash_runs_a_server_the_runner_names() {
+    let md = jinteki_cards::find("Mad Dash").expect("Mad Dash is in the card layer");
+    assert_eq!(
+        md.unimplemented,
+        vec![
+            "When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point.",
+            "Otherwise, suffer 1 meat damage.",
+        ],
+        "exactly two printed sentences are still unsayable"
+    );
+
+    let mut vm = Vm::empty(9410);
+    let card_id = vm.new_object(card_partial("Mad Dash"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(card_id))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Rnd))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Rnd, .. }
+        )),
+        "the run went to the server the Runner named: {}",
+        t.tail(20)
+    );
+    // The pay-off is unsayable, and the marker is what says so — the event is
+    // trashed at 8.6.7g like any other, rather than reaching a score area.
+    assert_eq!(
+        vm.st.objects[&card_id].zone,
+        Zone::Discard(Side::Runner),
+        "and no branch of the marked sentence ran: {}",
+        t.tail(20)
+    );
+}
+
+/// Raindrops Cut Stone: "Run any server." / "When that run ends, draw 1 card
+/// for each hosted power counter and gain 3[credit]."
+///
+/// PARTIAL — the counter sentence is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear. Both expressed halves are asserted: the run
+/// happens, and the pay-off fires when it ENDS — which is only possible
+/// because 4.6.4e keeps a played event active in the play area while 5.2.2b
+/// suspends its resolution for the run. With the counter sentence marked, the
+/// hosted count is 0 and the draw half is worth nothing; the 3[credit] is
+/// what the sentence pays regardless, and it is what the assertion reads.
+#[test]
+fn raindrops_cut_stone_pays_out_when_the_run_it_made_ends() {
+    let rcs = jinteki_cards::find("Raindrops Cut Stone").expect("Raindrops Cut Stone is in the card layer");
+    assert_eq!(
+        rcs.unimplemented,
+        vec!["Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9411);
+    let card_id = vm.new_object(card_partial("Raindrops Cut Stone"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 1;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(card_id))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Archives, .. }
+        )),
+        "the run happened: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.runner.credits, 3,
+        "1 − the 1[credit] play cost + the 3[credit] the run's end pays: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        0,
+        "…and 0 cards, because the marked sentence is what would have put \
+         counters there: {}",
+        t.tail(20)
+    );
+}
+
+/// Stimhack: "Place 9[credit] on this event, then run any server." / "When
+/// that run ends, suffer 1 core damage. This damage cannot be prevented."
+///
+/// PARTIAL — the credit-pool sentence is unsayable (see the card's doc comment
+/// and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the
+/// marker cannot quietly disappear.
+///
+/// Everything else is asserted on one board, and the unpreventability is
+/// asserted against a card that really would have stopped it: a free paid
+/// interrupt printing "prevent all core damage" is installed, and 9.9.7's
+/// relevance test never offers it, because `EffectAtom::unpreventable` leaves
+/// no preventable atom to be relevant to. 10.4.2b is the rest — a card out of
+/// the grip AND a permanent maximum-hand-size reduction.
+#[test]
+fn stimhack_loads_nine_credits_and_the_core_damage_cannot_be_prevented() {
+    let sh = jinteki_cards::find("Stimhack").expect("Stimhack is in the card layer");
+    assert_eq!(
+        sh.unimplemented,
+        vec!["During that run, hosted credits are considered to be in your credit pool."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9412);
+    let card_id = vm.new_object(card_partial("Stimhack"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+    tk::install_rig(&mut vm, tk::prevent_all_like("Core Shield", jinteki_cr::effects::DamageKind::Core));
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 0;
+    let max_before = vm.st.runner.max_hand_size_base;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(card_id))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+            // If the prevention is ever offered, taking it is the failure this
+            // test is looking for.
+            .when(Match::interrupt().offering("chrome-parlor"), Reply::take("chrome-parlor"))
+            .stop_at_action(),
+    );
+
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Archives, .. }
+        )),
+        "the run happened after the credits were placed: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.core_damage, 1,
+        "9.9.7: the prevention could not apply, so the core damage landed: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.max_hand_size_base,
+        max_before - 1,
+        "10.4.2b: and it permanently cost a card of maximum hand size: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "10.4.2b: one random card out of the grip of three: {}",
+        t.tail(24)
+    );
+}
+
+/// Mystic Maemi: "When your turn begins and whenever you steal an agenda,
+/// place 1[credit] on this resource." / "When your turn ends, if there are 3
+/// or more hosted credits, you must trash 1 card from your grip at random or
+/// trash this resource."
+///
+/// PARTIAL — the spend permission is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear.
+///
+/// The two expressed sentences are asserted together, and the drive is what
+/// makes the disjunction observable: the turn begins with two credits already
+/// on her (board state), the turn-begin half puts a third there, and the
+/// turn's END then finds three and puts 9.11.4g's choice to the Runner —
+/// which is only reached because the 9.6.5c requirement counted the credit the
+/// FIRST sentence placed. The Runner takes the option that trashes her, and
+/// she goes.
+#[test]
+fn mystic_maemi_banks_a_credit_each_turn_and_asks_to_be_paid_at_its_end() {
+    let mm = jinteki_cards::find("Mystic Maemi").expect("Mystic Maemi is in the card layer");
+    assert_eq!(
+        mm.unimplemented,
+        vec!["You can spend hosted credits to play events."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9413);
+    let maemi = tk::install_rig(&mut vm, card_partial("Mystic Maemi"));
+    tk::place_counters(&mut vm, maemi, CounterKind::Credit, 2);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Runner);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::Halt)
+            .when(Match::options().once(), Reply::ChooseNamed("trash this resource"))
+            .otherwise_click_credit(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&maemi].counter(CounterKind::Credit),
+        3,
+        "the turn began and a third credit went on her: {}",
+        g.transcript().tail(16)
+    );
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&maemi].zone,
+        Zone::Discard(Side::Runner),
+        "9.11.4g: at the turn's end the Runner chose to trash her rather than \
+         the card from their grip: {}",
+        g.transcript().tail(24)
+    );
+}
+
+/// Tsakhia "Bankhar" Gantulga: "When your turn begins, you may choose a
+/// server."
+///
+/// PARTIAL — the subroutine replacement is unsayable (see the card's doc
+/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
+/// the marker cannot quietly disappear. The choice is asserted as 9.10.3's
+/// maintained choice, which is what the second sentence would read: the
+/// decision is put to the Runner over the servers, and the answer is still
+/// remembered by the card afterwards.
+#[test]
+fn bankhar_chooses_a_server_when_the_turn_begins_and_remembers_it() {
+    let bg = jinteki_cards::find("Tsakhia \"Bankhar\" Gantulga")
+        .expect("Tsakhia \"Bankhar\" Gantulga is in the card layer");
+    assert_eq!(
+        bg.unimplemented,
+        vec!["During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve \"[subroutine] Do 1 net damage.\"."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9414);
+    let bankhar = tk::install_rig(&mut vm, card_partial("Tsakhia \"Bankhar\" Gantulga"));
+    tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 1, 1), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::reaction().once(), Reply::take("bankhar"))
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::choose_server().once(), Reply::Server(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.maintained_choice(bankhar, "bankhar server"),
+        Some(jinteki_cr::lingering::ChoiceValue::Server(ServerId::Remote(1))),
+        "9.10.3: the server the Runner named is remembered by the card: {}",
+        t.tail(20)
+    );
+}
