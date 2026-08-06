@@ -2458,6 +2458,24 @@ pub enum TargetFilter {
     /// protecting it, so both are "in" it; 4.6.8 is what makes "remote" a
     /// distinction the criterion can draw. Names the play area (1.15.2c).
     InRemoteServer,
+    /// CR 4.6.9a: "…a piece of ice **protecting the chosen server**"
+    /// (Tsakhia "Bankhar" Gantulga), "…ice protecting HQ". 4.6.9a puts every
+    /// installed piece of ice in a position in front of the server it
+    /// protects, so this is
+    /// the ice HALF of 4.6.6b's "in the server" and not the whole of it —
+    /// [`TargetFilter::InRemoteServer`] and
+    /// [`TargetFilter::InAttackedServer`] are the ones that also reach a
+    /// root.
+    ///
+    /// WHICH server is a [`ServerRef`] and therefore content (§12 rule 2):
+    /// a server the card names outright, or 9.10.3's maintained choice —
+    /// which is the only way a criterion can ever reach one of 4.6.8's
+    /// remotes, since none exists to name at card-write time. A maintained
+    /// choice holding no server describes nothing, so a card whose choice was
+    /// never made is simply inert.
+    ///
+    /// Names the play area (1.15.2c): only installed cards occupy positions.
+    ProtectingServer(ServerRef),
     /// CR 4.2.2: "1 of the top N cards of R&D" (Top Hat class) — a criterion
     /// that explicitly specifies the zone, which is what lets 1.15.2c's
     /// play-area restriction lift for it.

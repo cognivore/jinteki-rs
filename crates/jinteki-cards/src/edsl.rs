@@ -2177,6 +2177,32 @@ pub fn encounters_a(subtype: Subtype, reqs: &[TriggerRequirement]) -> TriggerCon
 pub fn can_interface_with_the_encountered(subtype: Subtype) -> TriggerRequirement {
     TriggerRequirement::CanInterfaceWithEncounteredIce { required_subtype: Some(subtype) }
 }
+/// "**During an encounter with <these cards>**, …" (CR 6.5) — a question
+/// about the encounter IN PROGRESS, asked in the shared requirement
+/// vocabulary so a static ability says it with the same words a conditional
+/// one does. An empty description is a sentence saying plain "during an
+/// encounter".
+pub fn during_an_encounter_with(criteria: &[TargetFilter]) -> TriggerRequirement {
+    TriggerRequirement::EncounterUnderWay {
+        criteria: criteria.to_vec(),
+        first_each_turn: false,
+    }
+}
+/// "During the **first** encounter **each turn** with <these cards>, …"
+/// (Tsakhia "Bankhar" Gantulga) — the same requirement with the printed
+/// ORDINAL on it. It counts ENCOUNTERS and not applications: it holds while
+/// no EARLIER encounter this turn was with a card the description reaches,
+/// read off the change log (10.2.1) the way every other printed ordinal in
+/// the kernel is. 9.4.1 is why it cannot be 9.3.6g's once-per-turn flag — a
+/// static ability never resolves, so it never spends one.
+pub fn during_the_first_encounter_each_turn_with(
+    criteria: &[TargetFilter],
+) -> TriggerRequirement {
+    TriggerRequirement::EncounterUnderWay {
+        criteria: criteria.to_vec(),
+        first_each_turn: true,
+    }
+}
 /// "X[credit]:" — 1.16.2c's variable cost, announced before it is paid. With
 /// no printed restriction on X, 1.16.1c is the only bound: what the payer can
 /// actually pay.
@@ -3540,6 +3566,36 @@ pub fn link_at_least(n: u32) -> TriggerRequirement {
 /// "…if the Runner has 3 or more agenda points" (Complete Image; 1.17.1).
 pub fn agenda_points_at_least(side: Side, points: i32) -> TriggerRequirement {
     TriggerRequirement::AgendaPointsAtLeast { side, points }
+}
+/// "…whenever the Corp would resolve a subroutine, instead they resolve
+/// \"[subroutine] …\"." (Tsakhia "Bankhar" Gantulga; CR 9.8.9 / 9.9.8b.) The
+/// declaration replaces the imminent subroutine with the stated one and
+/// changes nothing about WHETHER one resolves — 9.8.9 keeps the replacement
+/// "treated as having the same source as the original imminent subroutine",
+/// so it still resolves from the ice and a Persephone-class condition still
+/// sees a subroutine resolve.
+///
+/// WHEN it is on is the static ability's stated condition, not this
+/// declaration's business: written with none it rewrites every subroutine in
+/// the game, which is why every card printing it prints a scope too.
+pub fn replaces_each_subroutine_with(
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> StaticDecl {
+    StaticDecl::ReplaceSubroutineResolution { instead: instrs.into_iter().collect() }
+}
+/// "…a piece of ice protecting **the server this card chose**" (Tsakhia
+/// "Bankhar" Gantulga; 4.6.9a + 9.10.3). The ice HALF of 4.6.6b's "in the
+/// server" — a root is not a position protecting anything — and the server is
+/// whatever this source is remembering under `key`, which is the only way a
+/// description can reach one of 4.6.8's remotes at all. Describes nothing
+/// while no server is being maintained there.
+pub fn protecting_the_server_chosen_as(key: &'static str) -> TargetFilter {
+    TargetFilter::ProtectingServer(jinteki_cr::instr::ServerRef::MaintainedChoice(key))
+}
+/// "…a piece of ice protecting <a named server>" (4.6.9a) — the same
+/// criterion with the server the card names outright.
+pub fn protecting_server(server: ServerId) -> TargetFilter {
+    TargetFilter::ProtectingServer(jinteki_cr::instr::ServerRef::Server(server))
 }
 /// "…a card in a remote server" (4.6.6 — the root and the ice protecting it).
 pub fn in_a_remote_server() -> TargetFilter {

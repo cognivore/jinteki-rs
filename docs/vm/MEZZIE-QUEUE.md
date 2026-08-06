@@ -121,7 +121,7 @@ Identity is COMPLETE.
       "When your turn begins and whenever you steal an agenda, place 1[credit] on this resource. / You can spend hosted credits to play events. / When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource."
 - [x] **Same Old Thing** ×1 — resource · cost 0
       "[click], [click], [trash]: Play an event from your heap (paying its play cost)."
-- [ ] **Tsakhia "Bankhar" Gantulga** ◆ ×3 — resource · Connection · cost 1
+- [x] **Tsakhia "Bankhar" Gantulga** ◆ ×3 — resource · Connection · cost 1
       "When your turn begins, you may choose a server. / During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve "[subroutine] Do 1 net damage."."
 - [x] **Black Orchestra** ×2 — program · Icebreaker - Decoder · cost 3, str 2
       "Whenever you encounter a code gate, you may install this program from your heap. / 3[credit]: +2 strength. Then, if this program can interface with the code gate you are encountering, break up to 2 subroutines."
@@ -136,21 +136,20 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `work/finish` wave: 43 of 47 ticked, 4 printed
-sentences still unsayable, 4 cards unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 44 of 47 ticked, 3 printed
+sentences still unsayable, 3 cards unticked.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
 kernel and claims have to be checked against it.
 
-The six that remain, and what each is waiting on:
+The three that remain, and what each is waiting on:
 
 | Card | Waiting on |
 |---|---|
 | Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
 | Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
 | Marilyn Campaign | one: a trash redirected to a DECK, optionally |
-| Tsakhia "Bankhar" Gantulga | two: an ENCOUNTER state requirement, and an ordinal on a static ability |
 
 
 Never approximated. A card that needs one of these is left unticked with the
@@ -573,32 +572,44 @@ already argued: an allowance is read where credits are SPENT, and this is read
 where they are COUNTED — by `Quantity::CreditsInPoolOf`, by 1.10.3b's forced
 loss, and by every affordability question. **Stimhack** is written and ticked.
 
-### A static declaration scoped to an ENCOUNTER, carrying an ordinal (CR 6.5 / 9.3.7a)
+### A static declaration scoped to an ENCOUNTER, carrying an ordinal — LANDED (CR 6.5 / 9.3.7a)
 
-`StaticDecl::ReplaceSubroutineResolution` already says 9.9.2's "instead of the
-subroutine they would resolve, these instructions". What cannot be said is
-WHEN it is on. A static ability is either always active or gated by
-`declares_while`'s state requirements, and neither reaches an ENCOUNTER. The
-nearest requirement is `CanInterfaceWithEncounteredIce { required_subtype }`,
-which is 9.3.6c's strength gate wearing a subtype and not a question about the
-encounter at all; nothing asks whether one is under way, nor whether its ice
-matches a description. `AbilityDef` does carry an `ordinal`, but only
-`first_imminence_of` ever reads it — it stipulates which IMMINENCE a
-conditional may be relevant to, and no static ability is read through it — so
-"the first encounter each turn" still has no position.
+`TriggerRequirement::EncounterUnderWay { criteria, first_each_turn }` and
+`TargetFilter::ProtectingServer(ServerRef)`. Two words rather than the entry's
+two, but not the same two — one of the entry's placements was wrong.
 
-Both gaps have to close together. An always-on declaration rewrites every
-subroutine on every server for the whole game, which is the largest over-reach
-a card of this class can have, so the mechanism being present buys nothing on
-its own.
+The requirement lives in the SHARED vocabulary, which is what the entry asked
+for and what makes it usable from `declares_while` (9.3.7a) and from a trigger
+condition's `requires` (9.6.5c) with the same words. `criteria` describes the
+encountered ice in the ordinary filter vocabulary; an empty list is a sentence
+saying plain "during an encounter".
 
-Wanted: the encounter as a state requirement in the shared vocabulary — one
-under way, with its ice described the way every other card is described,
-including "protecting the chosen server" against a 9.10.3 maintained choice —
-and the ordinal as content on a static ability the way `InherentCostMod`
-already carries `first_each_turn`.
+The ordinal did NOT go on the static ability, and the entry's "the way
+`InherentCostMod` already carries `first_each_turn`" is right about the
+spelling and wrong about the position. A static ability never resolves (9.4.1),
+so an ordinal on the ABILITY could only mean "the first time it applies" —
+which is not what the sentence says. The sentence counts ENCOUNTERS: it holds
+while no EARLIER encounter this turn was with ice the description reaches. So
+the ordinal is content on the REQUIREMENT, beside the description it qualifies,
+and it is read from the change log (10.2.1) the way every other printed ordinal
+in the kernel is. The encounter's own id stops the walk, so a piece of ice
+encountered twice in one turn does not answer for both.
 
-Wants it: **Tsakhia "Bankhar" Gantulga** ("During the first encounter each turn
-with a piece of ice protecting the chosen server, whenever the Corp would
-resolve a subroutine, instead they resolve …"; the turn-begin server choice is
-done and tested, and 9.10.3 remembers it).
+"Protecting the chosen server" needed a description word of its own:
+`MatchesMaintainedChoice` compares a maintained NAME, TYPE or SUBTYPE against a
+card and its own doc says a maintained SERVER "describes no card, so nothing
+matches". `TargetFilter::ProtectingServer` is that missing half — 4.6.9a puts
+every installed piece of ice in a position in front of the server it protects,
+and WHICH server is a `ServerRef`, so "protecting HQ" and "protecting the
+server this card chose" are one criterion with different content. It is the ICE
+half of 4.6.6b's "in the server" and deliberately not the whole of it: a root
+is not a position protecting anything.
+
+Measured by
+`bankhar_replaces_the_first_subroutine_each_turn_on_the_chosen_server`: four
+arms over the same remote behind "end the run" ice, so what the Corp resolved
+is visible in whether the run survived — one ice on the chosen server (the run
+goes on), two (the second encounter is out of scope and ends it), a different
+server chosen, and nothing chosen at all.
+
+**Tsakhia "Bankhar" Gantulga** is written and ticked.

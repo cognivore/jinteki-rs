@@ -8392,6 +8392,25 @@ impl Vm {
             TargetFilter::IceProtectingAttackedServer => {
                 matches!((o.zone, self.current_run), (Zone::Ice(a), Some((_, b, _))) if a == b)
             }
+            // 4.6.9a: every installed piece of ice is in a position in
+            // front of the server it protects, so the criterion is the ice's
+            // zone compared against the named server — which may be one the
+            // card named outright or one 9.10.3 is remembering for its
+            // source.
+            TargetFilter::ProtectingServer(r) => {
+                cite!("rule_ice_ordered");
+                let want = match r {
+                    crate::instr::ServerRef::Server(s) => Some(s),
+                    crate::instr::ServerRef::MaintainedChoice(k) => {
+                        cite!("rule_lingering_effect_maintain_choice");
+                        source.and_then(|src| match self.maintained_choice(src, k) {
+                            Some(crate::lingering::ChoiceValue::Server(s)) => Some(s),
+                            _ => None,
+                        })
+                    }
+                };
+                matches!((o.zone, want), (Zone::Ice(a), Some(b)) if a == b)
+            }
             // 4.6.6b: the root AND the ice protecting it are both "in" the
             // server; 6.1.2 is which server that is while a run is on.
             TargetFilter::InAttackedServer => {
@@ -9777,6 +9796,49 @@ impl Vm {
                 log[start..]
                     .iter()
                     .any(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == src))
+            }
+            // CR 6.5: "during the first encounter each turn with a piece of
+            // ice protecting the chosen server" — is an encounter under way,
+            // is its ice the one the sentence describes, and is it the FIRST
+            // such encounter this turn?
+            R::EncounterUnderWay { criteria, first_each_turn } => {
+                cite!("rule_encounter_ice_phase");
+                let Some(e) = self.st.encounter.as_ref() else { return false };
+                let describes = |id: &ObjectId| {
+                    self.st
+                        .objects
+                        .get(id)
+                        .is_some_and(|o| criteria.iter().all(|f| self.filter_matches(o, *f, source)))
+                };
+                if !describes(&e.ice) {
+                    return false;
+                }
+                if !*first_each_turn {
+                    return true;
+                }
+                // 10.2.1: the history is open information, so the ordinal is
+                // read off it — and it counts ENCOUNTERS, not applications:
+                // the requirement holds while no EARLIER encounter this turn
+                // was with ice the criteria reach. The encounter's own id
+                // stops the walk, so a card encountered twice in one turn
+                // does not answer for both.
+                cite!("rule_open_information");
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                    .unwrap_or(0);
+                for c in &log[start..] {
+                    if let GameChange::EncounterBegan { ice, encounter_id } = c {
+                        if *encounter_id == e.id {
+                            break;
+                        }
+                        if describes(ice) {
+                            return false;
+                        }
+                    }
+                }
+                true
             }
             R::RunnerTagsAtLeast(n) => {
                 // 10.5.2: "tagged" is a question about the number of tags

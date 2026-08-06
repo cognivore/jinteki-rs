@@ -1170,6 +1170,44 @@ pub enum TriggerRequirement {
     /// after "+X strength" has already resolved. Written as the flag, the
     /// card could never pump itself up to a barrier it did not already match.
     CanInterfaceWithEncounteredIce { required_subtype: Option<crate::subtype::Subtype> },
+    /// CR 6.5: "**During the first encounter each turn with a piece of ice
+    /// protecting the chosen server**, …" (Tsakhia "Bankhar" Gantulga) — a
+    /// question about the ENCOUNTER IN PROGRESS, asked in the shared
+    /// requirement vocabulary so a static ability and a conditional one
+    /// state it with the same words.
+    ///
+    /// Not [`TriggerRequirement::CanInterfaceWithEncounteredIce`], which is
+    /// 3.9.5g's strength gate wearing a subtype and never asks whether an
+    /// encounter is under way at all.
+    ///
+    /// Both stipulations the printed sentence can make are content on the one
+    /// requirement (§12 rule 2):
+    ///
+    /// * `criteria` describes the ENCOUNTERED ICE in the shared filter
+    ///   vocabulary — "a piece of ice protecting the chosen server", "a code
+    ///   gate", or nothing at all, which is a sentence saying plain "during
+    ///   an encounter". 6.1.4 lets a card be encountered while uninstalled,
+    ///   so a description naming a position leaves that case out by
+    ///   construction, exactly as it should.
+    /// * `first_each_turn` is the printed ORDINAL, and it counts ENCOUNTERS
+    ///   rather than applications: the requirement holds only while the
+    ///   encounter under way is the first one this turn whose ice the
+    ///   criteria reach. It is read from the change log (10.2.1 makes the
+    ///   history open information), the way
+    ///   [`StaticDecl::InherentCostMod`]'s field of the same name is, and
+    ///   for the same reason — 9.4.1 says a static ability never resolves, so
+    ///   9.3.6g's once-per-turn flag could never be what such a sentence
+    ///   means.
+    ///
+    ///   The count asks the criteria of each earlier encounter's ice AS IT IS
+    ///   NOW. That is exact for every description this vocabulary can write
+    ///   about a card's own characteristics, and an approximation only for
+    ///   one about a position the ice has since left — no printed card in
+    ///   either deck distinguishes them.
+    ///
+    /// `false` is a sentence printing no ordinal, which is what every
+    /// "during an encounter" card without one says.
+    EncounterUnderWay { criteria: Vec<crate::instr::TargetFilter>, first_each_turn: bool },
     /// CR 6.9.2b: "…**after an approach during which that ice was rezzed**"
     /// (Nasir Meidan). A 9.6.5c requirement listed inside an encounter
     /// condition, asked of the approach the encounter directly follows: the

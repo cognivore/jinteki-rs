@@ -753,7 +753,8 @@ pub fn same_old_thing() -> Card {
 ///  chosen server, whenever the Corp would resolve a subroutine, instead they
 ///  resolve \"[subroutine] Do 1 net damage.\"."
 ///
-/// PARTIAL — the choice is expressed; the replacement is marked.
+/// COMPLETE. Two printed sentences: a conditional ability that remembers a
+/// choice, and a static ability gated on the encounter that choice describes.
 ///
 /// "You may choose a server" is 9.10.3's MAINTAINED CHOICE — an ordinary
 /// 1.15.2 announcement whose value the card remembers for as long as it is
@@ -762,19 +763,26 @@ pub fn same_old_thing() -> Card {
 /// "You may" is the optionality on the conditional ability, so a Runner who
 /// wants last turn's server to stay chosen simply declines.
 ///
-/// The second sentence's MECHANISM exists: `StaticDecl::ReplaceSubroutineResolution`
-/// is 9.9.2's "instead of <the effect>, <these instructions>" said of a
-/// subroutine, which is the right shape for a sentence that swaps what the
-/// Corp resolves without touching whether they resolve it (9.8.9: the
-/// replacement still resolves from the ice, so it is still a subroutine
-/// resolving). What cannot be said is WHEN it applies. The declaration is
-/// either always on or gated by `declares_while`'s state requirements, and
-/// this card's gate is an ENCOUNTER (6.5) matching a description — with ice
-/// protecting the remembered server — carrying an ORDINAL, "the first
-/// encounter each turn". No requirement asks about the encounter in progress,
-/// and no static ability carries an ordinal at all. An always-on declaration
-/// would rewrite every subroutine on every server for the whole game, which is
-/// the largest possible over-reach, so the sentence is marked.
+/// The second sentence is 9.9.2's "instead of <the effect>, <these
+/// instructions>" said of a SUBROUTINE. It swaps what the Corp resolves and
+/// touches nothing about whether they resolve it: 9.8.9 keeps the replacement
+/// "treated as having the same source as the original imminent subroutine",
+/// so it resolves from the ice and a Persephone-class condition still sees a
+/// subroutine resolve.
+///
+/// Everything else in that sentence is the SCOPE, and the scope is the card.
+/// "During the first encounter each turn with a piece of ice protecting the
+/// chosen server" is one stated condition (9.3.7a) asking three things at
+/// once: that an encounter is under way (6.5), that its ice is in a position
+/// protecting the remembered server (4.6.9a + 9.10.3), and that no earlier
+/// encounter this turn was with such a piece of ice. Written without it the
+/// declaration would rewrite every subroutine on every server for the whole
+/// game.
+///
+/// The ordinal counts ENCOUNTERS and not applications, which is what makes a
+/// second piece of ice protecting the chosen server bite normally in the same
+/// turn — and 9.4.1 is why it cannot be a once-per-turn flag: a static
+/// ability never resolves, so it never spends one.
 pub fn tsakhia_bankhar_gantulga() -> Card {
     card("Tsakhia \"Bankhar\" Gantulga")
         .runner()
@@ -797,7 +805,13 @@ pub fn tsakhia_bankhar_gantulga() -> Card {
             }],
         )
         .named("choose a server for the turn")
-        .unimplemented("During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve \"[subroutine] Do 1 net damage.\".")
+        .declares_while(
+            &[during_the_first_encounter_each_turn_with(&[
+                of_type(CardType::Ice),
+                protecting_the_server_chosen_as("bankhar server"),
+            ])],
+            [replaces_each_subroutine_with([net_damage(Corp, 1)])],
+        )
         .build()
 }
 

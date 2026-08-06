@@ -20735,24 +20735,14 @@ fn mystic_maemi_credits_pay_to_play_an_event_and_nothing_else() {
 /// Tsakhia "Bankhar" Gantulga: "When your turn begins, you may choose a
 /// server."
 ///
-/// PARTIAL — the subroutine replacement is unsayable (see the card's doc
-/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
-/// the marker cannot quietly disappear. The choice is asserted as 9.10.3's
-/// maintained choice, which is what the second sentence would read: the
-/// decision is put to the Runner over the servers, and the answer is still
-/// remembered by the card afterwards.
+/// 9.10.3's maintained choice is what the second sentence reads: the decision
+/// is put to the Runner over the servers, and the answer is still remembered
+/// by the card afterwards. What the card DOES with it is
+/// [`bankhar_replaces_the_first_subroutine_each_turn_on_the_chosen_server`].
 #[test]
 fn bankhar_chooses_a_server_when_the_turn_begins_and_remembers_it() {
-    let bg = jinteki_cards::find("Tsakhia \"Bankhar\" Gantulga")
-        .expect("Tsakhia \"Bankhar\" Gantulga is in the card layer");
-    assert_eq!(
-        bg.unimplemented,
-        vec!["During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve \"[subroutine] Do 1 net damage.\"."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9414);
-    let bankhar = tk::install_rig(&mut vm, card_partial("Tsakhia \"Bankhar\" Gantulga"));
+    let bankhar = tk::install_rig(&mut vm, card("Tsakhia \"Bankhar\" Gantulga"));
     tk::install_ice(&mut vm, tk::vanilla_ice("Wall", 1, 1), ServerId::Remote(1), false);
     tk::fill_hand(&mut vm, Side::Runner, 3);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -20774,6 +20764,89 @@ fn bankhar_chooses_a_server_when_the_turn_begins_and_remembers_it() {
         "9.10.3: the server the Runner named is remembered by the card: {}",
         t.tail(20)
     );
+}
+
+/// Tsakhia "Bankhar" Gantulga: "During the first encounter each turn with a
+/// piece of ice protecting the chosen server, whenever the Corp would resolve
+/// a subroutine, instead they resolve "[subroutine] Do 1 net damage."."
+///
+/// The sentence promises a swap and a SCOPE, and the scope is three separate
+/// claims. Every arm below runs the same remote behind two pieces of ice whose
+/// only subroutine ends the run, so what the Corp resolved is visible in
+/// whether the run survived and in how many cards the grip lost:
+///
+/// * chosen = the attacked remote — the FIRST encounter's "end the run" is
+///   replaced by 1 net damage, so the run goes on and the grip loses a card;
+///   the SECOND encounter that same turn is out of scope, so the run ends
+///   there. That is the printed ordinal, counting encounters.
+/// * chosen = HQ — the ice protects a different server, so nothing is
+///   replaced and the run ends on the outermost piece of ice with the grip
+///   untouched. 4.6.9a is the whole of that difference.
+/// * chosen = nothing (the Runner declined) — a maintained choice holding no
+///   server describes no card, so the card is inert.
+#[test]
+fn bankhar_replaces_the_first_subroutine_each_turn_on_the_chosen_server() {
+    // (server chosen, ice on the remote, cards the grip loses, run successful)
+    let arms: [(Option<ServerId>, usize, usize, bool); 4] = [
+        // one piece of ice: its "end the run" becomes 1 net damage, so the
+        // run goes on and reaches the server
+        (Some(ServerId::Remote(1)), 1, 1, true),
+        // two: the ordinal is spent on the first encounter, so the second
+        // ends the run as printed
+        (Some(ServerId::Remote(1)), 2, 1, false),
+        // the ice protects a different server from the chosen one
+        (Some(ServerId::Hq), 1, 0, false),
+        // nothing was chosen at all
+        (None, 1, 0, false),
+    ];
+    for (chosen, ice_count, damage, successful) in arms {
+        let mut vm = Vm::empty(9415);
+        tk::install_rig(&mut vm, card("Tsakhia \"Bankhar\" Gantulga"));
+        for i in 0..ice_count {
+            let name = if i == 0 { "Wall A" } else { "Wall B" };
+            tk::install_ice(&mut vm, tk::etr_ice(name, 0, 1), ServerId::Remote(1), true);
+        }
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        vm.start_turn(Side::Runner);
+        let grip_before = vm.st.hand[&Side::Runner].len();
+
+        let mut runner = Plan::runner().when(Match::reaction().once(), Reply::take("bankhar"));
+        runner = match chosen {
+            Some(s) => runner
+                .when(Match::optional().once(), Reply::Optional(true))
+                .when(Match::choose_server().once(), Reply::Server(s)),
+            // "You may": declining leaves nothing chosen at all.
+            None => runner.when(Match::optional().once(), Reply::Optional(false)),
+        };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            runner.when(Match::action().once(), Reply::run(ServerId::Remote(1))).stop_at_action(),
+        );
+
+        assert_eq!(
+            grip_before - vm.st.hand[&Side::Runner].len(),
+            damage,
+            "9.8.9: the replacement resolves 1 net damage in place of the \
+             subroutine, and only inside the scope the sentence states \
+             (chosen={chosen:?}, ice={ice_count}): {}",
+            t.tail(30)
+        );
+        let reached = vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. }));
+        assert_eq!(
+            reached, successful,
+            "the replaced subroutine no longer ends the run, and the SECOND \
+             encounter this turn is out of scope of the printed ordinal so its \
+             own 'end the run' still lands (chosen={chosen:?}, ice={ice_count}): {}",
+            t.tail(30)
+        );
+    }
 }
 
 
