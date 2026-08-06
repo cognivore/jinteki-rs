@@ -173,12 +173,22 @@ function handle(m) {
       // with that question: if a new decision arrived while something was
       // still armed, a first tap on it would be taken for the confirming
       // second — one tap, committed, on a question the player never armed
-      // anything for. Keyed by the choices' per-decision uuid stamp (the
-      // same stamp that keeps a stale choice tap from answering the next
-      // prompt), so a mere board repaint never disarms.
+      // anything for.
+      //
+      // So the key has to name the QUESTION and nothing else. `decision-seq`
+      // is the server's per-decision stamp, minted once where the question is
+      // put (`cr::present`) and carried unchanged by every re-send of it — a
+      // timed game re-pushes the same decision once a second, and a key that
+      // moved with the frame would disarm the board between the two taps of
+      // every board target, which is exactly what makes an install into a
+      // remote impossible to finish. Older/bridge servers that do not send
+      // one fall back to the prompt's own content, which is at least stable
+      // across a repaint.
       {
         const p = myPrompt();
-        const dkey = p ? `${p.msg}|${(p.choices || []).map((c) => c.uuid).join(",")}` : "";
+        const dkey = S["decision-seq"] != null
+          ? `d${S["decision-seq"]}`
+          : (p ? `${p.msg}|${(p.choices || []).map((c) => c.uuid).join(",")}` : "");
         if (dkey !== lastDecisionKey) {
           lastDecisionKey = dkey;
           armed = null;
@@ -415,9 +425,10 @@ function crTiming() {
   if (mode.startsWith("timed")) t.main_clock_secs = num("crlobby-mins", 30) * 60;
   if (mode.endsWith("rope")) {
     t.rope = {
-      action_secs: num("crlobby-rope-action", 60),
-      decision_secs: num("crlobby-rope-decision", 10),
-      timeout_fuse_secs: num("crlobby-rope-fuse", 30),
+      calm_secs: num("crlobby-rope-calm", 60),
+      opening_calm_secs: num("crlobby-rope-opening", 120),
+      action_increment_secs: num("crlobby-rope-inc", 10),
+      rope_secs: num("crlobby-rope-secs", 30),
     };
   }
   return t;
@@ -1125,11 +1136,18 @@ function barHtml(st, side, isOpp) {
  * Three displays, per the law of the overlay (UX.md THE LAW §2 — nothing
  * reflows):
  *   · the OPPONENT's main clock: a chip on their seat rail (near identity).
- *   · your OWN cluster, bottom-right corner: tiny main clock, the rope's
- *     fuse bar while a fuse of YOURS burns, and your banked ⌛ count.
- *     Your own only — the opponent's ⌛ count is never shown (nor sent).
- *   · the running clock is visually alive; red under a minute. The fuse is
- *     subtle until its last 3 seconds. */
+ *   · your OWN cluster, bottom-right corner: tiny main clock, the rope bar
+ *     while a rope of YOURS burns, your calm bank when it is running low,
+ *     and your banked ⌛ count. Your own only — the opponent's ⌛ count is
+ *     never shown (nor sent).
+ *   · the running clock is visually alive; red under a minute. The rope is
+ *     subtle until its last 3 seconds.
+ *
+ * THE ROPE IS NOT DRAWN WHILE THE BANK IS POSITIVE. It is a reservoir
+ * (`timing.rs`): a player who is playing never empties it, and a countdown
+ * shown to a player who is not in trouble is just nagging — so nothing at
+ * all appears until the bank is nearly gone, and the bar and the vignette
+ * only when `visible` says the rope is genuinely burning. */
 function renderTiming() {
   const cl = $("time-cluster");
   const t = S && S.timing;
@@ -1138,6 +1156,7 @@ function renderTiming() {
   if (!cl.firstChild) {
     cl.innerHTML =
       `<span class="ttokens" style="display:none">⌛0</span>` +
+      `<span class="tbank" style="display:none">⏳--</span>` +
       `<span class="tfuse" style="display:none"><i></i></span>` +
       `<span class="stat clock tclock" style="display:none">⏱ --:--</span>`;
   }
@@ -1180,25 +1199,54 @@ function timingTick() {
       });
     }
   }
-  // The fuse: your own prompt's rope, burning down — the cluster's small
-  // copy, the unmissable mid-screen bar, and the rim of the screen breathing
-  // dark red to hurry you. The opponent's fuse is their problem — every one
-  // of these shows YOURS only.
+  // The reservoir: YOUR calm bank draining, and — only once it is gone —
+  // your rope burning down. The cluster's small copy, the unmissable
+  // mid-screen bar and the rim of the screen breathing dark red all belong
+  // to the ROPE, and none of them exists while the bank is positive. The
+  // opponent's reservoir is their problem; every one of these shows YOURS.
+  const bankEl = document.querySelector("#time-cluster .tbank");
   const fuse = document.querySelector("#time-cluster .tfuse");
   const mid = $("rope-mid");
   const rim = $("rope-vignette");
-  if (!fuse || !mid || !rim) return;
-  const mine = !over && t.rope && t.rope.side === mySide;
-  if (!mine) {
+  if (!bankEl || !fuse || !mid || !rim) return;
+  const hideAll = () => {
+    bankEl.style.display = "none";
     fuse.style.display = "none";
     fuse.classList.remove("alarm");
     mid.style.display = "none";
     rim.style.display = "none";
+  };
+  const mine = !over && t.rope && t.rope.side === mySide;
+  if (!mine) { hideAll(); return; }
+  // The local countdown spends the bank first and only then the rope —
+  // the same order the server settles them in, so the two never disagree.
+  const bank = Math.max(0, t.rope.bank_ms - dt);
+  const spill = Math.max(0, dt - t.rope.bank_ms);
+  const ropeMs = Math.max(0, t.rope.rope_ms_left - spill);
+  const burning = bank <= 0;
+  if (!burning) {
+    // Calm. Nothing at all, unless the bank is nearly out — then one small
+    // number in the corner, which is a warning and not a countdown.
+    fuse.style.display = "none";
+    fuse.classList.remove("alarm");
+    mid.style.display = "none";
+    rim.style.display = "none";
+    if (bank < BANK_WARN_MS) {
+      bankEl.style.display = "";
+      bankEl.textContent = `⏳${Math.ceil(bank / 1000)}s`;
+      bankEl.classList.remove("alarm");
+    } else {
+      bankEl.style.display = "none";
+    }
     return;
   }
-  const ms = Math.max(0, t.rope.remaining_ms - dt);
-  const alarm = ms < 3000;
-  const pct = `${Math.max(0, Math.min(100, (ms / Math.max(1, t.rope.total_ms)) * 100))}%`;
+  const alarm = ropeMs < 3000;
+  const pct = `${Math.max(0, Math.min(100, (ropeMs / Math.max(1, t.rope.rope_total_ms)) * 100))}%`;
+  // On the rope the corner number counts the ROPE, because that is what is
+  // about to happen to you. Same chip, same place; the bank is zero anyway.
+  bankEl.style.display = "";
+  bankEl.textContent = `⏳${Math.ceil(ropeMs / 1000)}s`;
+  bankEl.classList.toggle("alarm", alarm);
   fuse.style.display = "";
   fuse.classList.toggle("alarm", alarm);
   fuse.firstElementChild.style.width = pct;
@@ -1208,17 +1256,26 @@ function timingTick() {
   rim.style.display = "";
   rim.classList.toggle("alarm", alarm);
 }
+/* How little calm time is left before the corner says so. Below this the
+   player is about to be roped and would rather know; above it, silence. */
+const BANK_WARN_MS = 15000;
 setInterval(timingTick, 150);
 
-/* Dev/test door to a timed game (the lobby will own the real config UI):
-   `?timing=dev` on the URL, or `?timing=main:300,action:60,decision:10,fuse:30`
-   (any subset; naming any rope knob turns the rope on with defaults for the
-   rest). Absent = untimed, exactly today's behavior. */
+/* Dev/test door to a timed game (the lobby owns the real config UI):
+   `?timing=dev` on the URL, or
+   `?timing=main:300,calm:15,opening:20,inc:5,rope:10` (any subset; naming any
+   rope knob turns the rope on with defaults for the rest). The names are the
+   reservoir's: `calm` is the bank's cap, `opening` what you start holding,
+   `inc` what one completed action pays back, `rope` how long the rope burns
+   once the bank is spent. Absent = untimed, exactly today's behavior. */
 function timingFromQuery() {
   const q = new URLSearchParams(location.search).get("timing");
   if (!q) return undefined;
   if (q === "dev") {
-    return { main_clock_secs: 300, rope: { action_secs: 15, decision_secs: 8, timeout_fuse_secs: 10 } };
+    return {
+      main_clock_secs: 300,
+      rope: { calm_secs: 10, opening_calm_secs: 15, action_increment_secs: 5, rope_secs: 8 },
+    };
   }
   const t = {};
   const rope = {};
@@ -1227,10 +1284,10 @@ function timingFromQuery() {
     const n = parseInt(v, 10);
     if (!Number.isFinite(n)) return;
     if (k === "main") t.main_clock_secs = n;
-    if (k === "action") rope.action_secs = n;
-    if (k === "decision") rope.decision_secs = n;
-    if (k === "fuse") rope.timeout_fuse_secs = n;
-    if (k === "rope" && n) rope.action_secs = rope.action_secs ?? 60;
+    if (k === "calm") rope.calm_secs = n;
+    if (k === "opening") rope.opening_calm_secs = n;
+    if (k === "inc") rope.action_increment_secs = n;
+    if (k === "rope") rope.rope_secs = n;
   });
   if (Object.keys(rope).length) t.rope = rope;
   return Object.keys(t).length ? t : undefined;
@@ -3124,6 +3181,13 @@ async function cardMeta(title) {
 
 function renderPickerPrompt(sheet, p, choices) {
   const key = `${p.msg}|${choices.length}`;
+  // Everything this sheet shows is a function of the DECISION (its message
+  // and its fixed choice list) plus local search state — none of which a
+  // state push can change. So a re-render for the same decision is a no-op,
+  // and it has to be: a timed game re-pushes the same decision once a second,
+  // and rebuilding the search box under a player who is typing into it would
+  // drop their caret and, on a phone, their keyboard with it.
+  if (pickerKey === key && sheet.querySelector(".picker-input")) return;
   if (pickerKey !== key) { pickerKey = key; pickerQuery = ""; pickerPick = null; }
 
   sheet.innerHTML = `
@@ -3380,6 +3444,12 @@ function renderAccessReveal() {
   const cur = rest[0];
   const more = rest.length - 1;
   const ov = revealOverlayEl();
+  // Already showing exactly this card: leave it standing. A reveal is a beat
+  // the player acknowledges, and in a timed game the once-a-second sync would
+  // otherwise tear the overlay down and build it again under their thumb —
+  // restarting its entrance every second and replacing the button mid-tap.
+  if (ov.style.display === "flex" && ov.dataset.seq === String(cur.seq || 0)) return;
+  ov.dataset.seq = String(cur.seq || 0);
   ov.style.display = "flex";
   ov.innerHTML = "";
   const card = el("div", "zoom-card");

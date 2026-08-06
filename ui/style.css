@@ -1331,6 +1331,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* Banked timeouts: the typographic sand clock and YOUR count, nothing else. */
 #time-cluster .ttokens { color: var(--dim); font-weight: 700; font-size: 13px; }
 #time-cluster .ttokens.some { color: var(--gold); }
+/* The calm bank, in seconds — shown ONLY when it is nearly out, or while the
+   rope is burning (where it counts the rope). A player with time in hand is
+   told nothing at all. */
+#time-cluster .tbank { color: var(--gold); font-weight: 700; font-size: 13px;
+  font-variant-numeric: tabular-nums; }
+#time-cluster .tbank.alarm { color: var(--danger); }
 /* YOUR rope, unmissable: a burn-down bar across the middle of the screen.
    Overlay between the two board halves; the board never moves under it. */
 #rope-mid { position: fixed; left: 50%; top: 47%; transform: translate(-50%, -50%);

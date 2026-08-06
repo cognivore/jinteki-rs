@@ -315,10 +315,14 @@
     </label>
     <details id="crlobby-rope-adv" class="rope-adv">
       <summary>Rope settings (advanced)</summary>
+      <!-- The rope is a BANK of calm time, not a per-prompt fuse: it drains
+           only while the game waits on you, every action you complete pays it
+           back, and only an empty bank puts a rope on your screen. -->
       <div class="rope-fields">
-        <label>Action secs<input id="crlobby-rope-action" type="number" inputmode="numeric" min="1" max="600" value="60"></label>
-        <label>Decision secs<input id="crlobby-rope-decision" type="number" inputmode="numeric" min="1" max="600" value="10"></label>
-        <label>Timeout fuse secs<input id="crlobby-rope-fuse" type="number" inputmode="numeric" min="1" max="600" value="30"></label>
+        <label>Calm secs<input id="crlobby-rope-calm" type="number" inputmode="numeric" min="1" max="600" value="60"></label>
+        <label>Opening calm secs<input id="crlobby-rope-opening" type="number" inputmode="numeric" min="1" max="600" value="120"></label>
+        <label>Secs per action<input id="crlobby-rope-inc" type="number" inputmode="numeric" min="1" max="600" value="10"></label>
+        <label>Rope secs<input id="crlobby-rope-secs" type="number" inputmode="numeric" min="1" max="600" value="30"></label>
       </div>
     </details>
   </div>

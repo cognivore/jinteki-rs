@@ -476,6 +476,13 @@ struct Pending {
     /// Whose decision it is. Only that seat may answer it; the other seat's
     /// view carries the waiting prompt instead.
     side: Side,
+    /// This decision's identity: a monotone stamp minted ONCE, in `present`,
+    /// when the question is put. It rides the state as `decision-seq` so the
+    /// client can tell "a new question" from "the same question, re-sent" —
+    /// timing syncs re-serialize this same `Pending` several times a second,
+    /// and a client that read those as new questions would throw away the
+    /// half-finished intent (an armed target, a raised card) each time.
+    seq: u64,
     spec: DecisionSpec,
     msg: String,
     /// (uuid, label, the answer taking it produces, the card it is about).
@@ -623,6 +630,10 @@ pub struct CrGame {
     /// kernel's change buffer is the authoritative event stream; this is the
     /// cursor that turns it into two readable ones (`crlog`).
     narrated: usize,
+    /// How far into `vm.changes.log` the rope's reservoir has been paid for
+    /// completed actions (`timing_credit_actions`). Its own cursor, because
+    /// the log is read for two unrelated purposes at two different rhythms.
+    acted: usize,
     /// The operator's unfiltered copy (`transcript`) — off unless the process
     /// configured a data dir, and never served to anyone.
     transcript: crate::transcript::Transcript,
@@ -677,14 +688,14 @@ impl CrGame {
             .unwrap_or_else(|| side_name(side).to_string())
     }
     /// Timing hook: a decision was just put to a person. Their main clock
-    /// starts; the rope lights a fuse sized by the prompt kind.
+    /// starts and their calm reservoir starts draining. Nothing is sized per
+    /// prompt — the bank is the whole budget (`crate::timing`).
     fn timing_arm(&mut self) {
         if !self.clock.enabled() {
             return;
         }
         if let Some(p) = self.pending.as_ref() {
-            let is_action = matches!(p.spec, DecisionSpec::TakeAction { .. });
-            self.clock.arm(p.side, is_action, Instant::now());
+            self.clock.arm(p.side, Instant::now());
         }
     }
     /// Timing hook: nobody owes a decision any more (it was answered or
@@ -692,6 +703,35 @@ impl CrGame {
     fn timing_disarm(&mut self) {
         if self.clock.enabled() {
             self.clock.disarm(Instant::now());
+        }
+    }
+    /// Timing hook: every ACTION completed since the last look pays its
+    /// taker's reservoir back (CR 5.2.5 — the kernel's `ActionCompleted`
+    /// record, which is the one thing that means "a player did something",
+    /// as opposed to the decisions the bank is spent on).
+    ///
+    /// Cursor-based over the same change log `narrate` reads, so it is
+    /// idempotent and can be called from anywhere the VM may have moved.
+    fn timing_credit_actions(&mut self) {
+        if !self.clock.enabled() {
+            self.acted = self.vm.changes.log.len();
+            return;
+        }
+        let upto = self.vm.changes.log.len();
+        if upto <= self.acted {
+            return;
+        }
+        let now = Instant::now();
+        let done: Vec<Side> = self.vm.changes.log[self.acted..upto]
+            .iter()
+            .filter_map(|c| match c {
+                jinteki_cr::change::GameChange::ActionCompleted { side, .. } => Some(*side),
+                _ => None,
+            })
+            .collect();
+        self.acted = upto;
+        for side in done {
+            self.clock.credit_action(side, now);
         }
     }
     /// Timing hook: watch for a turn boundary; a clean own-turn feeds the
@@ -912,6 +952,7 @@ fn new_game(
         access_seq: 0,
         log: [Vec::new(), Vec::new()],
         narrated: 0,
+        acted: 0,
         transcript,
         result: None,
         conceded: None,
@@ -1237,8 +1278,10 @@ async fn drive_inner(g: &mut CrGame, mut sink: Option<(&mut WebSocket, Side)>) {
     }
     for _ in 0..20_000 {
         // A turn boundary is a fact about the VM, noticed wherever the VM
-        // moved: the ⌛-banking streak reads it (`timing`).
+        // moved: the ⌛-banking streak reads it (`timing`). So is a completed
+        // action, which is what pays a player's calm reservoir back.
         g.timing_note_turn();
+        g.timing_credit_actions();
         match g.vm.step() {
             Yield::Progressed => {
                 // Every step, so a line is rendered in the state the record
@@ -1261,9 +1304,12 @@ async fn drive_inner(g: &mut CrGame, mut sink: Option<(&mut WebSocket, Side)>) {
                 // Again here, not only at the loop top: the VM can push a new
                 // turn and yield that turn's first decision inside ONE step,
                 // and the streak bookkeeping must see the boundary BEFORE the
-                // fuse for that decision can burn anything (a fire that lands
+                // rope for that decision can burn anything (a fire that lands
                 // before the boundary would be un-dirtied by it).
                 g.timing_note_turn();
+                // …and the action that ended a moment ago must have paid the
+                // reservoir back BEFORE this decision starts draining it.
+                g.timing_credit_actions();
                 // PRIORITY, written once, where the engine actually hands it
                 // over. Everything the board says about whose decision it is
                 // reads off this — including the bot's, so a state pushed
@@ -1353,10 +1399,11 @@ fn auto_turn_answer(spec: &DecisionSpec) -> DecisionAnswer {
 // here, and nothing about time is ever trusted from a client)
 // ───────────────────────────────────────────────────────────────────────────
 
-/// One timing inspection of one game: settle the chess clock, flag a side
-/// whose clock reached zero, resolve a burnt-out fuse. Returns whether
-/// anything happened (= the seats should be nudged and the outcome checked).
-/// Called by [`spawn_timing_ticker`]'s loop, and directly by the tests.
+/// One timing inspection of one game: settle the clocks, flag a side whose
+/// main clock reached zero, resolve a rope that has burnt out. Returns
+/// whether anything happened (= the seats should be nudged and the outcome
+/// checked). Called by [`spawn_timing_ticker`]'s loop, and directly by the
+/// tests.
 pub async fn timing_tick(g: &mut CrGame) -> bool {
     if g.over() || !g.clock.enabled() {
         return false;
@@ -1376,22 +1423,23 @@ pub async fn timing_tick(g: &mut CrGame) -> bool {
         g.transcript.flush();
         return true;
     }
-    // 2. The rope.
-    if !g.clock.fuse_popped(now) {
+    // 2. The rope. It only burns for someone whose calm bank is spent, and
+    //    only while they owe a decision.
+    if !g.clock.rope_burnt() {
         return false;
     }
     if g.pending.is_none() {
-        // Cannot happen in the normal flow (the fuse lives and dies with
-        // `pending`), but a fuse with no question is only ever stale.
+        // Cannot happen in the normal flow (the rope burns only while a
+        // decision is armed), but a rope with no question is only ever stale.
         g.timing_disarm();
         return false;
     }
     let Some((side, what)) = g.clock.pop(now) else { return false };
     match what {
         PopOutcome::TimeoutFired => {
-            // The banked ⌛ auto-fired: the fuse has restarted at the timeout
-            // length, the token is consumed, and the prompt stays on the
-            // table. Announced by identity name, in both logs.
+            // The banked ⌛ auto-fired: the rope has restarted whole, the
+            // token is consumed, and the prompt stays on the table.
+            // Announced by identity name, in both logs.
             let line = format!("{} used a timeout \u{231B}", g.identity_name(side));
             g.say(line.clone());
             g.transcript.note(&line);
@@ -1477,8 +1525,8 @@ pub fn spawn_timing_ticker(db: Arc<Db>) {
                     record_outcome_if_over(&db, &mut g).await;
                 }
                 // The 1s sync keeps clients honest against drift while
-                // anything is burning; events push immediately.
-                let sync = n % 4 == 0 && (g.clock.fuse().is_some() || g.pending.is_some());
+                // anything is running; events push immediately.
+                let sync = n % 4 == 0 && (g.clock.running_side().is_some() || g.pending.is_some());
                 drop(g);
                 if changed || sync {
                     crate::lobby::nudge(crate::lobby::Nudge::Game(seat.key.clone()));
@@ -1891,8 +1939,22 @@ fn decision_wait_lines(vm: &Vm, side: Side, spec: &DecisionSpec) -> [Option<Stri
 
 fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
     let view = vm.view_of(asked);
+    // A choice uuid is unique to the DECISION, not just to its position in
+    // the list. Two prompts in a row both numbering their options from 0 mean
+    // a tap that lands a frame late answers the NEXT question with whatever
+    // happens to sit at that index — a misplay the player never made and
+    // cannot see. A per-decision stamp makes a stale uuid simply not match.
+    //
+    // The same stamp IS the decision's identity on the wire (`Pending::seq`),
+    // and it is minted HERE — once, where the question is put — and nowhere
+    // else. Everything that merely re-sends a decision (a timing sync, a
+    // reconnect, the other seat's nudge) re-serializes the stored `Pending`
+    // and cannot bump it.
+    static DECISION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = DECISION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut p = Pending {
         side: asked,
+        seq,
         spec: spec.clone(),
         msg: String::new(),
         choices: Vec::new(),
@@ -1901,13 +1963,6 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
         arrange: None,
         actions: Vec::new(),
     };
-    // A choice uuid is unique to the DECISION, not just to its position in
-    // the list. Two prompts in a row both numbering their options from 0 mean
-    // a tap that lands a frame late answers the NEXT question with whatever
-    // happens to sit at that index — a misplay the player never made and
-    // cannot see. A per-decision stamp makes a stale uuid simply not match.
-    static DECISION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let seq = DECISION_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let push = |p: &mut Pending, label: String, a: DecisionAnswer| {
         let card = choice_card(vm, &a);
         p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, card));
@@ -2656,6 +2711,24 @@ pub fn state_json(g: &CrGame, viewer: Side) -> Value {
         },
     );
     root.insert("run".into(), run_json(vm));
+    // WHICH QUESTION IS ON THE TABLE — a stamp minted once per decision, in
+    // `present`, and carried unchanged by every re-send of that decision.
+    //
+    // A client holds intents that belong to a QUESTION and not to a frame:
+    // the armed board target waiting for its confirming second tap, the
+    // raised card in hand. Those must die when the question does — and must
+    // survive everything that merely re-sends the same question, which in a
+    // timed game is once a second forever. Anything derived from the frame
+    // (a prompt's rendered text, a deadline) would make every sync look like
+    // a new question and eat the second tap; this cannot, because nothing
+    // but `present` can change it. `null` while nobody owes a decision.
+    root.insert(
+        "decision-seq".into(),
+        match (g.over(), g.pending.as_ref()) {
+            (false, Some(p)) => json!(p.seq),
+            _ => Value::Null,
+        },
+    );
     // Clocks and the rope, absent entirely in an untimed game. Both main
     // clocks and whose is running are open information; the ⌛ count is the
     // viewer's OWN — the opponent's is never sent (`timing::TimingState::json`).
