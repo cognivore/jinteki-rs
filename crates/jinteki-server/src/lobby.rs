@@ -601,7 +601,19 @@ pub async fn leave_pairing(token: &str) -> Left {
 /// How long a seat survives with no live socket in it. A refresh reconnects
 /// well inside this; a closed tab does not, and its seat is withdrawn — a
 /// lobby whose host is gone must not keep catching joiners.
-pub const ABANDON_GRACE: Duration = Duration::from_secs(3);
+/// A seat whose sockets have all gone is withdrawn only after this long.
+/// It is generous on purpose: a phone that backgrounds its tab drops the
+/// websocket within seconds, and a seat that evaporates while its owner is
+/// waiting for someone to arrive is the difference between "nobody is here"
+/// and a working lobby. A refresh reclaims the seat by token long before it
+/// expires.
+/// A seat is NOT withdrawn because its sockets went away. A phone that
+/// backgrounds its tab, a train into a tunnel, a laptop lid — all drop the
+/// websocket in seconds, and a room that evaporates with it is the
+/// difference between "nobody is here" and a lobby that works. The room is
+/// held and re-advertised by the server until its owner cancels it or
+/// [`OPEN_TTL`] retires it; the owner reclaims it by token on reconnect.
+pub const ABANDON_GRACE: Duration = OPEN_TTL;
 
 /// A socket holding a lobby seat died. One fewer socket holds it; if that
 /// was the last one, then after [`ABANDON_GRACE`] with the seat still

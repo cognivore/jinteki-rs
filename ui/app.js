@@ -382,10 +382,26 @@ function connect(path, onopen) {
   logSeenK = null;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}${path}`);
-  ws.onopen = onopen;
+  ws.onopen = () => { wsRetry = 0; onopen && onopen(); };
   ws.onmessage = (ev) => handle(JSON.parse(ev.data));
-  ws.onclose = () => { showDisconnected(); };
+  ws.onclose = () => {
+    // A dropped socket is a tunnel, not a decision. The room and the game
+    // both live server-side behind a token, so come back and say who we
+    // are: the seat is still advertised, the game is still ours. Backoff
+    // caps quickly because the common case is a phone waking up.
+    showDisconnected();
+    const wait = Math.min(1000 * Math.pow(2, wsRetry++), 8000);
+    setTimeout(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      const saved = JSON.parse(localStorage.getItem("jinteki_local") || "null");
+      connect(path, () => {
+        if (saved && saved.token) send({ type: "resume", token: saved.token });
+        else if (mode === "cr") send({ type: "lobby-list" });
+      });
+    }, wait);
+  };
 }
+let wsRetry = 0;
 function showDisconnected() {
   if (!document.getElementById("screen-game").classList.contains("active")) {
     toast("Connection closed");
@@ -738,18 +754,33 @@ $("crlobby-refresh").onclick = () => send({ type: "lobby-list" });
 // compatible seat whichever side it is, and when nobody is waiting it opens
 // a seat on a 50/50 coin flip so two strangers pressing the button meet in
 // the middle instead of both hosting the same side.
-$("crlobby-play").onclick = () => {
+/* THREE VERBS, ONE MECHANISM. All three autopair; they differ only in which
+   sides the player is willing to take, and the SERVER reads that from which
+   sides appear in `decks` (a side is playable iff its key is present). That
+   is what makes a preference real: it constrains the JOIN as well as the
+   seat this player opens when nobody is waiting.
+     Play now  — no preference: both sides, and if nobody is waiting the seat
+                 opens on a coin flip so two strangers pressing the same
+                 button do not both host the same side.
+     as Runner — runner only: joins a table that needs a runner, else waits as one.
+     as Corp   — corp only. */
+function crFindGame(pref) {
   if (crWaitToken) return; // already seated and waiting — cancel is the verb now
-  $("crlobby-status").textContent = "finding an opponent…";
+  const decks = {};
+  if (pref !== "corp") decks.runner = crDeck("runner") || null;
+  if (pref !== "runner") decks.corp = crDeck("corp") || null;
+  $("crlobby-status").textContent =
+    pref ? `finding a game as ${pref}…` : "finding an opponent…";
   send({
     type: "lobby-anyone",
-    decks: { runner: crDeck("runner") || null, corp: crDeck("corp") || null },
-    side: Math.random() < 0.5 ? "runner" : "corp",
+    decks,
+    side: pref || (Math.random() < 0.5 ? "runner" : "corp"),
     timing: crTiming(),
   });
-};
-$("crlobby-create-runner").onclick = () => crCreate("runner");
-$("crlobby-create-corp").onclick = () => crCreate("corp");
+}
+$("crlobby-play").onclick = () => crFindGame(null);
+$("crlobby-create-runner").onclick = () => crFindGame("runner");
+$("crlobby-create-corp").onclick = () => crFindGame("corp");
 $("crlobby-cancel").onclick = () => {
   crWaitToken = null;
   crWaitId = null;
