@@ -837,7 +837,19 @@ function glowClass(cid) {
     // target, and the server says so (`target-choices`).
     return (myPrompt() || {})["target-choices"] ? "selectable" : "usable";
   }
-  if (actionsFor(cid).length) return "legal";
+  // GREEN is "an ABILITY on this card you can use right now", and a card
+  // ability whose cost starts with [click] is exactly that — CR 5.2.1 calls
+  // it an action, but it is still the card's own printed ability, and the
+  // player reading the board is asking "can I use this card", not "which CR
+  // window is this". Jackson Howard's "[click]: Draw 2 cards" used to draw
+  // the same teal as "you may install this from HQ", while the card went
+  // GREEN only in the paid window where its one option was to remove itself
+  // from the game — so green meant "exile me" on the very card whose click
+  // ability the player was hunting for. Teal keeps its own job: an ordinary
+  // action ABOUT the card (play it, install it, advance it, rez it).
+  const acts = actionsFor(cid);
+  if (acts.some((a) => a.command === "ability")) return "usable";
+  if (acts.length) return "legal";
   return "";
 }
 
@@ -2416,6 +2428,13 @@ function cardEl(c, opts) {
       repaintArmed();                    // one draw, for the whole board
       return;
     }
+    // Where the window offers named options on this card, the SHEET is the
+    // gate and the arming ring would only be a third tap: the ring says "the
+    // next tap commits" without saying to what, and the sheet says exactly
+    // what. Two taps either way — this one just spends them on the question
+    // instead of on the ceremony. (Cards with no options keep the ring:
+    // there is nothing to name, and 9.2.7f still makes the choice final.)
+    if (!opts.hand && promptChoicesFor(c.cid).length) { onCardTap(c, opts, el); return; }
     if (armed !== c.cid) { setArmed(c.cid); return; }
     onCardTap(c, opts, el);
   });
@@ -2614,15 +2633,20 @@ function onCardTap(c, opts, el) {
     return;
   }
 
-  // A card the current window offers something on: tapping it takes that
-  // option. One option resolves immediately; several open a sheet naming
-  // them, so a card with two abilities is still unambiguous.
+  // A card the current window offers something on: the tap NAMES the option
+  // before taking it, one or many.
+  //
+  // One option used to resolve on the spot, and that was a trap on exactly
+  // the cards it should have been most careful with. Jackson Howard is green
+  // in a paid window because its only option there is "Remove Jackson Howard
+  // from the game: shuffle Archives into R&D" — a player reaching for its
+  // "[click]: Draw 2 cards" taps the green card and the permanent is gone,
+  // having read nothing. The arming ring (§7) gave them a second tap but
+  // never said what the second tap would DO, and a gate that does not name
+  // the act is not a gate. Now the sheet always names it, and the tap on the
+  // NAME is the commit — still two taps, and both of them informed.
   const offered = promptChoicesFor(c.cid);
-  if (offered.length === 1) {
-    act("choice", { choice: { uuid: offered[0].uuid } });
-    return;
-  }
-  if (offered.length > 1) {
+  if (offered.length) {
     const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 40, bottom: 120 };
     openSheet(offered.map((ch) => [
       sym(String(ch.value)),
