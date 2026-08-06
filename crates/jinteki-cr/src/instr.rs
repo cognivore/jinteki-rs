@@ -2784,6 +2784,23 @@ pub enum CreditUse {
     /// restricts to one: 6.1.1's run in progress. Both halves must hold at
     /// once; neither is the other's paraphrase.
     UsingAbilitiesDuringRuns(Vec<TargetFilter>),
+    /// "Use these credits **to rez cards**." (Mumba Temple.) CR 8.1.2d's rez
+    /// cost, paid for the card being rezzed — described with the ordinary
+    /// filter vocabulary (§12 rule 5), so "to rez cards", "to rez ice" and "to
+    /// rez bioroids" are one allowance with different content.
+    ///
+    /// It is NOT [`CreditUse::UsingAbilitiesOf`] under another name, for the
+    /// same reason [`CreditUse::AdvancingCards`] is not: 8.1.2's rez procedure
+    /// pays a card's rez cost and uses no ability at all, so writing a rez
+    /// permission as the "using" allowance would let the credits pay for paid
+    /// abilities they may not pay for and STILL not pay for a rez.
+    Rezzing(Vec<TargetFilter>),
+    /// "You can spend hosted credits **to play events**." (Mystic Maemi.) The
+    /// same position for 8.6.7c's play cost, and missing for the same reason:
+    /// the play procedure pays a card's play cost and uses no ability either.
+    /// The cards are described the ordinary way, so "to play events", "to play
+    /// cards" and "to play run events" are one allowance.
+    PlayingCards(Vec<TargetFilter>),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

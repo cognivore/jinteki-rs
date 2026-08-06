@@ -48,7 +48,7 @@ Identity is COMPLETE. Printed text below is from
       "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)"
 - [x] **MCA Austerity Policy** ◆ ×2 — asset · cost 1, trash 3
       "Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click]. / [click], [trash], 3 hosted power counters: Gain [click][click][click][click]."
-- [ ] **Mumba Temple** ×3 — asset · Alliance - Facility · cost 1, trash 3
+- [x] **Mumba Temple** ×3 — asset · Alliance - Facility · cost 1, trash 3
       "This card costs 0 influence if you have 15 or fewer ice in your deck. / 2[recurring-credit] / Use these credits to rez cards."
 - [x] **Rashida Jaheem** ◆ ×3 — asset · Character · cost 0, trash 1
       "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
@@ -117,7 +117,7 @@ Identity is COMPLETE.
       "Once per turn → [click], suffer 1 net damage: Gain 1[credit] and draw 2 cards."
 - [x] **Clan Vengeance** ×3 — resource · Clan · cost 3
       "Whenever you suffer any amount of damage, place 1 power counter on Clan Vengeance. / [trash]: Trash 1 card from HQ at random for each power counter on Clan Vengeance."
-- [ ] **Mystic Maemi** ◆ ×3 — resource · Companion - Virtual · cost 1
+- [x] **Mystic Maemi** ◆ ×3 — resource · Companion - Virtual · cost 1
       "When your turn begins and whenever you steal an agenda, place 1[credit] on this resource. / You can spend hosted credits to play events. / When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource."
 - [x] **Same Old Thing** ×1 — resource · cost 0
       "[click], [click], [trash]: Play an event from your heap (paying its play cost)."
@@ -349,36 +349,23 @@ describing the ORIGINAL printing, which charged every run; the printed text in
 `netrunner-cards-json` is the revised one and it has the ordinal.
 
 
-### Hosted credits spendable on REZZING (CR 1.10.3c / 8.1.2)
+### Hosted credits spendable on REZZING and on PLAYING — LANDED (CR 1.10.3c)
 
-1.10.3c is the whole of what hosted credits are: they may be spent only as the
-hosting card's ability allows. `CreditUse` names five allowances — any
-payment, trashing described cards, USING described cards (9.1.6a's paid-ability
-trigger cost), a trace attempt's two spend steps, and advancing described
-cards — and rezzing is none of them.
+`CreditUse::Rezzing(criteria)` and `CreditUse::PlayingCards(criteria)`, with
+`CreditPurpose::Rezzing`/`Playing` read at the one place each cost is paid.
+Neither is `UsingAbilitiesOf` under another name, for the reason
+`AdvancingCards` is not: 8.1.2's rez procedure and 8.6's play procedure each
+pay a card's cost and use no ability at all. **Mumba Temple** and **Mystic
+Maemi** are written and ticked.
 
-It is not `UsingAbilitiesOf` under another name, for the reason
-`AdvancingCards` is not either: 8.1.2's rez procedure pays a card's rez cost
-and uses no ability at all, so writing a rez permission as the "using"
-allowance would let the credits pay for paid abilities they may not pay for
-and STILL not pay for a rez. A card whose only permission is unsayable has
-credits placed on it that no payment can reach.
-
-Wanted: rezzing as one more purpose on `CreditUse`, with the cards described in
-the same filter vocabulary the other purposes use (so "to rez cards", "to rez
-ice" and "to rez bioroids" are one word with different content), paired with
-the matching `CreditPurpose` read at the one place 8.1.2d's rez cost is paid.
-
-The same position is what a sentence naming PLAYING wants, and for the same
-reason: 8.6.7c pays a play cost inside the play procedure and uses no ability
-at all, so `UsingAbilitiesOf` would let the credits pay for paid abilities
-they may not pay for and STILL not pay for a play.
-
-Wants it: **Mumba Temple** ("Use these credits to rez cards" — the
-2[recurring-credit] itself is done and tested, placed at the rez and refilled
-without accumulating); **Mystic Maemi** ("You can spend hosted credits to play
-events" — the credits arrive and the turn-end demand is done and tested; only
-the permission that would let them be spent is missing).
+One thing the word needed that the blocker did not mention, and it is the part
+that would have made the card look implemented and do nothing: the purpose has
+to be stated at the OFFER site as well as at the payment. `rez_affordable` and
+the basic play action asked `cost_payable` with no purpose, so a card whose
+credits are allowed "to rez cards" answered NO to affordability and the rez was
+never offered at all — the payment would have worked and nothing ever reached
+it. `paid_ability_cost_payable` had already solved exactly this for 9.1.6a and
+says so in its doc; the two new sites now do the same.
 
 ### The install LOCATION as content on the install condition (CR 4.6.6e / 4.6.9d)
 

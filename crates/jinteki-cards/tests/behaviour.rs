@@ -18393,25 +18393,16 @@ fn rezeki_pays_when_the_runners_turn_begins_and_never_on_the_corps() {
 
 /// Mumba Temple: "2[recurring-credit]"
 ///
-/// PARTIAL — "Use these credits to rez cards." is unsayable (see the card's
-/// doc comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud
-/// so the marker cannot quietly disappear. What IS printed and observable is
-/// where the credits come from and when: 1.10.5b places them as soon as the
+/// Where the credits come from and when: 1.10.5b places them as soon as the
 /// card becomes active, which for a Corp asset is the rez and nothing before
 /// it, and 1.10.5d refills rather than accumulates them at the start of the
 /// Corp's turn — so a card that has spent none of them holds exactly the 2 it
-/// prints and never 4.
+/// prints and never 4. What they may be SPENT on is
+/// [`mumba_temple_credits_pay_a_rez_cost_and_nothing_else`].
 #[test]
 fn mumba_temple_places_two_recurring_credits_on_the_rez_and_never_more() {
-    let temple = jinteki_cards::find("Mumba Temple").expect("Mumba Temple is in the card layer");
-    assert_eq!(
-        temple.unimplemented,
-        vec!["Use these credits to rez cards."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9128);
-    let mt = tk::install_root(&mut vm, card_partial("Mumba Temple"), ServerId::Remote(1), false);
+    let mt = tk::install_root(&mut vm, card("Mumba Temple"), ServerId::Remote(1), false);
     tk::fill_deck(&mut vm, Side::Corp, 8);
     tk::fill_deck(&mut vm, Side::Runner, 5);
     vm.st.corp.credits = 3;
@@ -18450,6 +18441,96 @@ fn mumba_temple_places_two_recurring_credits_on_the_rez_and_never_more() {
         2,
         "1.10.5d: refilled to the printed 2 rather than accumulated to 4: {}",
         g.transcript().tail(20)
+    );
+}
+
+/// Mumba Temple: "Use these credits to rez cards."
+///
+/// CR 1.10.3c: hosted credits "may be spent only as the hosting card's ability
+/// allows", so the sentence has to be asserted in both directions — the
+/// payment it names goes through, and every other payment does not.
+///
+/// The board is the same in both arms: a rezzed Mumba Temple with its 2
+/// recurring credits, a Corp pool of 0, and one thing that costs 2. In the
+/// first arm that thing is a REZ, and the temple pays for it. In the second it
+/// is the basic ADVANCE action (5.2.6f, 1[credit]) plus a basic trash-resource
+/// action — payments the card never allowed — and the temple pays for neither,
+/// so the Corp cannot take them at all.
+///
+/// A pool of 0 is what makes the assertion sharp: the credits are on the card,
+/// 1.13.3 keeps them off the player, and the only route from one to the other
+/// is the permission this sentence prints.
+#[test]
+fn mumba_temple_credits_pay_a_rez_cost_and_nothing_else() {
+    let mut vm = Vm::empty(9129);
+    let mt = tk::install_root(&mut vm, card("Mumba Temple"), ServerId::Remote(1), true);
+    // 1.10.5b places these at the rez; the board is set up already rezzed, so
+    // they are placed here instead (the placement itself is the neighbouring
+    // test's assertion).
+    tk::place_counters(&mut vm, mt, CounterKind::Credit, 2);
+    let asset = tk::install_root(&mut vm, tk::vanilla_asset("Costly", 2, 0), ServerId::Remote(2), false);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    // 9.2.7c: the Corp rezzes in a paid ability window, and the Runner's turn
+    // is where one opens before any action is taken.
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::rez(asset)),
+        Plan::runner().when(Match::action().first(), Reply::Halt),
+    );
+
+    assert!(
+        vm.st.objects[&asset].faceup,
+        "1.10.3c/8.1.2d: the 2[credit] rez cost was paid out of the temple's hosted \
+         credits, from a pool of 0: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&mt].counter(CounterKind::Credit),
+        0,
+        "…and it came off the card, which is where 1.13.3 keeps it: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.corp.credits, 0, "the pool was never involved: {}", t.tail(20));
+
+    // The other direction, on the same shape of board: an ADVANCE costs
+    // 1[credit] and the permission does not name advancing, so the action is
+    // not affordable and is never offered.
+    let mut vm = Vm::empty(9130);
+    let mt = tk::install_root(&mut vm, card("Mumba Temple"), ServerId::Remote(1), true);
+    tk::place_counters(&mut vm, mt, CounterKind::Credit, 2);
+    let agenda = tk::install_root(&mut vm, tk::vanilla_agenda("Advanceable", 3, 2), ServerId::Remote(2), false);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(&mut vm, Plan::corp().stop_at_action(), Plan::runner());
+    let advance_offered = t
+        .first_window(Kind::Action, Side::Corp)
+        .actions()
+        .iter()
+        .any(|o| matches!(o, ActionOption::BasicAdvance { card } if *card == agenda));
+    assert!(
+        !advance_offered,
+        "1.10.3c: the permission names rezzing, so the temple's credits cannot pay \
+         5.2.6f's 1[credit] and the action is unaffordable: {}",
+        t.tail(20)
+    );
+    // …and the same credits still pay for a rez on this board, so the arm is
+    // not just an empty board saying no to everything.
+    assert_eq!(
+        vm.spendable_credits_for(Side::Corp, jinteki_cr::vm::CreditPurpose::Rezzing(agenda)),
+        2,
+        "the two hosted credits are spendable — for a rez, and only for a rez"
+    );
+    assert_eq!(
+        vm.spendable_credits_for(Side::Corp, jinteki_cr::vm::CreditPurpose::Advancing(agenda)),
+        0,
+        "…and not for an advance, which is the whole of 1.10.3c"
     );
 }
 
@@ -20123,11 +20204,10 @@ fn stimhack_loads_nine_credits_and_the_core_damage_cannot_be_prevented() {
 /// or more hosted credits, you must trash 1 card from your grip at random or
 /// trash this resource."
 ///
-/// PARTIAL — the spend permission is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear.
+/// Two of her three sentences; the spend permission is
+/// [`mystic_maemi_credits_pay_to_play_an_event_and_nothing_else`].
 ///
-/// The two expressed sentences are asserted together, and the drive is what
+/// They are asserted together, and the drive is what
 /// makes the disjunction observable: the turn begins with two credits already
 /// on her (board state), the turn-begin half puts a third there, and the
 /// turn's END then finds three and puts 9.11.4g's choice to the Runner —
@@ -20136,15 +20216,8 @@ fn stimhack_loads_nine_credits_and_the_core_damage_cannot_be_prevented() {
 /// she goes.
 #[test]
 fn mystic_maemi_banks_a_credit_each_turn_and_asks_to_be_paid_at_its_end() {
-    let mm = jinteki_cards::find("Mystic Maemi").expect("Mystic Maemi is in the card layer");
-    assert_eq!(
-        mm.unimplemented,
-        vec!["You can spend hosted credits to play events."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9413);
-    let maemi = tk::install_rig(&mut vm, card_partial("Mystic Maemi"));
+    let maemi = tk::install_rig(&mut vm, card("Mystic Maemi"));
     tk::place_counters(&mut vm, maemi, CounterKind::Credit, 2);
     tk::fill_hand(&mut vm, Side::Runner, 3);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -20174,6 +20247,71 @@ fn mystic_maemi_banks_a_credit_each_turn_and_asks_to_be_paid_at_its_end() {
          the card from their grip: {}",
         g.transcript().tail(24)
     );
+}
+
+/// Mystic Maemi: "You can spend hosted credits to play events."
+///
+/// CR 1.10.3c in both directions on one board: a Runner with an empty pool,
+/// three credits on Maemi, and two cards in the grip that each cost 3 — an
+/// EVENT, which the sentence allows, and a PROGRAM, which it does not.
+///
+/// The event is offered and played and the credits come off her; the program
+/// is not offered at all, because 1.16.4b makes an unpayable install cost a
+/// card the basic install action cannot take. That is the whole of 1.10.3c:
+/// hosted credits "may be spent only as the hosting card's ability allows",
+/// and 8.6.7c's play cost is a different allowance from 8.5's install cost.
+///
+/// The empty pool is what makes it sharp — 1.13.3 keeps the credits off the
+/// player, so the only route from the card to the payment is this sentence.
+#[test]
+fn mystic_maemi_credits_pay_to_play_an_event_and_nothing_else() {
+    let mut vm = Vm::empty(9414);
+    let maemi = tk::install_rig(&mut vm, card("Mystic Maemi"));
+    // Two now; her own "when your turn begins" makes the third.
+    tk::place_counters(&mut vm, maemi, CounterKind::Credit, 2);
+    let event = vm.new_object(tk::event("Costly Event", 3, vec![]), Zone::Hand(Side::Runner));
+    let program = vm.new_object(
+        tk::program_cost("Costly Program", 3),
+        Zone::Hand(Side::Runner),
+    );
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([event, program]);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().once(), Reply::play_card(event)).stop_at_action(),
+    );
+
+    let install_offered = t
+        .first_window(Kind::Action, Side::Runner)
+        .actions()
+        .iter()
+        .any(|o| matches!(o, ActionOption::BasicInstall { card } if *card == program));
+    assert!(
+        !install_offered,
+        "1.10.3c: the permission names PLAYING, so her credits cannot pay an install \
+         cost and 1.16.4b withholds the action: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&event].zone,
+        Zone::Discard(Side::Runner),
+        "…and the event WAS played, out of a pool of 0, on the allowance the card \
+         prints: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&maemi].counter(CounterKind::Credit),
+        0,
+        "…with the three credits coming off her rather than out of a pool that never \
+         had any (1.13.3): {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.st.runner.credits, 0, "the pool was never involved: {}", t.tail(20));
 }
 
 /// Tsakhia "Bankhar" Gantulga: "When your turn begins, you may choose a

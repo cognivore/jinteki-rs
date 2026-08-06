@@ -652,6 +652,12 @@ pub enum CreditPurpose {
     /// the card the advancement counter is going on, which is what a sentence
     /// naming a class of card to advance ("to advance ice") describes.
     Advancing(ObjectId),
+    /// CR 8.1.2d: a payment made to REZ this card. The rez procedure uses no
+    /// ability, so this is not `UsingAbilityOf` and could never have been.
+    Rezzing(ObjectId),
+    /// CR 8.6.7c: a payment made to PLAY this card, for the same reason —
+    /// 8.6's play procedure uses no ability either.
+    Playing(ObjectId),
 }
 
 /// What a completed payment goes on to do. Every payment has one, because a
@@ -664,6 +670,16 @@ pub enum PaymentCont {
     None,
     /// 8.1.2: the rez procedure continues — the card turns faceup.
     Rez(ObjectId),
+    /// 8.6.7c: the play cost was paid. Nothing follows it — the play's step
+    /// sequence carries on by itself — but the card being paid FOR is what
+    /// 1.10.3c's "to play events" describes, and a continuation is where the
+    /// kernel already records that.
+    Play(ObjectId),
+    /// 8.5.15 + 8.1.2d: an install-and-rez paid the REZ cost. Distinct from
+    /// [`PaymentCont::Rez`] only in that nothing follows it — the install's
+    /// own step sequence carries on — so it exists to say what the payment
+    /// was for, which is the same thing 1.10.3c's "to rez cards" describes.
+    RezWithinInstall(ObjectId),
     /// 7.4.3: the additional cost to access the chosen candidate was paid.
     Access(ObjectId),
     /// 7.1.5: the basic trash ability's cost was paid.
@@ -13016,7 +13032,13 @@ impl Vm {
                     Some(add) => base_rez.plus(add),
                     None => base_rez.clone(),
                 };
-                if !self.cost_payable(Side::Corp, c, &full_rez) {
+                if !self.cost_payable_for(
+                    Side::Corp,
+                    c,
+                    &full_rez,
+                    None,
+                    CreditPurpose::Rezzing(c),
+                ) {
                     cite!("rule_cost");
                     cite!("rule_reveal_for_install_and_rez");
                     self.install_reveal(c);
@@ -13044,7 +13066,12 @@ impl Vm {
                 // that processes the CardInstalled change, while the card is
                 // still facedown (the 9.6.5b THG example).
                 cite!("rule_cost_checkpoint_cost_zero");
-                self.pay_cost(Side::Corp, c, &base_rez);
+                // 8.1.2d: still a rez cost, so 1.10.3c's "to rez cards"
+                // reaches it exactly as it reaches a standalone rez. Nothing
+                // follows the payment here — 8.5.15's install-and-rez runs
+                // its own steps — so the continuation is only carrying what
+                // the payment was FOR.
+                self.begin_payment(Side::Corp, c, &base_rez, PaymentCont::RezWithinInstall(c), None);
             }
             Instruction::InstallRezFinish => {
                 let Some(p) = self.installs.pop() else { return };
@@ -13117,7 +13144,10 @@ impl Vm {
                     cite!("rule_additional_cost");
                     cost = cost.plus(&extra);
                 }
-                self.pay_cost(side, c, &cost);
+                // 8.6.7c: nothing follows the payment, but the card it is
+                // paid FOR travels with it — 1.10.3c's "to play events" is a
+                // description of that card.
+                self.begin_payment(side, c, &cost, PaymentCont::Play(c), None);
             }
             Instruction::PlayStepActivate => {
                 cite!("rule_steps_playing_active");
@@ -14321,7 +14351,9 @@ impl Vm {
             // The action's [click] plus any additional [click] cost, less
             // the discount (1.16.2a) — the whole click component of 1.16.4d's
             // aggregate must be affordable.
-            if self.cost_payable(side, c, &cost)
+            // 1.10.3c again: the purpose of this payment is a PLAY, stated
+            // here so the offer agrees with what the payment will do.
+            if self.cost_payable_for(side, c, &cost, None, CreditPurpose::Playing(c))
                 && self.st.player(side).clicks + click_discount > cost.clicks
             {
                 out.push(ActionOption::BasicPlayOperation { card: c });
@@ -14979,13 +15011,19 @@ impl Vm {
     pub fn rez_affordable(&self, card: ObjectId) -> bool {
         cite!("rule_inherent_rez_cost");
         let printed = self.rez_cost_credits(card);
-        if self.cost_payable(Side::Corp, card, &Cost::credits(printed)) {
+        // 1.10.3c: the purpose is KNOWN here — this is a rez cost — and it has
+        // to be stated for the same reason `paid_ability_cost_payable` states
+        // its own: without it the offer and the payment disagree, and a card
+        // whose credits are allowed "to rez cards" would never be offered the
+        // rez they can pay for.
+        let purpose = CreditPurpose::Rezzing(card);
+        if self.cost_payable_for(Side::Corp, card, &Cost::credits(printed), None, purpose) {
             return true;
         }
         self.alternate_payments_for(card).into_iter().any(|(_, covers, instead)| {
             cite!("rule_alternate_payment");
             let reduced = Cost::credits(printed.saturating_sub(covers));
-            self.cost_payable(Side::Corp, card, &reduced.plus(&instead))
+            self.cost_payable_for(Side::Corp, card, &reduced.plus(&instead), None, purpose)
         })
     }
 
@@ -15266,6 +15304,16 @@ impl Vm {
                 self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
             }
             (Some(crate::instr::CreditUse::AdvancingCards(_)), _) => false,
+            (Some(crate::instr::CreditUse::Rezzing(criteria)), CreditPurpose::Rezzing(c)) => {
+                cite!("sec_rez");
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::Rezzing(_)), _) => false,
+            (Some(crate::instr::CreditUse::PlayingCards(criteria)), CreditPurpose::Playing(c)) => {
+                cite!("rule_playing_play_cost");
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::PlayingCards(_)), _) => false,
         }
     }
 
@@ -15296,6 +15344,12 @@ impl Vm {
             // 9.1.6a: paying a paid ability's trigger cost IS using the card
             // the ability is on, and `Payment::source` is that card.
             PaymentCont::TriggerCost => CreditPurpose::UsingAbilityOf(p.source),
+            // 8.1.2d / 8.6.7c: the rez and play procedures use no ability, so
+            // what these payments are FOR is the card itself.
+            PaymentCont::Rez(card) | PaymentCont::RezWithinInstall(card) => {
+                CreditPurpose::Rezzing(card)
+            }
+            PaymentCont::Play(card) => CreditPurpose::Playing(card),
             _ => CreditPurpose::Unspecified,
         }
     }
@@ -15947,7 +16001,10 @@ impl Vm {
     /// Continue whatever the payment was for.
     fn resume_payment(&mut self, cont: PaymentCont) {
         match cont {
-            PaymentCont::None | PaymentCont::TriggerCost => {}
+            PaymentCont::None
+            | PaymentCont::TriggerCost
+            | PaymentCont::Play(_)
+            | PaymentCont::RezWithinInstall(_) => {}
             PaymentCont::Rez(id) => self.rez_card_finish(id),
             PaymentCont::Access(card) => self.push_access(card),
             // 5.2.6f: the cost is paid, so the action's effect follows — the

@@ -611,7 +611,7 @@ pub fn clan_vengeance() -> Card {
 ///  When your turn ends, if there are 3 or more hosted credits, you must trash
 ///  1 card from your grip at random or trash this resource."
 ///
-/// PARTIAL — the first and third sentences; the spend permission is marked.
+/// COMPLETE.
 ///
 /// The first sentence names TWO occurrences and one ordinal-free instruction,
 /// so it is one conditional ability whose condition is a disjunction
@@ -628,16 +628,17 @@ pub fn clan_vengeance() -> Card {
 ///
 /// "You can spend hosted credits to play events" is 1.10.3c: hosted credits
 /// may be spent only as the hosting card's ability allows, and the allowance
-/// is content on `CreditUse`. The five allowances the kernel names are any
-/// payment, trashing described cards, USING described cards (9.1.6a's paid
-/// ability trigger cost), a trace attempt's spend steps, and advancing — and
-/// PLAYING a card is none of them. It is not the "using" allowance under
-/// another name, for the same reason rezzing is not: 8.6.7c pays a play cost
-/// inside the play procedure and uses no ability at all, so writing it as
-/// `UsingAbilitiesOf` would let the credits pay for paid abilities they may
-/// not pay for and STILL not pay for a play. Written as `AnyPayment` it would
-/// pay for installs, trashes and traces the card never allowed. Both readings
-/// are wrong in opposite directions, so the sentence is marked.
+/// is content on `CreditUse`. PLAYING is its own allowance and not the "using
+/// described cards" one under another name, for the same reason rezzing is
+/// not: 8.6.7c pays a play cost inside the play procedure and uses no ability
+/// at all, so `UsingAbilitiesOf` would let these credits pay for paid
+/// abilities they may not pay for and STILL not pay for a play. `AnyPayment`
+/// is wrong in the other direction — it would pay for installs, trashes and
+/// traces the card never allowed.
+///
+/// The description names no zone, so it says so: an event is played from the
+/// grip and, with Same Old Thing in this very deck, from the heap, and
+/// 1.15.2c's play-area default would reach neither.
 pub fn mystic_maemi() -> Card {
     card("Mystic Maemi")
         .runner()
@@ -648,6 +649,7 @@ pub fn mystic_maemi() -> Card {
         .unique()
         .text("When your turn begins and whenever you steal an agenda, place 1[credit] on this resource.")
         .text("You can spend hosted credits to play events.")
+        .credits_only_for_playing(&[of_type(CardType::Event), in_any_location()])
         .text("When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource.")
         .when(
             either_of(&[turn_begins(Runner), runner_steals_agenda()]),
@@ -665,7 +667,6 @@ pub fn mystic_maemi() -> Card {
             ])],
         )
         .named("pay her at the turn's end")
-        .unimplemented("You can spend hosted credits to play events.")
         .build()
 }
 

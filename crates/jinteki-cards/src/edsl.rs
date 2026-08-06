@@ -383,6 +383,29 @@ impl CardBuilder {
             Some(jinteki_cr::instr::CreditUse::AdvancingCards(criteria.to_vec()));
         self
     }
+    /// "Use these credits **to rez cards**." (Mumba Temple; CR 1.10.3c +
+    /// 8.1.2d.) The cards that may be rezzed with the credits are described
+    /// with the ordinary filter words. It is not
+    /// [`Self::credits_only_for_using`]: 8.1.2's rez procedure uses no ability
+    /// at all, so writing it that way would let the credits pay for paid
+    /// abilities they may not pay for and still not pay for a rez.
+    pub fn credits_only_for_rezzing(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::Rezzing(criteria.to_vec()));
+        self
+    }
+    /// "You can spend hosted credits **to play events**." (Mystic Maemi; CR
+    /// 1.10.3c + 8.6.7c.) The same position for the PLAY cost, missing for the
+    /// same reason — 8.6's play procedure uses no ability either. The cards
+    /// are described the ordinary way, and a card that names no zone wants
+    /// [`in_any_location`] beside the type: an event is played from the grip
+    /// or, with Same Old Thing, from the heap, and 1.15.2c's play-area default
+    /// would reach neither.
+    pub fn credits_only_for_playing(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::PlayingCards(criteria.to_vec()));
+        self
+    }
 
     // ---- the printed text ------------------------------------------------
     /// One printed line of the card's text box, copied exactly. Call it once

@@ -47,8 +47,12 @@ fn mezzies_decks_are_honest_as_far_as_they_go() {
                 );
             }
             // A complete card denotes into SOMETHING — an ability, a 1.16.10
-            // printed additional cost, or one of 1.6's setup facts (Valencia's
-            // whole card is the Corp's starting bad publicity).
+            // printed additional cost, one of 1.6's setup facts (Valencia's
+            // whole card is the Corp's starting bad publicity), or 1.10.5's
+            // recurring credits with 1.10.3c's allowance for spending them
+            // (Mumba Temple's whole card is those two printed facts, and
+            // neither is an ability: 1.10.5 places the credits by rule, and
+            // the allowance is read wherever a payment asks).
             if c.is_complete() {
                 assert!(
                     !c.printed.abilities.is_empty()
@@ -56,7 +60,9 @@ fn mezzies_decks_are_honest_as_far_as_they_go() {
                         || c.printed.additional_play_cost.is_some()
                         || c.printed.starting_hand_size.is_some()
                         || c.printed.starting_credits.is_some()
-                        || c.printed.starting_bad_publicity.is_some(),
+                        || c.printed.starting_bad_publicity.is_some()
+                        || c.printed.recurring_credits.is_some()
+                        || c.printed.hosted_credits_spendable.is_some(),
                     "{key}: {} is marked complete but denotes into nothing",
                     c.name()
                 );

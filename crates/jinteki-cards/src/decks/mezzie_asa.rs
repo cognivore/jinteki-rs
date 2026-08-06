@@ -569,7 +569,7 @@ pub fn mca_austerity_policy() -> Card {
 ///  2[recurring-credit]
 ///  Use these credits to rez cards."
 ///
-/// PARTIAL: the credits arrive; nothing can spend them yet.
+/// COMPLETE.
 ///
 /// The alliance line is a 1.4.5 deckbuilding restriction on influence and not
 /// a sentence this card does — the same treatment Jeeves Model Bioroids's
@@ -582,19 +582,18 @@ pub fn mca_austerity_policy() -> Card {
 /// rezzed — and 1.10.5d refills rather than accumulates them when the Corp's
 /// turn begins, so the card never holds more than the 2 it prints.
 ///
-/// UNIMPLEMENTED: "Use these credits to rez cards." 1.10.3c is the whole of
-/// what hosted credits are — they may be spent only as the hosting card's
-/// ability allows — and the vocabulary names five allowances: any payment, a
-/// payment to trash described cards, a payment for USING described cards
-/// (9.1.6a's paid-ability trigger cost), a trace attempt's two spend steps,
-/// and a payment to advance described cards. Rezzing is none of them and is
-/// not a spelling of any of them: 8.1.2's rez procedure pays a card's rez
-/// cost and uses no ability at all, so writing this as the "using" allowance
-/// would let the credits pay for paid abilities they may not pay for and
-/// still not pay for a rez. With the restriction unsayable the placed credits
-/// are reachable by no payment, which is the honest reading of a card whose
-/// only permission is the marked sentence. The general capability wanted is
-/// on MEZZIE-QUEUE.md's Blockers.
+/// "Use these credits to rez cards" is 1.10.3c, which is the whole of what
+/// hosted credits are: they may be spent only as the hosting card's ability
+/// allows. The allowance names REZZING, and that is not a spelling of the
+/// "using described cards" one — 8.1.2's rez procedure pays a card's rez cost
+/// and uses no ability at all, so the "using" allowance would let these
+/// credits pay for paid abilities they may not pay for and STILL not pay for
+/// a rez.
+///
+/// The cards are described the ordinary way, and the card says plain "cards",
+/// which `in_any_location` is how this vocabulary prints (Whizzard's line
+/// already does it). For a rez it reaches the same set either way, because
+/// 8.1.2 only ever rezzes an installed card.
 pub fn mumba_temple() -> Card {
     card("Mumba Temple")
         .corp()
@@ -607,7 +606,7 @@ pub fn mumba_temple() -> Card {
         .text("This card costs 0 influence if you have 15 or fewer ice in your deck.")
         .text("2[recurring-credit]")
         .text("Use these credits to rez cards.")
-        .unimplemented("Use these credits to rez cards.")
+        .credits_only_for_rezzing(&[in_any_location()])
         .build()
 }
 
