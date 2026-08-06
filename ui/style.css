@@ -287,7 +287,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .root-stack { display: flex; flex-direction: column; align-items: center; gap: 4px;
   --tuck: 26px; }
 .root-stack.tucked { gap: 0; }
-.root-stack.tucked .card + .card { margin-top: calc(var(--tuck) - 88px); }
+.root-stack.tucked .card + .card { margin-top: calc(var(--tuck) - 64px); }
 /* THE ARMED card comes forward, whole. It is the one the next tap acts on
    (9.2.7f: what it takes resolves to the end), and a gate you can only half
    see is not a gate. Nothing else is reordered — the stack's meaning is its
@@ -319,11 +319,36 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    a step JS shrinks as the count grows, so five never sprawls further than
    one. The box reserves exactly the peek, so a row of hosts does not reflow
    when one of them picks something up. */
+/* The reserved room is BELOW, never beside: the bars run down the host's
+   face, and a row of hosts must stay a row — widening one would push every
+   card after it sideways the moment something was picked up. */
 .hosting { position: relative; flex-shrink: 0;
-  width: 64px; height: 88px; margin: 0 var(--peek, 14px) var(--peek, 14px) 0; }
+  width: 64px; height: 64px; margin: 0 0 var(--peek, 8px) 0; }
 .hosting > .card { position: absolute; inset: 0; z-index: 3; }
 .host-stack { position: absolute; inset: 0; z-index: 1; }
-.host-stack .card { position: absolute; top: 0; left: 0; }
+/* A CARRIED CARD IS A NAMED BAR, laid over the host.
+   Two demands, and they are both right: a carried card must not take a
+   card's worth of board, AND it must say what it is. An edge peeking out
+   from behind the host satisfies the first and fails the second — you can
+   see that something is there and never learn what, which is exactly the
+   complaint that killed the previous two attempts.
+
+   So each one is a 16px bar across the host's face: a sliver of its own art
+   with its own name band filling it, over the host, above the host's own
+   name. Every carried card is legible, none of them costs a card of board,
+   and the press that reads any card reads these too. */
+.host-stack { position: absolute; left: 2px; right: 2px; top: 34%; bottom: auto;
+  display: flex; flex-direction: column; gap: 1px; z-index: 5; }
+.host-stack .card { position: relative; top: auto; left: auto;
+  width: 100%; height: 16px; padding: 0; border-width: 1px; border-radius: 3px;
+  background-position: center 35%; font-size: 8px; }
+.host-stack .card .ctype, .host-stack .card .subs, .host-stack .card .badges { display: none; }
+/* The band IS the bar: at 16px the name fills it, on the same scrim every
+   card's name sits on, so it reads over any art. */
+.host-stack .card .cname { top: 0; padding: 1px 2px; max-height: none;
+  display: flex; align-items: center; line-height: 1;
+  background: rgba(6,10,20,.82); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
 /* Armed or answerable, a carried card comes forward far enough to be read
    and hit — the same "the card the next tap acts on is unmistakable" rule
    the tucked root stack follows. */
@@ -331,11 +356,9 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* An ice sliver is a chip, not a footprint, so what it carries hangs under
    it rather than behind it — the one place the box cannot be the host's own
    outline. Still one column, still stepped. */
-.host-stack.on-ice { position: static; display: flex; margin: 1px 0 2px 10px; }
-.host-stack.on-ice .card { position: relative; width: 30px; height: 42px;
-  padding: 2px; font-size: 6.5px; border-width: 1px; border-radius: 5px;
+.host-stack.on-ice { position: static; display: flex; gap: 2px; margin: 1px 0 2px 10px; }
+.host-stack.on-ice .card { position: relative; top: auto; left: auto;
   transform: none !important; }
-.host-stack.on-ice .card + .card { margin-left: -22px; }
 
 /* rig */
 .rig { display: flex; flex-direction: column; gap: 4px; padding: 4px 10px; height: 100%; }
@@ -354,7 +377,19 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    child, never the card's own outline glow, so the three colours of THE LAW
    §3 are untouched. Discs are sized in `em` so they shrink with the card
    instead of needing a second set of numbers per breakpoint. */
-.card { position: relative; width: 64px; height: 88px; border-radius: 8px; background: var(--panel);
+/* ── A CARD IS A SQUARE OF ART WITH ITS NAME ON IT ──────────────────────
+   The portrait card is the shape a card has IN YOUR HAND. On a board it is
+   the wrong shape twice over: it is the tallest thing in a layout whose
+   scarcest axis is height, and the art it is showing — the only part a
+   player recognises at a glance — is a strip in the middle of it with text
+   above and below that no size on a phone can render legibly anyway.
+
+   So a tabled card is SQUARE AT MOST, cropped to its art (never letterboxed,
+   never scrolled), with its name laid over the bottom on a scrim that makes
+   it readable against any art at all. Arena's battlefield, and for Arena's
+   reason: you read the board by picture and by name, and you read the RULES
+   by opening the card. Opening it is a press away and always was. */
+.card { position: relative; width: 64px; height: 64px; border-radius: 8px; background: var(--panel);
   border: 1.5px solid var(--line); display: flex; flex-direction: column; padding: 4px;
   font-size: 9.5px; line-height: 1.15; flex-shrink: 0; overflow: hidden; }
 .card.deal { animation: dealin .3s; }
@@ -362,8 +397,8 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .card .cost { position: absolute; top: 1px; left: 1px; width: 1.9em; height: 1.9em; border-radius: 50%;
   background: var(--gold); color: #241c04; font-weight: 800; display: flex; align-items: center;
   justify-content: center; font-size: 1.05em; z-index: 2; }
-.card .cname { font-weight: 700; overflow: hidden; margin-top: 2px; }
-.card .ctype { color: var(--dim); font-size: 8.5px; margin-top: auto; }
+.card .ctype { color: var(--dim); font-size: 8.5px; margin-top: auto;
+  padding-bottom: 2.3em; }
 .card .cstr { position: absolute; bottom: 1px; left: 1px; width: 1.9em; height: 1.9em; border-radius: 50%;
   background: var(--runner); color: #fff; font-weight: 800; display: flex; align-items: center;
   justify-content: center; font-size: 1.05em; z-index: 2; }
@@ -573,7 +608,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    own, or the card climbs into whatever is above it (in a prompt sheet, that
    is the sentence asking the question). The hand's box is a fixed height and
    bottom-aligned, so the same padding costs it nothing. */
-.fan { --fw: 64px; --fh: 89px; --fstep: 16px; --fpeek: 10px; --ftilt: 1.2; --farc: 1;
+.fan { --fw: 64px; --fh: 64px; --fstep: 16px; --fpeek: 10px; --ftilt: 1.2; --farc: 1;
   --ffocus: 1.22;
   padding-top: calc((var(--ffocus) - 1) * var(--fh) + 14px);
   display: flex; justify-content: center; align-items: flex-end;
@@ -885,10 +920,22 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .zoom-card .zline { color: var(--dim); font-size: 13px; }
 .zoom-card .ztext { font-size: 15px; line-height: 1.45; white-space: pre-wrap; }
 
-/* card art */
-.card.art { background-size: cover; background-position: center top; }
-.card.art .cname, .card.art .ctype, .card.art .subs { visibility: hidden; }
+/* card art. THE NAME NEVER HIDES. It used to: art cards dropped `.cname`
+   entirely, so the board was a wall of pictures and the only way to learn
+   which card was which was to open each one. A picture identifies a card you
+   already know; the name identifies every other card, and on a 64px tile the
+   two together are the whole of what a player needs to read the board. */
+.card.art { background-size: cover; background-position: center 28%; }
+.card.art .ctype, .card.art .subs { visibility: hidden; }
 .card.art.ice { background-position: center; }
+/* The name band: laid over the bottom of the crop, on a scrim dark enough
+   that white text survives whatever the art puts under it. Two lines at
+   most, then it clips — the reader has the rest. */
+.card .cname { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  margin: 0; padding: 3px 3px 2px; font-weight: 700; line-height: 1.05;
+  max-height: 2.3em; overflow: hidden;
+  background: linear-gradient(180deg, rgba(6,10,20,0) 0%, rgba(6,10,20,.86) 42%, rgba(6,10,20,.96) 100%);
+  text-shadow: 0 1px 2px rgba(0,0,0,.95); word-break: break-word; }
 .zoom-card .zart { width: 100%; border-radius: 10px; margin-bottom: 4px; }
 .hover-preview .zoom-card.small .zart { width: 100%; }
 
@@ -1103,7 +1150,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 @media (max-height: 640px) {
   /* The discs and the counters are sized in `em`, so shrinking the card's
      font shrinks them with it — one number, not a second set per breakpoint. */
-  .card { width: 52px; height: 72px; font-size: 8.5px; border-radius: 6px; }
+  .card { width: 52px; height: 52px; font-size: 8.5px; border-radius: 6px; }
   .card.ice { width: 72px; height: 46px; }
   /* The tuck is sized off the card, not off the screen: 22px still clears a
      1.9em cost disc and a 1.7em counter at this font, and the card is 72px
@@ -1462,7 +1509,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
        card 52 x 72, step 16, peek 10  ->  ink = 52 + 8*16 + 20 = 200px  ✓
      One rule, on the fan itself: the hand and the prompt row are the same
      widget and they shrink together or they are not. */
-  .fan { --fw: 52px; --fh: 72px; }
+  .fan { --fw: 52px; --fh: 52px; }
 }
 
 /* The hand window is a CONSTANT width now (5 cards + two peeks ≈ 212px),

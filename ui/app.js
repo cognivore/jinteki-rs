@@ -2187,30 +2187,30 @@ function drawnElsewhere(c) { return !!c && c.host != null && hostOnBoard(c.host)
    a card holding five occupies no more of the row than a card holding one:
    the footprint is the HOST's, always, which is what makes a rig of hosts
    readable at phone width. */
-const HOST_PEEK = 14;      // px of board the tuck may use, at any count
+const HOST_PEEK = 8;       // the least room a host reserves under itself
+const HOST_CHIP = 16;      // a carried card's bar: art sliver + its own name
+const HOST_H = 64;         // the host's own square (`.card` in style.css)
 function hostBox(c, opts) {
   const host = cardEl(c, opts);
   const kids = hostedOn(c.cid);
   if (!kids.length) return host;
   const box = el("div", "hosting");
   const stack = el("div", "host-stack");
-  const step = Math.min(7, HOST_PEEK / kids.length);
-  kids.forEach((k, i) => {
-    const kid = cardEl(k, { side: (opts && opts.side) || "runner", hosted: true });
-    const d = Math.round((i + 1) * step);
-    kid.style.transform = `translate(${d}px, ${d}px)`;
-    stack.appendChild(kid);
+  kids.forEach((k) => {
+    stack.appendChild(cardEl(k, { side: (opts && opts.side) || "runner", hosted: true }));
   });
   // Behind first, host last: the host is the top card in the DOM as well as
   // in z-index, so a tap that lands on both resolves to the host.
   box.appendChild(stack);
   box.appendChild(host);
-  // The peek is CONSTANT, not a function of the count: the step shrinks so
-  // that five fit in the same room as one, and the room is reserved whole
-  // either way. A box that grew with what it was holding would move its
-  // neighbours every time a card was picked up, which is the reflow this
-  // whole layout exists to avoid (THE LAW §2).
-  box.style.setProperty("--peek", `${HOST_PEEK}px`);
+  // The bars start a third of the way down the host and run downward. Up to
+  // two fit inside the host's own square; past that the box reserves the
+  // overflow so the bars never land on the neighbouring card. Legibility is
+  // what decides this — every carried card says its name (THE LAW §5) — and
+  // the room is reserved rather than taken, so nothing reflows mid-game.
+  const inside = Math.round(HOST_H * 0.66) - 2;
+  const need = kids.length * (HOST_CHIP + 1);
+  box.style.setProperty("--peek", `${Math.max(HOST_PEEK, need - inside + 2)}px`);
   return box;
 }
 

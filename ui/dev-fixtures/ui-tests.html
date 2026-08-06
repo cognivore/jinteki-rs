@@ -5,11 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>jinteki-rs — UI tests</title>
 <!-- THE STYLESHEET UNDER TEST. Not a copy of it, not a description of it:
-     the file the game ships, so a rule that changes changes this page. -->
-<link rel="stylesheet" href="/style.css">
+     the file the game ships, so a rule that changes changes this page.
+
+     CACHE-BUSTED, because the first time this page was opened in anger it
+     was scored against a stylesheet from an earlier deploy and reported
+     7/18 for rules that were already right: a test that can be served a
+     stale subject is a test that reports on the wrong thing. -->
+<script>
+  document.write('<link rel="stylesheet" href="/style.css?bust=' + Date.now() + '">');
+</script>
 <style>
+  /* THE PAGE SCROLLS. The stylesheet under test is the GAME's, and the game
+     deliberately pins `html, body { overflow: hidden }` — a board must never
+     scroll under a player's thumb. A test page is not a board: it is a long
+     document, and inheriting that rule made everything past the first screen
+     unreachable. Overridden loudly, and only here. */
+  html, body { overflow: auto !important; height: auto !important;
+               position: static !important; }
   body { font: 13px/1.5 ui-monospace, monospace; background: #0b0f18; color: #e8ecf5;
-         margin: 0; padding: 16px 16px 60px; }
+         margin: 0; padding: 16px 16px 60px; -webkit-overflow-scrolling: touch; }
   h1 { font-size: 17px; margin: 0 0 4px; }
   .sub { color: #8b95ab; margin-bottom: 16px; }
   .case { border: 1px solid #223; border-radius: 10px; padding: 12px; margin: 12px 0; }
@@ -39,7 +53,9 @@ browser, at real sizes. Open this page (it is served at
    and measure it. No DOM stub can do that: a stub would be asserting my
    description of the CSS rather than the CSS. */
 const results = [];
-function suite(name, build, checks) {
+const suites = [];
+function suite(name, build, checks) { suites.push([name, build, checks]); }
+function runSuite(name, build, checks) {
   const wrap = document.createElement("div");
   wrap.className = "case";
   wrap.innerHTML = `<h2>${name}</h2><div class="stage"></div><div class="res"></div>`;
@@ -73,16 +89,12 @@ suite("Hosting: the host is the top card, what it carries is tucked behind", (st
     box.className = "hosting";
     const stack = document.createElement("div");
     stack.className = "host-stack";
-    const step = Math.min(7, 14 / n);
-    for (let i = 0; i < n; i++) {
-      const k = card("", "Hosted " + (i + 1));
-      const d = Math.round((i + 1) * step);
-      k.style.transform = `translate(${d}px, ${d}px)`;
-      stack.appendChild(k);
-    }
+    const PEEK = 8, CHIP = 16, H = 64;
+    for (let i = 0; i < n; i++) stack.appendChild(card("", "Archived Memories " + (i + 1)));
     box.appendChild(stack);
     box.appendChild(card("", "Cupellation"));
-    box.style.setProperty("--peek", "14px");
+    const inside = Math.round(H * 0.66) - 2;
+    box.style.setProperty("--peek", Math.max(PEEK, n * (CHIP + 1) - inside + 2) + "px");
     stage.appendChild(box);
     return box;
   };
@@ -97,30 +109,78 @@ suite("Hosting: the host is the top card, what it carries is tucked behind", (st
   // hit-testing the middle of the host. A z-index comparison would not do:
   // the carried cards inherit `auto` inside their own stacking context, so
   // the numbers say nothing about what a tap actually lands on.
-  const h = rect(host(c.five)), k0 = rect(kids(c.five)[0]);
-  const hit = document.elementFromPoint(h.x + h.width / 2, h.y + h.height / 2);
+  const h = rect(host(c.five));
+  const hit = document.elementFromPoint(h.x + h.width / 2, h.y + 4);
   t.ok(hit === host(c.five) || host(c.five).contains(hit),
-    "a tap in the middle of the host lands on the host, not on what it carries");
-  t.ok(k0.x > h.x && k0.y > h.y, "a carried card is stepped down-and-right, so its edge shows");
+    "the host's own face is the top card where nothing is carried over it");
 
-  // Every carried card shows an edge — none is perfectly hidden by another.
-  const xs = kids(c.five).map((e) => Math.round(rect(e).x));
-  t.ok(new Set(xs).size === xs.length, `all five carried cards show a distinct edge (${xs.join(",")})`);
+  // EVERY CARRIED CARD SAYS WHAT IT IS. The previous version of this test
+  // asked only whether an EDGE showed, and passed a layout where five
+  // carried cards were five anonymous slivers — you could see that something
+  // was there and never learn what. An edge is not an answer; a NAME is.
+  kids(c.five).forEach((k, i) => {
+    const name = k.querySelector(".cname");
+    const nr = rect(name), kr = rect(k);
+    const cs = getComputedStyle(name);
+    const visible = cs.visibility === "visible" && cs.display !== "none" &&
+      nr.width >= 24 && nr.height >= 7;
+    t.ok(visible, `carried card ${i + 1} shows a readable name (${Math.round(nr.width)}×${Math.round(nr.height)})`);
+    // …and shows it OVER the host, not behind it: the point on the board
+    // where that name is drawn must belong to that card.
+    const at = document.elementFromPoint(nr.x + nr.width / 2, nr.y + nr.height / 2);
+    t.ok(at === name || k.contains(at), `carried card ${i + 1}'s name is not covered by the host`);
+  });
 
-  // ONE FOOTPRINT: five carried cards take no more room than one.
+  // ONE COLUMN OF BOARD, whatever it is carrying: a host never grows WIDER,
+  // because the row it lives in is the axis that runs out first.
   const w1 = rect(c.one).width + parseFloat(getComputedStyle(c.one).marginRight);
   const w5 = rect(c.five).width + parseFloat(getComputedStyle(c.five).marginRight);
   t.near(w5, w1, 1.5, "a card holding five is no wider than a card holding one");
-  t.ok(w5 <= rect(c.bare).width + 16, "and no wider than a bare card plus the peek");
+  t.ok(w5 <= rect(c.bare).width + 12, "and no wider than a bare card plus the peek");
 
-  // The carried cards stay INSIDE the reserved box: nothing spills onto a
-  // neighbour, which is what made the rig a wall of cards.
-  const box = rect(c.five);
-  const spill = kids(c.five).some((e) => rect(e).right > box.right + 15 || rect(e).bottom > box.bottom + 15);
+  // What it carries stays inside the room the box RESERVED — the bars may
+  // run past the host's own square, but never onto the neighbour, because
+  // the margin was set aside for them before they were drawn.
+  const box = rect(c.five), mb = parseFloat(getComputedStyle(c.five).marginBottom);
+  const spill = kids(c.five).some((e) => rect(e).right > box.right + 1 || rect(e).bottom > box.bottom + mb + 1);
   t.ok(!spill, "nothing spills past the room the box reserved");
+
+  // A carried card is a BAR, not a card: one line tall, never a card's worth
+  // of board.
+  const kr = rect(kids(c.five)[0]);
+  t.near(kr.height, 16, 1.5, "a carried card is a 16px bar");
+  t.ok(kr.height * 5 < rect(host(c.five)).height * 1.6,
+    "five of them cost less than two cards of height");
 
   // A card carrying nothing gets no box at all.
   t.ok(!c.bare.closest(".hosting"), "a card carrying nothing is drawn as a plain card");
+});
+
+/* ── 1b. A tabled card is a square of art with its name on it ─────────── */
+suite("Cards: square at most, cropped to art, name always readable", (stage) => {
+  const plain = card("", "Rashida Jaheem");
+  const art = card("art", "Gold Farmer");
+  // A stand-in for the art: a flat colour is enough to prove the name is
+  // laid over something rather than replaced by it.
+  art.style.backgroundImage = "linear-gradient(135deg,#c9a227,#7a3b12)";
+  stage.appendChild(plain);
+  stage.appendChild(art);
+  return { plain, art };
+}, (t, c) => {
+  for (const [what, e] of [["a plain card", c.plain], ["a card showing art", c.art]]) {
+    const r = rect(e);
+    t.ok(r.height <= r.width + 0.5, `${what} is square at most (${r.width}×${r.height})`);
+    const name = e.querySelector(".cname");
+    const cs = getComputedStyle(name);
+    t.ok(cs.visibility === "visible" && cs.display !== "none", `${what} shows its name`);
+    const nr = rect(name);
+    t.ok(nr.width > r.width * 0.6 && nr.bottom <= r.bottom + 0.5,
+      `${what}'s name is laid across the bottom of the crop`);
+    t.ok(/gradient|rgba?\(/.test(cs.backgroundImage + cs.backgroundColor),
+      `${what}'s name sits on a scrim, so it survives any art under it`);
+  }
+  t.ok(getComputedStyle(c.art).backgroundSize === "cover",
+    "art is CROPPED to fill the tile, never letterboxed or scrolled");
 });
 
 /* ── 2. Counters sit dead centre, and cannot eat a tap ───────────────── */
@@ -197,10 +257,15 @@ suite("Nothing that lists things can run off the screen", (stage) => {
     "and can never be taller than the screen");
 });
 
-const passed = results.filter(Boolean).length;
-const el = document.getElementById("summary");
-el.textContent = `${passed}/${results.length} passed`;
-el.className = passed === results.length ? "pass" : "fail";
+/* AFTER LOAD, never at parse time: the stylesheet is attached by script and
+   a measurement taken before it applies is a measurement of nothing. */
+window.addEventListener("load", () => {
+  suites.forEach(([n, b, c]) => runSuite(n, b, c));
+  const passed = results.filter(Boolean).length;
+  const el = document.getElementById("summary");
+  el.textContent = `${passed}/${results.length} passed`;
+  el.className = passed === results.length ? "pass" : "fail";
+});
 </script>
 </body>
 </html>
