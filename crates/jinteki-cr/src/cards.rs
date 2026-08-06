@@ -293,8 +293,13 @@ pub fn paper_wall() -> PrintedCard {
     c.cost = Some(0);
     c.strength = Some(1);
     c.abilities = vec![
-        AbilityDef::conditional(TriggerCond::SelfFullyBroken, vec![Instruction::TrashSelf], false)
-            .labeled("paper wall: trash it"),
+        // 6.5.7a: "this ice" is the ice that was fully broken, not a breaker.
+        AbilityDef::conditional(
+            TriggerCond::SelfFullyBroken { by_source: false },
+            vec![Instruction::TrashSelf],
+            false,
+        )
+        .labeled("paper wall: trash it"),
         AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
     ];
     c

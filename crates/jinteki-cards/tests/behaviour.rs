@@ -1103,15 +1103,23 @@ fn astroscript_places_an_agenda_counter_when_scored() {
 }
 
 /// Bukhgalter: "Interface → 1[credit]: Break 1 sentry subroutine."
-/// "1[credit]: +1 strength." — the pump raises strength enough to interface.
+/// "1[credit]: +1 strength."
+/// "The first time each turn this program fully breaks a piece of ice, gain
+///  2[credit]."
+///
+/// All three sentences on one encounter. The pump raises strength enough to
+/// interface (9.3.6c), the interface breaks the sentry's only subroutine, and
+/// that break is 6.5.7a's full break — performed using an ability on this one
+/// program and no other, which is what 6.5.7b needs before the program itself
+/// fully breaks the ice and the third sentence is met.
 #[test]
 fn bukhgalter_pumps_then_breaks_a_sentry() {
     let mut vm = Vm::empty(35);
-    let bukh = tk::install_rig(&mut vm, card_partial("Bukhgalter"));
+    let bukh = tk::install_rig(&mut vm, card("Bukhgalter"));
     assert_eq!(vm.effective_strength(bukh), Some(1), "printed strength 1");
     let mut sentry = tk::etr_ice("Some Sentry", 0, 2);
     sentry.subtypes = vec![Subtype::Sentry];
-    tk::install_ice(&mut vm, sentry, ServerId::Hq, true);
+    let ice = tk::install_ice(&mut vm, sentry, ServerId::Hq, true);
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -1136,11 +1144,116 @@ fn bukhgalter_pumps_then_breaks_a_sentry() {
             )
             .stop_at_action(),
     );
-    assert_eq!(vm.st.runner.credits, 3, "1 to pump, 1 to break: {}", t.tail(16));
     assert!(
         !vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
         "the sentry's subroutine was broken, so it did not resolve: {}",
         t.tail(16)
+    );
+    // 6.5.7b: the ice was fully broken using abilities on this program alone,
+    // so this program fully broke it — which is who the third sentence is
+    // about.
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::AllSubsBroken { ice: i, by } if *i == ice && *by == Some(bukh))),
+        "6.5.7a/b: this program fully broke the sentry: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(
+                c,
+                GameChange::CreditsGained { side: Side::Runner, amount: 2, source: Some(s) }
+                    if *s == bukh
+            ))
+            .count(),
+        1,
+        "\"gain 2[credit]\" — the full break paid, once: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        5,
+        "1 to pump and 1 to break out of 5, then the 2 the full break pays back: {}",
+        t.tail(16)
+    );
+}
+
+/// Bukhgalter: "**The first time each turn** this program fully breaks a piece
+/// of ice, gain 2[credit]."
+///
+/// Two runs on the same sentry in one turn, each fully broken by this program
+/// alone. 9.6.5c's ordinal counts the occurrences the condition is met by, so
+/// the second full break is the same occurrence and pays nothing.
+#[test]
+fn bukhgalter_pays_for_the_first_full_break_of_the_turn_and_not_the_second() {
+    let mut vm = Vm::empty(36);
+    let bukh = tk::install_rig(&mut vm, card("Bukhgalter"));
+    // Strength 1 against strength 1: the interface ability's 9.3.6c gate is
+    // met without pumping, so each run is one break and nothing else.
+    let mut sentry = tk::etr_ice("Some Sentry", 0, 1);
+    sentry.subtypes = vec![Subtype::Sentry];
+    tk::install_ice(&mut vm, sentry, ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    // One run per plan, on the same board, so that "break once" is once per
+    // encounter — a single plan's budget would spend both breaks inside the
+    // first encounter, where the second would break nothing.
+    let one_run = || {
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("interface").once(),
+                Reply::take("interface"),
+            )
+            .stop_at_action()
+    };
+
+    let t1 = plan::play(&mut vm, Plan::corp(), one_run());
+    assert_eq!(
+        vm.st.runner.credits,
+        11,
+        "after the first run: 1 spent breaking out of 10, and 2 gained: {}",
+        t1.tail(24)
+    );
+
+    let t = plan::play(&mut vm, Plan::corp(), one_run());
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::AllSubsBroken { by, .. } if *by == Some(bukh)))
+            .count(),
+        2,
+        "the program fully broke the sentry on both runs: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(
+                c,
+                GameChange::CreditsGained { side: Side::Runner, amount: 2, source: Some(s) }
+                    if *s == bukh
+            ))
+            .count(),
+        1,
+        "9.6.5c: \"the first time each turn\" — only the first of the two paid: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        10,
+        "two breaks out of 10, and 2 back for the first full break only: {}",
+        t.tail(40)
     );
 }
 
@@ -23086,7 +23199,7 @@ fn buffer_drive_cashes_itself_in_for_a_card_off_the_heap() {
 fn curupira_spends_three_counters_to_walk_past_a_barrier() {
     for pay in [true, false] {
         let mut vm = Vm::empty(9603);
-        let cur = tk::install_rig(&mut vm, card_partial("Curupira"));
+        let cur = tk::install_rig(&mut vm, card("Curupira"));
         tk::place_counters(&mut vm, cur, CounterKind::Power, 3);
         let mut wall = tk::etr_ice("Great Wall", 0, 5);
         wall.subtypes = vec![Subtype::Barrier];
@@ -23138,7 +23251,7 @@ fn curupira_spends_three_counters_to_walk_past_a_barrier() {
 #[test]
 fn curupira_pumps_then_breaks_a_barrier() {
     let mut vm = Vm::empty(9604);
-    let cur = tk::install_rig(&mut vm, card_partial("Curupira"));
+    let cur = tk::install_rig(&mut vm, card("Curupira"));
     assert_eq!(vm.effective_strength(cur), Some(1), "printed strength 1");
     let mut wall = tk::etr_ice("Small Wall", 0, 2);
     wall.subtypes = vec![Subtype::Barrier];
@@ -23174,6 +23287,89 @@ fn curupira_pumps_then_breaks_a_barrier() {
         vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
         "…and the run reached HQ: {}",
         t.tail(20)
+    );
+}
+
+/// Curupira: "Whenever **this program** fully breaks a piece of ice, place 1
+/// power counter on this program."
+///
+/// The sentence names the BREAKER, which is 6.5.7b's second fully-breaker —
+/// "if all its subroutines were broken using abilities on a single object,
+/// that object also fully breaks the ice" — and not 6.5.7a's ice. Two runs on
+/// one barrier say the difference: the first is broken by this program and
+/// leaves a counter, the second is broken just as fully by something else and
+/// leaves none, because the Runner fully breaking a piece of ice is not this
+/// program fully breaking it.
+#[test]
+fn curupira_counts_only_the_ice_it_broke_itself() {
+    let mut vm = Vm::empty(9605);
+    let cur = tk::install_rig(&mut vm, card("Curupira"));
+    tk::install_rig(&mut vm, tk::break_button("Someone Else"));
+    let mut wall = tk::etr_ice("Small Wall", 0, 2);
+    wall.subtypes = vec![Subtype::Barrier];
+    tk::install_ice(&mut vm, wall, ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // One run per plan: a single plan's budget would spend the second break
+    // inside the first encounter, where there is nothing left to break.
+    // First run — this program does the whole job (9.3.6c's strength gate
+    // needs the pump first).
+    let t1 = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("pump").once(),
+                Reply::take("pump"),
+            )
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("interface").once(),
+                Reply::take("interface"),
+            )
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&cur].counter(CounterKind::Power),
+        1,
+        "the break this program made left a counter: {}",
+        t1.tail(24)
+    );
+
+    // Second run — the other program breaks the same subroutine, so the ice
+    // is fully broken again and Curupira had no part in it.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("break: 1").once(),
+                Reply::take("break: 1"),
+            )
+            .stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::AllSubsBroken { .. }))
+            .count(),
+        2,
+        "6.5.7a: the Runner fully broke the wall on both runs: {}",
+        t.tail(40)
+    );
+    assert_eq!(
+        vm.st.objects[&cur].counter(CounterKind::Power),
+        1,
+        "\"place 1 power counter on this program\" — for the break this program \
+         made, and not for the one it had no part in (6.5.7b): {}",
+        t.tail(40)
     );
 }
 

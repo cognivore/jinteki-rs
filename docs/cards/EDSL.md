@@ -137,6 +137,8 @@ Farmer prints the same subroutine twice, so it is written twice.
 | `encountered()` | "When the Runner encounters this ice…" |
 | `passed()` | "When the Runner passes this ice…" |
 | `accessed()` | "When the Runner accesses this card…" |
+| `this_ice_is_fully_broken()` | "When the Runner fully breaks **this ice**…" (CR 6.5.7a — the source is the ice) |
+| `this_card_fully_breaks_ice()` | "Whenever **this program** fully breaks a piece of ice…" (CR 6.5.7b — the source is the breaker, and only if it broke every subroutine itself) |
 | `run_ends()` | "When this run ends…" |
 | `after_this_resolves()` | "After you resolve this operation, …" |
 | `discards_cards_to_reach_maximum_hand_size(Runner)` | "Whenever you discard cards to reach your maximum hand size, …" |

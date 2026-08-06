@@ -2314,6 +2314,21 @@ pub fn encountered() -> TriggerCond {
 pub fn accessed() -> TriggerCond {
     TriggerCond::SelfAccessed { requires: Vec::new() }
 }
+/// "When the Runner fully breaks **this ice**, …" (Paper Wall) — CR 6.5.7a,
+/// where the source is the ice that was broken. 6.5.7c's ice with no
+/// subroutines is fully broken too, as soon as step 6.9.3b begins.
+pub fn this_ice_is_fully_broken() -> TriggerCond {
+    TriggerCond::SelfFullyBroken { by_source: false }
+}
+/// "Whenever **this card** fully breaks a piece of ice, …" (Bukhgalter,
+/// Curupira, Cleaver) — CR 6.5.7b, where the source is the BREAKER: the ice is
+/// whichever one was fully broken, and the sentence is met only when all of
+/// that ice's subroutines were broken using abilities on this one object.
+/// Sharing the work with a second breaker meets it for neither of them, and
+/// 6.5.7c's zero-subroutine ice is fully broken by no object at all.
+pub fn this_card_fully_breaks_ice() -> TriggerCond {
+    TriggerCond::SelfFullyBroken { by_source: true }
+}
 /// "When the Runner passes this ice, …"
 pub fn passed() -> TriggerCond {
     TriggerCond::IcePassed {

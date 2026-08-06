@@ -88,6 +88,14 @@ pub struct EncounterState {
     /// encounter (at most once) — vacuously true for zero-sub ice as soon
     /// as step 6.9.3b begins.
     pub all_broken_noted: bool,
+    /// CR 6.5.7b: the objects whose abilities have broken subroutines during
+    /// this encounter. A SET rather than a single id because the rule asks
+    /// about all of them at once and only cares how many — "if all its
+    /// subroutines were broken using abilities on a single object, that
+    /// object also fully breaks the ice" — so two breakers sharing one piece
+    /// of ice means neither fully breaks it. Empty is 6.5.7c's zero-sub
+    /// ice, where "no objects fully break the ice".
+    pub breakers: std::collections::BTreeSet<ObjectId>,
     /// CR 1.21.3: the cards REVEALED during this encounter, in the order they
     /// were revealed. A reveal shows a card and puts it back as it was
     /// (1.21.3a), so nothing about the card itself records that it happened —
@@ -4001,6 +4009,7 @@ impl Vm {
             broken: std::collections::BTreeSet::new(),
             resolved: std::collections::BTreeSet::new(),
             all_broken_noted: false,
+            breakers: std::collections::BTreeSet::new(),
             revealed: Vec::new(),
         });
         self.changes.record(GameChange::EncounterBegan { ice, encounter_id: id });
@@ -4009,6 +4018,12 @@ impl Vm {
     /// CR 9.12.2d: note "all subroutines broken" for this encounter as soon
     /// as it could be satisfied — vacuously for zero-sub ice (checked when
     /// step 6.9.3b begins), or when the last subroutine is broken.
+    ///
+    /// 6.5.7a makes this the moment the RUNNER fully breaks the ice, and
+    /// 6.5.7b asks a second question of the same moment: whether an OBJECT
+    /// fully breaks it too. That is answered here, once, from the record of
+    /// who broke what, so the occurrence carries the answer and no later
+    /// reader has to reconstruct it.
     fn check_all_subs_broken(&mut self) {
         let Some(e) = self.st.encounter.as_ref() else { return };
         if e.all_broken_noted {
@@ -4022,10 +4037,24 @@ impl Vm {
         };
         if all {
             cite!("rule_vacuous_truth");
+            // 6.5.7b: "if all its subroutines were broken using abilities on
+            // a single object, that object also fully breaks the ice" — so
+            // exactly one contributor, and nobody otherwise. Two breakers
+            // sharing the ice is the failing case, and 6.5.7c's empty set
+            // ("no objects fully break the ice") is the vacuous one.
+            cite!("rule_object_fully_break");
+            cite!("rule_fully_break_no_subroutines");
+            let by = {
+                let e = self.st.encounter.as_ref().unwrap();
+                match e.breakers.len() {
+                    1 => e.breakers.iter().next().copied(),
+                    _ => None,
+                }
+            };
             if let Some(e) = self.st.encounter.as_mut() {
                 e.all_broken_noted = true;
             }
-            self.changes.record(GameChange::AllSubsBroken { ice });
+            self.changes.record(GameChange::AllSubsBroken { ice, by });
         }
     }
 
@@ -12714,6 +12743,14 @@ impl Vm {
                             // is newly broken — 9.8.6 lets the same key be
                             // named twice without taxing twice.
                             if e.broken.insert(k) {
+                                // 6.5.7b: the subroutine was broken "using an
+                                // ability on" this object, and the rule reads
+                                // the whole set of them when the ice is fully
+                                // broken. Noted per subroutine, because an
+                                // object that broke none of them is not one
+                                // of the objects the rule is counting.
+                                cite!("rule_object_fully_break");
+                                e.breakers.insert(source.obj);
                                 just_broken.push(k);
                             }
                         }

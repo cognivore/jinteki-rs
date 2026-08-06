@@ -579,13 +579,31 @@ pub enum TriggerCond {
     /// (Forked class). 9.12.2d vacuous truth: ice with ZERO subroutines
     /// satisfies this as soon as step 6.9.3b of the encounter begins.
     AllSubsBrokenOnEncounteredIce,
-    /// CR 6.5.7a: "When the Runner fully breaks THIS ice…" (Paper Wall
-    /// class) — the same occurrence as
-    /// [`TriggerCond::AllSubsBrokenOnEncounteredIce`], scoped to the source
-    /// the way every other "this card" condition is. 6.5.7c's vacuous case
-    /// (ice with no subroutines) meets it too, and 6.5.7d means it is never
-    /// retracted.
-    SelfFullyBroken,
+    /// CR 6.5.7: a full break, scoped to the source — the same occurrence as
+    /// [`TriggerCond::AllSubsBrokenOnEncounteredIce`], which is met by any
+    /// full break at all and is therefore a larger sentence than either of
+    /// these.
+    ///
+    /// One occurrence has TWO fully-breakers, so a sentence saying "this
+    /// card" has to say which of them it means, and `by_source` is that
+    /// stipulation as content (§12 rule 2) rather than a second atom:
+    ///
+    /// * `false` — the source is the ICE that was fully broken: "when the
+    ///   Runner fully breaks **this ice**" (Paper Wall class). 6.5.7a's
+    ///   occurrence, compared against the source the way every other "this
+    ///   card" condition is. 6.5.7c's vacuous case (ice with no subroutines)
+    ///   meets it too, since the Runner fully breaks that ice as well.
+    /// * `true` — the source is the OBJECT that did the breaking: "whenever
+    ///   **this program** fully breaks a piece of ice" (Bukhgalter, Curupira,
+    ///   Cleaver class). 6.5.7b gives an object that status only when ALL the
+    ///   ice's subroutines were broken using abilities on that single object,
+    ///   so a break shared between two breakers is met for NEITHER of them,
+    ///   and 6.5.7c's zero-subroutine ice — "no objects fully break the ice
+    ///   in this case" — is met for nobody at all.
+    ///
+    /// 6.5.7d applies to both: the status is never retracted, and subroutines
+    /// gained afterwards cannot meet either reading a second time.
+    SelfFullyBroken { by_source: bool },
     /// "Whenever the Runner breaks a printed subroutine on this ice…"
     /// (Gold Farmer class.) Met once per subroutine, unlike
     /// [`TriggerCond::SelfFullyBroken`] which is met once per encounter.
@@ -3657,11 +3675,20 @@ fn trigger_matches_dyn(
             true
         }
         // 6.5.7a: "the Runner fully breaks the encountered ice the first time
-        // all subroutines on that ice are broken" — scoped to this card.
-        (TriggerCond::SelfFullyBroken, GameChange::AllSubsBroken { ice }) => {
+        // all subroutines on that ice are broken" — scoped to this card, in
+        // whichever of the occurrence's two roles the sentence names.
+        (TriggerCond::SelfFullyBroken { by_source }, GameChange::AllSubsBroken { ice, by }) => {
             cite!("rule_fully_break");
             cite!("rule_fully_break_no_subroutines");
-            *ice == source.id
+            if *by_source {
+                // 6.5.7b: "that object ALSO fully breaks the ice" — and only
+                // that object, so `None` (a shared break, or 6.5.7c's zero-sub
+                // ice where no object fully breaks it) is met by nobody.
+                cite!("rule_object_fully_break");
+                *by == Some(source.id)
+            } else {
+                *ice == source.id
+            }
         }
         (
             TriggerCond::SubroutineBrokenOnSelf { printed_only },

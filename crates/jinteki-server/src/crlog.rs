@@ -540,8 +540,13 @@ mod tests {
             | GameChange::IceApproached { ice }
             | GameChange::IcePassed { ice, .. }
             | GameChange::SubroutineResolved { ice, .. }
-            | GameChange::AllSubsBroken { ice }
             | GameChange::SubroutineBroken { ice, .. } => vec![*ice],
+            // 6.5.7b's second fully-breaker is a subject of this record too:
+            // the occurrence is about the object that broke as much as about
+            // the ice it broke.
+            GameChange::AllSubsBroken { ice, by } => {
+                std::iter::once(*ice).chain(by.iter().copied()).collect()
+            }
             _ => Vec::new(),
         }
     }
