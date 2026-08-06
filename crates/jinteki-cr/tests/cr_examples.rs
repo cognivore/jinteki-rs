@@ -12339,3 +12339,67 @@ fn example_rule_step_sequences_1() {
         "…which is still during the installation, before 8.5.16f"
     );
 }
+
+/// CR 3.9.5b/c are stated about an ability **on an icebreaker** modifying
+/// **that icebreaker's** strength, so the implicit "for the remainder of the
+/// current encounter" duration is scoped by the SUBTYPE and by nothing else.
+///
+/// This is the A/B that pins that scope. Two cards of the SAME shape — a paid
+/// ability stating "+1 strength for the remainder of this run" about its own
+/// strength — differing only in whether they carry `Subtype::Icebreaker`, both
+/// used during a FORCED encounter with no run in progress (6.5.9a). The stated
+/// duration names a structure that is not in progress, so 9.10.4 expires it at
+/// once; only the icebreaker also lives under 3.9.5c's implicit encounter
+/// duration and keeps the bonus for the rest of the encounter.
+///
+/// The kernel used to attach that implicit encounter duration to EVERY stated
+/// duration strength modification. `self_icebreaker` was computed for exactly
+/// this gate and reached only a `cite!`, which expands to a const and decides
+/// nothing at runtime — so the subtype comparison there was dead either way,
+/// and its lowercase spelling was invisible for that reason rather than
+/// harmless.
+#[test]
+fn the_implicit_encounter_duration_is_scoped_to_icebreakers() {
+    let mut vm = Vm::empty(3955);
+    let archangel =
+        vm.new_object(tk::accessed_encounter_ice("Archangel-like", 6, 0), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(archangel);
+    tk::install_rig(&mut vm, tk::hq_access_button("GangSign-like"));
+    let breaker = tk::install_rig(&mut vm, tk::run_pump_breaker("Gordian-like", 2));
+    let plain = tk::install_rig(&mut vm, tk::run_pump_non_breaker("Gordian-like-but-not-a-breaker", 2));
+    assert!(vm.has_subtype(breaker, Subtype::Icebreaker), "the A side is an icebreaker");
+    assert!(!vm.has_subtype(plain, Subtype::Icebreaker), "and the B side is the same card without it");
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .uses("access-hq")
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("gordian"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("plain-pump"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert!(
+        vm.st.encounter.is_some() && vm.current_run.is_none(),
+        "an encounter with no run in progress: {}",
+        script.transcript().tail(8)
+    );
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(3),
+        "3.9.5c: the icebreaker's stated duration runs ALONGSIDE the implicit \
+         encounter one, so the pump holds for the rest of the encounter"
+    );
+    assert_eq!(
+        vm.effective_strength(plain),
+        Some(2),
+        "3.9.5b/c are about an ability on an ICEBREAKER modifying that \
+         icebreaker's strength. Without the subtype there is no implicit \
+         encounter duration, so 9.10.4 expired the run duration it stated \
+         while no run was in progress"
+    );
+}

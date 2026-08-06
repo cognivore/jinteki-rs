@@ -11914,10 +11914,7 @@ impl Vm {
                     // icebreaker shapes spelled it lowercase too.
                     let self_icebreaker = t == source.obj
                         && self.has_subtype(t, Subtype::Icebreaker);
-                    let (stated, implicit) = match duration {
-                        Some(w) => (Some(*w), self_icebreaker),
-                        None => (None, true),
-                    };
+                    let stated = duration.as_ref().copied();
                     let base = match stated {
                         Some(w) => crate::lingering::bind_duration(w, enc, run, turn),
                         None => {
@@ -11940,12 +11937,28 @@ impl Vm {
                         Payload::StrengthMod { target: t, delta },
                         base,
                     );
-                    // 3.9.5c / 3.4.4a: a STATED duration runs alongside the
-                    // implicit encounter one; the effect ends when both have.
-                    if stated.is_some() && (implicit || !self.st.objects[&t].zone.is_installed()) {
-                        cite!("rule_icebreaker_strength_increase_specified");
-                    }
-                    if stated.is_some() {
+                    // 3.9.5c: "If an icebreaker's paid ability specifies
+                    // another duration for modifying ITS strength, that
+                    // modification lasts until both the stated duration and
+                    // the implicit encounter duration have expired."
+                    cite!("rule_icebreaker_strength_increase_specified");
+                    // 3.4.4a: "If an ability modifies the strength of a piece
+                    // of ice for the remainder of a run, and that ability
+                    // resolves during an encounter OUTSIDE of a run, the
+                    // modification instead lasts for the remainder of that
+                    // encounter." A separate rule from 3.9.5c, and the only
+                    // other one that attaches an implicit encounter duration.
+                    let ice_run_outside_a_run = matches!(
+                        stated,
+                        Some(crate::lingering::WantedDuration::ThisRun)
+                    ) && run.is_none()
+                        && self.st.objects[&t].printed.card_type == CardType::Ice;
+                    // Scoped to the two rules that state it. It used to be
+                    // attached to EVERY stated-duration strength modification;
+                    // `self_icebreaker` was computed for exactly this gate and
+                    // reached only a `cite!`, which expands to a const and so
+                    // decides nothing at runtime.
+                    if stated.is_some() && (self_icebreaker || ice_run_outside_a_run) {
                         cite!("rule_ice_strength_modification_duration");
                         l.also = enc.map(crate::lingering::Duration::Encounter);
                     }

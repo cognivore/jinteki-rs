@@ -21488,3 +21488,117 @@ fn the_two_blocked_upgrades_of_boring_dec_say_which_sentences_they_cannot_say() 
         "3.6.5: the subtype the rule is stated over is on the card"
     );
 }
+
+/// CR 3.6.5 with the two REAL regions the card layer prints.
+///
+/// "Limit 1 region per server." is printed on every region (3.6.5a) and stated
+/// as a rule of the game by 3.6.5b, so it denotes into nothing on either card:
+/// the second region installed into a server root forces the first out, as the
+/// must-trash component of 8.5.6a.
+///
+/// Driven with Crisium Grid and La Costa Grid and NOT with a testkit shape,
+/// because a fixture is exactly what hid this. The kernel compared the subtype
+/// as `"region"` while every real card prints `"Region"`, so the rule fired for
+/// no card that has ever been played — and `tk::region_upgrade` spelled it
+/// lowercase too, so the kernel test agreed with the defect and passed.
+#[test]
+fn a_second_real_region_forces_the_first_out_of_the_same_server_root() {
+    let mut vm = Vm::empty(3650);
+    let crisium = tk::install_root(&mut vm, card("Crisium Grid"), ServerId::Remote(1), true);
+    assert!(
+        vm.st.objects[&crisium].printed.subtypes.contains(&Subtype::Region),
+        "the rule is stated over the printed subtype, so the card must carry it"
+    );
+
+    // La Costa Grid still carries `.unimplemented(…)` for its own two
+    // sentences, so it does not go through `card()`. Its PRINTED facts are
+    // exact regardless, and 3.6.5 is a rule about the subtype and not about
+    // either card's text.
+    let lcg_printed = jinteki_cards::find("La Costa Grid")
+        .expect("La Costa Grid is in the card layer")
+        .printed;
+    assert!(
+        lcg_printed.subtypes.contains(&Subtype::Region),
+        "and so must the card being installed over it"
+    );
+    let lcg = vm.new_object(lcg_printed, Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(lcg);
+
+    // An install button in a DIFFERENT server's root, so the button itself is
+    // never a party to the 3.6.5 question it triggers.
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button(
+            "Install-Button",
+            lcg,
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1)),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("corp-install")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("corp-install"), "the install ability was offered and used: {}", t.tail(4));
+    assert_eq!(
+        vm.st.objects[&lcg].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "La Costa Grid is installed in the root it was sent to"
+    );
+    assert_eq!(
+        vm.st.objects[&crisium].zone,
+        Zone::Discard(Side::Corp),
+        "3.6.5b / 8.5.6a: the region already in that root is trashed when a \
+         second region is installed there"
+    );
+}
+
+/// The other half of 3.6.5: the limit is per SERVER, so a region in one
+/// remote's root leaves a region in another remote's root alone. Without this
+/// the test above would also pass on a kernel that trashed every region
+/// anywhere on installing one.
+#[test]
+fn a_real_region_in_another_server_is_left_alone() {
+    let mut vm = Vm::empty(3651);
+    let crisium = tk::install_root(&mut vm, card("Crisium Grid"), ServerId::Remote(1), true);
+    let lcg_printed = jinteki_cards::find("La Costa Grid")
+        .expect("La Costa Grid is in the card layer")
+        .printed;
+    let lcg = vm.new_object(lcg_printed, Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(lcg);
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button(
+            "Install-Button",
+            lcg,
+            // …into a DIFFERENT remote from the one Crisium sits in.
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(3)),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("corp-install")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("corp-install"), "the install ability was offered and used: {}", t.tail(4));
+    assert_eq!(
+        vm.st.objects[&lcg].zone,
+        Zone::Root(ServerId::Remote(3)),
+        "the second region installs into its own server"
+    );
+    assert_eq!(
+        vm.st.objects[&crisium].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "3.6.5: the limit is 1 region per SERVER, so a region elsewhere stays"
+    );
+}

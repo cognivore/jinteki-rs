@@ -3375,6 +3375,28 @@ pub fn run_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
     c
 }
 
+/// The A/B partner of [`run_pump_breaker`]: the SAME shape — a card with
+/// strength whose paid ability states "for the remainder of this run" about
+/// its OWN strength — but WITHOUT the Icebreaker subtype.
+///
+/// 3.9.5b and 3.9.5c are stated about an ability *on an icebreaker* modifying
+/// *that icebreaker's* strength, so the implicit "remainder of the current
+/// encounter" duration is scoped by the SUBTYPE and nothing else. This shape
+/// exists to measure that scope: with the subtype gone, 9.10.4 applies alone
+/// and a duration naming a structure that is not in progress expires at the
+/// next checkpoint.
+pub fn run_pump_non_breaker(name: &'static str, base: i32) -> PrintedCard {
+    let mut c = run_pump_breaker(name, base);
+    c.subtypes = Vec::new();
+    // A label of its own, so a plan can tell the two apart.
+    c.abilities = c
+        .abilities
+        .into_iter()
+        .map(|a| a.labeled("plain-pump: +1 strength for the run"))
+        .collect();
+    c
+}
+
 /// Na'Not'K shape (9.10.5): an icebreaker whose STATIC ability sets its
 /// strength to the number of ice protecting the attacked server — so the
 /// static contribution lapses the moment the run ends — plus a paid pump
