@@ -598,16 +598,7 @@ pub async fn leave_pairing(token: &str) -> Left {
 // Dead sockets: an invitation from nobody is withdrawn — after a grace
 // ───────────────────────────────────────────────────────────────────────────
 
-/// How long a seat survives with no live socket in it. A refresh reconnects
-/// well inside this; a closed tab does not, and its seat is withdrawn — a
-/// lobby whose host is gone must not keep catching joiners.
-/// A seat whose sockets have all gone is withdrawn only after this long.
-/// It is generous on purpose: a phone that backgrounds its tab drops the
-/// websocket within seconds, and a seat that evaporates while its owner is
-/// waiting for someone to arrive is the difference between "nobody is here"
-/// and a working lobby. A refresh reclaims the seat by token long before it
-/// expires.
-/// A seat is NOT withdrawn because its sockets went away. A phone that
+/// An OPEN seat is NOT withdrawn because its sockets went away. A phone that
 /// backgrounds its tab, a train into a tunnel, a laptop lid — all drop the
 /// websocket in seconds, and a room that evaporates with it is the
 /// difference between "nobody is here" and a lobby that works. The room is
@@ -615,14 +606,40 @@ pub async fn leave_pairing(token: &str) -> Left {
 /// [`OPEN_TTL`] retires it; the owner reclaims it by token on reconnect.
 pub const ABANDON_GRACE: Duration = OPEN_TTL;
 
-/// A socket holding a lobby seat died. One fewer socket holds it; if that
-/// was the last one, then after [`ABANDON_GRACE`] with the seat still
-/// unheld it is withdrawn — cancelled if it is (by then) an open seat,
-/// walked away from if it is a ready-check seat (which cancels any
-/// countdown and puts a still-present creator back on the open list). The
-/// re-lookup after the sleep is deliberate: a seat can change rooms while
-/// the grace runs (a joiner leaving turns a pairing back into an open
-/// seat), and the counter travels with it.
+/// A PAIRED seat is a different question, and it is why this is not one
+/// constant. Two people are mid ready-check: if the joiner's socket dies and
+/// does not come back, holding that pairing for a day would take the
+/// creator's room off the open list for a day — the same "no open games"
+/// the hold above exists to prevent, arrived at from the other side. So a
+/// pairing waits only this long for its missing half, and then dissolves:
+/// the creator goes back on the open list with the SAME room, and the
+/// joiner can walk back in. Nothing is destroyed either way.
+///
+/// Overridable for tests through `JINTEKI_PAIRING_GRACE_MS`, because a test
+/// that proves this law should not have to sit through it in real time.
+pub fn pairing_grace() -> Duration {
+    std::env::var("JINTEKI_PAIRING_GRACE_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(Duration::from_secs(15))
+}
+
+/// A socket holding a lobby seat died. One fewer socket holds it; if that was
+/// the last one, what happens next depends on WHICH seat it is:
+///
+/// * an open seat is HELD — nothing to wait for and nothing to do, so no
+///   timer is even spawned (one that slept [`ABANDON_GRACE`] to then decide
+///   against acting is a 24-hour task per dropped socket, and it is what
+///   made the lobby suite hang);
+/// * a pairing seat waits [`pairing_grace`] and, if still unheld, is walked
+///   away from — which cancels any countdown and puts a still-present
+///   creator back on the open list.
+///
+/// The re-lookup after the sleep is deliberate: a seat can change rooms while
+/// the grace runs (a joiner leaving turns a pairing back into an open seat),
+/// and a seat that has BECOME open in the meantime is held by the rule
+/// above rather than retired by this one.
 pub fn drop_holder(token: String) {
     tokio::spawn(async move {
         let Some(h) = holders_of(&token).await else { return };
@@ -632,12 +649,13 @@ pub fn drop_holder(token: String) {
         if h.load(Ordering::Relaxed) > 0 {
             return;
         }
-        tokio::time::sleep(ABANDON_GRACE).await;
+        if by_token(&token).await.is_some() {
+            return; // an open seat: held until cancelled or OPEN_TTL'd
+        }
+        tokio::time::sleep(pairing_grace()).await;
         match holders_of(&token).await {
-            Some(h) if h.load(Ordering::Relaxed) == 0 => {
-                if !cancel(&token).await {
-                    leave_pairing(&token).await;
-                }
+            Some(h) if h.load(Ordering::Relaxed) == 0 && by_token(&token).await.is_none() => {
+                leave_pairing(&token).await;
             }
             _ => {}
         }

@@ -3677,13 +3677,31 @@ fn card_json(vm: &Vm, view: &View, id: ObjectId, visible: bool) -> Value {
         return json!({"cid": id.0, "facedown": true});
     };
     let adv = o.counters.get(&CounterKind::Advancement).copied().unwrap_or(0);
+    // CR 1.13.1: a hosted card IS AT ITS HOST — "the hosted card is
+    // considered to be in the same location as the card hosting it". So
+    // where it sits is a fact about the table that every viewer gets, on a
+    // facedown card as much as a faceup one: without it a client can only
+    // draw the zone flat, and a Corp operation hosted on Cupellation lands
+    // loose in the Runner's rig looking like a resource they installed.
+    let host = o.host.map(|h| json!(h.0));
     if !visible {
         // jnet's private-card shape: presence, and nothing about identity.
-        return json!({"cid": id.0, "facedown": true, "rezzed": false, "advance-counter": adv});
+        let mut m = Map::new();
+        m.insert("cid".into(), json!(id.0));
+        m.insert("facedown".into(), json!(true));
+        m.insert("rezzed".into(), json!(false));
+        m.insert("advance-counter".into(), json!(adv));
+        if let Some(h) = host {
+            m.insert("host".into(), h);
+        }
+        return Value::Object(m);
     }
     let p = &o.printed;
     let mut m = Map::new();
     m.insert("cid".into(), json!(id.0));
+    if let Some(h) = host {
+        m.insert("host".into(), h);
+    }
     m.insert("title".into(), json!(p.name));
     if let Some(c) = crate::carddata::by_title(p.name) {
         m.insert("code".into(), json!(c.code));

@@ -18,9 +18,10 @@
 //!   join with a deck key, both ready, ticks arriving on BOTH sockets
 //!   unbidden, then a session and a state each, in the right seats.
 //!
-//! * `a_dying_socket_withdraws_its_lobby` (gate permitting) — an open seat
-//!   whose socket dies stops being an invitation; a paired joiner's death
-//!   puts the creator back on the open list.
+//! * `a_dying_socket_does_not_take_the_room_with_it` (gate permitting) — an
+//!   open seat outlives the socket that opened it (a backgrounded tab must
+//!   not empty the lobby), while a paired joiner's death dissolves the
+//!   pairing after a short grace and puts the creator back on the open list.
 
 use futures_util::{SinkExt, StreamExt};
 use jinteki_cr::object::{CardType, PrintedCard, Side};
@@ -368,41 +369,36 @@ async fn a_join_is_a_ready_check_and_the_count_drops_both_into_the_game() {
 }
 
 #[tokio::test]
-async fn a_dying_socket_withdraws_its_lobby() {
+async fn a_dying_socket_does_not_take_the_room_with_it() {
     if !cr::readiness().ready {
         eprintln!("gate closed ({}) — socket-death wire flow not exercised", cr::readiness().fraction());
         return;
     }
+    // The pairing half of this test waits out `lobby::pairing_grace()`, so it
+    // is told to be short. The open-seat half needs no clock at all.
+    std::env::set_var("JINTEKI_PAIRING_GRACE_MS", "400");
     let addr = spawn_app().await;
 
-    // An open seat dies with its socket: a dead socket's invitation is
-    // withdrawn rather than left to catch a joiner nobody will play — but
-    // only after the reconnect grace, because a refresh is also a dead
-    // socket and must NOT cost the seat.
+    // AN OPEN SEAT SURVIVES ITS SOCKET. This is the whole point: a phone that
+    // backgrounds the tab drops the websocket in seconds, and a room that
+    // went with it is why a lobby full of waiting players read "no open
+    // games". The seat is still on the list long after any reconnect grace
+    // would have run, and only its owner's cancel takes it off.
     let mut a = open_ws(&addr).await;
-    send(&mut a, json!({"type":"lobby-create","side":"corp","title":"doomed seat","seed":9})).await;
+    send(&mut a, json!({"type":"lobby-create","side":"corp","title":"held seat","seed":9})).await;
     let created = drain(&mut a, 1500).await;
     let gameid = frame(&created, "lobby-waiting").unwrap()["lobby"]["gameid"]
         .as_str().unwrap().to_string();
     a.close(None).await.unwrap();
     drop(a);
-    // Inside the grace the seat still stands (a refresh would find it)…
+    tokio::time::sleep(Duration::from_millis(1200)).await;
     let mut w = open_ws(&addr).await;
-    send(&mut w, json!({"type":"lobby-list"})).await;
-    let frames = drain(&mut w, 1000).await;
-    let list = frame(&frames, "lobby-list").unwrap();
-    assert!(
-        list["list"].as_array().unwrap().iter().any(|r| r["gameid"] == json!(gameid)),
-        "inside the grace the seat survives (refreshes must not lose it)"
-    );
-    // …and past it, with nobody having come back, it is withdrawn.
-    tokio::time::sleep(lobby::ABANDON_GRACE + Duration::from_millis(700)).await;
     send(&mut w, json!({"type":"lobby-list"})).await;
     let frames = drain(&mut w, 1200).await;
     let list = frame(&frames, "lobby-list").unwrap();
     assert!(
-        !list["list"].as_array().unwrap().iter().any(|r| r["gameid"] == json!(gameid)),
-        "the dead socket's seat is gone"
+        list["list"].as_array().unwrap().iter().any(|r| r["gameid"] == json!(gameid)),
+        "the seat outlives the socket that opened it"
     );
 
     // A paired joiner dying puts the creator back on the open list, still
@@ -419,10 +415,12 @@ async fn a_dying_socket_withdraws_its_lobby() {
     assert!(frame(&host_frames, "lobby-pairing").is_some(), "a table for two");
     joiner.close(None).await.unwrap();
     drop(joiner);
-    // The joiner gets the same grace a refresh would need; past it, the
-    // creator is back on the open list, same lobby, same token.
+    // A pairing waits `pairing_grace()` for its missing half and then
+    // dissolves — otherwise a joiner who closed their tab would keep the
+    // creator's room off the open list, which is the same outage the held
+    // seat above exists to prevent. The creator waits again, same lobby.
     let host_frames =
-        drain(&mut host, lobby::ABANDON_GRACE.as_millis() as u64 + 1500).await;
+        drain(&mut host, lobby::pairing_grace().as_millis() as u64 + 1500).await;
     let back = frame(&host_frames, "lobby-waiting")
         .expect("the joiner died: the creator waits again");
     assert_eq!(back["lobby"]["gameid"], json!(gameid), "same lobby, same seat");

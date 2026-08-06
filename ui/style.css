@@ -50,7 +50,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
    `.rig-row` and `.arrangerow` own their own axis and keep it. */
 .home-wrap, .findgame-body, .deck-rows, .edit-body, .builder-deck, .builder-grid,
 .log-lines, .bottom-sheet, .deck-picker, .picker-list, .picker-preview,
-#play-rail, .zoom-overlay .zoom-card {
+#play-rail, .zoom-overlay .zoom-card, .action-sheet {
   -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
 
 /* ── Home ─────────────────────────────────────────────────────────────── */
@@ -193,6 +193,18 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* Corp seat: your servers on your (bottom) half, runner rig up top. */
 #board.flipped { flex-direction: column-reverse; }
 #board.flipped .server { flex-direction: column-reverse; }
+/* …AND SO DOES THE ICE INSIDE IT. CR 4.6.6a lays ice out "with the outermost
+   piece of ice furthest from the server", and 6.2.2a/8.5 install every new
+   piece in that outermost position — the Runner meets it FIRST. The stack is
+   built innermost-first, which draws correctly in the Runner's seat (ice
+   grows down the screen, toward them, outermost nearest). Reversing the
+   COLUMN for the Corp's seat moved the stack to the far side of the server
+   without reversing the stack itself, so in that seat alone the sequence
+   read backwards: the ice just installed appeared closest to the server —
+   the innermost position — and the ice the Runner would hit first sat
+   furthest from them. One flip is not enough; the row and its contents both
+   turn around. */
+#board.flipped .ice-stack { flex-direction: column-reverse; }
 /* `safe` is load-bearing, not decoration: a flex container that aligns to
    the END and then overflows puts the overflow off the START edge, where
    every browser refuses to scroll to it. Hanging the columns from the bottom
@@ -281,16 +293,40 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    see is not a gate. Nothing else is reordered — the stack's meaning is its
    order, and arming is a moment, not a state of the board. */
 .root-stack.tucked .card.armed { z-index: 6; }
-/* Badges ride the edge that SURVIVES, the same law the fan follows: here the
-   tuck covers the bottom of every card but the last, so a covered card's
-   counters stay in their top-right corner — which is where they already are.
-   The flipped board moved them to the bottom (its columns hang from the
-   bottom edge and clip at the top); under a tuck that bottom is exactly what
-   is covered, so they come back to the top for the covered cards only. */
-#board.flipped .root-stack.tucked .card:not(:last-child) .badges {
-  top: 1px; bottom: auto; align-content: flex-start; }
-#board.flipped .root-stack.tucked .card:not(:last-child).hascost .badges {
+/* Badges ride the edge that SURVIVES, the same law the fan follows: the tuck
+   covers all but the top 26px of every card but the last, so a covered card's
+   counters cannot sit in its middle (§11 default) — that middle is under the
+   next card. They anchor into the strip that is still on screen, for both
+   board orientations, because the tuck is the same tuck either way. */
+.root-stack.tucked .card:not(:last-child) .badges {
+  inset: 1px 1px auto auto; padding: 0;
+  flex-direction: row-reverse;
+  align-content: flex-start; align-items: flex-start; justify-content: flex-start;
+  max-width: calc(100% - 2px); }
+.root-stack.tucked .card:not(:last-child).hascost .badges {
   max-width: calc(100% - 2px - 2.2em); }
+
+/* ── A CARD CARRYING CARDS (CR 1.13.1) ──────────────────────────────────
+   "The hosted card is considered to be in the same location as the card
+   hosting it." So it is drawn ON its host and never loose in the zone: a
+   COMPACT stack tucked under the host at half size, each one overlapping
+   the last, so a Cupellation holding five Corp cards is one card's worth of
+   board and not five. They are still cards — press to read, own counters —
+   just plainly subordinate to the card carrying them. */
+.hosting { display: flex; flex-direction: column; align-items: center; gap: 2px;
+  flex-shrink: 0; }
+.host-stack { display: flex; flex-direction: row; align-items: flex-start;
+  padding-left: 2px; max-width: 64px; }
+.host-stack .card { width: 32px; height: 44px; padding: 2px; font-size: 6.5px;
+  border-width: 1px; border-radius: 5px; }
+.host-stack .card + .card { margin-left: -24px; }
+/* The topmost of a tuck is the one whose face is whole, and the one a tap
+   is most likely aimed at, so it comes forward. */
+.host-stack .card:last-child { z-index: 3; }
+.host-stack .card.armed, .host-stack .card.selectable { z-index: 4; }
+.host-stack .card .ctype, .host-stack .card .subs { display: none; }
+/* On an ice sliver the stack hangs under the chip it belongs to. */
+.host-stack.on-ice { margin: 1px 0 3px 10px; }
 
 /* rig */
 .rig { display: flex; flex-direction: column; gap: 4px; padding: 4px 10px; height: 100%; }
@@ -331,17 +367,24 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    credits, power, virus, agenda, bad publicity) still land inside a 52x72
    card. Nothing is ever dropped — a counter the player cannot see is a
    counter they will misplay. */
-.card .badges { position: absolute; top: 1px; right: 1px; z-index: 2;
-  display: flex; flex-direction: row-reverse; flex-wrap: wrap;
-  align-content: flex-start; justify-content: flex-start; gap: 1px;
-  max-width: calc(100% - 2px); max-height: calc(100% - 2px); }
-/* …and they stop short of the corners the other discs are standing in: four
-   counters on a 52px card filled the whole top edge and painted over the
-   cost. Each disc is 1.9 x 1.05em wide, so 2.2em of clearance is one disc
-   and a hair, at every card size. */
-.card.hascost .badges { max-width: calc(100% - 2px - 2.2em); }
-.card.hasstr .badges, .card.staged .badges, .card.picked .badges {
-  max-height: calc(100% - 2px - 2.2em); }
+/* DEAD CENTRE. The corner was the wrong home for them: every other disc a
+   card carries stands in a corner (cost, strength, the staged ✓), so the
+   counters were always the ones squeezed — clipped by the clearances that
+   kept them off those discs, and covered outright wherever a card is drawn
+   overlapping another. The middle of the card is the one region nothing
+   else claims and no truncation eats first, and a counter is the single
+   piece of a card's state a player must never misread (§11). The contexts
+   where the middle is exactly what is COVERED — a fanned hand, a peek, a
+   tucked root stack — still re-anchor onto the strip that survives; those
+   rules are below and they override this one. */
+.card .badges { position: absolute; inset: 0; z-index: 2;
+  display: flex; flex-direction: row; flex-wrap: wrap;
+  align-content: center; align-items: center; justify-content: center; gap: 2px;
+  padding: 1px;
+  /* The badge box now covers the whole card, so it must be transparent to
+     taps or it would eat every tap meant for the card under it — the arm,
+     the confirm, the press that reads it. */
+  pointer-events: none; }
 .card .badges.tight { font-size: .8em; }
 .badge { min-width: 1.7em; height: 1.7em; border-radius: 999px; color: #fff; font-size: 1em; font-weight: 800;
   display: flex; align-items: center; justify-content: center; padding: 0 .25em; line-height: 1;
@@ -375,8 +418,9 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    six-kind card into a second column INSIDE the box rather than dropping
    anything. */
 .fanrow.overlapped .cardpick:not(.focused):not(.raised) .card .badges {
-  left: 1px; right: auto; top: 1px;
+  inset: 1px auto auto 1px; padding: 0;
   flex-direction: column; align-content: flex-start;
+  align-items: flex-start; justify-content: flex-start;
   max-width: calc(100% - 2px); max-height: calc(100% - 2px);
 }
 .fanrow.overlapped .cardpick:not(.focused):not(.raised) .card.hascost .badges {
@@ -394,25 +438,21 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    clip) and keeps the top-right corner. Shrunk to fit the 10px window, and
    flush against the surviving edge: a peek's badge is proof the card is
    carrying something, and the tap that follows it makes the counts legible. */
-.fanpeek .card .badges { font-size: .6em; top: 0; }
-.fanpeek.left .card .badges { right: 0; }
-.fanpeek.right .card .badges { left: 0; right: auto;
+.fanpeek .card .badges { font-size: .6em; inset: 0 0 auto auto; padding: 0;
+  align-content: flex-start; align-items: flex-start; justify-content: flex-start;
+  flex-direction: row-reverse; }
+.fanpeek.left .card .badges { right: 0; left: auto; }
+.fanpeek.right .card .badges { inset: 0 auto auto 0;
   flex-direction: column; align-content: flex-start; }
 /* Below the cost disc, which is sized in the CARD's em, not the badges' —
    3.5 of these shrunken em clears the 2em-of-card-font disc at every size. */
 .fanpeek.right .card.hascost .badges { top: 3.5em; }
-/* The flipped board (your own Corp seat) hangs its server columns from the
-   bottom edge, so a column too tall for its half clips at the TOP — which
-   was the one place the badges lived. Same rule as the fan: the badges ride
-   the edge that survives, here the bottom, stepping clear of the corners the
-   staged ✓ / picked mark and the strength disc stand in. */
-#board.flipped .server .card .badges { top: auto; bottom: 1px;
-  align-content: flex-end; }
-#board.flipped .server .card.staged .badges,
-#board.flipped .server .card.picked .badges { bottom: calc(2.2em + 1px);
-  max-height: calc(100% - 2px - 2.2em); }
-#board.flipped .server .card.hasstr .badges {
-  max-width: calc(100% - 2px - 2.2em); }
+/* The flipped board (your own Corp seat) used to move these to the bottom
+   edge, because its columns hang from the bottom and a too-tall column
+   clipped at the top where the badges then lived. The middle is not that
+   corner and the server row scrolls both axes now, so a flipped column's
+   cards keep the same centred counters every other card has: one place a
+   player looks, whichever seat they are sitting in. */
 .card.facedown { background: repeating-linear-gradient(45deg, #17203a, #17203a 6px, #131a2e 6px, #131a2e 12px); }
 .card.facedown .cname, .card.facedown .ctype { visibility: hidden; }
 .card.corp-card { border-color: #2c4a77; }
@@ -786,10 +826,15 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     padding-left: 0; padding-top: 8px; }
 }
 
-/* action sheet on a tapped card */
+/* action sheet on a tapped card. BOUNDED: a list longer than the screen used
+   to run off the bottom with no scroll and no cue — the choices past the
+   fold were simply unreachable, which is how a Runner facing five remotes
+   could not pick the fifth. It scrolls now, and `openSheet` pulls it back
+   inside the viewport after measuring it. */
 .action-sheet { position: fixed; z-index: 80; background: rgba(16,22,38,.97);
   border: 1px solid var(--legal); border-radius: 14px; padding: 10px; display: flex;
-  flex-direction: column; gap: 8px; min-width: 170px; animation: pop .15s; }
+  flex-direction: column; gap: 8px; min-width: 170px; animation: pop .15s;
+  max-height: min(70vh, calc(100vh - 16px)); overflow-y: auto; }
 .action-sheet .chip { text-align: left; }
 
 /* log drawer */
@@ -905,6 +950,16 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
 .gameover-overlay h1 { margin: 0; font-size: 40px; }
 .gameover-overlay .why { color: var(--dim); }
+.gameover-overlay .gobtns { display: flex; flex-wrap: wrap; gap: 10px;
+  justify-content: center; padding: 0 12px; }
+/* The way BACK to a result the player dismissed. It sits where the log tab
+   does not, above the safe area, and it is the only chrome a finished game
+   adds to the board it leaves readable. */
+.result-chip { position: fixed; z-index: 90;
+  top: calc(34px + var(--sat)); left: calc(8px + var(--sal));
+  background: var(--panel); border: 1px solid var(--gold); color: var(--text);
+  border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  white-space: nowrap; }
 
 /* compact ice slivers (MTGA aura-stack style).
    WIDTH is the axis that was free and the axis that was starving. A sliver

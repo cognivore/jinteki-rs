@@ -1200,11 +1200,42 @@ function boardQuestion(p) {
    never the only way to reach an unreadable card. */
 function rootStack(content) {
   const box = el("div", "root-stack");
-  (content || []).forEach((c) => box.appendChild(cardEl(c, { side: "corp" })));
+  // A card hosted on one of these is drawn ON it (CR 1.13.1), not as another
+  // card in the root — the root's tuck would bury it, and it was never
+  // installed there.
+  const own = (content || []).filter((c) => !drawnElsewhere(c));
+  own.forEach((c) => box.appendChild(hostBox(c, { side: "corp" })));
   // A single card is a card, not a stack: no tuck, no class to reason about.
-  if ((content || []).length > 1) box.classList.add("tucked");
+  if (own.length > 1) box.classList.add("tucked");
   return box;
 }
+
+/* ── WHICH SERVER? IS A QUESTION ABOUT SERVERS (THE LAW §3) ──────────────
+ *
+ * "Run ▾" used to open a list: one button per server, at a fixed point near
+ * the bottom of the screen, in a sheet with no bound and no scroll. A corp
+ * with five remotes therefore asked the Runner to choose from a list that
+ * ran off the bottom of the phone and could not be reached — the servers
+ * past the fourth were on screen, glowing, and unreachable through the very
+ * control that was supposed to pick them.
+ *
+ * The board already knows how to ask this. Every other question about a
+ * server is asked ON the servers — gold for a candidate, white for the one
+ * the next tap acts on, second tap commits — and the run is the most
+ * server-shaped question in the game. So "Run" now ARMS the board: the
+ * runnable servers light up, one tap focuses, the next runs, and "Cancel"
+ * (and tapping the table, and Escape) says never mind.
+ *
+ * A Map of the board's own server keys to the act that runs them, or null
+ * when no run is being chosen. It is client-side state: the server offered
+ * these runs already and is not waiting on anything. */
+let runPick = null;
+function setRunPick(m) {
+  runPick = m;
+  setArmed(null);
+  if (S) render();
+}
+function cancelRunPick() { if (runPick) setRunPick(null); }
 
 /* The uuid choices for one server column ("Server 2", "Protecting Server 2").
    Keys are the board's own server keys; "new" is the remote that does not
@@ -1291,7 +1322,13 @@ function render() {
   section("bars", renderBars);
   section("timing", renderTiming);
   section("servers", () => {
-    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority, armed])) renderServers();
+    // `runPick` is in the key because it is a QUESTION the servers are being
+    // asked (which one do you want to run?) — the columns wear the gold for
+    // it exactly as they do for a question the server sent, and a key that
+    // does not name it leaves the board silent while the rail says "tap the
+    // server you want".
+    if (dirty("servers", [(S.corp || {}).servers, S.run, ACTIONS, myPrompt(), S.priority, armed,
+      runPick && [...runPick.keys()].join(",")])) renderServers();
   });
   section("rig", () => {
     if (dirty("rig", [(S.runner || {}).rig, ACTIONS, myPrompt(), S.priority, armed])) renderRig();
@@ -1759,6 +1796,11 @@ function renderServers() {
       col.classList.add("selectable");
       if (armed === "srv:" + key) col.classList.add("armed-target");
       wireServerTarget(col, key, srvChoices.get(key));
+    } else if (runPick && runPick.has(key)) {
+      // A run being chosen is the same question in the same clothes.
+      col.classList.add("selectable");
+      if (armed === "srv:" + key) col.classList.add("armed-target");
+      wireRunTarget(col, key, runPick.get(key));
     }
     const name = document.createElement("div");
     name.className = "sname"; name.textContent = SERVER_NAME(key);
@@ -1833,6 +1875,16 @@ function renderServers() {
         sliver.addEventListener("mouseleave", hideHoverPreview);
       }
       stack.appendChild(sliver);
+      // Ice hosts cards too (a Boomerang, a trojan): they are AT this ice
+      // (CR 1.13.1), and the rig no longer draws them, so the sliver has to
+      // — or the card would be nowhere on the board at all. Under the chip
+      // they belong to, in the same compact stack the rig uses.
+      const iceKids = hostedOn(c.cid);
+      if (iceKids.length) {
+        const hs = el("div", "host-stack on-ice");
+        iceKids.forEach((k) => hs.appendChild(cardEl(k, { side: "runner", hosted: true })));
+        stack.appendChild(hs);
+      }
     });
     if (ices.length) {
       const n = document.createElement("div");
@@ -1882,6 +1934,21 @@ function wireServerTarget(col, key, chs) {
         abilityText(ch.value, ch.card && ch.card.title, true),
         () => act("choice", { choice: { uuid: ch.uuid } }),
       ]), Math.min(r.left, window.innerWidth - 200), Math.min(r.bottom + 6, window.innerHeight - 60 * chs.length - 20));
+    });
+  });
+}
+
+/* The run's version of the same two taps. The commit clears the pick BEFORE
+   it acts: the run that follows repaints the board from a state in which
+   nothing is being chosen any more, and a stale candidate glow on a server
+   the Runner is already inside would be a lie about what is being asked. */
+function wireRunTarget(col, key, go) {
+  col.addEventListener("pointerup", (e) => {
+    if (e.target.closest && e.target.closest(".card, .ice-sliver")) return;
+    armTap(BOARD_ARM, "srv:" + key, () => {
+      runPick = null;
+      setArmed(null);
+      go();
     });
   });
 }
@@ -2022,6 +2089,63 @@ function renderFocus() {
   };
 }
 
+/* ── A HOSTED CARD IS ON ITS HOST (CR 1.13.1) ────────────────────────────
+ *
+ * "The hosted card is considered to be in the same location as the card
+ * hosting it" — which is why the server sends every card's `host` and the
+ * board must never draw one loose. It used to: the zone lists are flat, so a
+ * Corp operation Cupellation had taken out of Archives was pushed into the
+ * Runner's RESOURCE row (the rig's fallback bucket) and drawn full size,
+ * next to the resources the Runner had actually installed. Five of them and
+ * the rig was a wall of cards belonging to the other player.
+ *
+ * They are drawn where they are: a COMPACT stack tucked under the host, at
+ * half size, each one overlapping the last. Still cards (THE LAW §5) — they
+ * press to read and they carry their own counters — just never mistakable
+ * for something installed in its own right. */
+function eachBoardList(fn) {
+  const runner = S.runner || {}, corp = S.corp || {};
+  const rig = runner.rig || {};
+  ["program", "hardware", "resource"].forEach((k) => fn(rig[k]));
+  Object.values(corp.servers || {}).forEach((s) => { fn(s && s.content); fn(s && s.ices); });
+  fn(corp["play-area"]);
+  fn(runner["play-area"]);
+}
+function hostedOn(cid) {
+  if (cid == null || !S) return [];
+  const out = [];
+  eachBoardList((list) => (list || []).forEach((c) => { if (c && c.host === cid) out.push(c); }));
+  return out;
+}
+/* Is the host itself on this board? A hosted card is drawn ON its host, so
+   it is skipped wherever it appears loose — but only if that host is being
+   drawn. Anything else and the card would simply disappear off the table,
+   which is a worse bug than the one being fixed. */
+function hostOnBoard(cid) {
+  if (cid == null || !S) return false;
+  let found = false;
+  eachBoardList((list) => { if (!found && (list || []).some((c) => c && c.cid === cid)) found = true; });
+  const runner = S.runner || {}, corp = S.corp || {};
+  return found
+    || !!(runner.identity && runner.identity.cid === cid)
+    || !!(corp.identity && corp.identity.cid === cid);
+}
+function drawnElsewhere(c) { return !!c && c.host != null && hostOnBoard(c.host); }
+/* The host and everything it carries, as one thing the row lays out. Returns
+   the bare card when it is carrying nothing, so the common case adds no box
+   and no class to reason about. */
+function hostBox(c, opts) {
+  const host = cardEl(c, opts);
+  const kids = hostedOn(c.cid);
+  if (!kids.length) return host;
+  const box = el("div", "hosting");
+  box.appendChild(host);
+  const stack = el("div", "host-stack");
+  kids.forEach((k) => stack.appendChild(cardEl(k, { side: (opts && opts.side) || "runner", hosted: true })));
+  box.appendChild(stack);
+  return box;
+}
+
 function renderRig() {
   const rigEl = $("rig");
   rigEl.innerHTML = "";
@@ -2031,7 +2155,9 @@ function renderRig() {
     const row = document.createElement("div");
     row.className = "rig-row";
     row.innerHTML = `<span class="rowlabel">${label}</span>`;
-    (rig[k] || []).forEach((c) => row.appendChild(cardEl(c, { side: "runner" })));
+    (rig[k] || [])
+      .filter((c) => !drawnElsewhere(c))
+      .forEach((c) => row.appendChild(hostBox(c, { side: "runner" })));
     if (k === "program" && runner.identity) {
       const idEl = cardEl(runner.identity, { side: "runner", identity: true });
       idEl.classList.add("identity-col");
@@ -3174,6 +3300,17 @@ function openSheet(items, x, y) {
   sheet.style.left = Math.max(8, x) + "px";
   sheet.style.top = Math.max(8, y) + "px";
   sheet.style.display = "flex";
+  // A SHEET CANNOT HANG OFF THE SCREEN. Its callers place it relative to
+  // whatever was tapped and guess at its height; a guess that is wrong by
+  // one item puts the last choice below the fold of a phone, where the
+  // stylesheet's `max-height` lets it scroll but nothing tells the player
+  // there is more. So it is pulled back inside the viewport once it has a
+  // real size — measured, not predicted.
+  const r = sheet.getBoundingClientRect();
+  const maxTop = window.innerHeight - r.height - 8;
+  if (r.top > maxTop) sheet.style.top = Math.max(8, maxTop) + "px";
+  const maxLeft = window.innerWidth - r.width - 8;
+  if (r.left > maxLeft) sheet.style.left = Math.max(8, maxLeft) + "px";
 }
 function closeSheet() { $("action-sheet").style.display = "none"; }
 /* Tapping the table means "none of these".
@@ -3210,6 +3347,9 @@ document.addEventListener("pointerdown", (e) => {
   if (!(t.closest && t.closest(".action-sheet"))) closeSheet();
   if (t.closest && t.closest(HOLDS_FOCUS)) return;
   disarm();
+  // Bare board is "none of these" for the run being chosen too — the same
+  // answer, and the same gesture that gives it to every other question.
+  cancelRunPick();
 });
 
 /* ── prompts ─────────────────────────────────────────────────────────── */
@@ -4147,7 +4287,7 @@ function renderChips() {
   // already cancels, but a way out you have to guess at is not one a player
   // under time pressure will find — and this is the last moment before an
   // option is chosen and 9.2.7f makes it resolve to the end.
-  if (armed != null) {
+  if (armed != null && !runPick) {
     const b = document.createElement("button");
     b.className = "chip cancel-armed";
     b.textContent = "Cancel";
@@ -4181,9 +4321,34 @@ function renderChips() {
       bar.appendChild(go);
       if (picked) mk("Start over", () => act("select-clear", {}), "prompt-chip");
     } else if (p["select-done"]) {
+      // A MINIMUM IS A MINIMUM. "Done" used to send whatever was picked,
+      // including nothing, however many the question required — so a Corp
+      // who had pointed at a card (armed it, white ring) and then pressed
+      // Done sent an EMPTY answer, and Archangel's trace added nothing to
+      // the grip. The button now says how many are still owed and cannot be
+      // pressed until they are; the only way to send nothing is a question
+      // that actually permits it.
       const empty = !(p["select-cards"] || []).length;
-      mk(empty ? "OK" : `Done (${picked} chosen)`, () => act("select-done", {}), "go prompt-chip");
+      const min = p["select-min"] ?? 0;
+      const short = !empty && picked < min;
+      const go = document.createElement("button");
+      go.className = "chip go prompt-chip";
+      go.textContent = empty ? "OK"
+        : short ? `Choose ${min - picked} more` : `Done (${picked} chosen)`;
+      go.disabled = short;
+      go.onclick = () => act("select-done", {});
+      bar.appendChild(go);
     }
+    return;
+  }
+  // Choosing a server to run is a question the BOARD is asking (see
+  // `runPick`): the rail carries only the hint and the way out, exactly as
+  // it does for a board question the server asked.
+  if (runPick) {
+    bar.appendChild(el("span", "armed-hint", armed != null
+      ? `Run on ${armedName()} — tap again to confirm`
+      : "Tap the server you want to run"));
+    mk("Cancel", () => cancelRunPick(), "cancel-armed");
     return;
   }
   if (native()) {
@@ -4193,19 +4358,20 @@ function renderChips() {
     if (has("purge")) mk("Purge viruses (●●●)", () => act("purge"));
     if (has("trash-resource")) mk("Trash a resource (2⬡)", () => act("trash-resource"));
     const runs = ACTIONS.filter((a) => a.command === "run");
-    if (runs.length) mk("Run ▾", () => {
-      openSheet(runs.map((a) => [SERVER_NAME(a.server), () => act("run", { server: a.server })]),
-        10, window.innerHeight - 300);
-    });
+    if (runs.length) mk("Run", () => setRunPick(
+      new Map(runs.map((a) => [a.server, () => act("run", { server: a.server })]))));
   } else {
     const myTurn = S["active-player"] === mySide;
     if (myTurn && !myPrompt()) {
       mk("+1 ⬡", () => act("credit"));
       mk("Draw", () => act("draw"));
-      if (mySide === "runner") mk("Run ▾", () => {
+      if (mySide === "runner") mk("Run", () => {
         const servers = Object.keys((S.corp || {}).servers || {});
-        openSheet(servers.map((k) => [SERVER_NAME(k), () => act("run", { server: k === "hq" || k === "rd" || k === "archives" ? k.toUpperCase().replace("RD", "R&D") : "Server " + k.replace("remote", "") })]),
-          10, window.innerHeight - 300);
+        setRunPick(new Map(servers.map((k) => [k, () => act("run", {
+          server: k === "hq" || k === "rd" || k === "archives"
+            ? k.toUpperCase().replace("RD", "R&D")
+            : "Server " + k.replace("remote", ""),
+        })])));
       });
       if (mySide === "runner") mk("Untag", () => act("remove-tag"));
     }
@@ -4470,7 +4636,25 @@ function renderLog() {
    event every device does fire, so that is the one that closes.
 
    `hit` gets first refusal on the tap: it returns true when the tap meant
-   something inside the overlay (a pile row to read), false to dismiss. */
+   something inside the overlay (a pile row to read), false to dismiss.
+
+   BUT A DRAG IS NOT A TAP, and the reader is a SCROLLER. Acting on
+   `pointerdown` meant the first touch of a scroll gesture was already an
+   answer: a finger put down on a pile row opened that card before it had
+   moved a pixel, and a finger put down anywhere else closed the reader and
+   `preventDefault`ed the pan that was about to happen. A heap longer than
+   the screen therefore could not be read AT ALL on a phone — the only
+   gesture that reaches its bottom half was the one gesture that dismissed
+   it. (On a desktop the wheel scrolls without a pointerdown, which is
+   exactly why this survived: it worked for every mouse and for no finger.)
+
+   So the press is RECORDED on `pointerdown` and only ACTED ON at
+   `pointerup`, and only if the pointer stayed inside `FAN_SLOP` — the same
+   slop, and the same law, the board's cards already follow: one gesture,
+   one meaning. `tracking` is what makes a long-press safe: a reader opened
+   mid-hold sees the release of a press it never saw begin, and a release
+   without its own press is nobody's tap. Nothing is `preventDefault`ed any
+   more — the browser owns the pan, which is what makes the list scroll. */
 function dismissOnTapAway(o, hit, onClose) {
   const close = () => {
     o.style.display = "none";
@@ -4479,9 +4663,14 @@ function dismissOnTapAway(o, hit, onClose) {
   };
   o.__dismiss = close;
   o.onclick = null;
-  o.onpointerdown = (e) => {
+  let tracking = false, sx = 0, sy = 0;
+  o.onpointerdown = (e) => { tracking = true; sx = e.clientX; sy = e.clientY; };
+  o.onpointercancel = () => { tracking = false; };
+  o.onpointerup = (e) => {
+    if (!tracking) return;
+    tracking = false;
+    if (Math.abs(e.clientX - sx) > FAN_SLOP || Math.abs(e.clientY - sy) > FAN_SLOP) return;
     if (hit && hit(e)) return;
-    e.preventDefault();
     close();
   };
 }
@@ -4501,6 +4690,7 @@ document.addEventListener("keydown", (e) => {
   // what you were pointing at" on one screen and nothing on the other.
   closeSheet();
   disarm();
+  cancelRunPick();
   clearBuilderFocus();
 });
 
@@ -4588,15 +4778,54 @@ function zoomPile(cards, title) {
   });
 }
 
+/* THE GAME ENDING IS NOT THE END OF LOOKING AT IT.
+ *
+ * This screen used to be a wall: it took the whole viewport the instant the
+ * last agenda landed, and the only way past it was "New game", which reloads.
+ * A player who wanted to see WHAT happened — the access that ended it, the
+ * log, the board — had the result and nothing else. In the words of the one
+ * it happened to: "I got kicked from the game before I could see what
+ * happened. Just saw that I won."
+ *
+ * So it dismisses, like every other reader on this board (THE LAW §2:
+ * nothing holds the table hostage), and the table stays exactly as the last
+ * change left it — log scrollable, piles readable, every card still a card.
+ * The result is one tap away again from the chip it leaves behind, because
+ * a result you cannot get back to is the same wall with extra steps. */
+let gameOverDismissed = null;   // the winner this seat has already read
 function renderGameOver() {
   const o = $("gameover-overlay");
-  if (!S.winner) { o.style.display = "none"; return; }
+  const chip = $("result-chip");
+  if (!S.winner) {
+    o.style.display = "none";
+    if (chip) chip.style.display = "none";
+    gameOverDismissed = null;
+    return;
+  }
   const iWon = S.winner === mySide;
-  localStorage.removeItem("jinteki_local");
+  const who = S.winner === "corp" ? "Corp" : "Runner";
+  const line = `${who} wins${S.reason ? " — " + esc(S.reason) : ""}`;
+  if (chip) {
+    chip.style.display = gameOverDismissed === S.winner ? "" : "none";
+    chip.textContent = iWon ? "🏁 You won" : "🏁 You lost";
+    chip.onclick = () => { gameOverDismissed = null; render(); };
+  }
+  if (gameOverDismissed === S.winner) { o.style.display = "none"; return; }
   o.style.display = "flex";
   o.innerHTML = `<h1>${iWon ? "VICTORY" : "DEFEAT"}</h1>
-    <div class="why">${S.winner} wins — ${S.reason || ""}</div>
-    <button class="big go" onclick="location.reload()">New game</button>`;
+    <div class="why">${line}</div>
+    <div class="gobtns">
+      <button class="big go alt" id="go-look">Back to the table</button>
+      <button class="big go" id="go-new">New game</button>
+    </div>`;
+  o.querySelector("#go-look").onclick = () => { gameOverDismissed = S.winner; render(); };
+  // The session token outlives the overlay for the same reason: it is what a
+  // refresh reconnects with, and a player reading a finished board may well
+  // refresh. It is dropped when they actually leave.
+  o.querySelector("#go-new").onclick = () => {
+    localStorage.removeItem("jinteki_local");
+    location.reload();
+  };
 }
 
 /* Fullscreen-ish chrome: lock landscape where the platform allows it
