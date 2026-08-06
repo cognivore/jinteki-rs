@@ -52,6 +52,11 @@ pub struct RunCtx {
     /// that initiated this run carried. Cleared when it becomes pending, so
     /// the one declaration offers it once.
     pub if_would_be_successful: Option<crate::vm::WouldBeSuccessful>,
+    /// CR 6.9.1c: what the effect that initiated this run STATED about it,
+    /// unconditionally — "the Corp cannot rez ice during that run". Resolved
+    /// as the run formally begins, and cleared then, so the one sentence
+    /// resolves once.
+    pub stated_about_run: Option<crate::vm::WouldBeSuccessful>,
     /// CR 6.1.3e: the Encounter Ice Phase the run has come DIRECTLY from,
     /// which is what makes a pass a pass "after an encounter" — `(ice, all
     /// its subroutines were broken during that encounter (6.1.3f/6.5.7), any
@@ -288,6 +293,24 @@ pub struct AbilityFrame {
     /// a shuffle, a rearrangement — becomes a NEW object, so the ability can
     /// no longer act on it, and the stale entry is exactly how that shows.
     pub looked_at: Vec<(crate::object::ObjectId, u32)>,
+    /// CR 1.21.6: the cards this ability has REVEALED, with the generation
+    /// each had when it was revealed.
+    ///
+    /// 1.21.6 is one rule over two verbs — "if a resolving ability directs one
+    /// or both players to **look at or reveal** a card or set of cards, each
+    /// such card remains visible … until the entire ability is finished
+    /// resolving or the card moves to a different location" — so the reveal
+    /// keeps its cards on the resolving ability exactly as
+    /// [`AbilityFrame::looked_at`] does. Kept separately because 1.21.5 says
+    /// the two effects "are not the same": a sentence saying "the revealed
+    /// cards" must not reach cards this ability only looked at, and the kernel
+    /// already keeps them apart everywhere else (two instructions, two
+    /// `GameChange` records).
+    ///
+    /// EXTENDED rather than assigned, which is the other difference: 1.21.6
+    /// keeps EVERY revealed card visible for the whole ability, so a second
+    /// reveal adds to the set instead of replacing it.
+    pub revealed: Vec<(crate::object::ObjectId, u32)>,
     /// CR 8.5.16f: the cards THIS ability's own install instructions have
     /// installed, in the order they became installed. What
     /// [`crate::instr::TargetFilter::InstalledByThisAbility`] describes and

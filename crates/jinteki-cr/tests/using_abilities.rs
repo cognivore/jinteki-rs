@@ -111,6 +111,65 @@ fn a_copy_installed_after_the_first_occurrence_gets_no_fresh_first_time() {
     assert_eq!(vm.st.runner.credits, 1, "one occurrence, one credit");
 }
 
+/// CR 9.6.5c over CR 1.16.4d: the ordinal counts the times the condition was
+/// MET, and 1.16.4d's condition is met by the Nth [click] spent on an action
+/// and not by the ones before it.
+///
+/// The two rules are read from the same records — every [click] spent is one
+/// `ClickSpent` — so an ordinal that asks only "did an earlier change of this
+/// shape occur?" is spent by click ONE of a three-click action, and click
+/// three, the one the sentence is about, is then refused as a repeat. A card
+/// printing "the first time you spend 3[click] on the same action each turn"
+/// would never fire at all. 9.6.5c is explicit that a requirement listed in a
+/// trigger condition is PART of the condition, so a change that did not meet
+/// the requirement was never one of "the times".
+///
+/// Both halves of the ordinal are asserted, and the two `count`s are what
+/// separate them:
+///
+/// * `count = 3` — one basic purge (5.2.6h), three clicks, one action. The
+///   condition is met once, at the third click, and the ordinal must permit
+///   it. Ordinal or no ordinal, the payout is the same.
+/// * `count = 1` — three basic draw actions, one click each. The condition is
+///   met three times, and here the ordinal MUST bite: one payout with it and
+///   three without. Draws rather than credits, so the actions themselves put
+///   nothing in the pool the ability is measured in.
+#[test]
+fn the_ordinal_over_clicks_spent_on_an_action_is_not_spent_by_the_earlier_clicks() {
+    for (count, ordinal, want) in [(3u32, false, 1u32), (3, true, 1), (1, false, 3), (1, true, 1)] {
+        let mut vm = Vm::empty(9020);
+        let shape = if ordinal {
+            tk::jeeves_like_first_each_turn("Jeeves-like", count)
+        } else {
+            tk::jeeves_like("Jeeves-like", count)
+        };
+        tk::install_root(&mut vm, shape, ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 12);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let corp = if count == 3 {
+            // 5.2.6h: one action, and it costs the Corp's whole turn.
+            Plan::corp().when(Match::action().once(), Reply::Take(Pick::Purge))
+        } else {
+            Plan::corp()
+        };
+        let t = plan::play(
+            &mut vm,
+            corp.when(Match::action(), Reply::draw()),
+            // Stop once the Corp's whole turn has gone by.
+            Plan::runner().when(Match::action().first(), Reply::Halt),
+        );
+
+        assert_eq!(
+            vm.st.corp.credits, want,
+            "9.6.5c/1.16.4d: count={count}, ordinal={ordinal}: {}",
+            t.tail(30)
+        );
+    }
+}
+
 /// CR 8.6.6d, as a nested CONDITIONAL ability rather than a step of the play.
 ///
 /// "If an ability that plays an event or operation also contains the nested

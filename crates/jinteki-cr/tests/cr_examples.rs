@@ -8681,6 +8681,48 @@ fn dp7a_complete() {
 // W11a — resolving an ability by class (§9.6.14d, §9.8) and "this server"
 // ===========================================================================
 
+/// CR 6.9.4g: an approach condition scoped to THIS server is met by the
+/// approach on the server its source is in, and by no other.
+///
+/// Not a worked example — the measurement the Manegarm-class card is written
+/// on. The two arms put the same upgrade in a remote root and run two
+/// different servers; without the scoping the second arm ends a run on HQ
+/// that the printed sentence says nothing about.
+#[test]
+fn an_approach_condition_scoped_to_this_server_ignores_every_other() {
+    for (server, ended) in [(ServerId::Remote(1), true), (ServerId::Hq, false)] {
+        let mut vm = Vm::empty(9042);
+        tk::install_root(
+            &mut vm,
+            tk::end_run_on_this_server_approach("Skunkworks-like"),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner().when(Match::action().once(), Reply::run(server)).stop_at_action(),
+        );
+
+        let succeeded = vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. }));
+        assert_eq!(
+            !succeeded, ended,
+            "6.9.4g: the condition is met on the source's own server and on no other \
+             (server={server:?}): {}",
+            t.tail(24)
+        );
+    }
+}
+
 /// example_rule_this_server_3 (4.6.6i): a Nanisivik-Grid-class ability turns a
 /// facedown Border Control in Archives faceup and resolves its first
 /// subroutine. Border Control was not moved between servers, so "this server"
@@ -11911,7 +11953,7 @@ fn example_rule_active_exception_catchall_1() {
         }
         // The grip holds exactly the one card, so the random damage trash
         // takes it (10.4.2a).
-        let ihw = vm.new_object(tk::ive_had_worse_like("IHW-like"), Zone::Hand(Side::Runner));
+        let ihw = vm.new_object(tk::ive_had_worse_like("IHW-like", &[DamageKind::Meat, DamageKind::Net, DamageKind::Core]), Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(ihw);
         vm.st.runner.credits = 0;
         vm.start_turn(Side::Runner);

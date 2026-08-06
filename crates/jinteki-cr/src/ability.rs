@@ -173,7 +173,24 @@ pub enum TriggerCond {
     /// — the last step of the Movement Phase, so the reaction window that
     /// follows it is not one a phase BEGINNING opened, which is what 6.8.2c
     /// is about.)
-    ServerApproached,
+    ///
+    /// WHICH server is content on the one condition (§12 rule 2), in the same
+    /// two-position shape [`TriggerCond::IcePassed`] uses for the same
+    /// distinction:
+    ///
+    /// * `this_server` — "whenever the Runner approaches **this** server"
+    ///   (Manegarm Skunkworks). The source's own server, which is what
+    ///   `SuccessfulRunOnServer` and `RunOnThisServerEnds` already ask for the
+    ///   two later steps of the run. A source that is in no server approaches
+    ///   nothing.
+    /// * `on` — the servers a sentence NAMES, the list `RunEnds` carries.
+    ///
+    /// Both empty is the sentence that stipulates neither, which is what
+    /// Formicary's "a server" prints — and what every declaration written
+    /// before this content existed said, so nothing moves by construction.
+    /// The distinction is measured, not assumed: an upgrade in a remote root
+    /// carrying nothing but this condition ends a run on HQ without it.
+    ServerApproached { this_server: bool, on: Vec<crate::object::ServerId> },
     /// "Whenever the Runner takes a tag." (Mr. Stone class.) Met per TAKING,
     /// not per tag, so "whenever you take 1 or more tags" is the same
     /// condition. `had_no_tags` is the printed "if you had no tags"
@@ -242,10 +259,37 @@ pub enum TriggerCond {
     SelfWouldBeTrashed,
     /// CR 10.4.2 / 9.1.8b: "when this card is trashed by damage" (I've Had
     /// Worse class). The condition can ONLY ever be met by the card moving
-    /// from the grip to the heap, which is why 9.1.8b keeps the ability
-    /// active THERE — and why a replacement that sends the card anywhere else
-    /// leaves it inactive.
-    SelfTrashedByDamage,
+    /// to the heap, which is why 9.1.8b keeps the ability active THERE — and
+    /// why a replacement that sends the card anywhere else leaves it
+    /// inactive.
+    ///
+    /// ONE condition for "this card is trashed", with everything the printed
+    /// sentence can stipulate about the occurrence as content (§12 rule 2):
+    ///
+    /// * `by_damage` — WHICH damage, and it is not decoration. 10.4.2a
+    ///   resolves meat and net damage by trashing randomly-chosen cards from
+    ///   the grip, and 10.4.2b resolves CORE damage the same way, adding only
+    ///   the hand-size reduction — so a sentence silent about the kind is met
+    ///   by core damage too, and "trashed by taking net or meat damage"
+    ///   excludes it. An EMPTY list is a sentence that does not name damage at
+    ///   all ("when this event is trashed from your grip or stack"), and it is
+    ///   read off the trash record rather than the damage one, so a trash by
+    ///   damage meets such a sentence exactly once.
+    /// * `from_zones` — the zone the card was trashed FROM, read off the
+    ///   record's `was_zone`. Empty is a sentence that names none. A sentence
+    ///   naming several ("your grip **or** stack") is one condition with a
+    ///   longer list, not a disjunction of conditions.
+    ///
+    /// The 9.1.8b zone follows from the condition and not from the fields: a
+    /// trash puts the card in its owner's discard pile whichever zone it came
+    /// from, so the ability is active THERE, which is the only place it can be
+    /// met. That is what makes the grip and the stack sayable at all — 4.3 and
+    /// 4.2's hidden zones leave everything inactive (4.4.4), so a condition
+    /// that could not name the destination could never be met from them.
+    SelfTrashed {
+        by_damage: Vec<crate::effects::DamageKind>,
+        from_zones: Vec<Zone>,
+    },
     /// "Whenever the Runner breaches this server…" (Ash class).
     ThisServerBreached,
     /// "Whenever you breach <this server>…" (Cupellation class — the server
@@ -547,6 +591,32 @@ pub enum TriggerCond {
     /// [`TriggerCond::SelfFullyBroken`] which is met once per encounter.
     /// `printed_only` is the origin stipulation as content (§12 rule 2).
     SubroutineBrokenOnSelf { printed_only: bool },
+    /// CR 9.8.10: "Whenever a subroutine RESOLVES…" (Raindrops Cut Stone
+    /// class) — the occurrence at step 9.8.10e, met once per subroutine
+    /// resolved.
+    ///
+    /// The complement of the three conditions above, which are all about
+    /// BREAKING, and not a substitute for either of them: 9.8.7 makes a
+    /// broken subroutine one that does not resolve, so a card counting
+    /// resolutions and a card counting breaks are asking about disjoint
+    /// occurrences.
+    ///
+    /// `criteria` describes the ICE the subroutine resolved from, in the
+    /// shared filter vocabulary (§12 rule 5), so "a subroutine on **this
+    /// ice**" is [`crate::instr::TargetFilter::IsSource`] and "a subroutine
+    /// on a piece of **bioroid** ice" is a subtype — one condition with
+    /// different content, never a condition per stipulation. An empty list is
+    /// a sentence that stipulates nothing about the ice, which is what
+    /// "whenever **a** subroutine resolves" prints.
+    ///
+    /// Two cases the rules already settle, so neither needs a word of its
+    /// own. 9.8.9's REPLACED subroutine "is treated as having the same source
+    /// as the original imminent subroutine", so it still resolves from the
+    /// ice and still meets this. And 6.10's run-ending subroutine resolved
+    /// like any other before it ended the run, which is what a printed
+    /// "(including a subroutine that ends the run)" is reminding the reader
+    /// of rather than asking for.
+    SubroutineResolved { criteria: Vec<crate::instr::TargetFilter> },
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples). `requires` is 9.6.5c's
     /// additional stipulation — "…**if** you have more [nbn] cards rezzed
@@ -1681,7 +1751,29 @@ pub enum StaticDecl {
     /// declaration (§12 rule 2), read at 6.9.1a where the attacked server is
     /// already announced — which is why the cost can be asked per server at
     /// all.
-    AdditionalRunActionCost { cost: Cost, on: crate::instr::RunServerSet },
+    /// `first_each_turn` is the printed ORDINAL — "…to take the basic action
+    /// to run a server **for the first time each turn**" (Enhanced Login
+    /// Protocol's current printing). It says WHICH TAKINGS of the action the
+    /// cost attaches to, exactly as
+    /// [`StaticDecl::InherentCostMod`]'s field of the same name says which
+    /// install or rez a modification reaches, and is read the same way: from
+    /// the change log (10.2.1 makes the history open information), the cost
+    /// applying while no EARLIER basic run action has been taken this turn.
+    ///
+    /// `false` is a sentence printing no ordinal at all, which is what
+    /// Service Outage prints and what this card's ORIGINAL printing did — so
+    /// every declaration written before this field existed is unchanged.
+    ///
+    /// The ordinal is not interchangeable with a conditional ability met by
+    /// the first run each turn, and the difference is 1.16.1b: an additional
+    /// cost is paid at 6.9.1a to INITIATE the action and gates it, so an
+    /// over-broad one forbids actions the player is entitled to take for
+    /// free, while a conditional resolves after the action and gates nothing.
+    AdditionalRunActionCost {
+        cost: Cost,
+        on: crate::instr::RunServerSet,
+        first_each_turn: bool,
+    },
     /// CR 1.16.2 / 5.2.5a: "The Runner pays 1[credit] more when spending a
     /// [click] to remove a tag **(not through a card ability)**" (SYNC,
     /// front) and "You may pay 2[credit] fewer when spending a [click] to
@@ -2703,9 +2795,11 @@ fn requirement_states_zone(req: &TriggerRequirement, obj: &Object) -> Option<Zon
 /// is what is compared.
 fn condition_only_met_in_zone(cond: &TriggerCond, obj: &Object) -> Option<Zone> {
     match cond {
-        // 10.4.2: damage trashes cards from the grip to the heap, so this
-        // condition can only ever be met with the card in its owner's heap.
-        TriggerCond::SelfTrashedByDamage => Some(Zone::Discard(obj.owner)),
+        // 8.2: a trash moves the card to its owner's discard pile, whichever
+        // zone it came from, so this condition can only ever be met with the
+        // card in that pile — which is what lets a sentence name the grip or
+        // the stack, where 4.4.4 would otherwise leave the ability inactive.
+        TriggerCond::SelfTrashed { .. } => Some(Zone::Discard(obj.owner)),
         // 1.17.3: only the Runner steals, and stealing moves the agenda to
         // the Runner's score area (1.17.7) — where 4.5.4 would otherwise
         // leave it inactive. Clone Retirement's "when you steal this agenda"
@@ -2916,6 +3010,14 @@ fn trigger_matches_dyn(
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
         }
+        (
+            TriggerCond::ServerApproached { this_server, on },
+            GameChange::ServerApproached { server },
+        ) => {
+            cite!("step_approach_server");
+            (!*this_server || server_of_source == Some(*server))
+                && (on.is_empty() || on.contains(server))
+        }
         (TriggerCond::RunnerTrashesCorpCard { .. }, GameChange::CardTrashed { by, obj, .. }) => {
             *by == Side::Runner && trashed_is_corp(*obj)
         }
@@ -2957,10 +3059,6 @@ fn trigger_matches_dyn(
         ) => {
             cite!("rule_subtypes_active");
             of_subtypes.iter().all(|s| has_subtype(*ice, s))
-        }
-        (TriggerCond::ServerApproached, GameChange::ServerApproached { .. }) => {
-            cite!("step_approach_server");
-            true
         }
         (
             TriggerCond::PlayerPaysCredits { side, caused_by, .. },
@@ -3315,9 +3413,32 @@ fn trigger_matches_dyn(
                 // 1.14.5: who did the trashing.
                 && by.is_none_or(|s| *trasher == s)
         }
-        (TriggerCond::SelfTrashedByDamage, GameChange::DamageSuffered { cards, .. }) => {
+        (
+            TriggerCond::SelfTrashed { by_damage, from_zones },
+            GameChange::DamageSuffered { kind, cards, .. },
+        ) => {
+            // 10.4.2a/b: a damage trash takes randomly-chosen cards from the
+            // grip. The KIND is on this record and nowhere else, so a sentence
+            // naming kinds is met here — and only here, which is why a
+            // sentence naming none is not (it reads the trash record below,
+            // so the one occurrence meets it once).
             cite!("rule_meat_net_damage");
-            cards.contains(&source.id)
+            cite!("rule_core_damage");
+            !by_damage.is_empty()
+                && by_damage.contains(kind)
+                && cards.contains(&source.id)
+                && (from_zones.is_empty() || from_zones.contains(&Zone::Hand(source.owner)))
+        }
+        (
+            TriggerCond::SelfTrashed { by_damage, from_zones },
+            GameChange::CardTrashed { obj, was_zone, .. },
+        ) => {
+            // 8.2.2: the trash movement is recorded whatever caused it, so
+            // this is where a sentence that names no damage kind is met.
+            cite!("movement_trash");
+            by_damage.is_empty()
+                && *obj == source.id
+                && (from_zones.is_empty() || from_zones.contains(was_zone))
         }
         (
             TriggerCond::EncounterEnds { criteria, with_advanced_ice },
@@ -3348,6 +3469,16 @@ fn trigger_matches_dyn(
         ) => {
             cite!("rule_break_subroutine");
             *ice == source.id && (!*printed_only || *printed)
+        }
+        (
+            TriggerCond::SubroutineResolved { criteria },
+            GameChange::SubroutineResolved { ice, .. },
+        ) => {
+            // 9.8.10e: the resolution itself, one occurrence per subroutine.
+            // §12 rule 5: whatever else the sentence says about the ice is a
+            // description, asked the way every other description is.
+            cite!("step_subroutine_resolution");
+            matches_criteria(*ice, criteria)
         }
         (TriggerCond::RunnerStealsAgenda { .. }, GameChange::AgendaStolen { .. }) => true,
         (TriggerCond::CorpScoresAgenda { criteria, .. }, GameChange::AgendaScored { obj, .. }) => {

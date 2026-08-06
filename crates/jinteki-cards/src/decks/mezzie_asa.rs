@@ -367,8 +367,7 @@ pub fn estelle_moon() -> Card {
 ///  The first time you spend 3[click] on the same action each turn, gain
 ///  [click]."
 ///
-/// UNIMPLEMENTED: the second sentence, which is the whole of what this card
-/// does at the table.
+/// COMPLETE.
 ///
 /// The alliance line is not a sentence this card does. Like "Limit 1 per
 /// deck" it is a deckbuilding restriction on influence (1.4.5) — it changes
@@ -377,16 +376,20 @@ pub fn estelle_moon() -> Card {
 /// treatment Salem's Hospitality already has.
 ///
 /// "The first time you spend 3[click] on the same action each turn" counts
-/// CLICKS, and the trigger vocabulary counts ACTIONS. The nearest words are
-/// The Collective's "the same action three times in a row" and MirrorMorph's
-/// "three different actions", and neither is this sentence: 5.2.6h's basic
-/// purge action is ONE action costing three clicks and meets Jeeves, and a
-/// double operation followed by an ordinary one is TWO actions costing three
-/// clicks between them and meets Jeeves — both of which the official rulings
-/// list, and neither of which is any number of repeated actions. Written with
-/// the words that exist the card would silently fire less often than it
-/// should, so it is marked instead. The general capability wanted is on
-/// MEZZIE-QUEUE.md's Blockers.
+/// CLICKS, not actions, and the distinction is the card: 5.2.6h's basic purge
+/// is ONE action costing three clicks and meets it, and a double operation
+/// followed by an ordinary action is TWO actions costing three clicks between
+/// them and meets it too. Neither is any number of REPEATED actions, so The
+/// Collective's `same_action_in_a_row` and MirrorMorph's
+/// `different_actions_this_turn` are both the wrong word — the right one is
+/// 1.16.4d's [`spends_clicks_on_one_action`], whose "clicks spent to take the
+/// action" expressly aggregates the clicks of an additional cost paid several
+/// steps into the action's resolution.
+///
+/// "The first time … each turn" is 9.6.5c's ordinal and NOT 9.3.6g's
+/// once-per-turn flag: the sentence is entirely mandatory, 9.1.6 says a player
+/// never "uses" an entirely mandatory ability, and a flag that is spent by
+/// using would therefore never expend at all.
 pub fn jeeves_model_bioroids() -> Card {
     card("Jeeves Model Bioroids")
         .corp()
@@ -398,7 +401,8 @@ pub fn jeeves_model_bioroids() -> Card {
         .unique()
         .text("This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck.")
         .text("The first time you spend 3[click] on the same action each turn, gain [click].")
-        .unimplemented("The first time you spend 3[click] on the same action each turn, gain [click].")
+        .when_first_each_turn(spends_clicks_on_one_action(Corp, 3), [gain_clicks(Corp, 1)])
+        .named("three clicks on one action")
         .build()
 }
 
@@ -565,7 +569,7 @@ pub fn mca_austerity_policy() -> Card {
 ///  2[recurring-credit]
 ///  Use these credits to rez cards."
 ///
-/// PARTIAL: the credits arrive; nothing can spend them yet.
+/// COMPLETE.
 ///
 /// The alliance line is a 1.4.5 deckbuilding restriction on influence and not
 /// a sentence this card does — the same treatment Jeeves Model Bioroids's
@@ -578,19 +582,18 @@ pub fn mca_austerity_policy() -> Card {
 /// rezzed — and 1.10.5d refills rather than accumulates them when the Corp's
 /// turn begins, so the card never holds more than the 2 it prints.
 ///
-/// UNIMPLEMENTED: "Use these credits to rez cards." 1.10.3c is the whole of
-/// what hosted credits are — they may be spent only as the hosting card's
-/// ability allows — and the vocabulary names five allowances: any payment, a
-/// payment to trash described cards, a payment for USING described cards
-/// (9.1.6a's paid-ability trigger cost), a trace attempt's two spend steps,
-/// and a payment to advance described cards. Rezzing is none of them and is
-/// not a spelling of any of them: 8.1.2's rez procedure pays a card's rez
-/// cost and uses no ability at all, so writing this as the "using" allowance
-/// would let the credits pay for paid abilities they may not pay for and
-/// still not pay for a rez. With the restriction unsayable the placed credits
-/// are reachable by no payment, which is the honest reading of a card whose
-/// only permission is the marked sentence. The general capability wanted is
-/// on MEZZIE-QUEUE.md's Blockers.
+/// "Use these credits to rez cards" is 1.10.3c, which is the whole of what
+/// hosted credits are: they may be spent only as the hosting card's ability
+/// allows. The allowance names REZZING, and that is not a spelling of the
+/// "using described cards" one — 8.1.2's rez procedure pays a card's rez cost
+/// and uses no ability at all, so the "using" allowance would let these
+/// credits pay for paid abilities they may not pay for and STILL not pay for
+/// a rez.
+///
+/// The cards are described the ordinary way, and the card says plain "cards",
+/// which `in_any_location` is how this vocabulary prints (Whizzard's line
+/// already does it). For a rez it reaches the same set either way, because
+/// 8.1.2 only ever rezzes an installed card.
 pub fn mumba_temple() -> Card {
     card("Mumba Temple")
         .corp()
@@ -603,7 +606,7 @@ pub fn mumba_temple() -> Card {
         .text("This card costs 0 influence if you have 15 or fewer ice in your deck.")
         .text("2[recurring-credit]")
         .text("Use these credits to rez cards.")
-        .unimplemented("Use these credits to rez cards.")
+        .credits_only_for_rezzing(&[in_any_location()])
         .build()
 }
 
@@ -670,7 +673,7 @@ pub fn spin_doctor() -> Card {
 ///  As an additional cost to take the basic action to run a server for the
 ///  first time each turn, the Runner must spend [click]."
 ///
-/// PARTIAL: the current stays; the toll it charges cannot be stated.
+/// COMPLETE.
 ///
 /// The first sentence is 8.6.6c read exactly: instead of trashing the card at
 /// step 8.6.7g of playing it, a lingering effect is created whose duration
@@ -682,20 +685,23 @@ pub fn spin_doctor() -> Card {
 /// already carries, and it is what makes the second sentence a static ability
 /// of a card in play rather than something the operation does as it resolves.
 ///
-/// UNIMPLEMENTED: the second sentence. It is 1.16.10's additional cost on
-/// 5.2.7a's basic run action, paid at 6.9.1a before the run formally begins
-/// (which is exactly the CR's own worked example against Heinlein Grid: the
-/// click is spent to INITIATE the run and is not spent during it). The
-/// declaration for that cost exists and names which servers it reaches — but
-/// it says nothing about WHICH TAKINGS of the action it attaches to, and this
-/// card charges only the first each turn. Written with the word that exists
-/// the Runner would pay a click for every run action of every turn, which is
-/// a strictly worse card than the printed one and a 1.16.1b gate on actions
-/// the Runner is entitled to take for free. A conditional ability met by the
-/// first run each turn is not a substitute either: an additional cost gates
-/// the action (1.16.1b — an unpayable cost means the action cannot be taken
-/// at all), and a conditional resolves after it. So it is marked. The general
-/// capability wanted is on MEZZIE-QUEUE.md's Blockers.
+/// The second sentence is 1.16.10's additional cost on 5.2.7a's basic run
+/// action, paid at 6.9.1a before the run formally begins — which is exactly
+/// the CR's own worked example against Heinlein Grid: the click is spent to
+/// INITIATE the run and is not spent during it.
+///
+/// "For the first time each turn" is the printed ORDINAL, and it is content on
+/// the same declaration rather than a second mechanism. It is read from the
+/// change log (10.2.1's open history): the cost applies while no earlier basic
+/// run action has been taken this turn, which is 5.2.5a's action identity
+/// asked of the turn.
+///
+/// It is not a conditional ability met by the first run each turn, and the
+/// difference is 1.16.1b: an additional cost GATES the action — a Runner who
+/// cannot pay cannot take it at all — while a conditional resolves after the
+/// action and gates nothing. Nor could the ordinal be left off: the Runner
+/// would pay a click for every run action of every turn, which forbids runs
+/// the printed card leaves free.
 pub fn enhanced_login_protocol() -> Card {
     card("Enhanced Login Protocol")
         .corp()
@@ -707,7 +713,8 @@ pub fn enhanced_login_protocol() -> Card {
         .text("As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click].")
         .declares([not_trashed_until_an_agenda_is_stolen()])
         .named("the current stays in the play area")
-        .unimplemented("As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click].")
+        .declares([additional_cost_to_run_the_first_time_each_turn(clicks(1))])
+        .named("a click for the turn's first run")
         .build()
 }
 
@@ -922,20 +929,15 @@ pub fn ash_2x3zb9cy() -> Card {
 /// "Whenever the Runner approaches this server, end the run unless they either
 ///  spend [click][click] or pay 5[credit]."
 ///
-/// UNIMPLEMENTED: the card's only sentence, on two counts that are each enough
-/// on their own.
+/// UNIMPLEMENTED: the card's only sentence, on ONE count now rather than two.
 ///
-/// "Approaches THIS server" is 6.9.4g's step with the server as a stipulation,
-/// and the approach condition takes none. The kernel's other two run
-/// conditions about a server carry it — a successful run "on this server"
-/// (Ash, above) and a run on this server ending (the AMAZE class) both compare
-/// the attacked server against the server the source is in — but the approach
-/// was written for the Formicary class, whose sentence names A server and means
-/// every one of them. Written with the word that exists, a rezzed copy in a
-/// remote would end runs on HQ and R&D, which is not a smaller card than the
-/// printed one; it is a different and much larger one.
+/// "Approaches THIS server" is no longer among them: 6.9.4g's condition now
+/// carries the server the way `IcePassed` carries its ice, so
+/// `runner_approaches_this_server()` says exactly what the card prints, and
+/// the kernel test measures the difference the scoping makes.
 ///
-/// "Unless they either spend [click][click] or pay 5[credit]" is 1.16.11b's
+/// What is left is "unless they either spend [click][click] or pay 5[credit]",
+/// which is 1.16.11b's
 /// nested cost with TWO costs, and the nested cost holds one. The two are not
 /// interchangeable and neither is a subset of the other: 1.11 clicks and 1.10
 /// credits are different resources, and a Runner with 5[credit] and no clicks
@@ -947,7 +949,7 @@ pub fn ash_2x3zb9cy() -> Card {
 /// two halves of a single choice. 9.12.3c is the shape the sentence actually
 /// has — a choice among options, restricted to the ones that can be fully
 /// resolved — so a Runner who can afford neither faces no choice at all and
-/// the run ends. The general capabilities wanted are on MEZZIE-QUEUE.md's
+/// the run ends. The general capability wanted is on MEZZIE-QUEUE.md's
 /// Blockers.
 pub fn manegarm_skunkworks() -> Card {
     card("Manegarm Skunkworks")
@@ -1149,37 +1151,48 @@ pub fn fairchild_3_0() -> Card {
 ///  cannot steal or trash Corp cards for the remainder of this run.
 ///  [subroutine] The Runner loses [click]."
 ///
-/// UNIMPLEMENTED: the first sentence — and, as of this merge, NOT because
-/// either half is unsayable any more. Both words landed, from two kernel
-/// waves that ran in parallel and each knew only its own half:
+/// COMPLETE — and it took two kernel waves that ran in parallel, each of
+/// which knew only its own half and each of which recorded the other as the
+/// blocker. Both words landed:
 ///
-///   * "if they have no [click] remaining" is a 9.6.5c requirement about a
-///     NUMBER (1.11.3), and `at_most(clicks_of(Runner), 0)` now states it in
-///     the direction the card prints it;
+///   * "if they have no [click] remaining" is a question about a NUMBER
+///     (1.11.3), and `at_most(clicks_of(Runner), 0)` states it in the
+///     direction the card prints it;
 ///   * "they cannot steal or trash Corp cards for the remainder of this run"
-///     is 1.2.2's cannot over an act, a duration and a description, all of
-///     which `ProhibitionScope::Matching` now carries.
+///     is 1.2.2's cannot over an act, a player, a description and a duration,
+///     all four of which `ProhibitionScope::Matching` carries.
 ///
-/// The sentence is one instruction (9.11.3), so it stays marked until it is
-/// written WHOLE — which is now a card-writing job and no longer a kernel
-/// one.
+/// The "if" is 9.6.5**d** and not 9.6.5c, which is decided by the word order
+/// and not by taste. 9.6.5c's own example is Quantum Predictive Model, whose
+/// requirement comes FIRST — "**If** the Runner is tagged **when** … is
+/// accessed" — and whose entire trigger condition is therefore both clauses.
+/// 9.6.5d's example is Underworld Contact, "**When** your turn begins, **if**
+/// you have 2 or more link, …", which is this card's template exactly: the
+/// requirement sits in the instructions and is checked when they resolve. So
+/// it is written with [`if_met`], which is 9.6.5d, rather than as a
+/// stipulation on the pass.
 ///
-/// The other half is no longer a blocker. "They cannot steal or trash Corp
-/// cards for the remainder of this run" is 9.10.1's prohibition with the run
-/// as its duration and a description for its scope, and the CR 1.2.2 wave
-/// added all three of the pieces it wanted: stealing (7.5) and trashing
-/// (7.1.5 / 1.19.4) are acts a "cannot" names, "Corp cards" is a description
-/// read where the act is offered, and "they" is the player the prohibition
-/// names — which matters here, because trashing is the one act BOTH players
-/// perform and the Corp must go on trashing its own cards.
+/// The whole sentence is still ONE instruction (9.11.3): `if_met` carries the
+/// condition and the effect together, so no checkpoint, reaction window or
+/// interrupt window opens between the test and the prohibition.
 ///
-/// The sentence still carries `.unimplemented(…)` whole, because 9.11.3 makes
-/// it ONE instruction: a requirement that cannot be stated is not a smaller
-/// version of the sentence, it is a prohibition that would apply when the
-/// printed one does not.
+/// Three things decide the prohibition's shape:
 ///
-/// The subroutine is complete: 1.11.3b's loss, which is not a spend, and
-/// which leaves a Runner with no clicks at zero rather than failing.
+/// * It is a LINGERING EFFECT (9.10.1) with a stated duration, not a static
+///   declaration of the ice — derez or trash the ice mid-run and the printed
+///   sentence lifts nothing, because it never said it would.
+/// * Its scope is a DESCRIPTION and not a named card. "Corp cards" is re-read
+///   wherever the act is offered, which is what reaches an agenda that is
+///   still in R&D — not installed, not in play — at the moment the sentence
+///   resolves. A named-card prohibition resolves through announced targets
+///   that 9.10.1 announces none of and would forbid nothing at all.
+/// * "**They**" is load-bearing, so the prohibition names the Runner.
+///   Stealing (7.5) is the Runner's act by definition, but trashing is the one
+///   act BOTH players perform, and the Corp must go on trashing its own cards
+///   — its own assets, its own operations on resolution — throughout the run.
+///
+/// The subroutine is 1.11.3b's loss, which is not a spend, and which leaves a
+/// Runner with no clicks at zero rather than failing.
 pub fn vertigo() -> Card {
     card("Vertigo")
         .corp()
@@ -1189,7 +1202,19 @@ pub fn vertigo() -> Card {
         .cost(1)
         .text("When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run.")
         .text("[subroutine] The Runner loses [click].")
-        .unimplemented("When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run.")
+        .when(
+            passed(),
+            [if_met(
+                &[at_most(clicks_of(Runner), 0)],
+                [cannot_act_on_matching(
+                    &[controlled_by(Corp)],
+                    Some(Runner),
+                    &[ProhibitedAction::Steal, ProhibitedAction::Trash],
+                    WantedDuration::ThisRun,
+                )],
+            )],
+        )
+        .named("no clicks, no stealing or trashing")
         .subroutine([lose_clicks(Runner, 1)])
         .named("the runner loses a click")
         .build()

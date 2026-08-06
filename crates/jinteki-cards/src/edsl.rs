@@ -383,6 +383,29 @@ impl CardBuilder {
             Some(jinteki_cr::instr::CreditUse::AdvancingCards(criteria.to_vec()));
         self
     }
+    /// "Use these credits **to rez cards**." (Mumba Temple; CR 1.10.3c +
+    /// 8.1.2d.) The cards that may be rezzed with the credits are described
+    /// with the ordinary filter words. It is not
+    /// [`Self::credits_only_for_using`]: 8.1.2's rez procedure uses no ability
+    /// at all, so writing it that way would let the credits pay for paid
+    /// abilities they may not pay for and still not pay for a rez.
+    pub fn credits_only_for_rezzing(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::Rezzing(criteria.to_vec()));
+        self
+    }
+    /// "You can spend hosted credits **to play events**." (Mystic Maemi; CR
+    /// 1.10.3c + 8.6.7c.) The same position for the PLAY cost, missing for the
+    /// same reason — 8.6's play procedure uses no ability either. The cards
+    /// are described the ordinary way, and a card that names no zone wants
+    /// [`in_any_location`] beside the type: an event is played from the grip
+    /// or, with Same Old Thing, from the heap, and 1.15.2c's play-area default
+    /// would reach neither.
+    pub fn credits_only_for_playing(mut self, criteria: &[TargetFilter]) -> Self {
+        self.printed.hosted_credits_spendable =
+            Some(jinteki_cr::instr::CreditUse::PlayingCards(criteria.to_vec()));
+        self
+    }
 
     // ---- the printed text ------------------------------------------------
     /// One printed line of the card's text box, copied exactly. Call it once
@@ -1170,6 +1193,7 @@ pub fn run_then_if_successful(
         allowed: RunServerSet::These(vec![server]),
         if_successful: if_successful.into_iter().collect(),
         if_would_be_successful: Vec::new(),
+        during: Vec::new(),
     }
 }
 /// "Run any server. If successful, …" — the effect names no server, so the
@@ -1177,6 +1201,33 @@ pub fn run_then_if_successful(
 /// allows (minus any server 6.3.2a forbids initiating a run on).
 pub fn run_any_server(if_successful: impl IntoIterator<Item = Instruction>) -> Instruction {
     Instruction::run_any_server(if_successful.into_iter().collect())
+}
+/// "Run any server. **<X> during that run.**" (Blackmail; CR 6.9.1 / 5.2.2b.)
+/// The effects the sentence states about the run it initiates, resolved as the
+/// run begins and gated on nothing.
+///
+/// The third thing a run-initiating sentence can say about its own run, beside
+/// [`run_any_server`]'s "if successful" and
+/// [`run_then_if_would_be_successful`]'s "would be". It has to ride on the
+/// instruction rather than follow it because 5.2.2b suspends the ability until
+/// the run completes: an instruction written after the run does not resolve
+/// until the run is over, and 9.10.4 would expire the "this run" duration it
+/// then created before anything could read it.
+pub fn run_any_server_during_which(
+    during: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    match Instruction::run_any_server(Vec::new()) {
+        Instruction::InitiateRun { server, allowed, if_successful, if_would_be_successful, .. } => {
+            Instruction::InitiateRun {
+                server,
+                allowed,
+                if_successful,
+                if_would_be_successful,
+                during: during.into_iter().collect(),
+            }
+        }
+        other => other,
+    }
 }
 /// "Run <server>. If that run **would** be declared successful, …" (Omar
 /// Keung.) 9.9.1's "would" makes the second sentence an INTERRUPT, relevant
@@ -1198,6 +1249,7 @@ pub fn run_then_if_would_be_successful(
         allowed: RunServerSet::These(vec![server]),
         if_successful: Vec::new(),
         if_would_be_successful: if_would_be_successful.into_iter().collect(),
+        during: Vec::new(),
     }
 }
 /// "The attacked server becomes <server>." (6.1.2d.) The run's timing step is
@@ -1727,6 +1779,16 @@ pub fn top_of_heap(count: Quantity) -> TargetSpec {
 pub fn looked_at_by_this_ability() -> TargetFilter {
     TargetFilter::LookedAtByThisAbility
 }
+/// "…the **revealed** cards" (Inject), "…**that agenda**" said of the one this
+/// ability revealed (Lakshmi Smartfabrics) — CR 1.21.6, which keeps a revealed
+/// card visible to the resolving ability exactly as it keeps a looked-at one.
+/// The twin of [`looked_at_by_this_ability`], and not interchangeable with it:
+/// 1.21.5 says looking and revealing "are not the same". CR 1.12.3 applies the
+/// same way — a card that moves to an unknown location becomes a new object and
+/// this description stops reaching it.
+pub fn revealed_by_this_ability() -> TargetFilter {
+    TargetFilter::RevealedByThisAbility
+}
 /// "…1 of them" — a card in this ability's own 4.8.7 set-aside group, still
 /// in the set-aside zone (Skorpios Defense Systems).
 pub fn set_aside_by_this_ability() -> TargetFilter {
@@ -2155,7 +2217,15 @@ pub fn passes_any_ice() -> TriggerCond {
 /// reached once every piece of ice protecting the attacked server has been
 /// passed — or straight away when none is).
 pub fn runner_approaches_a_server() -> TriggerCond {
-    TriggerCond::ServerApproached
+    TriggerCond::ServerApproached { this_server: false, on: Vec::new() }
+}
+/// "Whenever the Runner approaches **this server**, …" (Manegarm Skunkworks;
+/// 6.9.4g). The same condition scoped to the source's own server, which is
+/// what `SuccessfulRunOnServer` and `RunOnThisServerEnds` already ask for the
+/// two later steps of the run. A source that is in no server approaches
+/// nothing, so an upgrade in the grip says nothing at all.
+pub fn runner_approaches_this_server() -> TriggerCond {
+    TriggerCond::ServerApproached { this_server: true, on: Vec::new() }
 }
 /// "When this run ends, …"
 pub fn run_ends() -> TriggerCond {
@@ -2467,6 +2537,29 @@ pub fn suffers_damage(kind: DamageKind) -> TriggerCond {
 /// "Whenever the Runner suffers damage…" — any kind.
 pub fn suffers_any_damage() -> TriggerCond {
     TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false, responsible: None }
+}
+/// "Whenever **this card** is trashed by taking **net or meat** damage…"
+/// (I've Had Worse; CR 10.4.2 / 9.1.8b.) The kinds are the sentence's whole
+/// stipulation and they are load-bearing: 10.4.2b resolves CORE damage by
+/// trashing from the grip exactly as 10.4.2a resolves the other two, so a
+/// sentence silent about the kind is met by core damage too.
+///
+/// 9.1.8b is what makes it reachable from the grip at all — the trash puts the
+/// card in the heap, so the ability is active there, which is the only place
+/// the condition can be met.
+pub fn this_card_is_trashed_by_damage(kinds: &[DamageKind]) -> TriggerCond {
+    TriggerCond::SelfTrashed { by_damage: kinds.to_vec(), from_zones: Vec::new() }
+}
+/// "When **this card** is trashed **from your grip or stack**…" (Steelskin
+/// Scarring) — the same condition with the other stipulation: the zone the
+/// card was trashed FROM, and no stipulation about damage at all. A sentence
+/// naming two zones is one condition with a longer list.
+///
+/// It reads the TRASH record rather than the damage one, so a card trashed by
+/// damage out of the grip meets it exactly once, and a card milled off the
+/// stack meets it too — which "or stack" is there for.
+pub fn this_card_is_trashed_from(zones: &[Zone]) -> TriggerCond {
+    TriggerCond::SelfTrashed { by_damage: Vec::new(), from_zones: zones.to_vec() }
 }
 /// "Whenever **you do** damage…" (AU Co.) — the same occurrence
 /// [`suffers_any_damage`] names, with 10.4.1's stipulation about who was
@@ -2784,6 +2877,20 @@ pub fn same_action_in_a_row(side: Side, count: usize) -> TriggerCond {
 pub fn different_actions_this_turn(side: Side, count: usize) -> TriggerCond {
     TriggerCond::DifferentActionsThisTurn { side, count }
 }
+/// "The first time you spend N[click] on the same action each turn…"
+/// (Jeeves Model Bioroids; 1.16.4d). The third of 5.2.5's action-shaped
+/// conditions, and the one that counts CLICKS rather than actions: the
+/// clicks counted are every click spent to TAKE one action, including those
+/// of an additional cost paid several steps into its resolution — so a basic
+/// purge (one action, three clicks) meets it and so do a double operation
+/// and an ordinary action taken after it (two actions, three clicks between
+/// them).
+///
+/// Pair it with [`CardBuilder::when_first_each_turn`] for the printed "the
+/// first time … each turn": 9.6.5c's ordinal, not 9.3.6g's flag.
+pub fn spends_clicks_on_one_action(side: Side, count: u32) -> TriggerCond {
+    TriggerCond::ClicksSpentOnAction { side, count }
+}
 /// "Whenever the Runner draws a card…" (8.4.2: met once per card drawn).
 pub fn draws_a_card(side: Side) -> TriggerCond {
     TriggerCond::PlayerDrawsCards(side)
@@ -2917,6 +3024,24 @@ pub fn additional_cost_to_run(servers: &[ServerId], c: Cost) -> StaticDecl {
     StaticDecl::AdditionalRunActionCost {
         cost: c,
         on: jinteki_cr::instr::RunServerSet::These(servers.to_vec()),
+        first_each_turn: false,
+    }
+}
+/// "As an additional cost to take the basic action to run a server **for the
+/// first time each turn**, the Runner must pay <cost>." (Enhanced Login
+/// Protocol; 1.16.10 / 5.2.5a.) The same declaration with the printed ORDINAL
+/// on it, and the sentence names no server, so the set is every one.
+///
+/// The ordinal is not a conditional ability met by the first run each turn.
+/// 1.16.1b makes an additional cost a GATE on the action, paid at 6.9.1a to
+/// initiate it; a conditional resolves after the action and gates nothing.
+/// (The CR's own Heinlein Grid example turns on that distinction: the click
+/// this cost charges is spent to initiate the run and is not spent during it.)
+pub fn additional_cost_to_run_the_first_time_each_turn(c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalRunActionCost {
+        cost: c,
+        on: jinteki_cr::instr::RunServerSet::Any,
+        first_each_turn: true,
     }
 }
 /// "As an additional cost to run **a remote server**, the Runner must pay
@@ -2925,7 +3050,11 @@ pub fn additional_cost_to_run(servers: &[ServerId], c: Cost) -> StaticDecl {
 /// this is [`jinteki_cr::instr::RunServerSet::AnyRemote`] and never an
 /// enumeration.
 pub fn additional_cost_to_run_a_remote_server(c: Cost) -> StaticDecl {
-    StaticDecl::AdditionalRunActionCost { cost: c, on: jinteki_cr::instr::RunServerSet::AnyRemote }
+    StaticDecl::AdditionalRunActionCost {
+        cost: c,
+        on: jinteki_cr::instr::RunServerSet::AnyRemote,
+        first_each_turn: false,
+    }
 }
 /// "The Runner pays 1[credit] more when spending a [click] to remove a tag
 /// **(not through a card ability)**." (SYNC, front face; 1.16.2 / 5.2.7g.)
@@ -3305,6 +3434,19 @@ pub fn shuffle_deck_of(side: Side) -> Instruction {
 /// encounter.)
 pub fn printed_subroutine_broken() -> TriggerCond {
     TriggerCond::SubroutineBrokenOnSelf { printed_only: true }
+}
+/// "Whenever **a subroutine resolves**…" (Raindrops Cut Stone; CR 9.8.10e) —
+/// met once per subroutine RESOLVED, which is the complement of every
+/// break-shaped condition and not a substitute for one: 9.8.7 makes a broken
+/// subroutine one that does not resolve.
+///
+/// The criteria describe the ICE the subroutine resolved from, in the ordinary
+/// description words — `&[]` stipulates nothing, [`this_very_card`] says "on
+/// this ice". A subroutine 9.8.9 replaced still
+/// resolves from the ice, and 6.10's run-ending subroutine resolved before it
+/// ended the run, so both meet this without a word of their own.
+pub fn subroutine_resolves(criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::SubroutineResolved { criteria: criteria.to_vec() }
 }
 /// "…there is an installed AI program" (IP Block class) — at least `n` cards
 /// on the board match the description. The criteria are the same ones a
@@ -3732,6 +3874,23 @@ pub fn accesses_this_run() -> Quantity {
 pub fn accesses_this_turn() -> Quantity {
     Quantity::AccessesThisTurn
 }
+/// "…if you stole an agenda **during that run**" (Mad Dash; CR 7.5 over
+/// 1.12.6's run window) — how many agendas the Runner stole since the run
+/// began. Pair it with [`at_least`] 1 for the printed "if you stole an
+/// agenda"; a sentence saying "you stole no agendas" is [`at_most`] 0.
+///
+/// Not `TriggerCond::RunnerStealsAgenda`, and the difference is which
+/// question is being asked: that condition is met BY a steal as it happens,
+/// and a "when this run ends" ability asks about the run's history, which no
+/// occurrence during the run can answer for it.
+pub fn agendas_stolen_this_run() -> Quantity {
+    Quantity::AgendasStolen(jinteki_cr::instr::HistoryWindow::ThisRun)
+}
+/// "…for each agenda you stole **this turn**" — the same count over 1.12.6's
+/// turn window.
+pub fn agendas_stolen_this_turn() -> Quantity {
+    Quantity::AgendasStolen(jinteki_cr::instr::HistoryWindow::ThisTurn)
+}
 /// "…if your [mu] is full" / "…if you have at least 1 unused [mu]" (Dewi
 /// Subrotoputri's two faces) — CR 1.20.4a's own calculated value, the memory
 /// limit minus installed programs' memory costs. "Full" is [`at_most`] 0
@@ -3902,6 +4061,25 @@ pub fn cannot_act_on_matching(
             by,
             actions: actions.to_vec(),
         },
+        duration,
+    }
+}
+/// "**During that run, hosted credits are considered to be in your credit
+/// pool.**" (Stimhack; CR 1.13.3 waived for a duration.)
+///
+/// It is not a [`CardBuilder::credits_spendable_on_anything`] allowance under
+/// another name, and the difference is the whole of the sentence. 1.10.3c's
+/// allowances say what hosted credits may be SPENT on; 1.13.3 says hosted
+/// counters are not "on" the player at all, and this waives THAT — so the
+/// credits are read by everything that reads the pool: a forced 1.10.3b loss
+/// takes them, and a quantity asking how many credits the player has counts
+/// them. An allowance reaches every payment and none of those reads.
+pub fn hosted_credits_count_as_pool_credits(
+    criteria: &[TargetFilter],
+    duration: WantedDuration,
+) -> Instruction {
+    Instruction::CreateLingeringEffect {
+        payload: LingeringSpec::HostedCreditsAsPool { cards: criteria.to_vec() },
         duration,
     }
 }

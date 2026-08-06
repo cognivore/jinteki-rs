@@ -13,6 +13,7 @@
 
 use jinteki_cr::change::GameChange;
 use jinteki_cr::decision::GameResult;
+use jinteki_cr::effects::DamageKind;
 use jinteki_cr::object::{ServerId, Side, Zone};
 use jinteki_cr::plan::{self, Match, Plan, Reply};
 use jinteki_cr::testkit as tk;
@@ -35,7 +36,7 @@ fn four_net_damage_into_a_two_card_grip_flatlines() {
 
     // Exactly two cards in the grip; one of them watches for its own
     // damage-trash ("When this card is trashed by damage, gain 3[c]").
-    let watcher = vm.new_object(tk::ive_had_worse_like("IHW-like"), Zone::Hand(Side::Runner));
+    let watcher = vm.new_object(tk::ive_had_worse_like("IHW-like", &[DamageKind::Meat, DamageKind::Net, DamageKind::Core]), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(watcher);
     let other = tk::fill_hand(&mut vm, Side::Runner, 1);
     vm.st.runner.credits = 0;
@@ -106,7 +107,7 @@ fn four_net_damage_into_a_four_card_grip_empties_it_without_a_flatline() {
     let mut vm = Vm::empty(4243);
     stock_rnd(&mut vm, 5);
     tk::install_root(&mut vm, tk::net_damage_button("NetDamage-4", 4), ServerId::Remote(1), true);
-    let watcher = vm.new_object(tk::ive_had_worse_like("IHW-like"), Zone::Hand(Side::Runner));
+    let watcher = vm.new_object(tk::ive_had_worse_like("IHW-like", &[DamageKind::Meat, DamageKind::Net, DamageKind::Core]), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(watcher);
     tk::fill_hand(&mut vm, Side::Runner, 3);
     vm.st.runner.credits = 0;

@@ -73,6 +73,28 @@ pub enum Quantity {
     /// at least 1, and "you did not access any cards this turn" is this at
     /// most 0 — the only way a count says "none".
     AccessesThisTurn,
+    /// CR 7.5 / 1.12.6: the number of agendas the Runner STOLE inside a
+    /// history window — "if you stole an agenda during that run" (Mad Dash),
+    /// "for each agenda you stole this turn".
+    ///
+    /// 7.5's steal is an occurrence, and `TriggerCond::RunnerStealsAgenda` is
+    /// met by it as it happens. This is the other question, the one a "when
+    /// this run ends" ability has to put: not "is a steal happening" but "did
+    /// one happen inside this span". A condition met during the run is no
+    /// answer to it, because by the time the later ability resolves the
+    /// occurrence is over.
+    ///
+    /// The WINDOW is content (§12 rule 2), which is what
+    /// [`Quantity::AccessesThisRun`] and [`Quantity::AccessesThisTurn`] are
+    /// the older two-variant spelling of: the count is the same count, and a
+    /// run and a turn are two spans of the same 1.12.6 history review. Read
+    /// from the change log, which 10.2.1 makes open information.
+    ///
+    /// Only the Runner steals (7.5), so there is no side to carry. The
+    /// threshold and its direction are content on whatever asks: "you stole
+    /// an agenda" is this at least 1, and "you stole no agendas" is this at
+    /// most 0.
+    AgendasStolen(HistoryWindow),
     /// CR 1.20.4a: the Runner's UNUSED [mu] — the memory limit (1.20.2, as
     /// modified) minus the total memory cost of installed programs (1.20.3),
     /// which 1.20.4a names as a calculated value directly and rules that it
@@ -270,6 +292,26 @@ impl Quantity {
             Box::new(Quantity::Times(per, Box::new(Quantity::CountersOnSource(kind)))),
         )
     }
+}
+
+/// CR 1.12.6: the SPAN of game history a count reviews — "during that run"
+/// against "this turn".
+///
+/// Content on the quantity that counts (§12 rule 2), never a quantity per
+/// span: a sentence asking how many of something happened differs from its
+/// neighbour in the span alone. Both spans are marks into the change log,
+/// which 10.2.1 makes open information — `Vm::st.run_log_start` and
+/// `Vm::st.turn_log_start`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryWindow {
+    /// "…during that run" — from the run in progress beginning, or from the
+    /// run that just ended, for a "when this run ends" ability. Outside a run
+    /// the mark is stale and the count is whatever the last run left; a
+    /// sentence saying "that run" is only ever asked inside or at the end of
+    /// one.
+    ThisRun,
+    /// "…this turn" — from the current turn beginning (5.1).
+    ThisTurn,
 }
 
 /// The shared SERVER-filter language: the stipulations a sentence makes about
@@ -649,6 +691,34 @@ pub enum Instruction {
         /// is stated about "If successful" abilities; this sentence names the
         /// RUN ("that run"), and the run is what carries the clause.
         if_would_be_successful: Vec<Instruction>,
+        /// CR 6.9.1 / 5.2.2b: what the sentence states about the run it
+        /// initiates, UNCONDITIONALLY — "The Corp cannot rez ice **during
+        /// that run**" (Blackmail), "**During that run**, <X>". Resolved as
+        /// the run begins, before its first step.
+        ///
+        /// The third position beside `if_successful` and
+        /// `if_would_be_successful`, and it rides here for the same reason
+        /// both of those do: the sentence says "that run", and the run this
+        /// instruction creates is what identifies it.
+        ///
+        /// It is a position rather than an instruction written after the run
+        /// because 5.2.2b makes the two different things. "If a timing
+        /// structure is initiated during the resolution of an action, that
+        /// action is not complete until the new timing structure is complete
+        /// **and any further effects of the initiated action following the
+        /// completion of the new timing structure are resolved**" — so an
+        /// instruction printed after the run does not resolve until the run is
+        /// over, and a lingering effect it created for "that run" would meet
+        /// 9.10.4's "duration based on a timing structure that is not in
+        /// progress at the time the lingering effect is created" and expire
+        /// immediately. The card would do nothing at all.
+        ///
+        /// Neither workaround is offered. Reordering the sentence in front of
+        /// the run invents an instruction boundary the card does not print
+        /// (9.11.3) and creates the effect while there is no run to bind it
+        /// to; folding it into `if_successful` gates it on a success the card
+        /// never mentions.
+        during: Vec<Instruction>,
     },
     /// "Trace [N] — if successful, …; if unsuccessful, …" (10.8). Expanded
     /// by the resolution loop into the 10.8.6 step sequence. The base is a
@@ -1336,6 +1406,7 @@ impl Instruction {
             allowed: RunServerSet::Any,
             if_successful: Vec::new(),
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }
     }
 
@@ -1347,6 +1418,7 @@ impl Instruction {
             allowed: RunServerSet::Any,
             if_successful,
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }
     }
 
@@ -1539,9 +1611,16 @@ impl Instruction {
             }
             // 6.7.4/10.8/10.14: the conditional halves of a run, a trace and
             // a psi game resolve as their own ability chains later.
-            Instruction::InitiateRun { if_successful, if_would_be_successful, .. } => {
+            // …and so does 6.9.1c's unconditional clause: it resolves as its
+            // own pending instance when the run formally begins, so its
+            // targets are announced then and not here.
+            Instruction::InitiateRun { if_successful, if_would_be_successful, during, .. } => {
                 Contained::Deferred(
-                    if_successful.iter().chain(if_would_be_successful.iter()).collect(),
+                    if_successful
+                        .iter()
+                        .chain(if_would_be_successful.iter())
+                        .chain(during.iter())
+                        .collect(),
                 )
             }
             Instruction::Trace { if_successful, if_unsuccessful, determined_min, .. }
@@ -1720,6 +1799,22 @@ pub enum LingeringSpec {
         by: Option<Side>,
         actions: Vec<crate::lingering::ProhibitedAction>,
     },
+    /// CR 1.13.3 waived: "**hosted credits are considered to be in your credit
+    /// pool**" for a duration (Stimhack). The cards are DESCRIBED in the
+    /// shared filter vocabulary, so "hosted credits" said of this card is
+    /// [`TargetFilter::IsSource`] and a sentence about a class of card is the
+    /// same effect with different content.
+    ///
+    /// Distinct from every [`CreditUse`] allowance, and the distinction is the
+    /// whole of it. `CreditUse` says what hosted credits may be SPENT on
+    /// (1.10.3c). 1.13.3 says something else — hosted counters "do not count
+    /// as 'on' a player or as objects a player 'has'" — and this waives that:
+    /// the credits are then read by everything that reads the pool, so a
+    /// forced 1.10.3b loss takes them and a quantity asking how many credits
+    /// the player has counts them. `CreditUse::AnyPayment` reaches every
+    /// payment and none of those READS, which is a silent under-reach
+    /// wherever the pool is counted rather than spent.
+    HostedCreditsAsPool { cards: Vec<TargetFilter> },
 }
 
 /// CR 1.2.2: how a printed "cannot" picks the cards it is about, as written
@@ -2277,6 +2372,29 @@ pub enum TargetFilter {
     /// — no longer matches, so the ability can no longer act on it. A
     /// zone-naming criterion, so 1.15.2c's play-area restriction lifts.
     LookedAtByThisAbility,
+    /// CR 1.21.6 / 1.12.3: a card THIS ability REVEALED — "the rest of **the
+    /// revealed cards**" (Inject), "copies of **that agenda**" (Lakshmi
+    /// Smartfabrics).
+    ///
+    /// 1.21.6 is one rule over two verbs, so the reveal keeps its cards on the
+    /// resolving ability exactly as 1.21.2's look does, and this criterion
+    /// reads that record the way [`TargetFilter::LookedAtByThisAbility`] reads
+    /// its own. What keeps them two criteria and not one with a polarity is
+    /// 1.21.5: looking, revealing, exposing and accessing "are not the same,
+    /// even if they would be performed similarly at times", and the kernel
+    /// already says so everywhere else — one instruction and one
+    /// [`crate::change::GameChange`] per verb. A sentence saying "the revealed
+    /// cards" must not reach a card this ability only looked at.
+    ///
+    /// Distinct from [`TargetFilter::RevealedThisEncounter`], which is scoped
+    /// to the ENCOUNTER (Slot Machine's later subroutines read a reveal made
+    /// by an earlier ability) and answers nothing outside one.
+    ///
+    /// A zone-naming criterion, so 1.15.2c's play-area restriction lifts: the
+    /// cards it describes are wherever the reveal left them — 1.21.3a puts a
+    /// card back exactly as it was — which for a reveal off the top of a deck
+    /// is the deck.
+    RevealedByThisAbility,
     /// CR 8.5.16f + 1.15.4: "…**that program**", said of the card THIS
     /// ability's own earlier instruction installed (Kabonesa Wu). The card was
     /// never announced — 8.7.4's find is not 1.15.2's announcement, so the
@@ -2556,6 +2674,11 @@ impl TargetFilter {
                 | TargetFilter::SetAsideWithSource
                 | TargetFilter::DrawnCards
                 | TargetFilter::LookedAtByThisAbility
+                // 1.21.6 + 1.21.3a: the reveal puts each card back exactly
+                // where it was, so the cards this criterion describes are
+                // wherever that is — the top of a deck, a hand — and 1.15.2c
+                // would otherwise see none of them.
+                | TargetFilter::RevealedByThisAbility
                 // 1.15.4: the description fixes the cards by identity, the
                 // same way the triggering-card criteria below do, so there is
                 // no selection left for 1.15.2c to restrict.
@@ -2677,6 +2800,23 @@ pub enum CreditUse {
     /// restricts to one: 6.1.1's run in progress. Both halves must hold at
     /// once; neither is the other's paraphrase.
     UsingAbilitiesDuringRuns(Vec<TargetFilter>),
+    /// "Use these credits **to rez cards**." (Mumba Temple.) CR 8.1.2d's rez
+    /// cost, paid for the card being rezzed — described with the ordinary
+    /// filter vocabulary (§12 rule 5), so "to rez cards", "to rez ice" and "to
+    /// rez bioroids" are one allowance with different content.
+    ///
+    /// It is NOT [`CreditUse::UsingAbilitiesOf`] under another name, for the
+    /// same reason [`CreditUse::AdvancingCards`] is not: 8.1.2's rez procedure
+    /// pays a card's rez cost and uses no ability at all, so writing a rez
+    /// permission as the "using" allowance would let the credits pay for paid
+    /// abilities they may not pay for and STILL not pay for a rez.
+    Rezzing(Vec<TargetFilter>),
+    /// "You can spend hosted credits **to play events**." (Mystic Maemi.) The
+    /// same position for 8.6.7c's play cost, and missing for the same reason:
+    /// the play procedure pays a card's play cost and uses no ability either.
+    /// The cards are described the ordinary way, so "to play events", "to play
+    /// cards" and "to play run events" are one allowance.
+    PlayingCards(Vec<TargetFilter>),
 }
 
 /// CR 8.5.16b: the install destination, declared as part of installing.

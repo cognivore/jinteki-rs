@@ -25,7 +25,7 @@ use crate::edsl::*;
 /// "Play only if the Corp has at least 1 bad publicity.
 ///  Run any server. The Corp cannot rez ice during that run."
 ///
-/// PARTIAL — two of its three sentences are expressed, and the third is not.
+/// COMPLETE.
 ///
 /// "Play only if …" is a PLAY RESTRICTION and not a cost, and the difference
 /// decides where it goes. 9.3.3 states a restriction as a condition on
@@ -44,17 +44,29 @@ use crate::edsl::*;
 /// 10.6.2's bad publicity fund: those are credits the Runner controls, and
 /// 10.6.3c leaves them alone once a run has begun.
 ///
-/// UNIMPLEMENTED: "The Corp cannot rez ice during that run", which is marked
-/// for two reasons and neither is the acts. `ProhibitedAction::Rez` exists and
-/// `WantedDuration::ThisRun` exists; what does not is a moment to state them
-/// in, because the sentence is printed AFTER the sentence that runs and
-/// 5.2.2b suspends the play until the run completes — so an instruction
-/// written after the run would create its lingering effect when the run is
-/// already over. Beside that, the prohibition would have to reach the ice by
-/// DESCRIPTION and the lingering prohibition names one object fixed at
-/// creation. Both capabilities are on MEZZIE-QUEUE.md's Blockers. Reordering
-/// the prohibition in front of the run is not an answer either: it would
-/// invent an instruction boundary the card does not print (9.11.3).
+/// "The Corp cannot rez ice during that run" is 9.10.1's lingering effect with
+/// 1.2.2's precedence, and every piece of it is content on one instruction:
+/// `ProhibitedAction::Rez` is the act, `Some(Corp)` is the player the sentence
+/// names, "ice" is a DESCRIPTION re-read wherever a rez is offered — so a
+/// piece of ice still in HQ when this resolved is inside it — and
+/// `WantedDuration::ThisRun` is the span.
+///
+/// WHERE the sentence resolves is the only hard part, and it is why the run
+/// carries it. 5.2.2b: "if a timing structure is initiated during the
+/// resolution of an action, that action is not complete until the new timing
+/// structure is complete **and any further effects … following the completion
+/// of the new timing structure are resolved**." An instruction written after
+/// the run therefore does not resolve until the run is over, and the effect it
+/// created for "that run" would meet 9.10.4 — a duration based on a timing
+/// structure not in progress — and expire before anything read it. The card
+/// would compile and do nothing.
+///
+/// Reordering the prohibition in front of the run is not the answer either: it
+/// invents an instruction boundary the card does not print (9.11.3) and
+/// creates the effect while 9.10.4 still has no run to bind it to. So the
+/// sentence is stated ABOUT the run, on the instruction that makes it, beside
+/// the "if successful" position that already works this way — and it resolves
+/// as the run begins, which is what "during that run" means.
 pub fn blackmail() -> Card {
     card("Blackmail")
         .runner()
@@ -66,8 +78,12 @@ pub fn blackmail() -> Card {
         .text("Run any server. The Corp cannot rez ice during that run.")
         .declares([play_only_if(&[at_least(bad_publicity_of(Corp), 1)])])
         .named("play only if the Corp has bad publicity")
-        .play([run_any_server([])])
-        .unimplemented("The Corp cannot rez ice during that run.")
+        .play([run_any_server_during_which([cannot_act_on_matching(
+            &[of_type(CardType::Ice)],
+            Some(Corp),
+            &[ProhibitedAction::Rez],
+            WantedDuration::ThisRun,
+        )])])
         .build()
 }
 
@@ -112,8 +128,7 @@ pub fn hacktivist_meeting() -> Card {
 ///  Whenever I've Had Worse is trashed by taking net or meat damage, draw 3
 ///  cards."
 ///
-/// PARTIAL — the draw is expressed; the damage sentence is marked, and the
-/// reason is a DAMAGE KIND rather than a missing mechanism.
+/// COMPLETE.
 ///
 /// Note first what this card is NOT: it neither prevents nor reduces damage.
 /// 9.9.7's prevention and 9.9.6's reduction both act on an imminent effect
@@ -121,16 +136,17 @@ pub fn hacktivist_meeting() -> Card {
 /// taken this card with it, and what it does is draw. The card that "softens"
 /// damage does so only by replacing a card the damage already took.
 ///
-/// `TriggerCond::SelfTrashedByDamage` is the condition, and 9.1.8b is what
-/// makes it reachable at all: the ability has to be active in the GRIP for the
-/// trash to meet it, and the kernel keeps it active in the heap it lands in.
-/// What the condition cannot carry is WHICH damage. 10.4.2a resolves meat and
-/// net damage by trashing randomly-chosen cards from the grip — and 10.4.2b
-/// resolves CORE damage the same way, adding only the permanent hand-size
-/// reduction. So a condition that says nothing about the kind is met by core
-/// damage too, and this card's "net or meat" excludes it. That is a silent
-/// OVER-trigger: three cards drawn where the card promises none, from a
-/// Stimhack in this very deck. Marked rather than approximated.
+/// 9.1.8b is what makes the sentence reachable at all: the card is in the GRIP
+/// when the damage takes it, and 4.4.4 leaves everything there inactive — but
+/// the trash puts the card in the heap, and a condition that can only ever be
+/// met there is active there.
+///
+/// The KINDS are the whole of the rest, and they are not decoration. 10.4.2a
+/// resolves meat and net damage by trashing randomly-chosen cards from the
+/// grip; 10.4.2b resolves CORE damage the same way, adding only the permanent
+/// hand-size reduction. A condition silent about the kind is therefore met by
+/// core damage too — three cards drawn where this card promises none, off a
+/// Stimhack in this very deck.
 pub fn ive_had_worse() -> Card {
     card("I've Had Worse")
         .runner()
@@ -140,7 +156,11 @@ pub fn ive_had_worse() -> Card {
         .text("Draw 3 cards.")
         .text("Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards.")
         .play([draw(Runner, 3)])
-        .unimplemented("Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards.")
+        .when(
+            this_card_is_trashed_by_damage(&[DamageKind::Net, DamageKind::Meat]),
+            [draw(Runner, 3)],
+        )
+        .named("three more when the damage takes it")
         .build()
 }
 
@@ -149,25 +169,38 @@ pub fn ive_had_worse() -> Card {
 ///  Gain 1[credit] for each program trashed, and add the rest of the revealed
 ///  cards to your grip."
 ///
-/// PARTIAL — the first sentence, which is the whole of the reveal and the
-/// trash; the payout is marked.
+/// COMPLETE.
 ///
-/// 9.11.3 is why the first sentence is ONE instruction with two effects rather
-/// than two: "reveal … **and** trash …" joins them, so one checkpoint and one
-/// reaction window cover both, and `combined` is the atom for that. 1.15.2
-/// announces the trash's targets before either half resolves, which is exactly
-/// what lets the description name cards that are still on top of the stack —
-/// 1.15.2c's play-area default lifts because "the top 4 cards of your stack"
-/// names a zone (4.2.1).
+/// THREE instructions, and 9.11.4e is what makes the first sentence two of
+/// them rather than 9.11.3's one: "some older cards direct a player to look at
+/// or **reveal** a set of cards in the same sentence as the effects that will
+/// be performed upon those cards — treat these sentences as if making the
+/// cards visible to the relevant player(s) is the end of an instruction." So
+/// the reveal ends an instruction, a checkpoint occurs with the cards visible,
+/// and the trash is the next one. That order is load-bearing here and not
+/// bookkeeping: the trash describes its cards as the ones the reveal made
+/// visible, so it cannot be announced until the reveal has resolved.
 ///
-/// The second sentence needs two things the vocabulary does not have, and they
-/// are the same thing twice: a way to name THE CARDS THIS ABILITY REVEALED
-/// after the instruction that revealed them has finished. 1.21.3's reveal
-/// records nothing on the resolving ability — `LookedAtByThisAbility` is the
-/// record 1.21.2's LOOK keeps, and 1.21.5 keeps the two words distinct — so
-/// neither "for each program trashed" nor "the rest of the revealed cards" has
-/// anything to refer back to. Counting the top of the stack again would count
-/// different cards, because the trash already moved some of them.
+/// 1.21.6 is the rule the whole card turns on — "each such card remains
+/// visible to the relevant player(s) until the entire ability is finished
+/// resolving or the card moves to a different location". That is one rule over
+/// look AND reveal, and it is what lets the third instruction still say "the
+/// revealed cards" two instructions later. 1.15.2c's play-area default lifts
+/// for the criterion because the cards are wherever 1.21.3a put them back —
+/// the stack.
+///
+/// The last sentence is 9.11.3's one instruction with two effects, so
+/// `combined`, and both of its halves are said about what actually happened
+/// rather than about what was asked for:
+///
+/// * "for each program **trashed**" counts the cards this ability ANNOUNCED
+///   (1.15.4) that are now in the heap. The announcement is the trash's own,
+///   so the count is the programs it named; the heap is where they went. A
+///   count of the revealed programs would be the number the ability asked for,
+///   and 9.9.7's prevention is exactly what can make the two differ.
+/// * "the rest of the revealed cards" is the revealed cards the trash did NOT
+///   name — 1.15.4's record, negated, which is the same shape AU Co. and Steve
+///   Cambridge already use for a printed "the other card".
 pub fn inject() -> Card {
     card("Inject")
         .runner()
@@ -175,17 +208,19 @@ pub fn inject() -> Card {
         .faction("Anarch")
         .cost(1)
         .text("Reveal the top 4 cards of your stack and trash all programs revealed. Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip.")
-        .play([combined([
-            reveal(top_of_stack(amount(4))),
+        .play([
             // 4.2.1 + 1.15.2c: the zone is named, so the description reaches
-            // the stack; `TopOfDeckOf` is the criterion form of the same
-            // window `top_of_stack` names as a fixed group.
-            trash(all_matching(&[
-                TargetFilter::TopOfDeckOf { side: Runner, n: 4 },
-                of_type(CardType::Program),
-            ])),
-        ])])
-        .unimplemented("Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip.")
+            // the stack.
+            reveal(top_of_stack(amount(4))),
+            trash(all_matching(&[revealed_by_this_ability(), of_type(CardType::Program)])),
+            combined([
+                gain_q(Runner, per_card_matching(&[among_earlier_choices(), in_heap()])),
+                add_to_hand(all_matching(&[
+                    revealed_by_this_ability(),
+                    non(among_earlier_choices()),
+                ])),
+            ]),
+        ])
         .build()
 }
 
@@ -238,25 +273,36 @@ pub fn levy_ar_lab_access() -> Card {
 ///  run, add this event to your score area as an agenda worth 1 agenda point.
 ///  Otherwise, suffer 1 meat damage."
 ///
-/// PARTIAL — the run; the pay-off is marked.
+/// COMPLETE.
 ///
 /// The run is 6.9.1a's announcement with no server named, so the Runner
 /// declares the attacked one as the run is initiated.
 ///
-/// Everything after it waits on ONE missing question: "if you stole an agenda
-/// during that run". 7.5's steal is recorded — `TriggerCond::RunnerStealsAgenda`
-/// reads the occurrence as it happens — but a "when this run ends" ability
-/// asks about the run's HISTORY, and the requirement vocabulary has no term
-/// counting steals inside a window the way `AccessesThisRun` counts accesses
-/// or `SubroutinesBrokenThisRun` counts breaks. Without it the branch cannot
-/// be chosen, and a card that guessed would either hand out an agenda point it
-/// did not earn or do a meat damage it did not deserve.
+/// The pay-off is a CONDITIONAL ability of the card rather than an instruction
+/// after the run, for the reason Raindrops Cut Stone's is: 4.6.4e keeps a
+/// played event active in the play area for the whole of its resolution and
+/// 5.2.2b suspends that resolution until the run ends, so the event is still
+/// there — and still able to be added to a score area — when "when that run
+/// ends" is met.
 ///
-/// (`add_to_score_area(this_card(), Runner, Some(1))` says the rest of the
-/// first branch, and 1.17.3e/f is what makes it an ADD and not a steal: a card
+/// "If you stole an agenda during that run" is a question about the run's
+/// HISTORY, and that is the whole reason it is not
+/// `TriggerCond::RunnerStealsAgenda`: 7.5's steal is an occurrence, met as it
+/// happens, and by the time this ability resolves the occurrence is over.
+/// `agendas_stolen_this_run` is 1.12.6's review of the same record.
+///
+/// "Otherwise" is 1.16.11d's word for the other branch of the SAME condition,
+/// so the two printed sentences are one `IfMet` with two branches rather than
+/// two instructions — the shape Mutual Favor's printed "if you do not" already
+/// takes. Written as two instructions the negative branch would need its own
+/// requirement, and 9.6.5d would re-ask it after the first branch had already
+/// added the card to a score area.
+///
+/// 1.17.3e/f is what makes the first branch an ADD and not a steal: a card
 /// added to a score area is not stolen, so nothing that watches for a steal
-/// sees this. It is left out only because the condition that reaches it
-/// cannot be stated.)
+/// sees this — including this card's own condition, which has already been
+/// answered by then. 10.1.3's conversion is `as_agenda`: an EVENT becomes an
+/// agenda worth 1 point.
 pub fn mad_dash() -> Card {
     card("Mad Dash")
         .runner()
@@ -266,8 +312,15 @@ pub fn mad_dash() -> Card {
         .cost(0)
         .text("Run any server. When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point. Otherwise, suffer 1 meat damage.")
         .play([run_any_server([])])
-        .unimplemented("When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point.")
-        .unimplemented("Otherwise, suffer 1 meat damage.")
+        .when(
+            run_ends(),
+            [if_met_else(
+                &[at_least(agendas_stolen_this_run(), 1)],
+                [add_to_score_area(this_card(), Runner, Some(1))],
+                [meat_damage(Runner, 1)],
+            )],
+        )
+        .named("when that run ends")
         .build()
 }
 
@@ -313,23 +366,30 @@ pub fn moshing() -> Card {
 ///  When that run ends, draw 1 card for each hosted power counter and gain
 ///  3[credit]."
 ///
-/// PARTIAL — the run and the pay-off are expressed; the counter sentence is
-/// marked, which makes the draw half of the pay-off read zero until it lands.
+/// COMPLETE.
 ///
-/// The pay-off is a CONDITIONAL ability of the card and not a delayed one
-/// (9.6.13): 4.6.4e keeps a played event active in the play area for the whole
-/// of its resolution, and 5.2.2b suspends that resolution until the run ends,
-/// so the event is still there — with its counters on it — when "when that run
-/// ends" is met. 9.11.3 again makes "draw … and gain …" one instruction.
+/// Both of the card's abilities are CONDITIONAL abilities of the card and
+/// neither is a delayed one (9.6.13): 4.6.4e keeps a played event active in
+/// the play area for the whole of its resolution, and 5.2.2b suspends that
+/// resolution until the run ends — so the event is there, and collecting
+/// counters, for every subroutine of the run, and still there with those
+/// counters on it when "when that run ends" is met. That is also what makes
+/// "during that run" need no words: the ability exists for the span of one
+/// run and no other.
 ///
-/// The counter sentence needs a trigger condition met when a SUBROUTINE
-/// RESOLVES. 9.8.10's occurrence is recorded — `Quantity::SubroutinesResolvedThisRun`
-/// counts it from the change log — but no condition is met BY it, and the
-/// count is not a substitute for the counters: 1.12.1 makes a counter an
-/// object, so a power counter on this event is a thing other cards can see,
-/// count and remove, and a number recomputed from history is not. The
-/// parenthetical is 6.10's reminder that a subroutine ending the run still
-/// resolved, which is the same occurrence and needs no separate word.
+/// The counter sentence is 9.8.10e's occurrence, met once per subroutine
+/// RESOLVED. It is not any of the break-shaped conditions and not the count
+/// either: 1.12.1 makes a counter an OBJECT, so a power counter on this event
+/// is a thing other cards can see, count and remove, while
+/// `Quantity::SubroutinesResolvedThisRun` is a number recomputed from history
+/// and nothing can touch it.
+///
+/// The parenthetical asks for nothing extra. 6.10's run-ending subroutine
+/// RESOLVED and then ended the run, so it is already one of the occurrences;
+/// the reminder is there because a reader might expect the run ending to
+/// cancel it.
+///
+/// 9.11.3 makes "draw … and gain …" one instruction.
 pub fn raindrops_cut_stone() -> Card {
     card("Raindrops Cut Stone")
         .runner()
@@ -340,12 +400,13 @@ pub fn raindrops_cut_stone() -> Card {
         .text("Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event.")
         .text("When that run ends, draw 1 card for each hosted power counter and gain 3[credit].")
         .play([run_any_server([])])
+        .when(subroutine_resolves(&[]), [place(CounterKind::Power, 1)])
+        .named("one counter per subroutine resolved")
         .when(
             run_ends(),
             [combined([draw_q(Runner, per_hosted_counter(CounterKind::Power)), gain(Runner, 3)])],
         )
         .named("when that run ends")
-        .unimplemented("Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event.")
         .build()
 }
 
@@ -353,20 +414,26 @@ pub fn raindrops_cut_stone() -> Card {
 /// "Draw 3 cards.
 ///  When this event is trashed from your grip or stack, you may draw 2 cards."
 ///
-/// PARTIAL — the draw is expressed; the second sentence is marked.
+/// COMPLETE.
 ///
 /// Like [`ive_had_worse`], this card prevents and reduces nothing: 9.9.7 and
 /// 9.9.6 act on an imminent effect, and this sentence is met after a trash has
 /// already happened. It replaces cards; it does not save them.
 ///
-/// What it wants is the twin of `TriggerCond::SelfTrashedByDamage`: THIS
-/// card's own trash, with the zone it was trashed FROM as content. The kernel
-/// has the zone-carrying condition (`CardTrashed { from_zone, … }`) and the
-/// self-scoped one, and no condition that is both — and the scope is not
-/// cosmetic, because 9.1.8b decides where the ability is ACTIVE from the
-/// condition alone. A grip and a stack are 4.3 and 4.2's hidden zones, where
-/// 4.4.4 leaves everything inactive unless the ability says otherwise, so a
-/// condition that cannot name them is a condition that can never be met.
+/// It is the same condition [`ive_had_worse`] uses with the other stipulation
+/// on it: this card's own trash, with the ZONE it was trashed from as content
+/// and no stipulation about damage at all. The two zones are one list, because
+/// "your grip **or** stack" is one sentence.
+///
+/// 9.1.8b again decides where the ability is ACTIVE, and here it is the whole
+/// reason the sentence can be said: a grip and a stack are 4.3 and 4.2's
+/// hidden zones, where 4.4.4 leaves everything inactive — but the trash puts
+/// the card in the heap, and the condition can only ever be met there.
+///
+/// Naming no damage kind is itself a stipulation: the condition reads the
+/// TRASH record rather than the damage one, so a copy taken out of the grip by
+/// net damage meets it exactly once, and a copy milled off the stack meets it
+/// too. "You may" is 9.6.9's optional ability — the whole of it is the draw.
 pub fn steelskin_scarring() -> Card {
     card("Steelskin Scarring")
         .runner()
@@ -376,7 +443,11 @@ pub fn steelskin_scarring() -> Card {
         .text("Draw 3 cards.")
         .text("When this event is trashed from your grip or stack, you may draw 2 cards.")
         .play([draw(Runner, 3)])
-        .unimplemented("When this event is trashed from your grip or stack, you may draw 2 cards.")
+        .may_when(
+            this_card_is_trashed_from(&[Zone::Hand(Runner), Zone::Deck(Runner)]),
+            [draw(Runner, 2)],
+        )
+        .named("two more when it is trashed from the grip or the stack")
         .build()
 }
 
@@ -385,7 +456,7 @@ pub fn steelskin_scarring() -> Card {
 ///  hosted credits are considered to be in your credit pool. When that run
 ///  ends, suffer 1 core damage. This damage cannot be prevented."
 ///
-/// PARTIAL — three of its four sentences; the credit pool is marked.
+/// COMPLETE.
 ///
 /// "Place 9[credit] on this event, then run any server" joins its two effects
 /// with "THEN", and that word is why they are two instructions rather than
@@ -409,16 +480,21 @@ pub fn steelskin_scarring() -> Card {
 /// 4.6.4e keeps the event active in the play area for its whole resolution and
 /// "when that run ends" names 6.10's moment rather than "afterwards".
 ///
-/// "Hosted credits are considered to be in your credit pool" is marked, and
-/// the near miss is worth naming: `CreditUse::AnyPayment` would let the nine
-/// credits pay for anything, which is most of what the sentence is FOR. It is
-/// not what the sentence SAYS. 1.13.3 keeps hosted credits out of the pool
-/// entirely — they are never "on" the player — and this card waives exactly
-/// that, so the credits are read by anything that reads the pool: a forced
-/// 1.10.3b loss during the run takes them, and a quantity asking how many
-/// credits the Runner has counts them. `CreditUse` cannot say so, and neither
-/// can any lingering effect, so writing the permission alone would be a
+/// "Hosted credits are considered to be in your credit pool" is 1.13.3 WAIVED,
+/// and the near miss is worth naming: `CreditUse::AnyPayment` would let the
+/// nine credits pay for anything, which is most of what the sentence is FOR.
+/// It is not what the sentence SAYS. 1.13.3 keeps hosted credits out of the
+/// pool entirely — they are never "on" the player — and this card waives
+/// exactly that, so the credits are read by anything that reads the pool: a
+/// forced 1.10.3b loss during the run takes them, and a quantity asking how
+/// many credits the Runner has counts them. The permission alone would be a
 /// silent UNDER-reach in every one of those places.
+///
+/// The sentence rides on the RUN, for the reason Blackmail's does: 5.2.2b
+/// suspends this ability until the run completes, so an instruction written
+/// after it would create a "this run" effect with no run left to bind to
+/// (9.10.4). "Then" already put the placement before the run, which is the
+/// only order that leaves anything for the effect to be about.
 pub fn stimhack() -> Card {
     card("Stimhack")
         .runner()
@@ -427,7 +503,13 @@ pub fn stimhack() -> Card {
         .subtypes(&["Run"])
         .cost(0)
         .text("Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented.")
-        .play([place(CounterKind::Credit, 9), run_any_server([])])
+        .play([
+            place(CounterKind::Credit, 9),
+            run_any_server_during_which([hosted_credits_count_as_pool_credits(
+                &[this_very_card()],
+                WantedDuration::ThisRun,
+            )]),
+        ])
         .when(
             run_ends(),
             [Instruction::DamageUnpreventable {
@@ -437,7 +519,6 @@ pub fn stimhack() -> Card {
             }],
         )
         .named("when that run ends")
-        .unimplemented("During that run, hosted credits are considered to be in your credit pool.")
         .build()
 }
 
@@ -554,7 +635,7 @@ pub fn clan_vengeance() -> Card {
 ///  When your turn ends, if there are 3 or more hosted credits, you must trash
 ///  1 card from your grip at random or trash this resource."
 ///
-/// PARTIAL — the first and third sentences; the spend permission is marked.
+/// COMPLETE.
 ///
 /// The first sentence names TWO occurrences and one ordinal-free instruction,
 /// so it is one conditional ability whose condition is a disjunction
@@ -571,16 +652,17 @@ pub fn clan_vengeance() -> Card {
 ///
 /// "You can spend hosted credits to play events" is 1.10.3c: hosted credits
 /// may be spent only as the hosting card's ability allows, and the allowance
-/// is content on `CreditUse`. The five allowances the kernel names are any
-/// payment, trashing described cards, USING described cards (9.1.6a's paid
-/// ability trigger cost), a trace attempt's spend steps, and advancing — and
-/// PLAYING a card is none of them. It is not the "using" allowance under
-/// another name, for the same reason rezzing is not: 8.6.7c pays a play cost
-/// inside the play procedure and uses no ability at all, so writing it as
-/// `UsingAbilitiesOf` would let the credits pay for paid abilities they may
-/// not pay for and STILL not pay for a play. Written as `AnyPayment` it would
-/// pay for installs, trashes and traces the card never allowed. Both readings
-/// are wrong in opposite directions, so the sentence is marked.
+/// is content on `CreditUse`. PLAYING is its own allowance and not the "using
+/// described cards" one under another name, for the same reason rezzing is
+/// not: 8.6.7c pays a play cost inside the play procedure and uses no ability
+/// at all, so `UsingAbilitiesOf` would let these credits pay for paid
+/// abilities they may not pay for and STILL not pay for a play. `AnyPayment`
+/// is wrong in the other direction — it would pay for installs, trashes and
+/// traces the card never allowed.
+///
+/// The description names no zone, so it says so: an event is played from the
+/// grip and, with Same Old Thing in this very deck, from the heap, and
+/// 1.15.2c's play-area default would reach neither.
 pub fn mystic_maemi() -> Card {
     card("Mystic Maemi")
         .runner()
@@ -591,6 +673,7 @@ pub fn mystic_maemi() -> Card {
         .unique()
         .text("When your turn begins and whenever you steal an agenda, place 1[credit] on this resource.")
         .text("You can spend hosted credits to play events.")
+        .credits_only_for_playing(&[of_type(CardType::Event), in_any_location()])
         .text("When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource.")
         .when(
             either_of(&[turn_begins(Runner), runner_steals_agenda()]),
@@ -608,7 +691,6 @@ pub fn mystic_maemi() -> Card {
             ])],
         )
         .named("pay her at the turn's end")
-        .unimplemented("You can spend hosted credits to play events.")
         .build()
 }
 

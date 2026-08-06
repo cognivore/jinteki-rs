@@ -98,6 +98,36 @@ fn same_action_run_at(vm: &Vm, count: usize, idx: usize) -> bool {
     }
 }
 
+/// CR 1.16.4d: at the point `idx` in the change log, how many [click] had
+/// been spent to take the action then in progress?
+///
+/// Asked of a point in the history rather than of the present, for the same
+/// reason [`same_action_run_at`] is: the scan asks it of the change it is
+/// looking at, and 9.6.5c's ordinal asks it of every EARLIER change, to decide
+/// whether that change was one of "the times" the sentence counts. Asked of
+/// the present — of `Vm::current_action`, which is the running total NOW — the
+/// first click of a three-click action answers exactly what the third does, so
+/// a "first time each turn" ordinal was spent by the first click and the
+/// condition could never be met at all.
+///
+/// The clicks counted are every one recorded since the action was initiated,
+/// which is what makes 1.16.4d's own case work: "even though other steps take
+/// place between initiating the action and paying that cost", the click of an
+/// additional cost paid several steps into the action's resolution is still a
+/// click spent to take it.
+fn clicks_spent_on_action_at(vm: &Vm, side: crate::object::Side, idx: usize) -> u32 {
+    cite!("rule_inherent_cost_aggregates");
+    let Some(start) =
+        vm.changes.log[..=idx].iter().rposition(|x| matches!(x, GameChange::ActionTaken { .. }))
+    else {
+        return 0;
+    };
+    vm.changes.log[start..=idx]
+        .iter()
+        .filter(|x| matches!(x, GameChange::ClickSpent { side: s } if *s == side))
+        .count() as u32
+}
+
 fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
     cite!("step_checkpoint_conditional_abilities");
     cite!("rule_condition_checked_in_checkpoints");
@@ -397,11 +427,10 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                     }
                     // 1.16.4d: every [click] spent to TAKE the action counts,
                     // including one paid several steps into its resolution.
-                    if let crate::ability::TriggerCond::ClicksSpentOnAction { count, .. } = cond {
+                    if let crate::ability::TriggerCond::ClicksSpentOnAction { side, count } = cond {
                         cite!("rule_inherent_cost_aggregates");
-                        match vm.st.current_action {
-                            Some((_, spent)) if spent >= *count => {}
-                            _ => continue,
+                        if clicks_spent_on_action_at(vm, *side, window_start + offset) < *count {
+                            continue;
                         }
                     }
                     // 6.3.4: "during a run" is a game-state test the scan can
@@ -590,12 +619,31 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             }
                             _ => None,
                         };
+                        // And the same reading for 1.16.4d's "spend N[click] on
+                        // the same action": whether an earlier click was one of
+                        // "the times" is a question about how many had been
+                        // spent on that action BY THEN. Without this, the first
+                        // click of a three-click action spent the ordinal — it
+                        // is a `ClickSpent` the condition's own occurrence test
+                        // accepts — and the third click, the one that actually
+                        // meets the printed sentence, was refused as a repeat.
+                        let clicks_on_action_cond = match cond {
+                            crate::ability::TriggerCond::ClicksSpentOnAction { side, count } => {
+                                Some((*side, *count))
+                            }
+                            _ => None,
+                        };
                         let earlier = vm.changes.log[from..here].iter().enumerate().any(|(k, x)| {
                             if during_run_cond && !run_in_progress_at(from + k) {
                                 return false;
                             }
                             if let Some(n) = same_action_cond {
                                 if !same_action_run_at(vm, n, from + k) {
+                                    return false;
+                                }
+                            }
+                            if let Some((s, n)) = clicks_on_action_cond {
+                                if clicks_spent_on_action_at(vm, s, from + k) < n {
                                     return false;
                                 }
                             }

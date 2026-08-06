@@ -40,7 +40,7 @@ Identity is COMPLETE. Printed text below is from
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
 - [x] **Estelle Moon** ◆ ×3 — asset · Executive · cost 2, trash 3
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
-- [ ] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
+- [x] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
 - [ ] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
@@ -48,13 +48,13 @@ Identity is COMPLETE. Printed text below is from
       "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)"
 - [x] **MCA Austerity Policy** ◆ ×2 — asset · cost 1, trash 3
       "Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click]. / [click], [trash], 3 hosted power counters: Gain [click][click][click][click]."
-- [ ] **Mumba Temple** ×3 — asset · Alliance - Facility · cost 1, trash 3
+- [x] **Mumba Temple** ×3 — asset · Alliance - Facility · cost 1, trash 3
       "This card costs 0 influence if you have 15 or fewer ice in your deck. / 2[recurring-credit] / Use these credits to rez cards."
 - [x] **Rashida Jaheem** ◆ ×3 — asset · Character · cost 0, trash 1
       "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
 - [x] **Spin Doctor** ◆ ×3 — asset · Character · cost 0, trash 2
       "When you rez this asset, draw 2 cards. / Remove this asset from the game: Shuffle up to 2 cards from Archives into R&D."
-- [ ] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
+- [x] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
       "This operation is not trashed until another current is played or an agenda is stolen. / As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."
 - [x] **Flood the Market** ×1 — operation · Double · cost 3
       "As an additional cost to play this operation, spend [click]. / Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice."
@@ -72,7 +72,7 @@ Identity is COMPLETE. Printed text below is from
       "[subroutine] End the run."
 - [x] **Fairchild 3.0** ×2 — ice · Code Gate - Bioroid - AP · cost 6, str 5
       "Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] Do 1 core damage or end the run."
-- [ ] **Vertigo** ×1 — ice · Code Gate · cost 1, str 1
+- [x] **Vertigo** ×1 — ice · Code Gate · cost 1, str 1
       "When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run. / [subroutine] The Runner loses [click]."
 - [x] **Drafter** ×2 — ice · Sentry · cost 3, str 3
       "[subroutine] You may add 1 card from Archives to HQ. / [subroutine] You may install 1 card from Archives or HQ, ignoring all costs."
@@ -85,27 +85,27 @@ Identity is COMPLETE. Printed text below is from
 
 Identity is COMPLETE.
 
-- [ ] **Blackmail** ×3 — event · Run · cost 1
+- [x] **Blackmail** ×3 — event · Run · cost 1
       "Play only if the Corp has at least 1 bad publicity. / Run any server. The Corp cannot rez ice during that run."
 - [ ] **Hacktivist Meeting** ×3 — event · Current · cost 1
       "This card is not trashed until another current is played or an agenda is scored. / As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."
-- [ ] **I've Had Worse** ×3 — event · cost 1
+- [x] **I've Had Worse** ×3 — event · cost 1
       "Draw 3 cards. / Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."
-- [ ] **Inject** ×3 — event · cost 1
+- [x] **Inject** ×3 — event · cost 1
       "Reveal the top 4 cards of your stack and trash all programs revealed. Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip."
 - [x] **Levy AR Lab Access** ×1 — event · cost 5
       "Shuffle your grip and heap into your stack. Draw 5 cards. Remove Levy AR Lab Access from the game instead of trashing it."
-- [ ] **Mad Dash** ×1 — event · Run · cost 0
+- [x] **Mad Dash** ×1 — event · Run · cost 0
       "Run any server. When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point. Otherwise, suffer 1 meat damage."
 - [x] **Moshing** ×3 — event · cost 0
       "As an additional cost to play this event, trash 3 cards from your grip. / Gain 3[credit] and draw 3 cards."
-- [ ] **Raindrops Cut Stone** ×2 — event · Run · cost 1
+- [x] **Raindrops Cut Stone** ×2 — event · Run · cost 1
       "Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event. / When that run ends, draw 1 card for each hosted power counter and gain 3[credit]."
 - [x] **Rebirth** ×1 — event · cost 0
       "Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it. / Limit 1 per deck."
-- [ ] **Steelskin Scarring** ×3 — event · cost 1
+- [x] **Steelskin Scarring** ×3 — event · cost 1
       "Draw 3 cards. / When this event is trashed from your grip or stack, you may draw 2 cards."
-- [ ] **Stimhack** ×1 — event · Run · cost 0
+- [x] **Stimhack** ×1 — event · Run · cost 0
       "Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented."
 - [x] **Sure Gamble** ×2 — event · cost 5
       "Gain 9[credit]."
@@ -117,7 +117,7 @@ Identity is COMPLETE.
       "Once per turn → [click], suffer 1 net damage: Gain 1[credit] and draw 2 cards."
 - [x] **Clan Vengeance** ×3 — resource · Clan · cost 3
       "Whenever you suffer any amount of damage, place 1 power counter on Clan Vengeance. / [trash]: Trash 1 card from HQ at random for each power counter on Clan Vengeance."
-- [ ] **Mystic Maemi** ◆ ×3 — resource · Companion - Virtual · cost 1
+- [x] **Mystic Maemi** ◆ ×3 — resource · Companion - Virtual · cost 1
       "When your turn begins and whenever you steal an agenda, place 1[credit] on this resource. / You can spend hosted credits to play events. / When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource."
 - [x] **Same Old Thing** ×1 — resource · cost 0
       "[click], [click], [trash]: Play an event from your heap (paying its play cost)."
@@ -135,6 +135,25 @@ Identity is COMPLETE.
 ---
 
 ## Blockers — kernel words these cards want, found while working the queue
+
+**State after the `kernel/vm-deficiencies` wave: 41 of 47 ticked, 6 printed
+sentences still unsayable, 6 cards unticked.** Nine kernel words landed and
+two cards turned out never to have been blocked at all. Entries marked
+LANDED are kept, with what was built and what the entry got wrong, because
+the standing lesson of this queue is that a blocker is a claim about the
+kernel and claims have to be checked against it.
+
+The six that remain, and what each is waiting on:
+
+| Card | Waiting on |
+|---|---|
+| Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
+| Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
+| Marilyn Campaign | one: a trash redirected to a DECK, optionally |
+| Manegarm Skunkworks | one: a nested cost with ALTERNATIVE costs |
+| Hacktivist Meeting | two: an additional cost to REZ described cards, and a random-trash `Cost` component |
+| Tsakhia "Bankhar" Gantulga | two: an ENCOUNTER state requirement, and an ordinal on a static ability |
+
 
 Never approximated. A card that needs one of these is left unticked with the
 word it wants named here, exactly as the identity queue did it.
@@ -155,8 +174,23 @@ that ground when this list was re-read against the kernel:
   the W13e wave under CR 1.16.4d's citation rather than 5.2.1's; it is read by
   the checkpoint scan, `tk::jeeves_like` is its shape, and
   `example_rule_inherent_cost_aggregates_1` drives it on a board. **Jeeves
-  Model Bioroids** is finishable now and is not written yet — its sentence is
-  that condition under `when_first_each_turn`, with `gain_clicks(Corp, 1)`.
+  Model Bioroids** is written and ticked, as
+  `when_first_each_turn(spends_clicks_on_one_action(Corp, 3), …)`.
+  Writing it did turn up one defect in the word rather than a gap in the
+  vocabulary, fixed in the same wave: 9.6.5c's ordinal was read off the bare
+  `ClickSpent` records, so the FIRST click of a three-click action spent it and
+  the third — the one the sentence is about — was refused as a repeat. The
+  scan now asks "how many clicks had been spent on the action in progress AT
+  THAT POINT", of the log, exactly as `same_action_run_at` already did for
+  5.2.5's neighbour.
+- **The two halves of Vertigo's first sentence** — both landed, from two
+  kernel waves that ran in parallel and each recorded the other as the
+  blocker. `at_most(clicks_of(Runner), 0)` is the number, and
+  `ProhibitionScope::Matching` is the act, the player, the description and the
+  duration. **Vertigo** is written and ticked. The "if" is CR 9.6.5**d** —
+  Underworld Contact's word order, not Quantum Predictive Model's — so it is
+  `if_met` inside the instruction, and 9.11.3 keeps the whole sentence one
+  instruction.
 
 ### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
 
@@ -210,26 +244,18 @@ one declaration with different content.
 Wants it: **Project Vacheron** (gains "When the Runnerʼs turn begins, remove 1
 hosted agenda counter.").
 
-### The approach condition naming WHICH server (CR 6.9.4g)
+### The approach condition naming WHICH server — LANDED (CR 6.9.4g)
 
-`TriggerCond::ServerApproached` is a unit variant, met by 6.9.4g's step
-whatever server was approached. The kernel's other two run conditions about a
-server both carry it — `SuccessfulRunOnServer` compares the attacked server
-against the server the source is in, and `RunEnds { on }` carries the list a
-sentence names — but the approach was written for the Formicary class, whose
-sentence names A server and means every one of them.
+`TriggerCond::ServerApproached { this_server, on }` — the same two-position
+shape `IcePassed` uses for the same distinction, so "this server" (Manegarm
+Skunkworks), a named list, and Formicary's "a server" are one condition with
+different content. Both positions empty is what every existing declaration
+said, so nothing moved. Measured rather than assumed: the kernel test
+`an_approach_condition_scoped_to_this_server_ignores_every_other` runs the
+same upgrade against its own remote and against HQ.
 
-This is measured, not assumed: an upgrade rezzed in the root of a remote,
-carrying nothing but a `ServerApproached` conditional, ends a run on HQ. A card
-saying "this server" written with the word that exists is not a smaller card
-than the printed one; it is a different and much larger one.
-
-Wanted: the server as CONTENT on the one condition — the source's own server,
-or the named list, in whatever shape `RunEnds` and `SuccessfulRunOnServer`
-already agree on — so "whenever the Runner approaches this server", "…a
-server" and "…HQ" are one condition with different content.
-
-Wants it: **Manegarm Skunkworks**.
+**Manegarm Skunkworks** is now blocked on ONE word rather than two — the
+alternative-cost entry below — and stays unticked.
 
 ### A nested cost with ALTERNATIVE costs (CR 1.16.11b / 9.12.3c)
 
@@ -297,73 +323,32 @@ waits on this word and on the revealed-cards word below, so the card stays
 unticked. Both remaining halves are about the SAME reveal: which agenda may be
 revealed, and which cards "copies of that agenda" then means.
 
-### The printed ORDINAL on an additional-cost declaration (CR 1.16.10 / 5.2.5a)
+### The printed ORDINAL on an additional-cost declaration — LANDED (CR 1.16.10)
 
-`StaticDecl::AdditionalRunActionCost { cost, on }` says WHAT the cost is and
-WHICH servers it reaches, and nothing about WHICH TAKINGS of the action it
-attaches to. A sentence that charges only some of them — "…**for the first
-time each turn**" — has no position to say so, and written without it the cost
-is charged every time. That is not a small error: 1.16.1b makes an additional
-cost a gate on the action, so an over-broad one forbids actions the player is
-entitled to take for free.
+`StaticDecl::AdditionalRunActionCost` gains `first_each_turn: bool`, the field
+`InherentCostMod` already carries and read the same way: from the change log,
+the cost applying while no EARLIER basic run action has been taken this turn
+(5.2.5a's action identity, asked of the turn). `false` at every existing site,
+which is what Service Outage and this card's ORIGINAL printing say. **Enhanced
+Login Protocol** is written and ticked.
 
-A conditional ability met by the first run each turn is not a substitute and
-must not be offered as one. An additional cost is paid at 6.9.1a to INITIATE
-the action and gates it; a conditional resolves after it and gates nothing.
-(The CR's own Heinlein Grid example turns on exactly that distinction: the
-click this cost charges is spent to initiate the run and is not spent during
-it.)
+### Hosted credits spendable on REZZING and on PLAYING — LANDED (CR 1.10.3c)
 
-Wanted: the ordinal as CONTENT on the one declaration, the way
-`StaticDecl::InherentCostMod` already carries `first_each_turn` — one
-position, read from the change log, covering "the first N times each turn" for
-every additional cost a card can print. That is the whole of what is missing.
+`CreditUse::Rezzing(criteria)` and `CreditUse::PlayingCards(criteria)`, with
+`CreditPurpose::Rezzing`/`Playing` read at the one place each cost is paid.
+Neither is `UsingAbilitiesOf` under another name, for the reason
+`AdvancingCards` is not: 8.1.2's rez procedure and 8.6's play procedure each
+pay a card's cost and use no ability at all. **Mumba Temple** and **Mystic
+Maemi** are written and ticked.
 
-(An earlier wave also wanted the "names no server" set here, claiming a
-sentence naming no server could not be written at all. That was never true:
-`RunServerSet` is among `crate::edsl`'s re-exports, so
-`StaticDecl::AdditionalRunActionCost { cost, on: RunServerSet::Any }` is
-written directly, and `additional_cost_to_run`'s own doc comment names
-`RunServerSet::Any` as how to say it. What the two named helpers do not have
-is a THIRD helper for the empty set — a shorthand, not a capability.)
-
-Wants it: **Enhanced Login Protocol** (its second sentence; the current's own
-"not trashed until…" is done and tested). Note the kernel's doc comment on
-`AdditionalRunActionCost` names this card as its class exemplar — it is
-describing the ORIGINAL printing, which charged every run; the printed text in
-`netrunner-cards-json` is the revised one and it has the ordinal.
-
-
-### Hosted credits spendable on REZZING (CR 1.10.3c / 8.1.2)
-
-1.10.3c is the whole of what hosted credits are: they may be spent only as the
-hosting card's ability allows. `CreditUse` names five allowances — any
-payment, trashing described cards, USING described cards (9.1.6a's paid-ability
-trigger cost), a trace attempt's two spend steps, and advancing described
-cards — and rezzing is none of them.
-
-It is not `UsingAbilitiesOf` under another name, for the reason
-`AdvancingCards` is not either: 8.1.2's rez procedure pays a card's rez cost
-and uses no ability at all, so writing a rez permission as the "using"
-allowance would let the credits pay for paid abilities they may not pay for
-and STILL not pay for a rez. A card whose only permission is unsayable has
-credits placed on it that no payment can reach.
-
-Wanted: rezzing as one more purpose on `CreditUse`, with the cards described in
-the same filter vocabulary the other purposes use (so "to rez cards", "to rez
-ice" and "to rez bioroids" are one word with different content), paired with
-the matching `CreditPurpose` read at the one place 8.1.2d's rez cost is paid.
-
-The same position is what a sentence naming PLAYING wants, and for the same
-reason: 8.6.7c pays a play cost inside the play procedure and uses no ability
-at all, so `UsingAbilitiesOf` would let the credits pay for paid abilities
-they may not pay for and STILL not pay for a play.
-
-Wants it: **Mumba Temple** ("Use these credits to rez cards" — the
-2[recurring-credit] itself is done and tested, placed at the rez and refilled
-without accumulating); **Mystic Maemi** ("You can spend hosted credits to play
-events" — the credits arrive and the turn-end demand is done and tested; only
-the permission that would let them be spent is missing).
+One thing the word needed that the blocker did not mention, and it is the part
+that would have made the card look implemented and do nothing: the purpose has
+to be stated at the OFFER site as well as at the payment. `rez_affordable` and
+the basic play action asked `cost_payable` with no purpose, so a card whose
+credits are allowed "to rez cards" answered NO to affordability and the rez was
+never offered at all — the payment would have worked and nothing ever reached
+it. `paid_ability_cost_payable` had already solved exactly this for 9.1.6a and
+says so in its doc; the two new sites now do the same.
 
 ### The install LOCATION as content on the install condition (CR 4.6.6e / 4.6.9d)
 
@@ -437,34 +422,20 @@ is ticked and tested on the first (scored for 3, stolen for 2, on one board);
 with four agenda counters out of a remote, and without them out of Archives),
 and it stays unticked for its second sentence alone.
 
-### What a run-initiating sentence states about THAT run (CR 6.9.1 / 5.2.2b)
+### What a run-initiating sentence states about THAT run — LANDED (CR 6.9.1c)
 
-`Instruction::InitiateRun` carries two positions for effects tied to the run it
-starts — `if_successful` (6.7.4) and `if_would_be_successful` (9.9.1) — and no
-position for one that applies UNCONDITIONALLY from the run's beginning. That
-is not a small gap, because 5.2.2b suspends the ability resolving the run until
-the run completes: an instruction written AFTER the run in printed order does
-not resolve until the run is over, so a lingering effect it creates for "that
-run" is created when there is no longer a run to reach.
+One more position on `Instruction::InitiateRun`, beside `if_successful`
+(6.7.4) and `if_would_be_successful` (9.9.1): `during`, the effects the
+sentence states about the run it initiates, gated on nothing. It travels on the
+run itself, exactly as the other two do, and is pended at 6.9.1c — the run has
+formally begun, so 9.10.4 has a run to bind a "this run" duration to, and
+6.9.1e's rez window has not opened yet. **Blackmail** is written and ticked.
 
-The two workarounds are both wrong and neither should be offered. Reordering
-the sentence in front of the run invents an instruction boundary the card does
-not print (9.11.3) and creates the effect while 9.6.13d has no run to attach
-it to; folding it into `if_successful` gates on a success the card never
-mentions.
-
-Wanted: one more position on the same instruction — the effects the sentence
-states about the run it initiates, resolved as the run begins — so "the Corp
-cannot rez ice during that run", "during that run, <X>" and "if successful, …"
-are three contents of one word rather than three mechanisms.
-
-Wants it: **Blackmail** ("The Corp cannot rez ice during that run" —
-`ProhibitedAction::Rez` and `WantedDuration::ThisRun` both exist; the moment to
-state them in does not). It wants the DESCRIBED prohibition above as well, and
-an earlier entry here was wrong to say the moment was all that was missing:
-"ice" is a description and `LingeringSpec::Prohibit` names one object fixed
-when the effect was created, so the sentence waits on both words. The play
-restriction and the run are done and tested.
+The entry's second claim was WRONG and is deleted: "'ice' is a description and
+`LingeringSpec::Prohibit` names one object fixed when the effect was created".
+`ProhibitionSpec::Matching` takes a description and has since the CR 1.2.2
+wave; the queue's own text already corrected itself two entries down and the
+card's doc comment did not.
 
 ### An additional cost to REZ the cards a description reaches (CR 1.16.10 / 8.1.2)
 
@@ -493,128 +464,85 @@ Wants it: **Hacktivist Meeting** ("As an additional cost to rez non-ice cards,
 the Corp must randomly trash a card from HQ"; the current's own "not trashed
 until…" is done and tested).
 
-### A card's OWN trash, with the occurrence's stipulations as content (CR 10.4.2 / 9.1.8b)
+### A card's OWN trash, with the occurrence's stipulations as content — LANDED
 
-Two conditions describe a trash and neither is both halves.
-`TriggerCond::SelfTrashedByDamage` is scoped to the source and says nothing
-about WHICH damage; `TriggerCond::CardTrashed { from_zone, … }` carries the
-zone and every other stipulation and cannot be scoped to the source at all —
-its `requires` vocabulary has no term for "the trashed card is this card".
+`TriggerCond::SelfTrashed { by_damage, from_zones }` replaces the contentless
+`SelfTrashedByDamage`. Both stipulations are load-bearing and in opposite
+directions: 10.4.2b resolves CORE damage by trashing from the grip exactly as
+10.4.2a resolves meat and net, so a sentence silent about the kind
+over-triggers; and 9.1.8b derives the zone the ability is ACTIVE in from the
+condition, which is what lets a sentence name the grip or the stack at all
+(4.4.4 leaves both inactive).
 
-Both halves are load-bearing, in opposite directions.
+An EMPTY `by_damage` is itself a stipulation and not a wildcard: the condition
+then reads the TRASH record (8.2.2) rather than the damage one, so a card taken
+out of the grip by damage meets such a sentence exactly once. **I've Had
+Worse** and **Steelskin Scarring** are written and ticked.
 
-- The KIND is not decoration: 10.4.2a resolves meat and net damage by trashing
-  randomly-chosen cards from the grip, and 10.4.2b resolves CORE damage the
-  same way, adding only the hand-size reduction. A condition silent about the
-  kind is met by core damage, so a card printing "net or meat" over-triggers —
-  and Stimhack, in this very deck, is what would trigger it.
-- The SCOPE decides where the ability is ACTIVE. 9.1.8b keeps an ability alive
-  in the zone its condition names, and the kernel derives that zone from the
-  condition alone (`SelfTrashedByDamage` → the discard pile). A grip or a stack
-  is 4.3/4.2's hidden zone where 4.4.4 leaves everything inactive, so a
-  condition that cannot name them can never be met at all.
+`by` (who trashed it) is deliberately NOT on the atom. `CardTrashed` already
+carries it for the non-self case, no card in either deck asks for it, and an
+unread field is untested code; it belongs on this atom the day a card prints
+it.
 
-Wanted: ONE condition for "this card is trashed", with the damage kinds, the
-zone it was trashed FROM, and who trashed it all as content on it (§12 rule 2),
-and the 9.1.8b zone derived from that content — so "trashed by net or meat
-damage" and "trashed from your grip or stack" are the same word with different
-contents rather than two atoms, neither of which exists.
+### The cards THIS ABILITY revealed — LANDED (CR 1.21.6)
 
-Wants it: **I've Had Worse** ("Whenever I've Had Worse is trashed by taking net
-or meat damage, draw 3 cards" — the kind half); **Steelskin Scarring** ("When
-this event is trashed from your grip or stack, you may draw 2 cards" — the zone
-half and the scope). Both cards' "Draw 3 cards" is done and tested.
+`TargetFilter::RevealedByThisAbility`, the twin of `LookedAtByThisAbility`:
+1.21.6 is ONE rule over two verbs — "if a resolving ability directs one or both
+players to look at **or reveal** a card or set of cards, each such card remains
+visible … until the entire ability is finished resolving" — so the reveal keeps
+its cards on the resolving ability's frame exactly as the look does. Kept as a
+second criterion rather than a polarity on the first because 1.21.5 says the
+two "are not the same", which is the split the kernel already makes everywhere
+else (one instruction and one `GameChange` per verb). **Inject** is written and
+ticked.
 
-### The cards THIS ABILITY revealed, and the cards it trashed (CR 1.21.3 / 9.12.2a)
+The other half of this entry was never missing, and finding that out is what
+made Inject a one-word card. "Gain 1[credit] for each program **trashed**" does
+NOT want a new quantity: it is the cards this ability ANNOUNCED (1.15.4, which
+the trash's own announcement fills) that are now in the heap —
+`per_card_matching(&[among_earlier_choices(), in_heap()])`. That is exact where
+a count of the revealed programs would not be: 9.9.7's prevention is what makes
+"asked for" and "actually trashed" differ, and the heap is where the difference
+shows. **Embezzle** (`unlisted.rs`) still wants the random-reveal half —
+`Instruction::RevealRandomFromHand` announces nothing and takes no `TargetSpec`,
+so neither 1.15.4's record nor 1.21.6's reaches its cards.
 
-1.21.2's LOOK records what it looked at on the resolving ability, which is what
-`TargetFilter::LookedAtByThisAbility` reads and what lets a later instruction
-say "1 of those cards". 1.21.3's REVEAL records nothing, and 1.21.5 keeps the
-two words distinct, so a sentence that reveals cards and then refers back to
-them — "the rest of the revealed cards" — has nothing to refer to. Naming the
-same window of the deck again reaches different cards, because an earlier half
-of the sentence already moved some of them.
+**Lakshmi Smartfabrics** keeps this as one of its two blockers, and it is the
+NAME half rather than the identity half: "copies of that agenda" is every card
+sharing a characteristic with the revealed one, and the filter vocabulary can
+say "the card this ability revealed" (now) and "a card with this printed name"
+(`HasName`) and not "a card with the same name as that one".
 
-Beside it, and for the same sentence, no quantity counts "each card trashed
-this way": `CreditsLostThisAbility` is the shape (what this ability ACTUALLY
-did, not what it asked for) and there is no trash twin. `unlisted.rs` records
-the same want against **Embezzle**, which is the other card it blocks.
+### A count of the agendas STOLEN inside a window — LANDED (CR 7.5 / 1.12.6)
 
-Wanted: the reveal keeping its cards on the resolving ability the way the look
-does, readable as a description; and one quantity over what this ability
-actually trashed, with the description as content.
+`Quantity::AgendasStolen(HistoryWindow)`, read from the change log where
+`AccessesThisRun` and `SubroutinesBrokenThisRun` are read from it. The window
+is CONTENT on the one quantity rather than a variant per span — which is what
+those two neighbours are the older spelling of — so "during that run" and "this
+turn" are one count. Only the Runner steals (7.5), so no side rides on it.
+`HistoryWindow` is 1.12.6's span as a named thing, and it is the position any
+later history count should take. **Mad Dash** is written and ticked.
 
-Wants it: **Inject** ("Gain 1[credit] for each program trashed, and add the
-rest of the revealed cards to your grip" — the reveal and the trash are done
-and tested); **Embezzle**, already recorded in `unlisted.rs`; **Lakshmi
-Smartfabrics** ("The Runner cannot steal **copies of that agenda**" — the
-prohibition is written and takes a description, and what the description has
-to say is "cards with the same name as the card this ability revealed", which
-is this word read for a characteristic instead of for identity).
+### A trigger condition met when a SUBROUTINE RESOLVES — LANDED (CR 9.8.10)
 
-### A count of the agendas STOLEN inside a window (CR 7.5 / 1.12.6)
+`TriggerCond::SubroutineResolved { criteria }`, met at step 9.8.10e once per
+subroutine. The criteria describe the ICE it resolved from in the shared filter
+vocabulary, so "a subroutine", "a subroutine on this ice" and "a subroutine on
+a bioroid" are one condition with different content. Two cases the rules
+already settle and neither got a word: 9.8.9's replaced subroutine "is treated
+as having the same source as the original imminent subroutine", so it still
+resolves from the ice; and 6.10's run-ending subroutine resolved before it
+ended the run. **Raindrops Cut Stone** is written and ticked, with the
+run-ending arm as its own board.
 
-The history quantities count accesses (`AccessesThisRun`, `AccessesThisTurn`),
-subroutines broken and resolved, and ice passed. Nothing counts STEALS.
-7.5's steal is recorded as it happens — `TriggerCond::RunnerStealsAgenda` is
-met by the occurrence — but a "when this run ends" ability asks about the run's
-HISTORY, and a condition met during the run is not a question a later ability
-can put.
+### Hosted credits TREATED AS pool credits — LANDED (CR 1.13.3)
 
-Wanted: one quantity counting the agendas stolen since the window began, with
-the window (run or turn) as content, exactly as `AccessesThisRun` and
-`AccessesThisTurn` are one count over two windows; the existing `at_least`
-supplies "if you stole an agenda".
-
-Wants it: **Mad Dash** ("if you stole an agenda during that run"; the run is
-done and tested, and `add_to_score_area(this_card(), Runner, Some(1))` says the
-rest of the branch — 1.17.3e/f keeps it an ADD and not a steal).
-
-### A trigger condition met when a SUBROUTINE RESOLVES (CR 9.8.10)
-
-The subroutine conditions are about BREAKING (`SubroutineBrokenOnSelf`,
-`AllSubsBrokenOnEncounteredIce`, `SelfFullyBroken`) and about a run that
-followed one (`MakesSuccessfulRun`'s `after_subroutine_resolved` flag — a
-field on that condition, not a condition of its own). None is met by the
-resolution itself, though `GameChange::SubroutineResolved` records it and
-`Quantity::SubroutinesResolvedThisRun` counts it from the log.
-
-The count is not a substitute for the condition, and the card that wants it is
-what shows why: 1.12.1 makes a counter an OBJECT, so a power counter placed by
-each resolution is a thing other cards can see, count and remove, and a number
-recomputed from history is not.
-
-Wanted: one condition met when a subroutine resolves, with the stipulations as
-content — whose ice, which subroutine, and whether the run in progress is the
-one the sentence named (9.8.9's replacement still resolves from the ice, and
-6.10's run-ending subroutine still resolved, so both are met and neither needs
-a word of its own).
-
-Wants it: **Raindrops Cut Stone** ("Whenever a subroutine resolves during that
-run … place 1 power counter on this event"; the run and the "when that run
-ends" pay-off are done and tested).
-
-### Hosted credits TREATED AS pool credits, for a duration (CR 1.13.3 / 1.10.1)
-
-Distinct from the `CreditUse` entry above, and the distinction is the whole of
-it. `CreditUse` says what hosted credits may be SPENT on (1.10.3c). 1.13.3 says
-something else — hosted credits are not "on" the player at all — and a card
-saying they are considered to be in the credit pool waives that: the credits
-are then read by everything that reads the pool, so a forced 1.10.3b loss
-during the named window takes them, and a quantity asking how many credits the
-Runner has counts them.
-
-Writing the permission alone (`CreditUse::AnyPayment`) reaches every payment
-and none of those reads — a silent UNDER-reach wherever the pool is counted
-rather than spent, which is why it is not offered as the near-enough answer.
-
-Wanted: one lingering effect treating a described card's hosted credits as pool
-credits, with the duration as content — the one place 1.13.3's separation is
-read, so "during that run" and any other span are the same word.
-
-Wants it: **Stimhack** ("During that run, hosted credits are considered to be
-in your credit pool"; the placement, the run, and the unpreventable core
-damage are done and tested).
+`LingeringSpec::HostedCreditsAsPool { cards }` with the duration as content,
+and `Vm::pool_credits` as the ONE place the pool is read. That is the whole
+difference from a `CreditUse` allowance, which the card's own doc comment had
+already argued: an allowance is read where credits are SPENT, and this is read
+where they are COUNTED — by `Quantity::CreditsInPoolOf`, by 1.10.3b's forced
+loss, and by every affordability question. **Stimhack** is written and ticked.
 
 ### A static declaration scoped to an ENCOUNTER, carrying an ordinal (CR 6.5 / 9.3.7a)
 

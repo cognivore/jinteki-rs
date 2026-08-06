@@ -652,6 +652,12 @@ pub enum CreditPurpose {
     /// the card the advancement counter is going on, which is what a sentence
     /// naming a class of card to advance ("to advance ice") describes.
     Advancing(ObjectId),
+    /// CR 8.1.2d: a payment made to REZ this card. The rez procedure uses no
+    /// ability, so this is not `UsingAbilityOf` and could never have been.
+    Rezzing(ObjectId),
+    /// CR 8.6.7c: a payment made to PLAY this card, for the same reason —
+    /// 8.6's play procedure uses no ability either.
+    Playing(ObjectId),
 }
 
 /// What a completed payment goes on to do. Every payment has one, because a
@@ -664,6 +670,16 @@ pub enum PaymentCont {
     None,
     /// 8.1.2: the rez procedure continues — the card turns faceup.
     Rez(ObjectId),
+    /// 8.6.7c: the play cost was paid. Nothing follows it — the play's step
+    /// sequence carries on by itself — but the card being paid FOR is what
+    /// 1.10.3c's "to play events" describes, and a continuation is where the
+    /// kernel already records that.
+    Play(ObjectId),
+    /// 8.5.15 + 8.1.2d: an install-and-rez paid the REZ cost. Distinct from
+    /// [`PaymentCont::Rez`] only in that nothing follows it — the install's
+    /// own step sequence carries on — so it exists to say what the payment
+    /// was for, which is the same thing 1.10.3c's "to rez cards" describes.
+    RezWithinInstall(ObjectId),
     /// 7.4.3: the additional cost to access the chosen candidate was paid.
     Access(ObjectId),
     /// 7.1.5: the basic trash ability's cost was paid.
@@ -2047,6 +2063,12 @@ impl Vm {
                 };
                 self.current_run = Some((run_id, server, false));
                 self.changes.record(GameChange::RunBegan { server });
+                // CR 6.9.1c: the run has formally begun, so this is the moment
+                // a sentence stating something ABOUT it takes effect — with
+                // the run in progress, which is what 9.10.4 needs of a "this
+                // run" duration, and before 6.9.1e's paid window where the
+                // Corp may rez.
+                self.pend_stated_about_run();
             }
             StepKind::SetPositionOutermost => {
                 cite!("rule_position_initial");
@@ -3160,6 +3182,66 @@ impl Vm {
         }
     }
 
+    /// CR 6.9.1c: the sentence the effect that initiated this run STATED about
+    /// it becomes pending, as a mandatory conditional instance, exactly as
+    /// [`Vm::pend_if_successful`]'s clause does — the same 9.6.14d mechanism,
+    /// with no condition of its own, because the sentence states no condition.
+    ///
+    /// It fires once and is cleared, so a run moved (6.1.2d) or a Runner sent
+    /// back to a new position does not restate it.
+    fn pend_stated_about_run(&mut self) {
+        let Some(c) = self.run_ctx().and_then(|r| r.stated_about_run.clone()) else { return };
+        cite!("step_initiation_formal_begin");
+        let label = self
+            .st
+            .objects
+            .get(&c.source.obj)
+            .map(|o| o.printed.name)
+            .unwrap_or("stated about that run");
+        let def = AbilityDef {
+            controller: None,
+            kind: AbilityKind::Conditional,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: c.effects.clone(),
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            ordinal: None,
+            label,
+        };
+        let id = self.next_instance_id();
+        cite!("rule_pending_instances");
+        let gen = self.generation(c.source.obj);
+        self.instances.insert(
+            id,
+            AbilityInstance {
+                id,
+                ability: c.source,
+                def,
+                controller: c.controller,
+                mandatory: true,
+                window: None,
+                hangover: false,
+                independent: false,
+                source_generation: gen,
+                occurrence_group: 0,
+                from_lingering: None,
+                run_id: self.current_run.map(|(r, _, _)| r),
+                triggering_card: None,
+                triggering_cards: Vec::new(),
+                bound_targets: Vec::new(),
+                bound_installs: Vec::new(),
+                set_aside_group: None,
+            },
+        );
+        self.pending_from_effect.push(id);
+        if let Some(r) = self.run_ctx_mut() {
+            r.stated_about_run = None;
+        }
+    }
+
     /// CR 9.9.8b + 4.8.7: the follow-up of a completed trash-replacement
     /// group (Skorpios class) becomes pending, as a conditional instance in
     /// the ordinary 9.6.14d way — [`Vm::pend_if_successful`]'s shape, for a
@@ -4248,6 +4330,7 @@ impl Vm {
                 jump_to_run_ends: false,
                 if_successful: None,
                 if_would_be_successful: None,
+                stated_about_run: None,
                 last_encounter: None,
             }),
         }));
@@ -4907,6 +4990,24 @@ impl Vm {
                     .filter(|c| matches!(c, GameChange::CardAccessed { .. }))
                     .count() as i64
             }
+            // 7.5 over 1.12.6's window: `AgendaStolen` is recorded at step
+            // 7.2.3, where the steal actually happens, so counting those
+            // records since the window began IS "the agendas you stole" — an
+            // access whose steal a 1.2.2 "cannot" forbade left no record.
+            Q::AgendasStolen(window) => {
+                cite!("movement_steal");
+                cite!("rule_score_steal");
+                cite!("rule_previous_object");
+                cite!("rule_hidden_or_open_information");
+                let from = match window {
+                    crate::instr::HistoryWindow::ThisRun => self.st.run_log_start,
+                    crate::instr::HistoryWindow::ThisTurn => self.st.turn_log_start,
+                };
+                self.changes.log[from.min(self.changes.log.len())..]
+                    .iter()
+                    .filter(|c| matches!(c, GameChange::AgendaStolen { .. }))
+                    .count() as i64
+            }
             // 1.20.4a: "unused [mu]" is the CR's own calculated value — the
             // memory limit as modified (1.20.2) minus the memory costs of
             // installed programs (1.20.3), counted exactly as the checkpoint
@@ -5038,8 +5139,11 @@ impl Vm {
             // 1.10.1: the named player's credit POOL — 1.13.3 keeps credits
             // hosted on cards out of it.
             Q::CreditsInPoolOf(side) => {
+                // 1.13.3 keeps credits hosted on cards out of the pool —
+                // unless a lingering effect has said they are considered to be
+                // in it, which is exactly the read `CreditUse` cannot reach.
                 cite!("rule_credit_pool");
-                self.st.player(*side).credits as i64
+                self.pool_credits(*side) as i64
             }
             // 1.11.3a/b: the number of clicks the player HAS — increased by a
             // gain, reduced by a loss or a spend, and read where the sentence
@@ -6447,6 +6551,7 @@ impl Vm {
             set_aside_cards: Vec::new(),
             found_cards: Vec::new(),
             looked_at: Vec::new(),
+            revealed: Vec::new(),
             // 4.8.7 + 9.6.14d: a frame resolving a trash-replacement group's
             // follow-up starts with the group its instance was bound to, so
             // `SetAsideByThisAbility` reads it exactly as it reads a group an
@@ -8328,6 +8433,25 @@ impl Vm {
                     .find_map(|fr| match fr {
                         Frame::Ability(af) => {
                             Some(af.looked_at.iter().any(|(id, g)| *id == o.id && *g == gen))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+            }
+            // 1.21.6: the cards this ability REVEALED, read from the same
+            // frame record for the same reason — and kept apart from the
+            // looked-at ones because 1.21.5 keeps the two verbs apart.
+            TargetFilter::RevealedByThisAbility => {
+                cite!("rule_remain_visible");
+                cite!("rule_look_reveal_expose_access_distinct");
+                cite!("rule_object_move_location");
+                let gen = self.generation(o.id);
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|fr| match fr {
+                        Frame::Ability(af) => {
+                            Some(af.revealed.iter().any(|(id, g)| *id == o.id && *g == gen))
                         }
                         _ => None,
                     })
@@ -10482,12 +10606,47 @@ impl Vm {
                 // populations apart).
                 cite!("rule_lose_credits");
                 for a in imm.atoms.iter().filter(|a| a.occurs_at_resolution()) {
-                    let have = self.st.player(*side).credits;
-                    let n = (a.value.max(0) as u32).min(have);
-                    self.st.player_mut(*side).credits -= n;
+                    let have = self.pool_credits(*side);
+                    let mut n = (a.value.max(0) as u32).min(have);
+                    let from_pool = n.min(self.st.player(*side).credits);
+                    self.st.player_mut(*side).credits -= from_pool;
+                    n -= from_pool;
+                    // 1.13.3 waived: credits considered to be IN the pool are
+                    // reachable by a forced loss, which is the whole reason
+                    // this is not a 1.10.3c allowance — an allowance is about
+                    // spending and a loss is not a spend (1.10.3b).
+                    if n > 0 {
+                        let pooled: Vec<ObjectId> = self
+                            .st
+                            .objects
+                            .values()
+                            .filter(|o| {
+                                o.controller == *side
+                                    && card_active(o)
+                                    && self.hosted_credits_pooled(o, *side)
+                                    && o.counter(CounterKind::Credit) > 0
+                            })
+                            .map(|o| o.id)
+                            .collect();
+                        for c in pooled {
+                            if n == 0 {
+                                break;
+                            }
+                            let have = self.st.objects[&c].counter(CounterKind::Credit);
+                            let take = have.min(n);
+                            self.st
+                                .objects
+                                .get_mut(&c)
+                                .unwrap()
+                                .counters
+                                .insert(CounterKind::Credit, have - take);
+                            n -= take;
+                        }
+                    }
+                    let lost = (a.value.max(0) as u32).min(have) - n;
                     self.changes.record(GameChange::CreditsLost {
                         side: *side,
-                        amount: n,
+                        amount: lost,
                         source: Some(source.obj),
                     });
                 }
@@ -11117,6 +11276,7 @@ impl Vm {
                 allowed,
                 if_successful,
                 if_would_be_successful,
+                during,
             } => {
                 cite!("rule_run_timing_structure");
                 // 6.9.1a: the attacked server has been announced by now — an
@@ -11154,6 +11314,23 @@ impl Vm {
                     };
                     if let Some(r) = self.run_ctx_mut() {
                         r.if_would_be_successful = Some(clause);
+                    }
+                }
+                // CR 6.9.1c / 5.2.2b: what the sentence STATES about the run
+                // it initiates, unconditionally. It travels with the run for
+                // the same reason the two clauses above do, and it is a
+                // position on the instruction rather than an instruction of
+                // its own because 5.2.2b would not reach one written after the
+                // run until the run was over — at which point 9.10.4 expires
+                // any "this run" duration the moment it is created.
+                if !during.is_empty() {
+                    cite!("step_initiation_formal_begin");
+                    cite!("rule_action_timing_structure_completion");
+                    cite!("rule_lingering_effect_inapplicable_timing_structure");
+                    let clause =
+                        WouldBeSuccessful { source, controller, effects: during.clone() };
+                    if let Some(r) = self.run_ctx_mut() {
+                        r.stated_about_run = Some(clause);
                     }
                 }
                 // The nested run frame is now on top; this ability resumes
@@ -11502,6 +11679,16 @@ impl Vm {
                     }
                     crate::instr::LingeringSpec::AdditionalAccess { server, extra } => {
                         Payload::AdditionalAccess { server: *server, extra: *extra }
+                    }
+                    crate::instr::LingeringSpec::HostedCreditsAsPool { cards } => {
+                        // 1.13.3 waived for the duration: the description is
+                        // carried, not resolved, so it is re-read wherever the
+                        // pool is read.
+                        cite!("rule_hosted_counters_not_on_player");
+                        Payload::HostedCreditsAsPool {
+                            side: controller,
+                            criteria: cards.clone(),
+                        }
                     }
                 };
                 let id = self.next_lingering;
@@ -11934,6 +12121,23 @@ impl Vm {
                 cite!("rule_reveal_not_turn_faceup");
                 cite!("rule_look_reveal_expose_access_distinct");
                 let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                // 1.21.6: each revealed card "remains visible … until the
+                // entire ability is finished resolving or the card moves to a
+                // different location", which is the same record 1.21.2's look
+                // keeps and what lets a later sentence say "the revealed
+                // cards". 1.12.3 supplies the generation stamp: a card moved
+                // to an unknown location becomes a NEW object, so the stale
+                // entry stops matching.
+                cite!("rule_remain_visible");
+                cite!("rule_object_move_location");
+                let stamped: Vec<(ObjectId, u32)> = targets
+                    .iter()
+                    .filter(|t| self.st.objects.contains_key(t))
+                    .map(|t| (*t, self.generation(*t)))
+                    .collect();
+                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                    af.revealed.extend(stamped);
+                }
                 for t in targets {
                     if !self.st.objects.contains_key(&t) {
                         continue;
@@ -12876,7 +13080,13 @@ impl Vm {
                     Some(add) => base_rez.plus(add),
                     None => base_rez.clone(),
                 };
-                if !self.cost_payable(Side::Corp, c, &full_rez) {
+                if !self.cost_payable_for(
+                    Side::Corp,
+                    c,
+                    &full_rez,
+                    None,
+                    CreditPurpose::Rezzing(c),
+                ) {
                     cite!("rule_cost");
                     cite!("rule_reveal_for_install_and_rez");
                     self.install_reveal(c);
@@ -12904,7 +13114,12 @@ impl Vm {
                 // that processes the CardInstalled change, while the card is
                 // still facedown (the 9.6.5b THG example).
                 cite!("rule_cost_checkpoint_cost_zero");
-                self.pay_cost(Side::Corp, c, &base_rez);
+                // 8.1.2d: still a rez cost, so 1.10.3c's "to rez cards"
+                // reaches it exactly as it reaches a standalone rez. Nothing
+                // follows the payment here — 8.5.15's install-and-rez runs
+                // its own steps — so the continuation is only carrying what
+                // the payment was FOR.
+                self.begin_payment(Side::Corp, c, &base_rez, PaymentCont::RezWithinInstall(c), None);
             }
             Instruction::InstallRezFinish => {
                 let Some(p) = self.installs.pop() else { return };
@@ -12977,7 +13192,10 @@ impl Vm {
                     cite!("rule_additional_cost");
                     cost = cost.plus(&extra);
                 }
-                self.pay_cost(side, c, &cost);
+                // 8.6.7c: nothing follows the payment, but the card it is
+                // paid FOR travels with it — 1.10.3c's "to play events" is a
+                // description of that card.
+                self.begin_payment(side, c, &cost, PaymentCont::Play(c), None);
             }
             Instruction::PlayStepActivate => {
                 cite!("rule_steps_playing_active");
@@ -14181,7 +14399,9 @@ impl Vm {
             // The action's [click] plus any additional [click] cost, less
             // the discount (1.16.2a) — the whole click component of 1.16.4d's
             // aggregate must be affordable.
-            if self.cost_payable(side, c, &cost)
+            // 1.10.3c again: the purpose of this payment is a PLAY, stated
+            // here so the offer agrees with what the payment will do.
+            if self.cost_payable_for(side, c, &cost, None, CreditPurpose::Playing(c))
                 && self.st.player(side).clicks + click_discount > cost.clicks
             {
                 out.push(ActionOption::BasicPlayOperation { card: c });
@@ -14636,7 +14856,9 @@ impl Vm {
             // — a card whose ability names one class of payment ("use these
             // credits to trash installed cards") answers for the card being
             // trashed, not in general.
-            let avail = self.st.runner.credits
+            // 1.13.3, waived where a card says so: `pool_credits` is the pool
+            // plus anything an effect has made "considered to be in" it.
+            let avail = self.pool_credits(Side::Runner)
                 + self.st.bp_fund
                 + self.spendable_hosted_credits_for(
                     Side::Runner,
@@ -14805,14 +15027,54 @@ impl Vm {
     pub fn run_action_cost(&self, server: ServerId) -> Cost {
         cite!("rule_additional_cost");
         let mut total = Cost::free();
+        let first = self.earlier_run_actions_this_turn() == 0;
         for (_, d) in self.active_statics() {
-            if let StaticDecl::AdditionalRunActionCost { cost, on } = d {
+            if let StaticDecl::AdditionalRunActionCost { cost, on, first_each_turn } = d {
+                // 1.16.10 + 5.2.5a: the printed ordinal says WHICH takings of
+                // the action the cost attaches to. Without it the cost is
+                // charged every time, and 1.16.1b makes that a gate on an
+                // action the player is entitled to take for free.
+                if first_each_turn && !first {
+                    continue;
+                }
                 if on.allows(server) {
                     total = total.plus(&cost);
                 }
             }
         }
         total
+    }
+
+    /// CR 5.2.5a / 10.2.1: how many basic RUN actions the Runner has taken
+    /// this turn BEFORE the one in progress, read from the open history.
+    ///
+    /// "Before the one in progress" is the whole of the arithmetic: 5.2.2
+    /// records `ActionTaken` as the action is initiated, and every caller asks
+    /// this question from inside that very action — so the current taking is
+    /// already in the log and the count runs up to it rather than through it.
+    fn earlier_run_actions_this_turn(&self) -> usize {
+        cite!("rule_same_actions");
+        cite!("rule_hidden_or_open_information");
+        let from = self.st.turn_log_start.min(self.changes.log.len());
+        let here = self.changes.log[from..]
+            .iter()
+            .rposition(|c| matches!(c, GameChange::ActionTaken { .. }))
+            .map(|i| from + i)
+            .unwrap_or(self.changes.log.len());
+        self.changes.log[from..here]
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    GameChange::ActionTaken {
+                        action: crate::change::ActionIdentity::Basic(
+                            crate::change::BasicAction::Run
+                        ),
+                        ..
+                    }
+                )
+            })
+            .count()
     }
 
     /// CR 9.12.3a/e: is this player required to spend their first [click] of
@@ -14839,13 +15101,19 @@ impl Vm {
     pub fn rez_affordable(&self, card: ObjectId) -> bool {
         cite!("rule_inherent_rez_cost");
         let printed = self.rez_cost_credits(card);
-        if self.cost_payable(Side::Corp, card, &Cost::credits(printed)) {
+        // 1.10.3c: the purpose is KNOWN here — this is a rez cost — and it has
+        // to be stated for the same reason `paid_ability_cost_payable` states
+        // its own: without it the offer and the payment disagree, and a card
+        // whose credits are allowed "to rez cards" would never be offered the
+        // rez they can pay for.
+        let purpose = CreditPurpose::Rezzing(card);
+        if self.cost_payable_for(Side::Corp, card, &Cost::credits(printed), None, purpose) {
             return true;
         }
         self.alternate_payments_for(card).into_iter().any(|(_, covers, instead)| {
             cite!("rule_alternate_payment");
             let reduced = Cost::credits(printed.saturating_sub(covers));
-            self.cost_payable(Side::Corp, card, &reduced.plus(&instead))
+            self.cost_payable_for(Side::Corp, card, &reduced.plus(&instead), None, purpose)
         })
     }
 
@@ -14896,7 +15164,8 @@ impl Vm {
         let credits_avail = if self.credits_prohibited(side) {
             0
         } else {
-            p.credits
+            // 1.13.3, waived where a card says so.
+            self.pool_credits(side)
                 + self.spendable_hosted_credits_for(side, purpose)
                 + if side == Side::Runner && self.current_run.is_some() {
                     self.st.bp_fund
@@ -15050,7 +15319,11 @@ impl Vm {
             cite!("rule_bid_possible");
             return 0;
         }
-        self.st.player(side).credits + self.spendable_hosted_credits_for(side, purpose)
+        // 1.13.3 waived: credits considered to be in the pool are counted by
+        // `pool_credits`, and `spendable_hosted_credits_for` only adds the
+        // ones a 1.10.3c allowance reaches — the two populations do not
+        // overlap, because `credit_locations` offers a card once.
+        self.pool_credits(side) + self.spendable_hosted_credits_for(side, purpose)
     }
 
     /// CR 9.3.4: an active declaration forbidding this player from spending
@@ -15074,6 +15347,10 @@ impl Vm {
             .objects
             .values()
             .filter(|o| o.controller == side && card_active(o))
+            // 1.13.3 waived: a card whose credits are already counted as POOL
+            // credits is not counted again here, so the two populations stay
+            // disjoint and `credit_locations` offers each card once.
+            .filter(|o| !self.hosted_credits_pooled(o, side))
             .filter(|o| self.hosted_credits_allowed(o, purpose))
             .map(|o| o.counter(CounterKind::Credit))
             .sum()
@@ -15126,6 +15403,16 @@ impl Vm {
                 self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
             }
             (Some(crate::instr::CreditUse::AdvancingCards(_)), _) => false,
+            (Some(crate::instr::CreditUse::Rezzing(criteria)), CreditPurpose::Rezzing(c)) => {
+                cite!("sec_rez");
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::Rezzing(_)), _) => false,
+            (Some(crate::instr::CreditUse::PlayingCards(criteria)), CreditPurpose::Playing(c)) => {
+                cite!("rule_playing_play_cost");
+                self.filter_candidates_from(criteria, Some(o.id)).contains(&c)
+            }
+            (Some(crate::instr::CreditUse::PlayingCards(_)), _) => false,
         }
     }
 
@@ -15156,6 +15443,12 @@ impl Vm {
             // 9.1.6a: paying a paid ability's trigger cost IS using the card
             // the ability is on, and `Payment::source` is that card.
             PaymentCont::TriggerCost => CreditPurpose::UsingAbilityOf(p.source),
+            // 8.1.2d / 8.6.7c: the rez and play procedures use no ability, so
+            // what these payments are FOR is the card itself.
+            PaymentCont::Rez(card) | PaymentCont::RezWithinInstall(card) => {
+                CreditPurpose::Rezzing(card)
+            }
+            PaymentCont::Play(card) => CreditPurpose::Playing(card),
             _ => CreditPurpose::Unspecified,
         }
     }
@@ -15395,7 +15688,13 @@ impl Vm {
         cite!("rule_spend_credits");
         let mut out = vec![(None, self.st.player(side).credits)];
         for o in self.st.objects.values() {
-            if o.controller == side && card_active(o) && self.hosted_credits_allowed(o, purpose) {
+            if o.controller == side
+                && card_active(o)
+                // 1.13.3 waived: credits considered to be IN the pool need no
+                // 1.10.3c allowance, because they are not being spent from a
+                // card at all.
+                && (self.hosted_credits_allowed(o, purpose) || self.hosted_credits_pooled(o, side))
+            {
                 let n = o.counter(CounterKind::Credit);
                 if n > 0 {
                     out.push((Some(o.id), n));
@@ -15403,6 +15702,41 @@ impl Vm {
             }
         }
         out
+    }
+
+    /// CR 1.13.3, waived by a lingering effect: are the credits hosted on this
+    /// card "considered to be in" `side`'s credit pool right now?
+    ///
+    /// The description is re-read here rather than resolved when the effect
+    /// was created, which is what makes it a description (9.10.1).
+    pub fn hosted_credits_pooled(&self, o: &Object, side: Side) -> bool {
+        cite!("rule_hosted_counters_not_on_player");
+        self.lingering.iter().any(|l| match &l.payload {
+            Payload::HostedCreditsAsPool { side: whose, criteria } => {
+                *whose == side && self.description_reaches(o, criteria, l.source)
+            }
+            _ => false,
+        })
+    }
+
+    /// CR 1.10.1 + 1.13.3: the credits in a player's pool, plus any a
+    /// lingering effect has made "considered to be in" it. Every reader of the
+    /// pool goes through this, which is the difference between this word and
+    /// a 1.10.3c allowance: an allowance is read where credits are SPENT, and
+    /// this is read where they are COUNTED.
+    pub fn pool_credits(&self, side: Side) -> u32 {
+        cite!("rule_credit_pool");
+        cite!("rule_hosted_counters_not_on_player");
+        let hosted: u32 = self
+            .st
+            .objects
+            .values()
+            .filter(|o| {
+                o.controller == side && card_active(o) && self.hosted_credits_pooled(o, side)
+            })
+            .map(|o| o.counter(CounterKind::Credit))
+            .sum();
+        self.st.player(side).credits + hosted
     }
 
     /// CR 1.10.3c's location list for an any-source counter component: each
@@ -15807,7 +16141,10 @@ impl Vm {
     /// Continue whatever the payment was for.
     fn resume_payment(&mut self, cont: PaymentCont) {
         match cont {
-            PaymentCont::None | PaymentCont::TriggerCost => {}
+            PaymentCont::None
+            | PaymentCont::TriggerCost
+            | PaymentCont::Play(_)
+            | PaymentCont::RezWithinInstall(_) => {}
             PaymentCont::Rez(id) => self.rez_card_finish(id),
             PaymentCont::Access(card) => self.push_access(card),
             // 5.2.6f: the cost is paid, so the action's effect follows — the

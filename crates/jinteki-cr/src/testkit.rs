@@ -5585,8 +5585,8 @@ pub fn because_i_can_like(name: &'static str, server: ServerId, gain: i64) -> Pr
             server: Some(server),
             allowed: crate::instr::RunServerSet::AnyRemote,
             if_successful: vec![Instruction::GainCredits(Side::Runner, Quantity::c(gain))],
-        
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }],
     )
 }
@@ -5611,8 +5611,8 @@ pub fn account_siphon_like(name: &'static str, gain: u32) -> PrintedCard {
                 },
                 duration: crate::lingering::WantedDuration::ThisRun,
             }],
-        
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }],
     )
 }
@@ -5640,16 +5640,34 @@ pub fn successful_run_trace_upgrade(name: &'static str, base: i64) -> PrintedCar
 // W13c shapes: additional costs on the basic run action (§6.3.4, §9.12.3e)
 // ---------------------------------------------------------------------------
 
-/// Enhanced Login Protocol / Service Outage shape (6.3.4 / 1.16.10): "the
-/// Runner must pay [cost] as an additional cost to make a run." The sentence
-/// names no server, so the declaration's set is every server.
+/// Service Outage shape (6.3.4 / 1.16.10): "the Runner must pay [cost] as an
+/// additional cost to make a run." The sentence names no server, so the
+/// declaration's set is every server, and it prints no ORDINAL — the cost is
+/// charged on every run action.
 pub fn run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost {
         cost: extra,
         on: crate::instr::RunServerSet::Any,
+        first_each_turn: false,
     }])
     .labeled("surcharge: additional cost to make a run")];
+    c
+}
+
+/// Enhanced Login Protocol shape (1.16.10 / 5.2.5a): the same sentence with
+/// the printed ORDINAL on it — "…to take the basic action to run a server
+/// **for the first time each turn**". Its neighbour above is the same
+/// declaration without one, which is what the original printing of the card
+/// this shape is named for actually said.
+pub fn first_run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost {
+        cost: extra,
+        on: crate::instr::RunServerSet::Any,
+        first_each_turn: true,
+    }])
+    .labeled("surcharge: additional cost to make the first run each turn")];
     c
 }
 
@@ -5753,6 +5771,22 @@ pub fn jeeves_like(name: &'static str, count: u32) -> PrintedCard {
         false,
     )
     .labeled("jeeves: clicks on one action")];
+    c
+}
+
+/// The same shape with the ordinal Jeeves Model Bioroids actually prints:
+/// "**The first time** you spend N[click] on the same action **each turn**,
+/// …" — 9.6.5c's stipulation about the occurrence, over 1.16.4d's condition.
+///
+/// The pair exists because the two interact, and getting the interaction
+/// wrong silences the card completely: 9.6.5c counts only the times the
+/// condition was actually MET, and 1.16.4d's condition is met by the Nth
+/// click spent on an action and not by the first. An ordinal read off the
+/// bare click records is spent by click one, and click three — the one the
+/// sentence is about — is then refused as a repeat.
+pub fn jeeves_like_first_each_turn(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = jeeves_like(name, count);
+    c.abilities = c.abilities.into_iter().map(|a| a.first_time_each_turn()).collect();
     c
 }
 
@@ -5960,7 +5994,7 @@ pub fn formicary_like(name: &'static str, to: ServerId) -> PrintedCard {
     let mut c = etr_ice(name, 0, 1);
     c.abilities.push(
         AbilityDef::conditional(
-            TriggerCond::ServerApproached,
+            TriggerCond::ServerApproached { this_server: false, on: Vec::new() },
             vec![
                 Instruction::RezCard {
                     target: TargetSpec::SelfSource,
@@ -5983,13 +6017,28 @@ pub fn formicary_like(name: &'static str, to: ServerId) -> PrintedCard {
     c
 }
 
+/// Manegarm Skunkworks shape (6.9.4g): an UPGRADE with "whenever the Runner
+/// approaches **this** server, end the run." The server scoping is the whole
+/// point of the shape — its neighbour below says "a server" and ends a run on
+/// any of them, which is a different and much larger card.
+pub fn end_run_on_this_server_approach(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::ServerApproached { this_server: true, on: Vec::new() },
+        vec![Instruction::EndTheRun],
+        false,
+    )
+    .labeled("approach-etr-here: end the run when THIS server is approached")];
+    c
+}
+
 /// A Runner card with "Whenever the Runner approaches a server, end the run."
 /// — the effect CR 6.8.2c's example needs to end a run from inside the
 /// reaction window that follows step 6.9.4g.
 pub fn end_run_on_server_approach(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::ServerApproached,
+        TriggerCond::ServerApproached { this_server: false, on: Vec::new() },
         vec![Instruction::EndTheRun],
         false,
     )
@@ -6042,20 +6091,40 @@ pub fn skorpios_like(name: &'static str) -> PrintedCard {
 }
 
 /// I've-Had-Worse shape (9.1.8b): a Runner event with "When this card is
-/// trashed by damage, …". The condition can only ever be met by the card
-/// moving from the grip to the heap, so 9.1.8b keeps the ability active in the
-/// heap — and nowhere else.
+/// trashed by damage of these kinds, …". The condition can only ever be met by
+/// the card moving to the heap, so 9.1.8b keeps the ability active there — and
+/// nowhere else.
+///
+/// The KINDS are a parameter because 10.4.2b resolves core damage by trashing
+/// from the grip exactly as 10.4.2a resolves meat and net: a shape silent
+/// about the kind would be met by all three, which is a different card from
+/// the printed one.
 ///
 /// Simplification: the printed card draws 3; gaining credits is the same
 /// occurrence and is what the example's assertion is about.
-pub fn ive_had_worse_like(name: &'static str) -> PrintedCard {
+pub fn ive_had_worse_like(name: &'static str, kinds: &[DamageKind]) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Event);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfTrashedByDamage,
+        TriggerCond::SelfTrashed { by_damage: kinds.to_vec(), from_zones: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(3))],
         false,
     )
     .labeled("ihw: when trashed by damage")];
+    c
+}
+
+/// Steelskin Scarring shape (9.1.8b, the other half): a Runner event with
+/// "When this card is trashed FROM these zones, …" and no damage stipulation
+/// at all. It reads the trash record rather than the damage one, so a trash by
+/// damage meets it exactly once and a mill out of the stack meets it too.
+pub fn steelskin_like(name: &'static str, zones: &[Zone]) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Event);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfTrashed { by_damage: Vec::new(), from_zones: zones.to_vec() },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+        false,
+    )
+    .labeled("steelskin: when trashed from a named zone")];
     c
 }
 

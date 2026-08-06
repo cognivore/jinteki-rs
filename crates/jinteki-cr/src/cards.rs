@@ -1106,8 +1106,8 @@ pub fn account_siphon() -> PrintedCard {
             },
             duration: crate::lingering::WantedDuration::ThisRun,
         }],
-    
         if_would_be_successful: Vec::new(),
+        during: Vec::new(),
     }])
     .labeled("account siphon: run hq")];
     c
