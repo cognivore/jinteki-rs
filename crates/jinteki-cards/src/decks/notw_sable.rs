@@ -428,7 +428,7 @@ pub fn carmen() -> Card {
 ///  Interface → 1[credit]: Break 1 barrier subroutine.
 ///  1[credit]: +1 strength."
 ///
-/// COMPLETE. Four printed lines and three different kinds of thing.
+/// PARTIAL: the second line.
 ///
 /// The first line is Paperclip's condition — 6.5.4's encounter with 2.16's
 /// subtype stipulation — carrying 1.16.11a's nested cost. The printed "you
@@ -438,14 +438,16 @@ pub fn carmen() -> Card {
 /// nothing. The counters are 1.9.5f's power counters, spent rather than
 /// removed; the bypass is 6.5.8.
 ///
-/// The second line is 6.5.7a's full break said of this program rather than of
-/// a piece of ice — the same occurrence Bukhgalter reads, which the kernel
-/// records at the moment the last subroutine goes. That ordering is what makes
-/// the card a clock: the counter arrives on the break, so the barrier it pays
-/// to bypass later is never the one that paid for it.
-///
-/// "Place 1 power counter on this program" is 1.18.2's placement and not a
-/// load — no sentence on this card asks "when it is empty".
+/// The second line stops on WHO. 6.5.7a's full break is an occurrence the
+/// kernel records, but the record names the ICE and nobody else
+/// (`GameChange::AllSubsBroken { ice }`), and the condition scoped to a source
+/// compares that ice against the source — which is right for Paper Wall's
+/// "when the Runner fully breaks **this ice**" and unmeetable for this card's
+/// "whenever **this program** fully breaks a piece of ice", where the source
+/// is the breaker and never the ice. There is no third word: the unscoped
+/// condition is met by any full break at all, by any breaker, which is a
+/// larger card than the printed one. The general capability — the full-break
+/// occurrence naming the card that did the breaking — is on the Blockers list.
 ///
 /// The last two lines are the icebreaker pair: 9.3.6c's interface flag with
 /// 9.5.6a/c confining it to an encounter with a barrier, and an ordinary paid
@@ -471,8 +473,7 @@ pub fn curupira() -> Card {
             )],
         )
         .named("three counters walks you past a barrier")
-        .when(TriggerCond::SelfFullyBroken, [place(CounterKind::Power, 1)])
-        .named("a counter for a full break")
+        .unimplemented("Whenever this program fully breaks a piece of ice, place 1 power counter on this program.")
         .paid_interface(credits(1), Some(Subtype::Barrier), [break_subroutines(1)])
         .named("interface: break 1 barrier subroutine")
         .paid(credits(1), [pump(1)])

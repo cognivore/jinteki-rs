@@ -633,7 +633,27 @@ fn step_a_conditional_abilities(vm: &mut Vm) -> Vec<u64> {
                             }
                             _ => None,
                         };
+                        // 9.12.2a read beside 9.6.5c: a condition whose printed
+                        // noun is PLURAL ("**1 or more cards** are trashed
+                        // from your grip") speaks of the cards of one event
+                        // together, and `trigger_per_event` is where that
+                        // reading lives. The ordinal counts TIMES, and the
+                        // cards of one event are one time — so a change that
+                        // shares this occurrence's group is not an earlier
+                        // time, it is this one said of another of its cards.
+                        // Without this the ordinal is spent by the first card
+                        // of the event, every later card of the SAME event is
+                        // dropped before the grouping below can collect it,
+                        // and a sentence saying "1 of **those** cards" reaches
+                        // only the first — which is a smaller card than the
+                        // printed one wherever the two rules meet.
+                        cite!("rule_act_on_multiple_cards");
+                        let per_event_cond = crate::ability::trigger_per_event(cond);
+                        let this_group = *group;
                         let earlier = vm.changes.log[from..here].iter().enumerate().any(|(k, x)| {
+                            if per_event_cond && vm.changes.groups[from + k] == this_group {
+                                return false;
+                            }
                             if during_run_cond && !run_in_progress_at(from + k) {
                                 return false;
                             }
