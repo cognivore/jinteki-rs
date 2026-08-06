@@ -36,6 +36,7 @@ pub fn deck_named(name: &str) -> Option<Vec<Card>> {
         "mezzie_valencia" => Some(decks::mezzie_valencia::deck()),
         // docs/vm/DECK-OF-THE-WEEK.md.
         "notw_restoring_humanity" => Some(decks::notw_restoring_humanity::deck()),
+        "notw_sable" => Some(decks::notw_sable::deck()),
         _ => None,
     }
 }
