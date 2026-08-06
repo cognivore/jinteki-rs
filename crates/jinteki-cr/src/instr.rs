@@ -1582,10 +1582,11 @@ impl Instruction {
             // wrapped instruction's, made here.
             Instruction::PerformedBy { instr, .. } => Contained::Inline(vec![instr]),
             // 9.6.9: the optional component is carried out as part of this
-            // instruction unless it is one of the §9.2.2e procedures, which
-            // are spliced in to expand and announce for themselves.
+            // instruction unless it is one that has to be an instruction in
+            // its own right — a §9.2.2e procedure, or 9.11.4g's choice —
+            // which is spliced in to expand and announce for itself.
             Instruction::DeclineableChoice(inner) => {
-                if inner.expands_into_steps() {
+                if inner.resolves_as_its_own_instruction() {
                     Contained::Deferred(vec![inner])
                 } else {
                     Contained::Inline(vec![inner])
@@ -1734,6 +1735,37 @@ impl Instruction {
                 | Instruction::PlayCards { .. }
                 | Instruction::Trace { .. }
         )
+    }
+
+    /// CR 9.11.4g/9.11.4f/9.2.2e: **this instruction cannot resolve inside
+    /// another instruction's imminence** — it has to be an instruction of the
+    /// ability in its own right.
+    ///
+    /// Two families qualify. 9.11.4g's choice ("the player chooses 1 of the
+    /// options … the chosen effect is resolved as the next instruction") and
+    /// 9.11.4f's nested cost both END the instruction they are written in and
+    /// put their outcome AFTER it: inside an imminence there is no "next
+    /// instruction" to put anything after, so the decision has nowhere to
+    /// land. 9.2.2e's procedures expand into step sequences, which likewise
+    /// only exist as frame instructions.
+    ///
+    /// This predicate is the guard on that. `Predictive Planogram` shipped
+    /// with its "Resolve 1 of the following" `ChooseOne` written inside an
+    /// `IfMet` branch, which resolved the branch INLINE — the choice reached
+    /// [`crate::vm::Vm::apply_imminent`], whose `ChooseOne` arm expects the
+    /// choice to have been asked already, and the whole card silently
+    /// resolved to nothing. Every container that resolves what it contains
+    /// inline asks this question first and splices instead.
+    pub fn resolves_as_its_own_instruction(&self) -> bool {
+        match self {
+            // 1.14.5: the wrapper only names who chooses — what it wraps
+            // decides where the instruction has to live.
+            Instruction::PerformedBy { instr, .. } => instr.resolves_as_its_own_instruction(),
+            Instruction::ChooseOne { .. }
+            | Instruction::NestedCostThen { .. }
+            | Instruction::NestedCostUnless { .. } => true,
+            other => other.expands_into_steps(),
+        }
     }
 }
 

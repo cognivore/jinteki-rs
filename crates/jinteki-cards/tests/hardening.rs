@@ -1984,3 +1984,120 @@ fn controlling_the_message_re_arms_for_the_next_turn() {
     assert_eq!(vm.st.runner.tags, 2, "and both tags stuck: {}", t2.tail(40));
 }
 
+// ---------------------------------------------------------------------------
+// F. Where a choice may be written (CR 9.11.4g), over the whole corpus
+// ---------------------------------------------------------------------------
+
+/// CR 9.11.4g: a choice ENDS the instruction it is written in, and "the chosen
+/// effect is resolved as the next instruction". An instruction that resolves
+/// INSIDE another one's imminence has no next instruction, so a choice
+/// written there can never be put to anyone — it resolves to nothing, in
+/// silence.
+///
+/// Predictive Planogram shipped exactly that way. Its "Resolve 1 of the
+/// following" sat in an `if_met_else` branch, `IfMet` resolved its branch
+/// inline, and the card produced neither the credits nor the cards in a real
+/// game — no prompt, no error, nothing. One card was the symptom; the class
+/// is "a choice written under any container that resolves what it holds
+/// inline", and that is what this walks.
+///
+/// It is a STRUCTURAL walk rather than a fixture per card because the
+/// property is structural: it covers every card a fixture could reach, and
+/// also every card a fixture could not (a subroutine on ice nobody has
+/// written a run for, a branch that needs three prior turns to reach). The
+/// kernel carries the same rule as a `debug_assert!` in
+/// `Vm::apply_imminent`'s `ChooseOne` arm, so a card slipping past this walk
+/// would still fail loudly the first time a test resolved it — this is the
+/// layer that does not need the resolution to happen at all.
+#[test]
+fn no_card_writes_a_choice_where_the_kernel_could_never_put_it() {
+    use jinteki_cr::instr::{Contained, Instruction};
+
+    fn short(i: &Instruction) -> String {
+        let d = format!("{i:?}");
+        match d.find([' ', '(', '{']) {
+            Some(n) => d[..n].to_string(),
+            None => d,
+        }
+    }
+
+    /// Every place a choice instruction sits, paired with whether the kernel
+    /// will give it an instruction of its own when it gets there.
+    fn walk(instr: &Instruction, own_instruction: bool, path: &str, bad: &mut Vec<String>) {
+        let here = format!("{path} > {}", short(instr));
+        if instr.resolves_as_its_own_instruction() && !own_instruction {
+            bad.push(here.clone());
+        }
+        match instr.contains() {
+            Contained::Nothing => {}
+            // These become instructions in their own right — spliced into the
+            // frame, pushed as a new chain, or created as an ability later.
+            Contained::Deferred(list) => {
+                for i in list {
+                    walk(i, true, &here, bad);
+                }
+            }
+            // 9.6.5d: the live branch is spliced whole when any step of it
+            // needs its own instruction (`Vm::branch_becomes_instructions`),
+            // so a branch is a legal home for a choice. WHICH branch is live
+            // is a game-state question; structurally, every branch is one.
+            Contained::Branches(branches) => {
+                for (_, effects) in branches {
+                    for i in effects {
+                        walk(i, true, &here, bad);
+                    }
+                }
+            }
+            // 9.11.4a: resolved as part of THIS instruction. `PerformedBy` is
+            // peeled everywhere (1.14.5 names a player, not a position) and
+            // `DeclineableChoice` splices what must be its own instruction,
+            // so both hand their content the enclosing position; anything
+            // else resolves what it holds inside an imminence.
+            Contained::Inline(list) => {
+                let passes_position = matches!(
+                    instr,
+                    Instruction::PerformedBy { .. } | Instruction::DeclineableChoice(_)
+                );
+                for i in list {
+                    walk(i, own_instruction && passes_position, &here, bad);
+                }
+            }
+        }
+    }
+
+    fn has_choice(i: &Instruction) -> bool {
+        if matches!(i, Instruction::ChooseOne { .. }) {
+            return true;
+        }
+        match i.contains() {
+            Contained::Nothing => false,
+            Contained::Inline(l) | Contained::Deferred(l) => l.iter().any(|x| has_choice(x)),
+            Contained::Branches(b) => b.iter().any(|(_, e)| e.iter().any(has_choice)),
+        }
+    }
+
+    let mut bad: Vec<String> = Vec::new();
+    let mut choices = 0usize;
+    for c in jinteki_cards::all_cards() {
+        for (n, ab) in c.printed.abilities.iter().enumerate() {
+            for (k, instr) in ab.instructions.iter().enumerate() {
+                choices += usize::from(has_choice(instr));
+                walk(instr, true, &format!("{} ability #{n} #{k}", c.printed.name), &mut bad);
+            }
+        }
+    }
+
+    assert!(
+        choices >= 15,
+        "the corpus still holds the choices this walk is about — {choices} found, so \
+         the walk has not been quietly emptied by a refactor"
+    );
+    assert!(
+        bad.is_empty(),
+        "9.11.4g: these choices are written where the kernel would resolve them inside \
+         another instruction's imminence, so they could never be put to a player \
+         (the Predictive Planogram defect):\n  {}",
+        bad.join("\n  ")
+    );
+}
+

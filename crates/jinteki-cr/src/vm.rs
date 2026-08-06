@@ -6992,7 +6992,11 @@ impl Vm {
             // so their choices are made here.
             Contained::Inline(list) => list.iter().map(|i| self.announcements_owed(i)).sum(),
             // 9.6.5d: only the live branch resolves, so only its
-            // announcements are owed.
+            // announcements are owed — unless the branch becomes instructions
+            // of its own (9.11.4g), in which case each step announces for
+            // itself when it is reached and owing them here would announce
+            // everything twice.
+            Contained::Branches(_) if self.branch_becomes_instructions(instr) => 0,
             Contained::Branches(_) => {
                 self.live_branch(instr).iter().map(|i| self.announcements_owed(i)).sum()
             }
@@ -7013,6 +7017,7 @@ impl Vm {
             Contained::Inline(list) => {
                 list.iter().map(|i| self.span_announcements_owed(i)).sum()
             }
+            Contained::Branches(_) if self.branch_becomes_instructions(instr) => 0,
             Contained::Branches(_) => self
                 .live_branch(instr)
                 .iter()
@@ -7020,6 +7025,19 @@ impl Vm {
                 .sum(),
         };
         own + contained
+    }
+
+    /// CR 9.11.4g: does this branching instruction's LIVE branch become
+    /// instructions of the ability, rather than resolving inside this one?
+    ///
+    /// It does when any step of it ends the instruction it is written in —
+    /// see [`Instruction::resolves_as_its_own_instruction`]. The whole branch
+    /// goes, not just that step, because printed order has to survive: a
+    /// branch of "gain 1[credit]. Then choose…" cannot resolve its gain
+    /// inline and its choice later without swapping the two.
+    fn branch_becomes_instructions(&self, instr: &Instruction) -> bool {
+        matches!(instr.contains(), Contained::Branches(_))
+            && self.live_branch(instr).iter().any(|i| i.resolves_as_its_own_instruction())
     }
 
     /// The decisions an instruction asks for at announce time that are NOT
@@ -11053,16 +11071,9 @@ impl Vm {
                     // go back through imminence to be expanded and to announce
                     // its own targets, so it is spliced in as the next
                     // instruction, exactly as a nested cost's paid-for branch
-                    // is (9.11.4f).
-                    if matches!(
-                        **inner,
-                        Instruction::InstallCard { .. }
-                            | Instruction::InstallCards { .. }
-                            | Instruction::RezInstalledCards { .. }
-                            | Instruction::PlayCard { .. }
-                            | Instruction::PlayCards { .. }
-                            | Instruction::Trace { .. }
-                    ) {
+                    // is (9.11.4f) — and so does 9.11.4g's choice, whose
+                    // chosen effect IS "the next instruction".
+                    if inner.resolves_as_its_own_instruction() {
                         cite!("rule_nested_cost_instruction");
                         let next = (**inner).clone();
                         if let Some(Frame::Ability(af)) = self.frames.last_mut() {
@@ -11089,7 +11100,15 @@ impl Vm {
             Instruction::NestedCostThen { .. } | Instruction::NestedCostUnless { .. } => {
                 // Handled at answer time (rule_nested_cost_instruction): the
                 // choice ended this instruction; the appropriate branch was
-                // injected as the next instruction.
+                // injected as the next instruction. Same reasoning as the
+                // `ChooseOne` arm: reaching this is a container resolving a
+                // payment decision inline, where it can never be asked.
+                debug_assert!(
+                    false,
+                    "9.11.4f: a nested cost cannot resolve inside another instruction's \
+                     imminence — its container must splice it into the frame \
+                     (Instruction::resolves_as_its_own_instruction)"
+                );
             }
             Instruction::MoveSetAsideCounters { kind, target } => {
                 // CR 9.5.5 (Reconstruction Contract): move the set-aside
@@ -11810,7 +11829,18 @@ impl Vm {
             }
             Instruction::ChooseOne { .. } => {
                 // Handled at answer time (the choice ends the instruction;
-                // the chosen effect is injected as the next instruction).
+                // the chosen effect is injected as the next instruction) —
+                // so an ability's own instruction never arrives here at all.
+                // Arriving here means a container resolved a choice INLINE,
+                // where there is no next instruction to inject into and the
+                // choice is never put: the defect that made Predictive
+                // Planogram resolve to nothing. Loud, not silent.
+                debug_assert!(
+                    false,
+                    "9.11.4g: a choice cannot resolve inside another instruction's \
+                     imminence — its container must splice it into the frame \
+                     (Instruction::resolves_as_its_own_instruction)"
+                );
             }
             Instruction::OfferAction { different_from_this_turn, click_discount } => {
                 // 5.2.4: actions are taken only during the action phase —
@@ -13677,6 +13707,26 @@ impl Vm {
                     .iter()
                     .all(|r| self.state_requirement_holds_for(r, Some(source.obj)));
                 let branch = if met { then } else { otherwise };
+                // 9.11.4g/9.11.4f/9.2.2e: a branch step that ends the
+                // instruction it is written in — a choice, a nested cost, one
+                // of the procedures — has no home inside THIS instruction's
+                // imminence, because what it produces is "the next
+                // instruction" and an imminence has none. Such a branch is
+                // spliced into the frame whole, in printed order, where each
+                // step is an instruction in its own right and announces for
+                // itself (which is why `announcements_owed` stops owing the
+                // branch's announcements in exactly this case).
+                if branch.iter().any(|s| s.resolves_as_its_own_instruction()) {
+                    cite!("rule_choice_instruction");
+                    cite!("rule_nested_cost_instruction");
+                    let steps: Vec<Instruction> = branch.to_vec();
+                    if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                        for (k, ins) in steps.into_iter().enumerate() {
+                            af.instructions.insert(af.idx + 1 + k, ins);
+                        }
+                    }
+                    return;
+                }
                 for step in branch {
                     let atoms =
                         self.expected_atoms(step, controller, &imm.targets, Some(source.obj));

@@ -2511,6 +2511,62 @@ fn mutual_favor_without_a_run_puts_the_breaker_in_the_grip() {
     );
 }
 
+/// Mutual Favor's OTHER branch — the one the card was written for: after a
+/// successful run, "you may install that program. If you do not, add it to
+/// your grip" is a choice, and the Runner is actually asked it.
+///
+/// The branch was unreachable in practice: the choice sat inside the
+/// `if_met_else`, which resolved its branch inline, so the whole instruction
+/// completed with the breaker left in the stack — the same defect that made
+/// Predictive Planogram do nothing. Both options, one game each.
+#[test]
+fn mutual_favor_after_a_successful_run_offers_the_install_and_resolves_it() {
+    for install_it in [true, false] {
+        let mut vm = Vm::empty(4704);
+        let mf = vm.new_object(card("Mutual Favor"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(mf);
+        let mut breaker = tk::runner_filler("Bogus Breaker");
+        breaker.card_type = CardType::Program;
+        breaker.subtypes = vec![Subtype::Icebreaker];
+        breaker.cost = Some(0);
+        let brk = vm.new_object(breaker, Zone::Deck(Side::Runner));
+        vm.st.deck.get_mut(&Side::Runner).unwrap().push(brk);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let pick = if install_it { "install that program" } else { "add it to your grip" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                // An undefended Archives run is successful, which is what
+                // makes the tagged branch live when the event is played.
+                .when(Match::action().once(), Reply::run(ServerId::Archives))
+                .when(Match::action().once(), Reply::play_card(mf))
+                .when(Match::targets().once(), Reply::Targets(vec![brk]))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+        );
+
+        let asked = t.of_kind(Kind::Options);
+        assert_eq!(
+            asked.len(),
+            1,
+            "the Runner was offered the install (install={install_it}): {}",
+            t.tail(40)
+        );
+        let want = if install_it { Zone::Rig } else { Zone::Hand(Side::Runner) };
+        assert_eq!(
+            vm.st.objects[&brk].zone,
+            want,
+            "the chosen option is what happened (install={install_it}): {}",
+            t.tail(40)
+        );
+    }
+}
+
 /// The Source: "The advancement requirement of all agendas is increased by 1."
 ///
 /// "All agendas" reaches every agenda wherever it sits, so the raised
@@ -21711,4 +21767,105 @@ fn a_second_console_is_trashed_even_though_it_shares_no_name_with_the_first() {
         Zone::Rig,
         "and the newer console stays installed"
     );
+}
+
+/// Predictive Planogram: "Resolve 1 of the following. If the Runner is
+/// tagged, you may resolve both instead. • Gain 3[credit]. • Draw 3 cards."
+///
+/// The untagged half of the sentence, both ways: the Corp is OFFERED the two
+/// printed options and the one it takes actually happens. The card shipped
+/// resolving to NOTHING — its `ChooseOne` sits inside an `IfMet` branch, and
+/// a branch's instructions are applied straight into imminence, where the
+/// choice instruction has no answer path and silently completed.
+#[test]
+fn predictive_planogram_offers_the_untagged_choice_and_resolves_it() {
+    for want_credits in [true, false] {
+        let mut vm = Vm::empty(4470);
+        let pp = vm.new_object(card("Predictive Planogram"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(pp);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 3);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+        let pick = if want_credits { "Gain 3[credit]." } else { "Draw 3 cards." };
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(pp))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+
+        let asked = t.of_kind(Kind::Options);
+        assert_eq!(
+            asked.len(),
+            1,
+            "the Corp was asked to resolve 1 of the following (credits={want_credits}): {}",
+            t.tail(30)
+        );
+        let DecisionSpec::ChooseOption { options } = &asked[0].spec else {
+            panic!("an option choice: {:?}", asked[0].spec)
+        };
+        assert_eq!(
+            options.len(),
+            2,
+            "untagged, the two printed bullets and not the tagged 'both': {options:?}"
+        );
+
+        // The hand held the operation; 5.6.2b's mandatory draw adds one and
+        // playing the operation takes it away again, so "nothing drawn" is a
+        // hand of 1 and "3 cards drawn" is a hand of 4.
+        if want_credits {
+            assert_eq!(vm.st.corp.credits, 3, "the credits were gained: {}", t.tail(30));
+            assert_eq!(
+                vm.st.hand[&Side::Corp].len(),
+                1,
+                "…and no cards drawn: {}",
+                t.tail(30)
+            );
+        } else {
+            assert_eq!(
+                vm.st.hand[&Side::Corp].len(),
+                4,
+                "three cards were drawn: {}",
+                t.tail(30)
+            );
+            assert_eq!(vm.st.corp.credits, 0, "…and no credits gained: {}", t.tail(30));
+        }
+    }
+}
+
+/// Predictive Planogram's other half: "If the Runner is tagged, you may
+/// resolve both instead." — a third option, and taking it does both things.
+#[test]
+fn predictive_planogram_offers_both_to_a_tagged_runner() {
+    let mut vm = Vm::empty(4471);
+    let pp = vm.new_object(card("Predictive Planogram"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(pp);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    vm.st.corp.credits = 0;
+    vm.st.runner.tags = 1;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(pp))
+            .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("Resolve both."))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    let asked = t.of_kind(Kind::Options);
+    assert_eq!(asked.len(), 1, "one choice was put: {}", t.tail(30));
+    let DecisionSpec::ChooseOption { options } = &asked[0].spec else {
+        panic!("an option choice: {:?}", asked[0].spec)
+    };
+    assert_eq!(options.len(), 3, "tagged, the third option is offered too: {options:?}");
+    assert_eq!(vm.st.corp.credits, 3, "both: the credits: {}", t.tail(30));
+    // 1 (the operation) + 1 (mandatory draw) − 1 (played) + 3 = 4.
+    assert_eq!(vm.st.hand[&Side::Corp].len(), 4, "…and the cards: {}", t.tail(30));
 }
