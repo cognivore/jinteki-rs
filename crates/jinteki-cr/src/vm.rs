@@ -5722,6 +5722,32 @@ impl Vm {
         total
     }
 
+    /// CR 1.16.10 / 8.1.2: everything an 8.1.2d rez has to pay BESIDE the
+    /// inherent rez cost — the card's own printed additional cost (Archer's
+    /// "as an additional cost to rez this card") and every active
+    /// [`StaticDecl::AdditionalRezCost`] whose description reaches it
+    /// (Hacktivist Meeting's "to rez non-ice cards").
+    ///
+    /// One reader for both, at every rez, because 1.16.10b makes them ONE
+    /// all-at-once payment and 1.16.1b makes their sum the affordability
+    /// question. Before this existed the printed one was read on the
+    /// install-and-rez path alone, so an Archer rezzed from the ordinary (R)
+    /// option forfeited nothing.
+    pub fn additional_rez_cost_of(&self, card: ObjectId) -> Cost {
+        cite!("rule_additional_cost");
+        cite!("rule_additonal_cost_simultaenous");
+        let Some(o) = self.st.objects.get(&card) else { return Cost::free() };
+        let mut total = o.printed.additional_rez_cost.clone().unwrap_or_default();
+        for (src, d) in self.active_statics() {
+            if let StaticDecl::AdditionalRezCost { criteria, cost } = d {
+                if criteria.iter().all(|f| self.filter_matches(o, *f, Some(src))) {
+                    total = total.plus(&cost);
+                }
+            }
+        }
+        total
+    }
+
     /// The Noble Path class: a live prevent-all-damage lingering effect.
     fn damage_shield_active(&self) -> bool {
         self.lingering
@@ -13139,12 +13165,7 @@ impl Vm {
                 // additional rez cost loses its credit part and KEEPS its
                 // forfeits, where `ignore_costs` (1.16.5c as this kernel
                 // reads it, inherent-only) would leave the whole of it.
-                let additional = self
-                    .st
-                    .objects[&c]
-                    .printed
-                    .additional_rez_cost
-                    .clone()
+                let additional = Some(self.additional_rez_cost_of(c))
                     .map(|a| if p.ignore_credit_costs { a.without_credits() } else { a })
                     // An additional cost that WAS only credits has nothing
                     // left once they are ignored, so there is no payment to
@@ -15181,13 +15202,29 @@ impl Vm {
         // whose credits are allowed "to rez cards" would never be offered the
         // rez they can pay for.
         let purpose = CreditPurpose::Rezzing(card);
-        if self.cost_payable_for(Side::Corp, card, &Cost::credits(printed), None, purpose) {
+        // 1.16.10b + 1.16.1b: the additional costs are part of the same
+        // payment, so they are part of the same affordability question — a
+        // rez whose additional cost cannot be paid is not offered at all.
+        let extra = self.additional_rez_cost_of(card);
+        if self.cost_payable_for(
+            Side::Corp,
+            card,
+            &Cost::credits(printed).plus(&extra),
+            None,
+            purpose,
+        ) {
             return true;
         }
         self.alternate_payments_for(card).into_iter().any(|(_, covers, instead)| {
             cite!("rule_alternate_payment");
             let reduced = Cost::credits(printed.saturating_sub(covers));
-            self.cost_payable_for(Side::Corp, card, &reduced.plus(&instead), None, purpose)
+            self.cost_payable_for(
+                Side::Corp,
+                card,
+                &reduced.plus(&instead).plus(&extra),
+                None,
+                purpose,
+            )
         })
     }
 
@@ -15256,8 +15293,11 @@ impl Vm {
             return false;
         }
         // 1.16.1b: a "trash N cards from your grip" component cannot be paid
-        // with fewer than N cards there (the Patchwork branch of 8.7.2b).
-        if (self.st.hand[&side].len() as u32) < cost.trash_from_hand {
+        // with fewer than N cards there (the Patchwork branch of 8.7.2b). The
+        // random component (1.15.2b) comes out of the SAME hand, so a cost
+        // carrying both needs enough cards for both.
+        if (self.st.hand[&side].len() as u32) < cost.trash_from_hand + cost.trash_random_from_hand
+        {
             return false;
         }
         // 1.9.2: a counter component is spent from the source, so a card
@@ -16390,6 +16430,22 @@ impl Vm {
             self.trash_card(c, side);
             trashed.push(c);
         }
+        // CR 1.15.2b: "…randomly trash a card from HQ" (Hacktivist Meeting
+        // class) — nobody announces it, so there is no choice to gather and
+        // none was: the payment takes the cards out of the hand at random,
+        // one at a time, exactly as `Instruction::TrashRandomFromHand` does
+        // for the same words said as an effect.
+        for _ in 0..cost.trash_random_from_hand {
+            cite!("rule_targets_must_be_valid");
+            let hand = &self.st.hand[&side];
+            if hand.is_empty() {
+                break;
+            }
+            let i = self.rng.random_range(0..hand.len());
+            let c = self.st.hand[&side][i];
+            self.trash_card(c, side);
+            trashed.push(c);
+        }
         // "…trash all cards from your grip:" (Citadel Sanctuary class) — the
         // whole grip, whatever it holds; no choice to gather.
         if cost.trash_all_from_hand {
@@ -17061,7 +17117,10 @@ impl Vm {
             // 1.16.2a: the default value, then the increases, then the
             // reductions, and never below zero.
             cite!("rule_cost_calculation");
-            let cost = Cost::credits(self.rez_cost_credits(id).saturating_sub(less));
+            let cost = Cost::credits(self.rez_cost_credits(id).saturating_sub(less))
+                // 1.16.10b: the inherent cost and every additional cost are
+                // ONE payment, so they are combined before it begins.
+                .plus(&self.additional_rez_cost_of(id));
             // The rez cost may take Decisions to pay (1.16.2e/1.10.3c), so the
             // rest of the procedure is the payment's continuation.
             self.begin_payment(Side::Corp, id, &cost, PaymentCont::Rez(id), None);
@@ -18279,11 +18338,7 @@ impl Vm {
                     } else {
                         Cost::credits(self.rez_cost_credits(c))
                     };
-                    let add = self.st.objects[&c]
-                        .printed
-                        .additional_rez_cost
-                        .clone()
-                        .unwrap_or_default();
+                    let add = self.additional_rez_cost_of(c);
                     let total = base.plus(&add);
                     self.pay_cost(Side::Corp, c, &total);
                 } else {

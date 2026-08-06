@@ -2096,6 +2096,18 @@ pub fn any_x_counters_equal_to(kind: CounterKind, q: Quantity) -> Cost {
 pub fn trash_cards_from_hand_of(side: Side, n: u32) -> Cost {
     Cost::trash_matching(n, vec![in_hand_of(side)])
 }
+/// "…**randomly** trash a card from HQ" as a cost (Hacktivist Meeting;
+/// 1.15.2b + 1.16.1). The cards come out of the PAYER's hand, and nobody
+/// announces them: 1.15.2b puts a target choice to a player, and a random
+/// pick takes it away from both — which is exactly why this is not
+/// [`trash_cards_from_hand_of`] with a different name, and why it takes no
+/// description of the cards.
+///
+/// 1.16.1: a hand with fewer than N cards cannot pay it, so whatever the cost
+/// is charged FOR cannot be done at all.
+pub fn randomly_trash_cards_from_hand(n: u32) -> Cost {
+    Cost::trash_random_from_hand(n)
+}
 /// "**Trash the unrezzed piece of ice the Runner is approaching:**"
 /// (AgInfusion; 1.16.10 + 6.4.2.) A trigger cost over the shared criteria —
 /// the approach fixes the ice, and "unrezzed" is 8.1.2's stipulation about
@@ -3131,6 +3143,18 @@ pub fn non(f: TargetFilter) -> TargetFilter {
 /// the Runner must pay <cost>." (Gagarin class; 1.16.10 / 7.4.3.)
 pub fn additional_cost_to_access_a_card_in_a_remote_root(c: Cost) -> StaticDecl {
     StaticDecl::AdditionalAccessCost(c)
+}
+/// "As an additional cost to rez <these cards>, the Corp must <cost>."
+/// (Hacktivist Meeting; 1.16.10 / 8.1.2.) The cards are the sentence's
+/// stipulation on the one declaration, in the shared filter vocabulary, so
+/// "non-ice cards" and a sentence naming no cards at all are the same
+/// declaration with different content — an empty list taxes every rez.
+///
+/// 1.16.1b makes it a GATE and not merely a charge: the inherent rez cost and
+/// this one are one payment (1.16.10b), so a Corp who cannot pay it is not
+/// offered the rez.
+pub fn additional_cost_to_rez(criteria: &[TargetFilter], c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalRezCost { criteria: criteria.to_vec(), cost: c }
 }
 /// "As an additional cost to run <these servers>, the Runner must pay
 /// <cost>." (Earth Station: SEA Headquarters; 1.16.10 / 6.3.4.) The named

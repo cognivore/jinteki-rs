@@ -1343,6 +1343,22 @@ pub struct Cost {
     /// KERNEL APPROXIMATION: which cards are trashed is not put to the payer
     /// (the front of the hand is taken); no example distinguishes them.
     pub trash_from_hand: u32,
+    /// CR 1.15.2b: "…**randomly** trash a card from HQ" as a cost (Hacktivist
+    /// Meeting class) — N cards taken at RANDOM out of the payer's hand.
+    ///
+    /// Not [`Cost::trash_from_hand`] with a different comment, and the
+    /// difference is the rule: a random pick is not an announcement — 1.15.2b
+    /// puts the choice to a player and this sentence takes it away from both,
+    /// which is exactly the distinction
+    /// [`crate::instr::Instruction::RevealRandomFromHand`] is written on.
+    /// `trash_from_hand` is the ANNOUNCED trash of that shape
+    /// (its own doc records the approximation that it takes the front of the
+    /// hand), and the front of a hand is not a card taken at random.
+    ///
+    /// 1.16.1: the component is payable only with at least that many cards in
+    /// the hand — a Corp with an empty HQ cannot pay it, and so cannot do the
+    /// thing it is an additional cost for.
+    pub trash_random_from_hand: u32,
     /// "Remove <this card> from the game:" as a trigger cost (Jackson class;
     /// 1.16.1 — the payment moves the source to the removed-from-game zone).
     pub remove_self_from_game: bool,
@@ -1420,6 +1436,10 @@ impl Cost {
     pub fn trash_from_hand(n: u32) -> Self {
         Cost { trash_from_hand: n, ..Default::default() }
     }
+    /// CR 1.15.2b: "randomly trash N cards from your hand" as a cost.
+    pub fn trash_random_from_hand(n: u32) -> Self {
+        Cost { trash_random_from_hand: n, ..Default::default() }
+    }
     /// CR 1.9.2: "spend N hosted counters of a kind" as a cost.
     pub fn spend_counters(kind: crate::object::CounterKind, n: u32) -> Self {
         Cost { spend_counters: Some((kind, n)), ..Default::default() }
@@ -1490,6 +1510,7 @@ impl Cost {
             net_damage: self.net_damage + other.net_damage,
             lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
+            trash_random_from_hand: self.trash_random_from_hand + other.trash_random_from_hand,
             remove_self_from_game: self.remove_self_from_game || other.remove_self_from_game,
             trash_all_from_hand: self.trash_all_from_hand || other.trash_all_from_hand,
             spend_counters: self.spend_counters.or(other.spend_counters),
@@ -1950,6 +1971,29 @@ pub enum StaticDecl {
     /// "As an additional cost to access a card in the root of a remote
     /// server, pay N." (Gagarin class — 7.4.3 example 2.)
     AdditionalAccessCost(Cost),
+    /// CR 1.16.10 / 8.1.2: "As an additional cost to rez **non-ice cards**,
+    /// the Corp must randomly trash a card from HQ." (Hacktivist Meeting
+    /// class.)
+    ///
+    /// 1.16.10's additional costs come in two shapes. One is a fact printed
+    /// on the card being paid for — [`crate::object::PrintedCard::
+    /// additional_rez_cost`], Archer's "as an additional cost to rez THIS
+    /// card". The other is a declaration taxing an ACT, of which the kernel
+    /// has one per act because each names a different procedure with its own
+    /// scope vocabulary and its own payment site: stealing (1.17.3d),
+    /// accessing (7.4.3), the basic run action (6.3.4), a basic action by
+    /// its target (5.2.5a) — and now 8.1.2's rez.
+    ///
+    /// `criteria` is the sentence's stipulation about the card being rezzed,
+    /// in the shared filter vocabulary (§12 rule 5), so "non-ice cards",
+    /// "ice" and a sentence naming no cards at all are one declaration with
+    /// different content. An EMPTY list taxes every rez, which is what a
+    /// sentence saying plain "to rez cards" means.
+    ///
+    /// 1.16.1b is what makes it bite rather than merely charge: the combined
+    /// cost has to be payable for the rez to be OFFERED at all, so a Corp who
+    /// cannot pay it cannot rez the described cards.
+    AdditionalRezCost { criteria: Vec<crate::instr::TargetFilter>, cost: Cost },
     /// "You may pay <cost> to lower the install cost of a card you are
     /// installing by N." (Patchwork class; 1.16.6 install costs.) The
     /// reduction is only available while its own cost is payable, which is

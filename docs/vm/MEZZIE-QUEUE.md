@@ -87,7 +87,7 @@ Identity is COMPLETE.
 
 - [x] **Blackmail** ×3 — event · Run · cost 1
       "Play only if the Corp has at least 1 bad publicity. / Run any server. The Corp cannot rez ice during that run."
-- [ ] **Hacktivist Meeting** ×3 — event · Current · cost 1
+- [x] **Hacktivist Meeting** ×3 — event · Current · cost 1
       "This card is not trashed until another current is played or an agenda is scored. / As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."
 - [x] **I've Had Worse** ×3 — event · cost 1
       "Draw 3 cards. / Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."
@@ -136,8 +136,8 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `work/finish` wave: 42 of 47 ticked, 5 printed
-sentences still unsayable, 5 cards unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 43 of 47 ticked, 4 printed
+sentences still unsayable, 4 cards unticked.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
@@ -150,7 +150,6 @@ The six that remain, and what each is waiting on:
 | Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
 | Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
 | Marilyn Campaign | one: a trash redirected to a DECK, optionally |
-| Hacktivist Meeting | two: an additional cost to REZ described cards, and a random-trash `Cost` component |
 | Tsakhia "Bankhar" Gantulga | two: an ENCOUNTER state requirement, and an ordinal on a static ability |
 
 
@@ -453,32 +452,46 @@ The entry's second claim was WRONG and is deleted: "'ice' is a description and
 wave; the queue's own text already corrected itself two entries down and the
 card's doc comment did not.
 
-### An additional cost to REZ the cards a description reaches (CR 1.16.10 / 8.1.2)
+### An additional cost to REZ the cards a description reaches — LANDED (CR 1.16.10 / 8.1.2)
 
-1.16.10's additional costs come in two shapes here: a fact printed on the card
-being paid for (`additional_rez_cost`, Archer's "to rez THIS card"), and a
-declaration taxing an ACT by description — of which there are three
-(`AdditionalStealCost`, `AdditionalAccessCost`, `AdditionalRunActionCost`).
-Rezzing the cards a description reaches ("non-ice cards") is neither.
+`StaticDecl::AdditionalRezCost { criteria, cost }` and
+`Cost::trash_random_from_hand`, plus one reader for both halves of an 8.1.2
+rez's additional costs.
 
-Beside it, the same sentence wants a COST component that exists only as an
-effect: `Instruction::TrashRandomFromHand` performs 1.15.2b's unannounced trash
-out of a hand, and no `Cost` field charges one. `Cost::trash_matching` is the
-announced trash and not this — 1.15.2b is explicit that a card taken at random
-is not announced by anyone, which is exactly the difference the sentence turns
-on. `Cost::trash_from_hand` is not it either, and it is the near miss worth
-naming: it charges an UNANNOUNCED trash, but its own doc records the
-approximation that makes it the wrong word — it takes the front of the hand,
-and the front of a hand is not a card taken at random.
+The entry asked for "the act as CONTENT on ONE additional-cost declaration".
+That was re-read against the kernel and NOT done, deliberately: the four
+existing declarations are not four variants of one word, they are one per
+PROCEDURE, and each carries scope vocabulary the others have no position for —
+`AdditionalRunActionCost` has 6.3.4's server set and its printed ordinal,
+`AdditionalBasicActionCost` has 5.2.5a's basic-action identity and a
+description of the acted-on card, `AdditionalAccessCost` has 7.4.3's remote
+root. Merging them would make one atom with a union of fields irrelevant to
+each other, which is what §12 rule 2 exists to prevent, not to require. What
+IS shared — and what the entry was right about — is the description
+vocabulary: `criteria` is the ordinary filter list, so "non-ice cards" and a
+sentence naming no cards at all are the same declaration with different
+content.
 
-Wanted: the act as CONTENT on one additional-cost declaration — rezzing beside
-stealing, accessing and the basic actions, with the cards described in the
-shared filter vocabulary — and a random-trash component on `Cost`, so a
-sentence charging one is a cost and not an effect that fires afterwards.
+The random-trash component is `Cost::trash_random_from_hand`, beside
+`trash_from_hand` rather than instead of it: a random pick is not an
+announcement (1.15.2b puts the choice to a player and this sentence takes it
+away from both), which is the same distinction
+`Instruction::RevealRandomFromHand` is already written on. 1.16.1 makes an
+empty hand unable to pay it, which is where the card's teeth are.
 
-Wants it: **Hacktivist Meeting** ("As an additional cost to rez non-ice cards,
-the Corp must randomly trash a card from HQ"; the current's own "not trashed
-until…" is done and tested).
+What the entry did not mention, and what was found while wiring it: the
+kernel read a card's PRINTED additional rez cost on the install-and-rez path
+only. `Vm::rez_card_inner` — the ordinary (R) paid-window rez — never added it
+and `Vm::rez_affordable` never asked about it, so an Archer rezzed from a paid
+window forfeited nothing and a rez whose additional cost was unpayable was
+still offered. Both now go through one reader, `Vm::additional_rez_cost_of`,
+which combines the printed cost with every declaration reaching the card
+(1.16.10b: they are ONE payment, so they are one affordability question).
+
+Measured by `hacktivist_meeting_taxes_every_non_ice_rez_and_stops_it_with_an_empty_hq`:
+an asset rez costs HQ a card, an ice rez costs it nothing, and with HQ empty
+the asset cannot be rezzed at all. **Hacktivist Meeting** is written and
+ticked.
 
 ### A card's OWN trash, with the occurrence's stipulations as content — LANDED
 

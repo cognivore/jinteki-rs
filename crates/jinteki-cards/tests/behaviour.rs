@@ -19898,23 +19898,15 @@ fn blackmail_shuts_the_corp_out_of_rezzing_ice_for_the_run_it_makes() {
 /// Hacktivist Meeting: "This card is not trashed until another current is
 /// played or an agenda is scored."
 ///
-/// PARTIAL — the additional cost to rez is unsayable (see the card's doc
-/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
-/// the marker cannot quietly disappear. The sentence that IS expressed is the
-/// one that keeps the card on the table: played, it stays in the play area
-/// instead of being trashed at step 8.6.7g (3.7.1b / 8.6.6c), and the Corp
-/// scoring an agenda is what ends it.
+/// The sentence that keeps the card on the table: played, it stays in the play
+/// area instead of being trashed at step 8.6.7g (3.7.1b / 8.6.6c), and the
+/// Corp scoring an agenda is what ends it. The tax the card levies while it is
+/// there is
+/// [`hacktivist_meeting_taxes_every_non_ice_rez_and_stops_it_with_an_empty_hq`].
 #[test]
 fn hacktivist_meeting_stays_in_the_play_area_until_an_agenda_is_scored() {
-    let hm = jinteki_cards::find("Hacktivist Meeting").expect("Hacktivist Meeting is in the card layer");
-    assert_eq!(
-        hm.unimplemented,
-        vec!["As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9406);
-    let card_id = vm.new_object(card_partial("Hacktivist Meeting"), Zone::Hand(Side::Runner));
+    let card_id = vm.new_object(card("Hacktivist Meeting"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
     let agenda = tk::install_root(
         &mut vm,
@@ -19957,6 +19949,99 @@ fn hacktivist_meeting_stays_in_the_play_area_until_an_agenda_is_scored() {
         "3.7.1b: the score ended the lingering effect and the current was trashed: {}",
         g.transcript().tail(24)
     );
+}
+
+/// Hacktivist Meeting: "As an additional cost to rez non-ice cards, the Corp
+/// must randomly trash a card from HQ."
+///
+/// Three things the sentence promises, on one board each. "Non-ice cards" is
+/// the description, so rezzing an ASSET costs HQ a card and rezzing ICE costs
+/// it nothing — the two arms are the same board with a different card rezzed.
+/// And 1.16.1 is the half no credit cost could say: with HQ EMPTY the cost
+/// cannot be paid, so 1.16.10b's single payment cannot be made and the Corp
+/// cannot rez the asset at all — it is not even offered the option (1.16.1b).
+///
+/// The Corp's credits are held well above both rez costs in every arm, so
+/// nothing here turns on affordability of the printed cost.
+#[test]
+fn hacktivist_meeting_taxes_every_non_ice_rez_and_stops_it_with_an_empty_hq() {
+    // (rez the asset or the ice, cards in HQ, does the rez happen, HQ after)
+    let arms: [(bool, usize, bool, usize); 3] = [
+        (true, 3, true, 2),  // an asset: rezzed, and HQ paid a card
+        (false, 3, true, 3), // ice: the description does not reach it
+        (true, 0, false, 0), // an asset with an empty HQ: no rez at all
+    ];
+    for (rez_asset, hq, rezzed, hq_after) in arms {
+        let mut vm = Vm::empty(9408);
+        // 8.6.6c: a current sits FACEUP and active in the play area, which is
+        // where playing it would have left it — and where its declaration is
+        // read from. That it GETS there and stays is the sibling test.
+        let current = vm.new_object(card("Hacktivist Meeting"), Zone::PlayArea(Side::Runner));
+        vm.st.active_seq += 1;
+        let seq = vm.st.active_seq;
+        let o = vm.st.objects.get_mut(&current).unwrap();
+        o.faceup = true;
+        o.active_since = seq;
+        let asset = tk::install_root(
+            &mut vm,
+            tk::vanilla_asset("Sample Room", 1, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        let ice = tk::install_ice(
+            &mut vm,
+            tk::vanilla_ice("Sample Ice", 1, 1),
+            ServerId::Remote(1),
+            false,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, hq);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        vm.st.corp.credits = 10;
+        vm.st.runner.credits = 3;
+        vm.start_turn(Side::Runner);
+
+        // 8.1.2a: an asset is rezzed from an ordinary paid ability window and
+        // a piece of ice only while it is being approached (6.9.2b), so the
+        // ice arm needs a run to reach its rez at all.
+        let target = if rez_asset { asset } else { ice };
+        let (corp, runner) = if rez_asset {
+            (
+                Plan::corp().when(Match::paid().once(), Reply::rez(asset)),
+                Plan::runner().stop_at_action(),
+            )
+        } else {
+            (
+                Plan::corp().when(Match::any(), Reply::Take(Pick::RezApproachedIce)),
+                Plan::runner()
+                    .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            )
+        };
+        let t = plan::play(&mut vm, corp, runner);
+
+        assert_eq!(
+            vm.st.objects[&current].zone,
+            Zone::PlayArea(Side::Runner),
+            "the current is on the table, which is the only state its tax is \
+             declared from (rez_asset={rez_asset}, hq={hq}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.objects[&target].faceup,
+            rezzed,
+            "1.16.1b: the rez happens exactly when its combined cost can be paid — \
+             an empty HQ cannot pay a card (rez_asset={rez_asset}, hq={hq}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            hq_after,
+            "1.15.2b: a card came out of HQ at random for the non-ice rez and for \
+             nothing else (rez_asset={rez_asset}, hq={hq}): {}",
+            t.tail(24)
+        );
+    }
 }
 
 /// I've Had Worse: "Draw 3 cards."
