@@ -331,6 +331,49 @@ pub enum GameChange {
     /// an index means nothing to a reader and the resolvable-options filter
     /// (9.12.3c) makes indices differ between the offer and the printed list.
     OptionChosen { source: ObjectId, side: Side, label: &'static str },
+    /// CR 1.15.2: a player ANNOUNCED an instruction's targets, and these are
+    /// the objects they named.
+    ///
+    /// The announcement is a MOMENT, not a consequence: 1.15.2 puts it before
+    /// the instruction becomes imminent, so an interrupt acts between the
+    /// naming and the effect and a prevented effect leaves this record as the
+    /// only account of what it was aimed at. Nothing downstream can
+    /// reconstruct it either — a trashed card in Archives says a card was
+    /// trashed, never that it was the one chosen — and a choice that changes
+    /// no state at all (9.10.3's "choose 1 installed piece of ice") says
+    /// nothing whatsoever without this.
+    ///
+    /// `targets` is the announcement as 1.15.2b/e left it: validated against
+    /// the candidates, each named once, capped at the count. It is a list
+    /// because ONE announcement can name several objects ("add 2 installed
+    /// Runner cards to the grip"), and 1.15.2 makes those one announcement
+    /// rather than two. An announcement of NOTHING — 1.15.2b caps at the
+    /// eligible targets available, and there can be none — is not recorded:
+    /// no object was named, so there is nothing to say.
+    TargetsAnnounced { source: ObjectId, side: Side, targets: Vec<ObjectId> },
+    /// CR 9.10.3: a source began MAINTAINING a choice — the value the later
+    /// sentences of that same card read back as "that server", "the named
+    /// card", "the named type".
+    ///
+    /// A maintained choice is exactly what a player has to remember for as
+    /// long as the card is active, which makes it exactly what a log has to
+    /// say. Recorded for the values 1.15.1b keeps OUT of a target
+    /// announcement — a server, a card name, a number, a card type, a subtype
+    /// — none of which is an object, and none of which is therefore announced
+    /// anywhere. A maintained choice OF AN OBJECT ("choose 1 installed piece
+    /// of ice") IS a 1.15.2 announcement and is already carried by
+    /// [`GameChange::TargetsAnnounced`]; recording it here as well would say
+    /// the same thing twice in two lines.
+    ///
+    /// `key` is the card layer's own word for what is being remembered
+    /// ("boomerang ice", "marketing target"), carried so a reader can tell
+    /// two choices of one source apart.
+    ChoiceMaintained {
+        source: ObjectId,
+        side: Side,
+        key: &'static str,
+        choice: crate::lingering::ChoiceValue,
+    },
     /// A trash ability was used. `basic` says WHICH: `true` is 7.1.5's basic
     /// trash ability, where the Runner pays an accessed card's trash cost;
     /// `false` is a card's own printed [trash] ability, whose 1.19.4 trigger
