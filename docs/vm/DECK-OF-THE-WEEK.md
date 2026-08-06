@@ -86,7 +86,7 @@ three blocked below. Behaviour tests are in
 Module: `crates/jinteki-cards/src/decks/notw_sable.rs`
 
 18 distinct cards, 13 to write. All thirteen are written in
-`crates/jinteki-cards/src/decks/notw_sable.rs`; three are complete and ten are
+`crates/jinteki-cards/src/decks/notw_sable.rs`; four are complete and nine are
 partial or blocked below. Behaviour tests are in
 `crates/jinteki-cards/tests/behaviour.rs` under "kit costume party".
 
@@ -103,7 +103,7 @@ partial or blocked below. Behaviour tests are in
 - [ ] **Carpe Diem** ×3 — event
       "Identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) / Gain 4[credit]. You may run your mark."
 - [x] **Clean Getaway** ×3 — event
-- [ ] **Curupira** ×1 — program
+- [x] **Curupira** ×1 — program
       "Whenever you encounter a barrier, you may spend 3 hosted power counters to bypass it. / Whenever this program fully breaks a piece of ice, place 1 power counter on this program. / Interface → 1[credit]: Break 1 barrier subroutine. / 1[credit]: +1 strength."
 - [x] **Hyperbaric** ×1 — program
       "When you install this program, place 1 power counter on it. / This program gets +1 strength for each hosted power counter. / Interface → 1[credit]: Break 1 code gate subroutine. / 2[credit]: Place 1 power counter on this program."
@@ -230,29 +230,40 @@ Waiting on it, one position each: **Carpe Diem**'s "You may run your mark"
 of ice during a run on your mark" (the requirement side). Written with the
 words that exist, either would reach every server there is.
 
-### 8. The full-break occurrence naming the card that BROKE (CR 6.5.7a)
+### 8. The full-break occurrence naming the card that BROKE — LANDED (CR 6.5.7b)
 
-`GameChange::AllSubsBroken` records the ICE and nobody else, so
-`TriggerCond::SelfFullyBroken` — which compares that ice against the source —
-says "when the Runner fully breaks **this ice**" (Paper Wall) and cannot say
-"whenever **this program** fully breaks a piece of ice" (Curupira, Bukhgalter,
-Cleaver), where the source is the breaker. The unscoped
-`AllSubsBrokenOnEncounteredIce` is met by any full break by any breaker, which
-is a larger card. The capability is the breaker on the record, and the
-stipulation about whom the sentence names as content on the condition.
+`GameChange::AllSubsBroken { ice, by }` and
+`TriggerCond::SelfFullyBroken { by_source }`. The entry was right about both
+halves of the shape: the breaker belongs on the RECORD, and which of the
+occurrence's two participants a sentence names is CONTENT on the one condition
+— `false` is Paper Wall's "when the Runner fully breaks **this ice**", `true`
+is "whenever **this program** fully breaks a piece of ice" (Curupira,
+Bukhgalter, Cleaver). No second atom, and every site written before it keeps
+its meaning as `by_source: false`.
 
-Waiting on it: **Curupira**'s "Whenever this program fully breaks a piece of
-ice, place 1 power counter on this program."
+What the entry got wrong is the rule number, and the rule it missed is the one
+that decides the type. 6.5.7**b** — "if all its subroutines were broken using
+abilities on a **single object**, that object **also** fully breaks the ice" —
+makes the breaker OPTIONAL, not merely unrecorded: two breakers sharing one
+piece of ice means the Runner fully breaks it and NO object does, and 6.5.7c
+says the same of ice with no subroutines in as many words ("no objects fully
+break the ice in this case"). So `by` is an `Option<ObjectId>` whose `None` is
+a fact of the rules rather than a missing lookup, and it is computed from the
+set of objects whose abilities broke subroutines during the encounter — the
+rule asks about all the subroutines at once, never about whoever broke the
+last one.
 
-NOTE for whoever lands it: `andromeda.rs`'s **Bukhgalter** already writes the
-program-side sentence with the ice-side condition
-(`.when_first_each_turn(TriggerCond::SelfFullyBroken, …)` for "the first time
-each turn **this program** fully breaks a piece of ice, gain 2[credit]"). Its
-doc comment still reads "UNIMPLEMENTED: the third sentence" and the card
-carries no marker, so it is counted complete while that sentence can never
-fire. Not touched here — it is a priority-deck card and `decks.rs` pins that
-deck at zero partial cards — but it is the same defect and should be fixed in
-the same wave.
+Landed with it: **Curupira**'s "Whenever this program fully breaks a piece of
+ice, place 1 power counter on this program", ticked above.
+
+The NOTE was right and is now discharged. `andromeda.rs`'s **Bukhgalter** wrote
+the program-side sentence with the ice-side condition, so "the first time each
+turn **this program** fully breaks a piece of ice, gain 2[credit]" could never
+fire, on a card `decks.rs` pins as complete and `cr.rs` seats in the ANDROMEDA
+deck — live, and in players' hands. Its own test asserted the pump, the credits
+SPENT and that the sentry broke, and never that the 2 credits ARRIVED, which is
+why it survived. Fixed in the same wave as this word, with the missing
+assertion added.
 
 ### 9. An ordinal that names WHICH occurrence, not only the first (CR 9.6.5c)
 

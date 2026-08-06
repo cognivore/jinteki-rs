@@ -381,8 +381,20 @@ pub fn desperado() -> Card {
 ///  The first time each turn this program fully breaks a piece of ice, gain
 ///  2[credit]."
 ///
-/// UNIMPLEMENTED: the third sentence. `IcePassed { fully_broken: true }` is
-/// the PASS that follows a full break, not the break itself.
+/// COMPLETE.
+///
+/// The third sentence is 6.5.7b's full break read from the BREAKER's side —
+/// "**this program** fully breaks a piece of ice" — and not 6.5.7a's, which
+/// names the ice ("the Runner fully breaks **this ice**", Paper Wall) and is a
+/// sentence this card does not print. It is not `IcePassed { fully_broken }`
+/// either: that is 6.9.4a's PASS that follows a full break, one timing point
+/// later and skipped entirely when the encounter ends without a pass.
+///
+/// 6.5.7b gives the program that status only if ALL the ice's subroutines were
+/// broken using abilities on it, so a run where this breaker and another split
+/// the work pays nothing — which is what the printed sentence says. 9.6.5c's
+/// ordinal ("the first time each turn") counts the occurrences it is met by,
+/// so a second full break in the same turn pays nothing either.
 pub fn bukhgalter() -> Card {
     card("Bukhgalter")
         .runner()
@@ -399,7 +411,7 @@ pub fn bukhgalter() -> Card {
         .named("interface: break 1 sentry subroutine")
         .paid(credits(1), [pump(1)])
         .named("pump: +1 strength")
-        .when_first_each_turn(TriggerCond::SelfFullyBroken, [gain(Runner, 2)])
+        .when_first_each_turn(this_card_fully_breaks_ice(), [gain(Runner, 2)])
         .named("bukhgalter: fully broke a piece of ice")
         .build()
 }

@@ -354,8 +354,26 @@ pub enum GameChange {
     SubroutineResolved { ice: ObjectId, index: usize },
     /// CR 9.12.2d: "all subroutines broken" became satisfied for this
     /// encounter — including vacuously, for ice with zero subroutines, as
-    /// soon as step 6.9.3b begins.
-    AllSubsBroken { ice: ObjectId },
+    /// soon as step 6.9.3b begins. 6.5.7a: this is the moment the Runner
+    /// fully breaks `ice`, and 6.5.7d never retracts it.
+    ///
+    /// `by` is CR 6.5.7b's second fully-breaker: "if all its subroutines were
+    /// broken using abilities on a **single object**, that object also fully
+    /// breaks the ice". It is an `Option` because a full break does NOT
+    /// always have one, and the rule says so twice:
+    ///
+    /// * 6.5.7b's condition can simply fail — two breakers sharing the work
+    ///   on one piece of ice means all its subroutines were not broken using
+    ///   abilities on a single object, and then NO object fully breaks it,
+    ///   only the Runner does.
+    /// * 6.5.7c settles the vacuous case in as many words: ice with no
+    ///   subroutines is fully broken by the Runner when step 6.9.3b begins,
+    ///   and "no objects fully break the ice in this case".
+    ///
+    /// So the Runner always fully breaks (`ice` is always named) and an
+    /// object sometimes does. `None` is the honest record of "nobody", not a
+    /// missing lookup.
+    AllSubsBroken { ice: ObjectId, by: Option<ObjectId> },
     /// CR 9.8.6: ONE subroutine on `ice` was broken. Recorded per
     /// subroutine, so an ability that watches for breaking is met once for
     /// each — Gold Farmer taxes twice when both its subroutines are broken.

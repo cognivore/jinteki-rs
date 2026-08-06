@@ -3497,7 +3497,7 @@ fn example_rule_vacuous_truth_1() {
     );
     assert!(t.took("forked"), "the Forked-class ability was used");
     assert!(
-        vm.changes.log.iter().any(|c| matches!(c, GameChange::AllSubsBroken { ice } if *ice == troll)),
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::AllSubsBroken { ice, .. } if *ice == troll)),
         "9.12.2d: zero subroutines are vacuously all-broken at step 6.9.3b"
     );
     assert_eq!(
@@ -6746,7 +6746,7 @@ fn example_rule_break_all_but_x_subroutines_targets_1() {
         vm.changes
             .log
             .iter()
-            .any(|c| matches!(c, GameChange::AllSubsBroken { ice: i } if *i == ice)),
+            .any(|c| matches!(c, GameChange::AllSubsBroken { ice: i, .. } if *i == ice)),
         "9.12.2d: all three subroutines were broken"
     );
     assert!(
@@ -8200,7 +8200,7 @@ fn example_rule_bypass_during_encounter_1() {
         "the encounter ended when the ice was bypassed"
     );
     assert!(
-        !vm.changes.log.iter().any(|c| matches!(c, GameChange::AllSubsBroken { ice } if *ice == troll)),
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::AllSubsBroken { ice, .. } if *ice == troll)),
         "6.5.8c: step 6.9.3b never occurred, so nothing was vacuously all-broken: {:?}",
         vm.changes.log
     );

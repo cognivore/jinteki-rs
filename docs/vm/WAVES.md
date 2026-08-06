@@ -1207,12 +1207,18 @@ scan of its instructions.
     from the change log since the turn began. W18b also made WHOSE discard
     phase content — `side: Option<Side>`, `None` being the sentence that
     names no player, which is what both of these cards actually print.
-- "Whenever the Runner breaks a printed subroutine on this ice" (Gold
+- ~~"Whenever the Runner breaks a printed subroutine on this ice" (Gold
   Farmer), and "the first time each turn this program fully breaks a piece of
   ice" (Bukhgalter) — `PassedIceAfterFullyBreaking` is the PASS, not the
-  break. (6.5.7a's "when the Runner fully breaks THIS ice" IS now real:
-  `TriggerCond::SelfFullyBroken`, W16b. 6.5.7b's "…using abilities on a
-  single object" — which is what Bukhgalter needs — is not.)
+  break.~~ — **both done**. Gold Farmer's half is
+  `TriggerCond::SubroutineBrokenOnSelf { printed_only }`. Bukhgalter's is
+  6.5.7**b**: `GameChange::AllSubsBroken` now names the object that broke as
+  well as the ice, and `TriggerCond::SelfFullyBroken { by_source }` carries
+  which of the two the sentence means — `false` Paper Wall, `true` Bukhgalter
+  and Curupira. The breaker is an `Option`, because 6.5.7b's "using abilities
+  on a **single object**" fails when two breakers share a piece of ice and
+  6.5.7c gives zero-subroutine ice no object breaker at all. Bukhgalter's
+  third sentence had never once paid out.
 - "When your action phase ends" (Nebula Talent Management).
 - ~~a subtype stipulation on `EncounterBegins` — "whenever you encounter a
   barrier" (Paperclip).~~ — **done, W21**: `EncounterBegins { of_subtypes,
