@@ -225,26 +225,18 @@ one declaration with different content.
 Wants it: **Project Vacheron** (gains "When the Runnerʼs turn begins, remove 1
 hosted agenda counter.").
 
-### The approach condition naming WHICH server (CR 6.9.4g)
+### The approach condition naming WHICH server — LANDED (CR 6.9.4g)
 
-`TriggerCond::ServerApproached` is a unit variant, met by 6.9.4g's step
-whatever server was approached. The kernel's other two run conditions about a
-server both carry it — `SuccessfulRunOnServer` compares the attacked server
-against the server the source is in, and `RunEnds { on }` carries the list a
-sentence names — but the approach was written for the Formicary class, whose
-sentence names A server and means every one of them.
+`TriggerCond::ServerApproached { this_server, on }` — the same two-position
+shape `IcePassed` uses for the same distinction, so "this server" (Manegarm
+Skunkworks), a named list, and Formicary's "a server" are one condition with
+different content. Both positions empty is what every existing declaration
+said, so nothing moved. Measured rather than assumed: the kernel test
+`an_approach_condition_scoped_to_this_server_ignores_every_other` runs the
+same upgrade against its own remote and against HQ.
 
-This is measured, not assumed: an upgrade rezzed in the root of a remote,
-carrying nothing but a `ServerApproached` conditional, ends a run on HQ. A card
-saying "this server" written with the word that exists is not a smaller card
-than the printed one; it is a different and much larger one.
-
-Wanted: the server as CONTENT on the one condition — the source's own server,
-or the named list, in whatever shape `RunEnds` and `SuccessfulRunOnServer`
-already agree on — so "whenever the Runner approaches this server", "…a
-server" and "…HQ" are one condition with different content.
-
-Wants it: **Manegarm Skunkworks**.
+**Manegarm Skunkworks** is now blocked on ONE word rather than two — the
+alternative-cost entry below — and stays unticked.
 
 ### A nested cost with ALTERNATIVE costs (CR 1.16.11b / 9.12.3c)
 

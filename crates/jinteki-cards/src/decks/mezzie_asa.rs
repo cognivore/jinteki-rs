@@ -929,20 +929,15 @@ pub fn ash_2x3zb9cy() -> Card {
 /// "Whenever the Runner approaches this server, end the run unless they either
 ///  spend [click][click] or pay 5[credit]."
 ///
-/// UNIMPLEMENTED: the card's only sentence, on two counts that are each enough
-/// on their own.
+/// UNIMPLEMENTED: the card's only sentence, on ONE count now rather than two.
 ///
-/// "Approaches THIS server" is 6.9.4g's step with the server as a stipulation,
-/// and the approach condition takes none. The kernel's other two run
-/// conditions about a server carry it — a successful run "on this server"
-/// (Ash, above) and a run on this server ending (the AMAZE class) both compare
-/// the attacked server against the server the source is in — but the approach
-/// was written for the Formicary class, whose sentence names A server and means
-/// every one of them. Written with the word that exists, a rezzed copy in a
-/// remote would end runs on HQ and R&D, which is not a smaller card than the
-/// printed one; it is a different and much larger one.
+/// "Approaches THIS server" is no longer among them: 6.9.4g's condition now
+/// carries the server the way `IcePassed` carries its ice, so
+/// `runner_approaches_this_server()` says exactly what the card prints, and
+/// the kernel test measures the difference the scoping makes.
 ///
-/// "Unless they either spend [click][click] or pay 5[credit]" is 1.16.11b's
+/// What is left is "unless they either spend [click][click] or pay 5[credit]",
+/// which is 1.16.11b's
 /// nested cost with TWO costs, and the nested cost holds one. The two are not
 /// interchangeable and neither is a subset of the other: 1.11 clicks and 1.10
 /// credits are different resources, and a Runner with 5[credit] and no clicks
@@ -954,7 +949,7 @@ pub fn ash_2x3zb9cy() -> Card {
 /// two halves of a single choice. 9.12.3c is the shape the sentence actually
 /// has — a choice among options, restricted to the ones that can be fully
 /// resolved — so a Runner who can afford neither faces no choice at all and
-/// the run ends. The general capabilities wanted are on MEZZIE-QUEUE.md's
+/// the run ends. The general capability wanted is on MEZZIE-QUEUE.md's
 /// Blockers.
 pub fn manegarm_skunkworks() -> Card {
     card("Manegarm Skunkworks")

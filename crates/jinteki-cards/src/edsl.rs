@@ -2217,7 +2217,15 @@ pub fn passes_any_ice() -> TriggerCond {
 /// reached once every piece of ice protecting the attacked server has been
 /// passed — or straight away when none is).
 pub fn runner_approaches_a_server() -> TriggerCond {
-    TriggerCond::ServerApproached
+    TriggerCond::ServerApproached { this_server: false, on: Vec::new() }
+}
+/// "Whenever the Runner approaches **this server**, …" (Manegarm Skunkworks;
+/// 6.9.4g). The same condition scoped to the source's own server, which is
+/// what `SuccessfulRunOnServer` and `RunOnThisServerEnds` already ask for the
+/// two later steps of the run. A source that is in no server approaches
+/// nothing, so an upgrade in the grip says nothing at all.
+pub fn runner_approaches_this_server() -> TriggerCond {
+    TriggerCond::ServerApproached { this_server: true, on: Vec::new() }
 }
 /// "When this run ends, …"
 pub fn run_ends() -> TriggerCond {

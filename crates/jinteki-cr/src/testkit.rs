@@ -5994,7 +5994,7 @@ pub fn formicary_like(name: &'static str, to: ServerId) -> PrintedCard {
     let mut c = etr_ice(name, 0, 1);
     c.abilities.push(
         AbilityDef::conditional(
-            TriggerCond::ServerApproached,
+            TriggerCond::ServerApproached { this_server: false, on: Vec::new() },
             vec![
                 Instruction::RezCard {
                     target: TargetSpec::SelfSource,
@@ -6017,13 +6017,28 @@ pub fn formicary_like(name: &'static str, to: ServerId) -> PrintedCard {
     c
 }
 
+/// Manegarm Skunkworks shape (6.9.4g): an UPGRADE with "whenever the Runner
+/// approaches **this** server, end the run." The server scoping is the whole
+/// point of the shape — its neighbour below says "a server" and ends a run on
+/// any of them, which is a different and much larger card.
+pub fn end_run_on_this_server_approach(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::ServerApproached { this_server: true, on: Vec::new() },
+        vec![Instruction::EndTheRun],
+        false,
+    )
+    .labeled("approach-etr-here: end the run when THIS server is approached")];
+    c
+}
+
 /// A Runner card with "Whenever the Runner approaches a server, end the run."
 /// — the effect CR 6.8.2c's example needs to end a run from inside the
 /// reaction window that follows step 6.9.4g.
 pub fn end_run_on_server_approach(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::ServerApproached,
+        TriggerCond::ServerApproached { this_server: false, on: Vec::new() },
         vec![Instruction::EndTheRun],
         false,
     )

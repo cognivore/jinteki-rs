@@ -173,7 +173,24 @@ pub enum TriggerCond {
     /// — the last step of the Movement Phase, so the reaction window that
     /// follows it is not one a phase BEGINNING opened, which is what 6.8.2c
     /// is about.)
-    ServerApproached,
+    ///
+    /// WHICH server is content on the one condition (§12 rule 2), in the same
+    /// two-position shape [`TriggerCond::IcePassed`] uses for the same
+    /// distinction:
+    ///
+    /// * `this_server` — "whenever the Runner approaches **this** server"
+    ///   (Manegarm Skunkworks). The source's own server, which is what
+    ///   `SuccessfulRunOnServer` and `RunOnThisServerEnds` already ask for the
+    ///   two later steps of the run. A source that is in no server approaches
+    ///   nothing.
+    /// * `on` — the servers a sentence NAMES, the list `RunEnds` carries.
+    ///
+    /// Both empty is the sentence that stipulates neither, which is what
+    /// Formicary's "a server" prints — and what every declaration written
+    /// before this content existed said, so nothing moves by construction.
+    /// The distinction is measured, not assumed: an upgrade in a remote root
+    /// carrying nothing but this condition ends a run on HQ without it.
+    ServerApproached { this_server: bool, on: Vec<crate::object::ServerId> },
     /// "Whenever the Runner takes a tag." (Mr. Stone class.) Met per TAKING,
     /// not per tag, so "whenever you take 1 or more tags" is the same
     /// condition. `had_no_tags` is the printed "if you had no tags"
@@ -2993,6 +3010,14 @@ fn trigger_matches_dyn(
         (TriggerCond::RunOnThisServerEnds, GameChange::RunEnded { server, .. }) => {
             server_of_source == Some(*server)
         }
+        (
+            TriggerCond::ServerApproached { this_server, on },
+            GameChange::ServerApproached { server },
+        ) => {
+            cite!("step_approach_server");
+            (!*this_server || server_of_source == Some(*server))
+                && (on.is_empty() || on.contains(server))
+        }
         (TriggerCond::RunnerTrashesCorpCard { .. }, GameChange::CardTrashed { by, obj, .. }) => {
             *by == Side::Runner && trashed_is_corp(*obj)
         }
@@ -3034,10 +3059,6 @@ fn trigger_matches_dyn(
         ) => {
             cite!("rule_subtypes_active");
             of_subtypes.iter().all(|s| has_subtype(*ice, s))
-        }
-        (TriggerCond::ServerApproached, GameChange::ServerApproached { .. }) => {
-            cite!("step_approach_server");
-            true
         }
         (
             TriggerCond::PlayerPaysCredits { side, caused_by, .. },
