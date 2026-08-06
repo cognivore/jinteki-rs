@@ -30,10 +30,12 @@
 
 use jinteki_cr::change::GameChange;
 use jinteki_cr::effects::DamageKind;
+use jinteki_cr::instr::NamedValue;
+use jinteki_cr::lingering::ChoiceValue;
 use jinteki_cr::object::{CounterKind, ObjectId, ServerId, Side, Zone};
 use jinteki_cr::Vm;
 
-use crate::cr::{server_label, side_name};
+use crate::cr::{server_label, side_name, type_name};
 
 /// CR 10.2.2b: a card this reader has not been shown is not named to them.
 ///
@@ -95,6 +97,27 @@ fn installed_clause(vm: &Vm, id: ObjectId) -> String {
         Some(Zone::Root(s)) => format!(" in {}", server_label(s)),
         _ => String::new(),
     }
+}
+
+/// A card an ANNOUNCEMENT names: WHAT it is, as far as this reader is
+/// entitled to it, and WHERE it is, always.
+///
+/// The two halves are governed by different rules and that asymmetry is the
+/// whole of this function. 10.2.2b withholds an identity the reader has not
+/// been shown, so the title becomes "a card" — but 4.6.2/10.2.3a make a
+/// card's LOCATION open information whether or not its identity is, so the
+/// clause is added either way. A Runner told "chooses a card protecting HQ"
+/// knows exactly which piece of ice their Boomerang is bound to; they simply
+/// do not know what it is, which is the same thing they knew before.
+///
+/// The clause is the same one the install line uses, so "installs Rashida
+/// Jaheem in Server 3" and "chooses Rashida Jaheem in Server 3" name the same
+/// place in the same words. It is empty for every zone with no location of
+/// its own — the grip, the heap, the stack, a score area, the set-aside zone,
+/// and the rig (4.6.5c) — where there is no server to name and a clause would
+/// be noise.
+fn announced_card(vm: &Vm, viewer: Side, id: ObjectId) -> String {
+    format!("{}{}", card_name_for(vm, viewer, id), installed_clause(vm, id))
 }
 
 fn damage_word(k: DamageKind) -> &'static str {
@@ -210,6 +233,50 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         // against the prompt the player answered.
         GameChange::OptionChosen { source, side, label } => {
             format!("{} resolves {}.", by(*side, Some(*source)), label.trim_end_matches('.'))
+        }
+        // CR 1.15.2: WHAT was announced. The log used to say only that a
+        // player was being asked ("Runner: choosing target for Boomerang")
+        // and never what they answered, which for a choice that changes no
+        // state at all — 9.10.3's "choose 1 installed piece of ice" — meant
+        // the card's whole effect was invisible to both players, including
+        // the one who made it.
+        //
+        // ONE line per announcement, however many objects it named: 1.15.2
+        // makes "add 2 installed Runner cards to the grip" a single
+        // announcement of two cards, and a reader wants to see them together.
+        GameChange::TargetsAnnounced { source, side, targets } => {
+            let named: Vec<String> =
+                targets.iter().map(|t| announced_card(vm, viewer, *t)).collect();
+            format!("{} chooses {}.", by(*side, Some(*source)), named.join(", "))
+        }
+        // CR 9.10.3: what this card is now REMEMBERING. 1.15.1b keeps these
+        // values out of a target announcement — a server, a name, a number, a
+        // type are not objects — so this record is the only place they are
+        // ever said, and they are precisely the thing a player has to
+        // remember for as long as the card stays active.
+        //
+        // 10.2.3b: an announced choice "stays available to both players", so
+        // both logs say it. The one choice the rules DO hide — Méliès U's
+        // secretly set identity face — is not a maintained choice and never
+        // reaches this record: its answer is sealed in the VM the way a psi
+        // bid is, and the change log gets `IdentityFaceSecretlySet` with no
+        // face in it at all.
+        GameChange::ChoiceMaintained { source, side, choice, .. } => {
+            let said = by(*side, Some(*source));
+            match choice {
+                ChoiceValue::Server(s) => format!("{said} chooses {}.", server_label(*s)),
+                // 1.15.1b: NAMING, which is the printed word for all four.
+                ChoiceValue::Named(NamedValue::CardName(n)) => format!("{said} names {n}."),
+                ChoiceValue::Named(NamedValue::Number(n)) => format!("{said} names {n}."),
+                ChoiceValue::Subtype(t) => format!("{said} names {}.", t.as_str()),
+                ChoiceValue::CardType(t) => format!("{said} names {}.", type_name(*t)),
+                // Announced (1.15.2), so `TargetsAnnounced` has already said
+                // it and this record is never made for an object. Rendered
+                // anyway, in the same words, so the two can never disagree.
+                ChoiceValue::Object(o) => {
+                    format!("{said} chooses {}.", announced_card(vm, viewer, *o))
+                }
+            }
         }
 
         // ── cards moving ───────────────────────────────────────────────
@@ -532,6 +599,16 @@ mod tests {
             | GameChange::OptionChosen { source: obj, .. }
             | GameChange::DamagePrevented { by: obj, .. } => vec![*obj],
             GameChange::CardHosted { obj, host } => vec![*obj, *host],
+            // 1.15.2: the announcement is ABOUT the objects it named, and
+            // about the source that named them — every one of them goes
+            // through the same entitlement.
+            GameChange::TargetsAnnounced { source, targets, .. } => {
+                std::iter::once(*source).chain(targets.iter().copied()).collect()
+            }
+            GameChange::ChoiceMaintained { source, choice, .. } => match choice {
+                ChoiceValue::Object(o) => vec![*source, *o],
+                _ => vec![*source],
+            },
             GameChange::CounterRemoved { obj, .. } => obj.iter().copied().collect(),
             GameChange::DamageSuffered { cards, .. } => cards.clone(),
             GameChange::CostPaid { trashed, .. } => trashed.clone(),
@@ -810,5 +887,406 @@ mod tests {
             !lines.iter().any(|l| l.starts_with("Corp: Test Corp —")),
             "and it is not blamed on the identity that happened to be out: {lines:?}"
         );
+    }
+
+    /// Every line one reader is handed over a stretch of the log.
+    fn lines_for(vm: &Vm, from: usize, viewer: Side) -> Vec<String> {
+        vm.changes.log[from..].iter().filter_map(|c| narrate(vm, c, viewer)).collect()
+    }
+
+    /// THE BUG, as a test. A live game's log read:
+    ///
+    /// ```text
+    /// Runner: Boomerang — pays 2[c].
+    /// Runner: installs Boomerang.
+    /// Runner: in a reaction window (9.2.8)
+    /// Runner: choosing target for Boomerang
+    /// ```
+    ///
+    /// …and then said nothing more. Boomerang's whole printed effect IS the
+    /// choice — "use this hardware only during encounters with **that ice**",
+    /// 9.10.3's maintained choice — and neither player could read which piece
+    /// of ice the copy had been bound to. Not even the player who chose it:
+    /// the announcement changed no game state, so there was nothing on the
+    /// board to look at afterwards. 1.15.2's announcement is a record now,
+    /// and the record is a line.
+    #[test]
+    fn the_log_says_which_ice_boomerang_chose() {
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::plan::{Kind, Pick};
+        use jinteki_cr::testkit;
+
+        let mut vm = Vm::empty(20_260_806);
+        // Rezzed, so 1.21.1 gives both players the title — the ordinary case
+        // once the Runner has met the ice.
+        let gold = testkit::install_ice(
+            &mut vm,
+            jinteki_cards::find("Gold Farmer").unwrap().printed,
+            ServerId::Hq,
+            true,
+        );
+        let boom = vm.new_object(
+            jinteki_cards::find("Boomerang").unwrap().printed,
+            Zone::Hand(Side::Runner),
+        );
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(boom);
+        vm.st.runner.credits = 10;
+        vm.start_turn(Side::Runner);
+
+        let from = vm.changes.log.len();
+        let mut s = Script::new(
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(boom)))
+                .when(Match::of(Kind::Targets).once(), Reply::target(gold))
+                .when(Match::action().once(), Reply::Halt),
+        );
+        s.run(&mut vm);
+
+        // 10.2.3b: the announcement stays available to BOTH players, so both
+        // logs carry it, in the same words — and the words say WHERE, because
+        // "Gold Farmer" alone is not an answer at a table with two of them.
+        for viewer in [Side::Runner, Side::Corp] {
+            let lines = lines_for(&vm, from, viewer);
+            assert!(
+                lines.iter().any(|l| l == "Runner: Boomerang — chooses Gold Farmer protecting HQ."),
+                "the {viewer:?} log says which ice, and where it stands:\n{}",
+                lines.join("\n")
+            );
+        }
+        assert_no_leaks(&vm, from);
+    }
+
+    /// The same choice made against an UNREZZED piece of ice, which is the
+    /// other half of 10.2.2b: 1.21.1 does not let the Runner read a facedown
+    /// card, and announcing it as a target does not reveal it — a player
+    /// points at a position, not at an identity. So the Corp's log names the
+    /// ice and the Runner's does not.
+    ///
+    /// The LOCATION is the same in both, because 4.6.2/10.2.3a make it open
+    /// information either way. Withholding the title is the only difference
+    /// between the two lines, which is exactly the asymmetry §10.2 draws.
+    #[test]
+    fn an_unrezzed_ice_is_named_to_the_corp_and_only_placed_for_the_runner() {
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::plan::{Kind, Pick};
+        use jinteki_cr::testkit;
+
+        let mut vm = Vm::empty(20_260_807);
+        let gold = testkit::install_ice(
+            &mut vm,
+            jinteki_cards::find("Gold Farmer").unwrap().printed,
+            ServerId::Hq,
+            false,
+        );
+        let boom = vm.new_object(
+            jinteki_cards::find("Boomerang").unwrap().printed,
+            Zone::Hand(Side::Runner),
+        );
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(boom);
+        vm.st.runner.credits = 10;
+        vm.start_turn(Side::Runner);
+
+        let from = vm.changes.log.len();
+        let mut s = Script::new(
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::Take(Pick::InstallCard(boom)))
+                .when(Match::of(Kind::Targets).once(), Reply::target(gold))
+                .when(Match::action().once(), Reply::Halt),
+        );
+        s.run(&mut vm);
+
+        let runner = lines_for(&vm, from, Side::Runner);
+        let corp = lines_for(&vm, from, Side::Corp);
+        assert!(
+            runner.iter().any(|l| l == "Runner: Boomerang — chooses a card protecting HQ."),
+            "the Runner is told where, not what:\n{}",
+            runner.join("\n")
+        );
+        assert!(
+            !runner.iter().any(|l| l.contains("Gold Farmer")),
+            "…and the facedown ice is not named to them anywhere:\n{}",
+            runner.join("\n")
+        );
+        assert!(
+            corp.iter().any(|l| l == "Runner: Boomerang — chooses Gold Farmer protecting HQ."),
+            "while the Corp, who may look at their own facedown card (1.21.2a), reads it:\n{}",
+            corp.join("\n")
+        );
+        assert_no_leaks(&vm, from);
+    }
+
+    /// The clause itself, one card per zone that takes one. WHERE a card is,
+    /// is open information (4.6.2/10.2.3a) whether or not WHAT it is, is —
+    /// so it is said for every installed card an announcement names, and the
+    /// preposition is the zone's own: ice PROTECTS a server (4.6.6d), a card
+    /// in a root is IN it (4.6.6b).
+    ///
+    /// A card that is not installed has no location to name. "Sure Gamble in
+    /// the heap" is noise: 4.4.7b makes the whole heap open, so the title
+    /// already says everything there is to say.
+    ///
+    /// One line, three cards, three different answers — which is also the
+    /// proof that a multi-target announcement carries the clause PER CARD and
+    /// not once for the line.
+    #[test]
+    fn an_announced_card_says_where_it_is_installed_and_says_nothing_where_it_is_not() {
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::testkit;
+
+        let mut vm = Vm::empty(20_260_812);
+        let ice = testkit::install_ice(
+            &mut vm,
+            jinteki_cards::find("Gold Farmer").unwrap().printed,
+            ServerId::Remote(3),
+            true,
+        );
+        let asset = testkit::install_root(
+            &mut vm,
+            jinteki_cards::find("Rashida Jaheem").unwrap().printed,
+            ServerId::Remote(3),
+            true,
+        );
+        let heap = vm.new_object(cards::sure_gamble(), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(heap);
+        let src = vm.new_object(
+            jinteki_cards::find("Targeted Marketing").unwrap().printed,
+            Zone::PlayArea(Side::Corp),
+        );
+        vm.st.objects.get_mut(&src).unwrap().faceup = true;
+
+        let line = narrate(
+            &vm,
+            &GameChange::TargetsAnnounced {
+                source: src,
+                side: Side::Corp,
+                targets: vec![ice, asset, heap],
+            },
+            Side::Runner,
+        )
+        .expect("an announcement is news");
+        assert_eq!(
+            line,
+            "Corp: Targeted Marketing — chooses Gold Farmer protecting Server 3, \
+             Rashida Jaheem in Server 3, Sure Gamble."
+        );
+    }
+
+    /// ONE announcement that names TWO cards is ONE line naming both — 1.15.2
+    /// makes "choose 2 cards in your heap" a single announcement, and a
+    /// reader wants the pair together, in the order they were named.
+    ///
+    /// Steve Cambridge is the case in full: the Runner announces two cards,
+    /// and then 1.14.5 hands the CORP a second announcement out of the same
+    /// instruction ("**the Corp** removes 1 of those cards"). Two
+    /// announcements, two speakers, one card apiece named to the right one.
+    #[test]
+    fn one_announcement_of_two_cards_is_one_line_naming_both() {
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::plan::Kind;
+
+        let mut base = setup(mixed_corp_deck(), 20_260_808);
+        base.runner_identity =
+            Some(jinteki_cards::find("Steve Cambridge: Master Grifter").unwrap().printed);
+        let mut vm = Vm::new_game(base);
+        // 4.4.7b: the heap is open information to both players, and stays
+        // open wherever these two cards go next — so the rendering is the
+        // same question before and after the identity resolves.
+        let mut heap = Vec::new();
+        for c in [cards::sure_gamble(), cards::diesel()] {
+            let id = vm.new_object(c, Zone::Discard(Side::Runner));
+            vm.st.discard.get_mut(&Side::Runner).unwrap().push(id);
+            heap.push(id);
+        }
+
+        let from = vm.changes.log.len();
+        let mut s = Script::new(
+            Plan::corp()
+                .when(Match::of(Kind::Targets).once(), Reply::target(heap[0]))
+                .otherwise_click_credit(),
+            Plan::runner()
+                .runs(ServerId::Hq)
+                .when(Match::any().once(), Reply::take("master grifter"))
+                .when(Match::of(Kind::Targets).once(), Reply::Targets(heap.clone()))
+                .when(Match::action().once(), Reply::Halt),
+        );
+        s.run(&mut vm);
+
+        let runner = lines_for(&vm, from, Side::Runner);
+        assert!(
+            runner.iter().any(|l| {
+                l == "Runner: Steve Cambridge: Master Grifter — chooses Sure Gamble, Diesel."
+            }),
+            "one line, both cards, in announcement order:\n{}",
+            runner.join("\n")
+        );
+        assert!(
+            runner.iter().any(|l| {
+                l == "Corp: Steve Cambridge: Master Grifter — chooses Sure Gamble."
+            }),
+            "1.14.5: and the Corp's own announcement out of the same instruction:\n{}",
+            runner.join("\n")
+        );
+        assert_eq!(
+            runner.iter().filter(|l| l.contains("— chooses ")).count(),
+            2,
+            "two announcements, two lines — not one per card:\n{}",
+            runner.join("\n")
+        );
+        // And NO location clause on either line. These cards are in the heap
+        // (4.4.7b), which is not a server and not installed: there is nothing
+        // to place them in, and a card taken out of a pile is fully named by
+        // its title.
+        for l in runner.iter().filter(|l| l.contains("— chooses ")) {
+            assert!(
+                !l.contains(" protecting ") && !l.contains(" in "),
+                "an uninstalled card is not placed anywhere: {l:?}"
+            );
+        }
+        assert_no_leaks(&vm, from);
+    }
+
+    /// CR 9.10.3 for the values 1.15.1b keeps OUT of an announcement. A named
+    /// card is not an object, so nothing announces it and nothing else in the
+    /// log could ever say it — and Targeted Marketing's whole remaining text
+    /// is about the name it is holding ("gain 10[c] whenever the Runner plays
+    /// or installs a copy of **that card**"). A player who cannot read the
+    /// name cannot play around the card.
+    #[test]
+    fn a_maintained_name_is_said_to_both_players() {
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::plan::Kind;
+
+        let mut vm = Vm::empty(20_260_809);
+        let tm = vm.new_object(
+            jinteki_cards::find("Targeted Marketing").unwrap().printed,
+            Zone::Hand(Side::Corp),
+        );
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(tm);
+        for _ in 0..8 {
+            let c = vm.new_object(cards::hedge_fund(), Zone::Deck(Side::Corp));
+            vm.st.deck.get_mut(&Side::Corp).unwrap().push(c);
+        }
+        vm.start_turn(Side::Corp);
+
+        let from = vm.changes.log.len();
+        let mut s = Script::new(
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(tm))
+                .when(Match::of(Kind::NameValue).once(), Reply::Name("Sure Gamble"))
+                .when(Match::action().once(), Reply::Halt),
+            Plan::runner(),
+        );
+        s.run(&mut vm);
+
+        // 10.2.3b: an announced choice "stays available to both players" —
+        // the Runner is entitled to know what was named at them.
+        for viewer in [Side::Corp, Side::Runner] {
+            let lines = lines_for(&vm, from, viewer);
+            assert!(
+                lines.iter().any(|l| l == "Corp: Targeted Marketing — names Sure Gamble."),
+                "the {viewer:?} log carries the name:\n{}",
+                lines.join("\n")
+            );
+        }
+        assert_no_leaks(&vm, from);
+    }
+
+    /// The other three things 1.15.1b lets a card remember, in the words the
+    /// log says them in. A server is not an object and neither is a type, so
+    /// no announcement carries them and no other record in the log mentions
+    /// them at all — this arm is their only voice, and these are the four
+    /// shapes it has.
+    #[test]
+    fn a_maintained_server_or_type_is_said_in_the_same_shape() {
+        use jinteki_cr::instr::NamedValue;
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::subtype::Subtype;
+
+        let mut vm = Vm::empty(20_260_811);
+        let src = vm.new_object(
+            jinteki_cards::find("Targeted Marketing").unwrap().printed,
+            Zone::PlayArea(Side::Corp),
+        );
+        // 8.6.6c: a current stays faceup in the play area, which is what
+        // 1.21.1 needs for the Runner's line to name the card that named.
+        vm.st.objects.get_mut(&src).unwrap().faceup = true;
+        let said = |c: ChoiceValue| {
+            narrate(
+                &vm,
+                &GameChange::ChoiceMaintained {
+                    source: src,
+                    side: Side::Corp,
+                    key: "test",
+                    choice: c,
+                },
+                Side::Runner,
+            )
+            .expect("a maintained choice is news")
+        };
+        assert_eq!(
+            said(ChoiceValue::Server(ServerId::Remote(1))),
+            "Corp: Targeted Marketing — chooses Server 1."
+        );
+        assert_eq!(
+            said(ChoiceValue::Named(NamedValue::Number(3))),
+            "Corp: Targeted Marketing — names 3."
+        );
+        assert_eq!(
+            said(ChoiceValue::Subtype(Subtype::Barrier)),
+            "Corp: Targeted Marketing — names Barrier."
+        );
+        assert_eq!(
+            said(ChoiceValue::CardType(CardType::Program)),
+            "Corp: Targeted Marketing — names Program."
+        );
+    }
+
+    /// The choice the rules KEEP HIDDEN stays hidden. Méliès U's "secretly
+    /// set your identity to any copy" is 10.2.2a's sealed answer — the psi
+    /// grain (10.14.6b) — and the flip is its only reveal.
+    ///
+    /// The whole of this change is about saying what a player chose, which
+    /// makes this the test that says where that stops: the record carries no
+    /// face, so no line can leak one, and what both players are entitled to
+    /// — that the set happened — is what both logs say.
+    #[test]
+    fn a_secretly_set_identity_face_reaches_neither_log() {
+        let faces = [
+            "Tenure Floors: Méliès U",
+            "Subsurface Labs: Méliès U",
+            "Disposal Grounds: Méliès U",
+        ];
+        let mut base = setup(mixed_corp_deck(), 20_260_810);
+        base.corp_identity =
+            Some(jinteki_cards::find("Méliès U: Only the Brightest").unwrap().printed);
+        let mut vm = Vm::new_game(base);
+
+        let from = vm.changes.log.len();
+        // A whole Corp turn, so the discard phase ends and the mandatory
+        // "secretly set" ability resolves in front of both players.
+        let mut s = Script::new(
+            Plan::corp().otherwise_click_credit(),
+            Plan::runner().when(Match::action().once(), Reply::Halt).otherwise_click_credit(),
+        );
+        s.run(&mut vm);
+
+        let mut said = 0;
+        for viewer in [Side::Corp, Side::Runner] {
+            let lines = lines_for(&vm, from, viewer);
+            let joined = lines.join("\n");
+            for f in faces {
+                assert!(
+                    !joined.contains(f),
+                    "10.2.2a: the {viewer:?} log names the sealed face {f:?}:\n{joined}"
+                );
+            }
+            if lines.iter().any(|l| l == "Corp: secretly sets their identity.") {
+                said += 1;
+            }
+        }
+        assert_eq!(said, 2, "…and both players are told the set happened");
+        assert_no_leaks(&vm, from);
     }
 }

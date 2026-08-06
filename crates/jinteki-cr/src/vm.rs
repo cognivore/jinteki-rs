@@ -2688,14 +2688,30 @@ impl Vm {
     /// which is 9.10.3b's "always look for the server chosen this turn" and
     /// Azmari EdTech's "the type you **last** named this way". 9.10.4 binds
     /// the duration to the structure in progress.
+    ///
+    /// `side` is the player who made the choice (1.14.5: a choice named for a
+    /// player is made by that player, and otherwise by the controller) — the
+    /// record needs it because a log line names a speaker.
     fn maintain_choice(
         &mut self,
         source: ObjectId,
+        side: Side,
         key: &'static str,
         choice: crate::lingering::ChoiceValue,
         duration: crate::lingering::WantedDuration,
     ) {
         cite!("rule_lingering_effect_maintain_choice");
+        // 9.10.3: the choice is the thing later sentences of this card read
+        // back, so it is the thing a player has to remember — and the log
+        // says it. Not for an OBJECT: 1.15.2 announces that one, and the
+        // announcement's own record already named it (`TargetsAnnounced`).
+        // The rest of 1.15.1b's list is chosen at the instruction's
+        // resolution, is announced nowhere, and would otherwise never be said
+        // at all.
+        if !matches!(choice, crate::lingering::ChoiceValue::Object(_)) {
+            cite!("rule_object_subroutine_targets");
+            self.changes.record(GameChange::ChoiceMaintained { source, side, key, choice });
+        }
         let dur = crate::lingering::bind_duration(
             duration,
             self.st.encounter.as_ref().map(|e| e.id),
@@ -12219,7 +12235,7 @@ impl Vm {
                     }
                 };
                 let Some(choice) = value else { return };
-                self.maintain_choice(source.obj, key, choice, *duration);
+                self.maintain_choice(source.obj, controller, key, choice, *duration);
             }
             Instruction::MustTrashAccessedCard { means } => {
                 // 9.12.3a/b: a requirement, not an effect — it is recorded
@@ -18233,6 +18249,25 @@ impl Vm {
                 cite!("rule_targets_must_be_valid");
                 cite!("rule_distinct_targets");
                 let t = self.clamp_announcement(&spec, t);
+                // 1.15.2: THIS is the announcement — the moment the objects
+                // are named, before the instruction becomes imminent and
+                // before any interrupt can act on it. It is recorded because
+                // nothing later can say it: the choice may change no state at
+                // all (9.10.3's "choose 1 installed piece of ice"), and where
+                // it does, the state shows the effect and never that this
+                // card was the one chosen for it.
+                //
+                // An announcement of nothing (1.15.2b, no eligible targets)
+                // named no object and records none.
+                if !t.is_empty() {
+                    if let Some(src) = self.current_source() {
+                        self.changes.record(GameChange::TargetsAnnounced {
+                            source: src,
+                            side,
+                            targets: t.clone(),
+                        });
+                    }
+                }
                 let instr = {
                     let Some(Frame::Ability(af)) = self.frames.last_mut() else { return };
                     af.targets.extend(t.iter().copied());
@@ -18650,6 +18685,7 @@ impl Vm {
                 if !excluded {
                     self.maintain_choice(
                         source,
+                        side,
                         key,
                         crate::lingering::ChoiceValue::Named(v),
                         duration,
@@ -18674,6 +18710,7 @@ impl Vm {
                 if let Some(s) = chosen {
                     self.maintain_choice(
                         source,
+                        side,
                         key,
                         crate::lingering::ChoiceValue::Server(s),
                         duration,

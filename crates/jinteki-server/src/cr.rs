@@ -2986,7 +2986,7 @@ pub(crate) fn server_label(s: ServerId) -> String {
         ServerId::Remote(n) => format!("Server {n}"),
     }
 }
-fn type_name(t: CardType) -> &'static str {
+pub(crate) fn type_name(t: CardType) -> &'static str {
     match t {
         CardType::Identity => "Identity",
         CardType::Agenda => "Agenda",
@@ -4692,6 +4692,139 @@ mod tests {
         let mut sorted = ns.clone();
         sorted.dedup();
         assert_eq!(ns.len(), sorted.len(), "every line has its own number: {ns:?}");
+    }
+
+    /// THE WHOLE PATH, as the player sees it: a real `CrGame`, the real
+    /// adapter, and the line where it actually lands — `g.log`, the array
+    /// `state_json` ships to the client.
+    ///
+    /// The bug was reported off a live log that said "Runner: choosing target
+    /// for Boomerang" and then nothing. This drives the same moment and reads
+    /// the same array: the wait line is still there (the Runner IS being
+    /// asked), and now the answer follows it.
+    #[test]
+    fn the_shipped_log_says_which_ice_boomerang_chose() {
+        use jinteki_cr::object::Zone;
+
+        let filler = |n: usize, f: fn() -> jinteki_cr::object::PrintedCard| {
+            std::iter::repeat_with(f).take(n).collect::<Vec<_>>()
+        };
+        let setup = GameSetup {
+            corp_deck: filler(20, jinteki_cr::cards::hedge_fund),
+            runner_deck: filler(20, jinteki_cr::cards::sure_gamble),
+            corp_identity: Some(PrintedCard::vanilla("Test Corp", Side::Corp, CardType::Identity)),
+            runner_identity: Some(PrintedCard::vanilla(
+                "Test Runner",
+                Side::Runner,
+                CardType::Identity,
+            )),
+            additional_identities: Default::default(),
+            extra_cards: Default::default(),
+            seed: 20_260_806,
+            shuffle: true,
+        };
+        let mut g = new_game(
+            setup,
+            [SeatState::bot(), SeatState::human("tester", None)],
+            0,
+            TimingParams::untimed(),
+        );
+
+        // Run the game up to the Runner's first action window, narrating as
+        // the server does — after every step.
+        let mut acted = false;
+        for _ in 0..20_000 {
+            g.narrate();
+            match g.vm.step() {
+                Yield::Decision(side, spec) => {
+                    if side == Side::Runner && matches!(spec, DecisionSpec::TakeAction { .. }) {
+                        acted = true;
+                        break;
+                    }
+                    let a = default_answer(&spec);
+                    g.vm.answer(a);
+                }
+                Yield::GameOver(_) => break,
+                Yield::Progressed => {}
+            }
+        }
+        assert!(acted, "the Runner reached an action window");
+
+        // The board the bug happened on: one rezzed piece of ice, and
+        // Boomerang in the grip with the credits to install it.
+        let gold = jinteki_cr::testkit::install_ice(
+            &mut g.vm,
+            jinteki_cards::find("Gold Farmer").unwrap().printed,
+            ServerId::Hq,
+            true,
+        );
+        let boom = g
+            .vm
+            .new_object(jinteki_cards::find("Boomerang").unwrap().printed, Zone::Hand(Side::Runner));
+        g.vm.st.hand.get_mut(&Side::Runner).unwrap().push(boom);
+        g.vm.st.runner.credits = 10;
+
+        // Spend the window that was already open, so the next one is built
+        // with Boomerang in the grip and offers the install.
+        g.vm.answer(default_answer(&DecisionSpec::TakeAction {
+            options: vec![ActionOption::BasicCredit],
+        }));
+
+        let from = g.log[six(Side::Runner)].len();
+        let mut installed = false;
+        for _ in 0..20_000 {
+            g.narrate();
+            match g.vm.step() {
+                Yield::Decision(side, spec) => {
+                    let a = match &spec {
+                        DecisionSpec::TakeAction { options } if !installed => {
+                            let opt = options
+                                .iter()
+                                .find(|o| matches!(o, ActionOption::BasicInstall { card } if *card == boom))
+                                .expect("the install action is offered")
+                                .clone();
+                            installed = true;
+                            DecisionAnswer::Action(opt)
+                        }
+                        // The wait line the bug reported, said by the adapter
+                        // exactly where `drive_inner` says it.
+                        DecisionSpec::ChooseTargets { .. } => {
+                            g.say_wait(decision_wait_lines(&g.vm, side, &spec));
+                            DecisionAnswer::Targets(vec![gold])
+                        }
+                        DecisionSpec::TakeAction { .. } => break,
+                        other => default_answer(other),
+                    };
+                    g.vm.answer(a);
+                }
+                Yield::GameOver(_) => break,
+                Yield::Progressed => {}
+            }
+        }
+        g.narrate();
+
+        let said: Vec<String> = g.log[six(Side::Runner)][from..]
+            .iter()
+            .filter_map(|l| l["text"].as_str().map(|s| s.to_string()))
+            .collect();
+        assert!(
+            said.iter().any(|l| l == "Runner: choosing target for Boomerang"),
+            "the question is still asked:\n{}",
+            said.join("\n")
+        );
+        assert!(
+            said.iter().any(|l| l == "Runner: Boomerang — chooses Gold Farmer protecting HQ."),
+            "and the answer is in the log the player reads, with the ice placed:\n{}",
+            said.join("\n")
+        );
+        // One wait line, not a stack of them: the collapse rule is unchanged
+        // and the answered announcement is a line of its own between them.
+        assert_eq!(
+            said.iter().filter(|l| l.starts_with("Runner: choosing target")).count(),
+            1,
+            "the wait line is said once:\n{}",
+            said.join("\n")
+        );
     }
 
     /// A FACEDOWN INSTALLED CARD, ON THE WIRE, from both seats.
