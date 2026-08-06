@@ -10,6 +10,7 @@ pub mod gauntlet;
 pub mod identities;
 pub mod mezzie_asa;
 pub mod mezzie_valencia;
+pub mod notw_restoring_humanity;
 pub mod unlisted;
 
 /// Every card of both decks — the deck proper, plus CR 1.5.4a's pile of
@@ -30,6 +31,7 @@ pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
         "gauntlet" => Some(gauntlet::additional_identities()),
         "mezzie_asa" => Some(mezzie_asa::additional_identities()),
         "mezzie_valencia" => Some(mezzie_valencia::additional_identities()),
+        "notw_restoring_humanity" => Some(notw_restoring_humanity::additional_identities()),
         _ => None,
     }
 }
@@ -61,6 +63,19 @@ pub fn mezzie_decks() -> Vec<Card> {
     out
 }
 
+/// The deck-of-the-week decks (`docs/vm/DECK-OF-THE-WEEK.md`), as far as they
+/// are written.
+///
+/// Kept out of [`priority_decks`] for the same reason [`mezzie_decks`] is:
+/// that pair is the odometer the campaign ratchets to zero partial cards, and
+/// these are mid-queue. A card one of them shares with a deck already written
+/// is the written one, listed here and defined there.
+pub fn deck_of_the_week() -> Vec<Card> {
+    let mut out = notw_restoring_humanity::deck();
+    out.extend(notw_restoring_humanity::additional_identities());
+    out
+}
+
 /// Every card this crate carries, priority decks and all — what
 /// [`crate::find`] searches.
 pub fn all_cards() -> Vec<Card> {
@@ -68,6 +83,12 @@ pub fn all_cards() -> Vec<Card> {
     // Mezzie's decks reuse cards the priority decks already define, so a
     // second copy is never carried.
     for c in mezzie_decks() {
+        if !out.iter().any(|x| x.name() == c.name()) {
+            out.push(c);
+        }
+    }
+    // The deck of the week reuses from both of the above.
+    for c in deck_of_the_week() {
         if !out.iter().any(|x| x.name() == c.name()) {
             out.push(c);
         }
@@ -97,6 +118,10 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("gauntlet.rs", include_str!("gauntlet.rs")),
     ("mezzie_asa.rs", include_str!("mezzie_asa.rs")),
     ("mezzie_valencia.rs", include_str!("mezzie_valencia.rs")),
+    (
+        "notw_restoring_humanity.rs",
+        include_str!("notw_restoring_humanity.rs"),
+    ),
     ("unlisted.rs", include_str!("unlisted.rs")),
     (
         "identities/runner_criminal.rs",

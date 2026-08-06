@@ -5,7 +5,9 @@
 //! doc comment and the data say the same thing, and the gap list is what the
 //! deck files say it is.
 
-use jinteki_cards::{deck_named, mezzie_decks, pile_named, priority_decks, SOURCES};
+use jinteki_cards::{
+    deck_named, deck_of_the_week, mezzie_decks, pile_named, priority_decks, SOURCES,
+};
 
 #[test]
 fn both_decks_build() {
@@ -75,6 +77,52 @@ fn mezzies_decks_are_honest_as_far_as_they_go() {
     // decision for the wave that writes her deck's own cards.
     assert!(pile_named("mezzie_asa").unwrap().is_empty(), "a Corp deck brings no 1.5.4a pile");
     assert!(pile_named("mezzie_valencia").unwrap().is_empty(), "Valencia's pile is not chosen yet");
+}
+
+/// The deck of the week (`docs/vm/DECK-OF-THE-WEEK.md`) is held to the same
+/// bar as Mezzie's: mid-queue, so the assertion is not "no partial cards" but
+/// that everything in it is as honest as a priority-deck card, with the gap
+/// list PRINTED rather than ratcheted (SYS-D-9).
+#[test]
+fn the_deck_of_the_week_is_honest_as_far_as_it_goes() {
+    let cards = deck_of_the_week();
+    assert!(!cards.is_empty(), "the module is registered and returns its cards");
+    // 16 distinct cards on NRDB #97714's list, plus the identity CR 1.5.4a
+    // brings along with the deck.
+    let key = "notw_restoring_humanity";
+    let deck = deck_named(key).unwrap_or_else(|| panic!("the card layer has no deck {key:?}"));
+    assert_eq!(deck.len(), 17, "{key}: 16 distinct cards and the identity");
+    for c in &deck {
+        assert!(!c.oracle_text.trim().is_empty(), "{key}: {} has no printed text", c.name());
+        assert!(c.printed.faction.is_some(), "{key}: {} prints a faction (2.13)", c.name());
+        for a in &c.printed.abilities {
+            assert!(
+                a.label.starts_with(&c.name().to_lowercase()) || a.label == "base link",
+                "{key}: {}'s ability label {:?} does not name its card",
+                c.name(),
+                a.label
+            );
+        }
+        if c.is_complete() {
+            assert!(
+                !c.printed.abilities.is_empty()
+                    || c.printed.additional_steal_cost.is_some()
+                    || c.printed.additional_play_cost.is_some(),
+                "{key}: {} is marked complete but denotes into nothing",
+                c.name()
+            );
+        }
+    }
+    let complete = deck.iter().filter(|c| c.is_complete()).count();
+    let sentences: usize = deck.iter().map(|c| c.unimplemented.len()).sum();
+    println!(
+        "{key}: {} cards written, {complete} complete, {} partial, \
+         {sentences} printed sentences still unsayable",
+        deck.len(),
+        deck.len() - complete
+    );
+    // CR 1.5.4a: a Corp deck brings no pile at all.
+    assert!(pile_named(key).unwrap().is_empty(), "a Corp deck brings no 1.5.4a pile");
 }
 
 /// CR 1.5.4a: every card of the pile is a Runner IDENTITY, and 1.5.4b's
@@ -219,7 +267,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 269, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face, Ascending to Orbit is Earth Station's; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue; mezzie_asa.rs is 6 of Mezzie's ice, 7 of her assets, 4 of her operations, her 4 agendas and her 2 upgrades, mezzie_valencia.rs is Zer0, three programs, and the ten events and four resources of Valencia's own list)");
+    assert_eq!(checked, 281, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face, Ascending to Orbit is Earth Station's; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue; mezzie_asa.rs is 6 of Mezzie's ice, 7 of her assets, 4 of her operations, her 4 agendas and her 2 upgrades, mezzie_valencia.rs is Zer0, three programs, and the ten events and four resources of Valencia's own list, notw_restoring_humanity.rs is the 12 of Boring.dec's 16 no earlier deck had written)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and
@@ -275,7 +323,7 @@ fn every_definition_is_reachable_from_all_cards() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 269, "one reachability check per card definition");
+    assert_eq!(checked, 281, "one reachability check per card definition");
 }
 
 /// What `cards_in` reports for a card that declared `.no_printed_text()` —

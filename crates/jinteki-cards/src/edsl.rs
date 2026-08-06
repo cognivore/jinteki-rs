@@ -605,6 +605,23 @@ impl CardBuilder {
                 .with_timing(TimingRestriction::RunOnly),
         )
     }
+    /// "<cost>: … **Use this ability only during a run.**"
+    /// (Proprionegation.) CR 9.3.3c makes the printed sentence a restriction
+    /// on WHEN the ability can be used, and 6.1.1 is the span it names: the
+    /// ability is offered in every paid window from the run's initiation to
+    /// the end of its Run Ends Phase, and in none outside one. The
+    /// once-per-turn twin is [`CardBuilder::paid_once_per_turn_during_a_run`]
+    /// — the flag is a separate printed sentence, so it is a separate call.
+    pub fn paid_during_a_run(
+        self,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .with_timing(TimingRestriction::RunOnly),
+        )
+    }
     /// "Once per turn → <cost referring to the unrezzed ice being
     /// approached>: …" (AgInfusion.) The once-per-turn flag (9.3.6g) and
     /// 9.5.6b's timing restriction: a paid ability that refers to the ice
@@ -1154,6 +1171,16 @@ pub fn runner_moves_to_outermost_of_remembered(key: &'static str) -> Instruction
         server: jinteki_cr::instr::ServerRef::MaintainedChoice(key),
     }
 }
+/// "The Runner moves to the outermost position of **Archives**."
+/// (Proprionegation.) The same 6.2.8b movement to a POSITION, with the server
+/// the sentence names outright instead of one a 9.10.3 choice is remembering
+/// — which is the only difference between the two spellings, and why the
+/// server is content on one instruction rather than an instruction of its own.
+/// The parenthetical "(They approach any ice in that position.)" is 1.4
+/// reminder text for what the move already is.
+pub fn runner_moves_to_outermost_of(server: ServerId) -> Instruction {
+    Instruction::MoveRunnerToOutermost { server: jinteki_cr::instr::ServerRef::Server(server) }
+}
 /// "Run <server>."
 pub fn run(server: ServerId) -> Instruction {
     Instruction::run(server)
@@ -1426,6 +1453,25 @@ pub fn set_aside_top_of_deck_with_this_card(deck_of: Side, n: i64) -> Instructio
 pub fn set_aside_with_this_card() -> TargetFilter {
     TargetFilter::SetAsideWithSource
 }
+/// "**Look at** the top N cards of R&D…" (Precognition / Indexing class; CR
+/// 8.3.2 + 9.11.4e.) The look is its own instruction — 9.11.4e splits it off
+/// the sentence it shares a line with — and it works by setting the cards
+/// aside where the looking player can see them, which is what lets the next
+/// sentence act on them ([`set_aside_by_this_ability`]) or put them back in a
+/// chosen order ([`arrange_set_aside`]). The group is NOT stamped with the
+/// source card, so it lasts only as long as this ability's resolution; the
+/// stamped twin is [`set_aside_top_of_deck_with_this_card`].
+pub fn set_aside_top_of_deck(deck_of: Side, n: i64) -> Instruction {
+    Instruction::SetAsideTopOfDeck { deck_of, count: Quantity::c(n), with_source: false }
+}
+/// "…and **arrange them in any order**." (CR 8.3.3: the arranging player
+/// "secretly puts them in the order of their choice, and returns them to the
+/// top of that deck".) 8.3.3 makes every returned card a NEW object (1.12.3),
+/// and 8.3.1a is the degenerate case the rule states outright: arranging 1 or
+/// fewer cards does nothing, but the cards still go back.
+pub fn arrange_set_aside(to_top_of: Side) -> Instruction {
+    Instruction::ArrangeSetAside { to_top_of }
+}
 /// "…a card with a trash cost" (Neutralize All Threats; 2.6/7.1.5a).
 pub fn has_trash_cost() -> TargetFilter {
     TargetFilter::HasTrashCost
@@ -1546,6 +1592,22 @@ pub fn play_card(card: TargetSpec) -> Instruction {
 /// "Rez <a card>." (8.1.2.)
 pub fn rez(target: TargetSpec) -> Instruction {
     Instruction::RezCard { target, ignore_costs: false, reduce: Quantity::c(0) }
+}
+/// "Rez <a card>, **ignoring all costs**." (Send a Message; CR 8.1.2b's rez
+/// by an ability with 1.16.5c's cost removal — the same axis
+/// [`install_ignoring_all_costs`] states for an install, on the rez. 8.1.1's
+/// "only an unrezzed card can be rezzed" is not a stipulation on the
+/// announcement (contrast 1.15.2's charge rule, which the CR states
+/// explicitly): an already-rezzed card announced here is simply not rezzed
+/// again, which is 1.2.3's "do as much as possible".
+pub fn rez_ignoring_all_costs(target: TargetSpec) -> Instruction {
+    Instruction::RezCard { target, ignore_costs: true, reduce: Quantity::c(0) }
+}
+/// "**Derez** <a card>." (CR 8.1.3 — a rezzed card is turned facedown, and
+/// 8.1.3a-c is what that costs it: it becomes inactive, its counters and
+/// hosted cards stay, and nothing is refunded.)
+pub fn derez(target: TargetSpec) -> Instruction {
+    Instruction::Derez { target }
 }
 /// "Rez <a card>, **paying N[credit] less**." (Haas-Bioroid: Architects of
 /// Tomorrow; CR 1.16.2a.) The same rez, with one effect lowering its cost —
@@ -2807,6 +2869,36 @@ pub fn runner_made_no_successful_run_last_turn() -> TriggerRequirement {
 /// rewrite what 9.6.5c's ordinal counts.
 pub fn encounter_with_advanced_ice_ends() -> TriggerCond {
     TriggerCond::EncounterEnds { criteria: Vec::new(), with_advanced_ice: true }
+}
+/// "Whenever an encounter with **this ice** ends…" (Knowledge Seeker) — the
+/// same 6.5.10 moment, with the printed "this" said in the ordinary
+/// description vocabulary ([`this_very_card`]) rather than as a condition of
+/// its own. It is not the same sentence as an encounter with any ice ending:
+/// the ice the encounter was with is what the criteria are read against.
+pub fn encounter_with_this_ice_ends() -> TriggerCond {
+    TriggerCond::EncounterEnds { criteria: vec![this_very_card()], with_advanced_ice: false }
+}
+/// "Whenever an encounter with this ice ends, **if <state>**, …" (Knowledge
+/// Seeker) — the same moment with 9.6.5c's requirements riding ON the
+/// condition, so they are checked when the condition would be met and an
+/// unmet one leaves the ability unmarked rather than pending-and-idle.
+///
+/// The requirements ride through the DISJUNCTION's slot, which is the
+/// kernel's one place a requirement can attach to a condition that carries no
+/// slot of its own. 9.6.5 makes a disjunction of a single alternative that
+/// alternative — `trigger_matches` recurses into it and `trigger_per_event`
+/// delegates to it, so nothing about the occurrence, its multiplicity or its
+/// grouping changes — and 9.6.5c's requirements are the whole condition's in
+/// either spelling. It is stated here rather than at each call site because
+/// the alternative may carry none of its own (the kernel debug-asserts it).
+pub fn encounter_with_this_ice_ends_if(reqs: &[TriggerRequirement]) -> TriggerCond {
+    if reqs.is_empty() {
+        return encounter_with_this_ice_ends();
+    }
+    TriggerCond::AnyOf {
+        alternatives: vec![encounter_with_this_ice_ends()],
+        requires: reqs.to_vec(),
+    }
 }
 /// "Whenever you take 1 or more bad publicity…" (10.6.1.)
 pub fn takes_bad_publicity(side: Side) -> TriggerCond {
