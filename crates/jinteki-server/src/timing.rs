@@ -18,11 +18,26 @@
 //! while the game is waiting on them, and while it is positive NOTHING
 //! about the rope is on their screen. Every action they COMPLETE (CR 5.2.5,
 //! the [`jinteki_cr::change::GameChange::ActionCompleted`] record — not a
-//! mere decision, which is what the bank pays for) credits the bank back
-//! up. Only when the bank is empty does a rope appear and burn.
+//! mere decision, which is what the bank pays for) adds `action_increment`
+//! to it, with no ceiling. Only when the bank is empty does a rope appear
+//! and burn.
+//!
+//! EVERY TURN IS A FRESH MINUTE: at each turn boundary both players' banks
+//! are SET to `calm` ([`TimingState::note_turn`]). A minute to start the
+//! turn with, ten more seconds for every action taken in it, and none of it
+//! carried into the next turn — the reset is what stops a fast player
+//! hoarding an hour of rope-proofing, and it is also what lifts a player who
+//! was roped a moment ago back into calm when their new turn begins.
 //!
 //! A player who is playing therefore never sees a rope at all; a player who
-//! has stopped playing sees one, and taking an action lifts them off it.
+//! has stopped playing sees one, and taking an action lifts them off it —
+//! whoever pressed the button. The house's auto-played credits pay the bank
+//! exactly as a human's do; what they do NOT do is break the
+//! consecutive-burn-out chain, because only a player answering for
+//! themselves does that. That is what keeps the ladder terminating for a
+//! player who has walked away: their banked ⌛ fire one by one, and then two
+//! burn-outs with no human answer between them end the game.
+//!
 //! The consequence ladder for a rope that burns all the way out is
 //! unchanged — see [`PopOutcome`].
 //!
@@ -42,22 +57,20 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RopeConfig {
-    /// The steady-state size of the bank: the most calm time a player can
-    /// be holding, and so the most they can be given back by acting.
+    /// THE MINUTE EVERY TURN STARTS WITH. At each turn boundary both
+    /// players' banks are SET to this — "before rope even appears the
+    /// player has 1 minute" — and from there "every action adds 10
+    /// ADDITIONAL seconds", with no ceiling inside the turn.
     ///
-    /// COORDINATOR'S INFERENCE, retunable HERE and nowhere else: the spec
-    /// says "before rope even appears the player has 1 minute" and "keep or
-    /// mul decision is ok to take 2 minutes before rope", which fixes the
-    /// opening bank at 120 and the steady state at 60 but does not say in
-    /// so many words that crediting is CAPPED at the steady state. We cap
-    /// it, which is what makes the opening 120 decay into the 60 regime
-    /// (the first completed action of the game collapses whatever is left
-    /// of the opening bank to `calm_secs`). If that decay is too abrupt,
-    /// this constant and [`TimingState::credit_action`] are the only two
-    /// places that need to change.
+    /// Set, not raised: the reset is what stops a bank being hoarded across
+    /// turns, so a long turn's earnings are spent in the turn that earned
+    /// them. A player who is on the rope when a turn boundary arrives is
+    /// lifted off it by the reset, which is right — a new turn is a new
+    /// minute. See [`TimingState::note_turn`], the one place it happens.
     pub calm_secs: u32,
-    /// The bank both players start the game holding — the opening
-    /// keep/mulligan window is allowed to be a long think.
+    /// The bank both players start the game holding, before any turn has
+    /// begun — the opening keep/mulligan window is allowed to be a long
+    /// think. The first turn boundary hands over to `calm_secs`.
     pub opening_calm_secs: u32,
     /// What one COMPLETED action pays back into the bank.
     pub action_increment_secs: u32,
@@ -310,12 +323,15 @@ pub struct TimingState {
     /// `params.rope` whenever the bank is credited or a burn-out resolves,
     /// so a player who comes off the rope gets a whole one next time.
     rope_left: [Duration; 2],
-    /// Did this side's rope burn out with nothing answered by them since?
+    /// Did this side's rope burn out with nothing answered BY THEM since?
     ///
-    /// Two jobs, one fact: it is what makes a second consecutive burn-out a
-    /// loss, and it is what stops the HOUSE's auto-played actions from
-    /// refilling the bank of the player they are being played for. Only
-    /// [`Self::answered`] — the player speaking for themselves — clears it.
+    /// The whole of the consecutive-burn-out ladder, and the reason it
+    /// terminates for an absent player: nothing the game does on their
+    /// behalf touches this. Not an auto-resolve, not a house-played credit,
+    /// not the turn boundary refilling their bank. Only [`Self::answered`]
+    /// — a human answering a prompt — clears it, so two burn-outs with no
+    /// human answer between them are always a loss, however much calm time
+    /// the reservoir handed back in between.
     burnt_last: [bool; 2],
     /// Banked ⌛ per side.
     tokens: [u32; 2],
@@ -416,23 +432,23 @@ impl TimingState {
         self.burnt_last[six(side)] = false;
     }
 
-    /// `side` COMPLETED AN ACTION (CR 5.2.5): their bank is paid back
-    /// `action_increment`, capped at `calm` — and the rope they would meet
-    /// at the bottom of the bank is relit whole.
+    /// `side` COMPLETED AN ACTION (CR 5.2.5): their bank is paid
+    /// `action_increment` ADDITIONAL seconds — no ceiling; the turn boundary
+    /// is what bounds a bank, not a cap — and the rope they would meet at
+    /// the bottom of it is relit whole.
     ///
-    /// A no-op while the rope has burned out on them and they have not
-    /// spoken since: the credits the house plays on a roped player's behalf
-    /// are the house acting, not the player, and must not buy back the calm
-    /// time the player just failed to use.
+    /// It does not matter whose hand pressed the button. An action the house
+    /// plays for a roped player is still an action completed, and the bank
+    /// is a budget for deciding, not a reward for attention. What the house
+    /// cannot do on a player's behalf is BREAK THE CHAIN — see
+    /// [`Self::answered`] — so a player who has walked away still runs out
+    /// of ladder.
     pub fn credit_action(&mut self, side: Side, now: Instant) {
         let Some(r) = self.params.rope.as_ref() else { return };
-        let (inc, cap, rope) = (r.action_increment, r.calm, r.rope);
+        let (inc, rope) = (r.action_increment, r.rope);
         let i = six(side);
-        if self.burnt_last[i] {
-            return;
-        }
         self.settle(now);
-        self.bank[i] = (self.bank[i] + inc).min(cap);
+        self.bank[i] += inc;
         self.rope_left[i] = rope;
     }
 
@@ -482,16 +498,32 @@ impl TimingState {
         Some((side, PopOutcome::AutoResolve))
     }
 
-    /// Watch the VM's `(turn_seq, turn_side)` for turn boundaries. When a
-    /// turn of `side`'s own ends clean, their streak grows; at three, a ⌛ is
-    /// banked and the streak restarts. Returns the side that just banked one,
-    /// if any. `turn_seq` 0 is setup and belongs to nobody.
-    pub fn note_turn(&mut self, turn_seq: u64, turn_side: Side) -> Option<Side> {
-        if self.params.rope.is_none() || (turn_seq, turn_side) == self.seen_turn {
+    /// Watch the VM's `(turn_seq, turn_side)` for turn boundaries — THE ONE
+    /// PLACE A BANK IS RESET, and where a clean own-turn feeds the ⌛ streak.
+    ///
+    /// A new turn sets BOTH banks to `calm` and relights both ropes. Both,
+    /// not just the turn's owner: the player who is not on the move spends
+    /// their bank on paid windows and reactions all through the opponent's
+    /// turn, so they need the same fresh minute. SET, not raised — a bank is
+    /// spent in the turn that earned it, and nothing is hoarded across one.
+    ///
+    /// Returns the side that just banked a ⌛, if any. `turn_seq` 0 is setup
+    /// and belongs to nobody, but it is still a boundary: the opening
+    /// `opening_calm` gives way to `calm` when the first turn begins.
+    pub fn note_turn(&mut self, turn_seq: u64, turn_side: Side, now: Instant) -> Option<Side> {
+        let Some(r) = self.params.rope.as_ref() else { return None };
+        let (calm, rope) = (r.calm, r.rope);
+        if (turn_seq, turn_side) == self.seen_turn {
             return None;
         }
         let (old_seq, old_side) = self.seen_turn;
         self.seen_turn = (turn_seq, turn_side);
+        // Charge the drain up to the boundary before the reset overwrites it,
+        // so the anchor moves too: without this the seconds spent deciding in
+        // the OLD turn would be taken out of the new turn's fresh minute.
+        self.settle(now);
+        self.bank = [calm, calm];
+        self.rope_left = [rope, rope];
         // The new turn starts fresh for its owner.
         self.turn_dirty[six(turn_side)] = false;
         if old_seq == 0 {
@@ -640,21 +672,59 @@ mod state_tests {
     }
 
     #[test]
-    fn the_opening_bank_is_the_opening_calm_and_a_credit_caps_at_the_steady_state() {
+    fn the_opening_bank_is_the_opening_calm_until_the_first_turn_begins() {
         let mut ts = TimingState::new(reservoir());
         assert_eq!(ts.bank_of(Side::Corp), MS(200), "both sides open on the long bank");
         assert_eq!(ts.bank_of(Side::Runner), MS(200));
         let t0 = Instant::now();
         ts.arm(Side::Runner, t0);
-        // The first completed action collapses the opening bank to the cap —
-        // the documented decay of the 2-minute opening into the 1-minute regime.
-        ts.credit_action(Side::Runner, t0 + MS(10));
-        assert_eq!(ts.bank_of(Side::Runner), MS(100), "capped at calm, not 190 + 40");
-        // …and from below the cap a credit is a plain addition.
-        ts.settle(t0 + MS(90));
-        assert_eq!(ts.bank_of(Side::Runner), MS(20));
-        ts.credit_action(Side::Runner, t0 + MS(90));
-        assert_eq!(ts.bank_of(Side::Runner), MS(60));
+        // The keep/mulligan think spends the LONG bank…
+        ts.settle(t0 + MS(50));
+        assert_eq!(ts.bank_of(Side::Runner), MS(150));
+        // …and then the first turn hands over to the steady minute.
+        ts.note_turn(1, Side::Corp, t0 + MS(50));
+        assert_eq!(ts.bank_of(Side::Runner), MS(100));
+        assert_eq!(ts.bank_of(Side::Corp), MS(100));
+    }
+
+    #[test]
+    fn actions_add_without_a_ceiling_and_every_turn_sets_the_bank_back() {
+        let mut ts = TimingState::new(reservoir());
+        let t0 = Instant::now();
+        ts.note_turn(1, Side::Runner, t0);
+        ts.arm(Side::Runner, t0);
+        assert_eq!(ts.bank_of(Side::Runner), MS(100), "the turn opens on the calm minute");
+        // Five actions inside one turn: +40 each, and NOTHING caps them.
+        for n in 1..=5 {
+            ts.credit_action(Side::Runner, t0);
+            assert_eq!(
+                ts.bank_of(Side::Runner),
+                MS(100 + 40 * n),
+                "action {n} adds 40 additional, with no ceiling"
+            );
+        }
+        assert_eq!(ts.bank_of(Side::Runner), MS(300), "well past `calm`");
+        // The next turn SETS it back — a big bank is not hoarded across one.
+        ts.note_turn(2, Side::Corp, t0);
+        assert_eq!(ts.bank_of(Side::Runner), MS(100), "set, not raised");
+        assert_eq!(ts.bank_of(Side::Corp), MS(100), "both sides, not just the mover");
+    }
+
+    #[test]
+    fn a_turn_boundary_lifts_a_roped_player_back_into_calm() {
+        let mut ts = TimingState::new(reservoir());
+        let t0 = Instant::now();
+        ts.note_turn(1, Side::Runner, t0);
+        ts.arm(Side::Runner, t0);
+        // Idle away the whole minute: on the rope, halfway through it.
+        ts.settle(t0 + MS(130));
+        assert_eq!(ts.roped(), Some(Side::Runner));
+        assert_eq!(ts.rope_left[1], MS(30));
+        // A new turn is a new minute, so the rope goes out.
+        ts.note_turn(2, Side::Corp, t0 + MS(130));
+        assert_eq!(ts.roped(), None, "un-roped by the reset");
+        assert_eq!(ts.bank_of(Side::Runner), MS(100));
+        assert_eq!(ts.rope_left[1], MS(60), "with a whole rope waiting under it");
     }
 
     #[test]
@@ -736,21 +806,22 @@ mod state_tests {
     #[test]
     fn a_streak_of_three_clean_turns_banks_and_a_burn_out_resets() {
         let mut ts = TimingState::new(reservoir());
+        let t = Instant::now();
         // Setup (seq 0) belongs to nobody.
-        assert_eq!(ts.note_turn(1, Side::Corp), None);
+        assert_eq!(ts.note_turn(1, Side::Corp, t), None);
         // Corp 1 → Runner 2 → Corp 3 → Runner 4 …: each old turn credits its owner.
-        assert_eq!(ts.note_turn(2, Side::Runner), None); // corp streak 1
-        assert_eq!(ts.note_turn(3, Side::Corp), None); // runner streak 1
-        assert_eq!(ts.note_turn(4, Side::Runner), None); // corp streak 2
-        assert_eq!(ts.note_turn(5, Side::Corp), None); // runner streak 2
-        assert_eq!(ts.note_turn(6, Side::Runner), Some(Side::Corp), "3 clean corp turns bank");
+        assert_eq!(ts.note_turn(2, Side::Runner, t), None); // corp streak 1
+        assert_eq!(ts.note_turn(3, Side::Corp, t), None); // runner streak 1
+        assert_eq!(ts.note_turn(4, Side::Runner, t), None); // corp streak 2
+        assert_eq!(ts.note_turn(5, Side::Corp, t), None); // runner streak 2
+        assert_eq!(ts.note_turn(6, Side::Runner, t), Some(Side::Corp), "3 clean corp turns bank");
         assert_eq!(ts.tokens_of(Side::Corp), 1);
         // The runner burns out mid-turn: streak gone, and the turn will not count.
         let now = Instant::now();
         ts.arm(Side::Runner, now);
         ts.settle(now + MS(300));
         assert_eq!(ts.pop(now + MS(300)), Some((Side::Runner, PopOutcome::AutoResolve)));
-        assert_eq!(ts.note_turn(7, Side::Corp), None, "the burnt turn is not clean");
+        assert_eq!(ts.note_turn(7, Side::Corp, now + MS(300)), None, "the burnt turn is not clean");
         assert_eq!(ts.streak[1], 0);
     }
 
@@ -776,22 +847,69 @@ mod state_tests {
     }
 
     #[test]
-    fn the_house_playing_for_a_roped_player_does_not_refill_their_bank() {
+    fn the_house_playing_for_a_roped_player_fills_the_bank_as_if_clicked() {
         let mut ts = TimingState::new(reservoir());
         let t0 = Instant::now();
         ts.arm(Side::Runner, t0);
         ts.settle(t0 + MS(300));
         assert_eq!(ts.pop(t0 + MS(300)), Some((Side::Runner, PopOutcome::AutoResolve)));
         // The house plays out the turn on their behalf: four basic credits.
-        for _ in 0..4 {
+        // The bank does not care whose hand pressed the button.
+        for n in 1..=4 {
             ts.credit_action(Side::Runner, t0 + MS(300));
+            assert_eq!(ts.bank_of(Side::Runner), MS(40 * n), "auto-credit {n} pays like any other");
         }
-        assert_eq!(ts.bank_of(Side::Runner), Duration::ZERO, "the house does not buy calm time");
-        assert_eq!(ts.roped(), Some(Side::Runner), "still on the rope");
-        // The player speaks for themselves, and their next action pays again.
-        ts.answered(Side::Runner);
-        ts.credit_action(Side::Runner, t0 + MS(300));
-        assert_eq!(ts.bank_of(Side::Runner), MS(40));
+        assert_eq!(ts.roped(), None, "and it lifts them off the rope, as clicking would");
+        // What the house CANNOT do is speak for them: the chain is still open,
+        // so the next burn-out is still the second in a row.
+        assert!(ts.burnt_last[1], "no auto-play breaks the chain");
+        ts.settle(t0 + MS(600));
+        assert_eq!(ts.pop(t0 + MS(600)), Some((Side::Runner, PopOutcome::Loss)));
+    }
+
+    #[test]
+    fn an_absent_player_runs_out_of_ladder_in_a_finite_number_of_turns() {
+        // The whole arc the rules describe for someone who walked away: the
+        // rope burns out, their banked ⌛ fire one at a time, and then two
+        // burn-outs with no human answer between them end it. Nothing the
+        // game does on their behalf — the turn reset refilling their minute,
+        // the house's auto-credits, the auto-resolves — may keep it going.
+        let mut ts = TimingState::new(reservoir());
+        ts.tokens[1] = 3;
+        let mut now = Instant::now();
+        let mut fired = 0;
+        let mut auto = 0;
+        let mut outcome = None;
+        for turn in 1..200u64 {
+            // A new turn hands them a fresh minute and a whole rope.
+            ts.note_turn(turn, Side::Runner, now);
+            ts.arm(Side::Runner, now);
+            // They are not there, so it all burns: bank, then rope.
+            now += MS(200);
+            ts.settle(now);
+            assert!(ts.rope_burnt(), "turn {turn}: an untouched reservoir empties");
+            let (side, what) = ts.pop(now).expect("a burnt rope resolves");
+            assert_eq!(side, Side::Runner);
+            match what {
+                PopOutcome::TimeoutFired => fired += 1,
+                PopOutcome::AutoResolve => {
+                    auto += 1;
+                    // The house plays the rest of the turn as credits, which
+                    // now DOES pay the bank — and still does not save them.
+                    for _ in 0..4 {
+                        ts.credit_action(Side::Runner, now);
+                    }
+                }
+                PopOutcome::Loss => {
+                    outcome = Some(turn);
+                    break;
+                }
+            }
+            ts.disarm(now);
+        }
+        assert_eq!(fired, 3, "every banked ⌛ fires, one per burn-out");
+        assert_eq!(auto, 1, "then one auto-resolve");
+        assert_eq!(outcome, Some(5), "and the fifth burn-out is the loss");
     }
 
     #[test]

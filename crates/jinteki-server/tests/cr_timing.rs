@@ -202,20 +202,40 @@ async fn a_fast_player_never_sees_a_rope() {
 }
 
 #[tokio::test]
-async fn the_bank_caps_at_the_steady_state() {
-    // Opening 2000, cap 120: the first completed action of the game collapses
-    // the long opening bank into the steady-state regime (timing.rs documents
-    // this cap as the coordinator's inference, retunable in one place).
-    let seat = timed_game(20_260_822, reservoir(120, 2000, 40, 60)).await;
+async fn a_turn_has_no_ceiling_and_the_next_turn_sets_the_bank_back() {
+    // A minute to start the turn with, ten more for every action taken in it,
+    // and none of it hoarded into the next turn.
+    let seat = timed_game(20_260_822, reservoir(400, 2000, 400, 300)).await;
     let mut g = seat.game.lock().await;
+    assert!(bank_ms(&state(&g)) > 1500, "the keep/mulligan window holds the long opening bank");
     keep_hand(&mut g).await;
-    assert!(bank_ms(&state(&g)) > 1500, "the mulligan is not an action: the bank is untouched");
+    // Two turn boundaries later (Corp 1, Runner 2) the opening bank has given
+    // way to the plain calm minute every turn starts on.
+    let opened = bank_ms(&state(&g));
+    assert!(opened <= 400 && opened > 0, "the turn opens on `calm`, got {opened}");
+    // The Runner's turn: four clicks, each paying 400 additional ms into a
+    // bank that started the turn at 400. Nothing caps it.
+    let mut last = opened;
+    for click in 1..=3 {
+        cr::command_headless(&mut g, Side::Runner, &json!({"command":"credit","args":{}}))
+            .await
+            .expect("the credit action is legal");
+        let now = bank_ms(&state(&g));
+        assert!(now > last, "click {click} added to the bank ({last} → {now})");
+        last = now;
+    }
+    assert!(last > 400, "the bank is well past `calm` inside its own turn: {last}");
+    // The fourth click ends the turn, the bot plays the Corp's, and the
+    // Runner's NEXT window opens on a plain fresh minute — not on a hoard.
+    let turn_before = state(&g)["turn"].as_u64().unwrap();
     cr::command_headless(&mut g, Side::Runner, &json!({"command":"credit","args":{}}))
         .await
         .expect("the credit action is legal");
-    let after = bank_ms(&state(&g));
-    assert!(after <= 120, "one action caps the bank at the steady state, got {after}");
-    assert!(after > 0);
+    let t = state(&g);
+    assert!(t["turn"].as_u64().unwrap() > turn_before, "the turn passed");
+    let fresh = bank_ms(&t);
+    assert!(fresh <= 400, "a new turn SETS the bank to calm, got {fresh}");
+    assert!(fresh > 0);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -282,10 +302,13 @@ async fn a_first_burn_out_on_the_action_window_plays_the_turn_as_credits() {
     assert!(t["turn"].as_u64().unwrap() >= before_turn + 2, "the turn passed and came back");
     assert_eq!(t["runner"]["click"], json!(4), "a fresh window, a fresh allotment");
     assert!(t["winner"].is_null(), "a first burn-out is not a loss");
-    // The house's credits did NOT buy the bank back: they are still on a rope,
-    // a whole one, and playing is the only way off it.
-    assert!(rope_visible(&t), "still roped, because they still have not played");
-    assert_eq!(bank_ms(&t), 0);
+    // The house's four credits paid the bank exactly as a human's would have,
+    // and the two turn boundaries since have handed out fresh minutes anyway:
+    // the new window is calm. What is NOT reset is the chain — nothing the
+    // house did counts as this player answering, which is why the next
+    // burn-out is still the second in a row (see the loss test below).
+    assert!(!rope_visible(&t), "a new turn is a new minute, roped or not");
+    assert!(bank_ms(&t) > 0);
 }
 
 #[tokio::test]
@@ -314,15 +337,17 @@ async fn a_first_burn_out_on_a_decision_prompt_gives_the_neutral_answer() {
 
 #[tokio::test]
 async fn a_second_consecutive_burn_out_loses_the_game() {
-    let seat = timed_game(20_260_808, reservoir(400, 80, 40, 80)).await;
+    // Every turn boundary between the two burn-outs hands this player a fresh
+    // minute, and the house's credits pay into it too. The chain does not
+    // care: only THEY can break it, and they never speak.
+    let seat = timed_game(20_260_808, reservoir(80, 80, 40, 80)).await;
     let mut g = seat.game.lock().await;
     // Burn-out 1: the mulligan (auto-kept). Nothing was answered by the player.
     tokio::time::sleep(Duration::from_millis(220)).await;
     assert!(cr::timing_tick(&mut g).await);
     assert!(state(&g)["winner"].is_null());
-    assert!(rope_visible(&state(&g)), "the burn-out leaves them on a relit rope");
     // Burn-out 2: the action window that followed, still with no answer between.
-    tokio::time::sleep(Duration::from_millis(140)).await;
+    tokio::time::sleep(Duration::from_millis(260)).await;
     assert!(cr::timing_tick(&mut g).await);
     let t = state(&g);
     assert_eq!(t["winner"], json!("corp"), "two consecutive burn-outs are a loss");
@@ -332,23 +357,55 @@ async fn a_second_consecutive_burn_out_loses_the_game() {
 
 #[tokio::test]
 async fn an_answer_between_burn_outs_breaks_the_chain() {
-    let seat = timed_game(20_260_809, reservoir(400, 80, 60, 80)).await;
+    let seat = timed_game(20_260_809, reservoir(80, 80, 60, 80)).await;
     let mut g = seat.game.lock().await;
     // Burn-out 1: the mulligan.
     tokio::time::sleep(Duration::from_millis(220)).await;
     assert!(cr::timing_tick(&mut g).await);
-    // The player answers the action window themselves (one credit), which is
-    // both what breaks the chain and what buys their calm time back…
+    // The player answers the action window themselves (one credit) — the one
+    // thing that breaks the chain…
     cr::command_headless(&mut g, Side::Runner, &json!({"command":"credit","args":{}}))
         .await
         .expect("the credit action is legal");
     assert!(!rope_visible(&state(&g)), "playing lifted them off the rope");
     // …so the next burn-out is a FIRST burn-out again: auto-credits, not a loss.
-    tokio::time::sleep(Duration::from_millis(220)).await;
+    tokio::time::sleep(Duration::from_millis(260)).await;
     assert!(cr::timing_tick(&mut g).await);
     let t = state(&g);
     assert!(t["winner"].is_null(), "the chain was broken by the answered prompt");
     assert!(log_contains(&t, "the rest of the turn is spent on credits"));
+}
+
+#[tokio::test]
+async fn an_absent_player_burns_every_timeout_and_then_loses() {
+    // The whole arc for someone who walked away from the machine, end to end
+    // through the real session: their banked ⌛ fire one at a time, then a
+    // burn-out, then the next burn-out with nothing human in between — and
+    // the game ENDS. Every turn boundary in here refills their minute and
+    // every auto-played credit pays into it; none of that saves them, and
+    // none of it can stretch the arc past a bounded number of ticks.
+    let seat = timed_game(20_260_825, reservoir(60, 2000, 40, 60)).await;
+    let mut g = seat.game.lock().await;
+    keep_hand(&mut g).await;
+    for _ in 0..3 {
+        clean_credit_turn(&mut g).await;
+    }
+    assert_eq!(timing_of(&state(&g))["timeouts"], json!(1), "one ⌛ banked before they leave");
+    // …and now nobody is at the keyboard. Only the ticker runs.
+    let mut ticks = 0;
+    while state(&g)["winner"].is_null() {
+        ticks += 1;
+        assert!(ticks < 500, "the ladder must terminate; it did not in {ticks} ticks");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        cr::timing_tick(&mut g).await;
+    }
+    let t = state(&g);
+    assert_eq!(t["winner"], json!("corp"));
+    assert_eq!(t["reason"], json!("roped out"));
+    assert!(log_contains(&t, "used a timeout"), "the ⌛ fired first: {:#?}", log_of(&t));
+    assert!(log_contains(&t, "the rope burned out"), "then a burn-out");
+    assert!(log_contains(&t, "twice in a row"), "then the one that ends it");
+    assert_eq!(timing_of(&t)["timeouts"], json!(0), "every banked ⌛ was spent");
 }
 
 // ───────────────────────────────────────────────────────────────────────────

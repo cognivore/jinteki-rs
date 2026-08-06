@@ -734,11 +734,13 @@ impl CrGame {
             self.clock.credit_action(side, now);
         }
     }
-    /// Timing hook: watch for a turn boundary; a clean own-turn feeds the
-    /// ⌛-banking streak (`crate::timing::TimingState::note_turn`).
+    /// Timing hook: watch for a turn boundary. A new turn is a fresh minute
+    /// — both banks are reset to `calm` — and a clean own-turn that just
+    /// ended feeds the ⌛-banking streak
+    /// (`crate::timing::TimingState::note_turn`).
     fn timing_note_turn(&mut self) {
         if self.clock.enabled() {
-            self.clock.note_turn(self.vm.st.turn_seq, self.vm.st.turn_side);
+            self.clock.note_turn(self.vm.st.turn_seq, self.vm.st.turn_side, Instant::now());
         }
     }
     /// A line both players may read (system notices, chat, the result).
@@ -1278,8 +1280,9 @@ async fn drive_inner(g: &mut CrGame, mut sink: Option<(&mut WebSocket, Side)>) {
     }
     for _ in 0..20_000 {
         // A turn boundary is a fact about the VM, noticed wherever the VM
-        // moved: the ⌛-banking streak reads it (`timing`). So is a completed
-        // action, which is what pays a player's calm reservoir back.
+        // moved: both reservoirs are reset to a fresh minute by it, and the
+        // ⌛-banking streak reads it (`timing`). So is a completed action,
+        // which is what pays a player's reservoir its extra seconds.
         g.timing_note_turn();
         g.timing_credit_actions();
         match g.vm.step() {
