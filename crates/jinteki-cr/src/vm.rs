@@ -6349,6 +6349,22 @@ impl Vm {
                         return true;
                     }
                 }
+                // 9.9.8a + 9.9.4c: an interrupt that REDIRECTS a trash is
+                // relevant while the trash it would redirect is among the
+                // imminent instruction's expected effects. The cards are
+                // resolved against the source, so "instead of adding IT to
+                // Archives" asks about the source's own trash.
+                Instruction::RedirectImminentTrash { cards, .. } => {
+                    cite!("rule_replacement_effect_relevant");
+                    let targets = self.resolve_targets(cards, Some(source), &[]);
+                    if atoms.iter().any(|a| {
+                        a.expected()
+                            && a.class == EffectClass::TrashCards
+                            && targets.iter().any(|t| a.targets.contains(t))
+                    }) {
+                        return true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -10915,8 +10931,13 @@ impl Vm {
                     } else {
                         a.targets.clone()
                     };
+                    // 9.9.8a: a card an interrupt spoke for goes where the
+                    // interrupt said (8.2.2 — it is still trashed); every
+                    // other card of the same trash goes where it would have.
+                    let redirects = a.trash_to.clone();
                     for t in targets {
-                        self.trash_card(t, controller);
+                        let to = redirects.iter().find(|(c, _)| *c == t).map(|(_, d)| *d);
+                        self.trash_card_to(t, controller, to);
                     }
                 }
             }
@@ -11150,8 +11171,17 @@ impl Vm {
                                         self.draw_cards(a.side, a.value.max(0) as u32, false)
                                     }
                                     EffectClass::TrashCards => {
+                                        // 9.9.8a: a card an interrupt spoke
+                                        // for goes where the interrupt said,
+                                        // and every other card of the same
+                                        // trash goes where it would have.
+                                        let redirects = a.trash_to.clone();
                                         for t in a.targets.clone() {
-                                            self.trash_card(t, controller);
+                                            let to = redirects
+                                                .iter()
+                                                .find(|(c, _)| *c == t)
+                                                .map(|(_, d)| *d);
+                                            self.trash_card_to(t, controller, to);
                                         }
                                     }
                                     EffectClass::EndTheRun => {
@@ -11335,6 +11365,28 @@ impl Vm {
                         self.do_damage(kind, a.value as u32, *responsible);
                     }
                 }
+            }
+            Instruction::RedirectImminentTrash { cards, to } => {
+                // CR 9.9.10: the replacement applies immediately when the
+                // interrupt resolves. 8.2.2: the trash still happens and is
+                // still recorded — the destination is all that changes, which
+                // is why the atom is modified rather than removed.
+                cite!("rule_replace_imminent_effects");
+                cite!("sec_replacing_movements");
+                let to = *to;
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                self.modify_parent_imminent(move |atom| {
+                    if atom.class != EffectClass::TrashCards {
+                        return false;
+                    }
+                    let mut spoke = false;
+                    for t in targets.iter().filter(|t| atom.targets.contains(t)) {
+                        atom.trash_to.retain(|(c, _)| c != t);
+                        atom.trash_to.push((*t, to));
+                        spoke = true;
+                    }
+                    spoke
+                });
             }
             Instruction::ReplaceImminentDamageKind { to } => {
                 // CR 9.9.10: the replacement applies immediately when the
@@ -15001,8 +15053,25 @@ impl Vm {
         // 7.1.5b: a card in the Corp's discard pile cannot be trashed, and its
         // trash cost cannot be paid — by the basic trash ability OR by any
         // other mid-access ability. A card accessed in Archives is already
-        // there; so is one this access has just trashed.
-        let in_archives = o.zone == Zone::Discard(Side::Corp);
+        // there.
+        //
+        // A card THIS ACCESS has already trashed is the other half, and it is
+        // asked of the trash RECORD rather than of the discard pile: 8.2.2
+        // records the movement wherever a 9.9.8a redirection sent the card,
+        // so a Marilyn-Campaign-class escape into R&D is still a trash and
+        // still spends the access's one opportunity. Reading the zone alone
+        // offered the Runner a second trash of a card that was no longer
+        // there to trash. The scan runs back to this card's own access.
+        cite!("rule_open_information");
+        let log = &self.changes.log;
+        let since = log
+            .iter()
+            .rposition(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == card))
+            .unwrap_or(0);
+        let already_trashed = log[since..]
+            .iter()
+            .any(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == card));
+        let in_archives = o.zone == Zone::Discard(Side::Corp) || already_trashed;
         // 7.1.5: the basic trash ability — pay the trash cost, trash it.
         // 1.10.3c: what the Runner can pay it WITH includes hosted credits
         // their own cards let them spend (Scrubber class), not just the pool.
@@ -16338,7 +16407,24 @@ impl Vm {
                 );
             }
             PaymentCont::BasicTrash { card, window } => {
-                self.trash_card(card, Side::Runner);
+                // CR 7.1.5 + 9.1.1g: the basic trash ability is an ABILITY —
+                // "Access → Pay the trash cost of the accessed card: Trash
+                // it." — and a non-static ability's text is instructions, so
+                // its trash becomes imminent and gets 9.9.4's interrupt
+                // window like every other trash. Trashing directly from here
+                // skipped that window, which is what left a Marilyn-class
+                // "when this card would be trashed" interrupt unable to see
+                // the one trash the card is really about. Its sibling,
+                // `PaymentCont::BasicTrashResourceAction`, already ran the
+                // basic action's effect through a rules-ability frame; this
+                // is the same shape for the same reason.
+                cite!("rule_basic_trash_ability");
+                cite!("rule_instruction_link");
+                // 9.1.6a: the ability is USED once its trigger cost is paid,
+                // which is here — before its instruction resolves — so the
+                // window's option and the record are settled first and the
+                // frame pushed last. (Pushing first would leave the ability
+                // frame on top and the window's option unresolved.)
                 if let Some(Frame::Window(w)) = self.frames.last_mut() {
                     if w.id == window {
                         w.option_resolved();
@@ -16350,6 +16436,14 @@ impl Vm {
                         side: Side::Runner,
                         basic: true,
                     });
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
+                    Side::Runner,
+                    vec![Instruction::TrashCards(TargetSpec::Objects(vec![card]))],
+                    None,
+                    None,
+                );
             }
             // 5.2.6g: the costs are paid (the 1.16.3 checkpoint ran inside
             // `pay_cost_committed`), so the action's effect follows — the
@@ -16887,6 +16981,23 @@ impl Vm {
 
     /// CR 1.19: trash = move to owner's discard pile.
     pub fn trash_card(&mut self, id: ObjectId, by: Side) {
+        self.trash_card_to(id, by, None)
+    }
+
+    /// CR 1.19 + 9.9.8a: the same trash, with the destination an INTERRUPT
+    /// said this card goes to instead (9.9.10 applied it to the effect while
+    /// it was imminent, so it arrives here on the atom).
+    ///
+    /// A redirection stated this way wins over a 9.9.8b static's, for the
+    /// reason 9.9.11a gives: a replacement cannot apply without something to
+    /// replace, and the imminent-effect one has already replaced the
+    /// destination by the time the movement happens.
+    pub fn trash_card_to(
+        &mut self,
+        id: ObjectId,
+        by: Side,
+        redirected: Option<crate::instr::TrashDestination>,
+    ) {
         cite!("rule_trashing");
         let was = self.st.objects[&id].zone;
         let owner = self.st.objects[&id].owner;
@@ -16945,11 +17056,21 @@ impl Vm {
             was_rezzed,
             during_install,
         });
-        match self.replaced_trash_destination(id) {
+        match redirected.or_else(|| self.replaced_trash_destination(id)) {
             // 4.9: removed from the game instead of the discard pile.
             Some(crate::instr::TrashDestination::RemovedFromGame) => {
                 cite!("sec_removed_from_game");
                 self.move_card(id, Zone::RemovedFromGame);
+            }
+            // 4.2.3 + 8.7.3: into the owner's deck, shuffled. The deck is
+            // ordered, so a card entering it with no stated position is put
+            // in by a shuffle — and 1.12.3 then makes it a new object, since
+            // nobody can say which card of the deck it now is.
+            Some(crate::instr::TrashDestination::ShuffledIntoOwnersDeck) => {
+                cite!("rule_deck_ordered");
+                cite!("rule_shuffle_deck_after_search");
+                self.move_card(id, Zone::Deck(owner));
+                self.shuffle_deck(owner);
             }
             // 8.1.4/8.1.4d: the installed Runner card is turned facedown and
             // stays in the play area — it is not uninstalled, so it never

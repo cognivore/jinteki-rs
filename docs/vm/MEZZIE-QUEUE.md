@@ -44,7 +44,7 @@ Identity is COMPLETE. Printed text below is from
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
 - [ ] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
-- [ ] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
+- [x] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
       "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)"
 - [x] **MCA Austerity Policy** ◆ ×2 — asset · cost 1, trash 3
       "Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click]. / [click], [trash], 3 hosted power counters: Gain [click][click][click][click]."
@@ -136,20 +136,19 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `work/finish` wave: 44 of 47 ticked, 3 printed
-sentences still unsayable, 3 cards unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 45 of 47 ticked, 2 printed
+sentences still unsayable, 2 cards unticked.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
 kernel and claims have to be checked against it.
 
-The three that remain, and what each is waiting on:
+The two that remain, and what each is waiting on:
 
 | Card | Waiting on |
 |---|---|
 | Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
 | Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
-| Marilyn Campaign | one: a trash redirected to a DECK, optionally |
 
 
 Never approximated. A card that needs one of these is left unticked with the
@@ -293,28 +292,57 @@ could reach — neither door payable, no decision put, run ended.
 
 **Manegarm Skunkworks** is written and ticked.
 
-### A trash whose destination an ABILITY redirects (CR 9.9.8a-b / 8.2.2)
+### A trash whose destination an ABILITY redirects — LANDED (CR 9.9.8a-b / 8.2.2)
 
-The kernel replaces a trash's destination in exactly one shape:
-`StaticDecl::ReplaceTrashDestination`, read where the movement happens,
-mandatory, with `TrashDestination` naming two places — removed from game (4.9)
-and turned facedown in play (8.1.4d). A card printing "[interrupt] → when this
-card would be trashed, you may put it somewhere else instead of adding it to
-<the discard pile>" has neither the optionality nor the destination, and
-writing it with the static would make every trash of that card a redirect
-whether its controller wanted one or not.
+`TrashDestination::ShuffledIntoOwnersDeck` (4.2.3 + 8.7.3 — a deck is ordered,
+so a card entering it with no stated position goes in by a shuffle, and 1.12.3
+then makes it a new object) and `Instruction::RedirectImminentTrash { cards,
+to }`, the interrupt-effect that says where the cards of the trash ALREADY
+IMMINENT go. Both halves the entry asked for, in two positions rather than one.
 
-Wanted: the destination as CONTENT on the one atom — a player's deck (shuffled
-in, 4.2.3), a hand, the set-aside zone — added as variants of
-`TrashDestination` rather than as new replacement atoms; and the same
-replacement expressible from a card's own optional interrupt (9.9.8a) as well
-as from a static (9.9.8b), so the printed "you may" is one flag on the existing
-word and not a second mechanism. 8.2.2 is what every shape of it must keep: the
-card is still trashed and conditions about being trashed are still met — only
-where it lands changes, which is exactly what these cards' parenthetical says.
+The optionality is NOT "one flag on the existing word", and that is the
+entry's mistake. It cannot be: `StaticDecl::ReplaceTrashDestination` is read
+inside `Vm::trash_card`, in the middle of a movement, where the kernel cannot
+put a question to a player — `Vm::ask` records a pending decision and does not
+unwind, so the movement would complete before the answer arrived. The printed
+"you may" therefore lives where every other optional conditional keeps it: on
+the INTERRUPT that carries the redirection (9.6.9c), triggered from the 9.9.4
+window like any other. That is also what the card prints — "[interrupt] →" —
+and what 9.9.8a/9.9.10 describe: an interrupt introducing a replacement for
+the instruction already imminent, applied the moment it resolves.
 
-Wants it: **Marilyn Campaign** ("you may shuffle it into R&D instead of adding
-it to Archives").
+So the two shapes divide by what they can reach, not by a flag. The 9.9.8b
+static stays mandatory and stays read at the movement, which is what lets it
+reach the trashes no instruction makes imminent (10.4.2's damage, 1.16.1a's
+cost trashes). The 9.9.8a interrupt reaches exactly the trashes that HAVE an
+imminence — which is all an interrupt can ever act on. The destination rides
+the imminent atom (`EffectAtom::trash_to`), so a trash that is then PREVENTED
+takes the redirection with it, where a note kept beside the atom would have
+survived to redirect some later trash of the same card.
+
+TWO DEFECTS FIXED, both found by writing the card, and the first is the one
+that would have made it look implemented and do nothing:
+
+- The basic trash ability trashed the card DIRECTLY from its payment
+  continuation, with no imminence and so no interrupt window. CR 7.1.5 makes
+  it an ability and 9.1.1g makes a non-static ability's text instructions, so
+  its trash becomes imminent like every other; its own sibling,
+  `PaymentCont::BasicTrashResourceAction`, already ran the basic action's
+  effect through a rules-ability frame. Without this the Runner paying
+  Marilyn's trash cost on access — the trash the card is really about — could
+  never be redirected.
+- The mid-access window asked "is this card in Archives?" as its way of
+  saying "has this access already trashed it?". With the card redirected into
+  R&D the proxy failed and the Runner was offered a second trash of a card
+  that was no longer there. It now asks the trash RECORD, which 8.2.2
+  guarantees exists wherever the card landed.
+
+Measured by `marilyn_campaign_may_be_shuffled_into_rnd_instead_of_going_to_archives`:
+the Runner trashes the rezzed asset on access, and taking the interrupt adds a
+card to R&D while declining leaves it in Archives — with the trash recorded on
+both arms, which is what the printed parenthetical promises.
+
+**Marilyn Campaign** is written and ticked.
 
 ### A description stipulating agenda points, or the X announced for the cost (CR 2.4.2 / 1.16.2c / 1.15.2)
 

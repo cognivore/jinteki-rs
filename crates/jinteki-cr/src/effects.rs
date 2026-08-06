@@ -98,6 +98,23 @@ pub struct EffectAtom {
     /// place in that order, instead of walking the set blind. `None` outside
     /// a `Combined`.
     pub combined_half: Option<usize>,
+    /// CR 9.9.8a + 8.2.2: where a card of THIS trash goes instead of its
+    /// owner's discard pile, said by an interrupt that modified the effect
+    /// while it was imminent (9.9.10 — Marilyn Campaign's "you may shuffle it
+    /// into R&D instead of adding it to Archives").
+    ///
+    /// It rides the atom rather than the VM for the reason every other
+    /// modifiable part of an effect does: a trash that is then PREVENTED
+    /// (9.9.7) takes the redirection with it, where a note kept beside the
+    /// atom would survive to redirect some later trash of the same card.
+    ///
+    /// 8.2.2 is what a redirection does NOT change: the card is still
+    /// trashed, the movement is still recorded, and conditions about being
+    /// trashed are still met — only where it lands differs. One entry per
+    /// card, so a plural trash whose cards were spoken for separately keeps
+    /// them apart; a card with no entry takes the default (or whatever an
+    /// active 9.9.8b static says, which is read at the movement).
+    pub trash_to: Vec<(crate::object::ObjectId, crate::instr::TrashDestination)>,
 }
 
 impl EffectAtom {
@@ -114,6 +131,7 @@ impl EffectAtom {
             targets: Vec::new(),
             removed: false,
             combined_half: None,
+            trash_to: Vec::new(),
         }
     }
 

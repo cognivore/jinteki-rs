@@ -682,6 +682,30 @@ pub enum Instruction {
     /// Interrupt-effect: replace the imminent damage's type (Tori Hanzō
     /// class; 9.9.10: applies immediately when the interrupt resolves).
     ReplaceImminentDamageKind { to: DamageKind },
+    /// CR 9.9.8a + 8.2.2: "…**instead of adding it to Archives**" (Marilyn
+    /// Campaign). An interrupt-effect that sends the named cards of the
+    /// imminent trash somewhere other than their owner's discard pile;
+    /// 9.9.10 applies it the moment the interrupt resolves, so the movement
+    /// that follows lands them where this said.
+    ///
+    /// 8.2.2 is what it does NOT do: the cards are still trashed, the
+    /// movement is still recorded, and every condition about being trashed is
+    /// still met — which is exactly what the printed parenthetical "(It is
+    /// still considered trashed.)" says out loud.
+    ///
+    /// `cards` is a target POSITION and `to` is the content (§12 rule 2), so
+    /// "shuffle IT into R&D" said of the ability's own source and a sentence
+    /// naming other cards or another destination are one instruction.
+    ///
+    /// The optionality of a printed "you may" is NOT here: it belongs to the
+    /// interrupt ability that carries this (9.6.9c), which is the same place
+    /// every other optional conditional keeps it. [`StaticDecl::
+    /// ReplaceTrashDestination`](crate::ability::StaticDecl::ReplaceTrashDestination)
+    /// is 9.9.8b's mandatory twin, read at the movement so that it reaches
+    /// the trashes no instruction makes imminent (10.4.2's damage, 1.16.1a's
+    /// costs); this one reaches only a trash that HAS an imminence, which is
+    /// what an interrupt can act on at all.
+    RedirectImminentTrash { cards: TargetSpec, to: TrashDestination },
     /// "Run any server." / "make another run" (Doppelgänger class) — pushes
     /// a nested run timing structure.
     InitiateRun {
@@ -1468,6 +1492,7 @@ impl Instruction {
     pub fn target_positions(&self) -> Vec<&TargetSpec> {
         match self {
             Instruction::TrashCards(spec)
+            | Instruction::RedirectImminentTrash { cards: spec, .. }
             | Instruction::AccessCards { cards: spec, .. }
             | Instruction::ResolveAbilityOf { source: spec, .. }
             | Instruction::RezCard { target: spec, .. }
@@ -1665,6 +1690,7 @@ impl Instruction {
             | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
             | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags { .. }
             | Instruction::TrashCards(..) | Instruction::MaintainChoice { .. } | Instruction::MustTrashAccessedCard { .. }
+            | Instruction::RedirectImminentTrash { .. }
             | Instruction::EndTheRun | Instruction::JackOut | Instruction::AccessCards { .. }
             | Instruction::AdditionalAccesses(..)
             | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)
@@ -2788,6 +2814,16 @@ impl TargetFilter {
 pub enum TrashDestination {
     /// CR 4.9: the removed-from-game zone (Skorpios class).
     RemovedFromGame,
+    /// CR 4.2.3 + 8.7.3: the card's OWNER's deck, shuffled in (Marilyn
+    /// Campaign's "shuffle it into R&D"). The deck is ordered and a card
+    /// entering it takes no stated position, so the shuffle is part of the
+    /// destination rather than a second effect after it — which is also what
+    /// makes 1.12.3 apply: the card enters a hidden zone at an unknown
+    /// location and is a new object there.
+    ///
+    /// The owner is read from the card, exactly as the discard-pile default
+    /// is: the destination names a KIND of zone and the card says whose.
+    ShuffledIntoOwnersDeck,
     /// CR 8.1.4/8.1.4d: the installed Runner card is turned facedown and
     /// stays where it is — "a Runner card turned facedown is not considered
     /// to be uninstalled and simply remains in the play area" (Harbinger

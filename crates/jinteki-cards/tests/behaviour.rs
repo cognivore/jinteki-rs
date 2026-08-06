@@ -17808,7 +17808,7 @@ fn lakshmi_smartfabrics_counts_its_own_rez_and_every_other() {
 fn marilyn_campaign_loads_eight_credits_when_it_is_rezzed_and_not_before() {
     for rez_it in [false, true] {
         let mut vm = Vm::empty(9122);
-        let mc = tk::install_root(&mut vm, card_partial("Marilyn Campaign"), ServerId::Remote(1), false);
+        let mc = tk::install_root(&mut vm, card("Marilyn Campaign"), ServerId::Remote(1), false);
         tk::fill_deck(&mut vm, Side::Corp, 8);
         tk::fill_deck(&mut vm, Side::Runner, 5);
         vm.st.corp.credits = 5;
@@ -17852,7 +17852,7 @@ fn marilyn_campaign_loads_eight_credits_when_it_is_rezzed_and_not_before() {
 fn marilyn_campaign_pays_two_a_turn_and_trashes_itself_when_empty() {
     for (start_credits, left, trashed) in [(8u32, 6u32, false), (2u32, 0u32, true)] {
         let mut vm = Vm::empty(9123);
-        let mc = tk::install_root(&mut vm, card_partial("Marilyn Campaign"), ServerId::Remote(1), true);
+        let mc = tk::install_root(&mut vm, card("Marilyn Campaign"), ServerId::Remote(1), true);
         let o = vm.st.objects.get_mut(&mc).unwrap();
         o.counters.insert(CounterKind::Credit, start_credits);
         o.loaded_kinds.insert(CounterKind::Credit);
@@ -17889,6 +17889,81 @@ fn marilyn_campaign_pays_two_a_turn_and_trashes_itself_when_empty() {
                 t.tail(16)
             );
         }
+    }
+}
+
+/// Marilyn Campaign: "[interrupt] → When this asset would be trashed, you may
+/// shuffle it into R&D instead of adding it to Archives. (It is still
+/// considered trashed.)"
+///
+/// The trash the sentence is really about is the Runner paying its trash cost
+/// on access (7.1.5), so that is the board: the Runner runs the remote,
+/// accesses the rezzed asset and trashes it, and the Corp answers the
+/// interrupt.
+///
+/// Three things at once. Taking the interrupt puts the card in R&D and not in
+/// Archives; DECLINING it leaves the printed default alone, which is the half
+/// a mandatory 9.9.8b static could not express; and 8.2.2 holds either way —
+/// the card is still trashed, the movement is still recorded, so a condition
+/// about this card being trashed is met on both arms. The deck's size is
+/// asserted too: "shuffle it INTO R&D" adds a card there, it does not merely
+/// take one away from Archives.
+#[test]
+fn marilyn_campaign_may_be_shuffled_into_rnd_instead_of_going_to_archives() {
+    for take_it in [true, false] {
+        let mut vm = Vm::empty(9124);
+        let mc = tk::install_root(&mut vm, card("Marilyn Campaign"), ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        vm.st.corp.credits = 5;
+        vm.st.runner.credits = 9;
+        vm.start_turn(Side::Runner);
+        let deck_before = vm.st.deck[&Side::Corp].len();
+
+        // Declining is the plain fallback: 9.6.9c lets the Corp pass the
+        // interrupt window, and passing is what the neutral policy does.
+        let corp = if take_it {
+            Plan::corp().when(Match::interrupt(), Reply::take("marilyn"))
+        } else {
+            Plan::corp()
+        };
+        let t = plan::play(
+            &mut vm,
+            corp,
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .trashes_on_access()
+                .stop_at_action(),
+        );
+
+        // 1.12.3: a card entering a deck is a NEW object, so the old id is
+        // gone from the object table's installed zones — the card is found by
+        // counting R&D rather than by asking where the trashed object went.
+        assert_eq!(
+            vm.st.deck[&Side::Corp].len(),
+            deck_before + usize::from(take_it),
+            "4.2.3: taking the interrupt SHUFFLES IT IN — R&D gains a card, it \
+             is not merely spared Archives (take_it={take_it}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.discard[&Side::Corp].contains(&mc),
+            !take_it,
+            "…and declining leaves the printed default, which is what a \
+             mandatory static replacement could never say (take_it={take_it}): {}",
+            t.tail(30)
+        );
+        assert!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == mc)),
+            "8.2.2: the card is still trashed either way — only where it lands \
+             changes, which is what the printed parenthetical says \
+             (take_it={take_it}): {}",
+            t.tail(30)
+        );
     }
 }
 

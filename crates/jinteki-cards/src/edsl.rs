@@ -3567,6 +3567,28 @@ pub fn link_at_least(n: u32) -> TriggerRequirement {
 pub fn agenda_points_at_least(side: Side, points: i32) -> TriggerRequirement {
     TriggerRequirement::AgendaPointsAtLeast { side, points }
 }
+/// "[interrupt] → When this card **would be trashed** …" (Marilyn Campaign;
+/// CR 9.9.1 + 9.9.4c). The interrupt trigger for the source's own trash:
+/// relevant while the source is among the imminent instruction's expected
+/// trashes, and unmet by a trash no instruction made imminent.
+pub fn this_card_would_be_trashed() -> TriggerCond {
+    jinteki_cr::ability::TriggerCond::SelfWouldBeTrashed
+}
+/// "…**shuffle it into R&D instead of adding it to Archives**." (Marilyn
+/// Campaign; CR 9.9.8a + 8.2.2 + 4.2.3.) The imminent trash still happens and
+/// is still recorded — 8.2.2, and the card's own parenthetical says so — and
+/// only where the named cards land changes. 4.2.3 makes a deck ordered, so a
+/// card entering it with no stated position goes in by a shuffle.
+///
+/// The printed "you may" is NOT part of this: it belongs to the interrupt
+/// carrying it (`may_interrupt`), which is where every other optional
+/// conditional keeps it.
+pub fn shuffle_into_owners_deck_instead_of_trashing(cards: TargetSpec) -> Instruction {
+    Instruction::RedirectImminentTrash {
+        cards,
+        to: TrashDestination::ShuffledIntoOwnersDeck,
+    }
+}
 /// "…whenever the Corp would resolve a subroutine, instead they resolve
 /// \"[subroutine] …\"." (Tsakhia "Bankhar" Gantulga; CR 9.8.9 / 9.9.8b.) The
 /// declaration replaces the imminent subroutine with the stated one and

@@ -463,8 +463,7 @@ pub fn lakshmi_smartfabrics() -> Card {
 ///  R&D instead of adding it to Archives. (It is still considered
 ///  trashed.)"
 ///
-/// PARTIAL: the campaign pays out and empties itself; the escape into R&D is
-/// marked.
+/// COMPLETE. Four printed sentences, four abilities.
 ///
 /// The first printed line is two sentences and two abilities, which is what
 /// Daily Casts already is on the Runner's side of the table — LOADING (1.9.4)
@@ -479,16 +478,22 @@ pub fn lakshmi_smartfabrics() -> Card {
 /// bank: the credits move from the card into the pool, which is why the card
 /// runs out. An asset holding only 1 gives the 1 it has.
 ///
-/// UNIMPLEMENTED: the interrupt. It is a 9.9.8a replacement of where a trash
-/// puts the card, and the kernel replaces a trash destination in exactly one
-/// shape — a static declaration, mandatory, naming the removed-from-game zone
-/// or a facedown card in play. Marilyn needs the destination to be a deck and
-/// needs the replacement to be one the Corp MAY decline, and neither is
-/// content on the word that exists. Writing it with what is there would make
-/// every trash of this card a shuffle whether the Corp wanted it or not; 8.2.2
-/// is the part both readings must keep, and the parenthetical restates it —
-/// the card is still trashed, only where it lands changes. The general
-/// capability wanted is on MEZZIE-QUEUE.md's Blockers.
+/// The interrupt is 9.9.8a: an interrupt that introduces a replacement effect
+/// for the instruction already imminent, applied the moment it resolves
+/// (9.9.10). What it replaces is only the DESTINATION — 8.2.2 keeps the trash
+/// a trash, records it, and leaves every "is trashed" condition met, which is
+/// exactly what the printed parenthetical says out loud. The destination is
+/// the Corp's own deck, shuffled in, because 4.2.3 makes a deck ordered and a
+/// card entering it with no stated position goes in by a shuffle.
+///
+/// The "you may" is the interrupt's own optionality (9.6.9c), which is what
+/// rules out writing this as `StaticDecl::ReplaceTrashDestination`: 9.9.8b's
+/// static applies of its own accord and would shuffle this card away whether
+/// the Corp wanted it or not.
+///
+/// It applies to EVERY trash with an imminence, which is what makes the card
+/// worth playing: the Runner paying its trash cost on access is the trash the
+/// sentence is really about.
 pub fn marilyn_campaign() -> Card {
     card("Marilyn Campaign")
         .corp()
@@ -506,7 +511,11 @@ pub fn marilyn_campaign() -> Card {
         .named("empty, so gone")
         .when(turn_begins(Corp), [take_hosted_credits(this_card(), 2, Corp)])
         .named("two a turn")
-        .unimplemented("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)")
+        .may_interrupt(
+            this_card_would_be_trashed(),
+            [shuffle_into_owners_deck_instead_of_trashing(this_card())],
+        )
+        .named("into R&D instead of Archives")
         .build()
 }
 
