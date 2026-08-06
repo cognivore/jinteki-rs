@@ -663,6 +663,12 @@ pub enum CharOp {
     /// after any effect setting the value.
     IncreaseAgendaPoints(i32),
     DecreaseAgendaPoints(i32),
+    /// CR 9.12.1a FIRST stage said of agenda points: "…it **is worth 0**
+    /// agenda points" (Project Vacheron). The value is set, and the
+    /// increases and decreases above still apply on top of it — which is the
+    /// ordering the rule states and the reason this is a stage rather than a
+    /// subtraction of the printed value.
+    SetAgendaPoints(i32),
     /// 9.12.1b add/remove by counting.
     AddSubtype(crate::subtype::Subtype),
     RemoveSubtype(crate::subtype::Subtype),
@@ -681,6 +687,12 @@ pub enum CharOp {
     /// of `RemoveAllAbilities`, and the reason an object's abilities are a
     /// LIST computed by the pipeline rather than a mask over the printed one.
     CopyAbilitiesFrom(ObjectId),
+    /// CR 9.1.9b / 9.12.1: "…and gains \"<one ability>\"." (Project
+    /// Vacheron.) The stated ability is added to this object's abilities, the
+    /// way `CopyAbilitiesFrom` adds another card's — the difference is only
+    /// where the text came from, so both land in the same list and 9.1.9a's
+    /// "lose all abilities" reaches both.
+    GainStatedAbility(Box<crate::ability::AbilityDef>),
 }
 
 /// A characteristic-affecting effect gathered from the board.
@@ -835,6 +847,16 @@ fn compute_effective_inner(
     // stages. Only a card that has one at all can have it modified.
     cite!("rule_agenda_points_location");
     cite!("rule_agenda_points_citation");
+    // 9.12.1a's FIRST stage, in its own pass: "it is worth 0 agenda points"
+    // SETS the value, and the increases and decreases below then apply on top
+    // of it. Two sentences setting it at once is 9.12.1a's own case — both
+    // apply, so the last one read wins and neither is a modification of the
+    // other, exactly as `MaxHandSizeIs` records.
+    for e in &on_target {
+        if let CharOp::SetAgendaPoints(v) = e.op {
+            eff.agenda_points = Some(v);
+        }
+    }
     for e in &on_target {
         match e.op {
             CharOp::IncreaseAgendaPoints(v) => {
@@ -888,6 +910,15 @@ fn compute_effective_inner(
     cite!("rule_determine_actual_abilities");
     cite!("rule_gaining_losing_abilities");
     visiting.insert(target);
+    // 9.1.9b: an ability the sentence SPELLS OUT joins the same list as one
+    // copied from another card — both are abilities the object has.
+    for e in &on_target {
+        if let CharOp::GainStatedAbility(def) = &e.op {
+            let mut d = (**def).clone();
+            d.granted = true;
+            eff.gained_abilities.push(d);
+        }
+    }
     for e in &on_target {
         if let CharOp::CopyAbilitiesFrom(from) = e.op {
             if !objects.contains_key(&from) {
@@ -906,7 +937,10 @@ fn compute_effective_inner(
                     .chain(f.gained_abilities.iter().cloned())
                     .collect()
             };
-            eff.gained_abilities.extend(gained);
+            eff.gained_abilities.extend(gained.into_iter().map(|mut d| {
+                d.granted = true;
+                d
+            }));
         }
     }
     visiting.remove(&target);

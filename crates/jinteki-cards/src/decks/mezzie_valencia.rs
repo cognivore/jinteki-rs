@@ -95,22 +95,31 @@ pub fn blackmail() -> Card {
 ///  As an additional cost to rez non-ice cards, the Corp must randomly trash
 ///  a card from HQ."
 ///
-/// PARTIAL — the current's own sentence is expressed and the tax is not.
+/// COMPLETE. Two printed sentences, two declarations.
 ///
 /// The first sentence is 8.6.6c said the way Employee Strike says it: 3.7.1b
 /// prints the current EVENT's ending occurrences, and the pair — another
 /// current played, or an agenda scored — is content on one declaration rather
 /// than two.
 ///
-/// The second is a 1.16.10 ADDITIONAL COST, and additional costs in the kernel
-/// are either a fact printed on the card being paid for (`.additional_rez_cost`,
-/// which is Archer's "to rez THIS card") or one of the three declarations that
-/// tax an act by description — stealing, accessing, and the basic run action.
-/// Rezzing a DESCRIBED card ("non-ice cards") is none of them, and the payment
-/// this one asks for is not credits: it is a random trash out of HQ, which
-/// `Instruction::TrashRandomFromHand` performs as an effect but which no `Cost`
-/// component can charge. Written with the credit-cost words it would tax the
-/// wrong resource by the wrong amount, so it is marked.
+/// The second is a 1.16.10 ADDITIONAL COST stated about an ACT and the cards
+/// that act reaches — "to rez non-ice cards" — which is the same shape the
+/// declarations taxing stealing, accessing and the basic run action already
+/// have, with 8.1.2's rez as the act and the description in the shared filter
+/// vocabulary. "Non-ice" is one negated description word, so 1.15.2c's
+/// installed-cards default is untouched and the tax reaches assets, upgrades
+/// and agendas alike.
+///
+/// The payment is not credits. "Randomly trash a card from HQ" takes a card
+/// out of the Corp's hand that NOBODY chooses: 1.15.2b puts a target choice
+/// to a player, and a random pick takes it away from both, which is what
+/// makes it a component of its own rather than the announced trash of the
+/// same shape.
+///
+/// 1.16.1 is where the card gets its teeth, and it is the half a credit cost
+/// could never say: an empty HQ cannot pay a card, and 1.16.10b makes the
+/// rez cost and this one ONE payment — so a Corp with no cards in HQ cannot
+/// rez a non-ice card at all, and the rez is never even offered (1.16.1b).
 pub fn hacktivist_meeting() -> Card {
     card("Hacktivist Meeting")
         .runner()
@@ -120,8 +129,13 @@ pub fn hacktivist_meeting() -> Card {
         .cost(1)
         .text("This card is not trashed until another current is played or an agenda is scored.")
         .text("As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ.")
-        .declares([not_trashed_until_an_agenda_is_scored()])
-        .unimplemented("As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ.")
+        .declares([
+            not_trashed_until_an_agenda_is_scored(),
+            additional_cost_to_rez(
+                &[non(of_type(CardType::Ice))],
+                randomly_trash_cards_from_hand(1),
+            ),
+        ])
         .build()
 }
 
@@ -739,7 +753,8 @@ pub fn same_old_thing() -> Card {
 ///  chosen server, whenever the Corp would resolve a subroutine, instead they
 ///  resolve \"[subroutine] Do 1 net damage.\"."
 ///
-/// PARTIAL — the choice is expressed; the replacement is marked.
+/// COMPLETE. Two printed sentences: a conditional ability that remembers a
+/// choice, and a static ability gated on the encounter that choice describes.
 ///
 /// "You may choose a server" is 9.10.3's MAINTAINED CHOICE — an ordinary
 /// 1.15.2 announcement whose value the card remembers for as long as it is
@@ -748,19 +763,26 @@ pub fn same_old_thing() -> Card {
 /// "You may" is the optionality on the conditional ability, so a Runner who
 /// wants last turn's server to stay chosen simply declines.
 ///
-/// The second sentence's MECHANISM exists: `StaticDecl::ReplaceSubroutineResolution`
-/// is 9.9.2's "instead of <the effect>, <these instructions>" said of a
-/// subroutine, which is the right shape for a sentence that swaps what the
-/// Corp resolves without touching whether they resolve it (9.8.9: the
-/// replacement still resolves from the ice, so it is still a subroutine
-/// resolving). What cannot be said is WHEN it applies. The declaration is
-/// either always on or gated by `declares_while`'s state requirements, and
-/// this card's gate is an ENCOUNTER (6.5) matching a description — with ice
-/// protecting the remembered server — carrying an ORDINAL, "the first
-/// encounter each turn". No requirement asks about the encounter in progress,
-/// and no static ability carries an ordinal at all. An always-on declaration
-/// would rewrite every subroutine on every server for the whole game, which is
-/// the largest possible over-reach, so the sentence is marked.
+/// The second sentence is 9.9.2's "instead of <the effect>, <these
+/// instructions>" said of a SUBROUTINE. It swaps what the Corp resolves and
+/// touches nothing about whether they resolve it: 9.8.9 keeps the replacement
+/// "treated as having the same source as the original imminent subroutine",
+/// so it resolves from the ice and a Persephone-class condition still sees a
+/// subroutine resolve.
+///
+/// Everything else in that sentence is the SCOPE, and the scope is the card.
+/// "During the first encounter each turn with a piece of ice protecting the
+/// chosen server" is one stated condition (9.3.7a) asking three things at
+/// once: that an encounter is under way (6.5), that its ice is in a position
+/// protecting the remembered server (4.6.9a + 9.10.3), and that no earlier
+/// encounter this turn was with such a piece of ice. Written without it the
+/// declaration would rewrite every subroutine on every server for the whole
+/// game.
+///
+/// The ordinal counts ENCOUNTERS and not applications, which is what makes a
+/// second piece of ice protecting the chosen server bite normally in the same
+/// turn — and 9.4.1 is why it cannot be a once-per-turn flag: a static
+/// ability never resolves, so it never spends one.
 pub fn tsakhia_bankhar_gantulga() -> Card {
     card("Tsakhia \"Bankhar\" Gantulga")
         .runner()
@@ -783,7 +805,13 @@ pub fn tsakhia_bankhar_gantulga() -> Card {
             }],
         )
         .named("choose a server for the turn")
-        .unimplemented("During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve \"[subroutine] Do 1 net damage.\".")
+        .declares_while(
+            &[during_the_first_encounter_each_turn_with(&[
+                of_type(CardType::Ice),
+                protecting_the_server_chosen_as("bankhar server"),
+            ])],
+            [replaces_each_subroutine_with([net_damage(Corp, 1)])],
+        )
         .build()
 }
 

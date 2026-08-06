@@ -2406,10 +2406,19 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, sym_label(l), DecisionAnswer::Option(i));
             }
         }
-        DecisionSpec::NestedCost { cost } => {
-            p.msg = format!("Pay {}? (9.11.4f)", cost_label(cost));
-            push(&mut p, "Pay".into(), DecisionAnswer::PayNestedCost(true));
-            push(&mut p, "Decline".into(), DecisionAnswer::PayNestedCost(false));
+        DecisionSpec::NestedCost { costs } => {
+            // One way out is 9.11.4f's plain "Pay?"; several are 1.16.11b's
+            // "either … or …", and then each door is its own button, named
+            // by what it costs. Only the doors the payer can walk through
+            // reach here (1.16.1), so every button offered is payable.
+            let all = costs.iter().map(cost_label).collect::<Vec<_>>().join(" or ");
+            p.msg = format!("Pay {all}? (9.11.4f)");
+            for (i, c) in costs.iter().enumerate() {
+                let label =
+                    if costs.len() == 1 { "Pay".to_string() } else { format!("Pay {}", cost_label(c)) };
+                push(&mut p, label, DecisionAnswer::PayNestedCost(Some(i)));
+            }
+            push(&mut p, "Decline".into(), DecisionAnswer::PayNestedCost(None));
         }
         DecisionSpec::OptionalEffect { label } => {
             p.msg = sym_label(label);

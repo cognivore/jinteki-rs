@@ -1170,6 +1170,44 @@ pub enum TriggerRequirement {
     /// after "+X strength" has already resolved. Written as the flag, the
     /// card could never pump itself up to a barrier it did not already match.
     CanInterfaceWithEncounteredIce { required_subtype: Option<crate::subtype::Subtype> },
+    /// CR 6.5: "**During the first encounter each turn with a piece of ice
+    /// protecting the chosen server**, …" (Tsakhia "Bankhar" Gantulga) — a
+    /// question about the ENCOUNTER IN PROGRESS, asked in the shared
+    /// requirement vocabulary so a static ability and a conditional one
+    /// state it with the same words.
+    ///
+    /// Not [`TriggerRequirement::CanInterfaceWithEncounteredIce`], which is
+    /// 3.9.5g's strength gate wearing a subtype and never asks whether an
+    /// encounter is under way at all.
+    ///
+    /// Both stipulations the printed sentence can make are content on the one
+    /// requirement (§12 rule 2):
+    ///
+    /// * `criteria` describes the ENCOUNTERED ICE in the shared filter
+    ///   vocabulary — "a piece of ice protecting the chosen server", "a code
+    ///   gate", or nothing at all, which is a sentence saying plain "during
+    ///   an encounter". 6.1.4 lets a card be encountered while uninstalled,
+    ///   so a description naming a position leaves that case out by
+    ///   construction, exactly as it should.
+    /// * `first_each_turn` is the printed ORDINAL, and it counts ENCOUNTERS
+    ///   rather than applications: the requirement holds only while the
+    ///   encounter under way is the first one this turn whose ice the
+    ///   criteria reach. It is read from the change log (10.2.1 makes the
+    ///   history open information), the way
+    ///   [`StaticDecl::InherentCostMod`]'s field of the same name is, and
+    ///   for the same reason — 9.4.1 says a static ability never resolves, so
+    ///   9.3.6g's once-per-turn flag could never be what such a sentence
+    ///   means.
+    ///
+    ///   The count asks the criteria of each earlier encounter's ice AS IT IS
+    ///   NOW. That is exact for every description this vocabulary can write
+    ///   about a card's own characteristics, and an approximation only for
+    ///   one about a position the ice has since left — no printed card in
+    ///   either deck distinguishes them.
+    ///
+    /// `false` is a sentence printing no ordinal, which is what every
+    /// "during an encounter" card without one says.
+    EncounterUnderWay { criteria: Vec<crate::instr::TargetFilter>, first_each_turn: bool },
     /// CR 6.9.2b: "…**after an approach during which that ice was rezzed**"
     /// (Nasir Meidan). A 9.6.5c requirement listed inside an encounter
     /// condition, asked of the approach the encounter directly follows: the
@@ -1268,6 +1306,22 @@ pub enum StaticCond {
     /// trigger condition, so a static ability and a conditional one say
     /// "while the Runner is tagged" with the same words.
     StateRequirement(Vec<TriggerRequirement>),
+    /// CR 9.3.7a: "While this agenda is in the Runner's score area **with 1 or
+    /// more hosted agenda counters**, …" (Project Vacheron) — ONE stated
+    /// condition with several clauses, all of which must hold.
+    ///
+    /// The alternatives above are what a sentence can say about the source or
+    /// about the game; a sentence saying both is not two abilities (9.11.3
+    /// gives it one), so the conjunction is content on the one condition
+    /// rather than a variant per pair. It nests, though no printed card in
+    /// either deck needs it to.
+    ///
+    /// 9.1.8b goes on reading the zone clause wherever it appears in the
+    /// list: an ability stating that it is active in a score area is active
+    /// there, and 4.5.4 leaves the agenda inactive without that statement —
+    /// so a conjunction whose zone clause were ignored would be an ability
+    /// that never runs at all, in the one zone it is about.
+    All(Vec<StaticCond>),
 }
 
 /// WHOSE the declaration speaks about, when a card can say either. "Your
@@ -1343,6 +1397,22 @@ pub struct Cost {
     /// KERNEL APPROXIMATION: which cards are trashed is not put to the payer
     /// (the front of the hand is taken); no example distinguishes them.
     pub trash_from_hand: u32,
+    /// CR 1.15.2b: "…**randomly** trash a card from HQ" as a cost (Hacktivist
+    /// Meeting class) — N cards taken at RANDOM out of the payer's hand.
+    ///
+    /// Not [`Cost::trash_from_hand`] with a different comment, and the
+    /// difference is the rule: a random pick is not an announcement — 1.15.2b
+    /// puts the choice to a player and this sentence takes it away from both,
+    /// which is exactly the distinction
+    /// [`crate::instr::Instruction::RevealRandomFromHand`] is written on.
+    /// `trash_from_hand` is the ANNOUNCED trash of that shape
+    /// (its own doc records the approximation that it takes the front of the
+    /// hand), and the front of a hand is not a card taken at random.
+    ///
+    /// 1.16.1: the component is payable only with at least that many cards in
+    /// the hand — a Corp with an empty HQ cannot pay it, and so cannot do the
+    /// thing it is an additional cost for.
+    pub trash_random_from_hand: u32,
     /// "Remove <this card> from the game:" as a trigger cost (Jackson class;
     /// 1.16.1 — the payment moves the source to the removed-from-game zone).
     pub remove_self_from_game: bool,
@@ -1353,7 +1423,13 @@ pub struct Cost {
     /// CR 1.9.2: "spend N <kind> counters hosted on this card" (Imp class).
     /// The counters come off the ability's SOURCE, which is what makes an
     /// empty card's ability unusable rather than free.
-    pub spend_counters: Option<(crate::object::CounterKind, u32)>,
+    ///
+    /// The amount is a QUANTITY position (§12 rule 6), exactly as
+    /// [`Cost::credits`] is: a printed number, a calculated amount, or
+    /// 1.16.2c's announced X ("**X** hosted power counters:", Lakshmi
+    /// Smartfabrics). Where it mentions X, the announcement is owed before
+    /// the cost is paid and 1.16.1a bounds it by what the source hosts.
+    pub spend_counters: Option<(crate::object::CounterKind, crate::instr::Quantity)>,
     /// CR 1.16.2c + 1.10.3c: "**Any** X <kind> counters:" (Freedom Khumalo)
     /// — neither half of [`Cost::spend_counters`]: the amount is a quantity
     /// position announced under 1.16.2c rather than a printed number, and
@@ -1420,9 +1496,30 @@ impl Cost {
     pub fn trash_from_hand(n: u32) -> Self {
         Cost { trash_from_hand: n, ..Default::default() }
     }
+    /// CR 1.15.2b: "randomly trash N cards from your hand" as a cost.
+    pub fn trash_random_from_hand(n: u32) -> Self {
+        Cost { trash_random_from_hand: n, ..Default::default() }
+    }
     /// CR 1.9.2: "spend N hosted counters of a kind" as a cost.
     pub fn spend_counters(kind: crate::object::CounterKind, n: u32) -> Self {
-        Cost { spend_counters: Some((kind, n)), ..Default::default() }
+        Cost { spend_counters: Some((kind, crate::instr::Quantity::c(n as i64))), ..Default::default() }
+    }
+    /// CR 1.9.2 + 1.16.2c: "**X hosted <kind> counters:**" (Lakshmi
+    /// Smartfabrics) — the same component with the amount ANNOUNCED rather
+    /// than printed.
+    ///
+    /// It states no [`XBound`], and that is deliberate: `x_restriction` is
+    /// the restriction an ABILITY states on the value ("X must be equal to or
+    /// less than the number of tags the Runner has"), and this card states
+    /// none. What bounds the announcement is 1.16.1a — a cost must be payable
+    /// all at once — and for a counter component that is how many the SOURCE
+    /// hosts, which `Vm::x_bound` reads from the component itself. Writing it
+    /// as a stated restriction would put a rule of the game on the card.
+    pub fn spend_x_counters(kind: crate::object::CounterKind) -> Self {
+        Cost {
+            spend_counters: Some((kind, crate::instr::Quantity::AnnouncedX)),
+            ..Default::default()
+        }
     }
     /// CR 1.16.2c + 1.10.3c: "**Any** X <kind> counters: … X must be equal
     /// to <quantity>." (Freedom Khumalo.) The amount is X, announced by the
@@ -1490,9 +1587,10 @@ impl Cost {
             net_damage: self.net_damage + other.net_damage,
             lose_clicks: self.lose_clicks + other.lose_clicks,
             trash_from_hand: self.trash_from_hand + other.trash_from_hand,
+            trash_random_from_hand: self.trash_random_from_hand + other.trash_random_from_hand,
             remove_self_from_game: self.remove_self_from_game || other.remove_self_from_game,
             trash_all_from_hand: self.trash_all_from_hand || other.trash_all_from_hand,
-            spend_counters: self.spend_counters.or(other.spend_counters),
+            spend_counters: self.spend_counters.clone().or_else(|| other.spend_counters.clone()),
             spend_counters_any_source: self
                 .spend_counters_any_source
                 .clone()
@@ -1635,6 +1733,25 @@ pub enum StaticDecl {
         then: Vec<crate::instr::Instruction>,
         until_removed_with_it_this_turn: bool,
     },
+    /// CR 9.1.9b / 9.10.2 / 9.12.1: "…and **gains \"When the Runner's turn
+    /// begins, remove 1 hosted agenda counter.\"**" (Project Vacheron) — the
+    /// source gains ONE ability the sentence spells out, for as long as this
+    /// static ability is active.
+    ///
+    /// The commonest form of a gain and the one the kernel had no word for:
+    /// [`StaticDecl::GainSubroutines`] grants a stated SUBROUTINE and
+    /// [`StaticDecl::GainAbilitiesOf`] copies another card's whole text, and
+    /// between them there was no way to say a stated ability of any other
+    /// class. It carries an [`AbilityDef`] exactly as `GainSubroutines`
+    /// carries its subroutine, so "gains '[subroutine] End the run.'",
+    /// "gains 'When your turn begins, gain 1[credit].'" and a granted paid
+    /// ability are one declaration with different content.
+    ///
+    /// The gained ability is the SOURCE's (9.1.9b: an object's abilities
+    /// include the ones it gained), so "this card" inside it means the card
+    /// that gained it — which for Vacheron is what makes "remove 1 hosted
+    /// agenda counter" remove one of its own.
+    GainsStatedAbility(Box<AbilityDef>),
     /// CR 9.8.9 / 9.9.8b: while this static ability is active, an imminent
     /// subroutine is replaced by the stated one (Tsakhia "Bankhar" Gantulga
     /// class). "The replaced subroutine is treated as having the same source
@@ -1950,6 +2067,29 @@ pub enum StaticDecl {
     /// "As an additional cost to access a card in the root of a remote
     /// server, pay N." (Gagarin class — 7.4.3 example 2.)
     AdditionalAccessCost(Cost),
+    /// CR 1.16.10 / 8.1.2: "As an additional cost to rez **non-ice cards**,
+    /// the Corp must randomly trash a card from HQ." (Hacktivist Meeting
+    /// class.)
+    ///
+    /// 1.16.10's additional costs come in two shapes. One is a fact printed
+    /// on the card being paid for — [`crate::object::PrintedCard::
+    /// additional_rez_cost`], Archer's "as an additional cost to rez THIS
+    /// card". The other is a declaration taxing an ACT, of which the kernel
+    /// has one per act because each names a different procedure with its own
+    /// scope vocabulary and its own payment site: stealing (1.17.3d),
+    /// accessing (7.4.3), the basic run action (6.3.4), a basic action by
+    /// its target (5.2.5a) — and now 8.1.2's rez.
+    ///
+    /// `criteria` is the sentence's stipulation about the card being rezzed,
+    /// in the shared filter vocabulary (§12 rule 5), so "non-ice cards",
+    /// "ice" and a sentence naming no cards at all are one declaration with
+    /// different content. An EMPTY list taxes every rez, which is what a
+    /// sentence saying plain "to rez cards" means.
+    ///
+    /// 1.16.1b is what makes it bite rather than merely charge: the combined
+    /// cost has to be payable for the rez to be OFFERED at all, so a Corp who
+    /// cannot pay it cannot rez the described cards.
+    AdditionalRezCost { criteria: Vec<crate::instr::TargetFilter>, cost: Cost },
     /// "You may pay <cost> to lower the install cost of a card you are
     /// installing by N." (Patchwork class; 1.16.6 install costs.) The
     /// reduction is only available while its own cost is payable, which is
@@ -2039,7 +2179,18 @@ pub enum StaticDecl {
     /// "1 more for each hosted agenda counter" is the same declaration as a
     /// flat "1 more", and "1 fewer" is a negative quantity
     /// (`Quantity::Minus`).
-    SelfAgendaPointsMod(crate::instr::Quantity),
+    ///
+    /// `set` is 9.12.1a's STAGE, and it is the difference between "worth 1
+    /// fewer" and "**it is worth 0** agenda points" (Project Vacheron): the
+    /// first is the third stage, applied after everything else, and the
+    /// second is the FIRST — the value is set, and any modification still
+    /// applies on top of it, which is the ordering 9.12.1a states and the
+    /// only reason the two can be one declaration. Subtracting the printed
+    /// value instead only lands on 0 while nothing else is modifying it.
+    ///
+    /// `false` at every site written before the stage existed, which is what
+    /// every "worth N more/fewer" sentence says.
+    SelfAgendaPointsMod { amount: crate::instr::Quantity, set: bool },
     /// CR 1.7.2a / 1.17.2: "Each player needs 1 fewer agenda point to win the
     /// game." (Harmony Medtech.) "For each hosted power counter, you need 1
     /// less agenda point to win the game." (Issuaq Adaptics.)
@@ -2298,6 +2449,22 @@ pub fn ability_source_model() {
 /// One ability as printed/granted: the unit of rules text (9.1.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityDef {
+    /// CR 9.1.9b + 9.1.8b: this ability was GAINED — an active ability of
+    /// some card put it here through the 9.12.1d/e pipeline, rather than its
+    /// being printed on the object.
+    ///
+    /// It is what 9.1.8b's second sentence needs to be askable: an ability
+    /// that exists only while its grant does "can only ever meet its
+    /// conditions" where the grant reaches, so it is active there — Project
+    /// Vacheron's granted "when the Runner's turn begins" is on an agenda in
+    /// the Runner's score area, which 4.5.4 leaves inactive, and the grant
+    /// itself is what states otherwise. The pipeline recomputes the gain
+    /// continuously, so an ability that is present is one whose grantor is
+    /// active by construction.
+    ///
+    /// `false` on every printed ability; the pipeline sets it where it adds
+    /// one, and nothing in the card layer writes it.
+    pub granted: bool,
     pub kind: AbilityKind,
     pub flags: Vec<AbilityFlag>,
     /// Conditional abilities: the primary condition (9.6.1).
@@ -2389,7 +2556,7 @@ impl AbilityDef {
     }
 
     pub fn conditional(cond: TriggerCond, instrs: Vec<Instruction>, optional: bool) -> Self {
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: Some(Condition::Trigger(cond)),
@@ -2405,7 +2572,7 @@ impl AbilityDef {
 
     pub fn paid(cost: Cost, instrs: Vec<Instruction>) -> Self {
         // CR 9.5.3: paid abilities are always optional.
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Paid,
             flags: Vec::new(),
             condition: None,
@@ -2423,7 +2590,7 @@ impl AbilityDef {
     /// resolves as the card is played (step 8.6.7f).
     pub fn play(instrs: Vec<Instruction>) -> Self {
         cite!("rule_play_ability");
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -2438,7 +2605,7 @@ impl AbilityDef {
     }
 
     pub fn subroutine(instrs: Vec<Instruction>) -> Self {
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Subroutine,
             flags: Vec::new(),
             condition: None,
@@ -2453,7 +2620,7 @@ impl AbilityDef {
     }
 
     pub fn static_ability(statics: Vec<StaticDecl>) -> Self {
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Static,
             flags: Vec::new(),
             condition: None,
@@ -2744,8 +2911,28 @@ pub fn ability_active(
     // otherwise" in person: an agenda in the Runner's score area is inactive,
     // and Merger's "…while it is in the Runner's score area" is the statement
     // that makes its one ability an exception.
-    if let Some(Condition::Static(StaticCond::SourceInScoreAreaOf(side))) = &def.condition {
-        if obj.zone == crate::object::Zone::ScoreArea(*side) {
+    // 9.1.8b's SECOND sentence — "abilities that can only ever meet their
+    // conditions in a particular zone are active in that zone" — said of an
+    // ability the object GAINED. A gained ability exists only while the
+    // ability that grants it is active, and the 9.12.1d/e pipeline recomputes
+    // that continuously, so an ability that is present at all is one whose
+    // grantor is active: the zone it can meet its conditions in is exactly
+    // the zone the grant reaches. Without this, Project Vacheron's granted
+    // "when the Runner's turn begins" would sit on an agenda 4.5.4 leaves
+    // inactive and never fire, and the grant would be a sentence that does
+    // nothing.
+    if def.granted {
+        cite!("rule_active_exception_catchall");
+        cite!("rule_determine_actual_abilities");
+        return true;
+    }
+    // …and 9.1.8b's FIRST sentence is read wherever its clause APPEARS,
+    // including inside a 9.3.7a conjunction: "while this agenda is in the Runner's score area
+    // with 1 or more hosted agenda counters" states the zone exactly as
+    // Merger's shorter sentence does, and an ability inactive in the score
+    // area could never meet the rest of it.
+    if let Some(Condition::Static(sc)) = &def.condition {
+        if static_cond_states_zone(sc, obj) {
             return true;
         }
     }
@@ -2775,6 +2962,19 @@ pub fn ability_active(
 /// zone the requirement names is the zone it is active in. Only POSITIVE
 /// statements count: "anywhere except in Archives" names no zone to be active
 /// in.
+/// CR 9.1.8b's first sentence asked of a STATED condition: does it say the
+/// ability is active in the zone this card is actually in? Recursive over
+/// 9.3.7a's conjunction, because a clause states the zone wherever it sits.
+fn static_cond_states_zone(cond: &StaticCond, obj: &Object) -> bool {
+    match cond {
+        StaticCond::SourceInScoreAreaOf(side) => {
+            obj.zone == crate::object::Zone::ScoreArea(*side)
+        }
+        StaticCond::All(list) => list.iter().any(|c| static_cond_states_zone(c, obj)),
+        _ => false,
+    }
+}
+
 fn requirement_states_zone(req: &TriggerRequirement, obj: &Object) -> Option<Zone> {
     match req {
         TriggerRequirement::SourceInDiscard => Some(Zone::Discard(obj.owner)),

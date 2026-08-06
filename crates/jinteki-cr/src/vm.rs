@@ -2310,7 +2310,7 @@ impl Vm {
                     cite!("rule_candidates_already_accessed");
                     self.ask(
                         Side::Runner,
-                        DecisionSpec::NestedCost { cost: access_cost },
+                        DecisionSpec::NestedCost { costs: vec![access_cost] },
                         DecisionCtx::AccessCost(card),
                     );
                     return;
@@ -2380,7 +2380,7 @@ impl Vm {
                         // 1.16.10a: the Runner may pay or decline.
                         self.ask(
                             Side::Runner,
-                            DecisionSpec::NestedCost { cost: total },
+                            DecisionSpec::NestedCost { costs: vec![total] },
                             DecisionCtx::StealCost(card),
                         );
                     }
@@ -2520,8 +2520,21 @@ impl Vm {
                 }
                 match scope {
                     crate::lingering::ProhibitionScope::Object(t) => *t == card,
-                    crate::lingering::ProhibitionScope::Matching(criteria) => {
-                        self.description_reaches(o, criteria, l.source)
+                    crate::lingering::ProhibitionScope::Matching { criteria, copies_of } => {
+                        // 2.1.4: "copies of that card" is a question about the
+                        // NAME, asked of cards bound when the effect was
+                        // created — a conjunction with the re-read
+                        // description, and vacuous where the sentence bound
+                        // none.
+                        cite!("rule_card_name_definition");
+                        let a_copy = copies_of.is_empty()
+                            || copies_of.iter().any(|c| {
+                                self.st
+                                    .objects
+                                    .get(c)
+                                    .is_some_and(|r| r.printed.name == o.printed.name)
+                            });
+                        a_copy && self.description_reaches(o, criteria, l.source)
                     }
                 }
             }
@@ -3140,7 +3153,7 @@ impl Vm {
             .get(&c.source.obj)
             .map(|o| o.printed.name)
             .unwrap_or("if successful");
-        let def = AbilityDef { controller: None,
+        let def = AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: None,
@@ -3201,6 +3214,7 @@ impl Vm {
             .map(|o| o.printed.name)
             .unwrap_or("stated about that run");
         let def = AbilityDef {
+            granted: false,
             controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
@@ -3261,7 +3275,7 @@ impl Vm {
             .get(&p.source)
             .map(|o| o.printed.name)
             .unwrap_or("set-aside trash group");
-        let def = AbilityDef { controller: None,
+        let def = AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: None,
@@ -3340,7 +3354,7 @@ impl Vm {
             .get(&c.source.obj)
             .map(|o| o.printed.name)
             .unwrap_or("if the run would be declared successful");
-        let def = AbilityDef { controller: None,
+        let def = AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: vec![AbilityFlag::Interrupt],
             condition: Some(Condition::Trigger(TriggerCond::WouldDeclareRunSuccessful)),
@@ -3499,6 +3513,13 @@ impl Vm {
             StaticCond::StateRequirement(reqs) => {
                 cite!("rule_condition_requirements_part_of_effect");
                 reqs.iter().all(|r| self.state_requirement_holds_for(r, Some(obj)))
+            }
+            // 9.3.7a: one sentence, several clauses, all of which must hold —
+            // "while this agenda is in the Runner's score area WITH 1 or more
+            // hosted agenda counters".
+            StaticCond::All(list) => {
+                cite!("rule_conditional_ability_with_static_condition");
+                list.iter().all(|c| self.static_cond_holds(obj, c))
             }
         }
     }
@@ -3806,19 +3827,37 @@ impl Vm {
                                 }
                             }
                         }
-                        StaticDecl::SelfAgendaPointsMod(q) => {
-                            // 2.5 through 9.12.1a: an increase or a decrease
-                            // of the source's own agenda point value,
-                            // evaluated continuously like every other
-                            // characteristic modification (so Project Beale's
-                            // "for each hosted agenda counter" tracks the
-                            // counters it actually has).
-                            cite!("rule_agenda_points_citation");
-                            let n = self.eval_quantity(q, Some(o.id)) as i32;
+                        StaticDecl::GainsStatedAbility(def) => {
+                            // 9.1.9b: the source gains the ability the
+                            // sentence spells out, for as long as this static
+                            // is active — read through the same 9.12.1
+                            // pipeline every other gain is, so the checkpoint
+                            // scan and the paid-window scan both see it.
+                            cite!("rule_determine_actual_abilities");
+                            cite!("rule_gaining_losing_abilities");
                             out.push(CharEffect {
                                 source: o.id,
                                 target: o.id,
-                                op: if n >= 0 {
+                                op: CharOp::GainStatedAbility(def.clone()),
+                            });
+                        }
+                        StaticDecl::SelfAgendaPointsMod { amount, set } => {
+                            // 2.5 through 9.12.1a: the source's own agenda
+                            // point value, at the STAGE the sentence states —
+                            // set first, then increased, then decreased.
+                            // Evaluated continuously like every other
+                            // characteristic modification (so Project Beale's
+                            // "for each hosted agenda counter" tracks the
+                            // counters it actually has, and a value SET stays
+                            // set only until something modifies it).
+                            cite!("rule_agenda_points_citation");
+                            let n = self.eval_quantity(amount, Some(o.id)) as i32;
+                            out.push(CharEffect {
+                                source: o.id,
+                                target: o.id,
+                                op: if *set {
+                                    CharOp::SetAgendaPoints(n)
+                                } else if n >= 0 {
                                     CharOp::IncreaseAgendaPoints(n)
                                 } else {
                                     CharOp::DecreaseAgendaPoints(-n)
@@ -5722,6 +5761,32 @@ impl Vm {
         total
     }
 
+    /// CR 1.16.10 / 8.1.2: everything an 8.1.2d rez has to pay BESIDE the
+    /// inherent rez cost — the card's own printed additional cost (Archer's
+    /// "as an additional cost to rez this card") and every active
+    /// [`StaticDecl::AdditionalRezCost`] whose description reaches it
+    /// (Hacktivist Meeting's "to rez non-ice cards").
+    ///
+    /// One reader for both, at every rez, because 1.16.10b makes them ONE
+    /// all-at-once payment and 1.16.1b makes their sum the affordability
+    /// question. Before this existed the printed one was read on the
+    /// install-and-rez path alone, so an Archer rezzed from the ordinary (R)
+    /// option forfeited nothing.
+    pub fn additional_rez_cost_of(&self, card: ObjectId) -> Cost {
+        cite!("rule_additional_cost");
+        cite!("rule_additonal_cost_simultaenous");
+        let Some(o) = self.st.objects.get(&card) else { return Cost::free() };
+        let mut total = o.printed.additional_rez_cost.clone().unwrap_or_default();
+        for (src, d) in self.active_statics() {
+            if let StaticDecl::AdditionalRezCost { criteria, cost } = d {
+                if criteria.iter().all(|f| self.filter_matches(o, *f, Some(src))) {
+                    total = total.plus(&cost);
+                }
+            }
+        }
+        total
+    }
+
     /// The Noble Path class: a live prevent-all-damage lingering effect.
     fn damage_shield_active(&self) -> bool {
         self.lingering
@@ -6323,6 +6388,22 @@ impl Vm {
                         return true;
                     }
                 }
+                // 9.9.8a + 9.9.4c: an interrupt that REDIRECTS a trash is
+                // relevant while the trash it would redirect is among the
+                // imminent instruction's expected effects. The cards are
+                // resolved against the source, so "instead of adding IT to
+                // Archives" asks about the source's own trash.
+                Instruction::RedirectImminentTrash { cards, .. } => {
+                    cite!("rule_replacement_effect_relevant");
+                    let targets = self.resolve_targets(cards, Some(source), &[]);
+                    if atoms.iter().any(|a| {
+                        a.expected()
+                            && a.class == EffectClass::TrashCards
+                            && targets.iter().any(|t| a.targets.contains(t))
+                    }) {
+                        return true;
+                    }
+                }
                 _ => {}
             }
         }
@@ -6727,10 +6808,17 @@ impl Vm {
                             return;
                         }
                     }
-                    Instruction::NestedCostUnless { cost, effect, .. } => {
-                        let (payer, source) = self.nested_cost_payer(&instr);
-                        if !self.cost_payable(payer, source, cost) {
+                    Instruction::NestedCostUnless { costs, effect, .. } => {
+                        // 1.16.1: each way out is offered only if the payer
+                        // can pay it in FULL, so a sentence with two doors
+                        // ("either spend [click][click] or pay 5[credit]")
+                        // puts only the ones they can walk through — which
+                        // is 9.12.3c's rule about a choice among effects,
+                        // said about costs. With none of them payable there
+                        // is no choice to put at all.
+                        if self.payable_nested_costs(&instr, costs).is_empty() {
                             cite!("rule_cost_interrupt_static_mandatory");
+                            cite!("rule_mandatory_choice");
                             // Cannot pay: the "unless" effect is forced.
                             let eff = (**effect).clone();
                             let idx_now = {
@@ -6960,18 +7048,43 @@ impl Vm {
         let Some(Frame::Ability(af)) = self.frames.last() else {
             return (Side::Runner, ObjectId(0));
         };
-        let (cost, explicit) = match instr {
-            Instruction::NestedCostThen { cost, payer, .. }
-            | Instruction::NestedCostUnless { cost, payer, .. } => (cost, *payer),
+        let (costs, explicit): (&[Cost], _) = match instr {
+            Instruction::NestedCostThen { cost, payer, .. } => {
+                (std::slice::from_ref(cost), *payer)
+            }
+            Instruction::NestedCostUnless { costs, payer, .. } => (costs.as_slice(), *payer),
             _ => return (af.controller, af.source.obj),
         };
-        let payer = explicit.unwrap_or(if cost.tags > 0 || cost.net_damage > 0 {
-            // Tag/damage components are things the Runner suffers.
-            Side::Runner
-        } else {
-            af.controller
-        });
+        // One sentence names ONE payer, whichever of its doors they take, so
+        // the derivation asks the list: a tag or damage component anywhere in
+        // it is something the Runner suffers.
+        let payer = explicit.unwrap_or(
+            if costs.iter().any(|c| c.tags > 0 || c.net_damage > 0) {
+                // Tag/damage components are things the Runner suffers.
+                Side::Runner
+            } else {
+                af.controller
+            },
+        );
         (payer, af.source.obj)
+    }
+
+    /// CR 1.16.1: the ways out of a 1.16.11b nested cost that this payer can
+    /// actually take — "if a player cannot pay the full cost … they cannot
+    /// use the effect associated with that cost", asked of each alternative
+    /// in turn.
+    ///
+    /// The result is the list a [`DecisionSpec::NestedCost`] offers and the
+    /// list a [`DecisionAnswer::PayNestedCost`] indexes, so the two are the
+    /// same list by construction; an empty result means no choice is put at
+    /// all (9.12.3c's shape, said about costs).
+    fn payable_nested_costs(&self, instr: &Instruction, costs: &[Cost]) -> Vec<Cost> {
+        let (payer, source) = self.nested_cost_payer(instr);
+        costs
+            .iter()
+            .filter(|c| self.cost_payable(payer, source, c))
+            .cloned()
+            .collect()
     }
 
     /// CR 1.15.2: how many separate announcements this instruction requires
@@ -7432,10 +7545,19 @@ impl Vm {
                     DecisionSpec::ChooseCounters { candidates, count: n, up_to: *up_to },
                 ))
             }
-            Instruction::NestedCostThen { cost, .. }
-            | Instruction::NestedCostUnless { cost, .. } => {
+            Instruction::NestedCostThen { cost, .. } => {
                 let (payer, _) = self.nested_cost_payer(instr);
-                Some((payer, DecisionSpec::NestedCost { cost: cost.clone() }))
+                Some((payer, DecisionSpec::NestedCost { costs: vec![cost.clone()] }))
+            }
+            Instruction::NestedCostUnless { costs, .. } => {
+                // 1.16.1 has already forced the branch if none of them is
+                // payable, so what is offered here is a non-empty list of
+                // doors the payer can walk through.
+                let (payer, _) = self.nested_cost_payer(instr);
+                Some((
+                    payer,
+                    DecisionSpec::NestedCost { costs: self.payable_nested_costs(instr, costs) },
+                ))
             }
             // 9.6.9: the optional component's yes/no.
             Instruction::DeclineableChoice(_) => Some((
@@ -8359,6 +8481,25 @@ impl Vm {
             TargetFilter::IceProtectingAttackedServer => {
                 matches!((o.zone, self.current_run), (Zone::Ice(a), Some((_, b, _))) if a == b)
             }
+            // 4.6.9a: every installed piece of ice is in a position in
+            // front of the server it protects, so the criterion is the ice's
+            // zone compared against the named server — which may be one the
+            // card named outright or one 9.10.3 is remembering for its
+            // source.
+            TargetFilter::ProtectingServer(r) => {
+                cite!("rule_ice_ordered");
+                let want = match r {
+                    crate::instr::ServerRef::Server(s) => Some(s),
+                    crate::instr::ServerRef::MaintainedChoice(k) => {
+                        cite!("rule_lingering_effect_maintain_choice");
+                        source.and_then(|src| match self.maintained_choice(src, k) {
+                            Some(crate::lingering::ChoiceValue::Server(s)) => Some(s),
+                            _ => None,
+                        })
+                    }
+                };
+                matches!((o.zone, want), (Zone::Ice(a), Some(b)) if a == b)
+            }
             // 4.6.6b: the root AND the ice protecting it are both "in" the
             // server; 6.1.2 is which server that is while a run is on.
             TargetFilter::InAttackedServer => {
@@ -8628,6 +8769,26 @@ impl Vm {
             // copies of that card" reaches a copy of any of them. An
             // occurrence naming one card leaves a one-element list, which is
             // the same question The Foundry asks.
+            // 2.1.4 + 1.21.6: "copies of that agenda" — the same question
+            // asked of the cards this ability REVEALED rather than of the
+            // ones an occurrence named. The reveal's record is the frame's,
+            // which is where 1.21.6 keeps it for the rest of the resolution.
+            TargetFilter::SameNameAsRevealedByThisAbility => {
+                cite!("rule_card_name_definition");
+                cite!("rule_remain_visible");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(&af.revealed),
+                        _ => None,
+                    })
+                    .is_some_and(|rs| {
+                        rs.iter()
+                            .filter_map(|(id, _)| self.st.objects.get(id))
+                            .any(|r| r.printed.name == o.printed.name)
+                    })
+            }
             TargetFilter::SameNameAsTriggeringCard => {
                 cite!("rule_card_name_definition");
                 self.frames
@@ -8698,7 +8859,34 @@ impl Vm {
                     .subtypes
                     .contains(&s)
             }
-            TargetFilter::PrintedCostAtMost(n) => o.printed.cost.unwrap_or(0) <= n,
+            // 2.3 / 2.4.2 / 2.9: a numeric characteristic against a
+            // quantity. The quantity is evaluated HERE, with the ability's
+            // source in hand, so an announced X (1.16.2c) and a calculated
+            // bound are both re-read wherever the criterion is asked.
+            TargetFilter::CharacteristicIs { of, cmp, value } => {
+                let have: i64 = match of {
+                    crate::instr::CardCharacteristic::PrintedCost => {
+                        cite!("rule_printed_cost_definition");
+                        o.printed.cost.unwrap_or(0) as i64
+                    }
+                    crate::instr::CardCharacteristic::AgendaPoints => {
+                        cite!("rule_agenda_points_location");
+                        o.printed.agenda_points.unwrap_or(0) as i64
+                    }
+                    // 2.9 through the 9.12.1 pipeline: the value the card has
+                    // NOW, which is what every other strength reader uses.
+                    crate::instr::CardCharacteristic::Strength => {
+                        cite!("rule_strength_location");
+                        self.effective_strength(o.id).unwrap_or(0) as i64
+                    }
+                };
+                let want = self.eval_quantity(value, source);
+                match cmp {
+                    crate::instr::NumericCmp::AtMost => have <= want,
+                    crate::instr::NumericCmp::AtLeast => have >= want,
+                    crate::instr::NumericCmp::Exactly => have == want,
+                }
+            }
             TargetFilter::InScoreAreaOf(side) => {
                 cite!("rule_score_area");
                 o.zone == Zone::ScoreArea(side)
@@ -9745,6 +9933,49 @@ impl Vm {
                 log[start..]
                     .iter()
                     .any(|c| matches!(c, GameChange::CardInstalled { obj, .. } if *obj == src))
+            }
+            // CR 6.5: "during the first encounter each turn with a piece of
+            // ice protecting the chosen server" — is an encounter under way,
+            // is its ice the one the sentence describes, and is it the FIRST
+            // such encounter this turn?
+            R::EncounterUnderWay { criteria, first_each_turn } => {
+                cite!("rule_encounter_ice_phase");
+                let Some(e) = self.st.encounter.as_ref() else { return false };
+                let describes = |id: &ObjectId| {
+                    self.st
+                        .objects
+                        .get(id)
+                        .is_some_and(|o| criteria.iter().all(|f| self.filter_matches(o, *f, source)))
+                };
+                if !describes(&e.ice) {
+                    return false;
+                }
+                if !*first_each_turn {
+                    return true;
+                }
+                // 10.2.1: the history is open information, so the ordinal is
+                // read off it — and it counts ENCOUNTERS, not applications:
+                // the requirement holds while no EARLIER encounter this turn
+                // was with ice the criteria reach. The encounter's own id
+                // stops the walk, so a card encountered twice in one turn
+                // does not answer for both.
+                cite!("rule_open_information");
+                let log = &self.changes.log;
+                let start = log
+                    .iter()
+                    .rposition(|c| matches!(c, GameChange::TurnBegan { .. }))
+                    .unwrap_or(0);
+                for c in &log[start..] {
+                    if let GameChange::EncounterBegan { ice, encounter_id } = c {
+                        if *encounter_id == e.id {
+                            break;
+                        }
+                        if describes(ice) {
+                            return false;
+                        }
+                    }
+                }
+                true
             }
             R::RunnerTagsAtLeast(n) => {
                 // 10.5.2: "tagged" is a question about the number of tags
@@ -10821,8 +11052,13 @@ impl Vm {
                     } else {
                         a.targets.clone()
                     };
+                    // 9.9.8a: a card an interrupt spoke for goes where the
+                    // interrupt said (8.2.2 — it is still trashed); every
+                    // other card of the same trash goes where it would have.
+                    let redirects = a.trash_to.clone();
                     for t in targets {
-                        self.trash_card(t, controller);
+                        let to = redirects.iter().find(|(c, _)| *c == t).map(|(_, d)| *d);
+                        self.trash_card_to(t, controller, to);
                     }
                 }
             }
@@ -11056,8 +11292,17 @@ impl Vm {
                                         self.draw_cards(a.side, a.value.max(0) as u32, false)
                                     }
                                     EffectClass::TrashCards => {
+                                        // 9.9.8a: a card an interrupt spoke
+                                        // for goes where the interrupt said,
+                                        // and every other card of the same
+                                        // trash goes where it would have.
+                                        let redirects = a.trash_to.clone();
                                         for t in a.targets.clone() {
-                                            self.trash_card(t, controller);
+                                            let to = redirects
+                                                .iter()
+                                                .find(|(c, _)| *c == t)
+                                                .map(|(_, d)| *d);
+                                            self.trash_card_to(t, controller, to);
                                         }
                                     }
                                     EffectClass::EndTheRun => {
@@ -11242,6 +11487,28 @@ impl Vm {
                         self.do_damage(kind, a.value as u32, *responsible);
                     }
                 }
+            }
+            Instruction::RedirectImminentTrash { cards, to } => {
+                // CR 9.9.10: the replacement applies immediately when the
+                // interrupt resolves. 8.2.2: the trash still happens and is
+                // still recorded — the destination is all that changes, which
+                // is why the atom is modified rather than removed.
+                cite!("rule_replace_imminent_effects");
+                cite!("sec_replacing_movements");
+                let to = *to;
+                let targets = self.resolve_targets(cards, Some(source.obj), &imm.targets);
+                self.modify_parent_imminent(move |atom| {
+                    if atom.class != EffectClass::TrashCards {
+                        return false;
+                    }
+                    let mut spoke = false;
+                    for t in targets.iter().filter(|t| atom.targets.contains(t)) {
+                        atom.trash_to.retain(|(c, _)| c != t);
+                        atom.trash_to.push((*t, to));
+                        spoke = true;
+                    }
+                    spoke
+                });
             }
             Instruction::ReplaceImminentDamageKind { to } => {
                 // CR 9.9.10: the replacement applies immediately when the
@@ -11686,6 +11953,42 @@ impl Vm {
                         // every time, so a card that arrives later is inside
                         // it and a card that leaves is out of it.
                         crate::instr::ProhibitionSpec::Matching(criteria) => {
+                            // 1.21.6 + 9.10.1: a criterion that reads the
+                            // RESOLVING ability's own frame ("copies of that
+                            // agenda") cannot be re-read later — the frame is
+                            // gone by the time the act is offered. It is bound
+                            // here instead, while the frame still holds it,
+                            // the way a delayed conditional's targets are.
+                            cite!("rule_remain_visible");
+                            let copies_of = if criteria.iter().any(|f| {
+                                matches!(
+                                    f,
+                                    crate::instr::TargetFilter::SameNameAsRevealedByThisAbility
+                                )
+                            }) {
+                                self.frames
+                                    .iter()
+                                    .rev()
+                                    .find_map(|fr| match fr {
+                                        Frame::Ability(af) => Some(
+                                            af.revealed.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+                                        ),
+                                        _ => None,
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
+                            let criteria: Vec<_> = criteria
+                                .iter()
+                                .filter(|f| {
+                                    !matches!(
+                                        f,
+                                        crate::instr::TargetFilter::SameNameAsRevealedByThisAbility
+                                    )
+                                })
+                                .copied()
+                                .collect();
                             let id = self.next_lingering;
                             self.next_lingering += 1;
                             self.lingering.push(LingeringEffect::new(
@@ -11693,9 +11996,10 @@ impl Vm {
                                 source.obj,
                                 Payload::Prohibited {
                                     by: *by,
-                                    scope: crate::lingering::ProhibitionScope::Matching(
-                                        criteria.clone(),
-                                    ),
+                                    scope: crate::lingering::ProhibitionScope::Matching {
+                                        criteria,
+                                        copies_of,
+                                    },
                                     actions: actions.clone(),
                                 },
                                 dur,
@@ -13145,12 +13449,7 @@ impl Vm {
                 // additional rez cost loses its credit part and KEEPS its
                 // forfeits, where `ignore_costs` (1.16.5c as this kernel
                 // reads it, inherent-only) would leave the whole of it.
-                let additional = self
-                    .st
-                    .objects[&c]
-                    .printed
-                    .additional_rez_cost
-                    .clone()
+                let additional = Some(self.additional_rez_cost_of(c))
                     .map(|a| if p.ignore_credit_costs { a.without_credits() } else { a })
                     // An additional cost that WAS only credits has nothing
                     // left once they are ignored, so there is no payment to
@@ -13185,7 +13484,7 @@ impl Vm {
                     let total = base.plus(&add);
                     self.ask(
                         Side::Corp,
-                        DecisionSpec::NestedCost { cost: total },
+                        DecisionSpec::NestedCost { costs: vec![total] },
                         DecisionCtx::RezAdditionalCost,
                     );
                     return;
@@ -14944,8 +15243,25 @@ impl Vm {
         // 7.1.5b: a card in the Corp's discard pile cannot be trashed, and its
         // trash cost cannot be paid — by the basic trash ability OR by any
         // other mid-access ability. A card accessed in Archives is already
-        // there; so is one this access has just trashed.
-        let in_archives = o.zone == Zone::Discard(Side::Corp);
+        // there.
+        //
+        // A card THIS ACCESS has already trashed is the other half, and it is
+        // asked of the trash RECORD rather than of the discard pile: 8.2.2
+        // records the movement wherever a 9.9.8a redirection sent the card,
+        // so a Marilyn-Campaign-class escape into R&D is still a trash and
+        // still spends the access's one opportunity. Reading the zone alone
+        // offered the Runner a second trash of a card that was no longer
+        // there to trash. The scan runs back to this card's own access.
+        cite!("rule_open_information");
+        let log = &self.changes.log;
+        let since = log
+            .iter()
+            .rposition(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == card))
+            .unwrap_or(0);
+        let already_trashed = log[since..]
+            .iter()
+            .any(|c| matches!(c, GameChange::CardTrashed { obj, .. } if *obj == card));
+        let in_archives = o.zone == Zone::Discard(Side::Corp) || already_trashed;
         // 7.1.5: the basic trash ability — pay the trash cost, trash it.
         // 1.10.3c: what the Runner can pay it WITH includes hosted credits
         // their own cards let them spend (Scrubber class), not just the pool.
@@ -15207,13 +15523,29 @@ impl Vm {
         // whose credits are allowed "to rez cards" would never be offered the
         // rez they can pay for.
         let purpose = CreditPurpose::Rezzing(card);
-        if self.cost_payable_for(Side::Corp, card, &Cost::credits(printed), None, purpose) {
+        // 1.16.10b + 1.16.1b: the additional costs are part of the same
+        // payment, so they are part of the same affordability question — a
+        // rez whose additional cost cannot be paid is not offered at all.
+        let extra = self.additional_rez_cost_of(card);
+        if self.cost_payable_for(
+            Side::Corp,
+            card,
+            &Cost::credits(printed).plus(&extra),
+            None,
+            purpose,
+        ) {
             return true;
         }
         self.alternate_payments_for(card).into_iter().any(|(_, covers, instead)| {
             cite!("rule_alternate_payment");
             let reduced = Cost::credits(printed.saturating_sub(covers));
-            self.cost_payable_for(Side::Corp, card, &reduced.plus(&instead), None, purpose)
+            self.cost_payable_for(
+                Side::Corp,
+                card,
+                &reduced.plus(&instead).plus(&extra),
+                None,
+                purpose,
+            )
         })
     }
 
@@ -15282,15 +15614,24 @@ impl Vm {
             return false;
         }
         // 1.16.1b: a "trash N cards from your grip" component cannot be paid
-        // with fewer than N cards there (the Patchwork branch of 8.7.2b).
-        if (self.st.hand[&side].len() as u32) < cost.trash_from_hand {
+        // with fewer than N cards there (the Patchwork branch of 8.7.2b). The
+        // random component (1.15.2b) comes out of the SAME hand, so a cost
+        // carrying both needs enough cards for both.
+        if (self.st.hand[&side].len() as u32) < cost.trash_from_hand + cost.trash_random_from_hand
+        {
             return false;
         }
         // 1.9.2: a counter component is spent from the source, so a card
         // without enough hosted counters cannot pay it.
-        if let Some((kind, n)) = cost.spend_counters {
+        if let Some((kind, amount)) = &cost.spend_counters {
             cite!("rule_counters_default_from_bank");
-            if self.st.objects[&source].counter(kind) < n {
+            // 1.16.2b: the amount is calculated when the cost is to be paid.
+            // 1.16.2d makes a bare X read 0 OUTSIDE a payment — always
+            // payable — and the payer then announces upward under 1.16.1a's
+            // bound, which is what `x_bound` reads from the source's counters.
+            cite!("rule_cost_x_out_of_context");
+            let want = self.eval_quantity(amount, Some(source)).max(0) as u32;
+            if self.st.objects[&source].counter(*kind) < want {
                 return false;
             }
         }
@@ -15925,7 +16266,22 @@ impl Vm {
     fn x_bound(&self, p: &Payment) -> u32 {
         cite!("rule_cost_x");
         cite!("rule_cost_restrictions");
+        // 1.16.1a: the announcement is bounded by what can actually be paid
+        // all at once, and WHAT that is depends on which component holds the
+        // X. Credits are the common case; a counter component is paid out of
+        // the source's own counters (1.9.2), and a payer's credit pool says
+        // nothing about how many it hosts.
         let mut max = self.spendable_credits(p.side);
+        if let Some((kind, amount)) = &p.cost.spend_counters {
+            if amount.mentions_announced_x() {
+                max = self
+                    .st
+                    .objects
+                    .get(&p.source)
+                    .map(|o| o.counter(*kind))
+                    .unwrap_or(0);
+            }
+        }
         if let Some(crate::ability::XBound::AtMost(q)) = &p.cost.x_restriction {
             max = max.min(self.eval_quantity(q, Some(p.source)).max(0) as u32);
         }
@@ -15947,7 +16303,14 @@ impl Vm {
                 if let Some(pm) = self.payment.as_mut() {
                     pm.announced_x = Some(determined);
                 }
-            } else if p.cost.credits.mentions_announced_x() || p.cost.x_restriction.is_some() {
+            } else if p.cost.credits.mentions_announced_x()
+                || p
+                    .cost
+                    .spend_counters
+                    .as_ref()
+                    .is_some_and(|(_, q)| q.mentions_announced_x())
+                || p.cost.x_restriction.is_some()
+            {
                 // 1.16.2c: the announcement is owed whenever the cost
                 // CONTAINS X — a stated restriction is an extra bound on the
                 // value, not what creates the choice (Corporate
@@ -16262,7 +16625,24 @@ impl Vm {
                 );
             }
             PaymentCont::BasicTrash { card, window } => {
-                self.trash_card(card, Side::Runner);
+                // CR 7.1.5 + 9.1.1g: the basic trash ability is an ABILITY —
+                // "Access → Pay the trash cost of the accessed card: Trash
+                // it." — and a non-static ability's text is instructions, so
+                // its trash becomes imminent and gets 9.9.4's interrupt
+                // window like every other trash. Trashing directly from here
+                // skipped that window, which is what left a Marilyn-class
+                // "when this card would be trashed" interrupt unable to see
+                // the one trash the card is really about. Its sibling,
+                // `PaymentCont::BasicTrashResourceAction`, already ran the
+                // basic action's effect through a rules-ability frame; this
+                // is the same shape for the same reason.
+                cite!("rule_basic_trash_ability");
+                cite!("rule_instruction_link");
+                // 9.1.6a: the ability is USED once its trigger cost is paid,
+                // which is here — before its instruction resolves — so the
+                // window's option and the record are settled first and the
+                // frame pushed last. (Pushing first would leave the ability
+                // frame on top and the window's option unresolved.)
                 if let Some(Frame::Window(w)) = self.frames.last_mut() {
                     if w.id == window {
                         w.option_resolved();
@@ -16274,6 +16654,14 @@ impl Vm {
                         side: Side::Runner,
                         basic: true,
                     });
+                self.push_ability_frame(
+                    ResolutionKind::Paid,
+                    AbilityRef { obj: ObjectId(0), index: usize::MAX },
+                    Side::Runner,
+                    vec![Instruction::TrashCards(TargetSpec::Objects(vec![card]))],
+                    None,
+                    None,
+                );
             }
             // 5.2.6g: the costs are paid (the 1.16.3 checkpoint ran inside
             // `pay_cost_committed`), so the action's effect follows — the
@@ -16331,11 +16719,12 @@ impl Vm {
         self.st.player_mut(side).clicks -= cost.clicks + cost.lose_clicks;
         // 1.9.2: counters spent as a cost come off the source and go back to
         // the bank.
-        if let Some((kind, n)) = cost.spend_counters {
+        if let Some((kind, amount)) = cost.spend_counters.clone() {
             cite!("rule_counters_default_from_bank");
+            let want = self.eval_quantity(&amount, Some(source)).max(0) as u32;
             let o = self.st.objects.get_mut(&source).unwrap();
             let have = *o.counters.get(&kind).unwrap_or(&0);
-            let spent = n.min(have);
+            let spent = want.min(have);
             o.counters.insert(kind, have - spent);
             self.changes
                 .record(GameChange::CounterRemoved { obj: Some(source), kind, amount: spent });
@@ -16413,6 +16802,22 @@ impl Vm {
             .clone()
             .unwrap_or_else(|| self.st.hand[&side].iter().take(cost.trash_from_hand as usize).copied().collect())
         {
+            self.trash_card(c, side);
+            trashed.push(c);
+        }
+        // CR 1.15.2b: "…randomly trash a card from HQ" (Hacktivist Meeting
+        // class) — nobody announces it, so there is no choice to gather and
+        // none was: the payment takes the cards out of the hand at random,
+        // one at a time, exactly as `Instruction::TrashRandomFromHand` does
+        // for the same words said as an effect.
+        for _ in 0..cost.trash_random_from_hand {
+            cite!("rule_targets_must_be_valid");
+            let hand = &self.st.hand[&side];
+            if hand.is_empty() {
+                break;
+            }
+            let i = self.rng.random_range(0..hand.len());
+            let c = self.st.hand[&side][i];
             self.trash_card(c, side);
             trashed.push(c);
         }
@@ -16796,6 +17201,23 @@ impl Vm {
 
     /// CR 1.19: trash = move to owner's discard pile.
     pub fn trash_card(&mut self, id: ObjectId, by: Side) {
+        self.trash_card_to(id, by, None)
+    }
+
+    /// CR 1.19 + 9.9.8a: the same trash, with the destination an INTERRUPT
+    /// said this card goes to instead (9.9.10 applied it to the effect while
+    /// it was imminent, so it arrives here on the atom).
+    ///
+    /// A redirection stated this way wins over a 9.9.8b static's, for the
+    /// reason 9.9.11a gives: a replacement cannot apply without something to
+    /// replace, and the imminent-effect one has already replaced the
+    /// destination by the time the movement happens.
+    pub fn trash_card_to(
+        &mut self,
+        id: ObjectId,
+        by: Side,
+        redirected: Option<crate::instr::TrashDestination>,
+    ) {
         cite!("rule_trashing");
         let was = self.st.objects[&id].zone;
         let owner = self.st.objects[&id].owner;
@@ -16854,11 +17276,21 @@ impl Vm {
             was_rezzed,
             during_install,
         });
-        match self.replaced_trash_destination(id) {
+        match redirected.or_else(|| self.replaced_trash_destination(id)) {
             // 4.9: removed from the game instead of the discard pile.
             Some(crate::instr::TrashDestination::RemovedFromGame) => {
                 cite!("sec_removed_from_game");
                 self.move_card(id, Zone::RemovedFromGame);
+            }
+            // 4.2.3 + 8.7.3: into the owner's deck, shuffled. The deck is
+            // ordered, so a card entering it with no stated position is put
+            // in by a shuffle — and 1.12.3 then makes it a new object, since
+            // nobody can say which card of the deck it now is.
+            Some(crate::instr::TrashDestination::ShuffledIntoOwnersDeck) => {
+                cite!("rule_deck_ordered");
+                cite!("rule_shuffle_deck_after_search");
+                self.move_card(id, Zone::Deck(owner));
+                self.shuffle_deck(owner);
             }
             // 8.1.4/8.1.4d: the installed Runner card is turned facedown and
             // stays in the play area — it is not uninstalled, so it never
@@ -17088,7 +17520,10 @@ impl Vm {
             // 1.16.2a: the default value, then the increases, then the
             // reductions, and never below zero.
             cite!("rule_cost_calculation");
-            let cost = Cost::credits(self.rez_cost_credits(id).saturating_sub(less));
+            let cost = Cost::credits(self.rez_cost_credits(id).saturating_sub(less))
+                // 1.16.10b: the inherent cost and every additional cost are
+                // ONE payment, so they are combined before it begins.
+                .plus(&self.additional_rez_cost_of(id));
             // The rez cost may take Decisions to pay (1.16.2e/1.10.3c), so the
             // rest of the procedure is the payment's continuation.
             self.begin_payment(Side::Corp, id, &cost, PaymentCont::Rez(id), None);
@@ -17811,9 +18246,9 @@ impl Vm {
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                     af.phase = AbilityPhase::Checkpoint;
                 }
-                match instr {
+                match instr.clone() {
                     Instruction::NestedCostThen { cost, effect, .. } => {
-                        if pay {
+                        if pay.is_some() {
                             cite!("rule_nested_cost_may");
                             // 1.16.11: the effect is what comes next. Queued
                             // before the payment for the same reason.
@@ -17847,12 +18282,22 @@ impl Vm {
                             self.changes.record(GameChange::AbilityUsed { source: source.obj });
                         }
                     }
-                    Instruction::NestedCostUnless { cost, effect, .. } => {
+                    Instruction::NestedCostUnless { costs, effect, .. } => {
                         cite!("rule_nested_cost_unless");
-                        if pay {
-                            self.pay_cost(payer, source.obj, &cost);
-                        } else if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-                            af.instructions.insert(idx + 1, (*effect).clone());
+                        // The answer indexes the list that was OFFERED —
+                        // 1.16.1's payable ones — which is why it is rebuilt
+                        // here from the same helper rather than indexing the
+                        // printed list: nothing has changed the game state
+                        // between the ask and the answer, so the two lists
+                        // are the same list.
+                        let offered = self.payable_nested_costs(&instr, &costs);
+                        match pay.and_then(|i| offered.get(i).cloned()) {
+                            Some(chosen) => self.pay_cost(payer, source.obj, &chosen),
+                            None => {
+                                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                                    af.instructions.insert(idx + 1, (*effect).clone());
+                                }
+                            }
                         }
                     }
                     _ => unreachable!(),
@@ -17862,7 +18307,7 @@ impl Vm {
                 // CR 1.16.10a/1.17.3d: an additional cost to steal may be
                 // declined; declining means the agenda is not stolen.
                 cite!("rule_decline_additional_cost");
-                if pay {
+                if pay.is_some() {
                     // 1.16.10b: all additional costs are one all-at-once
                     // payment; the frame's PayCost phase pays first, so the
                     // cost-paid checkpoint's reactions resolve BEFORE the
@@ -17919,7 +18364,7 @@ impl Vm {
                 // the player may then spend the click on anything.
                 cite!("rule_must_cannot_force_additional_cost");
                 self.st.run_requirement_discharged = true;
-                if pay {
+                if pay.is_some() {
                     // 6.3.4: the [click] and the additional cost are both paid
                     // to MAKE the run; the run formally begins afterwards.
                     cite!("rule_abilities_during_a_run");
@@ -17933,7 +18378,7 @@ impl Vm {
                 // CR 1.16.10a: the Corp may decline the additional cost, and
                 // declining means the agenda is not scored.
                 cite!("rule_decline_additional_cost");
-                if pay {
+                if pay.is_some() {
                     // 1.16.10c: "the additional cost is paid and a checkpoint
                     // is resolved BEFORE performing the usual procedure to
                     // carry out that effect" — which is exactly what an
@@ -18003,7 +18448,7 @@ impl Vm {
                 // means no access occurs — but the chosen card already
                 // ceased to be a candidate.
                 cite!("rule_candidates_already_accessed");
-                if pay {
+                if pay.is_some() {
                     let cost = self.additional_access_cost(card);
                     self.begin_payment(
                         Side::Runner,
@@ -18302,17 +18747,13 @@ impl Vm {
                 cite!("rule_inherent_and_additional_cost");
                 let Some(p) = self.installs.last().cloned() else { return };
                 let c = p.card;
-                if pay {
+                if pay.is_some() {
                     let base = if p.ignore_costs {
                         Cost::free()
                     } else {
                         Cost::credits(self.rez_cost_credits(c))
                     };
-                    let add = self.st.objects[&c]
-                        .printed
-                        .additional_rez_cost
-                        .clone()
-                        .unwrap_or_default();
+                    let add = self.additional_rez_cost_of(c);
                     let total = base.plus(&add);
                     self.pay_cost(Side::Corp, c, &total);
                 } else {
@@ -18591,7 +19032,7 @@ impl Vm {
                     cite!("rule_decline_additional_cost");
                     self.ask(
                         side,
-                        DecisionSpec::NestedCost { cost: extra },
+                        DecisionSpec::NestedCost { costs: vec![extra] },
                         DecisionCtx::RunActionCost { server, click_discount },
                     );
                     return;
@@ -18926,7 +19367,7 @@ impl Vm {
                     cite!("rule_decline_additional_cost");
                     self.ask(
                         Side::Corp,
-                        DecisionSpec::NestedCost { cost },
+                        DecisionSpec::NestedCost { costs: vec![cost] },
                         DecisionCtx::ScoreCost(card),
                     );
                 }

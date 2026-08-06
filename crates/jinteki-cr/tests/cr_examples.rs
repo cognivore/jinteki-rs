@@ -2745,7 +2745,7 @@ fn example_rule_reveal_for_ability_limitations_1() {
     let costs = t.windows(Kind::NestedCost, Side::Corp);
     assert!(!costs.is_empty(), "the additional rez cost was offered and declined (1.16.4c)");
     assert!(
-        costs.iter().all(|e| e.answer == Some(DecisionAnswer::PayNestedCost(false))),
+        costs.iter().all(|e| e.answer == Some(DecisionAnswer::PayNestedCost(None))),
         "the additional rez cost was offered and declined (1.16.4c)"
     );
     assert_eq!(vm.st.objects[&archer].zone, Zone::Ice(ServerId::Remote(1)));
@@ -3678,7 +3678,7 @@ fn example_rule_candidates_already_accessed_2() {
     let costs = t.windows(Kind::NestedCost, Side::Runner);
     assert!(!costs.is_empty(), "the additional access cost was offered and declined");
     assert!(
-        costs.iter().all(|e| e.answer == Some(DecisionAnswer::PayNestedCost(false))),
+        costs.iter().all(|e| e.answer == Some(DecisionAnswer::PayNestedCost(None))),
         "the additional access cost was offered and declined"
     );
     assert!(
@@ -3779,7 +3779,7 @@ fn example_rule_rnd_topmost_eligibile_candidate_2() {
             1,
             "the Strongbox-class click cost"
         );
-        assert_eq!(c.answer, Some(DecisionAnswer::PayNestedCost(true)));
+        assert_eq!(c.answer, Some(DecisionAnswer::PayNestedCost(Some(0))));
     }
     assert!(vm.st.score_area[&Side::Runner].contains(&agenda2));
     let accessed: Vec<_> = vm
@@ -8720,6 +8720,127 @@ fn an_approach_condition_scoped_to_this_server_ignores_every_other() {
             !succeeded, ended,
             "6.9.4g: the condition is met on the source's own server and on no other \
              (server={server:?}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// CR 1.16.11b + 1.16.1: a nested cost whose escape is a CHOICE of costs
+/// offers each door only to a payer who can pay it in full, and a payer who
+/// can pay none faces no choice at all — 9.12.3c's shape, said about costs.
+///
+/// The measurement the two-door sentence is written on. The card ends the run
+/// "unless they either spend [click][click] or pay 5[credit]", and the two
+/// resources are independent: the arms below hold one of them at a payable
+/// level and starve the other, so which doors were OFFERED, which one the
+/// Runner walked through, and what it cost them are all visible on one board.
+///
+/// The last arm is the one a single-cost approximation cannot reach: with 1
+/// click and 4[credit] neither door is payable, no decision is put, and the
+/// run ends.
+#[test]
+fn a_nested_cost_offers_only_the_alternatives_the_payer_can_pay() {
+    // (clicks at the approach, credits, doors offered, which one is taken)
+    let arms: [(u32, u32, usize, Option<usize>); 5] = [
+        (2, 5, 2, Some(0)), // both doors; the Runner spends the clicks
+        (2, 5, 2, Some(1)), // both doors; the Runner pays the credits
+        (2, 4, 1, Some(0)), // 4[credit] cannot pay 5: only the click door
+        (1, 5, 1, Some(0)), // 1[click] cannot pay 2: only the credit door
+        (1, 4, 0, None),    // neither: no choice at all, and the run ends
+    ];
+    for (clicks, credits, doors, take) in arms {
+        let mut vm = Vm::empty(9043);
+        let skunk = tk::install_root(
+            &mut vm,
+            tk::end_run_on_this_server_approach_unless_either("Skunkworks-like", 2, 5),
+            ServerId::Remote(1),
+            true,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        vm.st.runner.credits = credits;
+        // CR 1.11.2: the turn allots the Runner their clicks. The basic run
+        // action spends one of them before the approach, so the Runner
+        // reaches the nested cost with exactly `clicks` left.
+        vm.st.runner.allotted_clicks = clicks + 1;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(
+                    Match::nested_cost(),
+                    match take {
+                        Some(i) => Reply::PayCostWith(i),
+                        None => Reply::PayCost(false),
+                    },
+                )
+                .stop_at_action(),
+        );
+
+        let offered = t.windows(Kind::NestedCost, Side::Runner);
+        assert_eq!(
+            offered.len(),
+            usize::from(doors > 0),
+            "1.16.1: the choice is put exactly when at least one door is payable \
+             ({clicks}[click], {credits}[credit]): {}",
+            t.tail(24)
+        );
+        if doors > 0 {
+            assert_eq!(
+                offered[0].costs().len(),
+                doors,
+                "1.16.1: only the doors this payer can pay in full are offered \
+                 ({clicks}[click], {credits}[credit]): {}",
+                t.tail(24)
+            );
+        }
+
+        let succeeded = vm
+            .changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. }));
+        assert_eq!(
+            succeeded,
+            doors > 0,
+            "1.16.11b: paying a door suppresses the effect, and being able to pay \
+             none of them forces it ({clicks}[click], {credits}[credit]): {}",
+            t.tail(24)
+        );
+
+        // What the door actually cost, read off the payment records rather
+        // than off the leftovers: the click door can empty the Runner's turn,
+        // and the two resources move independently — which is the whole
+        // reason the sentence needs a list.
+        let paid = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::CostPaid { side: Side::Runner, credits, clicks, source, .. }
+                    if *source == Some(skunk) =>
+                {
+                    Some((*clicks, *credits))
+                }
+                _ => None,
+            })
+            .fold((0u32, 0u32), |a, b| (a.0 + b.0, a.1 + b.1));
+        let want = match (doors, take) {
+            (2, Some(0)) => (2, 0),
+            (2, Some(1)) => (0, 5),
+            (1, Some(0)) if clicks == 2 => (2, 0),
+            (1, Some(0)) => (0, 5),
+            _ => (0, 0),
+        };
+        assert_eq!(
+            paid, want,
+            "1.10/1.11: the click door is paid in clicks and the credit door in \
+             credits — a payer takes exactly the door they named \
+             ({clicks}[click], {credits}[credit]): {}",
             t.tail(24)
         );
     }

@@ -1,8 +1,8 @@
 # Mezzie's two decks — the card queue
 
-User-mandated, after the 150-identity campaign. Two decks, 99 cards, **37 distinct
-cards left to write**. Both identities are already complete (they came out of
-the identity queue), so this is cards only.
+User-mandated, after the 150-identity campaign. Two decks, 99 cards, 47 distinct
+cards, **all of them written and ticked**. Both identities came out of the
+identity queue already complete, so this was cards only.
 
 Same bar as every deck before it. CR SYS-D-12: a deck with one partial card
 cannot be played at all, so there is no partial credit — a deck is finished
@@ -34,7 +34,7 @@ Identity is COMPLETE. Printed text below is from
       "Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area."
 - [x] **Luminal Transubstantiation** ×1 — agenda · Research · adv 3/2
       "When you score this agenda, gain [click][click][click]. You cannot score agendas for the remainder of the turn. / Limit 1 per deck."
-- [ ] **Project Vacheron** ×3 — agenda · Research · adv 5/3
+- [x] **Project Vacheron** ×3 — agenda · Research · adv 5/3
       "[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters. / While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“"
 - [x] **Project Vitruvius** ×3 — agenda · Research · adv 3/2
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
@@ -42,9 +42,9 @@ Identity is COMPLETE. Printed text below is from
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
 - [x] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
-- [ ] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
+- [x] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
-- [ ] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
+- [x] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
       "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)"
 - [x] **MCA Austerity Policy** ◆ ×2 — asset · cost 1, trash 3
       "Once per turn → [click]: Place 1 power counter on this asset. When the Runner's next turn begins, they lose [click]. / [click], [trash], 3 hosted power counters: Gain [click][click][click][click]."
@@ -64,7 +64,7 @@ Identity is COMPLETE. Printed text below is from
       "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice."
 - [x] **Ash 2X3ZB9CY** ◆ ×1 — upgrade · Bioroid · cost 2, trash 3
       "Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run."
-- [ ] **Manegarm Skunkworks** ◆ ×1 — upgrade · cost 2, trash 3
+- [x] **Manegarm Skunkworks** ◆ ×1 — upgrade · cost 2, trash 3
       "Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."
 - [x] **Tatu-Bola** ×1 — ice · Barrier · cost 2, str 1
       "When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. (The new ice is installed unrezzed. You do not pay an install cost.) / [subroutine] End the run."
@@ -87,7 +87,7 @@ Identity is COMPLETE.
 
 - [x] **Blackmail** ×3 — event · Run · cost 1
       "Play only if the Corp has at least 1 bad publicity. / Run any server. The Corp cannot rez ice during that run."
-- [ ] **Hacktivist Meeting** ×3 — event · Current · cost 1
+- [x] **Hacktivist Meeting** ×3 — event · Current · cost 1
       "This card is not trashed until another current is played or an agenda is scored. / As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."
 - [x] **I've Had Worse** ×3 — event · cost 1
       "Draw 3 cards. / Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."
@@ -121,7 +121,7 @@ Identity is COMPLETE.
       "When your turn begins and whenever you steal an agenda, place 1[credit] on this resource. / You can spend hosted credits to play events. / When your turn ends, if there are 3 or more hosted credits, you must trash 1 card from your grip at random or trash this resource."
 - [x] **Same Old Thing** ×1 — resource · cost 0
       "[click], [click], [trash]: Play an event from your heap (paying its play cost)."
-- [ ] **Tsakhia "Bankhar" Gantulga** ◆ ×3 — resource · Connection · cost 1
+- [x] **Tsakhia "Bankhar" Gantulga** ◆ ×3 — resource · Connection · cost 1
       "When your turn begins, you may choose a server. / During the first encounter each turn with a piece of ice protecting the chosen server, whenever the Corp would resolve a subroutine, instead they resolve "[subroutine] Do 1 net damage."."
 - [x] **Black Orchestra** ×2 — program · Icebreaker - Decoder · cost 3, str 2
       "Whenever you encounter a code gate, you may install this program from your heap. / 3[credit]: +2 strength. Then, if this program can interface with the code gate you are encountering, break up to 2 subroutines."
@@ -136,24 +136,18 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `kernel/vm-deficiencies` wave: 41 of 47 ticked, 6 printed
-sentences still unsayable, 6 cards unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 47 of 47 ticked. The queue is EMPTY —
+every printed sentence of both decks is expressed in the public vocabulary,
+carries no `.unimplemented(…)`, and has a behaviour test driving it on a
+board.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
 kernel and claims have to be checked against it.
 
-The six that remain, and what each is waiting on:
-
-| Card | Waiting on |
-|---|---|
-| Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
-| Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
-| Marilyn Campaign | one: a trash redirected to a DECK, optionally |
-| Manegarm Skunkworks | one: a nested cost with ALTERNATIVE costs |
-| Hacktivist Meeting | two: an additional cost to REZ described cards, and a random-trash `Cost` component |
-| Tsakhia "Bankhar" Gantulga | two: an ENCOUNTER state requirement, and an ordinal on a static ability |
-
+Nothing remains. Every entry below is LANDED, and they are kept — with what
+each one got wrong — because the standing lesson of this queue is that a
+blocker is a claim about the kernel and claims have to be checked against it.
 
 Never approximated. A card that needs one of these is left unticked with the
 word it wants named here, exactly as the identity queue did it.
@@ -192,57 +186,48 @@ that ground when this list was re-read against the kernel:
   `if_met` inside the instruction, and 9.11.3 keeps the whole sentence one
   instruction.
 
-### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
+### A stated condition that asks about the SOURCE and the game state at once — LANDED (CR 9.3.7a)
 
-`AbilityDef::condition` holds one `Condition`, and `StaticCond` is a flat list
-of alternatives: an ability can state that it is active in a score area
-(`SourceInScoreAreaOf`, which 9.1.8b also reads to keep it alive there) or that
-some requirement about the game holds (`StateRequirement`), and never both. A
-printed "while this agenda is in the Runner's score area **with 1 or more
-hosted agenda counters**" is one stated condition with two clauses, and there
-is no position for the second.
+`StaticCond::All(Vec<StaticCond>)`, and 9.1.8b's first sentence now reads the
+zone clause wherever it sits in the list (`static_cond_states_zone` recurses),
+which the entry was right to insist on: without it the ability is inactive in
+the one zone it is about and never runs at all.
 
-Wanted: the stated condition as a CONJUNCTION — one list, whose members are
-the existing alternatives — so a sentence naming a zone and a state is one
-condition with two clauses and not two abilities. 9.1.8b must go on reading the
-zone clause wherever it appears in the list, or the ability is inactive in the
-one zone it is about.
+### Agenda points SET rather than modified — LANDED (CR 2.5 / 9.12.1a)
 
-Wants it: **Project Vacheron** (its second sentence, which also wants the two
-below).
+`StaticDecl::SelfAgendaPointsMod { amount, set }` and `CharOp::SetAgendaPoints`
+— 9.12.1a's FIRST stage said of the point value, applied in its own pass before
+the increases and decreases, so "worth 1 more", "worth 1 fewer" and "worth 0"
+are one declaration with different content. `set: false` at every site written
+before it. The entry called the set "the second stage"; it is the first, and
+the ordering is the whole reason the two can share a declaration.
 
-### Agenda points SET rather than modified (CR 2.5 / 9.12.1a)
+### A declaration that grants a STATED conditional ability — LANDED (CR 9.1.9b / 9.1.8b)
 
-`StaticDecl::SelfAgendaPointsMod(Quantity)` is 9.12.1a's third stage — it adds
-to the value, which is what Merger, Global Food Initiative and Project Beale
-print. A card printing "it **is worth 0** agenda points" states the second
-stage instead, and subtracting the printed value only lands on 0 while nothing
-else is modifying it.
+`StaticDecl::GainsStatedAbility(Box<AbilityDef>)` and
+`CharOp::GainStatedAbility`, read through the same 9.12.1d/e pipeline as
+`GainAbilitiesOf` so the checkpoint scan and every paid-window scan see the
+gained ability without knowing where it came from.
 
-Wanted: the set as content beside the modification on the one declaration —
-one position for the value with the STAGE as its content — so "worth 1 more",
-"worth 1 fewer" and "worth 0" are one declaration with different content, and
-9.12.1a's ordering does the rest.
+It did NOT go through `Payload::GrantedAbility`, and that entry's "the kernel
+has the payload and no declaration reaches it" was the wrong lead: a lingering
+payload is 9.10's mechanism for an effect created ahead of time, and this is a
+STATIC declaration — it must stop the moment its stated condition stops
+holding, which is exactly what makes Vacheron's agenda worth 3 again when the
+last counter comes off. Reached through a lingering effect it would have had to
+be created and destroyed by something.
 
-Wants it: **Project Vacheron** ("it is worth 0 agenda points").
-
-### A declaration that grants a STATED conditional ability (CR 9.1.9 / 9.10.2)
-
-`StaticDecl::GainSubroutines { sub, count }` grants a stated SUBROUTINE and
-`StaticDecl::GainAbilitiesOf { criteria }` copies another card's whole text,
-and between them there is no way to write the commonest form of all: a card
-that gains one ability the sentence spells out in quotation marks. The kernel
-has the payload (`Payload::GrantedAbility { to, def }`, 9.10.2) and no
-declaration reaches it.
-
-Wanted: the stated ability as content on one declaration, the way
-`GainSubroutines` already carries a stated subroutine — the ability being an
-`AbilityDef` of any class, so "gains '[subroutine] End the run.'", "gains 'When
-your turn begins, gain 1[credit].'" and "gains 'Hosted agenda counter: …'" are
-one declaration with different content.
-
-Wants it: **Project Vacheron** (gains "When the Runnerʼs turn begins, remove 1
-hosted agenda counter.").
+The half nobody had written down, and the one that made the card compile and do
+nothing until it was found: a gained ability was INACTIVE on an inactive card.
+4.5.4 leaves an agenda in the Runner's score area inactive, 9.1.8b's first
+sentence keeps the granting static alive there, and the granted ability states
+no zone of its own — so it was never offered. 9.1.8b's SECOND sentence is what
+answers it ("abilities that can only ever meet their conditions in a particular
+zone are active in that zone"): a gained ability exists only while its grant
+does, and the pipeline recomputes that continuously, so an ability that is
+present at all is one whose grantor is active. `AbilityDef::granted` is the
+flag the pipeline sets and `ability_active` reads; nothing in the card layer
+writes it.
 
 ### The approach condition naming WHICH server — LANDED (CR 6.9.4g)
 
@@ -254,74 +239,122 @@ said, so nothing moved. Measured rather than assumed: the kernel test
 `an_approach_condition_scoped_to_this_server_ignores_every_other` runs the
 same upgrade against its own remote and against HQ.
 
-**Manegarm Skunkworks** is now blocked on ONE word rather than two — the
-alternative-cost entry below — and stays unticked.
+**Manegarm Skunkworks** was left blocked on ONE word rather than two — the
+alternative-cost entry below, which has since landed too.
 
-### A nested cost with ALTERNATIVE costs (CR 1.16.11b / 9.12.3c)
+### A nested cost with ALTERNATIVE costs — LANDED (CR 1.16.11b / 1.16.1)
 
-`Instruction::NestedCostUnless { cost, effect, payer }` holds one `Cost`, and
-`Cost` is a conjunction — every component is paid together. A sentence whose
-escape is a CHOICE of costs ("unless they either spend [click][click] or pay
-5[credit]") has nowhere to put the second one.
+`Instruction::NestedCostUnless { costs: Vec<Cost>, effect, payer }` — the ways
+out as a LIST, exactly as the entry asked. One element is every existing site
+(1.16.11b's ordinary "unless they pay 3[credit]"), so nothing moved; several
+are "unless they **either** spend [click][click] **or** pay 5[credit]", one
+instruction with two doors. `Cost` stays a conjunction and the list is the
+disjunction over it, which is how the two nest in the printed words.
 
-Neither workaround is honest. Writing one cost drops whichever door was not
-written, and the two are not interchangeable: a Runner with 5[credit] and no
-clicks escapes by one and a Runner with two clicks and no credits by the other.
-Nesting one inside the other invents an instruction boundary the sentence does
-not have (9.11.3), and with it a checkpoint, a reaction window and an interrupt
-window between the two halves of a single choice.
+The filter is **1.16.1** rather than the 1.16.1b the entry named — "if a player
+cannot pay the full cost … they cannot use the effect associated with that
+cost" — asked of each alternative where the choice is OFFERED. 9.12.3c is the
+analogy and not the rule: it governs a choice among *effects* in a "must"
+ability, and the shape it describes ("must choose an effect that can be fully
+resolved; if none can, the ability does nothing") is what the cost list does.
+Filing it under 9.12.3c alone would have pointed the next reader at the wrong
+sentence.
 
-Wanted: the costs as a LIST on the one instruction, filtered by 1.16.1b's
-payability where it is offered — which is 9.12.3c's rule about a choice among
-options said for costs: the payer picks among the costs they can actually pay,
-and a payer who can pay none faces no choice and the effect resolves.
+What the entry did not mention, and it is the half that costs the most:
+`DecisionSpec::NestedCost` and `DecisionAnswer::PayNestedCost` both had to
+learn WHICH cost. They are now `NestedCost { costs: Vec<Cost> }` — the payable
+ones, in printed order — and `PayNestedCost(Option<usize>)`, an index into
+that same list, with `None` for declining. The offered list is rebuilt from
+one helper (`Vm::payable_nested_costs`) at the ask and at the answer, so the
+two are the same list by construction. The ~20 driver call sites did NOT move:
+`Reply::PayCost(true)` still means "pay", and now means `Some(0)` — the only
+door wherever a sentence states one — with `Reply::PayCostWith(i)` for the
+two-door case. The server's prompt renders one button per door, named by what
+it costs, and a bare "Pay" when there is only one.
 
-Wants it: **Manegarm Skunkworks** (its only sentence, which also wants the
-condition above).
+Measured on a real board by
+`a_nested_cost_offers_only_the_alternatives_the_payer_can_pay`: five arms over
+the same upgrade, holding one resource payable and starving the other, so that
+which doors were offered, which was walked through and what it cost are all
+visible. The arm with 1[click] and 4[credit] is the one no single-cost writing
+could reach — neither door payable, no decision put, run ended.
 
-### A trash whose destination an ABILITY redirects (CR 9.9.8a-b / 8.2.2)
+**Manegarm Skunkworks** is written and ticked.
 
-The kernel replaces a trash's destination in exactly one shape:
-`StaticDecl::ReplaceTrashDestination`, read where the movement happens,
-mandatory, with `TrashDestination` naming two places — removed from game (4.9)
-and turned facedown in play (8.1.4d). A card printing "[interrupt] → when this
-card would be trashed, you may put it somewhere else instead of adding it to
-<the discard pile>" has neither the optionality nor the destination, and
-writing it with the static would make every trash of that card a redirect
-whether its controller wanted one or not.
+### A trash whose destination an ABILITY redirects — LANDED (CR 9.9.8a-b / 8.2.2)
 
-Wanted: the destination as CONTENT on the one atom — a player's deck (shuffled
-in, 4.2.3), a hand, the set-aside zone — added as variants of
-`TrashDestination` rather than as new replacement atoms; and the same
-replacement expressible from a card's own optional interrupt (9.9.8a) as well
-as from a static (9.9.8b), so the printed "you may" is one flag on the existing
-word and not a second mechanism. 8.2.2 is what every shape of it must keep: the
-card is still trashed and conditions about being trashed are still met — only
-where it lands changes, which is exactly what these cards' parenthetical says.
+`TrashDestination::ShuffledIntoOwnersDeck` (4.2.3 + 8.7.3 — a deck is ordered,
+so a card entering it with no stated position goes in by a shuffle, and 1.12.3
+then makes it a new object) and `Instruction::RedirectImminentTrash { cards,
+to }`, the interrupt-effect that says where the cards of the trash ALREADY
+IMMINENT go. Both halves the entry asked for, in two positions rather than one.
 
-Wants it: **Marilyn Campaign** ("you may shuffle it into R&D instead of adding
-it to Archives").
+The optionality is NOT "one flag on the existing word", and that is the
+entry's mistake. It cannot be: `StaticDecl::ReplaceTrashDestination` is read
+inside `Vm::trash_card`, in the middle of a movement, where the kernel cannot
+put a question to a player — `Vm::ask` records a pending decision and does not
+unwind, so the movement would complete before the answer arrived. The printed
+"you may" therefore lives where every other optional conditional keeps it: on
+the INTERRUPT that carries the redirection (9.6.9c), triggered from the 9.9.4
+window like any other. That is also what the card prints — "[interrupt] →" —
+and what 9.9.8a/9.9.10 describe: an interrupt introducing a replacement for
+the instruction already imminent, applied the moment it resolves.
 
-### A description stipulating agenda points, or the X announced for the cost (CR 2.4.2 / 1.16.2c / 1.15.2)
+So the two shapes divide by what they can reach, not by a flag. The 9.9.8b
+static stays mandatory and stays read at the movement, which is what lets it
+reach the trashes no instruction makes imminent (10.4.2's damage, 1.16.1a's
+cost trashes). The 9.9.8a interrupt reaches exactly the trashes that HAVE an
+imminence — which is all an interrupt can ever act on. The destination rides
+the imminent atom (`EffectAtom::trash_to`), so a trash that is then PREVENTED
+takes the redirection with it, where a note kept beside the atom would have
+survived to redirect some later trash of the same card.
 
-The description vocabulary can say a card's type, its subtypes, its name, its
-printed cost at most N, the counters on it, and its rez cost relative to a
-triggering card. It cannot say a card's AGENDA POINTS, and nothing in it can be
-compared against the X a player announced for the ability's own trigger cost
-(1.16.2c) — the announced X is readable as a *quantity* and never as a
-stipulation a described card has to satisfy.
+TWO DEFECTS FIXED, both found by writing the card, and the first is the one
+that would have made it look implemented and do nothing:
 
-Wanted: agenda points as one more characteristic the shared filter vocabulary
-reads, and one comparison position whose two sides are quantities — so "an
-agenda worth X points", "a card with printed cost X" and "ice with strength X
-or lower" are one word with different content, and not a filter apiece.
+- The basic trash ability trashed the card DIRECTLY from its payment
+  continuation, with no imminence and so no interrupt window. CR 7.1.5 makes
+  it an ability and 9.1.1g makes a non-static ability's text instructions, so
+  its trash becomes imminent like every other; its own sibling,
+  `PaymentCont::BasicTrashResourceAction`, already ran the basic action's
+  effect through a rules-ability frame. Without this the Runner paying
+  Marilyn's trash cost on access — the trash the card is really about — could
+  never be redirected.
+- The mid-access window asked "is this card in Archives?" as its way of
+  saying "has this access already trashed it?". With the card redirected into
+  R&D the proxy failed and the Runner was offered a second trash of a card
+  that was no longer there. It now asks the trash RECORD, which 8.2.2
+  guarantees exists wherever the card landed.
 
-Wants it: **Lakshmi Smartfabrics** ("Reveal an agenda worth X points from HQ").
-Its prohibition is no longer a blocker — CR 1.2.2's "cannot" now names
-stealing and takes a description with a duration — but the sentence still
-waits on this word and on the revealed-cards word below, so the card stays
-unticked. Both remaining halves are about the SAME reveal: which agenda may be
-revealed, and which cards "copies of that agenda" then means.
+Measured by `marilyn_campaign_may_be_shuffled_into_rnd_instead_of_going_to_archives`:
+the Runner trashes the rezzed asset on access, and taking the interrupt adds a
+card to R&D while declining leaves it in Archives — with the trash recorded on
+both arms, which is what the printed parenthetical promises.
+
+**Marilyn Campaign** is written and ticked.
+
+### A description stipulating agenda points, or the X announced for the cost — LANDED (CR 2.3 / 2.5 / 2.7 / 1.16.2c)
+
+`TargetFilter::CharacteristicIs { of, cmp, value }`, exactly the word the entry
+asked for: WHICH characteristic (`CardCharacteristic::PrintedCost |
+AgendaPoints | Strength`), WHICH comparison (`NumericCmp::AtMost | AtLeast |
+Exactly`) and the other side as a `Quantity`, which is what lets a description
+be compared against a number the game state produced — 1.16.2c's announced X
+above all. `PrintedCostAtMost(u32)` was folded into it rather than left beside
+it, so the vocabulary has one numeric criterion and not three. The quantity is
+a `&'static` reference so the filter vocabulary stays `Copy`, the way
+`AnyOf` and `Not` already are.
+
+The entry counted TWO words for this card. It is three, and the one it missed
+is the one everything else hangs off: **"X hosted power counters" was not
+sayable either.** `Cost::spend_counters` held a printed `u32`, and 1.16.2c's X
+has to be ANNOUNCED — `spend_counters_any_source` is the announced one and is
+the wrong word (Freedom Khumalo's counters come from any of the payer's cards;
+these come off THIS one). The amount is now a `Quantity` position like
+`Cost::credits`, `Cost::spend_x_counters` is the shorthand, and `Vm::x_bound`
+learned that an X in a counter component is bounded by what the SOURCE hosts
+and not by the payer's credit pool. Without it the card could not even be
+paid for, and no amount of description vocabulary would have helped.
 
 ### The printed ORDINAL on an additional-cost declaration — LANDED (CR 1.16.10)
 
@@ -437,32 +470,46 @@ The entry's second claim was WRONG and is deleted: "'ice' is a description and
 wave; the queue's own text already corrected itself two entries down and the
 card's doc comment did not.
 
-### An additional cost to REZ the cards a description reaches (CR 1.16.10 / 8.1.2)
+### An additional cost to REZ the cards a description reaches — LANDED (CR 1.16.10 / 8.1.2)
 
-1.16.10's additional costs come in two shapes here: a fact printed on the card
-being paid for (`additional_rez_cost`, Archer's "to rez THIS card"), and a
-declaration taxing an ACT by description — of which there are three
-(`AdditionalStealCost`, `AdditionalAccessCost`, `AdditionalRunActionCost`).
-Rezzing the cards a description reaches ("non-ice cards") is neither.
+`StaticDecl::AdditionalRezCost { criteria, cost }` and
+`Cost::trash_random_from_hand`, plus one reader for both halves of an 8.1.2
+rez's additional costs.
 
-Beside it, the same sentence wants a COST component that exists only as an
-effect: `Instruction::TrashRandomFromHand` performs 1.15.2b's unannounced trash
-out of a hand, and no `Cost` field charges one. `Cost::trash_matching` is the
-announced trash and not this — 1.15.2b is explicit that a card taken at random
-is not announced by anyone, which is exactly the difference the sentence turns
-on. `Cost::trash_from_hand` is not it either, and it is the near miss worth
-naming: it charges an UNANNOUNCED trash, but its own doc records the
-approximation that makes it the wrong word — it takes the front of the hand,
-and the front of a hand is not a card taken at random.
+The entry asked for "the act as CONTENT on ONE additional-cost declaration".
+That was re-read against the kernel and NOT done, deliberately: the four
+existing declarations are not four variants of one word, they are one per
+PROCEDURE, and each carries scope vocabulary the others have no position for —
+`AdditionalRunActionCost` has 6.3.4's server set and its printed ordinal,
+`AdditionalBasicActionCost` has 5.2.5a's basic-action identity and a
+description of the acted-on card, `AdditionalAccessCost` has 7.4.3's remote
+root. Merging them would make one atom with a union of fields irrelevant to
+each other, which is what §12 rule 2 exists to prevent, not to require. What
+IS shared — and what the entry was right about — is the description
+vocabulary: `criteria` is the ordinary filter list, so "non-ice cards" and a
+sentence naming no cards at all are the same declaration with different
+content.
 
-Wanted: the act as CONTENT on one additional-cost declaration — rezzing beside
-stealing, accessing and the basic actions, with the cards described in the
-shared filter vocabulary — and a random-trash component on `Cost`, so a
-sentence charging one is a cost and not an effect that fires afterwards.
+The random-trash component is `Cost::trash_random_from_hand`, beside
+`trash_from_hand` rather than instead of it: a random pick is not an
+announcement (1.15.2b puts the choice to a player and this sentence takes it
+away from both), which is the same distinction
+`Instruction::RevealRandomFromHand` is already written on. 1.16.1 makes an
+empty hand unable to pay it, which is where the card's teeth are.
 
-Wants it: **Hacktivist Meeting** ("As an additional cost to rez non-ice cards,
-the Corp must randomly trash a card from HQ"; the current's own "not trashed
-until…" is done and tested).
+What the entry did not mention, and what was found while wiring it: the
+kernel read a card's PRINTED additional rez cost on the install-and-rez path
+only. `Vm::rez_card_inner` — the ordinary (R) paid-window rez — never added it
+and `Vm::rez_affordable` never asked about it, so an Archer rezzed from a paid
+window forfeited nothing and a rez whose additional cost was unpayable was
+still offered. Both now go through one reader, `Vm::additional_rez_cost_of`,
+which combines the printed cost with every declaration reaching the card
+(1.16.10b: they are ONE payment, so they are one affordability question).
+
+Measured by `hacktivist_meeting_taxes_every_non_ice_rez_and_stops_it_with_an_empty_hq`:
+an asset rez costs HQ a card, an ice rez costs it nothing, and with HQ empty
+the asset cannot be rezzed at all. **Hacktivist Meeting** is written and
+ticked.
 
 ### A card's OWN trash, with the occurrence's stipulations as content — LANDED
 
@@ -483,6 +530,24 @@ Worse** and **Steelskin Scarring** are written and ticked.
 carries it for the non-self case, no card in either deck asks for it, and an
 unread field is untested code; it belongs on this atom the day a card prints
 it.
+
+### A card with the same NAME as one this ability revealed — LANDED (CR 2.1.4 / 1.21.6 / 9.10.1)
+
+`TargetFilter::SameNameAsRevealedByThisAbility`, the characteristic reading of
+the record `RevealedByThisAbility` reads as an identity. Both are needed and
+2.1.4 is why: a copy in R&D is a different card with the same name, and the
+copy is what the sentence forbids stealing.
+
+What the entry did not see is that the criterion alone is not enough, and the
+card would have compiled and done nothing. 1.21.6 keeps a revealed card
+visible only "until the entire ability is finished resolving", and the
+prohibition this sentence creates lasts the TURN — so a description re-read
+where the steal is offered reaches nothing at all. The frame-scoped part is
+therefore BOUND when the lingering effect is created, which is what
+`Payload::DelayedConditional`'s `bound_targets` already does for 1.15.4 across
+the same gap: `ProhibitionScope::Matching` gained a `copies_of` position
+holding the cards, compared by NAME (2.1.4) and conjoined with the re-read
+description. Empty at every existing site.
 
 ### The cards THIS ABILITY revealed — LANDED (CR 1.21.6)
 
@@ -507,11 +572,9 @@ shows. **Embezzle** (`unlisted.rs`) still wants the random-reveal half —
 `Instruction::RevealRandomFromHand` announces nothing and takes no `TargetSpec`,
 so neither 1.15.4's record nor 1.21.6's reaches its cards.
 
-**Lakshmi Smartfabrics** keeps this as one of its two blockers, and it is the
-NAME half rather than the identity half: "copies of that agenda" is every card
-sharing a characteristic with the revealed one, and the filter vocabulary can
-say "the card this ability revealed" (now) and "a card with this printed name"
-(`HasName`) and not "a card with the same name as that one".
+**Lakshmi Smartfabrics** kept this as one of its blockers, and it was the
+NAME half rather than the identity half — see the entry above, where it
+landed.
 
 ### A count of the agendas STOLEN inside a window — LANDED (CR 7.5 / 1.12.6)
 
@@ -544,32 +607,44 @@ already argued: an allowance is read where credits are SPENT, and this is read
 where they are COUNTED — by `Quantity::CreditsInPoolOf`, by 1.10.3b's forced
 loss, and by every affordability question. **Stimhack** is written and ticked.
 
-### A static declaration scoped to an ENCOUNTER, carrying an ordinal (CR 6.5 / 9.3.7a)
+### A static declaration scoped to an ENCOUNTER, carrying an ordinal — LANDED (CR 6.5 / 9.3.7a)
 
-`StaticDecl::ReplaceSubroutineResolution` already says 9.9.2's "instead of the
-subroutine they would resolve, these instructions". What cannot be said is
-WHEN it is on. A static ability is either always active or gated by
-`declares_while`'s state requirements, and neither reaches an ENCOUNTER. The
-nearest requirement is `CanInterfaceWithEncounteredIce { required_subtype }`,
-which is 9.3.6c's strength gate wearing a subtype and not a question about the
-encounter at all; nothing asks whether one is under way, nor whether its ice
-matches a description. `AbilityDef` does carry an `ordinal`, but only
-`first_imminence_of` ever reads it — it stipulates which IMMINENCE a
-conditional may be relevant to, and no static ability is read through it — so
-"the first encounter each turn" still has no position.
+`TriggerRequirement::EncounterUnderWay { criteria, first_each_turn }` and
+`TargetFilter::ProtectingServer(ServerRef)`. Two words rather than the entry's
+two, but not the same two — one of the entry's placements was wrong.
 
-Both gaps have to close together. An always-on declaration rewrites every
-subroutine on every server for the whole game, which is the largest over-reach
-a card of this class can have, so the mechanism being present buys nothing on
-its own.
+The requirement lives in the SHARED vocabulary, which is what the entry asked
+for and what makes it usable from `declares_while` (9.3.7a) and from a trigger
+condition's `requires` (9.6.5c) with the same words. `criteria` describes the
+encountered ice in the ordinary filter vocabulary; an empty list is a sentence
+saying plain "during an encounter".
 
-Wanted: the encounter as a state requirement in the shared vocabulary — one
-under way, with its ice described the way every other card is described,
-including "protecting the chosen server" against a 9.10.3 maintained choice —
-and the ordinal as content on a static ability the way `InherentCostMod`
-already carries `first_each_turn`.
+The ordinal did NOT go on the static ability, and the entry's "the way
+`InherentCostMod` already carries `first_each_turn`" is right about the
+spelling and wrong about the position. A static ability never resolves (9.4.1),
+so an ordinal on the ABILITY could only mean "the first time it applies" —
+which is not what the sentence says. The sentence counts ENCOUNTERS: it holds
+while no EARLIER encounter this turn was with ice the description reaches. So
+the ordinal is content on the REQUIREMENT, beside the description it qualifies,
+and it is read from the change log (10.2.1) the way every other printed ordinal
+in the kernel is. The encounter's own id stops the walk, so a piece of ice
+encountered twice in one turn does not answer for both.
 
-Wants it: **Tsakhia "Bankhar" Gantulga** ("During the first encounter each turn
-with a piece of ice protecting the chosen server, whenever the Corp would
-resolve a subroutine, instead they resolve …"; the turn-begin server choice is
-done and tested, and 9.10.3 remembers it).
+"Protecting the chosen server" needed a description word of its own:
+`MatchesMaintainedChoice` compares a maintained NAME, TYPE or SUBTYPE against a
+card and its own doc says a maintained SERVER "describes no card, so nothing
+matches". `TargetFilter::ProtectingServer` is that missing half — 4.6.9a puts
+every installed piece of ice in a position in front of the server it protects,
+and WHICH server is a `ServerRef`, so "protecting HQ" and "protecting the
+server this card chose" are one criterion with different content. It is the ICE
+half of 4.6.6b's "in the server" and deliberately not the whole of it: a root
+is not a position protecting anything.
+
+Measured by
+`bankhar_replaces_the_first_subroutine_each_turn_on_the_chosen_server`: four
+arms over the same remote behind "end the run" ice, so what the Corp resolved
+is visible in whether the run survived — one ice on the chosen server (the run
+goes on), two (the second encounter is out of scope and ends it), a different
+server chosen, and nothing chosen at all.
+
+**Tsakhia "Bankhar" Gantulga** is written and ticked.

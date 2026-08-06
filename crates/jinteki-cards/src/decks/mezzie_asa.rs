@@ -46,6 +46,28 @@ fn while_in_the_score_area_of(side: Side, decls: Vec<StaticDecl>) -> AbilityDef 
     def
 }
 
+/// The same statement with a second clause: "while this agenda is in
+/// <side>'s score area **with 1 or more hosted agenda counters**" — CR
+/// 9.3.7a's stated condition as a CONJUNCTION.
+///
+/// The zone clause is still what 9.1.8b reads to keep the ability active in
+/// the score area (see [`while_in_the_score_area_of`]), and it goes on being
+/// read inside the conjunction — an ability inactive there could never meet
+/// the other clause either, since the counters this one asks about are only
+/// ever on a card in a score area.
+fn while_in_the_score_area_of_with(
+    side: Side,
+    also: Vec<TriggerRequirement>,
+    decls: Vec<StaticDecl>,
+) -> AbilityDef {
+    let mut def = AbilityDef::static_ability(decls);
+    def.condition = Some(Condition::Static(StaticCond::All(vec![
+        StaticCond::SourceInScoreAreaOf(side),
+        StaticCond::StateRequirement(also),
+    ])));
+    def
+}
+
 /// A mandatory [interrupt] (9.3.6d/9.9.1) that is also active while its source
 /// is the card being ACCESSED (9.1.8a).
 ///
@@ -95,7 +117,7 @@ pub fn global_food_initiative() -> Card {
         .text("Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area.")
         .ability(while_in_the_score_area_of(
             Runner,
-            vec![StaticDecl::SelfAgendaPointsMod(amount(-1))],
+            vec![worth_n_more_agenda_points(amount(-1))],
         ))
         .named("1 fewer in the runner's score area")
         .build()
@@ -169,8 +191,9 @@ pub fn luminal_transubstantiation() -> Card {
 ///  agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs
 ///  turn begins, remove 1 hosted agenda counter.“"
 ///
-/// PARTIAL: the steal arrives with its counters; what the counters DO is
-/// marked.
+/// COMPLETE. Two printed sentences: an interrupt that replaces the steal, and
+/// a static ability that describes the agenda while it sits in the Runner's
+/// score area with the counters that steal gave it.
 ///
 /// The first sentence is 9.9.8c's replacement effect, created ahead of the
 /// effect it replaces by an interrupt on the imminent steal. 9.9.9c is the part
@@ -203,18 +226,24 @@ pub fn luminal_transubstantiation() -> Card {
 /// are one zone (4.4), and the zone the agenda is in when the steal becomes
 /// imminent is what the sentence asks about.
 ///
-/// UNIMPLEMENTED: the second sentence, on three counts. It is one static
-/// ability whose stated condition is a zone AND a number of hosted counters,
-/// and 9.3.7a's condition slot holds one or the other and never both. Its
-/// first declaration SETS the point value ("it is worth 0 agenda points"),
-/// which is 9.12.1a's second stage, and the declaration that exists modifies
-/// the value instead — a subtraction of the printed 3 gives 0 only while
-/// nothing else is modifying it. Its second declaration grants the card a
-/// stated CONDITIONAL ability, and the only stated ability a declaration can
-/// grant is a subroutine. Written with any of the three approximated the card
-/// would be worth the wrong number of points in the Runner's score area, which
-/// is the one thing this agenda is about. The general capabilities wanted are
-/// on MEZZIE-QUEUE.md's Blockers.
+/// The second sentence is ONE static ability with two declarations, and its
+/// stated condition (9.3.7a) has two clauses: the zone and the counters. The
+/// zone clause is what 9.1.8b reads to keep the ability active in the Runner's
+/// score area at all, and it is still read inside the conjunction — see
+/// [`while_in_the_score_area_of_with`].
+///
+/// "It is worth 0 agenda points" SETS 2.5's value: 9.12.1a's first stage, not
+/// a subtraction of the printed 3, which would land on 0 only while nothing
+/// else was modifying it. The counters clause is what turns it off: once the
+/// last counter comes off, the whole condition fails and the agenda is worth
+/// its printed 3 again, with nothing ever having been stamped on it.
+///
+/// The gained ability is the sentence's own words (9.1.9b), and "this card"
+/// inside it is the card that gained it — so it removes one of ITS OWN
+/// counters. It is a conditional ability like any other: it goes pending at
+/// the checkpoint after the Runner's turn begins and resolves from the
+/// reaction window, which is why the agenda is worth 0 for four of the
+/// Runner's turns and then 3.
 pub fn project_vacheron() -> Card {
     card("Project Vacheron")
         .corp()
@@ -241,7 +270,22 @@ pub fn project_vacheron() -> Card {
             )],
         ))
         .named("stolen with four agenda counters")
-        .unimplemented("While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“")
+        .ability(while_in_the_score_area_of_with(
+            Runner,
+            vec![at_least(per_hosted_counter(CounterKind::Agenda), 1)],
+            vec![
+                is_worth_agenda_points(amount(0)),
+                gains_the_ability(
+                    AbilityDef::conditional(
+                        turn_begins(Runner),
+                        vec![remove_counters(CounterKind::Agenda, 1)],
+                        false,
+                    )
+                    .labeled("a counter off when the runner's turn begins"),
+                ),
+            ],
+        ))
+        .named("worth nothing while its counters last")
         .build()
 }
 
@@ -424,22 +468,28 @@ pub fn jeeves_model_bioroids() -> Card {
 /// the rez, so the ability is there in time to be met by the occurrence that
 /// activated it.
 ///
-/// The paid ability is marked, and what it waits on is now the REVEAL at both
-/// ends of it rather than the prohibition. The prohibition itself is written:
-/// the CR 1.2.2 wave made stealing (7.5) an act a "cannot" names and gave the
-/// lingering prohibition a description and a duration, so "…for the remainder
-/// of this turn" is sayable.
+/// The paid ability is TWO printed sentences and so two instructions (9.11.3),
+/// and X ties them together.
 ///
-/// What is not sayable is which agenda may be revealed and which cards the
-/// sentence then means. "An agenda worth X points" is a description
-/// stipulating a characteristic the filter vocabulary does not read — the
-/// card's agenda points (2.4.2), compared against the X announced for the
-/// ability's own trigger cost (1.16.2c). And "copies of that agenda" is a
-/// description of cards sharing a characteristic with the card THIS ABILITY
-/// REVEALED, which 1.21.3's reveal records nowhere: unlike 1.21.2's look, a
-/// reveal keeps nothing on the resolving ability for a later instruction to
-/// refer back to. Both are on MEZZIE-QUEUE.md's Blockers as general
-/// capabilities, and both belong to the same reveal.
+/// "X hosted power counters" is 1.9.2's counter cost with 1.16.2c's announced
+/// amount: the counters come off THIS card, and 1.16.1a bounds what the Corp
+/// may announce by how many are actually on it. The announced value is then
+/// readable for the rest of the resolution, which is the only reason the next
+/// sentence can say "worth X points" at all — X is a number the payment
+/// produced and one that appears nowhere in print.
+///
+/// "An agenda worth X points from HQ" is a description with three
+/// stipulations: 2.5.1's printed agenda points compared against that X, the
+/// card type, and the zone — and the zone is load-bearing, because 1.15.2c
+/// would otherwise leave the announcement in the play area where HQ is not.
+///
+/// "Copies of that agenda" is 2.1.4: a question about the NAME and nothing
+/// else, asked of the cards this ability revealed (1.21.6 keeps them on the
+/// resolving ability's frame for exactly this). It is deliberately not "the
+/// card this ability revealed" — a copy in R&D is a different card with the
+/// same name, and the Runner stealing THAT is what the sentence is about.
+/// The prohibition is 1.2.2's, with the act, the player, the description and
+/// the duration all content on it.
 pub fn lakshmi_smartfabrics() -> Card {
     card("Lakshmi Smartfabrics")
         .corp()
@@ -451,7 +501,26 @@ pub fn lakshmi_smartfabrics() -> Card {
         .text("X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
         .when(corp_rezzes_a_card(), [place(CounterKind::Power, 1)])
         .named("a counter for every rez")
-        .unimplemented("X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
+        .paid(
+            x_hosted_counters(CounterKind::Power),
+            [
+                reveal(choose(
+                    1,
+                    &[
+                        in_hand_of(Corp),
+                        of_type(CardType::Agenda),
+                        worth_announced_x_agenda_points(),
+                    ],
+                )),
+                cannot_act_on_matching(
+                    &[in_any_location(), a_copy_of_a_card_this_ability_revealed()],
+                    Some(Runner),
+                    &[ProhibitedAction::Steal],
+                    this_turn(),
+                ),
+            ],
+        )
+        .named("reveal an agenda worth X, and it cannot be stolen")
         .build()
 }
 
@@ -463,8 +532,7 @@ pub fn lakshmi_smartfabrics() -> Card {
 ///  R&D instead of adding it to Archives. (It is still considered
 ///  trashed.)"
 ///
-/// PARTIAL: the campaign pays out and empties itself; the escape into R&D is
-/// marked.
+/// COMPLETE. Four printed sentences, four abilities.
 ///
 /// The first printed line is two sentences and two abilities, which is what
 /// Daily Casts already is on the Runner's side of the table — LOADING (1.9.4)
@@ -479,16 +547,22 @@ pub fn lakshmi_smartfabrics() -> Card {
 /// bank: the credits move from the card into the pool, which is why the card
 /// runs out. An asset holding only 1 gives the 1 it has.
 ///
-/// UNIMPLEMENTED: the interrupt. It is a 9.9.8a replacement of where a trash
-/// puts the card, and the kernel replaces a trash destination in exactly one
-/// shape — a static declaration, mandatory, naming the removed-from-game zone
-/// or a facedown card in play. Marilyn needs the destination to be a deck and
-/// needs the replacement to be one the Corp MAY decline, and neither is
-/// content on the word that exists. Writing it with what is there would make
-/// every trash of this card a shuffle whether the Corp wanted it or not; 8.2.2
-/// is the part both readings must keep, and the parenthetical restates it —
-/// the card is still trashed, only where it lands changes. The general
-/// capability wanted is on MEZZIE-QUEUE.md's Blockers.
+/// The interrupt is 9.9.8a: an interrupt that introduces a replacement effect
+/// for the instruction already imminent, applied the moment it resolves
+/// (9.9.10). What it replaces is only the DESTINATION — 8.2.2 keeps the trash
+/// a trash, records it, and leaves every "is trashed" condition met, which is
+/// exactly what the printed parenthetical says out loud. The destination is
+/// the Corp's own deck, shuffled in, because 4.2.3 makes a deck ordered and a
+/// card entering it with no stated position goes in by a shuffle.
+///
+/// The "you may" is the interrupt's own optionality (9.6.9c), which is what
+/// rules out writing this as `StaticDecl::ReplaceTrashDestination`: 9.9.8b's
+/// static applies of its own accord and would shuffle this card away whether
+/// the Corp wanted it or not.
+///
+/// It applies to EVERY trash with an imminence, which is what makes the card
+/// worth playing: the Runner paying its trash cost on access is the trash the
+/// sentence is really about.
 pub fn marilyn_campaign() -> Card {
     card("Marilyn Campaign")
         .corp()
@@ -506,7 +580,11 @@ pub fn marilyn_campaign() -> Card {
         .named("empty, so gone")
         .when(turn_begins(Corp), [take_hosted_credits(this_card(), 2, Corp)])
         .named("two a turn")
-        .unimplemented("[interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)")
+        .may_interrupt(
+            this_card_would_be_trashed(),
+            [shuffle_into_owners_deck_instead_of_trashing(this_card())],
+        )
+        .named("into R&D instead of Archives")
         .build()
 }
 
@@ -931,28 +1009,29 @@ pub fn ash_2x3zb9cy() -> Card {
 /// "Whenever the Runner approaches this server, end the run unless they either
 ///  spend [click][click] or pay 5[credit]."
 ///
-/// UNIMPLEMENTED: the card's only sentence, on ONE count now rather than two.
+/// COMPLETE. One printed sentence, one instruction (9.11.3) — an end-the-run
+/// whose escape is a nested cost with TWO ways out.
 ///
-/// "Approaches THIS server" is no longer among them: 6.9.4g's condition now
-/// carries the server the way `IcePassed` carries its ice, so
-/// `runner_approaches_this_server()` says exactly what the card prints, and
-/// the kernel test measures the difference the scoping makes.
+/// WHEN is 6.9.4g's step, scoped to the source's own server: the condition
+/// carries the server the way `IcePassed` carries its ice, so a rezzed copy in
+/// a remote says nothing about a run on HQ, and the approach is reached once
+/// every piece of ice protecting the attacked server has been passed — or
+/// straight away when none is.
 ///
-/// What is left is "unless they either spend [click][click] or pay 5[credit]",
-/// which is 1.16.11b's
-/// nested cost with TWO costs, and the nested cost holds one. The two are not
-/// interchangeable and neither is a subset of the other: 1.11 clicks and 1.10
-/// credits are different resources, and a Runner with 5[credit] and no clicks
-/// escapes by one door while a Runner with two clicks and no credits escapes by
-/// the other. Writing it as one cost drops whichever door was not written and
-/// ends runs the Runner had paid to continue; writing it as two nested costs
-/// one inside the other invents an instruction boundary the sentence does not
-/// have (9.11.3), and with it a checkpoint and an interrupt window between the
-/// two halves of a single choice. 9.12.3c is the shape the sentence actually
-/// has — a choice among options, restricted to the ones that can be fully
-/// resolved — so a Runner who can afford neither faces no choice at all and
-/// the run ends. The general capability wanted is on MEZZIE-QUEUE.md's
-/// Blockers.
+/// The escape is 1.16.11b written with a LIST of costs, and the list is
+/// load-bearing: 1.11 clicks and 1.10 credits are different resources, so
+/// neither door is a subset of the other. A Runner with 5[credit] and no
+/// clicks escapes by one and a Runner with two clicks and no credits by the
+/// other; writing one cost would end runs the Runner had paid to continue.
+/// Nesting one inside the other is the other wrong answer — it invents an
+/// instruction boundary the sentence does not have (9.11.3) and with it a
+/// checkpoint, a reaction window and an interrupt window between the two
+/// halves of a single choice.
+///
+/// 1.16.1 is what makes the list behave: a door the Runner cannot pay in full
+/// is not put to them, and a Runner who can pay neither faces no choice at all
+/// and the run ends — 9.12.3c's shape ("that player must choose an effect that
+/// can be fully resolved"), said about costs.
 pub fn manegarm_skunkworks() -> Card {
     card("Manegarm Skunkworks")
         .corp()
@@ -962,7 +1041,15 @@ pub fn manegarm_skunkworks() -> Card {
         .trash_cost(3)
         .unique()
         .text("Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit].")
-        .unimplemented("Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit].")
+        .when(
+            runner_approaches_this_server(),
+            [unless_pays_one_of(
+                Side::Runner,
+                [clicks(2), credits(5)],
+                end_the_run(),
+            )],
+        )
+        .named("end the run here unless they spend 2 clicks or pay 5")
         .build()
 }
 

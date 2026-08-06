@@ -501,7 +501,7 @@ pub fn trash_set_button_of(
 /// marker (gain 0 credits) — the test asserts availability, not the effect.
 pub fn tori_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldDamage {
@@ -535,7 +535,7 @@ pub fn feedback_like(name: &'static str) -> PrintedCard {
 /// relevance requires a run in progress (10.3.6 example).
 pub fn jesminder_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldTakeTags { during_run: true })),
@@ -641,7 +641,7 @@ pub fn pump_breaker(name: &'static str, base_strength: i32) -> PrintedCard {
 pub fn parasite_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(1);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: Vec::new(),
         condition: Some(Condition::Static(StaticCond::HostStrengthAtMost(0))),
@@ -761,7 +761,7 @@ pub fn funhouse_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::SelfEncountered,
         vec![Instruction::NestedCostUnless {
-            cost: Cost::tags(1),
+            costs: vec![Cost::tags(1)],
             effect: Box::new(Instruction::EndTheRun),
             payer: Some(Side::Runner),
         }],
@@ -776,7 +776,7 @@ pub fn funhouse_like(name: &'static str) -> PrintedCard {
 pub fn etr_unless_pay_ice(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 1);
     c.abilities = vec![AbilityDef::subroutine(vec![Instruction::NestedCostUnless {
-        cost: Cost::credits(1),
+        costs: vec![Cost::credits(1)],
         effect: Box::new(Instruction::EndTheRun),
         payer: Some(Side::Runner),
     }])
@@ -922,7 +922,7 @@ pub fn lockdown_like(name: &'static str) -> PrintedCard {
 /// of cards…" — a conditional interrupt relevant to imminent draws (9.9.3d).
 pub fn class_act_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldDraw { by: Some(Side::Runner) })),
@@ -942,7 +942,7 @@ pub fn class_act_like(name: &'static str) -> PrintedCard {
 pub fn harbinger_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.memory_cost = Some(0);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::SelfWouldBeTrashed)),
@@ -1722,7 +1722,7 @@ pub fn operation(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Pri
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
     c.cost = Some(cost);
     if !instrs.is_empty() {
-        c.abilities = vec![AbilityDef { controller: None,
+        c.abilities = vec![AbilityDef { granted: false, controller: None,
             kind: crate::ability::AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -1743,7 +1743,7 @@ pub fn event(name: &'static str, cost: u32, instrs: Vec<Instruction>) -> Printed
     let mut c = PrintedCard::vanilla(name, Side::Runner, CardType::Event);
     c.cost = Some(cost);
     if !instrs.is_empty() {
-        c.abilities = vec![AbilityDef { controller: None,
+        c.abilities = vec![AbilityDef { granted: false, controller: None,
             kind: crate::ability::AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -2228,7 +2228,7 @@ pub fn gallery_like(name: &'static str, installee: ObjectId) -> PrintedCard {
 /// opened (9.9.4b/c).
 pub fn noh_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Resource);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Conditional,
         flags: vec![AbilityFlag::Interrupt],
         condition: Some(Condition::Trigger(TriggerCond::WouldTakeTags { during_run: false })),
@@ -3284,7 +3284,7 @@ pub fn toll_ice(name: &'static str, n: u32) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::SelfEncountered,
         vec![Instruction::NestedCostUnless {
-            cost: Cost::credits(n),
+            costs: vec![Cost::credits(n)],
             effect: Box::new(Instruction::EndTheRun),
             payer: Some(Side::Runner),
         }],
@@ -3720,7 +3720,7 @@ pub fn tinkering_like(name: &'static str) -> PrintedCard {
 pub fn morph_ice(name: &'static str, prints: Subtype, loses: Subtype) -> PrintedCard {
     let mut c = vanilla_ice(name, 3, 3);
     c.subtypes = vec![prints];
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Static,
         flags: Vec::new(),
         condition: None,
@@ -4124,10 +4124,10 @@ pub fn cayambe_like(name: &'static str) -> PrintedCard {
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::encounter_begins(),
         vec![Instruction::NestedCostUnless {
-            cost: Cost::credits_q(Quantity::Times(
+            costs: vec![Cost::credits_q(Quantity::Times(
                 2,
                 Box::new(Quantity::Count(vec![F::IceProtectingAttackedServer])),
-            )),
+            ))],
             effect: Box::new(Instruction::EndTheRun),
             payer: Some(Side::Runner),
         }],
@@ -4170,7 +4170,7 @@ pub fn guru_like(name: &'static str) -> PrintedCard {
         vec![
             Instruction::PreventAllDamage { kind: DamageKind::Net },
             Instruction::NestedCostUnless {
-                cost: Cost::credits(4),
+                costs: vec![Cost::credits(4)],
                 effect: Box::new(Instruction::TrashSelf),
                 payer: Some(Side::Runner),
             },
@@ -4576,7 +4576,7 @@ pub fn nanisivik_like(name: &'static str) -> PrintedCard {
 pub fn attini_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 3);
     c.abilities = vec![
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             condition: Some(Condition::Static(StaticCond::SourceAbilityResolving)),
             ..AbilityDef::static_ability(vec![StaticDecl::CannotSpendCredits(Side::Runner)])
         }
@@ -4801,7 +4801,7 @@ pub fn guru_davinder_like(name: &'static str, kind: DamageKind) -> PrintedCard {
         AbilityDef::conditional(
             TriggerCond::SourcePreventedDamage,
             vec![Instruction::NestedCostUnless {
-                cost: Cost::credits(4),
+                costs: vec![Cost::credits(4)],
                 effect: Box::new(Instruction::TrashSelf),
                 payer: Some(Side::Runner),
             }],
@@ -4858,7 +4858,7 @@ pub fn architect_look_install(name: &'static str, n: u32, dest: ServerId) -> Pri
 pub fn oppo_research_like(name: &'static str) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
     c.cost = Some(0);
-    let play_ability = |instrs: Vec<Instruction>, label: &'static str| AbilityDef { controller: None,
+    let play_ability = |instrs: Vec<Instruction>, label: &'static str| AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Play,
         flags: Vec::new(),
         condition: None,
@@ -5276,7 +5276,7 @@ pub fn virtuoso_like(name: &'static str, server: ServerId) -> PrintedCard {
 pub fn realloc_like(name: &'static str, count: Quantity) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Operation);
     c.cost = Some(0);
-    c.abilities = vec![AbilityDef { controller: None,
+    c.abilities = vec![AbilityDef { granted: false, controller: None,
         kind: crate::ability::AbilityKind::Play,
         flags: Vec::new(),
         condition: None,
@@ -5730,7 +5730,7 @@ pub fn always_be_running_like(name: &'static str) -> PrintedCard {
 pub fn etr_unless_click_ice(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 0, 1);
     c.abilities = vec![AbilityDef::subroutine(vec![Instruction::NestedCostUnless {
-        cost: Cost { clicks: 1, ..Cost::free() },
+        costs: vec![Cost { clicks: 1, ..Cost::free() }],
         effect: Box::new(Instruction::EndTheRun),
         payer: Some(Side::Runner),
     }])
@@ -6056,6 +6056,35 @@ pub fn end_run_on_this_server_approach(name: &'static str) -> PrintedCard {
         false,
     )
     .labeled("approach-etr-here: end the run when THIS server is approached")];
+    c
+}
+
+/// The TWO-DOOR escape (1.16.11b): the shape above with "…end the run unless
+/// they **either** spend N[click] **or** pay M[credit]" — one instruction
+/// whose nested cost offers a LIST of costs, not a nesting of two nested
+/// costs.
+///
+/// The clicks and the credits are different resources (1.11 / 1.10), so
+/// neither door is a subset of the other and which ones are OFFERED is what
+/// the shape measures: 1.16.1 puts only the doors the payer can pay in full,
+/// and a payer who can pay none faces no choice at all (9.12.3c's shape, said
+/// about costs) and the effect resolves.
+pub fn end_run_on_this_server_approach_unless_either(
+    name: &'static str,
+    clicks: u32,
+    credits: u32,
+) -> PrintedCard {
+    let mut c = vanilla_upgrade(name, 0);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::ServerApproached { this_server: true, on: Vec::new() },
+        vec![Instruction::NestedCostUnless {
+            costs: vec![Cost { clicks, ..Cost::free() }, Cost::credits(credits)],
+            effect: Box::new(Instruction::EndTheRun),
+            payer: Some(Side::Runner),
+        }],
+        false,
+    )
+    .labeled("approach-etr-here-unless: end the run unless they spend clicks or pay credits")];
     c
 }
 

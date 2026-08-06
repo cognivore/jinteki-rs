@@ -1707,7 +1707,31 @@ pub fn may_pay(cost: Cost, instr: Instruction) -> Instruction {
 /// "… **unless** the Runner pays <cost>." (1.16.11b): paying suppresses the
 /// effect; declining makes it happen.
 pub fn unless_pays(payer: Side, cost: Cost, instr: Instruction) -> Instruction {
-    Instruction::NestedCostUnless { cost, effect: Box::new(instr), payer: Some(payer) }
+    Instruction::NestedCostUnless {
+        costs: vec![cost],
+        effect: Box::new(instr),
+        payer: Some(payer),
+    }
+}
+/// "… **unless** they **either** <cost> **or** <cost>." (1.16.11b; Manegarm
+/// Skunkworks.) The same nested cost with more than one way out — ONE
+/// instruction and one choice, not a nesting, because 9.11.3 gives the
+/// sentence no boundary between its two doors and a nesting would put a
+/// checkpoint, a reaction window and an interrupt window there.
+///
+/// 1.16.1 filters the doors where they are offered: the payer is put only the
+/// ones they can pay in full, and a payer who can pay none faces no choice at
+/// all and the effect resolves — 9.12.3c's shape, said about costs.
+pub fn unless_pays_one_of(
+    payer: Side,
+    costs: impl IntoIterator<Item = Cost>,
+    instr: Instruction,
+) -> Instruction {
+    Instruction::NestedCostUnless {
+        costs: costs.into_iter().collect(),
+        effect: Box::new(instr),
+        payer: Some(payer),
+    }
 }
 /// "**Repeat this process** for each <amount>." / "…<effects>, for each
 /// <amount>." (Fully Operational; CR 9.12.2b.) The effects TIED to a
@@ -2054,6 +2078,18 @@ pub fn trash_this_card() -> Cost {
 pub fn hosted_counters(kind: CounterKind, n: u32) -> Cost {
     Cost::spend_counters(kind, n)
 }
+/// "**X hosted <kind> counters:**" (Lakshmi Smartfabrics; 1.9.2 + 1.16.2c) —
+/// the same component as [`hosted_counters`] with the amount ANNOUNCED
+/// instead of printed. The counters still come off THIS card, which is what
+/// keeps it apart from [`any_x_counters_equal_to`]'s any-source payment, and
+/// 1.16.1a bounds the announcement by how many the card actually hosts.
+///
+/// The announced value is read back by [`jinteki_cr::instr::Quantity::
+/// AnnouncedX`] for the rest of the ability's resolution, which is what lets
+/// a later sentence say "worth X points".
+pub fn x_hosted_counters(kind: CounterKind) -> Cost {
+    Cost::spend_x_counters(kind)
+}
 /// "**Any** X <kind> counters: … X must be equal to <quantity>." (Freedom
 /// Khumalo; 1.16.2c + 1.10.3c.) Neither half of [`hosted_counters`]: the
 /// amount is X, DETERMINED by the equality rather than chosen, and the
@@ -2071,6 +2107,18 @@ pub fn any_x_counters_equal_to(kind: CounterKind, q: Quantity) -> Cost {
 /// 1.15.2c's installed-cards default.
 pub fn trash_cards_from_hand_of(side: Side, n: u32) -> Cost {
     Cost::trash_matching(n, vec![in_hand_of(side)])
+}
+/// "…**randomly** trash a card from HQ" as a cost (Hacktivist Meeting;
+/// 1.15.2b + 1.16.1). The cards come out of the PAYER's hand, and nobody
+/// announces them: 1.15.2b puts a target choice to a player, and a random
+/// pick takes it away from both — which is exactly why this is not
+/// [`trash_cards_from_hand_of`] with a different name, and why it takes no
+/// description of the cards.
+///
+/// 1.16.1: a hand with fewer than N cards cannot pay it, so whatever the cost
+/// is charged FOR cannot be done at all.
+pub fn randomly_trash_cards_from_hand(n: u32) -> Cost {
+    Cost::trash_random_from_hand(n)
 }
 /// "**Trash the unrezzed piece of ice the Runner is approaching:**"
 /// (AgInfusion; 1.16.10 + 6.4.2.) A trigger cost over the shared criteria —
@@ -2140,6 +2188,32 @@ pub fn encounters_a(subtype: Subtype, reqs: &[TriggerRequirement]) -> TriggerCon
 /// flag, because the card asks it after "+X strength" has resolved.
 pub fn can_interface_with_the_encountered(subtype: Subtype) -> TriggerRequirement {
     TriggerRequirement::CanInterfaceWithEncounteredIce { required_subtype: Some(subtype) }
+}
+/// "**During an encounter with <these cards>**, …" (CR 6.5) — a question
+/// about the encounter IN PROGRESS, asked in the shared requirement
+/// vocabulary so a static ability says it with the same words a conditional
+/// one does. An empty description is a sentence saying plain "during an
+/// encounter".
+pub fn during_an_encounter_with(criteria: &[TargetFilter]) -> TriggerRequirement {
+    TriggerRequirement::EncounterUnderWay {
+        criteria: criteria.to_vec(),
+        first_each_turn: false,
+    }
+}
+/// "During the **first** encounter **each turn** with <these cards>, …"
+/// (Tsakhia "Bankhar" Gantulga) — the same requirement with the printed
+/// ORDINAL on it. It counts ENCOUNTERS and not applications: it holds while
+/// no EARLIER encounter this turn was with a card the description reaches,
+/// read off the change log (10.2.1) the way every other printed ordinal in
+/// the kernel is. 9.4.1 is why it cannot be 9.3.6g's once-per-turn flag — a
+/// static ability never resolves, so it never spends one.
+pub fn during_the_first_encounter_each_turn_with(
+    criteria: &[TargetFilter],
+) -> TriggerRequirement {
+    TriggerRequirement::EncounterUnderWay {
+        criteria: criteria.to_vec(),
+        first_each_turn: true,
+    }
 }
 /// "X[credit]:" — 1.16.2c's variable cost, announced before it is paid. With
 /// no printed restriction on X, 1.16.1c is the only bound: what the payer can
@@ -3058,6 +3132,48 @@ pub fn max_hand_size_is(q: Quantity) -> StaticDecl {
 pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
     TargetFilter::SameCardTypeAsTriggeringCard
 }
+/// "…**an agenda worth X points**" (Lakshmi Smartfabrics), "…a card with
+/// printed cost 3 or lower", "…ice with strength X or lower" — a numeric
+/// characteristic of the card compared against a quantity (CR 2.3 / 2.5 /
+/// 2.7). One criterion with the characteristic, the comparison and the other
+/// side all as content.
+///
+/// The quantity may be anything the vocabulary can read, including 1.16.2c's
+/// announced X — which is what makes "worth X points" sayable at all, since
+/// X is a number the payment produced and not one printed anywhere.
+pub fn characteristic_is(
+    of: jinteki_cr::instr::CardCharacteristic,
+    cmp: jinteki_cr::instr::NumericCmp,
+    value: Quantity,
+) -> TargetFilter {
+    TargetFilter::CharacteristicIs { of, cmp, value: Box::leak(Box::new(value)) }
+}
+/// "…with printed install/rez/play cost N or lower" (CR 2.3).
+pub fn printed_cost_at_most(n: u32) -> TargetFilter {
+    characteristic_is(
+        jinteki_cr::instr::CardCharacteristic::PrintedCost,
+        jinteki_cr::instr::NumericCmp::AtMost,
+        Quantity::c(n as i64),
+    )
+}
+/// "…an agenda **worth X points**" (Lakshmi Smartfabrics; 2.5.1 + 1.16.2c) —
+/// the printed agenda points equal to the value announced for this ability's
+/// own trigger cost.
+pub fn worth_announced_x_agenda_points() -> TargetFilter {
+    characteristic_is(
+        jinteki_cr::instr::CardCharacteristic::AgendaPoints,
+        jinteki_cr::instr::NumericCmp::Exactly,
+        Quantity::AnnouncedX,
+    )
+}
+/// "…**copies of that agenda**" (Lakshmi Smartfabrics; 2.1.4 + 1.21.6) — a
+/// card whose NAME is the name of a card this ability revealed. Not
+/// [`revealed_by_this_ability`], which is the revealed card ITSELF: a copy in
+/// HQ is a different card with the same name, and 1.15.4 and 2.1.4 are what
+/// keep the two apart.
+pub fn a_copy_of_a_card_this_ability_revealed() -> TargetFilter {
+    TargetFilter::SameNameAsRevealedByThisAbility
+}
 /// "…**another copy of that ice**" (The Foundry) — a card with the same NAME
 /// as the one the occurrence that met this ability's condition named (1.15.4
 /// + 2.1.4). It names no zone of its own, so whatever the sentence says about
@@ -3107,6 +3223,18 @@ pub fn non(f: TargetFilter) -> TargetFilter {
 /// the Runner must pay <cost>." (Gagarin class; 1.16.10 / 7.4.3.)
 pub fn additional_cost_to_access_a_card_in_a_remote_root(c: Cost) -> StaticDecl {
     StaticDecl::AdditionalAccessCost(c)
+}
+/// "As an additional cost to rez <these cards>, the Corp must <cost>."
+/// (Hacktivist Meeting; 1.16.10 / 8.1.2.) The cards are the sentence's
+/// stipulation on the one declaration, in the shared filter vocabulary, so
+/// "non-ice cards" and a sentence naming no cards at all are the same
+/// declaration with different content — an empty list taxes every rez.
+///
+/// 1.16.1b makes it a GATE and not merely a charge: the inherent rez cost and
+/// this one are one payment (1.16.10b), so a Corp who cannot pay it is not
+/// offered the rez.
+pub fn additional_cost_to_rez(criteria: &[TargetFilter], c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalRezCost { criteria: criteria.to_vec(), cost: c }
 }
 /// "As an additional cost to run <these servers>, the Runner must pay
 /// <cost>." (Earth Station: SEA Headquarters; 1.16.10 / 6.3.4.) The named
@@ -3492,6 +3620,82 @@ pub fn link_at_least(n: u32) -> TriggerRequirement {
 /// "…if the Runner has 3 or more agenda points" (Complete Image; 1.17.1).
 pub fn agenda_points_at_least(side: Side, points: i32) -> TriggerRequirement {
     TriggerRequirement::AgendaPointsAtLeast { side, points }
+}
+/// "[interrupt] → When this card **would be trashed** …" (Marilyn Campaign;
+/// CR 9.9.1 + 9.9.4c). The interrupt trigger for the source's own trash:
+/// relevant while the source is among the imminent instruction's expected
+/// trashes, and unmet by a trash no instruction made imminent.
+pub fn this_card_would_be_trashed() -> TriggerCond {
+    jinteki_cr::ability::TriggerCond::SelfWouldBeTrashed
+}
+/// "…**shuffle it into R&D instead of adding it to Archives**." (Marilyn
+/// Campaign; CR 9.9.8a + 8.2.2 + 4.2.3.) The imminent trash still happens and
+/// is still recorded — 8.2.2, and the card's own parenthetical says so — and
+/// only where the named cards land changes. 4.2.3 makes a deck ordered, so a
+/// card entering it with no stated position goes in by a shuffle.
+///
+/// The printed "you may" is NOT part of this: it belongs to the interrupt
+/// carrying it (`may_interrupt`), which is where every other optional
+/// conditional keeps it.
+pub fn shuffle_into_owners_deck_instead_of_trashing(cards: TargetSpec) -> Instruction {
+    Instruction::RedirectImminentTrash {
+        cards,
+        to: TrashDestination::ShuffledIntoOwnersDeck,
+    }
+}
+/// "This agenda is worth N **more** agenda points." (Project Beale, Merger;
+/// "1 **fewer**" is a negative quantity.) CR 9.12.1a's later stages: the
+/// value is modified, and a sentence SETTING it is applied first — see
+/// [`is_worth_agenda_points`].
+pub fn worth_n_more_agenda_points(amount: Quantity) -> StaticDecl {
+    StaticDecl::SelfAgendaPointsMod { amount, set: false }
+}
+/// "…**it is worth 0** agenda points" (Project Vacheron) — CR 9.12.1a's FIRST
+/// stage said of 2.5's point value. Not a subtraction of the printed value:
+/// that only lands on 0 while nothing else is modifying it, and 9.12.1a
+/// applies every modification AFTER a value is set.
+pub fn is_worth_agenda_points(amount: Quantity) -> StaticDecl {
+    StaticDecl::SelfAgendaPointsMod { amount, set: true }
+}
+/// "…and **gains \"<one ability>\"**." (Project Vacheron; CR 9.1.9b.) The
+/// source gains the ability the sentence spells out, for as long as this
+/// static ability is active. Any class of ability — the stated conditional
+/// is only the commonest.
+///
+/// "This card" inside the gained ability means the card that gained it
+/// (9.1.9b: an object's abilities include the ones it gained).
+pub fn gains_the_ability(def: AbilityDef) -> StaticDecl {
+    StaticDecl::GainsStatedAbility(Box::new(def))
+}
+/// "…whenever the Corp would resolve a subroutine, instead they resolve
+/// \"[subroutine] …\"." (Tsakhia "Bankhar" Gantulga; CR 9.8.9 / 9.9.8b.) The
+/// declaration replaces the imminent subroutine with the stated one and
+/// changes nothing about WHETHER one resolves — 9.8.9 keeps the replacement
+/// "treated as having the same source as the original imminent subroutine",
+/// so it still resolves from the ice and a Persephone-class condition still
+/// sees a subroutine resolve.
+///
+/// WHEN it is on is the static ability's stated condition, not this
+/// declaration's business: written with none it rewrites every subroutine in
+/// the game, which is why every card printing it prints a scope too.
+pub fn replaces_each_subroutine_with(
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> StaticDecl {
+    StaticDecl::ReplaceSubroutineResolution { instead: instrs.into_iter().collect() }
+}
+/// "…a piece of ice protecting **the server this card chose**" (Tsakhia
+/// "Bankhar" Gantulga; 4.6.9a + 9.10.3). The ice HALF of 4.6.6b's "in the
+/// server" — a root is not a position protecting anything — and the server is
+/// whatever this source is remembering under `key`, which is the only way a
+/// description can reach one of 4.6.8's remotes at all. Describes nothing
+/// while no server is being maintained there.
+pub fn protecting_the_server_chosen_as(key: &'static str) -> TargetFilter {
+    TargetFilter::ProtectingServer(jinteki_cr::instr::ServerRef::MaintainedChoice(key))
+}
+/// "…a piece of ice protecting <a named server>" (4.6.9a) — the same
+/// criterion with the server the card names outright.
+pub fn protecting_server(server: ServerId) -> TargetFilter {
+    TargetFilter::ProtectingServer(jinteki_cr::instr::ServerRef::Server(server))
 }
 /// "…a card in a remote server" (4.6.6 — the root and the ice protecting it).
 pub fn in_a_remote_server() -> TargetFilter {

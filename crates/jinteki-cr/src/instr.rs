@@ -524,7 +524,30 @@ pub enum Instruction {
     /// CR 1.16.11b: "[effect] unless [cost]" — paying suppresses the effect;
     /// declining (or being unable to pay) makes it the next instruction.
     NestedCostUnless {
-        cost: crate::ability::Cost,
+        /// The ways OUT the sentence offers, as a list (§12 rule 2): one
+        /// element is 1.16.11b's ordinary "unless they pay 3[credit]", and
+        /// several are its "unless they **either** spend [click][click]
+        /// **or** pay 5[credit]" — one instruction with two doors, not two
+        /// instructions.
+        ///
+        /// A [`crate::ability::Cost`] is a CONJUNCTION: every component of
+        /// one element is paid together. The list is the disjunction over
+        /// it, so the two nest the way the printed words do.
+        ///
+        /// 1.16.1 filters the list where it is offered: a cost the payer
+        /// cannot pay in full is not a door, so it is not put to them. That
+        /// is 9.12.3c's rule about a choice among effects, said about costs
+        /// — the payer picks among the ones that can actually be paid, and
+        /// a payer who can pay none faces no choice at all and the effect
+        /// resolves. It is also why the list is never a nesting of one
+        /// `NestedCostUnless` inside another: nesting would invent an
+        /// instruction boundary the sentence does not have (9.11.3), and
+        /// with it a checkpoint, a reaction window and an interrupt window
+        /// between the two halves of a single choice.
+        ///
+        /// An EMPTY list is an authoring error and reads as an unpayable
+        /// cost: the effect resolves, unconditionally.
+        costs: Vec<crate::ability::Cost>,
         effect: Box<Instruction>,
         payer: Option<crate::object::Side>,
     },
@@ -659,6 +682,30 @@ pub enum Instruction {
     /// Interrupt-effect: replace the imminent damage's type (Tori Hanzō
     /// class; 9.9.10: applies immediately when the interrupt resolves).
     ReplaceImminentDamageKind { to: DamageKind },
+    /// CR 9.9.8a + 8.2.2: "…**instead of adding it to Archives**" (Marilyn
+    /// Campaign). An interrupt-effect that sends the named cards of the
+    /// imminent trash somewhere other than their owner's discard pile;
+    /// 9.9.10 applies it the moment the interrupt resolves, so the movement
+    /// that follows lands them where this said.
+    ///
+    /// 8.2.2 is what it does NOT do: the cards are still trashed, the
+    /// movement is still recorded, and every condition about being trashed is
+    /// still met — which is exactly what the printed parenthetical "(It is
+    /// still considered trashed.)" says out loud.
+    ///
+    /// `cards` is a target POSITION and `to` is the content (§12 rule 2), so
+    /// "shuffle IT into R&D" said of the ability's own source and a sentence
+    /// naming other cards or another destination are one instruction.
+    ///
+    /// The optionality of a printed "you may" is NOT here: it belongs to the
+    /// interrupt ability that carries this (9.6.9c), which is the same place
+    /// every other optional conditional keeps it. [`StaticDecl::
+    /// ReplaceTrashDestination`](crate::ability::StaticDecl::ReplaceTrashDestination)
+    /// is 9.9.8b's mandatory twin, read at the movement so that it reaches
+    /// the trashes no instruction makes imminent (10.4.2's damage, 1.16.1a's
+    /// costs); this one reaches only a trash that HAS an imminence, which is
+    /// what an interrupt can act on at all.
+    RedirectImminentTrash { cards: TargetSpec, to: TrashDestination },
     /// "Run any server." / "make another run" (Doppelgänger class) — pushes
     /// a nested run timing structure.
     InitiateRun {
@@ -1445,6 +1492,7 @@ impl Instruction {
     pub fn target_positions(&self) -> Vec<&TargetSpec> {
         match self {
             Instruction::TrashCards(spec)
+            | Instruction::RedirectImminentTrash { cards: spec, .. }
             | Instruction::AccessCards { cards: spec, .. }
             | Instruction::ResolveAbilityOf { source: spec, .. }
             | Instruction::RezCard { target: spec, .. }
@@ -1643,6 +1691,7 @@ impl Instruction {
             | Instruction::LoseClicks(..) | Instruction::Draw(..) | Instruction::DrawStepSetAside { .. }
             | Instruction::DrawStepAddToHand { .. } | Instruction::Damage { .. } | Instruction::GainTags { .. }
             | Instruction::TrashCards(..) | Instruction::MaintainChoice { .. } | Instruction::MustTrashAccessedCard { .. }
+            | Instruction::RedirectImminentTrash { .. }
             | Instruction::EndTheRun | Instruction::JackOut | Instruction::AccessCards { .. }
             | Instruction::AdditionalAccesses(..)
             | Instruction::ResolveAbilityOf { .. } | Instruction::RezCard { .. } | Instruction::EndActionPhase(..)
@@ -1980,6 +2029,31 @@ pub enum ServerExclusion {
 /// reads a remembered object — which is the only way an instruction can ever
 /// reach one of 4.6.8's remotes, since none exists to name at card-write
 /// time.
+/// CR 2.3 / 2.5 / 2.7: the numeric characteristics of a card a description
+/// can stipulate. Content on [`TargetFilter::CharacteristicIs`] (§12 rule 2),
+/// never a criterion apiece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardCharacteristic {
+    /// CR 2.3: the printed install/rez/play cost.
+    PrintedCost,
+    /// CR 2.5.1: the printed agenda points. 0 for a card that prints none.
+    AgendaPoints,
+    /// CR 2.7.1 through the 9.12.1 pipeline: strength AS IT IS NOW, so a
+    /// pumped icebreaker or a modified piece of ice answers with the value
+    /// the game state gives it. 0 for a card with no strength.
+    Strength,
+}
+
+/// How a stipulated characteristic is compared with its quantity. Content on
+/// the one criterion (§12 rule 2): "N or lower", "N or more" and "exactly N"
+/// are one word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumericCmp {
+    AtMost,
+    AtLeast,
+    Exactly,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerRef {
     /// A server the card names outright ("HQ").
@@ -2282,8 +2356,29 @@ pub enum TargetFilter {
     /// `Vec` so the filter vocabulary stays `Copy`, which is what lets a
     /// criterion be read wherever an object is examined.
     HasAnySubtype(&'static [crate::subtype::Subtype]),
-    /// CR 2.3: "…with printed install/rez/play cost N or lower".
-    PrintedCostAtMost(u32),
+    /// CR 2.3 / 2.5 / 2.7: a NUMERIC characteristic of the card, compared
+    /// against a quantity — "…with printed install/rez/play cost N or lower",
+    /// "…an agenda worth X points" (Lakshmi Smartfabrics), "…ice with
+    /// strength X or lower".
+    ///
+    /// One criterion for all of them (§12 rule 2): WHICH characteristic and
+    /// WHICH comparison are content, and the other side is a
+    /// [`Quantity`] — which is what lets a description be compared against a
+    /// number the game state produces, and in particular against 1.16.2c's
+    /// announced X, which is a quantity and was never sayable as a
+    /// stipulation before.
+    ///
+    /// The quantity is a `&'static` reference so the filter vocabulary stays
+    /// `Copy`, exactly as [`TargetFilter::AnyOf`] and [`TargetFilter::Not`]
+    /// already are. It is evaluated where the criterion is asked, so a
+    /// calculated bound is re-read rather than stamped.
+    ///
+    /// A card with no such characteristic printed on it reads 0, which is
+    /// 9.12.2e said of a card rather than of a set: an operation has no
+    /// agenda points, so "an agenda worth 0 points" reaches it — which is
+    /// why a sentence that means agendas says so with `CardTypeIs` beside
+    /// this one, as every printed card of this shape does.
+    CharacteristicIs { of: CardCharacteristic, cmp: NumericCmp, value: &'static Quantity },
     /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed
     /// faceup Corp card.
     Rezzed,
@@ -2314,6 +2409,26 @@ pub enum TargetFilter {
     /// With no such card nothing matches, the same way
     /// [`TargetFilter::SameCardTypeAsTriggeringCard`] reaches nothing.
     SameNameAsTriggeringCard,
+    /// CR 2.1.4 + 1.21.6: "…**copies of that agenda**" (Lakshmi
+    /// Smartfabrics) — a card whose name is the name of a card THIS ABILITY
+    /// REVEALED. 2.1.4 is what makes "copies of" a question about the name
+    /// and nothing else, and 1.21.6 is what keeps the revealed cards on the
+    /// resolving ability's frame for a later sentence to point back at.
+    ///
+    /// The relational sibling of [`TargetFilter::SameNameAsTriggeringCard`],
+    /// differing only in WHICH card stands on the other side — the occurrence
+    /// that met a condition, or the reveal this ability performed.
+    /// [`TargetFilter::RevealedByThisAbility`] is the same record read as an
+    /// IDENTITY ("those cards"); this reads it as a characteristic ("copies
+    /// of that card"), which is the difference 1.15.4 and 2.1.4 draw and the
+    /// reason both are needed: a copy in HQ is not the card that was
+    /// revealed.
+    ///
+    /// It stipulates a characteristic, so 1.15.2c's play-area default still
+    /// applies to it — a sentence about copies in a hidden zone says which
+    /// zone, as every printed card of this shape does. With nothing revealed
+    /// it reaches nothing.
+    SameNameAsRevealedByThisAbility,
     /// CR 1.15.4 + 1.16.4/8.7.2a: "…a card with a printed rez cost exactly
     /// 1[credit] **less than the trashed card's** printed rez cost" (Ob
     /// Superheavy Logistics) — a card whose PRINTED rez cost differs by
@@ -2467,6 +2582,24 @@ pub enum TargetFilter {
     /// protecting it, so both are "in" it; 4.6.8 is what makes "remote" a
     /// distinction the criterion can draw. Names the play area (1.15.2c).
     InRemoteServer,
+    /// CR 4.6.9a: "…a piece of ice **protecting the chosen server**"
+    /// (Tsakhia "Bankhar" Gantulga), "…ice protecting HQ". 4.6.9a puts every
+    /// installed piece of ice in a position in front of the server it
+    /// protects, so this is
+    /// the ice HALF of 4.6.6b's "in the server" and not the whole of it —
+    /// [`TargetFilter::InRemoteServer`] and
+    /// [`TargetFilter::InAttackedServer`] are the ones that also reach a
+    /// root.
+    ///
+    /// WHICH server is a [`ServerRef`] and therefore content (§12 rule 2):
+    /// a server the card names outright, or 9.10.3's maintained choice —
+    /// which is the only way a criterion can ever reach one of 4.6.8's
+    /// remotes, since none exists to name at card-write time. A maintained
+    /// choice holding no server describes nothing, so a card whose choice was
+    /// never made is simply inert.
+    ///
+    /// Names the play area (1.15.2c): only installed cards occupy positions.
+    ProtectingServer(ServerRef),
     /// CR 4.2.2: "1 of the top N cards of R&D" (Top Hat class) — a criterion
     /// that explicitly specifies the zone, which is what lets 1.15.2c's
     /// play-area restriction lift for it.
@@ -2634,7 +2767,8 @@ impl TargetFilter {
             TargetFilter::CardTypeIs(_)
                 | TargetFilter::HasSubtype(_)
                 | TargetFilter::HasAnySubtype(_)
-                | TargetFilter::PrintedCostAtMost(_)
+                | TargetFilter::CharacteristicIs { .. }
+                | TargetFilter::SameNameAsRevealedByThisAbility
                 | TargetFilter::HasName(_)
                 // 9.10.3: the maintained value IS a characteristic — a name,
                 // a card type or a subtype — so a card chosen for matching it
@@ -2779,6 +2913,16 @@ impl TargetFilter {
 pub enum TrashDestination {
     /// CR 4.9: the removed-from-game zone (Skorpios class).
     RemovedFromGame,
+    /// CR 4.2.3 + 8.7.3: the card's OWNER's deck, shuffled in (Marilyn
+    /// Campaign's "shuffle it into R&D"). The deck is ordered and a card
+    /// entering it takes no stated position, so the shuffle is part of the
+    /// destination rather than a second effect after it — which is also what
+    /// makes 1.12.3 apply: the card enters a hidden zone at an unknown
+    /// location and is a new object there.
+    ///
+    /// The owner is read from the card, exactly as the discard-pile default
+    /// is: the destination names a KIND of zone and the card says whose.
+    ShuffledIntoOwnersDeck,
     /// CR 8.1.4/8.1.4d: the installed Runner card is turned facedown and
     /// stays where it is — "a Runner card turned facedown is not considered
     /// to be uninstalled and simply remains in the play area" (Harbinger
