@@ -806,6 +806,17 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .log-lines { flex: 1; overflow-y: auto; padding: 10px; font-size: 12px; color: var(--dim);
   display: flex; flex-direction: column; gap: 6px; }
 .log-lines .me { color: var(--text); }
+/* "↓ N new": the affordance for a reader who has scrolled up while the log
+   kept moving. It sits INSIDE the drawer (which is `position: fixed`, so this
+   anchors to it) and floats over the last line rather than reflowing the
+   list — a chip that resized the scroller would move the very text the reader
+   is holding still to read. Clear of the bottom safe-area inset, which the
+   drawer pads for but an absolutely-positioned child sits inside of. */
+.log-new { position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(12px + var(--sab)); z-index: 2;
+  background: var(--panel); color: var(--text); border: 1px solid var(--legal);
+  border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0,0,0,.45); }
 #say-row { display: flex; gap: 6px; margin-top: 8px; }
 #say-input { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text);
   border-radius: 8px; padding: 8px; }

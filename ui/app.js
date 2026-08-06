@@ -63,6 +63,11 @@ function disarm() {
  * of the dirty key of every section that draws a card, or the redraw would
  * decide nothing had changed. */
 function repaintArmed() { if (S) render(); }
+/* The game log's reading position — see "THE READER'S PLACE IN THE LOG IS
+   THEIRS" by `renderLog`. Declared up here because `connect` resets them and
+   a saved session reconnects from a top-level restore. */
+let logFollow = true;
+let logSeenK = null;
 
 /* ── THE TWO TAPS, AS ARITHMETIC ─────────────────────────────────────────
  *
@@ -371,6 +376,10 @@ function connect(path, onopen) {
   titleSeen = new Set();
   titleList = [];
   sectionCache = {};
+  // A fresh connection is a fresh log: follow it from the bottom, with
+  // nothing outstanding to be told about (see `logFollow`).
+  logFollow = true;
+  logSeenK = null;
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}${path}`);
   ws.onopen = onopen;
@@ -4229,19 +4238,150 @@ function renderPhasePill() {
 }
 
 /* ── log ─────────────────────────────────────────────────────────────── */
-$("log-tab").onclick = () => $("log-drawer").classList.add("open");
+
+/* THE READER'S PLACE IN THE LOG IS THEIRS.
+ *
+ * Reported from a real game: "the scroll resets to all the way bottom every
+ * time". A timed game pushes state once a second (the timing ticker), every
+ * push runs `render`, and `renderLog` used to rebuild the list and slam
+ * `scrollTop` to the end — so a player who scrolled up to check what an ice
+ * did was dragged back down within the second, every second, and could not
+ * read their own history at all.
+ *
+ * The discipline is the standard one, and it has three parts.
+ *
+ * FOLLOWING is a state, not a default. While the reader is at the bottom, new
+ * lines pull the view down, because that is what being at the bottom means.
+ * The moment they scroll away from it they stop following and nothing moves
+ * the view but them.
+ *
+ * THE ANCHOR IS A LINE, NOT A NUMBER. `scrollTop` is not preservable here: the
+ * list is a window on the log (`slice(-200)`), the server drops lines off the
+ * front of its own copy once it hits its cap, and a collapsed wait line can
+ * grow a count and change height. All three change how much content sits ABOVE
+ * the reader, and a restored `scrollTop` would land that much off. So the
+ * position is remembered as "this line, this many pixels below the top edge"
+ * and restored by finding that same line again — which is why every line
+ * carries a stable key (`n`, minted once per line by the server and never
+ * reused; see `push_line`).
+ *
+ * AND THE READER IS TOLD. Scrolled-up and unaware that six things happened is
+ * its own failure, so a chip appears with the count and takes them back.
+ *
+ * Nothing here animates and nothing here hijacks: `scrollTop` is assigned
+ * directly, only ever to a value the reader asked for, and only ever when the
+ * list was actually rebuilt. */
+/* (`logFollow` and `logSeenK` are declared with the rest of the session state
+   at the top of the file: `connect` resets them, and it runs from a top-level
+   restore before this line is ever evaluated.) */
+/* Slack, in px, that still counts as "at the bottom": sub-pixel layout and
+   fractional device pixels mean an honest bottom is rarely exactly 0. */
+const LOG_FOOT = 24;
+
+/* A line's identity, stable across rebuilds. The CR server stamps `n`; the
+   older bridge server does not, and its log neither collapses nor drains, so
+   the absolute index is stable there and serves. */
+function logKey(l, i) { return l && l.n != null ? "n" + l.n : "i" + i; }
+
+function logAtBottom(box) {
+  return box.scrollHeight - box.scrollTop - box.clientHeight <= LOG_FOOT;
+}
+
+/* Everything currently in the log is now read. */
+function logMarkRead() {
+  const log = (S && S.log) || [];
+  logSeenK = log.length ? logKey(log[log.length - 1], log.length - 1) : null;
+}
+
+/* Back to the newest line, and following again. The one path that moves the
+   view on the reader's behalf, and it only ever runs from their own tap. */
+function logToBottom() {
+  const box = $("log-lines");
+  logFollow = true;
+  box.scrollTop = box.scrollHeight;
+  logMarkRead();
+  logPaintChip();
+}
+
+/* How many lines have arrived since the reader last saw the bottom. Counted
+   backwards from the newest, so a log that has been trimmed at the front
+   still gives an answer (an anchor that fell off the front means everything
+   on screen is new, which is the honest count). */
+function logUnread() {
+  const log = (S && S.log) || [];
+  if (logSeenK === null) return 0;
+  let n = 0;
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (logKey(log[i], i) === logSeenK) return n;
+    n++;
+  }
+  return n;
+}
+
+function logPaintChip() {
+  const chip = document.getElementById("log-new");
+  if (!chip) return;
+  const n = logFollow ? 0 : logUnread();
+  chip.textContent = `↓ ${n} new`;
+  chip.style.display = n > 0 ? "" : "none";
+}
+
+$("log-tab").onclick = () => {
+  $("log-drawer").classList.add("open");
+  // Opening the log is asking for the latest of it.
+  logToBottom();
+};
 $("log-close").onclick = () => $("log-drawer").classList.remove("open");
 $("concede-btn").onclick = () => {
   if (confirm("Concede the game?")) act("concede");
   $("log-drawer").classList.remove("open");
 };
 $("say-send").onclick = () => { send({ type: "say", msg: $("say-input").value }); $("say-input").value = ""; };
+$("log-new").onclick = logToBottom;
+/* The reader's own scrolling is the ONLY thing that decides whether they are
+   following. Passive: this listener never cancels the gesture. */
+$("log-lines").addEventListener("scroll", () => {
+  const box = $("log-lines");
+  const at = logAtBottom(box);
+  if (at === logFollow) return;
+  logFollow = at;
+  if (at) logMarkRead();
+  logPaintChip();
+}, { passive: true });
 
 function renderLog() {
   const box = $("log-lines");
   const log = S.log || [];
+  // Chat exists where there is somebody to say it to.
+  const human = mode === "bridge" || (mode === "cr" && S["opponent-bot"] === false);
+  $("say-row").style.display = human ? "" : "none";
+  // A push that did not change the log does not touch the list at all. Most
+  // pushes in a timed game are exactly that — a clock tick — and rebuilding
+  // for them is what turned "scroll up and read" into a fight with the
+  // server. (It also kept dropping any text the reader had selected.)
+  if (!dirty("log", log)) { logPaintChip(); return; }
+
+  const shown = log.slice(-200);
+  const first = log.length - shown.length;
+
+  // WHERE THE READER IS, measured before anything moves: the topmost line
+  // still on screen and how far its top edge sits below the viewport's, plus
+  // the distance from the bottom as a fallback for when that line is gone.
+  let anchor = null;
+  if (!logFollow) {
+    anchor = { k: null, dy: 0, fromBottom: box.scrollHeight - box.scrollTop };
+    for (const el of box.children) {
+      if (el.offsetTop + el.offsetHeight > box.scrollTop) {
+        anchor.k = el.dataset.k;
+        anchor.dy = el.offsetTop - box.scrollTop;
+        break;
+      }
+    }
+  }
+
   box.innerHTML = "";
-  log.slice(-200).forEach((l) => {
+  const byKey = new Map();
+  shown.forEach((l, i) => {
     const d = document.createElement("div");
     const user = typeof l.user === "object" && l.user ? l.user.username : l.user;
     // The log records the move a player made, and a move made with a card
@@ -4257,15 +4397,34 @@ function renderLog() {
     const body = chat ? sym(raw)
       : spk ? `${spk[1]}: ${abilityText(spk[2], null, true)}`
       : abilityText(raw, null, true);
-    d.textContent = (chat ? user + ": " : "") + body;
+    // A wait line the server folded into its predecessor carries how many
+    // times it was said. The count is the whole point of the fold: the fact
+    // is stated once, and how often it was true is still on the record.
+    const times = l.count > 1 ? ` ×${l.count}` : "";
+    d.textContent = (chat ? user + ": " : "") + body + times;
+    const k = logKey(l, first + i);
+    d.dataset.k = k;
+    byKey.set(k, d);
     box.appendChild(d);
   });
-  box.scrollTop = box.scrollHeight;
-  // Chat exists where there is somebody to say it to.
-  const human = mode === "bridge" || (mode === "cr" && S["opponent-bot"] === false);
-  $("say-row").style.display = human ? "" : "none";
-  if (log.length > prev.logn && $("log-drawer").classList.contains("open")) box.scrollTop = box.scrollHeight;
-  prev.logn = log.length;
+  // Tapping the newest line is the other way back to following — the reader
+  // is already looking at the end of the log and says so.
+  if (box.lastElementChild) box.lastElementChild.onclick = logToBottom;
+
+  if (logFollow) {
+    box.scrollTop = box.scrollHeight;
+    logMarkRead();
+  } else if (anchor) {
+    const el = anchor.k != null ? byKey.get(anchor.k) : null;
+    // The anchor line survived: put it back exactly where it was. It did not
+    // (trimmed off the front): hold the distance to the newest line instead,
+    // which is the closest thing to "unchanged" once the history under them
+    // has been thrown away.
+    box.scrollTop = el
+      ? Math.max(0, el.offsetTop - anchor.dy)
+      : Math.max(0, box.scrollHeight - anchor.fromBottom);
+  }
+  logPaintChip();
 }
 
 /* ── zoom / gameover / toast ─────────────────────────────────────────── */

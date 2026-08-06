@@ -391,6 +391,10 @@
       <div id="say-row" style="display:none"><input id="say-input" placeholder="say…"><button id="say-send" class="chip">➤</button></div>
     </div>
     <div id="log-lines" class="log-lines"></div>
+    <!-- Shown only while the reader has scrolled away from the newest line
+         and lines have arrived behind their back (`logPaintChip`). Tapping it
+         returns them to the bottom and resumes following. -->
+    <button id="log-new" class="log-new" style="display:none">↓ new</button>
   </div>
 
   <!-- Timed games only (server sends state.timing; untimed games never show

@@ -634,6 +634,17 @@ pub struct CrGame {
     /// its reader is not entitled to see. Chat is the one thing written to
     /// both logs verbatim.
     log: [Vec<Value>; 2],
+    /// Per-log line numbers (`"n"` on every entry), monotonic for the life of
+    /// the game and never reused — NOT the line's index, which shifts under
+    /// the reader every time `push_line` drains the front.
+    ///
+    /// The client anchors its scroll on these: a log that re-renders once a
+    /// second (a timed game pushes on every tick) has to be able to say "the
+    /// line you were looking at is THIS one" across a rebuild, and a raw
+    /// `scrollTop` cannot — it drifts by exactly the height of whatever was
+    /// dropped off the top. They also make "new lines arrived" answerable at
+    /// the cap, where the length stops growing but the log keeps moving.
+    log_seq: [u64; 2],
     /// How far into `vm.changes.log` both logs have been narrated. The
     /// kernel's change buffer is the authoritative event stream; this is the
     /// cursor that turns it into two readable ones (`crlog`).
@@ -682,18 +693,6 @@ impl CrGame {
     }
     fn over(&self) -> bool {
         self.result.is_some() || self.conceded.is_some() || self.timed_out.is_some()
-    }
-    /// The printed name of this side's identity card — what "{IDENTITY} used
-    /// a timeout" announces. Read from the play area, so a Rebirth-swapped
-    /// identity is named by who they are NOW.
-    fn identity_name(&self, side: Side) -> String {
-        self.vm
-            .cards_in_zone(Zone::PlayArea(side))
-            .iter()
-            .filter_map(|id| self.vm.st.objects.get(id))
-            .find(|o| o.printed.card_type == CardType::Identity)
-            .map(|o| o.printed.name.to_string())
-            .unwrap_or_else(|| side_name(side).to_string())
     }
     /// Timing hook: a decision was just put to a person. Their main clock
     /// starts and their calm reservoir starts draining. Nothing is sized per
@@ -768,13 +767,61 @@ impl CrGame {
             self.say_to(side, l);
         }
     }
+    /// The WAITING state, rendered once per viewer — and the one class of line
+    /// that may be collapsed (see [`CrGame::push_line`]).
+    ///
+    /// A wait line reports no game event: it says what the engine is asking
+    /// for right now, and the engine asks for the same thing over and over
+    /// (a turn is a string of paid ability windows). Five identical
+    /// "Corp: in a paid ability window (9.2.7)" in a row is five copies of
+    /// one fact, and it pushed the lines that ARE events off the screen.
+    fn say_wait(&mut self, lines: [Option<String>; 2]) {
+        for (i, l) in lines.into_iter().enumerate() {
+            let Some(l) = l else { continue };
+            let side = if i == 0 { Side::Corp } else { Side::Runner };
+            self.push_line(side, json!({"user": "__system__", "text": l, "wait": true}));
+        }
+    }
     /// A player's chat line: identical text in both logs, attributed.
     fn chat_line(&mut self, who: &str, text: &str) {
         let v = json!({"user": who, "text": text});
         self.push_line(Side::Corp, v.clone());
         self.push_line(Side::Runner, v);
     }
+    /// One line into one side's log, numbered — and, for a WAIT line only,
+    /// folded into the identical line above it instead of repeated.
+    ///
+    /// The collapse is deliberately narrow, because the log's whole job is to
+    /// be the record a player can audit a game from. Two conditions, both
+    /// required: the incoming line is a wait line (`say_wait` — a statement
+    /// about what the engine is asking for, never about anything that
+    /// HAPPENED), and it is byte-identical to the line immediately above it.
+    /// So the same window asked five times in a row becomes one line and a
+    /// count, while two of anything separated by so much as one event stay
+    /// two lines — an event between them is proof they are about different
+    /// moments, and "Corp: gains 1[c]." twice in a row is two credits and is
+    /// never, ever collapsed.
+    ///
+    /// The surviving line keeps its `n`, so a reader anchored on it stays
+    /// anchored while its count ticks up.
     fn push_line(&mut self, side: Side, v: Value) {
+        let n = self.log_seq[six(side)];
+        let log = &mut self.log[six(side)];
+        if v.get("wait") == Some(&Value::Bool(true)) {
+            if let Some(last) = log.last_mut() {
+                if last.get("wait") == Some(&Value::Bool(true)) && last.get("text") == v.get("text")
+                {
+                    let seen = last.get("count").and_then(|c| c.as_u64()).unwrap_or(1);
+                    last["count"] = json!(seen + 1);
+                    return;
+                }
+            }
+        }
+        let mut v = v;
+        if let Some(o) = v.as_object_mut() {
+            o.insert("n".into(), json!(n));
+        }
+        self.log_seq[six(side)] = n + 1;
         let log = &mut self.log[six(side)];
         log.push(v);
         // A narrated game is a much longer log than a list of taken actions
@@ -961,6 +1008,7 @@ fn new_game(
         accesses: Vec::new(),
         access_seq: 0,
         log: [Vec::new(), Vec::new()],
+        log_seq: [0, 0],
         narrated: 0,
         acted: 0,
         transcript,
@@ -1349,17 +1397,21 @@ async fn drive_inner(g: &mut CrGame, mut sink: Option<(&mut WebSocket, Side)>) {
                     }
                     let p = present(&g.vm, side, &spec);
                     g.picked.clear();
-                    // The waiting state is a LOG LINE, not a popup: "Hoshiko
-                    // Shiro: Untold Protagonist choosing target for install
-                    // (Simulchip)". The board carries the affordance (gold
-                    // candidates, the armed white ring); the log carries the
-                    // sentence, so a player who feels stuck can always open
-                    // it and read what the game is waiting for — and it goes
-                    // to BOTH logs, because at a physical table your opponent
-                    // can see you thinking too. Once per decision, here,
-                    // where the pending is installed — never per render.
+                    // The waiting state is a LOG LINE, not a popup: "Runner:
+                    // choosing target for install (Simulchip)". The board
+                    // carries the affordance (gold candidates, the armed
+                    // white ring); the log carries the sentence, so a player
+                    // who feels stuck can always open it and read what the
+                    // game is waiting for — and it goes to BOTH logs, because
+                    // at a physical table your opponent can see you thinking
+                    // too. Once per decision, here, where the pending is
+                    // installed — never per render.
+                    //
+                    // `say_wait`, not `say_each`: a wait line is the only
+                    // kind that folds into an identical predecessor, and a
+                    // turn is a string of identical paid ability windows.
                     let lines = decision_wait_lines(&g.vm, side, &spec);
-                    g.say_each(lines);
+                    g.say_wait(lines);
                     g.pending = Some(p);
                     // The clock starts when the question is PUT, which is here.
                     g.timing_arm();
@@ -1450,8 +1502,12 @@ pub async fn timing_tick(g: &mut CrGame) -> bool {
         PopOutcome::TimeoutFired => {
             // The banked ⌛ auto-fired: the rope has restarted whole, the
             // token is consumed, and the prompt stays on the table.
-            // Announced by identity name, in both logs.
-            let line = format!("{} used a timeout \u{231B}", g.identity_name(side));
+            //
+            // Announced by SIDE, in both logs. It read "{IDENTITY} used a
+            // timeout ⌛" once, which made it the one line in the column with
+            // a different subject from all the others; the log has ONE
+            // convention now and the actor of every line is a player.
+            let line = format!("{}: used a timeout \u{231B}", side_name(side));
             g.say(line.clone());
             g.transcript.note(&line);
         }
@@ -1901,11 +1957,20 @@ fn answer_now(g: &mut CrGame, a: DecisionAnswer) -> bool {
 // DecisionSpec → the UI's prompt shapes
 // ───────────────────────────────────────────────────────────────────────────
 
-/// The waiting state, narrated: "{IDENTITY} {verb} {ABILITY} ({SOURCE})" —
-/// one line per viewer, rendered into both logs when a human's decision is
+/// The waiting state, narrated: "{SIDE}: {verb} {ABILITY} ({SOURCE})" — one
+/// line per viewer, rendered into both logs when a human's decision is
 /// installed. The reminder popups this replaces used to cover the very cards
 /// the question was about; the sentence they carried lives HERE now, and the
 /// board alone carries the affordance.
+///
+/// THE ACTOR IS A SIDE, NEVER AN IDENTITY. This line used to open with the
+/// player's identity card ("Nebula Talent Management: Making Stars in a paid
+/// ability window …") while every other line in the same log opened with
+/// "Corp: " — two conventions in one column, and the identity's own colon
+/// made the first one read as a card doing the waiting. One convention now,
+/// and it is [`side_name`]: a log line's subject is the PLAYER. Card names
+/// inside the sentence are untouched — the source in the parentheses is
+/// still the card, and still filtered per viewer by §10.2.
 ///
 /// `ABILITY` is what the choice is for and `SOURCE` the card it is printed
 /// on; the parenthetical appears only when the two are not the same name
@@ -1973,11 +2038,7 @@ fn decision_wait_lines(vm: &Vm, side: Side, spec: &DecisionSpec) -> [Option<Stri
         // panels, not reminders — nothing to narrate.
         _ => return [None, None],
     };
-    let identity = vm
-        .identity_of(side)
-        .and_then(|id| vm.st.objects.get(&id))
-        .map(|o| o.printed.name.to_string())
-        .unwrap_or_else(|| side_name(side).to_string());
+    let who = side_name(side);
     let source = vm.decision_source();
     let mut out = [None, None];
     for (i, viewer) in [Side::Corp, Side::Runner].into_iter().enumerate() {
@@ -1989,17 +2050,17 @@ fn decision_wait_lines(vm: &Vm, side: Side, spec: &DecisionSpec) -> [Option<Stri
         // access") must not have a source glued on as if it were one.
         let takes_object = verb.ends_with(" for");
         let line = match (action_word, src_name.filter(|_| takes_object)) {
-            // "choosing a destination for install (Simulchip)"
-            (Some(act), Some(src)) => format!("{identity} {verb} {act} ({src})"),
+            // "Runner: choosing a destination for install (Simulchip)"
+            (Some(act), Some(src)) => format!("{who}: {verb} {act} ({src})"),
             // A basic action: no printed source to parenthesise.
-            (Some(act), None) => format!("{identity} {verb} {act}"),
-            // "choosing target for Simulchip" — ability and source are the
-            // same name, so it is said once.
-            (None, Some(src)) => format!("{identity} {verb} {src}"),
+            (Some(act), None) => format!("{who}: {verb} {act}"),
+            // "Runner: choosing target for Simulchip" — ability and source
+            // are the same name, so it is said once.
+            (None, Some(src)) => format!("{who}: {verb} {src}"),
             // No source at all: the verb phrase carries the whole of it,
             // dropping a dangling "for" where the verb expected an object.
             (None, None) => {
-                format!("{identity} {}", verb.strip_suffix(" for").unwrap_or(&verb))
+                format!("{who}: {}", verb.strip_suffix(" for").unwrap_or(&verb))
             }
         };
         out[i] = Some(line);
@@ -4189,6 +4250,105 @@ mod tests {
             labels.iter().any(|l| l.starts_with("Score ")),
             "the score is still on the table: {labels:?}"
         );
+    }
+
+    /// ONE CONVENTION FOR THE WHOLE COLUMN: the actor of a log line is a
+    /// SIDE, and the identity card never speaks.
+    ///
+    /// Reported from a real game, as two shapes in one screenshot: the effect
+    /// lines read "Corp: installs Rashida Jaheem in Server 100." while the
+    /// wait lines read "Nebula Talent Management: Making Stars in a paid
+    /// ability window — an agenda may be scored (9.2.7d)". The identity's own
+    /// colon made the second one parse as a CARD doing the waiting, and the
+    /// reader had to know which side that identity belonged to before they
+    /// could read the line at all.
+    #[test]
+    fn a_wait_line_names_the_side_and_never_the_identity() {
+        use jinteki_cr::window::PawClasses;
+        let mut g = dealt_game();
+        let spec = DecisionSpec::PaidWindow {
+            classes: PawClasses::prs(),
+            options: Vec::new(),
+        };
+        for side in [Side::Corp, Side::Runner] {
+            let ident = g
+                .vm
+                .identity_of(side)
+                .and_then(|id| g.vm.st.objects.get(&id))
+                .map(|o| o.printed.name.to_string())
+                .expect("a real deck brings a real identity");
+            let lines = decision_wait_lines(&g.vm, side, &spec);
+            for l in lines.iter().flatten() {
+                assert!(
+                    l.starts_with(&format!("{}: ", side_name(side))),
+                    "the actor is the side, spelled like every other line: {l:?}"
+                );
+                assert!(
+                    !l.contains(&ident),
+                    "and the identity card is not who is waiting ({ident:?}): {l:?}"
+                );
+            }
+        }
+
+        // The other shape — the one that ends in a card. A synthetic spec has
+        // no ability frame under it, so `decision_source` is None and the
+        // sentence drops its dangling "for"; what is being pinned here is the
+        // SUBJECT, which is a side in this shape too.
+        let hand = g.vm.cards_in_zone(Zone::Hand(Side::Runner));
+        let spec = DecisionSpec::ChooseTargets {
+            candidates: hand[..1].to_vec(),
+            count: 1,
+            up_to: false,
+            min: 1,
+            distinct_names: false,
+        };
+        let lines = decision_wait_lines(&g.vm, Side::Runner, &spec);
+        let runner = lines[six(Side::Runner)].clone().expect("a target choice is narrated");
+        assert!(
+            runner.starts_with("Runner: choosing target"),
+            "the shape is `<Side>: <verb> <source>`: {runner:?}"
+        );
+    }
+
+    /// The collapse, and the much longer list of things it REFUSES to
+    /// collapse. A log a player cannot audit a game from is not a log.
+    #[test]
+    fn only_consecutive_identical_wait_lines_collapse() {
+        let mut g = dealt_game();
+        let from = g.log[six(Side::Corp)].len();
+        let win = || {
+            [Some("Corp: in a paid ability window (9.2.7)".to_string()), None]
+        };
+
+        // Three of the same window in a row: one line, counted three.
+        for _ in 0..3 {
+            g.say_wait(win());
+        }
+        let seen = &g.log[six(Side::Corp)][from..];
+        assert_eq!(seen.len(), 1, "one window, said once: {seen:#?}");
+        assert_eq!(seen[0]["count"], json!(3), "…and counted: {seen:#?}");
+        let n = seen[0]["n"].clone();
+
+        // An EVENT between two windows is proof they are different moments,
+        // so the second window is a second line.
+        g.say_to(Side::Corp, "Corp: gains 1[c].");
+        g.say_wait(win());
+        let seen = &g.log[six(Side::Corp)][from..];
+        assert_eq!(seen.len(), 3, "window, event, window: {seen:#?}");
+        assert_eq!(seen[0]["n"], n, "and the collapsed line kept its number");
+
+        // Two identical EVENTS are two events, whatever they say. This is the
+        // line the collapse must never be allowed to reach: two credits is
+        // not one credit said twice.
+        for _ in 0..2 {
+            g.say_to(Side::Corp, "Corp: gains 1[c].");
+        }
+        let seen = &g.log[six(Side::Corp)][from..];
+        assert_eq!(seen.len(), 5, "both credits are in the log: {seen:#?}");
+        let ns: Vec<&Value> = seen.iter().map(|l| &l["n"]).collect();
+        let mut sorted = ns.clone();
+        sorted.dedup();
+        assert_eq!(ns.len(), sorted.len(), "every line has its own number: {ns:?}");
     }
 
     /// A FACEDOWN INSTALLED CARD, ON THE WIRE, from both seats.

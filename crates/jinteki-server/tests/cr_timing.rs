@@ -447,8 +447,13 @@ async fn a_banked_timeout_fires_restarts_the_rope_and_is_consumed() {
     assert!(cr::timing_tick(&mut g).await, "the fire is an event");
     let t = state(&g);
     assert!(
-        log_contains(&t, "Test Runner used a timeout"),
-        "announced by IDENTITY name: {:#?}",
+        log_contains(&t, "Runner: used a timeout"),
+        "announced by SIDE, like every other line in the log: {:#?}",
+        log_of(&t)
+    );
+    assert!(
+        !log_contains(&t, "Test Runner used a timeout"),
+        "…and never by the identity card, which is not who used it: {:#?}",
         log_of(&t)
     );
     assert_eq!(timing_of(&t)["timeouts"], json!(0), "the token is consumed");
