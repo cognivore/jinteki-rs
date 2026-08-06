@@ -70,7 +70,7 @@ Identity is COMPLETE. Printed text below is from
       "When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. (The new ice is installed unrezzed. You do not pay an install cost.) / [subroutine] End the run."
 - [x] **Vanilla** ×3 — ice · Barrier · cost 0, str 0
       "[subroutine] End the run."
-- [ ] **Fairchild 3.0** ×2 — ice · Code Gate - Bioroid - AP · cost 6, str 5
+- [x] **Fairchild 3.0** ×2 — ice · Code Gate - Bioroid - AP · cost 6, str 5
       "Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] Do 1 core damage or end the run."
 - [ ] **Vertigo** ×1 — ice · Code Gate · cost 1, str 1
       "When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run. / [subroutine] The Runner loses [click]."
@@ -143,23 +143,20 @@ Each entry is a GENERAL capability (ARCHITECTURE §12): thresholds, polarity,
 scope and windows are content on one atom, never a new atom per card. The
 "wants it" line names the cards that ran into it, for whoever picks it up.
 
-### An ability that names its controller (CR 1.14.4)
+A blocker that is no longer true costs more than no blocker at all, because it
+tells the next wave to skip a card it could finish. Two entries were deleted on
+that ground when this list was re-read against the kernel:
 
-1.14.4 says the controller of an ability is "**by default**" the controller of
-its source, and that a player can only use abilities they control. The kernel
-has no way to depart from that default: `Vm::paid_window_options` offers a
-card's paid abilities to its controller and to nobody else, so a Corp card
-whose ability says "Only the Runner can use this ability" would hand the
-Runner's ability to the Corp.
-
-Wanted: the ability itself carrying WHICH player controls it, as one optional
-field on `AbilityDef` (an absent value being 1.14.4's default). That is one
-position with the player as content, and it covers the whole bioroid class in
-both directions at once — including any future card that hands the Corp an
-ability printed on a Runner card.
-
-Wants it: **Fairchild 3.0** (the "Lose [click][click][click]: Break up to 3
-subroutines on this ice" ability; the three subroutines are done).
+- **An ability that names its controller (CR 1.14.4)** — landed as
+  `AbilityDef.controller` / `used_only_by` / `paid_used_only_by` (CR 1.14.4b).
+  **Fairchild 3.0** is written and ticked.
+- **A trigger condition over the CLICKS spent on one action** — never actually
+  missing. `TriggerCond::ClicksSpentOnAction { side, count }` has existed since
+  the W13e wave under CR 1.16.4d's citation rather than 5.2.1's; it is read by
+  the checkpoint scan, `tk::jeeves_like` is its shape, and
+  `example_rule_inherent_cost_aggregates_1` drives it on a board. **Jeeves
+  Model Bioroids** is finishable now and is not written yet — its sentence is
+  that condition under `when_first_each_turn`, with `gain_clicks(Corp, 1)`.
 
 ### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
 
@@ -256,28 +253,6 @@ and a payer who can pay none faces no choice and the effect resolves.
 Wants it: **Manegarm Skunkworks** (its only sentence, which also wants the
 condition above).
 
-### A trigger condition over the CLICKS spent on one action (CR 5.2.1 / 1.11.3b)
-
-The trigger vocabulary counts ACTIONS — `SameActionInARow { side, count }` (The
-Collective) and `DifferentActionsThisTurn` (MirrorMorph) — and has no condition
-about how many [click] a player has SPENT on one action within a turn. The two
-counts are not the same count and neither implies the other: 5.2.6h's basic
-purge is ONE action costing three clicks, and a double operation followed by an
-ordinary one is TWO actions costing three between them, and both meet a "spend
-3[click] on the same action" sentence while meeting no count of repeated
-actions at all. Written with the words that exist, such a card fires strictly
-less often than it should — a silent under-trigger, which is the reason the
-sentence is marked rather than approximated.
-
-Wanted: one condition over clicks SPENT (5.2.1, and 1.11.3b's insistence that
-spending and losing are not the same word), with the threshold and the "same
-action" grouping as content on it, so "the first time you spend N[click] on the
-same action each turn" is that condition paired with the ordinal
-`when_first_each_turn` already supplies.
-
-Wants it: **Jeeves Model Bioroids** (its only sentence that does anything; the
-alliance line is a 1.4.5 deckbuilding restriction and denotes into nothing).
-
 ### A trash whose destination an ABILITY redirects (CR 9.9.8a-b / 8.2.2)
 
 The kernel replaces a trash's destination in exactly one shape:
@@ -342,17 +317,22 @@ it.)
 Wanted: the ordinal as CONTENT on the one declaration, the way
 `StaticDecl::InherentCostMod` already carries `first_each_turn` — one
 position, read from the change log, covering "the first N times each turn" for
-every additional cost a card can print. Wanted beside it: the "names no
-server" set (`RunServerSet::Any`) reachable from the card vocabulary, which
-today offers helpers only for a named list and for 4.6.8's remotes — a
-sentence naming no server cannot be written at all, and the servers it would
-have to enumerate include remotes that do not exist when the card is written.
+every additional cost a card can print. That is the whole of what is missing.
+
+(An earlier wave also wanted the "names no server" set here, claiming a
+sentence naming no server could not be written at all. That was never true:
+`RunServerSet` is among `crate::edsl`'s re-exports, so
+`StaticDecl::AdditionalRunActionCost { cost, on: RunServerSet::Any }` is
+written directly, and `additional_cost_to_run`'s own doc comment names
+`RunServerSet::Any` as how to say it. What the two named helpers do not have
+is a THIRD helper for the empty set — a shorthand, not a capability.)
 
 Wants it: **Enhanced Login Protocol** (its second sentence; the current's own
 "not trashed until…" is done and tested). Note the kernel's doc comment on
 `AdditionalRunActionCost` names this card as its class exemplar — it is
 describing the ORIGINAL printing, which charged every run; the printed text in
 `netrunner-cards-json` is the revised one and it has the ordinal.
+
 
 ### Hosted credits spendable on REZZING (CR 1.10.3c / 8.1.2)
 
@@ -499,7 +479,10 @@ effect: `Instruction::TrashRandomFromHand` performs 1.15.2b's unannounced trash
 out of a hand, and no `Cost` field charges one. `Cost::trash_matching` is the
 announced trash and not this — 1.15.2b is explicit that a card taken at random
 is not announced by anyone, which is exactly the difference the sentence turns
-on.
+on. `Cost::trash_from_hand` is not it either, and it is the near miss worth
+naming: it charges an UNANNOUNCED trash, but its own doc records the
+approximation that makes it the wrong word — it takes the front of the hand,
+and the front of a hand is not a card taken at random.
 
 Wanted: the act as CONTENT on one additional-cost declaration — rezzing beside
 stealing, accessing and the basic actions, with the cards described in the
@@ -591,7 +574,8 @@ rest of the branch — 1.17.3e/f keeps it an ADD and not a steal).
 
 The subroutine conditions are about BREAKING (`SubroutineBrokenOnSelf`,
 `AllSubsBrokenOnEncounteredIce`, `SelfFullyBroken`) and about a run that
-followed one (`MakesSuccessfulRunAfterSubroutineResolved`). None is met by the
+followed one (`MakesSuccessfulRun`'s `after_subroutine_resolved` flag — a
+field on that condition, not a condition of its own). None is met by the
 resolution itself, though `GameChange::SubroutineResolved` records it and
 `Quantity::SubroutinesResolvedThisRun` counts it from the log.
 
@@ -637,10 +621,14 @@ damage are done and tested).
 `StaticDecl::ReplaceSubroutineResolution` already says 9.9.2's "instead of the
 subroutine they would resolve, these instructions". What cannot be said is
 WHEN it is on. A static ability is either always active or gated by
-`declares_while`'s state requirements, and neither reaches an ENCOUNTER: no
-requirement asks about the encounter in progress — whether one is under way at
-all, and whether its ice matches a description — and no static ability carries
-an ORDINAL, so "the first encounter each turn" has no position either.
+`declares_while`'s state requirements, and neither reaches an ENCOUNTER. The
+nearest requirement is `CanInterfaceWithEncounteredIce { required_subtype }`,
+which is 9.3.6c's strength gate wearing a subtype and not a question about the
+encounter at all; nothing asks whether one is under way, nor whether its ice
+matches a description. `AbilityDef` does carry an `ordinal`, but only
+`first_imminence_of` ever reads it — it stipulates which IMMINENCE a
+conditional may be relevant to, and no static ability is read through it — so
+"the first encounter each turn" still has no position.
 
 Both gaps have to close together. An always-on declaration rewrites every
 subroutine on every server for the whole game, which is the largest over-reach

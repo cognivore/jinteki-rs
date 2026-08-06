@@ -521,6 +521,35 @@ impl CardBuilder {
     ) -> Self {
         self.ability(AbilityDef::paid(cost, instrs.into_iter().collect()).used_only_by(user))
     }
+    /// "<cost>: … on **this ice**. **Only the Runner can use this ability.**"
+    /// — [`CardBuilder::paid_used_only_by`] with 9.5.6c's narrowest
+    /// stipulation beside it, which is every Bioroid's break ability.
+    ///
+    /// Both halves are printed and both are needed. 1.14.4b's named player is
+    /// what makes the ability the Runner's; 9.5.6c's "this ice" is what keeps
+    /// it on the card it is printed on — "a paid ability that refers to ice
+    /// the Runner is encountering can only be used during an encounter with a
+    /// piece of ice that meets all stipulations used in referring to it", and
+    /// "this ice" is a stipulation that only one piece of ice ever meets.
+    ///
+    /// Neither is a card-shaped exception: any ability may name any player,
+    /// and any ability may refer to its own source's encounter.
+    pub fn paid_used_only_by_during_encounters_with_this_card(
+        self,
+        user: Side,
+        cost: Cost,
+        instrs: impl IntoIterator<Item = Instruction>,
+    ) -> Self {
+        self.ability(
+            AbilityDef::paid(cost, instrs.into_iter().collect())
+                .used_only_by(user)
+                .with_timing(TimingRestriction::EncounterOnly {
+                    required_subtype: None,
+                    required_choice: None,
+                    required_self: true,
+                }),
+        )
+    }
     /// "Once per turn → [click], 1[credit]: …" — a paid ability carrying
     /// 9.3.6g's once-per-turn flag, which is spent by USING the ability and
     /// comes back when the turn ends.
@@ -556,7 +585,7 @@ impl CardBuilder {
                 .with_flag(AbilityFlag::OncePerTurn)
                 .with_timing(TimingRestriction::EncounterOnly {
                     required_subtype: Some(ice_subtype),
-                    required_choice: None,
+                    required_choice: None, required_self: false,
                 }),
         )
     }
@@ -609,7 +638,7 @@ impl CardBuilder {
         self.ability(
             AbilityDef::paid(cost, instrs.into_iter().collect())
                 .with_flag(AbilityFlag::Interface)
-                .with_timing(TimingRestriction::EncounterOnly { required_subtype: ice_subtype, required_choice: None }),
+                .with_timing(TimingRestriction::EncounterOnly { required_subtype: ice_subtype, required_choice: None, required_self: false }),
         )
     }
     /// "Access → 1[credit]: …" — usable only in the mid-access window
@@ -667,7 +696,7 @@ impl CardBuilder {
             AbilityDef::paid(cost, instrs.into_iter().collect()).with_timing(
                 TimingRestriction::EncounterOnly {
                     required_subtype: None,
-                    required_choice: Some(key),
+                    required_choice: Some(key), required_self: false,
                 },
             ),
         )
@@ -682,7 +711,7 @@ impl CardBuilder {
     ) -> Self {
         self.ability(
             AbilityDef::paid(cost, instrs.into_iter().collect())
-                .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None }),
+                .with_timing(TimingRestriction::EncounterOnly { required_subtype: None, required_choice: None, required_self: false }),
         )
     }
     /// "When <trigger>, …" — a conditional ability (9.6). Mandatory: its
@@ -1871,6 +1900,25 @@ pub fn credits(n: u32) -> Cost {
 /// "[click]:" — N of them.
 pub fn clicks(n: u32) -> Cost {
     Cost { clicks: n, ..Cost::default() }
+}
+/// "**Lose [click][click][click]:**" — CR 5.2.1a's other kind of click cost.
+///
+/// 5.2.1 makes an action "any paid ability where the cost BEGINS with a
+/// [click] symbol", and 5.2.1a is the exception that matters here: "other
+/// costs can contain [click] symbols without denoting an action". A cost
+/// beginning with the word *Lose* is one of those, so the ability is used in
+/// a paid window and not in an action window — which is the only reason a
+/// bioroid's break ability can be used at all, since an encounter is not an
+/// action window.
+///
+/// The clicks still come out of the payer's pool, and out of THEIR pool
+/// (1.14.3), so a Runner with fewer than N cannot use the ability (1.16.1).
+/// 1.11.3b keeps the two words apart for everything that asks — "lose" and
+/// "spend" "are not synonymous for the purposes of meeting conditions and
+/// restrictions of card abilities" — which is why this is a component of its
+/// own rather than [`clicks`] under another name.
+pub fn losing_clicks(n: u32) -> Cost {
+    Cost::lose_clicks(n)
 }
 /// "[trash]:" — trash this card to use it.
 pub fn trash_this_card() -> Cost {

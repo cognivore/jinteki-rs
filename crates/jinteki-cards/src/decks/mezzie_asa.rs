@@ -1055,15 +1055,38 @@ pub fn vanilla() -> Card {
 ///  cards.
 ///  [subroutine] Do 1 core damage or end the run."
 ///
-/// UNIMPLEMENTED: the bioroid ability. Everything in it but the last sentence
-/// has words — 5.2.1a's "Lose [click]" trigger cost, and 9.8.6's break of up
-/// to 3 of this ice's unbroken subroutines — but "Only the Runner can use
-/// this ability" is 1.14.4's *"by default"* clause, and the kernel has no
-/// default to depart from: an ability's controller is the controller of its
-/// source, full stop, and paid abilities are offered to that player alone.
-/// Written without it the ability would be the CORP's, which is worse than
-/// leaving it unsaid — the Corp would be able to break its own ice and the
-/// Runner never could. So it is marked rather than approximated.
+/// COMPLETE.
+///
+/// The bioroid ability is three printed clauses and one paid ability (9.5.1).
+/// The trigger cost is 5.2.1a's: "other costs can contain [click] symbols
+/// without denoting an action", so the ability is used in a PAID window and
+/// not in an action window — which is the only reason it can ever be used,
+/// because 9.5.6a confines a break ability to an encounter and an encounter
+/// is not an action window. 1.11.3b keeps "lose" and "spend" apart for
+/// everything that asks about them.
+///
+/// "Only the Runner can use this ability" is CR 1.14.4b, and it says two
+/// things because 1.14.4 has two halves. 1.14.4 makes the controller of an
+/// ability the controller of its source **by default** and lets a player use
+/// only abilities they control; 1.14.4b lets the printed sentence name
+/// someone else, and "the specified player controls each such ability, even
+/// if they do not control its source". So the RUNNER is offered it and the
+/// CORP — who controls the ice — never is. 1.14.3 follows without a word of
+/// its own: a player pays costs with objects they control, so the three
+/// clicks come out of the Runner's own pool.
+///
+/// "…on **this ice**" is 9.5.6c, the third clause and the easiest to lose: "a
+/// paid ability that refers to ice the Runner is encountering can only be
+/// used during an encounter with a piece of ice that meets all stipulations
+/// used in referring to it". Only one piece of ice ever meets *this ice*, so
+/// the ability is offered during an encounter with this card and during no
+/// other — without which a rezzed Fairchild would break subroutines on
+/// whatever ice the Runner happened to be encountering, which is not a
+/// smaller card than the printed one but a very much larger one.
+///
+/// 9.8.6 supplies the rest of the break: only UNBROKEN subroutines can be
+/// chosen, and "up to" is printed, which is what keeps 1.15.2e from forcing
+/// all three when fewer are left.
 ///
 /// The three subroutines are complete. Each of the first two is 9.12.3c's
 /// mandatory choice, and 9.12.3c is the whole of what makes them bite: the
@@ -1084,7 +1107,12 @@ pub fn fairchild_3_0() -> Card {
         .text("[subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards.")
         .text("[subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards.")
         .text("[subroutine] Do 1 core damage or end the run.")
-        .unimplemented("Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability.")
+        .paid_used_only_by_during_encounters_with_this_card(
+            Runner,
+            losing_clicks(3),
+            [break_up_to(3)],
+        )
+        .named("bioroid break")
         // The card prints this subroutine twice, so it is written twice.
         .subroutine([performed_by(
             Runner,
