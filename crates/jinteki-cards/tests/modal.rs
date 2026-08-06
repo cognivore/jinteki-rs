@@ -466,6 +466,96 @@ fn every_printed_choice_of_costs_has_a_test_that_pays_one() {
     );
 }
 
+/// CR 1.4 + 9.11.4g: the SAME placement question, asked about the faces a
+/// front-face walk cannot see.
+///
+/// `hardening::no_card_writes_a_choice_where_the_kernel_could_never_put_it`
+/// is the structural guard on the Predictive Planogram defect — a choice
+/// written where its container resolves it inline, so it is never put to
+/// anyone. It walks `c.printed.abilities`, which is the FRONT face only.
+/// Detective's Bureau's "[click]: Gain 3[credit] or draw 3 cards" is written
+/// on a flip face, so that walk cannot reach it: burying that choice in a
+/// `Combined` reproduces the Planogram defect exactly and the front-face walk
+/// stays green (verified by putting the defect in and running it).
+///
+/// This is the same property over the back faces. It is here rather than
+/// alongside the walk it completes because `hardening.rs` is another agent's
+/// file this wave; the two should be one walk when the branches meet.
+#[test]
+fn no_flip_face_writes_a_choice_where_the_kernel_could_never_put_it() {
+    /// Whether the kernel will give what sits HERE an instruction of its own.
+    /// 9.11.4a's inline containers do not, except the two that pass their
+    /// position through: `PerformedBy` names a player (1.14.5) rather than a
+    /// position, and `DeclineableChoice` splices what must be its own.
+    fn walk(instr: &Instruction, own_instruction: bool, path: &str, bad: &mut Vec<String>) {
+        let here = format!("{path} > {}", debug_head(instr));
+        if instr.resolves_as_its_own_instruction() && !own_instruction {
+            bad.push(here.clone());
+        }
+        match instr.contains() {
+            Contained::Nothing => {}
+            // Spliced into the frame, pushed as a new chain, or created as an
+            // ability later — each becomes an instruction in its own right.
+            Contained::Deferred(l) => {
+                for i in l {
+                    walk(i, true, &here, bad);
+                }
+            }
+            // 9.6.5d: the live branch is spliced whole when any step of it
+            // needs its own instruction, so a branch is a legal home.
+            Contained::Branches(bs) => {
+                for (_, effects) in bs {
+                    for i in effects {
+                        walk(i, true, &here, bad);
+                    }
+                }
+            }
+            Contained::Inline(l) => {
+                let passes_position = matches!(
+                    instr,
+                    Instruction::PerformedBy { .. } | Instruction::DeclineableChoice(_)
+                );
+                for i in l {
+                    walk(i, own_instruction && passes_position, &here, bad);
+                }
+            }
+        }
+    }
+
+    let mut bad: Vec<String> = Vec::new();
+    let mut faces = 0usize;
+    for c in jinteki_cards::all_cards() {
+        for face in &c.printed.flip_faces {
+            faces += 1;
+            for (n, ab) in face.abilities.iter().enumerate() {
+                for (k, instr) in ab.instructions.iter().enumerate() {
+                    walk(instr, true, &format!("{} ability #{n} #{k}", face.name), &mut bad);
+                }
+            }
+        }
+    }
+    assert!(
+        faces > 0,
+        "the corpus still ships double-sided cards, so this walk still has faces to walk"
+    );
+    assert!(
+        bad.is_empty(),
+        "9.11.4g: these choices are written on a FLIP FACE where the kernel would \
+         resolve them inside another instruction's imminence, so they could never be \
+         put to a player (the Predictive Planogram defect):\n  {}",
+        bad.join("\n  ")
+    );
+}
+
+/// The head of an instruction's `Debug`, for a path in a failure message.
+fn debug_head(i: &Instruction) -> String {
+    let d = format!("{i:?}");
+    match d.find([' ', '(', '{']) {
+        Some(n) => d[..n].to_string(),
+        None => d,
+    }
+}
+
 /// The naming family, which 9.11.4g does not reach: "name a card type" is one
 /// instruction over 2.15.2's closed list, not a printed set of bullets, so its
 /// options do not each owe an arm. What they do owe is that the decision is

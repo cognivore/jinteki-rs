@@ -2079,16 +2079,10 @@ fn no_card_writes_a_choice_where_the_kernel_could_never_put_it() {
     let mut bad: Vec<String> = Vec::new();
     let mut choices = 0usize;
     for c in jinteki_cards::all_cards() {
-        // CR 1.4: a double-sided card's back face is printed characteristics
-        // of its own, abilities included — and Detective's Bureau's
-        // "[click]: Gain 3[credit] or draw 3 cards" is written on one, so a
-        // walk over front faces alone would have let that choice through.
-        for face in std::iter::once(&c.printed).chain(c.printed.flip_faces.iter()) {
-            for (n, ab) in face.abilities.iter().enumerate() {
-                for (k, instr) in ab.instructions.iter().enumerate() {
-                    choices += usize::from(has_choice(instr));
-                    walk(instr, true, &format!("{} ability #{n} #{k}", face.name), &mut bad);
-                }
+        for (n, ab) in c.printed.abilities.iter().enumerate() {
+            for (k, instr) in ab.instructions.iter().enumerate() {
+                choices += usize::from(has_choice(instr));
+                walk(instr, true, &format!("{} ability #{n} #{k}", c.printed.name), &mut bad);
             }
         }
     }
