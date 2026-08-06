@@ -20600,3 +20600,888 @@ fn bankhar_chooses_a_server_when_the_turn_begins_and_remembers_it() {
     );
 }
 
+
+// ---------------------------------------------------------------------------
+// Deck of the week — Boring.dec (docs/vm/DECK-OF-THE-WEEK.md)
+// ---------------------------------------------------------------------------
+
+/// Fujii Asset Retrieval: "When this agenda is scored or stolen, do 2 net
+/// damage."
+///
+/// Both arms, because the sentence names both occurrences and 9.1.8b is the
+/// reason they are two abilities: 4.5.4 leaves an agenda in the Runner's score
+/// area inactive, and only a condition that can be met NOWHERE ELSE reaches
+/// it. The steal arm is the one that would silently do nothing if the sentence
+/// were written as one disjunctive condition.
+#[test]
+fn fujii_asset_retrieval_does_two_net_damage_scored_or_stolen() {
+    for stolen in [false, true] {
+        let mut vm = Vm::empty(9501);
+        let fujii =
+            tk::install_root(&mut vm, card("Fujii Asset Retrieval"), ServerId::Remote(1), false);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_hand(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                Plan::corp(),
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            )
+        } else {
+            // 1.18.1: the advancement requirement, met before the (S) option
+            // is offered.
+            vm.st.objects.get_mut(&fujii).unwrap().counters.insert(CounterKind::Advancement, 5);
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                Plan::corp().when(Match::paid(), Reply::score(fujii)).stop_at_action(),
+                Plan::runner(),
+            )
+        };
+        assert_eq!(
+            vm.st.objects[&fujii].zone,
+            Zone::ScoreArea(if stolen { Side::Runner } else { Side::Corp }),
+            "the agenda changed hands (stolen={stolen}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            3,
+            "10.4.1: 2 net damage trashed 2 of the Runner's 5 cards (stolen={stolen}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.discard[&Side::Runner].len(),
+            2,
+            "…and they are in the heap (stolen={stolen}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Send a Message: "When this agenda is scored or stolen, you may rez 1
+/// installed piece of ice, ignoring all costs."
+///
+/// The ice is priced beyond anything the Corp could pay — 20[credit] against a
+/// pool of 0 — so a rez that happens at all is 1.16.5c's, and the pool is
+/// still 0 afterwards. Both arms again, and a declining arm: the printed "you
+/// may" is 9.6.9's, so a Corp who says no rezzes nothing.
+#[test]
+fn send_a_message_rezzes_one_piece_of_ice_ignoring_all_costs() {
+    for (stolen, accept) in [(false, true), (true, true), (false, false)] {
+        let mut vm = Vm::empty(9502);
+        let sam = tk::install_root(&mut vm, card("Send a Message"), ServerId::Remote(1), false);
+        let big = tk::install_ice(&mut vm, tk::vanilla_ice("Colossus", 20, 5), ServerId::Rnd, false);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_hand(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+
+        // 9.6.9c: an optional conditional ability is offered as a reaction
+        // window option; DECLINING it is passing that window, which is what
+        // the plan's neutral policy does when the rule below is absent.
+        let mut corp = Plan::corp();
+        if accept {
+            corp = corp
+                .when(Match::reaction().offering("free rez"), Reply::take("free rez"))
+                .when(Match::targets().once(), Reply::target(big));
+        }
+        let t = if stolen {
+            vm.start_turn(Side::Runner);
+            plan::play(
+                &mut vm,
+                corp,
+                Plan::runner()
+                    .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                    .stop_at_action(),
+            )
+        } else {
+            vm.st.objects.get_mut(&sam).unwrap().counters.insert(CounterKind::Advancement, 5);
+            vm.start_turn(Side::Corp);
+            plan::play(
+                &mut vm,
+                corp.when(Match::paid().once(), Reply::score(sam)).stop_at_action(),
+                Plan::runner(),
+            )
+        };
+        assert_eq!(
+            vm.st.objects[&big].faceup,
+            accept,
+            "8.1.2b: the ice is rezzed exactly when the Corp takes the offer \
+             (stolen={stolen}, accept={accept}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.corp.credits, 0,
+            "1.16.5c: a 20[credit] rez cost from a pool of 0 — nothing was paid \
+             (stolen={stolen}, accept={accept}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Proprionegation: "When you score this agenda, place 1 agenda counter on
+/// it." / "Hosted agenda counter: The Runner moves to the outermost position
+/// of Archives. … Use this ability only during a run."
+///
+/// One drive across two turns, because 9.3.3c's "use this ability only during
+/// a run" is only observable as the difference between them. The Corp scores;
+/// the counter arrives; the driver halts at the Corp's own action window and
+/// the ability has been offered in NO window of that turn — 6.1.1 is the span
+/// the restriction names and the Corp's action phase is outside it. The turn
+/// then plays out, the Runner runs HQ, and from inside that run the counter
+/// buys 6.2.8b's movement: Archives becomes the attacked server and the Runner
+/// approaches the outermost piece of ice protecting it.
+#[test]
+fn proprionegation_sends_the_runner_out_to_archives_and_only_during_a_run() {
+    let mut vm = Vm::empty(9503);
+    let prop = tk::install_root(&mut vm, card("Proprionegation"), ServerId::Remote(1), false);
+    vm.st.objects.get_mut(&prop).unwrap().counters.insert(CounterKind::Advancement, 4);
+    let guard =
+        tk::install_ice(&mut vm, tk::vanilla_ice("Archives Guard", 0, 1), ServerId::Archives, false);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp()
+            .when(Match::paid().once(), Reply::score(prop))
+            .when(Match::action().first(), Reply::Halt)
+            .when(
+                Match::paid().offering("sent back out").once(),
+                Reply::take("sent back out"),
+            )
+            .otherwise_click_credit(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&prop].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was scored: {}",
+        g.transcript().tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&prop].counter(CounterKind::Agenda),
+        1,
+        "1.9.5i: scoring placed 1 agenda counter on it: {}",
+        g.transcript().tail(16)
+    );
+    assert!(
+        !g.transcript().ever_offered_to(Side::Corp, "sent back out"),
+        "9.3.3c: 'use this ability only during a run' — no run, no offer: {}",
+        g.transcript().tail(16)
+    );
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&prop].counter(CounterKind::Agenda),
+        0,
+        "1.16.10: the counter was the trigger cost and it is gone: {}",
+        g.transcript().tail(28)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::IceApproached { ice } if *ice == guard)),
+        "6.2.8b: the Runner's position became the outermost position of Archives \
+         — the one piece of ice protecting it, which they then approach: {}",
+        g.transcript().tail(28)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::BreachBegan { server: ServerId::Archives })),
+        "6.2.8b: Archives had become the attacked server, so that is what the run \
+         went on to breach: {}",
+        g.transcript().tail(28)
+    );
+    assert!(
+        !vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::BreachBegan { server: ServerId::Hq })),
+        "…and HQ, which the Runner declared, was never breached at all: {}",
+        g.transcript().tail(28)
+    );
+}
+
+/// Charlotte Caçador: "You can advance this asset."
+///
+/// CR 9.1.8f is the whole of it: "abilities that allow their source card to be
+/// advanced are active while that card is installed", so the basic advance
+/// action (5.2.6f) is offered on an UNREZZED asset — which is the shape of the
+/// card, since the Corp buys the counters before the Runner knows what they
+/// are for. 1.18.3 is the permission itself: without the printed sentence an
+/// asset cannot be advanced at all.
+#[test]
+fn charlotte_cacador_can_be_advanced_while_she_is_still_unrezzed() {
+    let mut vm = Vm::empty(9504);
+    let cc = tk::install_root(&mut vm, card("Charlotte Caçador"), ServerId::Remote(1), false);
+    let plain = tk::install_root(&mut vm, tk::vanilla_asset("Plain Asset", 0, 2), ServerId::Remote(2), false);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::Take(Pick::Advance(cc)))
+            .when(Match::action().once(), Reply::Take(Pick::Advance(cc)))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(!vm.st.objects[&cc].faceup, "she is still unrezzed: {}", t.tail(16));
+    assert_eq!(
+        vm.st.objects[&cc].counter(CounterKind::Advancement),
+        2,
+        "9.1.8f/1.18.3: the printed permission is active on an unrezzed installed \
+         card, and the basic action put two counters on her: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.corp.credits, 3, "5.2.6f: 1[credit] per advance: {}", t.tail(16));
+    assert_eq!(
+        vm.st.objects[&plain].counter(CounterKind::Advancement),
+        0,
+        "1.18.3: an asset with no such sentence was never advanceable — the \
+         permission is the card's, not the card type's: {}",
+        t.tail(16)
+    );
+}
+
+/// Charlotte Caçador: "When your turn begins, you may remove 1 hosted
+/// advancement counter to gain 4[credit] and draw 1 card."
+///
+/// 1.16.11a's nested cost IS the printed "you may": the Corp who declines
+/// spends no counter and gains nothing, and the Corp who pays gets both halves
+/// of the one sentence (9.11.3 — "gain 4[credit] and draw 1 card" is one
+/// instruction, so there is no state in which the credits arrive without the
+/// card).
+#[test]
+fn charlotte_cacador_cashes_a_counter_for_four_and_a_card_when_the_turn_begins() {
+    for pay in [true, false] {
+        let mut vm = Vm::empty(9505);
+        let cc = tk::install_root(&mut vm, card("Charlotte Caçador"), ServerId::Remote(1), true);
+        tk::place_counters(&mut vm, cc, CounterKind::Advancement, 2);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::reaction().offering("cash a counter"), Reply::take("cash a counter"))
+                .when(Match::nested_cost().once(), Reply::PayCost(pay))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if pay { 4 } else { 0 },
+            "the 4[credit] follows the counter and nothing else (pay={pay}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.objects[&cc].counter(CounterKind::Advancement),
+            if pay { 1 } else { 2 },
+            "1.16.10: the counter is the COST, spent exactly when the Corp pays \
+             (pay={pay}): {}",
+            t.tail(20)
+        );
+        // 5.6.1e's mandatory draw puts 1 card in HQ either way; the card's own
+        // draw is the second, and it is the other half of the same sentence.
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            if pay { 2 } else { 1 },
+            "9.11.3: one instruction, so the draw arrives with the credits or \
+             not at all (pay={pay}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Charlotte Caçador: "[trash], hosted advancement counter: Gain 3[credit]."
+///
+/// Two components in one 1.16.10 cost, so 1.16.1 is what the second arm
+/// asserts: with no counter on her the ability cannot be paid for and is never
+/// offered, which is the difference between this card and a plain trash-for-3.
+#[test]
+fn charlotte_cacador_cashes_herself_in_only_with_a_counter_to_spend() {
+    for counters in [1u32, 0] {
+        let mut vm = Vm::empty(9505);
+        let cc = tk::install_root(&mut vm, card("Charlotte Caçador"), ServerId::Remote(1), true);
+        if counters > 0 {
+            tk::place_counters(&mut vm, cc, CounterKind::Advancement, counters);
+        }
+        tk::fill_hand(&mut vm, Side::Corp, 2);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().offering("cash her in").once(), Reply::take("cash her in"))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            t.ever_offered_to(Side::Corp, "cash her in"),
+            counters > 0,
+            "1.16.1: both halves of the cost are required (counters={counters}): {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if counters > 0 { 3 } else { 0 },
+            "counters={counters}: {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.objects[&cc].zone == Zone::Discard(Side::Corp),
+            counters > 0,
+            "the [trash] is the other half of the cost (counters={counters}): {}",
+            t.tail(16)
+        );
+    }
+}
+
+/// Hansei Review: "Gain 10[credit]. If there are any cards in HQ, trash 1 of
+/// them."
+///
+/// Two sentences, two instructions (9.11.3), and the boundary is the point:
+/// the requirement is read AFTER the gain, so a Corp whose only card was
+/// Hansei Review itself has an empty HQ by the time the second sentence looks
+/// and trashes nothing. Both arms.
+#[test]
+fn hansei_review_gains_ten_then_trashes_a_card_from_hq_if_there_is_one() {
+    for stocked in [true, false] {
+        let mut vm = Vm::empty(9506);
+        let review = vm.new_object(card("Hansei Review"), Zone::Deck(Side::Corp));
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        // 5.6.1e's mandatory draw takes the top card, so putting Hansei Review
+        // there is how HQ holds exactly it and nothing else.
+        vm.st.deck.get_mut(&Side::Corp).unwrap().insert(0, review);
+        if stocked {
+            tk::fill_hand(&mut vm, Side::Corp, 2);
+        }
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 5;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(review))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+        assert_eq!(
+            vm.st.corp.credits, 10,
+            "5 − 5 play cost + 10 gained (stocked={stocked}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            if stocked { 1 } else { 0 },
+            "9.6.5d: the requirement is read where the second sentence stands — \
+             2 in HQ became 1, an empty HQ stayed empty (stocked={stocked}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.objects[&review].zone,
+            Zone::Discard(Side::Corp),
+            "8.6.7g: the played operation is trashed (stocked={stocked}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Mavirus: "While the Runner is accessing this upgrade in R&D, they must
+/// reveal it." / "When the Runner accesses this upgrade, you may purge virus
+/// counters. If this upgrade is rezzed, do 1 net damage." / "[trash]: Purge
+/// virus counters."
+///
+/// The ambush arm, driven in both rez states. 9.1.8a is what makes it speak at
+/// all — "abilities are active while their source is the card being accessed"
+/// — and the rez state is the difference the second sentence asks about: the
+/// purge happens either way, the damage only off a rezzed copy. 10.1.2's purge
+/// takes the Runner's virus counters wherever they are.
+#[test]
+fn mavirus_purges_on_access_and_only_a_rezzed_copy_does_the_damage() {
+    for rezzed in [true, false] {
+        let mut vm = Vm::empty(9507);
+        tk::install_root(&mut vm, card("Mavirus"), ServerId::Remote(1), rezzed);
+        let virus = tk::install_rig(&mut vm, tk::virus_program("Cache", 0));
+        tk::place_counters(&mut vm, virus, CounterKind::Virus, 3);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            // 9.6.9c: the "you may" is inside the instruction, so it is an
+            // optional-part decision and not an optional ability.
+            Plan::corp().when(Match::optional().once(), Reply::Optional(true)),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&virus].counter(CounterKind::Virus),
+            0,
+            "10.1.2: the purge happens whether or not the upgrade was rezzed \
+             (rezzed={rezzed}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            if rezzed { 3 } else { 4 },
+            "the second sentence asks whether THIS upgrade is rezzed, and only \
+             then does the net damage (rezzed={rezzed}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Mavirus: "While the Runner is accessing this upgrade in R&D, they must
+/// reveal it."
+///
+/// 9.6.5c's zone stipulation doing two jobs: it is the requirement, and by
+/// 9.1.8b's first sentence it is the STATEMENT that keeps the ability active
+/// in a deck, where a card is otherwise inactive. The polarity is the other
+/// arm — the same copy accessed out of a remote root reveals nothing, because
+/// there is nothing to reveal about a card the Runner is already looking at.
+#[test]
+fn mavirus_reveals_itself_when_it_is_accessed_in_rnd_and_not_elsewhere() {
+    for in_rnd in [true, false] {
+        let mut vm = Vm::empty(9508);
+        let mav = if in_rnd {
+            let o = vm.new_object(card("Mavirus"), Zone::Deck(Side::Corp));
+            tk::fill_deck(&mut vm, Side::Corp, 5);
+            vm.st.deck.get_mut(&Side::Corp).unwrap().insert(0, o);
+            o
+        } else {
+            tk::fill_deck(&mut vm, Side::Corp, 5);
+            tk::install_root(&mut vm, card("Mavirus"), ServerId::Remote(1), false)
+        };
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_hand(&mut vm, Side::Runner, 4);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::optional().once(), Reply::Optional(false)),
+            Plan::runner()
+                .when(
+                    Match::action().first(),
+                    Reply::run(if in_rnd { ServerId::Rnd } else { ServerId::Remote(1) }),
+                )
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == mav)),
+            in_rnd,
+            "1.21.3's reveal, scoped by 9.6.5c to an access in R&D (in_rnd={in_rnd}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Mavirus: "[trash]: Purge virus counters."
+///
+/// 1.16.10's [trash] as a trigger cost on a paid ability (9.5.1) — how a
+/// rezzed Mavirus purges on the Corp's own terms instead of waiting for the
+/// Runner to walk into it.
+#[test]
+fn mavirus_trashes_itself_to_purge_on_the_corps_own_terms() {
+    let mut vm = Vm::empty(9509);
+    let mav = tk::install_root(&mut vm, card("Mavirus"), ServerId::Remote(1), true);
+    let virus = tk::install_rig(&mut vm, tk::virus_program("Cache", 0));
+    tk::place_counters(&mut vm, virus, CounterKind::Virus, 2);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("purge on the corp").once(), Reply::take("purge on the corp"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(
+        vm.st.objects[&virus].counter(CounterKind::Virus),
+        0,
+        "10.1.2: every virus counter in play: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&mav].zone,
+        Zone::Discard(Side::Corp),
+        "1.16.10: the [trash] was the cost: {}",
+        t.tail(16)
+    );
+}
+
+/// Brân 1.0: "Lose [click]: Break 1 subroutine on this ice. Only the Runner
+/// can use this ability."
+///
+/// 1.14.4b in both directions, as Fairchild 3.0's test puts it: the named
+/// player is offered the ability printed on the other player's ice, and the
+/// player who controls the source is not. 1.14.3 is the third: the click comes
+/// out of the RUNNER's pool, and 1.11.3b records it as a LOSS and not a spend.
+#[test]
+fn bran_1_0_break_costs_the_runner_a_click_and_is_never_the_corps_to_use() {
+    let mut vm = Vm::empty(9510);
+    tk::install_ice(&mut vm, card("Brân 1.0"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+    let allotted = vm.st.runner.allotted_clicks;
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().stop_at_action(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(Match::paid().offering("bioroid break").once(), Reply::take("bioroid break"))
+            .when(Match::sub_targets().once(), Reply::SubroutineNamed("end the run"))
+            .stop_at_action(),
+    );
+    assert!(
+        t.ever_offered_to(Side::Runner, "bioroid break"),
+        "1.14.4b: the sentence names the Runner, so the Runner is offered it: {}",
+        t.tail(24)
+    );
+    assert!(
+        !t.ever_offered_to(Side::Corp, "bioroid break"),
+        "1.14.4/1.14.4b: and the Corp, who controls the ice, is not: {}",
+        t.tail(24)
+    );
+    assert!(
+        vm.changes
+            .log
+            .iter()
+            .any(|c| matches!(c, GameChange::ClicksLost { side: Side::Runner, amount: 1 })),
+        "1.14.3/1.11.3b: one click LOST by the Runner, not spent: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.clicks,
+        allotted - 2,
+        "1.11.2b: one click spent on the run action, one lost to the break: {}",
+        t.tail(24)
+    );
+}
+
+/// Brân 1.0: "[subroutine] You may install 1 piece of ice from HQ or Archives
+/// directly inward from this ice, ignoring all costs."
+///
+/// Three stipulations, asserted together on a Corp with an empty pool.
+///
+/// 6.2.2c is the destination: the new position is created immediately INWARD
+/// of Brân's, which `vm.st.ice` records innermost-first — so the installed
+/// piece comes before Brân in that sequence and after the piece already inside
+/// it. 1.16.5c is the price: installing a fourth piece of ice on this server
+/// would cost 8.5.11a's 3[credit], and the Corp has none. "From HQ or
+/// Archives" is one description with two alternatives, so both piles are
+/// offered at once — the card taken here is the one in Archives.
+#[test]
+fn bran_1_0_installs_ice_from_hq_or_archives_directly_inward_for_free() {
+    let mut vm = Vm::empty(9511);
+    let inner = tk::install_ice(&mut vm, tk::vanilla_ice("Inner Guard", 0, 1), ServerId::Remote(1), false);
+    let bran = tk::install_ice(&mut vm, card("Brân 1.0"), ServerId::Remote(1), true);
+    let outer = tk::install_ice(&mut vm, tk::vanilla_ice("Outer Guard", 0, 1), ServerId::Remote(1), false);
+    let buried = vm.new_object(tk::vanilla_ice("Buried Ice", 4, 4), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::targets().once(), Reply::target(buried)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&buried].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "the subroutine installed a piece of ice out of Archives: {}",
+        t.tail(28)
+    );
+    let order: Vec<ObjectId> =
+        vm.st.ice[&ServerId::Remote(1)].iter().filter_map(|p| p.ice).collect();
+    assert_eq!(
+        order,
+        vec![inner, buried, bran, outer],
+        "6.2.2c: 'directly inward from this ice' put it immediately inside Brân \
+         and outside the piece already there (the sequence is innermost first): {}",
+        t.tail(28)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 0,
+        "1.16.5c: 8.5.11a's 3[credit] for the ice already protecting the server \
+         was ignored, from a pool of 0: {}",
+        t.tail(28)
+    );
+}
+
+/// Empiricist: "[subroutine] Draw 1 card. You may add 1 card from HQ to the
+/// top of R&D." / "[subroutine] Do 1 net damage. Give the Runner 1 tag." /
+/// "[subroutine] Do 2 net damage."
+///
+/// The first subroutine's two sentences are TWO instructions (9.11.3), and
+/// this test is the observable consequence: the checkpoint between them means
+/// the card the Corp drew is one of the cards they may put back, which the
+/// drive does by name. Written as one merged instruction the choice would have
+/// been announced (1.15.2) before the draw resolved and the drawn card could
+/// never have been the one returned.
+#[test]
+fn empiricist_draws_before_it_asks_which_card_goes_back_on_top() {
+    let mut vm = Vm::empty(9512);
+    tk::install_ice(&mut vm, card("Empiricist"), ServerId::Hq, true);
+    let secret = vm.new_object(tk::corp_filler("Card Drawn"), Zone::Deck(Side::Corp));
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.deck.get_mut(&Side::Corp).unwrap().insert(0, secret);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_hand(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::optional().once(), Reply::Optional(true))
+            .when(Match::targets().once(), Reply::target(secret)),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.deck[&Side::Corp].first().copied(),
+        Some(secret),
+        "9.11.3: the draw finished before the second sentence chose, so the card \
+         just drawn could be the one put back on top of R&D: {}",
+        t.tail(28)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Corp].len(),
+        2,
+        "…and HQ is the size it started at: one card in, the same card out: {}",
+        t.tail(28)
+    );
+    // The other two subroutines resolved in printed order on the same pass.
+    assert_eq!(
+        vm.st.runner.tags, 1,
+        "the second subroutine's second sentence: {}",
+        t.tail(28)
+    );
+    assert_eq!(
+        vm.st.hand[&Side::Runner].len(),
+        2,
+        "10.4.1: 1 net damage from the second subroutine and 2 from the third, \
+         out of a grip of 5: {}",
+        t.tail(28)
+    );
+}
+
+/// Knowledge Seeker: "[subroutine] Place 1 virus counter on this ice." /
+/// "[subroutine] Look at the top 4 cards of R&D and arrange them in any
+/// order." / "[subroutine] End the run." / "Whenever an encounter with this
+/// ice ends, if it has 3 or more hosted virus counters, purge virus counters
+/// and derez this ice."
+///
+/// Both polarities of the card's own clock, on the ice it counts on. With two
+/// counters already there the first subroutine makes three and the encounter's
+/// end burns the ice out: 10.1.2's purge takes its counters (and the Runner's,
+/// which is the other half of what the ice is for) and 8.1.3 derezzes it. With
+/// one counter it makes two, the requirement is not met, and nothing happens.
+///
+/// The middle subroutine is 9.11.4e's split — the look, then 8.3.3's set-aside
+/// and arrangement — driven by putting the fourth card of R&D on top. 1.12.3 makes
+/// every arranged card a NEW object, so the assertion is by name: the identity
+/// the Corp announced does not survive the return.
+#[test]
+fn knowledge_seeker_counts_its_own_virus_counters_and_sorts_the_top_of_rnd() {
+    for (start, burns_out) in [(2u32, true), (1u32, false)] {
+        let mut vm = Vm::empty(9513);
+        let ks = tk::install_ice(&mut vm, card("Knowledge Seeker"), ServerId::Hq, true);
+        tk::place_counters(&mut vm, ks, CounterKind::Virus, start);
+        let runner_virus = tk::install_rig(&mut vm, tk::virus_program("Cache", 0));
+        tk::place_counters(&mut vm, runner_virus, CounterKind::Virus, 2);
+        let top: Vec<ObjectId> = ["First", "Second", "Third", "Fourth"]
+            .iter()
+            .map(|n| vm.new_object(tk::corp_filler(n), Zone::Deck(Side::Corp)))
+            .collect();
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        for (i, o) in top.iter().enumerate() {
+            vm.st.deck.get_mut(&Side::Corp).unwrap().insert(i, *o);
+        }
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(
+                Match::arrange().once(),
+                Reply::Arrange(vec![top[3], top[0], top[1], top[2]]),
+            ),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Hq))
+                .stop_at_action(),
+        );
+        // 8.3.3: the Corp put the fourth card on top. 1.12.3 renewed them all,
+        // so the card is named rather than pointed at.
+        let topmost = vm.st.deck[&Side::Corp].first().copied().expect("R&D is not empty");
+        assert_eq!(
+            vm.st.objects[&topmost].printed.name, "Fourth",
+            "8.3.3: the arrangement the Corp chose is the order R&D is in \
+             (start={start}): {}",
+            t.tail(32)
+        );
+        assert_eq!(
+            !vm.st.objects[&ks].faceup,
+            burns_out,
+            "8.1.3: the ice derezzes exactly when the encounter ended with 3 or \
+             more virus counters on it (start={start}): {}",
+            t.tail(32)
+        );
+        assert_eq!(
+            vm.st.objects[&ks].counter(CounterKind::Virus),
+            if burns_out { 0 } else { start + 1 },
+            "9.11.3: purge and derez are ONE sentence, so the counters go with \
+             the rez (start={start}): {}",
+            t.tail(32)
+        );
+        assert_eq!(
+            vm.st.objects[&runner_virus].counter(CounterKind::Virus),
+            if burns_out { 0 } else { 2 },
+            "10.1.2: the purge is every virus counter in play, not only its own \
+             (start={start}): {}",
+            t.tail(32)
+        );
+        assert!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+            "the third subroutine ended the run (start={start}): {}",
+            t.tail(32)
+        );
+    }
+}
+
+/// Flyswatter: "[subroutine] End the run."
+///
+/// PARTIAL — the rez sentence is unsayable (see the card's doc comment and
+/// DECK-OF-THE-WEEK.md's Blockers), and the test says so out loud so the
+/// marker cannot quietly disappear.
+#[test]
+fn flyswatter_subroutine_ends_the_run() {
+    let fs = jinteki_cards::find("Flyswatter").expect("Flyswatter is in the card layer");
+    assert_eq!(
+        fs.unimplemented,
+        vec!["When you rez this ice during a run against this server, purge virus counters."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9514);
+    tk::install_ice(&mut vm, card_partial("Flyswatter"), ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
+        "6.1.4: the subroutine ended the run before it could breach HQ: {}",
+        t.tail(20)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::BreachBegan { .. })),
+        "…so nothing was accessed: {}",
+        t.tail(20)
+    );
+}
+
+/// Anoetic Void and La Costa Grid are BLOCKED, and this is the test that says
+/// so out loud: the markers are data (SYS-D-9), so a wave that quietly deleted
+/// one instead of implementing the sentence would fail here rather than pass
+/// with a card that lies. Every other printed word of both cards is exact —
+/// type, subtype, rez and trash cost — which is what a deck list and an
+/// install test need from them meanwhile.
+#[test]
+fn the_two_blocked_upgrades_of_boring_dec_say_which_sentences_they_cannot_say() {
+    let av = jinteki_cards::find("Anoetic Void").expect("Anoetic Void is in the card layer");
+    assert_eq!(
+        av.unimplemented,
+        vec!["Whenever the Runner approaches this server, you may pay 2[credit] and trash 2 cards from HQ. If you do, end the run."],
+        "the whole printed line, because the trigger it needs is what is missing"
+    );
+    assert_eq!(
+        av.printed.card_type, CardType::Upgrade,
+        "the card's printed facts are exact even where its sentence is not"
+    );
+    assert_eq!(av.printed.trash_cost, Some(1), "…including 2.6.1's trash cost");
+
+    let lcg = jinteki_cards::find("La Costa Grid").expect("La Costa Grid is in the card layer");
+    assert_eq!(
+        lcg.unimplemented,
+        vec![
+            "Remote server only.",
+            "When your turn begins, place 1 advancement counter on a card in the root of this server.",
+        ],
+        "two printed sentences, counted separately (SYS-D-9)"
+    );
+    // 3.6.5a prints "Limit 1 region per server" on every region and 3.6.5b-d
+    // make it a rule of the game, so it is NOT among the markers — the same
+    // treatment Crisium Grid's identical line already has.
+    assert!(
+        lcg.oracle_text.contains("Limit 1 region per server."),
+        "the region line is carried as printed text and denotes into nothing"
+    );
+    assert!(
+        lcg.printed.subtypes.contains(&"Region"),
+        "3.6.5: the subtype the rule is stated over is on the card"
+    );
+}

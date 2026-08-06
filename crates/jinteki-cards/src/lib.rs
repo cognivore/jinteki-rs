@@ -21,7 +21,7 @@
 pub mod decks;
 pub mod edsl;
 
-pub use decks::{all_cards, mezzie_decks, priority_decks, SOURCES};
+pub use decks::{all_cards, deck_of_the_week, mezzie_decks, priority_decks, SOURCES};
 pub use edsl::{card, Card, CardBuilder};
 
 /// One deck, by name — what a deck list will ask for at cutover.
@@ -34,6 +34,8 @@ pub fn deck_named(name: &str) -> Option<Vec<Card>> {
         // and `cr::readiness()` is where that gate lives.
         "mezzie_asa" => Some(decks::mezzie_asa::deck()),
         "mezzie_valencia" => Some(decks::mezzie_valencia::deck()),
+        // docs/vm/DECK-OF-THE-WEEK.md.
+        "notw_restoring_humanity" => Some(decks::notw_restoring_humanity::deck()),
         _ => None,
     }
 }
