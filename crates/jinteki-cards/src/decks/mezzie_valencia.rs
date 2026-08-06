@@ -25,32 +25,36 @@ use crate::edsl::*;
 /// "Play only if the Corp has at least 1 bad publicity.
 ///  Run any server. The Corp cannot rez ice during that run."
 ///
-/// PARTIAL — two of its three sentences.
+/// PARTIAL — two of its three sentences are expressed, and the third is not.
 ///
 /// "Play only if …" is a PLAY RESTRICTION and not a cost, and the difference
-/// decides where it would go. 9.3.3 states a restriction as a condition on
+/// decides where it goes. 9.3.3 states a restriction as a condition on
 /// whether an ability may be used at all; 1.16.1 makes an unpayable cost stop
 /// the play too, but a cost is something a player PAYS — 1.16.1's "an effect a
 /// player must resolve" — and nothing here is paid or given up. The Corp's bad
 /// publicity is a fact about the game state, so `play_only_if` (9.1.8c) is the
 /// shape, and `StaticDecl::PlayOnlyIf` is the word for it.
 ///
-/// What it cannot say is the fact itself. The `Quantity` vocabulary reads
-/// tags, credit pools, agenda points, accesses, [mu] and counts of cards; a
-/// player's BAD PUBLICITY (6.4) is a player-level count like their tags and
-/// there is no term for it, so the requirement cannot be stated and the
-/// restriction is left marked rather than dropped: written without it the card
-/// would be a legal play at any time, which is precisely 1.2.2's "cannot"
-/// being ignored.
+/// The fact itself is 10.6.1's bad publicity — counters on the Corp, which
+/// 1.9.5d makes a player-level count exactly as 1.9.5c makes tags one — read
+/// as a quantity with the printed threshold on it. 9.1.8c is what keeps the
+/// declaration working from HQ, where the card is otherwise inactive, and it
+/// is read at the moment the play is offered rather than stamped anywhere
+/// (9.12.2), so bad publicity gained or removed mid-turn is seen. It is NOT
+/// 10.6.2's bad publicity fund: those are credits the Runner controls, and
+/// 10.6.3c leaves them alone once a run has begun.
 ///
-/// "The Corp cannot rez ice during that run" is marked for an ORDERING reason
-/// rather than a vocabulary one, and it is worth saying which: `ProhibitedAction::Rez`
-/// and `WantedDuration::ThisRun` both exist, but the sentence that states the
-/// prohibition is printed AFTER the sentence that runs, and 9.11.3's
-/// instructions resolve in printed order. 5.2.2b suspends the play until the
-/// run completes, so an instruction written after the run creates its
-/// lingering effect when the run is already over. Reordering it in front of
-/// the run would invent an instruction boundary the card does not have.
+/// UNIMPLEMENTED: "The Corp cannot rez ice during that run", which is marked
+/// for two reasons and neither is the acts. `ProhibitedAction::Rez` exists and
+/// `WantedDuration::ThisRun` exists; what does not is a moment to state them
+/// in, because the sentence is printed AFTER the sentence that runs and
+/// 5.2.2b suspends the play until the run completes — so an instruction
+/// written after the run would create its lingering effect when the run is
+/// already over. Beside that, the prohibition would have to reach the ice by
+/// DESCRIPTION and the lingering prohibition names one object fixed at
+/// creation. Both capabilities are on MEZZIE-QUEUE.md's Blockers. Reordering
+/// the prohibition in front of the run is not an answer either: it would
+/// invent an instruction boundary the card does not print (9.11.3).
 pub fn blackmail() -> Card {
     card("Blackmail")
         .runner()
@@ -60,8 +64,9 @@ pub fn blackmail() -> Card {
         .cost(1)
         .text("Play only if the Corp has at least 1 bad publicity.")
         .text("Run any server. The Corp cannot rez ice during that run.")
+        .declares([play_only_if(&[at_least(bad_publicity_of(Corp), 1)])])
+        .named("play only if the Corp has bad publicity")
         .play([run_any_server([])])
-        .unimplemented("Play only if the Corp has at least 1 bad publicity.")
         .unimplemented("The Corp cannot rez ice during that run.")
         .build()
 }

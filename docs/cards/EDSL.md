@@ -340,6 +340,46 @@ the Runner has" — is `strength_is(plus(amount(0), times(1, per_runner_tag())))
 its printed 0, plus 1 for each tag. Written that way it is recomputed as tags
 come and go, which is what the card means.
 
+Some amounts are about a player rather than about cards, and they read the
+number as it stands wherever the sentence asks:
+
+```rust
+# use jinteki_cards::edsl::*;
+let _ = credits_in_pool_of(Corp);
+let _ = clicks_of(Runner);          // "…if they have no [click] remaining"
+let _ = bad_publicity_of(Corp);     // "…at least 1 bad publicity"
+```
+
+A threshold on one of them is `at_least(…, n)` / `at_most(…, n)`, which is
+where the polarity lives: "no [click] remaining" is `at_most(clicks_of(Runner),
+0)` and "at least 1 bad publicity" is `at_least(bad_publicity_of(Corp), 1)` —
+one word each, with the number the card prints.
+
+And some count SERVERS (CR 4.6.6a), which are not cards and which no count of
+cards can stand in for — a remote root holds an asset or agenda *and* any
+number of upgrades, and a server can be behind more than one piece of ice:
+
+```rust
+# use jinteki_cards::edsl::*;
+// "…for each remote server that has a card in its root and is protected by ice"
+let _ = per_server_matching(&[
+    remote_server(),
+    with_a_card_in_its_root(&[]),
+    protected_by(&[of_type(CardType::Ice)]),
+]);
+let _ = per_server_matching(&[central_server()]);
+let _ = per_server_matching(&[with_a_card_installed_in_it(&[])]);
+```
+
+The stipulations stack like a card description's: written beside each other
+they mean *all* of them. An empty description inside one is the printed word
+"a card".
+
+`for_each(amount, [ … ])` is the sentence that ties effects to such an amount
+("Repeat this process for each …"). Mind the arithmetic a *repeat* prints: the
+process is one sentence and the repetition is another, so it happens 1 + N
+times and never N.
+
 ## The things a `.declares(…)` says
 
 Some sentences are permanently true rather than things that happen. They go in

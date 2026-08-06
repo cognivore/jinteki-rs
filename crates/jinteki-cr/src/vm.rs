@@ -4984,6 +4984,36 @@ impl Vm {
                 cite!("rule_credit_pool");
                 self.st.player(*side).credits as i64
             }
+            // 1.11.3a/b: the number of clicks the player HAS — increased by a
+            // gain, reduced by a loss or a spend, and read where the sentence
+            // asks rather than stamped anywhere (9.12.2).
+            Q::ClicksOf(side) => {
+                cite!("rule_click");
+                cite!("rule_gain_spend_lose_clicks");
+                self.st.player(*side).clicks as i64
+            }
+            // 10.6.1: bad publicity is counters on the PLAYER (1.9.5d), which
+            // is the number a sentence asking how much they HAVE means.
+            // 10.6.2's fund is credits the Runner controls and is not this.
+            Q::BadPublicityOf(side) => {
+                cite!("rule_bad_publicity");
+                cite!("rule_type_bad_pub_counter");
+                self.st.player(*side).bad_publicity as i64
+            }
+            // 4.6.6a: the SERVERS a description reaches, counted where the
+            // sentence is read. 4.6.7a's three centrals always exist; 4.6.8d's
+            // remotes exist exactly while a card is installed in the root of
+            // or protecting them, which is what `remote_servers` answers.
+            Q::CountServers(criteria) => {
+                cite!("rule_server");
+                cite!("rule_three_central_servers");
+                cite!("rule_remote_server_existence");
+                [ServerId::Hq, ServerId::Rnd, ServerId::Archives]
+                    .into_iter()
+                    .chain(self.remote_servers())
+                    .filter(|sv| criteria.iter().all(|f| self.server_matches(*sv, f, source)))
+                    .count() as i64
+            }
             // 1.16.4a: an inherent cost, printed on the card — so this is the
             // ice's own number and not the payment's, and 9.12.2e makes it 0
             // when there is no encounter to read it from.
@@ -5070,6 +5100,49 @@ impl Vm {
                 } else {
                     0
                 }
+            }
+        }
+    }
+
+    /// One stipulation of the shared SERVER-filter language (§12 rule 5),
+    /// read against one server. The atoms of a description are a conjunction,
+    /// so the caller asks this of each of them.
+    fn server_matches(
+        &self,
+        sv: ServerId,
+        f: &crate::instr::ServerFilter,
+        source: Option<ObjectId>,
+    ) -> bool {
+        use crate::instr::{ServerFilter, ServerLocation};
+        match f {
+            // 4.6.6c: exactly two types of server, so one boolean names both.
+            ServerFilter::IsCentral(want) => {
+                cite!("rule_server_types");
+                sv.is_central() == *want
+            }
+            // 4.6.6b: the root and the ice protecting a server are both IN
+            // it, and which of them the sentence means is content here. The
+            // cards themselves are described in the shared card-filter
+            // vocabulary and derived exactly as a count or an announcement
+            // derives them, so an empty description is "a card" and 1.15.2c's
+            // installed-cards default applies to it like any other.
+            ServerFilter::HasCardIn { location, criteria } => {
+                cite!("rule_server");
+                cite!("rule_server_root");
+                cite!("rule_ice_ordered");
+                self.filter_candidates_from(criteria, source)
+                    .into_iter()
+                    .filter_map(|id| self.st.objects.get(&id))
+                    .any(|o| match (*location, o.zone) {
+                        (ServerLocation::Root | ServerLocation::RootOrProtecting, Zone::Root(s)) => {
+                            s == sv
+                        }
+                        (
+                            ServerLocation::Protecting | ServerLocation::RootOrProtecting,
+                            Zone::Ice(s),
+                        ) => s == sv,
+                        _ => false,
+                    })
             }
         }
     }

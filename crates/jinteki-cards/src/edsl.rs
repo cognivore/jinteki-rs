@@ -162,8 +162,8 @@ pub use jinteki_cr::ability::{
 };
 pub use jinteki_cr::lingering::{ProhibitedAction, ReplacementTransform, WantedDuration};
 pub use jinteki_cr::instr::{
-    InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, SubroutineSpec,
-    TargetFilter, TargetSpec, TrashDestination,
+    InstallDest, InstallFilter, Instruction, LingeringSpec, Quantity, RunServerSet, ServerFilter,
+    ServerLocation, SubroutineSpec, TargetFilter, TargetSpec, TrashDestination,
 };
 pub use jinteki_cr::object::Side::{Corp, Runner};
 pub use jinteki_cr::object::{CardType, CounterKind, ServerId, Side, Zone};
@@ -1564,6 +1564,19 @@ pub fn may_pay(cost: Cost, instr: Instruction) -> Instruction {
 /// effect; declining makes it happen.
 pub fn unless_pays(payer: Side, cost: Cost, instr: Instruction) -> Instruction {
     Instruction::NestedCostUnless { cost, effect: Box::new(instr), payer: Some(payer) }
+}
+/// "**Repeat this process** for each <amount>." / "…<effects>, for each
+/// <amount>." (Fully Operational; CR 9.12.2b.) The effects TIED to a
+/// calculated quantity: if every one of them is an aggregated class (9.12.2c)
+/// the group is performed once with its values multiplied, and if any is not,
+/// the group is performed once per unit as separate occurrences — which is
+/// what makes a repeated CHOICE a fresh choice each time.
+///
+/// Mind the printed arithmetic of a REPEAT. 9.11.3 makes the process one
+/// instruction and the repetition another, so a sentence that does something
+/// and then repeats it for each of N does it 1 + N times, never N.
+pub fn for_each(count: Quantity, effects: impl IntoIterator<Item = Instruction>) -> Instruction {
+    Instruction::ForEach { count, effects: effects.into_iter().collect() }
 }
 /// "Resolve 1 of the following." (9.11.4g.) Each option is labelled with the
 /// printed words of that option.
@@ -3581,6 +3594,60 @@ pub fn per_card(f: TargetFilter) -> Quantity {
 /// of [`per_card`] and not a second kind of amount.
 pub fn per_card_matching(criteria: &[TargetFilter]) -> Quantity {
     Quantity::Count(criteria.to_vec())
+}
+/// "…for each **remote server that has a card in its root and is protected by
+/// ice**" (Fully Operational, Flood the Market; CR 4.6.6a) — the count of
+/// SERVERS a description reaches. The stipulations stack the way a card
+/// description's do: written beside each other they mean *all* of them, so
+/// this is the servers' [`per_card_matching`] and not a second kind of amount.
+///
+/// No count of cards says this: 4.6.6e lets a remote root hold an asset or
+/// agenda AND any number of upgrades, and a server can be behind more than
+/// one piece of ice, so counting either over-counts.
+pub fn per_server_matching(criteria: &[ServerFilter]) -> Quantity {
+    Quantity::CountServers(criteria.to_vec())
+}
+/// "…a **remote** server" (4.6.8a) — one of 4.6.6c's two server types.
+pub fn remote_server() -> ServerFilter {
+    ServerFilter::IsCentral(false)
+}
+/// "…a **central** server" (4.6.7a) — the other one.
+pub fn central_server() -> ServerFilter {
+    ServerFilter::IsCentral(true)
+}
+/// "…that **has a card in its root**" (4.6.6e). The cards are described in
+/// the ordinary description words; an empty description is the printed "a
+/// card".
+pub fn with_a_card_in_its_root(criteria: &[TargetFilter]) -> ServerFilter {
+    ServerFilter::HasCardIn { location: ServerLocation::Root, criteria: criteria.to_vec() }
+}
+/// "…that is **protected by ice**" (4.6.6d / 4.6.9a) — the same atom read at
+/// the server's other location, with the ice described in the same words.
+pub fn protected_by(criteria: &[TargetFilter]) -> ServerFilter {
+    ServerFilter::HasCardIn { location: ServerLocation::Protecting, criteria: criteria.to_vec() }
+}
+/// "…**you have a card installed in**" (4.6.6b: the cards in a server's root
+/// and the cards protecting it are both *in* that server) — the same atom
+/// again, at both locations at once.
+pub fn with_a_card_installed_in_it(criteria: &[TargetFilter]) -> ServerFilter {
+    ServerFilter::HasCardIn {
+        location: ServerLocation::RootOrProtecting,
+        criteria: criteria.to_vec(),
+    }
+}
+/// "…the [click] they have **remaining**" (Vertigo; CR 1.11.3) — the clicks in
+/// a player's pool. "No [click] remaining" is [`at_most`] 0, the direction the
+/// sentence prints.
+pub fn clicks_of(side: Side) -> Quantity {
+    Quantity::ClicksOf(side)
+}
+/// "…**at least 1 bad publicity**" (Blackmail; CR 10.6.1) — the bad publicity
+/// counters on a player, which 1.9.5d makes a player-level count exactly as
+/// 1.9.5c makes tags one. Pair it with [`at_least`] or [`at_most`] for the
+/// threshold and the polarity; 10.6.2's bad publicity FUND is a different
+/// number and this is never it.
+pub fn bad_publicity_of(side: Side) -> Quantity {
+    Quantity::BadPublicityOf(side)
 }
 /// "N for each …" — scale a quantity.
 pub fn times(n: i64, q: Quantity) -> Quantity {

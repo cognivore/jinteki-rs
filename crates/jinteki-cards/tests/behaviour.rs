@@ -18273,29 +18273,20 @@ fn enhanced_login_protocol_stays_in_the_play_area_until_an_agenda_is_stolen() {
 /// Flood the Market: "As an additional cost to play this operation, spend
 /// [click]."
 ///
-/// PARTIAL — the choose-and-place sentence is unsayable (see the card's doc
-/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
-/// the marker cannot quietly disappear. The *double* IS expressed, and 1.16.10
-/// makes it observable as a whole action the Corp never gets: both arms spend
-/// every remaining click on the basic credit action (5.2.7b), so the credits
-/// the Corp finishes with count the clicks the play left it — one fewer than
-/// the same play at the same credit cost without the extra [click].
+/// The *double* is 1.16.10's additional cost, observable as a whole action the
+/// Corp never gets: both arms spend every remaining click on the basic credit
+/// action (5.2.7b), so the credits the Corp finishes with count the clicks the
+/// play left it — one fewer than the same play at the same credit cost without
+/// the extra [click]. (The card's other sentence is asserted below.)
 #[test]
 fn flood_the_market_costs_a_click_on_top_of_its_play_cost() {
-    let flood = jinteki_cards::find("Flood the Market").expect("Flood the Market is in the card layer");
-    assert_eq!(
-        flood.unimplemented,
-        vec!["Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice."],
-        "exactly one printed instruction is still unsayable"
-    );
-
     for double in [false, true] {
         let mut vm = Vm::empty(9132);
         // The control is the same 3[credit] play made by an operation with no
         // additional cost — one printed line apart, so what differs in the
         // outcome is the [click] and nothing else.
         let printed = if double {
-            card_partial("Flood the Market")
+            card("Flood the Market")
         } else {
             let mut c = tk::corp_filler("Plain Operation");
             c.cost = Some(3);
@@ -18330,6 +18321,71 @@ fn flood_the_market_costs_a_click_on_top_of_its_play_cost() {
             t.tail(20)
         );
     }
+}
+
+/// Flood the Market: "Choose 1 installed card you can advance. Place 1
+/// advancement counter on that card for each remote server that has a card in
+/// its root and is protected by ice."
+///
+/// One instruction (9.11.4c): the choice is announced and the counters land on
+/// the card announced. Both halves are asserted — the chosen card gets them,
+/// and the card that was not chosen gets none.
+///
+/// The board is built so that no count of CARDS is the answer. Two remotes
+/// qualify; the cards in their roots number 3 (4.6.6e lets Remote 2's root
+/// hold an asset AND an upgrade) and the ice protecting them numbers 3, so a
+/// stand-in written over cards pays 3 where the sentence pays 2. The two
+/// remotes that do not qualify are each missing exactly one half of the
+/// description: Remote 3 has ice and an empty root, Remote 4 has a root card
+/// and no ice.
+#[test]
+fn flood_the_market_places_one_advancement_counter_per_qualifying_remote_server() {
+    let mut vm = Vm::empty(9137);
+    let op = vm.new_object(card("Flood the Market"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+    // Remote 1 qualifies, and its root card is one of the two agendas the Corp
+    // can advance (1.18.3).
+    let chosen = tk::install_root(&mut vm, tk::vanilla_agenda("Front Runner", 3, 2), ServerId::Remote(1), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("R1 Ice", 1, 1), ServerId::Remote(1), false);
+    // Remote 2 qualifies once, with two cards in its root and two pieces of ice.
+    tk::install_root(&mut vm, tk::vanilla_asset("R2 Asset", 0, 2), ServerId::Remote(2), false);
+    tk::install_root(&mut vm, tk::vanilla_upgrade("R2 Upgrade", 0), ServerId::Remote(2), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("R2 Inner", 1, 1), ServerId::Remote(2), false);
+    tk::install_ice(&mut vm, tk::vanilla_ice("R2 Outer", 1, 1), ServerId::Remote(2), false);
+    // Remote 3: ice, empty root — 4.6.8d makes it a server, the description
+    // does not reach it.
+    tk::install_ice(&mut vm, tk::vanilla_ice("R3 Ice", 1, 1), ServerId::Remote(3), false);
+    // Remote 4: a root card and no ice — the other half missing. Its agenda is
+    // the card the Corp does NOT choose.
+    let untouched = tk::install_root(&mut vm, tk::vanilla_agenda("Back Runner", 3, 2), ServerId::Remote(4), false);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 3;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(op))
+            .when(Match::targets().once(), Reply::target(chosen))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&chosen].counter(CounterKind::Advancement),
+        2,
+        "4.6.6a: Remote 1 and Remote 2 match the description — not the 3 cards \
+         in their roots and not the 3 pieces of ice protecting them: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&untouched].counter(CounterKind::Advancement),
+        0,
+        "1.15.2: the counters went to the card the Corp announced and nowhere \
+         else: {}",
+        t.tail(20)
+    );
 }
 
 /// Friends in High Places: "After you resolve this operation, end your action
@@ -18399,52 +18455,86 @@ fn friends_in_high_places_installs_two_out_of_archives_and_ends_the_action_phase
     );
 }
 
-/// Fully Operational: "Gain 2[credit] or draw 2 cards."
+/// Fully Operational: "Gain 2[credit] or draw 2 cards. Repeat this process for
+/// each remote server that has a card in its root and is protected by ice."
 ///
-/// PARTIAL — "Repeat this process for each remote server that has a card in
-/// its root and is protected by ice." is unsayable (see the card's doc comment
-/// and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear. The process itself is 9.11.4g's optioned effect,
-/// and each option is asserted on its own board: the Corp picks, and only the
-/// half it picked happens.
+/// The process is 9.11.4g's optioned effect and the repetition is the second
+/// sentence, so the printed arithmetic is 1 + N: on a bare board the Corp
+/// resolves it once, and with two qualifying remotes three times. Each
+/// repetition is a FRESH choice (9.12.2b: an optioned effect is not one of
+/// 9.12.2c's aggregated classes, so the group is performed once per unit
+/// rather than once with its values multiplied) — which the mixed arm asserts
+/// by taking the credits twice and the cards once.
+///
+/// The board is the one Flood the Market is tested on and for the same
+/// reason: two remotes qualify while the cards in their roots number 3 and the
+/// ice protecting them numbers 3, so a count of cards pays a different number.
 #[test]
-fn fully_operational_gains_two_or_draws_two_as_the_corp_chooses() {
-    let fo = jinteki_cards::find("Fully Operational").expect("Fully Operational is in the card layer");
-    assert_eq!(
-        fo.unimplemented,
-        vec!["Repeat this process for each remote server that has a card in its root and is protected by ice."],
-        "exactly one printed sentence is still unsayable"
-    );
-
-    for (pick, credits, hand) in [("gain 2[credit]", 4u32, 1usize), ("draw 2 cards", 2u32, 3usize)] {
+fn fully_operational_repeats_the_process_once_per_qualifying_remote_server() {
+    for (board, picks, credits, hand, why) in [
+        (
+            false,
+            vec!["gain 2[credit]"],
+            4u32,
+            1usize,
+            "with no qualifying server the process happens exactly once: 3 − the \
+             1[credit] play cost + 2",
+        ),
+        (
+            false,
+            vec!["draw 2 cards"],
+            2,
+            3,
+            "…and the other half of the same one resolution draws instead",
+        ),
+        (
+            true,
+            vec!["gain 2[credit]", "gain 2[credit]", "gain 2[credit]"],
+            8,
+            1,
+            "1 + N with N = 2 qualifying remotes: three resolutions, 6[credit], \
+             and not the 3 root cards' or 3 ice's worth",
+        ),
+        (
+            true,
+            vec!["gain 2[credit]", "draw 2 cards", "gain 2[credit]"],
+            6,
+            3,
+            "9.12.2b: each repetition is its own choice — two gains and one draw",
+        ),
+    ] {
         let mut vm = Vm::empty(9134);
-        let op = vm.new_object(card_partial("Fully Operational"), Zone::Hand(Side::Corp));
+        let op = vm.new_object(card("Fully Operational"), Zone::Hand(Side::Corp));
         vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
-        tk::fill_deck(&mut vm, Side::Corp, 8);
+        if board {
+            // Two qualifying remotes, plus one of each near miss.
+            tk::install_root(&mut vm, tk::vanilla_asset("R1 Asset", 0, 2), ServerId::Remote(1), false);
+            tk::install_ice(&mut vm, tk::vanilla_ice("R1 Ice", 1, 1), ServerId::Remote(1), false);
+            tk::install_root(&mut vm, tk::vanilla_asset("R2 Asset", 0, 2), ServerId::Remote(2), false);
+            tk::install_root(&mut vm, tk::vanilla_upgrade("R2 Upgrade", 0), ServerId::Remote(2), false);
+            tk::install_ice(&mut vm, tk::vanilla_ice("R2 Inner", 1, 1), ServerId::Remote(2), false);
+            tk::install_ice(&mut vm, tk::vanilla_ice("R2 Outer", 1, 1), ServerId::Remote(2), false);
+            tk::install_ice(&mut vm, tk::vanilla_ice("R3 Ice", 1, 1), ServerId::Remote(3), false);
+            tk::install_root(&mut vm, tk::vanilla_asset("R4 Asset", 0, 2), ServerId::Remote(4), false);
+        }
+        tk::fill_deck(&mut vm, Side::Corp, 12);
         tk::fill_deck(&mut vm, Side::Runner, 5);
         vm.st.corp.credits = 3;
         vm.start_turn(Side::Corp);
 
-        let t = plan::play(
-            &mut vm,
-            Plan::corp()
-                .when(Match::action().once(), Reply::play_card(op))
-                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
-                .stop_at_action(),
-            Plan::runner(),
-        );
+        let mut corp = Plan::corp().when(Match::action().once(), Reply::play_card(op));
+        for pick in &picks {
+            corp = corp.when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick));
+        }
+        let t = plan::play(&mut vm, corp.stop_at_action(), Plan::runner());
 
-        assert_eq!(
-            vm.st.corp.credits, credits,
-            "3 − the 1[credit] play cost, plus 2 only where that half was chosen (pick={pick}): {}",
-            t.tail(20)
-        );
+        assert_eq!(vm.st.corp.credits, credits, "{why}: {}", t.tail(24));
         // The operation left HQ and the turn's mandatory draw put one back.
         assert_eq!(
             vm.st.hand[&Side::Corp].len(),
             hand,
-            "…and 2 cards arrived only where THAT half was chosen (pick={pick}): {}",
-            t.tail(20)
+            "…and the cards arrived exactly where a draw was chosen ({why}): {}",
+            t.tail(24)
         );
     }
 }
@@ -19029,51 +19119,81 @@ fn same_old_thing_replays_an_event_out_of_the_heap_paying_for_it() {
     );
 }
 
-/// Blackmail: "Run any server." (the run half of its second printed line.)
+/// Blackmail: "Play only if the Corp has at least 1 bad publicity." / "Run any
+/// server." (the run half of its second printed line.)
 ///
-/// PARTIAL — the play restriction and the rez prohibition are unsayable (see
-/// the card's doc comment and MEZZIE-QUEUE.md's Blockers), and the test says
-/// so out loud so the markers cannot quietly disappear. What IS expressed is
+/// PARTIAL — the rez prohibition is unsayable (see the card's doc comment and
+/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear.
+///
+/// The restriction is asserted in both directions on the same board, which is
+/// what 9.1.8c and 1.2.2 between them require: with no bad publicity the basic
+/// play action does not offer the card at all, and with one it does. 10.6.1's
+/// bad publicity is a count on the player, so the difference between the two
+/// arms is one counter and nothing else. What follows the legal play is
 /// 6.9.1a's announcement over every server: the effect names none, so the
 /// Runner declares the attacked one as the run is initiated.
 #[test]
-fn blackmail_runs_a_server_the_runner_names() {
+fn blackmail_is_playable_only_against_a_corp_with_bad_publicity() {
     let bm = jinteki_cards::find("Blackmail").expect("Blackmail is in the card layer");
     assert_eq!(
         bm.unimplemented,
-        vec![
-            "Play only if the Corp has at least 1 bad publicity.",
-            "The Corp cannot rez ice during that run.",
-        ],
-        "exactly two printed sentences are still unsayable"
+        vec!["The Corp cannot rez ice during that run."],
+        "exactly one printed sentence is still unsayable"
     );
 
-    let mut vm = Vm::empty(9405);
-    let card_id = vm.new_object(card_partial("Blackmail"), Zone::Hand(Side::Runner));
-    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
-    tk::fill_hand(&mut vm, Side::Corp, 3);
-    tk::fill_deck(&mut vm, Side::Corp, 5);
-    tk::fill_deck(&mut vm, Side::Runner, 5);
-    vm.st.runner.credits = 3;
-    vm.start_turn(Side::Runner);
+    for bad_publicity in [0u32, 1u32] {
+        let mut vm = Vm::empty(9405);
+        let card_id = vm.new_object(card_partial("Blackmail"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 3;
+        vm.st.corp.bad_publicity = bad_publicity;
+        vm.start_turn(Side::Runner);
 
-    let t = plan::play(
-        &mut vm,
-        Plan::corp(),
-        Plan::runner()
-            .when(Match::action().once(), Reply::play_card(card_id))
-            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
-            .stop_at_action(),
-    );
-    assert!(
-        vm.changes.log.iter().any(|c| matches!(
-            c,
-            GameChange::RunDeclaredSuccessful { server: ServerId::Archives, .. }
-        )),
-        "the run went to the server the Runner named: {}",
-        t.tail(16)
-    );
-    assert_eq!(vm.st.runner.credits, 2, "3 − the 1[credit] play cost: {}", t.tail(16));
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(card_id))
+                .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+                .stop_at_action(),
+        );
+
+        let offered = t
+            .first_window(Kind::Action, Side::Runner)
+            .actions()
+            .iter()
+            .any(|o| matches!(o, ActionOption::BasicPlayOperation { card } if *card == card_id));
+        assert_eq!(
+            offered,
+            bad_publicity >= 1,
+            "9.1.8c gates the basic play action on 10.6.1's count \
+             (bad_publicity={bad_publicity}): {}",
+            t.tail(16)
+        );
+
+        if bad_publicity >= 1 {
+            assert!(
+                vm.changes.log.iter().any(|c| matches!(
+                    c,
+                    GameChange::RunDeclaredSuccessful { server: ServerId::Archives, .. }
+                )),
+                "the run went to the server the Runner named: {}",
+                t.tail(16)
+            );
+            assert_eq!(vm.st.runner.credits, 2, "3 − the 1[credit] play cost: {}", t.tail(16));
+        } else {
+            assert_eq!(
+                vm.st.objects[&card_id].zone,
+                Zone::Hand(Side::Runner),
+                "1.2.2: the card that could not be played is still in the grip: {}",
+                t.tail(16)
+            );
+        }
+    }
 }
 
 /// Hacktivist Meeting: "This card is not trashed until another current is
