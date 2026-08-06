@@ -6,7 +6,7 @@
 //! stores its token in localStorage and resumes over any fresh WebSocket.
 //! Wire protocol (JSON text frames):
 //!   client → server:
-//!     {"type":"start","side":"runner"|"corp","seed":123?,"runner_id"?}
+//!     {"type":"start","side":"runner"|"corp","seed":"123"?,"runner_id"?}
 //!     {"type":"start","engine":"cr","side":…,"seed":…}   ← the CR engine
 //!     {"type":"resume","token":"..."}
 //!     {"type":"action","command":"<jnet command>","args":{...}}
@@ -62,6 +62,37 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::Mutex;
+
+/// THE SEED IS A STRING ON THE WIRE, and this is the only place it becomes a
+/// number.
+///
+/// A game seed is a `u64`; JavaScript's only number is a double, so `2^53` is
+/// the last integer a browser can hold exactly. The client used to
+/// `parseInt` the seed box, which turned `9661175140325481871` into
+/// `9661175140325482000` and started a DIFFERENT GAME from the one whose seed
+/// its player had pasted in to replay — silently, with the wrong number
+/// echoed back in the log as if it were theirs. So the client stops
+/// converting: it sends the digits the player typed, unparsed, and the one
+/// parse to `u64` happens here.
+///
+/// A JSON number is still accepted — old clients, `curl`, the test suite —
+/// but only while it is exactly a `u64`; `1e3` and `-1` are refused rather
+/// than rounded or wrapped. Absent, null or blank is the seed box's
+/// documented "(optional)": a random game. Everything else refuses the start
+/// and says what a seed is, because a seed quietly replaced by another number
+/// is precisely the bug this function exists to make impossible.
+pub(crate) fn seed_from_wire(v: &Value) -> Result<u64, String> {
+    fn refuse(got: &str) -> String {
+        format!("seed must be a whole number from 0 to {} — got {got}", u64::MAX)
+    }
+    match &v["seed"] {
+        Value::Null => Ok(rand::random()),
+        Value::String(s) if s.trim().is_empty() => Ok(rand::random()),
+        Value::String(s) => s.trim().parse::<u64>().map_err(|_| refuse(&format!("{s:?}"))),
+        Value::Number(n) => n.as_u64().ok_or_else(|| refuse(&n.to_string())),
+        other => Err(refuse(&other.to_string())),
+    }
+}
 
 struct LocalGame {
     st: GameState,
@@ -359,7 +390,13 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                     lobby::cancel(t).await;
                 }
                 let side = lobby::side_from_key(v["side"].as_str().unwrap_or("runner"));
-                let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+                let seed = match seed_from_wire(&v) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        send_err(&mut ws, &e).await;
+                        continue;
+                    }
+                };
                 let deck = v["deck"].as_str().map(String::from);
                 // Absent timing is the default mode (timed 30 + rope).
                 let timing = crate::timing::TimingConfig::from_wire(&v["timing"]);
@@ -528,7 +565,13 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                             Some(s) if can_sides.contains(&s) => s,
                             _ => can_sides[0],
                         };
-                        let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+                        let seed = match seed_from_wire(&v) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                send_err(&mut ws, &e).await;
+                                continue;
+                            }
+                        };
                         let deck = deck_for(lobby::side_key(side));
                         let timing = crate::timing::TimingConfig::from_wire(&v["timing"]);
                         let o = lobby::create("", &me, user.clone(), side, deck, timing, seed)
@@ -596,7 +639,13 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
                     Some("corp") => Side::Corp,
                     _ => Side::Runner,
                 };
-                let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+                let seed = match seed_from_wire(&v) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        send_err(&mut ws, &e).await;
+                        continue;
+                    }
+                };
                 // The human side's deck: a stored deck when deck_id is given
                 // (owned or published), else the built-in demo deck — the
                 // cookieless flow is exactly today's behavior (§8.3).
@@ -833,7 +882,7 @@ pub async fn handle(mut ws: WebSocket, db: Arc<Db>, user: Option<String>) {
     }
 }
 
-async fn send_err(ws: &mut WebSocket, e: &str) {
+pub(crate) async fn send_err(ws: &mut WebSocket, e: &str) {
     let _ = ws
         .send(Message::Text(
             json!({"type":"error","error": e}).to_string().into(),
@@ -962,4 +1011,72 @@ fn actions_json(st: &GameState, side: Side) -> Value {
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::seed_from_wire;
+    use serde_json::json;
+
+    /// The seed from the report, and the proof that it needs a string: a
+    /// round trip through `f64` — which is every number a browser has —
+    /// comes back as a different game.
+    const BIG: u64 = 9661175140325481871;
+
+    #[test]
+    fn a_u64_seed_does_not_fit_a_javascript_number() {
+        assert_ne!(BIG as f64 as u64, BIG, "the whole reason the wire says string");
+    }
+
+    #[test]
+    fn the_digits_a_client_types_parse_to_that_exact_u64() {
+        assert_eq!(seed_from_wire(&json!({"seed": "9661175140325481871"})), Ok(BIG));
+        assert_eq!(seed_from_wire(&json!({"seed": " 9661175140325481871 "})), Ok(BIG));
+        assert_eq!(seed_from_wire(&json!({"seed": "0"})), Ok(0));
+        assert_eq!(seed_from_wire(&json!({"seed": "007"})), Ok(7));
+        assert_eq!(
+            seed_from_wire(&json!({"seed": "18446744073709551615"})),
+            Ok(u64::MAX),
+            "the last seed there is"
+        );
+    }
+
+    /// A number is still a seed — old clients, curl, this suite — as long as
+    /// it is exactly a u64.
+    #[test]
+    fn a_json_number_is_still_read_when_it_is_exactly_a_u64() {
+        assert_eq!(seed_from_wire(&json!({"seed": BIG})), Ok(BIG));
+        assert_eq!(seed_from_wire(&json!({"seed": 7})), Ok(7));
+    }
+
+    /// Absent, null and blank all mean the box was left empty: a random
+    /// game, which is what "(optional)" has always promised.
+    #[test]
+    fn no_seed_at_all_is_a_random_game() {
+        for v in [json!({}), json!({"seed": null}), json!({"seed": ""}), json!({"seed": "   "})] {
+            assert!(seed_from_wire(&v).is_ok(), "{v} must be a game, not a refusal");
+        }
+    }
+
+    /// Everything else refuses and says what a seed is. Not one of these may
+    /// silently become some other number.
+    #[test]
+    fn anything_else_refuses_and_says_what_a_seed_is() {
+        for v in [
+            json!({"seed": "banana"}),
+            json!({"seed": "-1"}),
+            json!({"seed": "1.5"}),
+            json!({"seed": "1e3"}),
+            json!({"seed": "12 34"}),
+            json!({"seed": "18446744073709551616"}), // u64::MAX + 1
+            json!({"seed": -1}),
+            json!({"seed": 1.5}),
+            json!({"seed": 1e300}),
+            json!({"seed": true}),
+            json!({"seed": ["7"]}),
+        ] {
+            let e = seed_from_wire(&v).expect_err(&format!("{v} is not a seed"));
+            assert!(e.contains("seed must be a whole number from 0 to 18446744073709551615"), "{e}");
+        }
+    }
 }
