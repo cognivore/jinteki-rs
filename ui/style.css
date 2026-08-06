@@ -1600,14 +1600,35 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .filter-row .chip.on { border-color: var(--gold); color: var(--gold); }
 
 /* The pool: every card IS a card (THE LAW §1) — the game's .card box at a
-   readable size, in a grid that scrolls. Tap adds a copy; long-press reads. */
+   readable size, in a grid that scrolls. One tap focuses, the second adds a
+   copy (the board's two taps, §3); long-press reads. */
 .builder-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px;
-  padding: 4px 2px calc(16px + var(--sab)); align-content: start; }
+  padding: 4px 2px calc(16px + var(--sab)); align-content: start;
+  /* How far a focused card rises out of the grid. Declared HERE and read by
+     `paintBuilderFocus`, which needs it to pin the transform-origin at the
+     container's edges — two copies of this number would drift, and a drifted
+     copy is a card clipped by the scroller it is trying to stand out of. */
+  --surface-scale: 1.14; }
 .builder-grid .card { width: 100%; height: auto; aspect-ratio: 64 / 89;
   font-size: 11px; cursor: pointer; }
 .builder-grid .card:hover { border-color: var(--legal); }
 .builder-grid .card .ctype { font-size: 10px; }
+/* THE FOCUSED CARD IS SURFACED. It stands above its neighbours and grows a
+   little, so the card the next click acts on is unmistakable — and it does it
+   with transform and z-index ALONE: no size, no margin, no gap, so not one
+   other card in the grid moves (THE LAW §2). `.card` is already
+   `position: relative`, so the z-index bites without adding one. The white
+   ring is the shared `.card.armed` rule — the same ring, the same meaning as
+   on the board: the next tap on this exact thing commits. The origin is
+   written by the painter at the grid's edges (see app.js).
+
+   No transition: the raise answers a click and must be TRUE the moment the
+   click lands. An eased one is a card that is only partly focused for a
+   frame or two — and a card re-created by the grid's redraw (adding a copy
+   rebuilds every element) starts from no previous value at all, so half the
+   raises would animate and half would not. */
+.builder-grid .card.surfaced { transform: scale(var(--surface-scale)); z-index: 6; }
 /* Faction stripe down the left edge — same anatomy at every size. */
 .card .fstripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 1; }
 .fac-criminal { background: #4f74d8; } .fac-shaper { background: #57c46b; }

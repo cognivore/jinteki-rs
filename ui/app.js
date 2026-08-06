@@ -63,6 +63,99 @@ function disarm() {
  * of the dirty key of every section that draws a card, or the redraw would
  * decide nothing had changed. */
 function repaintArmed() { if (S) render(); }
+
+/* ── THE TWO TAPS, AS ARITHMETIC ─────────────────────────────────────────
+ *
+ * The board and the deck editor ask the player the same question — "which
+ * one do you mean?" — and there must be exactly ONE answer to "what does a
+ * tap do", or the deck editor teaches a gesture the board then punishes. The
+ * editor used to add a copy on the FIRST tap, which is the single-tap commit
+ * the board deleted (see `cardEl`): the same finger, on the same-looking
+ * card box, meaning two different things on two screens.
+ *
+ * What the two screens genuinely do not share is WHERE the intent is kept.
+ * The board's `armed` is read directly by a dozen dirty keys and repaints
+ * through the whole `render`; the editor's grid repaints by touching two
+ * classes on cards that are already on screen. So the SLOT is per screen —
+ * `{ get, set }`, nothing more — and this function is the grammar over it:
+ * the first tap on a candidate arms it, a tap on a DIFFERENT candidate
+ * re-arms to that one and never commits, and only the second tap on the
+ * armed thing acts (THE LAW §3, lesson 16). Returns true when it committed,
+ * for the callers that care. */
+function armTap(slot, key, commit) {
+  if (slot.get() !== key) { slot.set(key); return false; }
+  commit();
+  return true;
+}
+/* The board's slot. `armed` stays a plain variable because it is read as one
+   in every section's dirty key; this is the door the grammar knocks on. */
+const BOARD_ARM = { get: () => armed, set: setArmed };
+
+/* ── THE DECK EDITOR'S SLOT ──────────────────────────────────────────────
+ *
+ * The same intent, in the one other screen that shows cards as cards. It is
+ * keyed by SURFACE and catalog id (`pool:01023`, `idp:01023`) rather than by
+ * the id alone, because one card is drawn in several places at once — the
+ * pool grid, the deck rows, the identity picker — and "the card the next
+ * click acts on" must name a place as well as a card, exactly as the board
+ * names a server column `srv:remote1` rather than "a remote".
+ *
+ * The painter, not `render`, is the repaint: the pool is hundreds of card
+ * boxes with an image each, and re-running the grid to move a white ring
+ * would destroy and rebuild every element on screen (including, mid-gesture,
+ * the one under the finger). Focus is a class on cards that already exist. */
+let builderFocus = null;
+function setBuilderFocus(key) {
+  if (builderFocus === key) return;
+  builderFocus = key;
+  paintBuilderFocus();
+}
+function clearBuilderFocus() { setBuilderFocus(null); }
+const BUILDER_ARM = { get: () => builderFocus, set: setBuilderFocus };
+
+/* THE FOCUSED CARD IS SURFACED — raised over its neighbours, scaled up and
+ * ringed, so the card a second click will act on cannot be mistaken. Two
+ * things it may not do:
+ *
+ *   · REFLOW. The grid is a static wall of cards and it stays put (THE LAW
+ *     §2) — transform and z-index only, never a size, a margin or a gap.
+ *   · CLIP. The grid is a scroller, so a card scaled from its centre in the
+ *     first column pushes 8px past the container's edge and is cut off (and
+ *     horizontally, worse: an overflow that makes a scrollbar appear IS a
+ *     reflow). So the raise grows INWARD at the edges: the origin is pinned
+ *     to whichever side would have overflowed. Measured flat — the class is
+ *     off every card before anything is read — because a rect measured
+ *     through a transform is the scaled rect and would compound.
+ */
+function paintBuilderFocus() {
+  const cards = document.querySelectorAll(".card[data-armkey]");
+  cards.forEach((c) => {
+    c.classList.remove("armed", "surfaced");
+    c.style.transformOrigin = "";
+  });
+  if (builderFocus == null) return;
+  const c = [...cards].find((n) => n.dataset.armkey === builderFocus);
+  // The focused card is not on screen any more — a filter, a search or a
+  // side switch took it away. Then nothing is focused: keeping the key would
+  // mean that a card which came back later would already be armed, and the
+  // first click on it would commit.
+  if (!c) { builderFocus = null; return; }
+  const host = c.closest(".builder-grid");
+  if (host) {
+    // The scale lives in the stylesheet and is READ here, so the origin can
+    // never disagree with the raise it is compensating for.
+    const k = parseFloat(getComputedStyle(host).getPropertyValue("--surface-scale")) || 1.12;
+    const g = host.getBoundingClientRect();
+    const r = c.getBoundingClientRect();
+    const pad = 5;                       // the ring's own 3px, and a hair
+    const dx = (r.width * (k - 1)) / 2 + pad;
+    const dy = (r.height * (k - 1)) / 2 + pad;
+    const x = r.left - dx < g.left ? "left" : r.right + dx > g.right ? "right" : "center";
+    const y = r.top - dy < g.top ? "top" : r.bottom + dy > g.bottom ? "bottom" : "center";
+    c.style.transformOrigin = `${x} ${y}`;
+  }
+  c.classList.add("armed", "surfaced");
+}
 let prev = { credits: {}, clicks: {}, logn: 0 };
 /* The last state push's timing snapshot: `{ at: performance.now(), d: state.timing }`.
    Null in untimed games — every timing element hides off this. */
@@ -263,6 +356,11 @@ function esc(s) {
 
 /* ── screens ─────────────────────────────────────────────────────────── */
 function show(id) {
+  // Leaving the deck editor takes its focus with it. An intent that outlives
+  // the screen it was made on is one nobody can see and nobody can cancel —
+  // and coming back to a card already armed would make the FIRST click a
+  // commit, which is the whole thing the two clicks exist to prevent.
+  if (id !== "screen-builder") clearBuilderFocus();
   document.querySelectorAll(".screen").forEach((s) => s.classList.remove("active"));
   $(id).classList.add("active");
 }
@@ -1566,7 +1664,7 @@ document.addEventListener("click", (e) => {
   // tap would answer a question (a target pick, an offered ability), the
   // first tap is the white ring and the second is the one that commits.
   const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
-  if (answerable && armed !== c.cid) { setArmed(c.cid); return; }
+  if (answerable) { armTap(BOARD_ARM, c.cid, () => onCardTap(c, { identity: true }, chip)); return; }
   onCardTap(c, { identity: true }, chip);
 });
 
@@ -1684,8 +1782,7 @@ function renderServers() {
         if (answerable) {
           // The same two taps every card takes: a sliver is still a card
           // (THE LAW §5), and the choice it answers is just as final.
-          if (armed !== c.cid) { setArmed(c.cid); return; }
-          onCardTap(c, { ice: true }, sliver);
+          armTap(BOARD_ARM, c.cid, () => onCardTap(c, { ice: true }, sliver));
         } else zoomCard(c);
       });
       if (armed != null && c.cid === armed) sliver.classList.add("armed");
@@ -1738,14 +1835,14 @@ function wireServerTarget(col, key, chs) {
   col.addEventListener("pointerup", (e) => {
     // Cards and ice answer for themselves (their own arming gate).
     if (e.target.closest && e.target.closest(".card, .ice-sliver")) return;
-    const k = "srv:" + key;
-    if (armed !== k) { setArmed(k); return; }
-    if (chs.length === 1) { act("choice", { choice: { uuid: chs[0].uuid } }); return; }
-    const r = col.getBoundingClientRect();
-    openSheet(chs.map((ch) => [
-      abilityText(ch.value, ch.card && ch.card.title, true),
-      () => act("choice", { choice: { uuid: ch.uuid } }),
-    ]), Math.min(r.left, window.innerWidth - 200), Math.min(r.bottom + 6, window.innerHeight - 60 * chs.length - 20));
+    armTap(BOARD_ARM, "srv:" + key, () => {
+      if (chs.length === 1) { act("choice", { choice: { uuid: chs[0].uuid } }); return; }
+      const r = col.getBoundingClientRect();
+      openSheet(chs.map((ch) => [
+        abilityText(ch.value, ch.card && ch.card.title, true),
+        () => act("choice", { choice: { uuid: ch.uuid } }),
+      ]), Math.min(r.left, window.innerWidth - 200), Math.min(r.bottom + 6, window.innerHeight - 60 * chs.length - 20));
+    });
   });
 }
 
@@ -2049,6 +2146,38 @@ document.addEventListener("scroll", cancelPendingPresses, true);
 document.addEventListener("pointercancel", cancelPendingPresses, true);
 document.addEventListener("touchcancel", cancelPendingPresses, true);
 
+/* ── A CARD OWNS ITS OWN PRESS ───────────────────────────────────────────
+ *
+ * Long-press is THE read gesture (THE LAW §5), and on a desktop browser the
+ * same press — and every right-click — also raises the platform's context
+ * menu: "Open image in new tab" over the card the player was holding down to
+ * read. On iOS the equivalent is the share/copy callout and a text selection
+ * started mid-hold. Both hand the gesture to somebody else halfway through.
+ *
+ * So anything that STANDS FOR A CARD eats `contextmenu`. One delegated
+ * listener rather than one per element: the press machines (`cardEl` and
+ * `pressToRead`) each used to attach their own, which covered the board and
+ * the builder's grid but not the surfaces that draw a card without a press
+ * timer at all — the reader's own art (right-clicking the zoom overlay's
+ * <img> was the loudest one), the play rail, the previews, the identity
+ * chips. The rule belongs to the CARD, not to the timer that happens to be
+ * watching it, and it is written once here.
+ *
+ * Scoped, never global: the deck-name field, the search box, the log and the
+ * chat keep the browser's menu, because copy/paste/spellcheck on real text
+ * is not ours to take. The stylesheet's half of the same rule is the `*`
+ * block at the top of style.css (`-webkit-touch-callout: none`,
+ * `user-select: none`) with `input, textarea` exempted the same way. */
+const CARDLIKE = ".card, .ice-sliver, .idchip, .zoom-card, .hover-preview, " +
+  ".fan-preview, .cardpick, .arrangepick, #play-rail, .brow, .bthumb, .zart";
+const KEEPS_MENU = "input, textarea, [contenteditable], .log-drawer, .log-lines";
+document.addEventListener("contextmenu", (e) => {
+  const t = e.target;
+  if (!t || !t.closest) return;
+  if (t.closest(KEEPS_MENU)) return;
+  if (t.closest(CARDLIKE)) e.preventDefault();
+});
+
 /* ONE press machine for everything that stands for a card but is not drawn by
  * `cardEl` — the ice slivers, the pile and deck-editor rows, the builder's
  * grid. They had three near-copies of this timer between them and three
@@ -2087,8 +2216,9 @@ function pressToRead(elm, ms, fire) {
   });
   ["pointerup", "pointerleave", "pointercancel"].forEach((ev) =>
     elm.addEventListener(ev, stop));
-  // The read gesture is ours, not iOS's selection callout.
-  elm.addEventListener("contextmenu", (e) => e.preventDefault());
+  // The read gesture is ours, not the platform's callout — see the delegated
+  // `contextmenu` rule above, which now covers every card-like surface
+  // including the ones that never start a press timer.
   return {
     /** Did this press already open the reader? Then the release is not a tap. */
     fired: () => fired,
@@ -2677,13 +2807,14 @@ function cardEl(c, opts) {
     // job the sheet was doing. (Cards with no options keep the ring too:
     // there is nothing to name, and 9.2.7f still makes the choice final.)
     if (!opts.hand && promptChoicesFor(c.cid).length > 1) { onCardTap(c, opts, el); return; }
-    if (armed !== c.cid) { setArmed(c.cid); return; }
-    onCardTap(c, opts, el);
+    armTap(BOARD_ARM, c.cid, () => onCardTap(c, opts, el));
   });
   el.addEventListener("pointerleave", el.__cancelPress);
   el.addEventListener("pointercancel", el.__cancelPress);
-  // Suppress the iOS long-press callout / selection so the read gesture is ours.
-  el.addEventListener("contextmenu", (e) => e.preventDefault());
+  // The iOS callout, the desktop context menu and the text selection are all
+  // suppressed by the one delegated `contextmenu` rule (`CARDLIKE`) — a card
+  // owns its press wherever it is drawn, not only where a press machine is
+  // watching it.
   if (hoverCapable) {
     el.addEventListener("mouseenter", () => {
       // Inside a fan, hovering a card focuses it and the right-hand panel is
@@ -3023,8 +3154,18 @@ const HOLDS_FOCUS = ".card, .action-sheet, .prompt-sheet, .fanrail, .railbtn, " 
   // A candidate server column and the identity chip take the same two taps a
   // card does; disarming on the press would eat the second tap's confirm.
   ".server.selectable, .ice-sliver, .idchip";
+/* The deck editor's version of the same list, and it is SHORTER on purpose.
+ * The board's chrome — the rails, the sheets, the buttons — belongs to the
+ * question the focus is part of, so pressing it must not throw the focus
+ * away. The editor's neighbours are not that: the filters, the search box,
+ * the deck rows and their explicit +/− are all other work, and a player who
+ * has reached for one has stopped pointing at a card. Only a card (which
+ * answers for itself) and the readers (which are the focused card being
+ * looked at, not left) hold it. */
+const BUILDER_HOLDS_FOCUS = ".card, #zoom-overlay, #access-overlay, #reveal-overlay, .hover-preview";
 document.addEventListener("pointerdown", (e) => {
   const t = e.target;
+  if (!(t.closest && t.closest(BUILDER_HOLDS_FOCUS))) clearBuilderFocus();
   if (t.closest && t.closest(".card")) return;   // its own handler decides
   if (!(t.closest && t.closest(".action-sheet"))) closeSheet();
   if (t.closest && t.closest(HOLDS_FOCUS)) return;
@@ -4165,9 +4306,12 @@ document.addEventListener("keydown", (e) => {
   }
   // Nothing open to dismiss, so Escape means the same as tapping the table:
   // whatever was singled out, is not any more. On a keyboard this is the
-  // fastest way to take back a card you did not mean to reach for.
+  // fastest way to take back a card you did not mean to reach for — on the
+  // board and in the deck editor alike, because one key cannot mean "cancel
+  // what you were pointing at" on one screen and nothing on the other.
   closeSheet();
   disarm();
+  clearBuilderFocus();
 });
 
 /* Opening a reader is IDEMPOTENT: one press, one preview. Asking for the
@@ -5332,6 +5476,12 @@ function builderCardEl(cc, opts) {
   opts = opts || {};
   const d = document.createElement("div");
   const qty = opts.qty || 0;
+  // `armKey` is what makes this card a candidate for the editor's focus —
+  // stamped on the element so the painter can find it after a re-render
+  // replaced every node in the grid. A card without one is a card no click
+  // arms (the identity slot: tapping it opens the picker, which is a look
+  // and not a commit).
+  if (opts.armKey) d.dataset.armkey = opts.armKey;
   d.className = "card " + (cc.side === "corp" ? "corp-card" : "runner-card") +
     (cc.type === "Identity" ? " identity" : "") +
     (cc.points > 0 ? " hasbpts" : "");
@@ -5460,7 +5610,8 @@ function renderDeckList() {
     // The server's per-card problems, verbatim, next to the card they name.
     probs.forEach((p) => box.appendChild(el("div", "brow-problem-msg", p.message)));
   });
-  if (!entries.length) box.appendChild(el("div", "hint", "No cards yet — tap cards in the pool to add them."));
+  if (!entries.length) box.appendChild(el("div", "hint",
+    "No cards yet — tap a card in the pool to focus it, tap it again to add a copy."));
 }
 
 function bumpCard(id, delta) {
@@ -5525,8 +5676,23 @@ function renderPool() {
   const cards = poolCards()
     .sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.title.localeCompare(b.title));
   cards.forEach((cc) => {
-    const c = builderCardEl(cc, { qty: DBS.deck.cards[cc.id] || 0 });
-    c.onclick = () => { if (!c.__wasLongPress()) bumpCard(cc.id, +1); };
+    const key = "pool:" + cc.id;
+    const c = builderCardEl(cc, { qty: DBS.deck.cards[cc.id] || 0, armKey: key });
+    // TWO CLICKS, the board's grammar (THE LAW §3, lesson 16). The first
+    // click FOCUSES this card — it surfaces over its neighbours and takes
+    // the white ring — and only a second click on the same card puts a copy
+    // in the deck. A click on a different card moves the focus there and
+    // adds nothing. A single-click add was the editor teaching the opposite
+    // of what the board then enforces, with the added cost that a mis-hit in
+    // a wall of 132px cards was a card silently in your list.
+    //
+    // The focus SURVIVES the add: a third click is the second copy, which is
+    // how decks are actually built, and unlike the board's commits (CR
+    // 9.2.7f — chosen resolves to the end) a copy is undone by the row's −.
+    c.onclick = () => {
+      if (c.__wasLongPress()) return;
+      armTap(BUILDER_ARM, key, () => bumpCard(cc.id, +1));
+    };
     if (hoverCapable) {
       c.addEventListener("mouseenter", () => showHoverPreview({ title: cc.title, type: cc.type, code: cc.id }, c));
       c.addEventListener("mouseleave", hideHoverPreview);
@@ -5535,12 +5701,19 @@ function renderPool() {
   });
   if (!cards.length) grid.appendChild(el("div", "hint",
     DBS.deck && DBS.deck.identity != null ? "No cards match." : "Pick an identity first."));
+  // The grid was just rebuilt from scratch, so the ring has to be put back on
+  // whichever card still holds the focus.
+  paintBuilderFocus();
 }
 
 /* ── identity picker: side toggle, identities as cards ────────────────── */
 let idPickerIsNew = false;
 function openIdPicker(isNew) {
   idPickerIsNew = isNew;
+  // A focus belongs to the surface you are looking at. Opening the picker
+  // covers the pool, so the pool's focused card is not the one the next
+  // click means any more.
+  clearBuilderFocus();
   const idc = DBS.deck && DBS.deck.identity != null ? DBS.byId[DBS.deck.identity] : null;
   if (idc) DBS.pickSide = idc.side;
   $("idpicker").style.display = "";
@@ -5549,11 +5722,14 @@ function openIdPicker(isNew) {
 }
 $("idpicker-close").onclick = () => {
   $("idpicker").style.display = "none";
+  clearBuilderFocus();
   if (idPickerIsNew && DBS.deck && DBS.deck.identity == null) openMyDecks();
   else renderBuilder();
 };
-$("idpick-corp").onclick = () => { DBS.pickSide = "corp"; renderIdPicker(); };
-$("idpick-runner").onclick = () => { DBS.pickSide = "runner"; renderIdPicker(); };
+// Switching sides replaces every card in the picker, so whatever was focused
+// is not on screen any more.
+$("idpick-corp").onclick = () => { DBS.pickSide = "corp"; clearBuilderFocus(); renderIdPicker(); };
+$("idpick-runner").onclick = () => { DBS.pickSide = "runner"; clearBuilderFocus(); renderIdPicker(); };
 
 function renderIdPicker() {
   document.querySelectorAll("#idpicker [data-pickside]").forEach((b) =>
@@ -5565,13 +5741,22 @@ function renderIdPicker() {
   DBS.catalog.identities
     .filter((c) => c.side === DBS.pickSide && !c.draft_only && !c.banned)
     .forEach((cc) => {
+      const key = "idp:" + cc.id;
       const slot = el("div", "");
-      const c = builderCardEl(cc);
-      c.onclick = () => { if (!c.__wasLongPress()) pickIdentity(cc); };
+      const c = builderCardEl(cc, { armKey: key });
+      // The picker takes the same two clicks as the pool, and for a stronger
+      // reason: choosing an identity is the one commit in this screen that
+      // can EMPTY THE DECK (switching sides), and it used to happen on the
+      // first tap of a 140px card in a scrolling wall of them.
+      c.onclick = () => {
+        if (c.__wasLongPress()) return;
+        armTap(BUILDER_ARM, key, () => pickIdentity(cc));
+      };
       slot.appendChild(c);
       slot.appendChild(el("div", "idlabel", cc.title));
       grid.appendChild(slot);
     });
+  paintBuilderFocus();
 }
 
 function pickIdentity(cc) {
