@@ -12,3 +12,7 @@ data/
 # must not read outside the workspace, so NSG's canonical subtype list is
 # checked in and `include_str!`d. Without this the crate does not build.
 !/crates/jinteki-cr/data/
+# …and NSG's format/card-pool data, vendored for the same reason: the format
+# guard (crates/jinteki-server/tests/formats.rs) computes each deck's card
+# pool from it, and must not reach outside the workspace to do so.
+!/crates/jinteki-server/data/

@@ -15,6 +15,7 @@ pub mod deckcheck;
 pub mod decks;
 pub mod eternal;
 pub mod eternal_decks;
+pub mod format;
 pub mod guard;
 pub mod lobby;
 pub mod local;

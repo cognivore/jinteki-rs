@@ -1,0 +1,8 @@
+{
+  "banned": ["creative_commission", "pharos", "tributary"],
+  "date_start": "2024-09-20",
+  "format_id": "startup",
+  "id": "startup_ban_list_24_09",
+  "max_3_point_agendas": 3,
+  "name": "Startup Ban List 24.09"
+}
