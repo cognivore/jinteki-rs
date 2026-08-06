@@ -8,3 +8,7 @@ result
 result-*
 .overnight/
 data/
+# …except the card data VENDORED into a crate, which is source: the kernel
+# must not read outside the workspace, so NSG's canonical subtype list is
+# checked in and `include_str!`d. Without this the crate does not build.
+!/crates/jinteki-cr/data/
