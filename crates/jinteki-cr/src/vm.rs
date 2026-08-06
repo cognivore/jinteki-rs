@@ -4935,7 +4935,7 @@ impl Vm {
             Q::Count(criteria) => self.count_filter(criteria, source),
             // 4.3.4: the number of cards in a hand is open information.
             Q::CardsInHandOf(side) => self.st.hand[side].len() as i64,
-            // 5.7.3: the maximum hand size as modified, through the same
+            // 5.5.3: the maximum hand size as modified, through the same
             // 9.12.1a pipeline the discard step reads.
             Q::MaxHandSizeOf(side) => self.max_hand_size(*side) as i64,
             // 2.15: every card has exactly one type, so "cards that share a
@@ -11495,7 +11495,7 @@ impl Vm {
                     self.st.hand[&Side::Corp].iter().take(n).copied().collect();
                 for c in cards {
                     self.move_card(c, Zone::Discard(Side::Corp));
-                    // Not 5.7.4's discard: a card ability made the Corp
+                    // Not 5.5.4's discard: a card ability made the Corp
                     // discard, and the maximum hand size has nothing to do
                     // with it.
                     self.changes.record(GameChange::CardDiscarded {
@@ -17506,7 +17506,7 @@ impl Vm {
                 self.changes.bump_group();
                 for c in cards {
                     self.move_card(c, Zone::Discard(s));
-                    // 5.7.4: this is the discard step's own discard — the
+                    // 5.5.4: this is the discard step's own discard — the
                     // cards a player discards "to reach their maximum hand
                     // size", which is the occurrence a condition can name.
                     self.changes.record(GameChange::CardDiscarded {

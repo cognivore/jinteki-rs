@@ -112,7 +112,7 @@ pub fn custom_biotics() -> Card {
 /// Cybernetics Division: Humanity Upgraded — Identity: Division.
 /// "Each player's maximum hand size is reduced by 1."
 ///
-/// COMPLETE. The same 5.7.3 declaration NBN: The World is Yours* makes, with
+/// COMPLETE. The same 5.5.3 declaration NBN: The World is Yours* makes, with
 /// the other polarity and the other scope — which is exactly why both are
 /// content on one declaration rather than two. "Each player's" reaches the
 /// Corp who plays it as well as the Runner, so this identity's own discard

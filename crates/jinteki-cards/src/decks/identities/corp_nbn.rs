@@ -46,7 +46,7 @@ pub fn nbn_reality_plus() -> Card {
 /// "Your maximum hand size is increased by 1."
 ///
 /// COMPLETE. A permanent fact rather than something that happens, so it is a
-/// static declaration: 5.7.3's maximum hand size, read continuously, which is
+/// static declaration: 5.5.3's maximum hand size, read continuously, which is
 /// what makes it correct against a core damage that lowers the same number
 /// from the other direction.
 ///
@@ -608,7 +608,7 @@ pub fn identities() -> Vec<Card> {
     ]
 }
 
-/// Acme Consulting: The Truth You Need — Identity: Division.
+/// Acme Consulting: The Truth You Need — Identity: Subsidiary.
 /// "The Runner is considered to have 1 additional tag (even if they have 0)
 ///  during encounters with the outermost piece of ice protecting any server."
 ///
@@ -634,7 +634,7 @@ pub fn acme_consulting() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&[Subtype::Division])
+        .subtypes(&[Subtype::Subsidiary])
         .text("The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.")
         .declares_while(
             &[board_has(&[the_encountered_ice(), outermost_ice_of_its_server()], 1)],

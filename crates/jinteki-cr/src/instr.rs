@@ -248,7 +248,7 @@ pub enum Quantity {
     /// [`TargetFilter::CardsInHandOf`] describes the cards, this reads how
     /// many there are, and 4.3.4 makes that number open information.
     CardsInHandOf(Side),
-    /// CR 5.5.1/5.7.3: the named player's maximum hand size, as modified —
+    /// CR 5.5.1/5.5.3: the named player's maximum hand size, as modified —
     /// read through the same 9.12.1a pipeline the discard step reads
     /// (`Vm::max_hand_size`), so a Safety-First-class "-2" or a Cybernetics
     /// "-1" is already inside the number a sentence compares against.
@@ -2497,7 +2497,7 @@ pub enum TargetFilter {
     /// card, and is what this reduces to after a per-occurrence condition
     /// (9.6.4b), which never names more. The difference is a per-EVENT
     /// condition — every card of one draw (8.4.2), every card of one discard
-    /// (5.7.4) — where the sentence speaks of the whole set and the singular
+    /// (5.5.4) — where the sentence speaks of the whole set and the singular
     /// would silently reach only the first of them.
     ///
     /// Like its singular it fixes cards by IDENTITY, so 1.15.2c's play-area

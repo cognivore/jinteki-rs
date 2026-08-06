@@ -516,7 +516,7 @@ pub fn bran_1_0() -> Card {
 ///
 /// The second subroutine's two sentences are one damage and one tag, in the
 /// printed order, with a checkpoint between them — so a Runner who is flatlined
-/// by the net damage (1.17.2b) never reaches the tag.
+/// by the net damage (1.7.2b) never reaches the tag.
 ///
 /// "You may add 1 card from HQ to the top of R&D" is 9.6.9c's optional part
 /// inside the instruction, and "from HQ" is the zone statement 1.15.2c wants

@@ -121,7 +121,7 @@ pub fn neutralize_all_threats() -> Card {
 ///  equal to or greater than your maximum hand size."
 ///
 /// COMPLETE. Two printed lines of different kinds: the first is permanently
-/// true and so a 5.7.3 static declaration — the same one Cybernetics
+/// true and so a 5.5.3 static declaration — the same one Cybernetics
 /// Division makes, with its own amount — and the second happens, so it is a
 /// conditional ability on 5.1.4b's formal end of the turn.
 ///

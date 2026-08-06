@@ -180,7 +180,7 @@ pub fn reclamation_order() -> Card {
 
 /// Salem's Hospitality — Operation: Alliance - Gray Ops. Cost 2.
 /// "This operation costs 0 influence if you have 6 or more
-///  non-<strong>alliance</strong> [nbn] cards in your deck.
+///  non-alliance [nbn] cards in your deck.
 ///  Choose a card name. The Runner reveals the grip and trashes all cards
 ///  with the chosen name revealed this way."
 ///
@@ -200,7 +200,7 @@ pub fn salems_hospitality() -> Card {
         .faction("NBN")
         .subtypes(&[Subtype::Alliance, Subtype::GrayOps])
         .cost(2)
-        .text("This operation costs 0 influence if you have 6 or more non-<strong>alliance</strong> [nbn] cards in your deck.")
+        .text("This operation costs 0 influence if you have 6 or more non-alliance [nbn] cards in your deck.")
         .text("Choose a card name. The Runner reveals the grip and trashes all cards with the chosen name revealed this way.")
         .play([
             name_a_card("salem's name"),
@@ -272,7 +272,7 @@ pub fn falsified_credentials() -> Card {
 
 /// Ibrahim Salem — Asset: Alliance - Character. Rez 2, trash 5. ◆
 /// "This card costs 0 influence if you have 6 or more
-///  non-<strong>alliance</strong> [nbn] cards in your deck.
+///  non-alliance [nbn] cards in your deck.
 ///  As an additional cost to rez Ibrahim Salem, forfeit an agenda.
 ///  When your turn begins, name a card type. Look at the Runner's grip and
 ///  trash 1 card in it of the named type."
@@ -293,7 +293,7 @@ pub fn ibrahim_salem() -> Card {
         .cost(2)
         .trash_cost(5)
         .unique()
-        .text("This card costs 0 influence if you have 6 or more non-<strong>alliance</strong> [nbn] cards in your deck.")
+        .text("This card costs 0 influence if you have 6 or more non-alliance [nbn] cards in your deck.")
         .text("As an additional cost to rez Ibrahim Salem, forfeit an agenda.")
         .text("When your turn begins, name a card type. Look at the Runner's grip and trash 1 card in it of the named type.")
         .additional_rez_cost(forfeit_agenda(1))
@@ -310,8 +310,8 @@ pub fn ibrahim_salem() -> Card {
 
 /// Wari — Program. Install 1, strength 0. ◆
 /// "The first time you make a successful run on HQ each turn, you may trash
-///  Wari to name <strong>sentry</strong>, <strong>code gate</strong> or
-///  <strong>barrier</strong>. Expose a piece of ice, then add it to HQ if it
+///  Wari to name sentry, code gate or
+///  barrier. Expose a piece of ice, then add it to HQ if it
 ///  has the named subtype."
 ///
 /// COMPLETE. Three printed subtypes, three branches (9.11.4g) — the choice
@@ -333,7 +333,7 @@ pub fn wari() -> Card {
         .strength(0)
         .memory(1)
         .unique()
-        .text("The first time you make a successful run on HQ each turn, you may trash Wari to name <strong>sentry</strong>, <strong>code gate</strong> or <strong>barrier</strong>. Expose a piece of ice, then add it to HQ if it has the named subtype.")
+        .text("The first time you make a successful run on HQ each turn, you may trash Wari to name sentry, code gate or barrier. Expose a piece of ice, then add it to HQ if it has the named subtype.")
         .when_first_each_turn(
             makes_successful_run_on(&[ServerId::Hq]),
             [
@@ -358,8 +358,8 @@ pub fn wari() -> Card {
 /// Whistleblower — Resource: Connection. Install 2. ◆
 /// "Whenever you make a successful run, you may trash this resource to choose
 ///  a card name. The next time this run you access an agenda with the chosen
-///  name, steal it, ignoring all costs. <em>(You are no longer accessing
-///  it.)</em>"
+///  name, steal it, ignoring all costs. (You are no longer accessing
+///  it.)"
 ///
 /// The first sentence is expressed: 1.15.1b's naming, paid for by trashing
 /// the source, with the run as the stated duration for the same reason Wari
@@ -382,7 +382,7 @@ pub fn whistleblower() -> Card {
         .subtypes(&[Subtype::Connection])
         .cost(2)
         .unique()
-        .text("Whenever you make a successful run, you may trash this resource to choose a card name. The next time this run you access an agenda with the chosen name, steal it, ignoring all costs. <em>(You are no longer accessing it.)</em>")
+        .text("Whenever you make a successful run, you may trash this resource to choose a card name. The next time this run you access an agenda with the chosen name, steal it, ignoring all costs. (You are no longer accessing it.)")
         .when(
             makes_successful_run(),
             [may_pay(
@@ -548,9 +548,9 @@ pub fn harmony_ar_therapy() -> Card {
 
 /// Asmund Pudlat — Resource: Connection - Seedy. Install 2. ◆
 /// "When you install this resource, search your stack for up to 2
-///  <strong>virus</strong> or <strong>weapon</strong> cards with different
-///  names. Host those cards faceup on this resource. <em>(They are not
-///  installed.)</em>
+///  virus or weapon cards with different
+///  names. Host those cards faceup on this resource. (They are not
+///  installed.)
 ///  When your turn begins, you may add 1 hosted card to your grip. If there
 ///  are no more hosted cards, trash this resource."
 ///
@@ -568,7 +568,7 @@ pub fn asmund_pudlat() -> Card {
         .subtypes(&[Subtype::Connection, Subtype::Seedy])
         .cost(2)
         .unique()
-        .text("When you install this resource, search your stack for up to 2 <strong>virus</strong> or <strong>weapon</strong> cards with different names. Host those cards faceup on this resource. <em>(They are not installed.)</em>")
+        .text("When you install this resource, search your stack for up to 2 virus or weapon cards with different names. Host those cards faceup on this resource. (They are not installed.)")
         .text("When your turn begins, you may add 1 hosted card to your grip. If there are no more hosted cards, trash this resource.")
         .when(
             installed(),

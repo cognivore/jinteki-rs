@@ -2488,7 +2488,7 @@ pub fn your_discard_phase_ends_if(side: Side, reqs: &[TriggerRequirement]) -> Tr
     TriggerCond::DiscardPhaseEnds { side: Some(side), requires: reqs.to_vec() }
 }
 /// "Whenever you **discard cards to reach your maximum hand size**…"
-/// (Magdalene Keino-Chemutai) — 5.7.4's discard itself, met once however many
+/// (Magdalene Keino-Chemutai) — 5.5.4's discard itself, met once however many
 /// cards it moved, and naming every one of them for
 /// [`among_those_cards`]. Not [`your_discard_phase_ends_if`], which is the
 /// formal end of the turn around it (5.1.4b) and happens whether or not a
@@ -3029,7 +3029,7 @@ pub fn runner_takes_tags_having_had_none() -> TriggerCond {
 pub fn advances_a_card(had_no_advancement: bool) -> TriggerCond {
     TriggerCond::AdvancesCard { had_no_advancement }
 }
-/// "Your maximum hand size is increased by N." / "…is reduced by N." (5.7.3 —
+/// "Your maximum hand size is increased by N." / "…is reduced by N." (5.5.3 —
 /// the amount carries the polarity.)
 pub fn max_hand_size_mod(n: i32) -> StaticDecl {
     StaticDecl::MaxHandSizeMod { whose: jinteki_cr::ability::DeclSubject::Controller, amount: n }

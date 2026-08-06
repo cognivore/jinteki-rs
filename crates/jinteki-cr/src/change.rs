@@ -136,7 +136,7 @@ pub enum GameChange {
     /// A card was DISCARDED — moved to its owner's discard pile by a player
     /// rather than by a trash.
     ///
-    /// `to_hand_size` is CR 5.7.4's stipulation: this discard was the discard
+    /// `to_hand_size` is CR 5.5.4's stipulation: this discard was the discard
     /// step's, the one a player makes "to reach their maximum hand size". It
     /// is recorded here rather than asked of the state afterwards for the same
     /// reason [`GameChange::CardTrashed::while_accessed`] is — it is a fact
@@ -430,7 +430,7 @@ pub fn cards_named_by(c: &GameChange) -> Vec<ObjectId> {
         | GameChange::CardRezzed { obj, .. }
         | GameChange::CardDerezzed { obj }
         | GameChange::CardTrashed { obj, .. }
-        // 5.7.4: "…install 1 program or piece of hardware from among THOSE
+        // 5.5.4: "…install 1 program or piece of hardware from among THOSE
         // CARDS" — a discard names the card it moved, which is what lets the
         // sentence that follows the condition act on it.
         | GameChange::CardDiscarded { obj, .. }

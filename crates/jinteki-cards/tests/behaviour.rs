@@ -5535,7 +5535,7 @@ fn cybernetics_division_shortens_the_corps_own_discard_phase() {
     assert_eq!(
         vm.st.hand[&Side::Corp].len(),
         4,
-        "5.7.4 discarded down to the reduced maximum, not to 5: {}",
+        "5.5.4 discarded down to the reduced maximum, not to 5: {}",
         t.tail(24)
     );
 }
@@ -7768,7 +7768,7 @@ fn cerebral_imaging_makes_the_hand_size_the_credit_pool() {
     assert_eq!(
         vm.st.hand[&Side::Corp].len(),
         5,
-        "5.7.4 discarded down to the credit pool, not to the base of five: {}",
+        "5.5.4 discarded down to the credit pool, not to the base of five: {}",
         t.tail(30)
     );
 }
@@ -10764,7 +10764,7 @@ fn magdalene_installs_a_program_from_anywhere_among_the_cards_she_just_discarded
         let event = mk("Some Event", CardType::Event, 0);
         let program = mk("Some Program", CardType::Program, 2);
         // Five fillers beside them: a grip of seven against a maximum hand
-        // size of five is 5.7.4's two-card discard.
+        // size of five is 5.5.4's two-card discard.
         tk::fill_hand(&mut vm, Side::Runner, 5);
         tk::fill_deck(&mut vm, Side::Corp, 5);
         tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -19119,7 +19119,7 @@ fn global_food_initiative_is_worth_three_scored_and_two_stolen() {
 /// Both sentences of the one conditional ability (9.11.3 — two sentences, two
 /// instructions, one trigger), each asserted as what it promises a player.
 ///
-/// The clicks are read off the turn itself: 5.6.4a allots the Corp three, the
+/// The clicks are read off the turn itself: 5.6.1a allots the Corp three, the
 /// score happens in the paid window of the first action window, and the turn
 /// then runs to six actions instead of three.
 ///
@@ -19182,7 +19182,7 @@ fn luminal_transubstantiation_pays_three_clicks_and_shuts_the_turn_to_agendas() 
         .count();
     assert_eq!(
         corp_actions, 6,
-        "5.6.4a's three clicks plus the three the agenda gained, spent as actions: {}",
+        "5.6.1a's three clicks plus the three the agenda gained, spent as actions: {}",
         t.tail(20)
     );
     assert_eq!(

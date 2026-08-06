@@ -69,7 +69,7 @@ pub fn exile() -> Card {
         .build()
 }
 
-/// Hayley Kaplan: Universal Scholar — Identity: Natural. Link 0.
+/// Hayley Kaplan: Universal Scholar — Identity: G-mod. Link 0.
 /// "The first time you install a card each turn, you may install another card
 ///  of the same type from your grip (paying its install cost)."
 ///
@@ -91,7 +91,7 @@ pub fn hayley_kaplan() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&[Subtype::Natural])
+        .subtypes(&[Subtype::GMod])
         .text("The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).")
         .may_when_first_each_turn(
             installs_a_card(Runner),
@@ -517,7 +517,7 @@ pub fn ele_smoke_scovak() -> Card {
 /// "When your discard phase ends, if you have the same number of cards in
 ///  your grip as the Corp has in HQ, you may draw 1 card."
 ///
-/// COMPLETE. The condition is 5.7.4's discard phase ending, with whose it is
+/// COMPLETE. The condition is 5.7.2d's discard phase ending, with whose it is
 /// named — a Runner identity saying "your" means the Runner's, and the Corp's
 /// discard phase ending does not meet it at all.
 ///
@@ -645,7 +645,7 @@ pub fn arissana_rocha_nahu() -> Card {
 /// "Whenever you discard cards to reach your maximum hand size, you may
 ///  install 1 program or piece of hardware from among those cards."
 ///
-/// COMPLETE. The condition is CR 5.7.4's DISCARD — the step where a player
+/// COMPLETE. The condition is CR 5.5.4's DISCARD — the step where a player
 /// with more cards in hand than their maximum hand size discards down to it —
 /// and deliberately not 5.1.4b's discard phase ending, which is what Lat
 /// reads. They are different occurrences: the phase ends whether or not a
