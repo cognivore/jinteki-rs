@@ -799,10 +799,13 @@ pub fn bookmark() -> PrintedCard {
     c.abilities = vec![
         AbilityDef::paid(
             Cost { clicks: 1, ..Default::default() },
+            // "**Up to** 3 cards": the ceiling is three and the floor is
+            // zero, so the "up to" is the spec's and not something the
+            // announcement machinery is expected to supply.
             vec![Instruction::HostCards {
                 cards: TargetSpec::Choose {
                     count: Quantity::c(3),
-                    criteria: vec![TargetFilter::CardsInHandOf(Side::Runner)], up_to: false },
+                    criteria: vec![TargetFilter::CardsInHandOf(Side::Runner)], up_to: true },
                 host: TargetSpec::SelfSource,
                 faceup: false,
             }],

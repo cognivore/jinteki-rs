@@ -7423,33 +7423,20 @@ impl Vm {
         let TargetSpec::Choose { count, criteria, up_to } = spec else {
             return self.announcement_for_at(spec, sub).map(|s| (af.controller, s));
         };
+        // No arm here lowers a `Choose`'s FLOOR. "Host <cards> on this card"
+        // (1.13.1), "add <a card> to your grip" (8.7.4) and "add <a card> to
+        // your score area" (1.17.3e) each used to, on the reading that the
+        // number such a sentence reaches for is never forced. It is: 1.15.2e
+        // forces it. "Add 1 installed Runner card to the grip" (Archangel)
+        // prints no "may" and no "up to", so with a legal candidate on the
+        // board one card is owed, and the shared 1.15.2 announcement is the
+        // whole answer — a description that reaches fewer cards than the
+        // count already lowers ceiling and floor together to what it reached
+        // ([`Vm::announcement_with`]), which is all "as much as you can" ever
+        // meant here. Optionality is the printed word's business: `up_to`
+        // for "up to N", a 9.6.9 optional component for "you may", and
+        // neither is derivable from where the cards are going.
         match (instr, position) {
-            // 1.13.1/8.7.4: "host <cards> on this card" / "add <a card> to
-            // your grip" — the cards a search or a hand supplies, whose
-            // number is not forced (1.15.2e's completion applies to the
-            // ceiling the player reached for). NOT a quantity the description
-            // itself counts out ("add **the rest** to HQ", AU Co.): there the
-            // count equals what the description reaches by construction, so
-            // 1.15.2e leaves no number to reach for and the announcement is
-            // the whole set.
-            (Instruction::HostCards { .. }, 0)
-            | (Instruction::AddToScoreArea { .. }, 0)
-            | (Instruction::AddCardsToHand { .. }, 0)
-                if !*up_to && !matches!(count, crate::instr::Quantity::Count(_)) =>
-            {
-                let candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
-                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
-                Some((
-                    af.controller,
-                    DecisionSpec::ChooseTargets {
-                        candidates,
-                        count: want,
-                        up_to: true,
-                        min: 0,
-                        distinct_names: false,
-                    },
-                ))
-            }
             // 1.21.4: "only installed cards that are not rezzed can be
             // exposed". The restriction belongs to the INSTRUCTION, not to
             // the card's words — "expose 1 card" prints no criteria at all —

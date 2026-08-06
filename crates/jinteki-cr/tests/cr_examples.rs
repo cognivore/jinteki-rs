@@ -9598,6 +9598,9 @@ fn example_rule_reveal_from_hidden_1() {
         &mut vm,
         Plan::corp()
             .when(Match::paid().once(), Reply::take("clone-suffrage"))
+            // 9.6.9c: "you may" is its own yes/no, taken here; the card is
+            // then named by the ordinary mandatory announcement.
+            .when(Match::optional().once(), Reply::Optional(true))
             .when(Match::targets().once(), Reply::target(op))
             .stop_at_action(),
         Plan::runner(),

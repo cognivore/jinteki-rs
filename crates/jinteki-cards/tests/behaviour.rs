@@ -521,6 +521,65 @@ fn archangel_subroutine_bounces_an_installed_card() {
     );
 }
 
+/// The same subroutine with TWO installed cards to choose between, which is
+/// where the sentence stops being self-executing. "Add 1 installed Runner
+/// card to the grip" prints no "may" and no "up to", and with two legal
+/// candidates 1.15.2e's "as much as you can" is all of it — so the Corp is
+/// asked for exactly one card and cannot answer with none.
+///
+/// Seen in a production game (transcript 17a23ebf, seq 1218): the Corp was
+/// offered `ChooseTargets { count: 1, up_to: true, min: 0 }`, answered with
+/// no cards, and the successful trace did nothing at all.
+#[test]
+fn archangel_asks_for_a_card_it_does_not_let_the_corp_decline() {
+    let mut vm = Vm::empty(23);
+    tk::install_ice(&mut vm, card_partial("Archangel"), ServerId::Hq, true);
+    let prog = tk::install_rig(
+        &mut vm,
+        tk::vanilla_runner_card("Some Program", jinteki_cr::object::CardType::Program),
+    );
+    let res = tk::install_rig(
+        &mut vm,
+        tk::vanilla_runner_card("Some Resource", jinteki_cr::object::CardType::Resource),
+    );
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.start_turn(Side::Runner);
+
+    // The Corp declines to name a card — the answer the production game sent.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::targets().once(), Reply::Targets(Vec::new())),
+        Plan::runner().when(Match::action().first(), Reply::run(ServerId::Hq)).stop_at_action(),
+    );
+
+    let asked = t
+        .windows(Kind::Targets, Side::Corp)
+        .into_iter()
+        .find(|e| matches!(&e.spec, DecisionSpec::ChooseTargets { candidates, .. }
+            if candidates.contains(&prog) && candidates.contains(&res)))
+        .unwrap_or_else(|| panic!("the successful trace asked for a card: {}", t.tail(20)));
+    let DecisionSpec::ChooseTargets { count, up_to, min, .. } = &asked.spec else {
+        unreachable!()
+    };
+    assert_eq!(*count, 1, "the sentence counts out one card");
+    assert!(!*up_to, "no 'up to' is printed: {}", t.tail(20));
+    assert_eq!(*min, 1, "1.15.2e: with two candidates, one must be announced");
+
+    // 1.15.2e leaves no "your answer was illegal" path: an under-announcement
+    // is completed to the floor, so the sentence still happens.
+    assert_eq!(
+        [&prog, &res]
+            .into_iter()
+            .filter(|c| vm.st.objects[c].zone == Zone::Hand(Side::Runner))
+            .count(),
+        1,
+        "a card was added to the grip despite the empty answer: {}",
+        t.tail(20)
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Programs
 // ---------------------------------------------------------------------------
