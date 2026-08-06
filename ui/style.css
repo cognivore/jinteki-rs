@@ -1616,6 +1616,27 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .builder-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px;
   padding: 4px 2px calc(16px + var(--sab)); align-content: start;
+  /* EVERY CARD GETS A WHOLE ROW. Chrome does not carry a grid item's
+     `aspect-ratio` into an `auto` row track: measured here, `auto` sized
+     every row to 11px — the item's text, as if the ratio were not
+     there — while each card, whose height the same ratio then derives from
+     its (definite) track width, drew 155px tall. Twelve of the thirteen row
+     boundaries overlapped, the worst by 134px, and a hit-test at a card's
+     own centre returned the card BELOW it 29 times out of 33: the pool was
+     a wall of cards of which only the top strip of each was yours to click.
+     Naming the maximum `max-content` instead of leaving it `auto` is what
+     makes the ratio contribute — same measurement, 155.055px rows, zero
+     overlap, 33 of 33 centres their own card. It is not a preference: it is
+     the one track-sizing keyword under which those cards are their own
+     height. (`#idpicker-grid` never had the bug and does not need this: its
+     items are wrapper divs with a label under the card, and a plain block
+     box's auto height DOES come from its ratio'd child.)
+
+     `max-content` and not a fixed row height, because the column tracks are
+     `1fr` — their width is the viewport's, so the row that matches it can
+     only be asked for, never written down. And it cannot clip a card whose
+     text runs long: max-content is a card's whole content either way. */
+  grid-auto-rows: max-content;
   /* How far a focused card rises out of the grid. Declared HERE and read by
      `paintBuilderFocus`, which needs it to pin the transform-origin at the
      container's edges — two copies of this number would drift, and a drifted
