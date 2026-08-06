@@ -56,11 +56,11 @@ Identity is COMPLETE. Printed text below is from
       "When you rez this asset, draw 2 cards. / Remove this asset from the game: Shuffle up to 2 cards from Archives into R&D."
 - [ ] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
       "This operation is not trashed until another current is played or an agenda is stolen. / As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."
-- [ ] **Flood the Market** ×1 — operation · Double · cost 3
+- [x] **Flood the Market** ×1 — operation · Double · cost 3
       "As an additional cost to play this operation, spend [click]. / Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice."
 - [x] **Friends in High Places** ×3 — operation · Terminal · cost 2
       "After you resolve this operation, end your action phase. / Install up to 2 cards from Archives (paying all install costs)."
-- [ ] **Fully Operational** ×3 — operation · cost 1
+- [x] **Fully Operational** ×3 — operation · cost 1
       "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice."
 - [x] **Ash 2X3ZB9CY** ◆ ×1 — upgrade · Bioroid · cost 2, trash 3
       "Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run."
@@ -256,25 +256,6 @@ and a payer who can pay none faces no choice and the effect resolves.
 Wants it: **Manegarm Skunkworks** (its only sentence, which also wants the
 condition above).
 
-### A quantity that reads a player's click pool (CR 1.11)
-
-The `Quantity` selector language has no term for the clicks in a player's
-click pool, so a requirement about how many a player has left cannot be
-stated — neither "if they have no [click] remaining" nor any threshold on the
-other side of it.
-
-Wanted: one selector for the pool, read the way `CreditsInPoolOf(Side)` reads
-the credit pool, with the side as content; the existing `at_least`/`at_most`
-supply the threshold and the polarity.
-
-Wants it: **Vertigo**. This is now the ONLY thing its sentence waits on — the
-prohibition half ("they cannot steal or trash Corp cards for the remainder of
-this run") is written and tested as of the CR 1.2.2 wave: stealing and
-trashing are acts a "cannot" names, the run is a duration it takes, and "Corp
-cards" is a description it reads where the act is offered. The sentence is one
-instruction (9.11.3) with a 9.6.5c requirement in front of it, so it stays
-marked in full until the requirement can be stated.
-
 ### A trigger condition over the CLICKS spent on one action (CR 5.2.1 / 1.11.3b)
 
 The trigger vocabulary counts ACTIONS — `SameActionInARow { side, count }` (The
@@ -372,38 +353,6 @@ Wants it: **Enhanced Login Protocol** (its second sentence; the current's own
 `AdditionalRunActionCost` names this card as its class exemplar — it is
 describing the ORIGINAL printing, which charged every run; the printed text in
 `netrunner-cards-json` is the revised one and it has the ordinal.
-
-### A quantity that counts SERVERS matching a description (CR 4.6.6)
-
-The `Quantity` selector language counts cards (`Count(Vec<TargetFilter>)`),
-counters, pools, accesses and subroutines. It has no term for a SERVER, so a
-"for each" over 4.6.6's servers cannot be stated — neither the count nor any
-stipulation on it.
-
-No count of cards stands in for one. 4.6.6e lets a remote root hold an asset
-or agenda AND any number of upgrades, so counting the cards in the qualifying
-roots over-counts a server with an upgrade on it; counting the ice protecting
-them over-counts a server behind two. Both directions hand out payouts that
-were never earned, which is why these sentences are marked rather than
-approximated.
-
-Wanted: one selector for servers, with the stipulations as content in the same
-filter vocabulary the card descriptions already use — the server's type
-(central or remote, 4.6.6c), whether a described card is installed in its root,
-whether ice protects it — so "each remote server that has a card in its root
-and is protected by ice", "each central server" and "each server you have a
-card installed in" are one word with different content and not a selector
-apiece. (The instruction that repeats a process the resulting number of times
-exists in the kernel as `Instruction::ForEach { count, effects }`; it is
-unreachable from the card vocabulary, and it wants the same quantity, so the
-two land together. Note the printed arithmetic: "do this, then repeat for each
-X" is 1 + N resolutions, never N.)
-
-Wants it: **Flood the Market** ("Place 1 advancement counter on that card for
-each remote server that has a card in its root and is protected by ice" — the
-*double*'s extra [click] is done); **Fully Operational** ("Repeat this process
-for each remote server that has a card in its root and is protected by ice" —
-the gain-or-draw is done).
 
 ### Hosted credits spendable on REZZING (CR 1.10.3c / 8.1.2)
 
@@ -508,29 +457,6 @@ is ticked and tested on the first (scored for 3, stolen for 2, on one board);
 with four agenda counters out of a remote, and without them out of Archives),
 and it stays unticked for its second sentence alone.
 
-### A quantity that reads a player's BAD PUBLICITY (CR 6.4 / 1.9.5)
-
-The `Quantity` selector language reads a player's tags (`RunnerTags`), their
-credit pool (`CreditsInPoolOf`), their agenda points, their [mu], their hand,
-and counts of cards and counters. It has no term for BAD PUBLICITY, which
-6.4.1 makes a player-level count exactly as 10.7 makes tags one — so a
-sentence asking how much of it the Corp has cannot be stated at all, in an
-effect or as a requirement.
-
-The card that wants it wants it as a PLAY RESTRICTION, and getting the class
-right is half the entry: 9.3.3's restriction is not 1.16.1's cost, because
-nothing is paid or given up — `StaticDecl::PlayOnlyIf` is the shape, and it is
-the requirement inside it that has no words. Written without the requirement
-the card is a legal play at any time, which is 1.2.2's "cannot" ignored.
-
-Wanted: one selector for a player's bad publicity, with the side as content,
-read the way `CreditsInPoolOf(Side)` reads the pool; the existing
-`at_least`/`at_most` supply the threshold and the polarity, so "at least 1 bad
-publicity" and "no bad publicity" are the same word twice.
-
-Wants it: **Blackmail** ("Play only if the Corp has at least 1 bad
-publicity"; the run itself is done and tested).
-
 ### What a run-initiating sentence states about THAT run (CR 6.9.1 / 5.2.2b)
 
 `Instruction::InitiateRun` carries two positions for effects tied to the run it
@@ -553,8 +479,12 @@ cannot rez ice during that run", "during that run, <X>" and "if successful, …"
 are three contents of one word rather than three mechanisms.
 
 Wants it: **Blackmail** ("The Corp cannot rez ice during that run" —
-`ProhibitedAction::Rez` and `WantedDuration::ThisRun` both exist; only the
-moment to state them in does not).
+`ProhibitedAction::Rez` and `WantedDuration::ThisRun` both exist; the moment to
+state them in does not). It wants the DESCRIBED prohibition above as well, and
+an earlier entry here was wrong to say the moment was all that was missing:
+"ice" is a description and `LingeringSpec::Prohibit` names one object fixed
+when the effect was created, so the sentence waits on both words. The play
+restriction and the run are done and tested.
 
 ### An additional cost to REZ the cards a description reaches (CR 1.16.10 / 8.1.2)
 

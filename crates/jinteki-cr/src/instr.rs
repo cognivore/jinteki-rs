@@ -115,6 +115,49 @@ pub enum Quantity {
     /// named player's credit POOL, which 1.13.3 keeps distinct from any
     /// credits hosted on cards.
     CreditsInPoolOf(Side),
+    /// CR 1.11.3: "…if they have **no [click] remaining**" (Vertigo class) —
+    /// the number of clicks the named player HAS, which 1.11.3a increases by
+    /// a gain and 1.11.3b reduces by a loss or a spend. The side is content
+    /// (§12 rule 2), read the way [`Quantity::CreditsInPoolOf`] reads a
+    /// credit pool, and the threshold and its direction belong to whatever
+    /// asks: "no [click] remaining" is this at most 0 and "at least
+    /// 1[click]" is this at least 1.
+    ///
+    /// 1.11.3b's other half is why this is a count of what a player HAS and
+    /// not of anything they did with it: "lose" and "spend" are not
+    /// synonymous, so a sentence asking how many clicks were SPENT on
+    /// something is a different question and reads the action's own record
+    /// (1.16.4d), never this.
+    ClicksOf(Side),
+    /// CR 10.6.1: "…if the Corp has **at least 1 bad publicity**" (Blackmail
+    /// class) — the bad publicity counters on the named player, which 1.9.5d
+    /// makes a player-level count exactly as 1.9.5c makes tags one. The side
+    /// is content (§12 rule 2), read the way [`Quantity::CreditsInPoolOf`]
+    /// reads a pool; the threshold and its direction belong to whatever asks,
+    /// so "at least 1 bad publicity" and "no bad publicity" are this selector
+    /// twice.
+    ///
+    /// 10.6.2's bad publicity FUND is a different number and never this one:
+    /// the fund holds credits the RUNNER controls, filled at step 6.9.1b and
+    /// emptied at 6.9.6b, and 10.6.3c is explicit that bad publicity taken or
+    /// removed after 6.9.1b leaves that run's fund alone. A sentence asking
+    /// how much bad publicity a player HAS reads the counters.
+    BadPublicityOf(Side),
+    /// CR 4.6.6a: "…for each **remote server that has a card in its root and
+    /// is protected by ice**" (Fully Operational class) — the number of
+    /// SERVERS the description reaches, with the stipulations as content in
+    /// the server-filter vocabulary ([`ServerFilter`]) exactly as
+    /// [`Quantity::Count`] carries the ones it makes about cards.
+    ///
+    /// A server is not a card and no count of cards stands in for one:
+    /// 4.6.6e lets a remote root hold an asset or agenda AND any number of
+    /// upgrades, so counting the cards in the qualifying roots over-counts a
+    /// server carrying an upgrade, and counting the ice protecting them
+    /// over-counts a server behind two. Which servers there are to count is
+    /// 4.6.7a and 4.6.8d: the three centrals always exist, and a remote
+    /// exists while at least one card is installed in its root or protecting
+    /// it.
+    CountServers(Vec<ServerFilter>),
     /// CR 1.16.4a: "the rez cost of that ice" (Nasir Meidan) — read off the
     /// ice of the encounter in progress, which is 1.15.4's back-reference
     /// [`TargetSpec::EncounteredIce`] asked for a number instead of a card.
@@ -227,6 +270,51 @@ impl Quantity {
             Box::new(Quantity::Times(per, Box::new(Quantity::CountersOnSource(kind)))),
         )
     }
+}
+
+/// The shared SERVER-filter language: the stipulations a sentence makes about
+/// 4.6.6a's servers, standing to [`Quantity::CountServers`] exactly as
+/// [`TargetFilter`] stands to [`Quantity::Count`] (§12 rule 5 — one filter
+/// vocabulary per kind of thing, with every stipulation as content on it).
+/// Each variant is one predicate atom, and several combine as a conjunction
+/// wherever a sentence stacks them: "each remote server that has a card in
+/// its root **and** is protected by ice" is three atoms and one description.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerFilter {
+    /// CR 4.6.6c: "…each **central** server" / "…each **remote** server" —
+    /// the server's TYPE. 4.6.6c says there are exactly two of them, so one
+    /// position with a boolean names both (4.6.7a's three centrals against
+    /// 4.6.8a's remotes) and neither is an atom of its own.
+    IsCentral(bool),
+    /// CR 4.6.6b: "…that **has a card in its root**", "…that is **protected
+    /// by ice**", "…**you have a card installed in**" — at least one card the
+    /// description reaches is in this server, at the location the sentence
+    /// names.
+    ///
+    /// 4.6.6b puts the cards in the root and the cards protecting the server
+    /// both *in* that server, so WHICH of the two a sentence means is content
+    /// on this one atom ([`ServerLocation`]) and not an atom apiece. The
+    /// cards are described in the shared card-filter vocabulary, read through
+    /// the same candidate derivation a count or an announcement reads (§12
+    /// rule 5); an empty description is the printed word "a card".
+    HasCardIn { location: ServerLocation, criteria: Vec<TargetFilter> },
+}
+
+/// CR 4.6.6b: where in a server a card is — "the cards in the root of a
+/// server and the cards protecting it are considered to be in that server",
+/// which makes three things a sentence can name and not two.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerLocation {
+    /// CR 4.6.6e: the server's ROOT, which every server has — a central's
+    /// holding any number of upgrades, a remote's holding 1 asset or agenda
+    /// and any number of upgrades.
+    Root,
+    /// CR 4.6.6d / 4.6.9a: the positions PROTECTING the server, which only
+    /// ice occupies.
+    Protecting,
+    /// CR 4.6.6b: either of them — the whole server, which is what a sentence
+    /// saying "in" a server means.
+    RootOrProtecting,
 }
 
 /// CR 6.7.4a: the set of servers an effect that initiates a run allowed the

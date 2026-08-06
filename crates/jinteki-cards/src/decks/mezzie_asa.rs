@@ -717,29 +717,33 @@ pub fn enhanced_login_protocol() -> Card {
 ///  that card for each remote server that has a card in its root and is
 ///  protected by ice."
 ///
-/// PARTIAL: the double costs its extra click; the counters cannot be counted.
+/// COMPLETE.
 ///
 /// The first sentence is 5.6.2a's *double* said in the card's own words, and
 /// it is a printed FACT about this card rather than a declaration — 1.16.10's
 /// additional cost to play THIS operation, paid at step 8.6.7b along with the
 /// 3[credit], which is where BOOM! already carries the same line.
 ///
-/// UNIMPLEMENTED: the rest, quoted as the two sentences it prints because
-/// 9.11.4c makes them ONE instruction — the first only chooses a target and
-/// the second acts on it, so the choice is announced as that one instruction
-/// becomes imminent and the counters land when it resolves. Marking half of
-/// it would leave a choice that nothing reads.
+/// The rest is ONE instruction, not two, because 9.11.4c says so: the first
+/// half only chooses a target and the second acts on it. So the choice is
+/// announced (1.15.2) as that one instruction becomes imminent, and the
+/// counters land on the announced card when it resolves.
 ///
-/// The half that has no words is the count. "For each remote server that has
-/// a card in its root and is protected by ice" is 9.12.2's calculated
-/// quantity over 4.6.6's SERVERS, and the quantity language counts cards,
-/// counters and pools and has no term for a server at all. No count of cards
-/// stands in for it: 4.6.6e lets a remote root hold an asset or agenda AND any
-/// number of upgrades, so counting what is in the qualifying roots over-counts
-/// a server with an upgrade on it, and counting the ice in front of them
-/// over-counts a server behind two. An over-count here is advancement counters
-/// the Corp did not earn, so it is marked rather than approximated. The
-/// general capability wanted is on MEZZIE-QUEUE.md's Blockers.
+/// "For each remote server that has a card in its root and is protected by
+/// ice" is 9.12.2's calculated quantity over 4.6.6a's SERVERS, written with
+/// the server-filter words — the type (4.6.6c), a card in the root (4.6.6e),
+/// ice protecting it (4.6.6d) — and it is a count of SERVERS on purpose. No
+/// count of cards stands in for it: 4.6.6e lets a remote root hold an asset or
+/// agenda AND any number of upgrades, so counting what is in the qualifying
+/// roots over-counts a server carrying an upgrade, and counting the ice in
+/// front of them over-counts a server behind two. Read at resolution like
+/// every calculated quantity (9.12.2), so a remote that ceased to exist at a
+/// checkpoint (4.6.8e) is no longer among them.
+///
+/// 1.18.2: this PLACES advancement counters and does not advance, so nothing
+/// meets an "advances a card" condition — but the card announced still has to
+/// be one the Corp can advance (1.18.3), which is what the printed
+/// description says and what an agenda satisfies by default.
 pub fn flood_the_market() -> Card {
     card("Flood the Market")
         .corp()
@@ -750,7 +754,16 @@ pub fn flood_the_market() -> Card {
         .text("As an additional cost to play this operation, spend [click].")
         .text("Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice.")
         .additional_play_cost(clicks(1))
-        .unimplemented("Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice.")
+        .play([place_on_q(
+            choose(1, &[advanceable()]),
+            CounterKind::Advancement,
+            per_server_matching(&[
+                remote_server(),
+                with_a_card_in_its_root(&[]),
+                protected_by(&[of_type(CardType::Ice)]),
+            ]),
+        )])
+        .named("an advancement counter per qualifying remote server")
         .build()
 }
 
@@ -807,7 +820,7 @@ pub fn friends_in_high_places() -> Card {
 /// "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server
 ///  that has a card in its root and is protected by ice."
 ///
-/// PARTIAL: the process is expressed; the repetition is not.
+/// COMPLETE.
 ///
 /// "Gain 2[credit] or draw 2 cards" is 9.11.4g's optioned effect: the choice
 /// itself ends an instruction and the option chosen begins the next, so a
@@ -815,17 +828,20 @@ pub fn friends_in_high_places() -> Card {
 /// the Corp, the controller of the ability's source, because the sentence
 /// names nobody else.
 ///
-/// UNIMPLEMENTED: "Repeat this process for each remote server that has a card
-/// in its root and is protected by ice." The count is the same one Flood the
-/// Market wants and cannot have — 9.12.2's calculated quantity over 4.6.6's
-/// SERVERS, which the quantity language has no term for, and which no count of
-/// cards stands in for (4.6.6e's root holds an asset or agenda and any number
-/// of upgrades; a server can be behind more than one piece of ice). Note also
-/// that the repetition is one MORE for each such server: the process happens
-/// once and then again per server, so the number of times is 1 + N and never
-/// N. Written with a wrong count the card pays out credits and cards that were
-/// never earned, so it is marked. The general capability wanted is on
-/// MEZZIE-QUEUE.md's Blockers.
+/// "Repeat this process for each remote server…" is the second sentence and
+/// therefore the second instruction (9.11.3), which is exactly what makes the
+/// printed arithmetic 1 + N and never N: the process happens once, and then
+/// once more for each such server. The count is the same quantity over
+/// 4.6.6a's SERVERS that Flood the Market takes, said in the same words, and
+/// it is a count of servers because no count of cards is one (4.6.6e's remote
+/// root holds an asset or agenda and any number of upgrades; a server can be
+/// behind more than one piece of ice).
+///
+/// Each repetition is a FRESH choice, and 9.12.2b is why: effects tied to a
+/// calculated quantity are aggregated only if every one of them is one of
+/// 9.12.2c's classes, and an optioned effect is not — so the group is
+/// performed once per unit, as separate occurrences, and the Corp may take
+/// the credits once and the cards the next time.
 pub fn fully_operational() -> Card {
     card("Fully Operational")
         .corp()
@@ -833,12 +849,24 @@ pub fn fully_operational() -> Card {
         .faction("Haas-Bioroid")
         .cost(1)
         .text("Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice.")
-        .play([choose_one([
-            ("gain 2[credit]", vec![gain(Corp, 2)]),
-            ("draw 2 cards", vec![draw(Corp, 2)]),
-        ])])
-        .named("gain two or draw two")
-        .unimplemented("Repeat this process for each remote server that has a card in its root and is protected by ice.")
+        .play([
+            choose_one([
+                ("gain 2[credit]", vec![gain(Corp, 2)]),
+                ("draw 2 cards", vec![draw(Corp, 2)]),
+            ]),
+            for_each(
+                per_server_matching(&[
+                    remote_server(),
+                    with_a_card_in_its_root(&[]),
+                    protected_by(&[of_type(CardType::Ice)]),
+                ]),
+                [choose_one([
+                    ("gain 2[credit]", vec![gain(Corp, 2)]),
+                    ("draw 2 cards", vec![draw(Corp, 2)]),
+                ])],
+            ),
+        ])
+        .named("gain two or draw two, once and again per qualifying remote server")
         .build()
 }
 
@@ -1093,12 +1121,20 @@ pub fn fairchild_3_0() -> Card {
 ///  cannot steal or trash Corp cards for the remainder of this run.
 ///  [subroutine] The Runner loses [click]."
 ///
-/// UNIMPLEMENTED: the first sentence, on ONE remaining count.
+/// UNIMPLEMENTED: the first sentence — and, as of this merge, NOT because
+/// either half is unsayable any more. Both words landed, from two kernel
+/// waves that ran in parallel and each knew only its own half:
 ///
-/// "If they have no [click] remaining" is a 9.6.5c requirement about a
-/// NUMBER — the clicks in the Runner's click pool (1.11) — and the quantity
-/// language has no selector that reads a click pool, so the requirement
-/// cannot be stated at all. It is on MEZZIE-QUEUE.md's Blockers.
+///   * "if they have no [click] remaining" is a 9.6.5c requirement about a
+///     NUMBER (1.11.3), and `at_most(clicks_of(Runner), 0)` now states it in
+///     the direction the card prints it;
+///   * "they cannot steal or trash Corp cards for the remainder of this run"
+///     is 1.2.2's cannot over an act, a duration and a description, all of
+///     which `ProhibitionScope::Matching` now carries.
+///
+/// The sentence is one instruction (9.11.3), so it stays marked until it is
+/// written WHOLE — which is now a card-writing job and no longer a kernel
+/// one.
 ///
 /// The other half is no longer a blocker. "They cannot steal or trash Corp
 /// cards for the remainder of this run" is 9.10.1's prohibition with the run
