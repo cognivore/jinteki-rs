@@ -23,6 +23,7 @@
 //!     validator.cljc:215-252`, `combine-id-and-cards` + `deck-point-count`).
 
 use crate::carddata::{self, Card};
+use jinteki_cr::object::PrintedCard;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -170,6 +171,112 @@ pub fn runner_identity_pile(except_title: &str) -> Vec<jinteki_cr::object::Print
         .collect()
 }
 
+/// Does this printed card meet the criterion, decided from PRINTED
+/// characteristics alone? `None` is "not from here" — a criterion that reads
+/// a position, a board or a run cannot be read before a game exists, and
+/// 1.5.3a's question ("what must the player bring along with their deck?") is
+/// asked while the deck is still a list.
+///
+/// Only the §2 card-characteristic atoms belong here. The authoritative
+/// selection is still the VM's at 1.6.2, over the pile this decides to bring.
+fn printed_meets(card: &PrintedCard, f: &jinteki_cr::instr::TargetFilter) -> Option<bool> {
+    use jinteki_cr::instr::TargetFilter as F;
+    match f {
+        // CR 2.16: an effective subtype — for a card outside any game, the
+        // printed one, since no modifier has had a chance to speak.
+        F::HasSubtype(s) => Some(card.subtypes.contains(s)),
+        F::HasAnySubtype(list) => Some(list.iter().any(|s| card.subtypes.contains(s))),
+        // CR 2.15: the card's type.
+        F::CardTypeIs(t) => Some(card.card_type == *t),
+        _ => None,
+    }
+}
+
+/// CR 1.5.1/1.5.3a: the cards from OUTSIDE the deck that an identity requires
+/// its player to bring along with it — "these cards are not considered part of
+/// your deck". Adam's three directives are the only printed case, and
+/// `PrintedCard::starting_extra_installs` is the fact that states it; an
+/// identity without one brings nothing, which is every other identity.
+///
+/// `Ok` is the pile to hand `GameSetup::extra_cards`, from which the VM
+/// selects at 1.6.2. `Err` names what stands in the way, the way
+/// `DeckRefusal::Unbuildable` names cards it cannot seat:
+///
+///   * a required card the engine carries INCOMPLETE. SYS-D-12: "no card
+///     shall be playable in a game unless its behavior is implemented" — and
+///     a directive is not merely in a deck, it BEGINS the game installed and
+///     active (1.5.3b/1.5.3d), so it is played in every game it comes to.
+///     This is the same bar `cr::readiness()` already holds the 1.5.4a
+///     identity pile to, for the same stated reason: a card that comes to the
+///     table with the deck is gated exactly like the deck is.
+///   * a count 1.5.3b cannot settle. Fewer matching cards than the fact needs
+///     and there is nothing to install; more, and "selects exactly N of their
+///     provided cards" is a real decision that game setup has no seat for —
+///     so the honest answer is to refuse rather than to choose for the player.
+pub fn starting_extra_cards(identity: &PrintedCard) -> Result<Vec<PrintedCard>, Vec<String>> {
+    let Some(fact) = identity.starting_extra_installs.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let mut brought: Vec<PrintedCard> = Vec::new();
+    let mut incomplete: Vec<String> = Vec::new();
+    let mut seen: Vec<&'static str> = Vec::new();
+    for c in jinteki_cards::all_cards() {
+        let mut meets = true;
+        for f in &fact.criteria {
+            match printed_meets(&c.printed, f) {
+                Some(ok) => meets &= ok,
+                None => {
+                    return Err(vec![format!(
+                        "{} describes the cards it starts the game with in terms no deck \
+                         list can be read against",
+                        identity.name
+                    )])
+                }
+            }
+        }
+        if !meets {
+            continue;
+        }
+        // 1.5.3a's "differently named": one card per name is what must be
+        // brought, so a second printing of the same name is not a second card.
+        if fact.distinct_names && seen.contains(&c.name()) {
+            continue;
+        }
+        seen.push(c.name());
+        if c.is_complete() {
+            brought.push(c.printed);
+        } else {
+            incomplete.push(c.name().to_string());
+        }
+    }
+    if !incomplete.is_empty() {
+        incomplete.sort();
+        return Err(incomplete);
+    }
+    if brought.len() != fact.count as usize {
+        return Err(vec![format!(
+            "{} starts the game with {} of them and the engine carries {}",
+            identity.name,
+            fact.count,
+            brought.len()
+        )]);
+    }
+    Ok(brought)
+}
+
+/// The 1.5.3a blockers as one problem sentence, or `None` when the identity
+/// can be seated. Shared by the catalog (which never offers such an identity)
+/// and `validate` (which explains a deck already saved with one).
+fn extra_cards_blocker(title: &str) -> Option<String> {
+    let card = jinteki_cards::find(title)?;
+    let blockers = starting_extra_cards(&card.printed).err()?;
+    Some(format!(
+        "{title} starts the game with cards from outside the deck that the engine cannot \
+         supply: {}",
+        blockers.join(", ")
+    ))
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Engine support
 // ───────────────────────────────────────────────────────────────────────────
@@ -244,6 +351,15 @@ pub fn catalog_json() -> Value {
             if starter_pack_only(c) {
                 continue;
             }
+            // CR 1.5.3a: an identity whose player must bring cards from
+            // outside the deck is only as seatable as those cards are. Adam
+            // is the case: complete himself, but a directive of his is not,
+            // and every Adam deck would therefore be built to be refused.
+            // The identity stays implemented and inspectable (SYS-D-12's
+            // other half); the builder simply does not offer it yet.
+            if extra_cards_blocker(&c.title).is_some() {
+                continue;
+            }
             identities.push(catalog_card(c));
         } else {
             cards.push(catalog_card(c));
@@ -314,6 +430,13 @@ pub fn validate(identity_id: &str, cards: &BTreeMap<String, u32>) -> Verdict {
                     format!("{} is not yet supported by the engine", c.title),
                     Some(identity_id),
                 );
+            }
+            // CR 1.5.3a: the identity is not the whole of what it brings.
+            // A deck whose identity starts the game with cards the engine
+            // cannot supply cannot be played, and the reason belongs on the
+            // deck screen where the choice was made, not at the table door.
+            if let Some(why) = extra_cards_blocker(&c.title) {
+                push("unsupported", why, Some(identity_id));
             }
             // Eternal: the identity itself must be in the card pool…
             if !e.in_pool(c) {
@@ -796,5 +919,100 @@ mod tests {
         assert_eq!(total, 7, "the shipped corp deck sits at exactly the point limit");
         let v = validate(&identity, &cards);
         assert!(!v.problems.iter().any(|p| p.code == "points_limit"));
+    }
+
+    // ── CR 1.5.3a: the cards an identity brings from outside the deck ──────
+
+    /// Every identity but Adam brings nothing from outside its deck, and the
+    /// engine says so without consulting the card layer's completeness.
+    #[test]
+    fn an_ordinary_identity_brings_no_extra_cards() {
+        for title in [
+            "Andromeda: Dispossessed Ristie",
+            "Nebula Talent Management: Making Stars",
+            "Chaos Theory: W\u{fc}nderkind",
+        ] {
+            let c = jinteki_cards::find(title).expect(title);
+            assert!(
+                c.printed.starting_extra_installs.is_none(),
+                "{title} prints no 1.5.3 setup fact"
+            );
+            assert_eq!(
+                starting_extra_cards(&c.printed).expect("no fact, nothing to bring").len(),
+                0
+            );
+            assert!(extra_cards_blocker(title).is_none(), "{title} is seatable");
+        }
+    }
+
+    /// Adam is the one identity that requires cards from outside the deck,
+    /// and today exactly one of the three directives blocks him. SYS-D-12:
+    /// a directive BEGINS the game installed and active (CR 1.5.3b/d), so an
+    /// unimplemented one is a card played in a game whose behaviour is not
+    /// implemented — the same bar `cr::readiness()` holds the 1.5.4a pile to.
+    ///
+    /// This assertion is also the ratchet: the day Always Be Running's first
+    /// printed sentence lands, this test fails and the gate above it opens.
+    #[test]
+    fn adam_is_refused_by_exactly_one_unimplemented_directive() {
+        let adam = jinteki_cards::find("Adam: Compulsive Hacker").expect("Adam is implemented");
+        assert!(adam.is_complete(), "the identity card itself is complete");
+        let fact = adam.printed.starting_extra_installs.clone().expect("Adam prints 1.5.3");
+        assert_eq!(fact.count, 3);
+        assert!(fact.distinct_names);
+
+        // The three directives the engine carries — the whole printed set.
+        let directives: Vec<(String, bool)> = jinteki_cards::all_cards()
+            .into_iter()
+            .filter(|c| c.printed.subtypes.contains(&jinteki_cr::Subtype::Directive))
+            .map(|c| (c.name().to_string(), c.is_complete()))
+            .collect();
+        assert_eq!(directives.len(), 3, "1.5.3a needs 3 differently named: {directives:?}");
+
+        match starting_extra_cards(&adam.printed) {
+            Ok(cards) => panic!(
+                "Always Be Running has an unimplemented sentence; Adam must not seat: {:?}",
+                cards.iter().map(|c| c.name).collect::<Vec<_>>()
+            ),
+            Err(blockers) => assert_eq!(blockers, vec!["Always Be Running".to_string()]),
+        }
+        let why = extra_cards_blocker("Adam: Compulsive Hacker").expect("a stated reason");
+        assert!(why.contains("Always Be Running"), "{why}");
+    }
+
+    /// SYS-D-12's other half — the card stays visible and inspectable — but
+    /// the deck builder never offers an identity every deck of which would
+    /// be refused, and a deck saved with one comes back with the reason.
+    #[test]
+    fn adam_is_off_the_builder_and_a_saved_adam_deck_says_why() {
+        let adam = carddata::by_title("Adam: Compulsive Hacker").expect("Adam has a printing");
+        // Nothing about Adam himself excludes him: pool, points, format all fine.
+        assert!(eternal().in_pool(adam));
+        assert!(!draft_only(adam));
+        assert!(!starter_pack_only(adam));
+        assert!(is_supported(&adam.title), "the identity card is complete and inspectable");
+
+        let cat = catalog_json();
+        let identities = cat["identities"].as_array().unwrap();
+        assert!(
+            !identities.iter().any(|c| c["id"] == "adam_compulsive_hacker"),
+            "an identity whose extra cards the engine cannot supply is not offered"
+        );
+
+        // A deck saved with him anyway (an older save, or a direct API call)
+        // is not legal, and the problem names the directive.
+        let v = validate("adam_compulsive_hacker", &deck(&[("sure_gamble", 3)]));
+        assert!(!v.legal);
+        let p = v
+            .problems
+            .iter()
+            .find(|p| p.code == "unsupported" && p.message.contains("Always Be Running"))
+            .unwrap_or_else(|| panic!("no 1.5.3a problem in {:?}", v.problems));
+        assert_eq!(p.card.as_deref(), Some("adam_compulsive_hacker"));
+        assert!(
+            p.message.contains("outside the deck"),
+            "the reason says where the cards come from: {}",
+            p.message
+        );
     }
 }

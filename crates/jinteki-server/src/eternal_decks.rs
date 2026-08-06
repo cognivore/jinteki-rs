@@ -346,6 +346,13 @@ pub struct TableDeck {
     /// filtered pile (built-ins their spec's, user decks the generalised
     /// one); Corp decks bring none — 1.5.4a's pile is the Runner's.
     pub pile: Vec<PrintedCard>,
+    /// CR 1.5.1/1.5.3a: the cards from outside the deck the IDENTITY requires
+    /// its player to bring along with it — Adam's directives. Not the deck
+    /// ("these cards are not considered part of your deck") and not the
+    /// 1.5.4a pile either: these begin the game installed (1.5.3b), which is
+    /// why they are brought rather than drawn. Empty for every identity that
+    /// prints no such fact, which is every identity but Adam.
+    pub extra: Vec<PrintedCard>,
 }
 
 /// Why a key did not become a deck. `to_json()` is the wire shape the lobby
@@ -436,6 +443,8 @@ pub fn resolve_builtin(key: &str, want: Side) -> Result<TableDeck, DeckRefusal> 
             missing: vec!["its identity card".into()],
         });
     };
+    let extra = eternal::starting_extra_cards(&identity)
+        .map_err(|missing| DeckRefusal::Unbuildable { key: key.into(), missing })?;
     Ok(TableDeck {
         key: spec.key.into(),
         name: spec.display_name.into(),
@@ -443,6 +452,7 @@ pub fn resolve_builtin(key: &str, want: Side) -> Result<TableDeck, DeckRefusal> 
         identity,
         cards,
         pile,
+        extra,
     })
 }
 
@@ -512,6 +522,12 @@ pub fn resolve_for_table(
         Side::Runner => eternal::runner_identity_pile(identity.name),
         Side::Corp => Vec::new(),
     };
+    // CR 1.5.1/1.5.3a: a user deck brings the extra cards its identity
+    // requires, exactly as the built-in path does. `validate` above already
+    // refused an identity whose extras the engine cannot supply, so this is
+    // the same backstop `missing` is: reported, never paniced.
+    let extra = eternal::starting_extra_cards(&identity)
+        .map_err(|missing| DeckRefusal::Unbuildable { key: key.into(), missing })?;
     Ok(TableDeck {
         key: key.into(),
         name: row.name,
@@ -519,6 +535,7 @@ pub fn resolve_for_table(
         identity,
         cards,
         pile,
+        extra,
     })
 }
 
@@ -740,5 +757,155 @@ mod tests {
             resolve_for_table(&conn, "user-nonesuch", &user, Side::Runner),
             Err(DeckRefusal::NotFound { .. })
         ));
+    }
+
+    // ── CR 1.5.3a: the extra cards an identity brings ─────────────────────
+
+    /// The built-in decks bring nothing from outside their decks and are
+    /// untouched by the seam that carries Adam's directives.
+    #[test]
+    fn the_builtin_decks_bring_no_extra_cards() {
+        let runner = resolve_builtin("andromeda", Side::Runner).expect("stock deck resolves");
+        let corp = resolve_builtin("gauntlet", Side::Corp).expect("stock deck resolves");
+        assert!(runner.extra.is_empty(), "Andromeda prints no 1.5.3 setup fact");
+        assert!(corp.extra.is_empty(), "Making Stars prints no 1.5.3 setup fact");
+        let setup = cr::setup_from(corp, runner, 11);
+        for side in [Side::Corp, Side::Runner] {
+            assert!(
+                setup.extra_cards.get(&side).is_none_or(Vec::is_empty),
+                "the stock table is unchanged: no {side:?} extra cards"
+            );
+        }
+        // And the game the stock pair assembles still starts.
+        let vm = jinteki_cr::Vm::new_game(setup);
+        assert_eq!(vm.st.deck[&Side::Corp].len() + vm.st.hand[&Side::Corp].len(), 49);
+    }
+
+    /// A saved user deck whose identity is Adam is refused at the door, and
+    /// the refusal the lobby renders says which card is in the way.
+    ///
+    /// SYS-D-12 is the rule: "no card shall be playable in a game unless its
+    /// behavior is implemented". A directive is not a deck card that may
+    /// never be drawn — CR 1.5.3b starts the game with it installed and
+    /// 1.5.3d makes it an ordinary installed card from that moment — so it
+    /// is played in every game it comes to, and one unimplemented sentence
+    /// (Always Be Running's first) refuses the whole deck. This is the same
+    /// reading `cr::readiness()` already applies to the 1.5.4a identity pile:
+    /// a card that comes to the table with the deck is gated like the deck.
+    #[test]
+    fn an_adam_user_deck_is_refused_while_a_directive_is_incomplete() {
+        let (db, user) = setup();
+        let conn = db.blocking_lock();
+        let draft = EternalDraft {
+            name: "compulsive".into(),
+            identity: "adam_compulsive_hacker".into(),
+            // Adam's own faction cards, so nothing here is the reason.
+            cards: [
+                ("neutralize_all_threats".to_string(), 3u32),
+                ("safety_first".to_string(), 3),
+                ("sure_gamble".to_string(), 3),
+            ]
+            .into_iter()
+            .collect(),
+        }
+        .checked()
+        .unwrap();
+        let key = create(&conn, &user, &draft).unwrap()["key"].as_str().unwrap().to_string();
+        let refusal = match resolve_for_table(&conn, &key, &user, Side::Runner) {
+            Err(r) => r,
+            Ok(t) => panic!("Adam seated with {} extra cards", t.extra.len()),
+        };
+        let wire = refusal.to_json();
+        assert_eq!(wire["error"], "deck-refused");
+        let said = serde_json::to_string(&wire).unwrap();
+        assert!(
+            said.contains("Always Be Running"),
+            "the refusal must name the card in the way: {said}"
+        );
+    }
+
+    /// The seam itself, proved end to end: an identity's extra cards travel
+    /// deck → `TableDeck::extra` → `GameSetup::extra_cards` → the rig, and
+    /// never through the stack.
+    ///
+    /// The pile is handed in directly rather than through
+    /// `eternal::starting_extra_cards`, because that gate refuses Adam today
+    /// (see `an_adam_user_deck_is_refused_while_a_directive_is_incomplete`).
+    /// What is under test is the wiring the gate opens onto: with
+    /// `extra_cards: Default::default()` — the bug this replaced — the three
+    /// directives never reach `Zone::OutsideGame` and 1.6.2's selection
+    /// cannot be made at all.
+    #[test]
+    fn an_identitys_extra_cards_start_installed_and_never_enter_the_stack() {
+        use jinteki_cards::decks::identities::runner_adam;
+        let adam = jinteki_cards::find("Adam: Compulsive Hacker").expect("Adam is implemented");
+        let directives: Vec<PrintedCard> =
+            runner_adam::directives().into_iter().map(|c| c.printed).collect();
+        let names: Vec<&str> = directives.iter().map(|c| c.name).collect();
+        assert_eq!(names.len(), 3, "CR 1.5.3a: three differently named directives");
+
+        let corp = resolve_builtin("gauntlet", Side::Corp).expect("stock deck resolves");
+        let stock = resolve_builtin("andromeda", Side::Runner).expect("stock deck resolves");
+        let runner = TableDeck {
+            key: "user-adam".into(),
+            name: "compulsive".into(),
+            side: Side::Runner,
+            identity: adam.printed,
+            // 1.4.3a: the extra cards are not counted in the deck, and this
+            // deck is an ordinary 45.
+            cards: stock.cards,
+            pile: Vec::new(),
+            extra: directives.clone(),
+        };
+        let setup = cr::setup_from(corp, runner, 7);
+        assert_eq!(
+            setup.extra_cards[&Side::Runner].len(),
+            3,
+            "the resolver's extra cards reach the setup"
+        );
+        assert_eq!(setup.runner_deck.len(), 45, "the directives are not part of the deck");
+
+        let vm = jinteki_cr::Vm::new_game(setup);
+        // CR 1.5.3b: all three begin the game installed in the play area.
+        let installed: Vec<&str> = vm
+            .st
+            .objects
+            .values()
+            .filter(|o| o.zone == jinteki_cr::object::Zone::Rig)
+            .map(|o| o.printed.name)
+            .collect();
+        for name in &names {
+            assert!(installed.contains(name), "{name} begins the game installed: {installed:?}");
+        }
+        assert_eq!(installed.len(), 3, "and nothing else is installed: {installed:?}");
+        for o in vm.st.objects.values().filter(|o| names.contains(&o.printed.name)) {
+            assert!(o.faceup, "{} is installed faceup (4.6.4c)", o.printed.name);
+            assert_eq!(o.controller, Side::Runner);
+            // 1.5.3d + 1.10.5: an installed Runner card is active.
+            assert!(
+                jinteki_cr::object::card_active(o),
+                "{} is active from 1.6 onwards",
+                o.printed.name
+            );
+        }
+        // …and none of them is in the stack or the grip — 1.5.3a's "these
+        // cards are not considered part of your deck", literally.
+        let stack: Vec<&str> =
+            vm.st.deck[&Side::Runner].iter().map(|id| vm.st.objects[id].printed.name).collect();
+        let grip: Vec<&str> =
+            vm.st.hand[&Side::Runner].iter().map(|id| vm.st.objects[id].printed.name).collect();
+        assert_eq!(stack.len() + grip.len(), 45, "the deck is exactly the deck");
+        for name in &names {
+            assert!(!stack.contains(name), "{name} is not in the stack");
+            assert!(!grip.contains(name), "{name} is not in the grip");
+        }
+        // The pile the directives came from is emptied by 1.6.2's selection.
+        assert!(
+            !vm.st
+                .objects
+                .values()
+                .any(|o| o.zone == jinteki_cr::object::Zone::OutsideGame(Side::Runner)),
+            "all three were selected; nothing is left outside the game"
+        );
     }
 }

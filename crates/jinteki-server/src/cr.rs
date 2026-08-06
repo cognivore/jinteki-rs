@@ -694,10 +694,15 @@ pub fn setup_from(
         additional_identities: [(Side::Corp, corp.pile), (Side::Runner, runner.pile)]
             .into_iter()
             .collect(),
-        // CR 1.5.1: no catalog identity requires cards from outside the deck
-        // (Adam's directives are the case that would, and Adam is not yet
-        // complete, so no deck the resolver seats can name him).
-        extra_cards: Default::default(),
+        // CR 1.5.1/1.5.3a: the cards an identity requires its player to bring
+        // from OUTSIDE the deck — Adam's directives. The resolver decided
+        // what each seat brings (`eternal::starting_extra_cards`); they are
+        // handed over here alongside the deck rather than shuffled into it,
+        // which is the whole of "these cards are not considered part of your
+        // deck". Empty for every identity that prints no such fact.
+        extra_cards: [(Side::Corp, corp.extra), (Side::Runner, runner.extra)]
+            .into_iter()
+            .collect(),
         seed,
         shuffle: true,
     }
