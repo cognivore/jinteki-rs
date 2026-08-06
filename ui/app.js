@@ -94,6 +94,165 @@ function sym(t) {
     .replaceAll("[their]", "their");
 }
 
+/* ── an ability's HANDLE, read as English ────────────────────────────────
+ *
+ * Every ability in the card layer carries a LABEL that is a developer handle,
+ * not a display name. The builder stamps the card's own lowercased name onto
+ * the front of whatever the card file wrote, so `.named("jackson: draw 2")` on
+ * Jackson Howard is stored as "jackson howard: jackson: draw 2" — that is how
+ * the plan-driver tests select an ability and how the traceability discipline
+ * names one, and `every_ability_is_labelled_with_its_card` in the card crate
+ * enforces the stamp. The server then composes "<handle> — <Card Name>" for
+ * action windows, paid windows and the log.
+ *
+ * None of that was ever meant to be read at a table. This is the ONE place
+ * that turns a handle into a sentence, and it does it entirely from the
+ * convention — the card layer, its labels and the tests that select by them
+ * are untouched.
+ *
+ * It only ever rewrites a string it can PROVE carries a handle, because it is
+ * called on whole log lines and on affordance labels the server wrote in
+ * English already. The proof is one of:
+ *
+ *   - the "<handle> — <Card Name>" suffix the server composes, whose right
+ *     half names the very card the left half is stamped with;
+ *   - a card name the caller already has (the sheet knows whose card it
+ *     opened on, a prompt choice carries its card);
+ *   - a title this game has actually shown (`seenTitles`), which is what lets
+ *     a log line be cleaned when nothing else says which card it is about.
+ *
+ * With no proof it hands the string straight back (through `sym`), so
+ * "Play Hedge Fund", "Runner: runs HQ." and a player's chat line all survive
+ * unchanged — and, critically, so does a card whose own NAME contains a colon
+ * ("Play Jinteki Biotech: Life Imagined" must not lose its card to a blind
+ * split on the first one).
+ *
+ * `showCard` asks for "Card Name — Ability": right where the ability appears
+ * on its own (the log, a chip in the rail), wrong where the card is already
+ * on screen beside it (a sheet opened on that card, a prompt drawing it).
+ */
+const AB_SHORTHAND = [
+  [/\br\s*&\s*d\b/gi, "R&D"], [/\bhq\b/gi, "HQ"], [/\bmu\b/gi, "MU"],
+  [/\bai\b/gi, "AI"], [/\barchives\b/gi, "Archives"],
+  [/\bcorp\b/gi, "Corp"], [/\brunner\b/gi, "Runner"],
+];
+/* The builder's automatic labels, for an ability the card file never named.
+   They describe the KIND of ability and nothing else — the honest reading of
+   "paid" is "a paid ability", and inventing card text here would be worse. */
+const AB_KIND = [
+  [/^\[sub\](?:\s+(\d+))?$/i, "Subroutine $1"],
+  [/^paid(?:\s+(\d+))?$/i, "Paid ability $1"],
+  [/^ability(?:\s+(\d+))?$/i, "Ability $1"],
+  [/^play(?:\s+(\d+))?$/i, "Play $1"],
+  [/^static(?:\s+(\d+))?$/i, "Static ability $1"],
+];
+function abilityText(raw, cardName, showCard) {
+  // Accents are folded for the NICKNAME test alone: the stamp the builder
+  // writes is `name.to_lowercase()`, which keeps them, but a card file writes
+  // its shorthand in ASCII ("melies u:" for Méliès U). Never used for an
+  // index into the original string.
+  const fold = (x) => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const lc = (x) => String(x).toLowerCase();
+  let s = String(raw == null ? "" : raw).trim();
+  if (!s) return "";
+  let name = cardName || null;
+  let proven = false;
+  let lead = "";
+
+  // The server's own composition. The suffix proves the stamp, and where the
+  // caller had no card in hand it is also where the name comes from.
+  const cut = s.lastIndexOf(" — ");
+  if (cut > 0) {
+    const head = s.slice(0, cut), tail = s.slice(cut + 3);
+    const at = lc(head).indexOf(lc(tail) + ": ");
+    if (at >= 0) {
+      lead = head.slice(0, at);          // a speaker ("Corp: "), kept verbatim
+      s = head.slice(at + tail.length + 2);
+      if (!name) name = tail;
+      proven = true;
+    }
+  }
+
+  // Peel stamps and subroutine markers until nothing is left to peel. They
+  // nest: the log narrates a subroutine as "<Ice>: [sub] <its handle>", and
+  // the handle is itself stamped with the same card.
+  for (let n = 0; n < 6; n++) {
+    const before = s;
+    const stamp = name && lc(s).startsWith(lc(name) + ": ")
+      ? name
+      : seenTitles().find((t) => lc(s).startsWith(lc(t) + ": "));
+    if (stamp) {
+      s = s.slice(stamp.length + 2);
+      if (!name) name = stamp;
+      proven = true;
+    }
+    // "[sub] End the run" is the kernel's own label; the marker is redundant
+    // wherever this runs, because every site that draws a subroutine draws
+    // the ↳ itself. A bare "[sub]" is a label, not a marker, and stays.
+    const m = /^\[sub\]\s+(?!\d+$)(.+)$/i.exec(s);
+    if (m) { s = m[1]; proven = true; }
+    if (s === before) break;
+  }
+  if (!proven) return sym(String(raw == null ? "" : raw));
+
+  // The card file's own shorthand for the same card ("jackson: draw 2"),
+  // which is only ever a run of words the card's name already contains — so a
+  // printed keyword ("Interface: Break 1 sentry subroutine", "Pump: +1
+  // strength", "Terminal: The action phase ends") is left where it stands.
+  if (name) {
+    const i = s.indexOf(": ");
+    if (i > 0) {
+      const words = ` ${fold(name).replace(/[^a-z0-9]+/g, " ").trim()} `;
+      const nick = fold(s.slice(0, i)).replace(/[^a-z0-9]+/g, " ").trim();
+      if (nick && words.includes(` ${nick} `)) s = s.slice(i + 2);
+    }
+  }
+
+  for (const [re, to] of AB_KIND) {
+    if (re.test(s)) { s = s.replace(re, to).trim(); break; }
+  }
+
+  // An identity's ability is usually named after the identity's own subtitle,
+  // lowercased by the stamp. Where the whole of what is left is a run of the
+  // card's own words, the card's own capitalisation is the right one —
+  // "ip recovery" is A Teia's "IP Recovery", not a typo.
+  if (name) {
+    const bare = (x) => fold(x).replace(/[^a-z0-9]+/g, " ").trim();
+    const w = name.split(/\s+/), target = bare(s);
+    outer:
+    for (let i = 0; i < w.length; i++) {
+      for (let j = i + 1; j <= w.length; j++) {
+        const cand = w.slice(i, j).join(" ");
+        if (bare(cand) === target) { s = cand; break outer; }
+      }
+    }
+  }
+
+  for (const [re, to] of AB_SHORTHAND) s = s.replace(re, to);
+  s = s.replace(/^([^\p{L}]*)(\p{Ll})/u, (_, pre, c) => pre + c.toUpperCase());
+  s = s.replace(/(:\s+)(\p{Ll})/gu, (_, sep, c) => sep + c.toUpperCase());
+  s = sym(s);
+  return lead + (showCard && name ? `${name} — ${s}` : s);
+}
+
+/* Every card title this game has shown, longest first — the only evidence a
+   log line gives that a "<something>: " prefix is a card's name and not part
+   of a sentence. It GROWS: a line about a card that has since left the table
+   is still a line about that card. */
+let titleSeen = new Set();
+let titleList = [];
+function seenTitles() { return titleList; }
+function noteTitles(v, depth) {
+  if (!v || depth > 8) return;
+  if (Array.isArray(v)) { v.forEach((x) => noteTitles(x, depth + 1)); return; }
+  if (typeof v !== "object") return;
+  if (typeof v.title === "string" && v.title && !titleSeen.has(v.title)) {
+    titleSeen.add(v.title);
+    titleList = [...titleSeen].sort((a, b) => b.length - a.length);
+  }
+  Object.values(v).forEach((x) => noteTitles(x, depth + 1));
+}
+
 /* A player-supplied string on its way into innerHTML — display names are the
    only such strings the board renders (§12.6: everything else uses nodes). */
 function esc(s) {
@@ -111,6 +270,8 @@ function show(id) {
 /* ── networking ──────────────────────────────────────────────────────── */
 function connect(path, onopen) {
   seenCids = new Set();
+  titleSeen = new Set();
+  titleList = [];
   sectionCache = {};
   const proto = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${proto}://${location.host}${path}`);
@@ -163,6 +324,9 @@ function handle(m) {
     case "state":
       S = m.state;
       ACTIONS = m.actions || [];
+      // Every card this game has named, kept so `abilityText` can tell a
+      // handle's "<card name>: " stamp from a colon inside a sentence.
+      noteTitles(S, 0);
       // The clocks are the SERVER's (server-authoritative): every push
       // carries the remaining times as of the moment it was sent, and the
       // client only counts the local interval down from that snapshot —
@@ -1531,7 +1695,7 @@ function wireServerTarget(col, key, chs) {
     if (chs.length === 1) { act("choice", { choice: { uuid: chs[0].uuid } }); return; }
     const r = col.getBoundingClientRect();
     openSheet(chs.map((ch) => [
-      sym(String(ch.value)),
+      abilityText(ch.value, ch.card && ch.card.title, true),
       () => act("choice", { choice: { uuid: ch.uuid } }),
     ]), Math.min(r.left, window.innerWidth - 200), Math.min(r.bottom + 6, window.innerHeight - 60 * chs.length - 20));
   });
@@ -1621,7 +1785,7 @@ function renderFocus() {
   const known = !!ice.title; // corp always knows its own ice
   const rezzed = !!ice.rezzed;
   const subs = (ice.subroutines || [])
-    .map((s) => `<div class="fsub ${s.broken ? "fbroken" : ""}">↳ ${sym(s.label)}</div>`)
+    .map((s) => `<div class="fsub ${s.broken ? "fbroken" : ""}">↳ ${abilityText(s.label, ice.title, false)}</div>`)
     .join("");
   const hint = rezzed
     ? subs
@@ -2571,7 +2735,7 @@ function cardInfoHtml(c, face) {
   return `${art}<h3>${faceTitle(c, face)}</h3>
     <div class="zline">${lines.join("<br>")}</div>
     <div class="ztext">${sym((back ? back.text : c.text) || "")}</div>
-    ${back ? "" : (c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${sym(s.label)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
+    ${back ? "" : (c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${abilityText(s.label, c.title, false)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
 }
 
 /* The hover preview is the one thing on screen a click CANNOT close: it is
@@ -2649,7 +2813,9 @@ function onCardTap(c, opts, el) {
   if (offered.length) {
     const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 40, bottom: 120 };
     openSheet(offered.map((ch) => [
-      sym(String(ch.value)),
+      // The sheet is anchored on the card it was opened from, so the card
+      // names itself and the option is just what it does.
+      abilityText(ch.value, c.title, false),
       () => act("choice", { choice: { uuid: ch.uuid } }),
     ]), r.left, r.bottom + 6);
     return;
@@ -2687,10 +2853,10 @@ function handActions(c) {
       // The server may label an affordance itself (the CR engine does: an
       // install declares its destination inside the procedure, 8.5.16b, so
       // the affordance cannot name a server).
-      if (a.command === "play") items.push([sym(a.label || "Play"), () => act("play", { card: { cid: c.cid } })]);
-      if (a.command === "runner-install") items.push([sym(a.label || "Install"), () => act("runner-install", { card: { cid: c.cid } })]);
+      if (a.command === "play") items.push([abilityText(a.label || "Play", c.title, false), () => act("play", { card: { cid: c.cid } })]);
+      if (a.command === "runner-install") items.push([abilityText(a.label || "Install", c.title, false), () => act("runner-install", { card: { cid: c.cid } })]);
       if (a.command === "corp-install") items.push([
-        a.label ? sym(a.label)
+        a.label ? abilityText(a.label, c.title, false)
           : a.server === "New remote" ? "Install → new remote" : `Install → ${SERVER_NAME(a.server)}`,
         () => act("corp-install", { card: { cid: c.cid }, server: a.server }),
       ]);
@@ -2706,7 +2872,9 @@ function openBoardSheet(c, el) {
   const items = [];
   if (native()) {
     actionsFor(c.cid).forEach((a) => {
-      const label = a.label ? sym(a.label) :
+      // The sheet opened on this card and sits against it, so the ability
+      // says what it does and the card is right there saying whose it is.
+      const label = a.label ? abilityText(a.label, c.title, false) :
         a.command === "advance" ? "Advance (● + 1⬡)" :
         a.command === "score" ? "Score" :
         a.command === "rez" ? `Rez (${c.cost ?? "?"}⬡)` :
@@ -2721,10 +2889,10 @@ function openBoardSheet(c, el) {
       if (c.advancementcost != null) items.push(["Score", () => act("score", { card: c })]);
     }
     (c.abilities || []).forEach((ab, i) => {
-      items.push([sym(ab.label || `Ability ${i}`), () => act("ability", { card: c, ability: i })]);
+      items.push([abilityText(ab.label || `Ability ${i}`, c.title, false), () => act("ability", { card: c, ability: i })]);
     });
     (c["runner-abilities"] || []).forEach((ab, i) => {
-      items.push([sym(ab.label || `Ability ${i}`), () => act("runner-ability", { card: c, ability: i })]);
+      items.push([abilityText(ab.label || `Ability ${i}`, c.title, false), () => act("runner-ability", { card: c, ability: i })]);
     });
   }
   if (!items.length) { zoomCard(c); return; }
@@ -2734,7 +2902,7 @@ function openBoardSheet(c, el) {
 
 function abilityLabel(c, idx) {
   const ab = (c.abilities || [])[idx];
-  return ab ? sym(ab.label) : `Ability ${idx}`;
+  return ab ? abilityText(ab.label, c.title, false) : `Ability ${idx}`;
 }
 
 function openSheet(items, x, y) {
@@ -2867,7 +3035,10 @@ function promptBody(sheet, p, choices) {
     const b = document.createElement("button");
     b.className = "chip";
     const v = ch.value;
-    b.textContent = sym(typeof v === "object" && v ? (v.title || "card") : String(v));
+    // No card is drawn beside these, so an ability names its own card.
+    b.textContent = typeof v === "object" && v
+      ? sym(v.title || "card")
+      : abilityText(v, ch.card && ch.card.title, true);
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
@@ -2900,7 +3071,7 @@ function ensureAnswerable(sheet, p) {
   // Prefer an answer the decision itself named; otherwise the only thing left
   // to say about a choice with nothing in it is that you have seen it.
   const ch = (p.choices || [])[0];
-  const b = el("button", "chip go", ch ? sym(String(ch.value)) : "OK");
+  const b = el("button", "chip go", ch ? abilityText(ch.value, ch.card && ch.card.title, true) : "OK");
   b.onclick = ch ? () => act("choice", { choice: { uuid: ch.uuid } })
                  : () => act("select-done", {});
   btns.appendChild(b);
@@ -3145,7 +3316,8 @@ function renderCardPrompt(sheet, p, choices) {
       // A select prompt is asking for TARGETS, so its cards are gold, and they
       // are the same gold the board paints on the same cards.
       glow: isSelectMode() ? "selectable" : "usable",
-      label: sym(String(ch.value)),
+      // The slot IS the card, so the caption is only what the option does.
+      label: abilityText(ch.value, ch.card && ch.card.title, false),
       // A card the viewer is not entitled to see has nothing on its face, so
       // its caption is the only thing telling two of them apart — it stays.
       extra: ch.card.title ? "" : "blind",
@@ -3163,7 +3335,7 @@ function renderCardPrompt(sheet, p, choices) {
   choices.filter((ch) => !ch.card).forEach((ch) => {
     const b = document.createElement("button");
     b.className = "chip";
-    b.textContent = sym(String(ch.value));
+    b.textContent = abilityText(ch.value, null, true);
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
@@ -3275,7 +3447,7 @@ function renderSelectPrompt(sheet, p, choices) {
   }
   // "None", "Pass" and anything else the decision offers besides the cards.
   choices.filter((ch) => !ch.card).forEach((ch) => {
-    const b = el("button", "chip", sym(String(ch.value)));
+    const b = el("button", "chip", abilityText(ch.value, null, true));
     b.onclick = () => act("choice", { choice: { uuid: ch.uuid } });
     btns.appendChild(b);
   });
@@ -3470,9 +3642,10 @@ function renderAccessReader(p) {
   const binary = tc != null || p.focus === "rez";
 
   const btns = [];
-  if (yes) btns.push([binary ? "Yes" : sym(String(yes.value)), "yes", yes.uuid]);
+  // The reader is showing this very card, so its options need not repeat it.
+  if (yes) btns.push([binary ? "Yes" : abilityText(yes.value, c.title, false), "yes", yes.uuid]);
   if (no) btns.push([binary ? "No" : "No action", "no", no.uuid]);
-  if (!btns.length) choices.forEach((ch) => btns.push([sym(String(ch.value)) || "OK", "no", ch.uuid]));
+  if (!btns.length) choices.forEach((ch) => btns.push([abilityText(ch.value, c.title, false) || "OK", "no", ch.uuid]));
 
   o.style.display = "flex";
   o.innerHTML = `<div class="zoom-card">${cardInfoHtml(c)}
@@ -3641,7 +3814,8 @@ function renderChips() {
       bar.appendChild(el("span", "armed-hint", `${armedName()} — tap again to confirm`));
     }
     (p.choices || []).filter((ch) => !ch.card && !ch.server).forEach((ch) => {
-      mk(sym(String(ch.value)), () => act("choice", { choice: { uuid: ch.uuid } }), "prompt-chip");
+      // A chip in the rail stands alone: an ability names its own card.
+      mk(abilityText(ch.value, ch.card && ch.card.title, true), () => act("choice", { choice: { uuid: ch.uuid } }), "prompt-chip");
     });
     const picked = (p["select-picked"] || []).length;
     if (p["select-kind"] === "discard") {
@@ -3759,7 +3933,20 @@ function renderLog() {
   log.slice(-200).forEach((l) => {
     const d = document.createElement("div");
     const user = typeof l.user === "object" && l.user ? l.user.username : l.user;
-    d.textContent = (user && user !== "__system__" ? user + ": " : "") + sym(l.text || "");
+    // The log records the move a player made, and a move made with a card
+    // ability arrives carrying that ability's developer handle. A person's
+    // chat line is their own words and is never touched; a system line goes
+    // through `abilityText`, which rewrites only what it can prove is a
+    // handle and hands everything else (the narration, "Runner: runs HQ.")
+    // straight back. The speaker is peeled off first so the handle's own
+    // "<card name>: " stamp is at the front where the proof looks for it.
+    const chat = user && user !== "__system__";
+    const raw = l.text || "";
+    const spk = chat ? null : /^(Corp|Runner): ([\s\S]+)$/.exec(raw);
+    const body = chat ? sym(raw)
+      : spk ? `${spk[1]}: ${abilityText(spk[2], null, true)}`
+      : abilityText(raw, null, true);
+    d.textContent = (chat ? user + ": " : "") + body;
     box.appendChild(d);
   });
   box.scrollTop = box.scrollHeight;
