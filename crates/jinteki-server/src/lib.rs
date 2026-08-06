@@ -6,6 +6,7 @@
 pub mod api;
 pub mod auth;
 pub mod bridge;
+pub mod cardimg;
 pub mod carddata;
 pub mod cr;
 pub mod crlog;

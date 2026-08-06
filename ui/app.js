@@ -2167,11 +2167,12 @@ function cardEl(c, opts) {
       el.style.backgroundImage = `url(${cardImgUrl(code)})`;
       el.classList.add("art");
     };
-    // A cold CDN, a flaky hop, a rate-limited burst: one miss used to leave
-    // the text scaffold up until the next state push happened to redraw this
-    // card, which read as "pictures not picturing". One quiet retry covers
-    // the transient; a second miss keeps the scaffold — by design, the text
-    // card IS the card (UX.md deviations: no card art required).
+    // The first request for a card our cache has not filled yet goes out to
+    // upstream behind the route, so it can be slow or lose once; a miss used
+    // to leave the text scaffold up until the next state push happened to
+    // redraw this card, which read as "pictures not picturing". One quiet
+    // retry covers the transient; a second miss keeps the scaffold, which
+    // still says everything the card says (UX.md deviations).
     img.onerror = () => {
       if (img.__retried) return;
       img.__retried = true;
@@ -2272,8 +2273,17 @@ function cardEl(c, opts) {
   return el;
 }
 
+/* Card art comes from OUR server, never from somebody else's CDN.
+   `card-images.netrunnerdb.com` 403s a client whose User-Agent it dislikes
+   and drops requests when a builder grid asks it for two hundred images at
+   once — and every request that loses lands on the player as a BLANK card,
+   which is precisely what THE LAW §1 forbids. `/img/card/<id>.jpg` serves
+   from a local cache the server pre-warms with the whole catalog; the id may
+   be a printing code (the game state's) or a catalog NSG id (the builder's),
+   because the route resolves both. The text scaffold stays as the fallback
+   for a card with genuinely no art, and is now the exception, not the rule. */
 function cardImgUrl(code) {
-  return `https://card-images.netrunnerdb.com/v2/large/${code}.jpg`;
+  return `/img/card/${encodeURIComponent(code)}.jpg`;
 }
 
 /* Every counter a card is carrying, on the card. The server already sends
@@ -4525,7 +4535,14 @@ async function dbDeleteDeck(key, builtin) {
                        LO = 18 + 2n,  HI = 19 + 2n
                        (40–44 → 18/19, 45–49 → 20/21, 50–54 → 22/23, then
                         +2 per full 5 cards over 50 — same arithmetic)
-     eternal points  = Σ points × copies ≤ point_limit (7)
+     eternal points  ONCE PER CARD NAME, the identity's own listing included
+                     — NOT per copy. Three Account Siphons cost the deck the
+                     same 3 points one does (eternal.rs:351-353,447, citing
+                     the reference validator). The mirror used to multiply by
+                     the copy count, which read "points 20/7" in red over a
+                     deck the server had just called legal at 7/7 — a client
+                     that contradicts the server about legality is worse than
+                     a client with no meter at all.  Σ ≤ point_limit (7)
      deck limit      copies of a card ≤ its printed deck_limit             */
 function apWindow(size, minSize) {
   const n = Math.max(0, Math.floor((Math.max(size, minSize || 40, 40) - 40) / 5));
@@ -4533,7 +4550,9 @@ function apWindow(size, minSize) {
 }
 function deckTotals(identityId, cards) {
   const idc = identityId != null ? DBS.byId[identityId] : null;
-  const t = { size: 0, inf: 0, ap: 0, pts: 0,
+  // The identity is a NAME on the points list like any other, and it is
+  // counted before a single card is looked at.
+  const t = { size: 0, inf: 0, ap: 0, pts: idc ? (idc.points || 0) : 0,
     minSize: idc ? (idc.min_deck_size || 0) : 0,
     infLimit: idc ? idc.influence_limit : null,
     side: idc ? idc.side : null, apLo: 0, apHi: 0 };
@@ -4543,7 +4562,8 @@ function deckTotals(identityId, cards) {
     t.size += n;
     if (idc && c.faction !== idc.faction) t.inf += (c.influence_cost || 0) * n;
     t.ap += (c.agenda_points || 0) * n;
-    t.pts += (c.points || 0) * n;
+    // Once per name: the map has one entry per name, so no × n here.
+    t.pts += (c.points || 0);
   }
   const w = apWindow(t.size, t.minSize);
   t.apLo = w[0]; t.apHi = w[1];
@@ -4563,8 +4583,9 @@ function deckMirrorProblems(identityId, cards) {
     message: `${t.inf} influence used; the identity allows ${t.infLimit}`, card: null });
   if (t.side === "corp" && !(t.ap >= t.apLo && t.ap <= t.apHi)) out.push({ code: "agenda_points",
     message: `${t.ap} agenda points; a ${t.size}-card deck requires ${t.apLo} or ${t.apHi}`, card: null });
-  if (t.pts > DBS.catalog.point_limit) out.push({ code: "points",
-    message: `${t.pts} eternal points used; the limit is ${DBS.catalog.point_limit}`, card: null });
+  // `points_limit` is the code the server's vocabulary uses (api.rs Problem).
+  if (t.pts > DBS.catalog.point_limit) out.push({ code: "points_limit",
+    message: `${t.pts} eternal points; the limit is ${DBS.catalog.point_limit}`, card: null });
   for (const [id, n] of Object.entries(cards)) {
     const c = DBS.byId[id];
     if (!c || !n) continue;
@@ -4756,8 +4777,10 @@ function factionClass(f) {
 
 /* A catalog card drawn as a CARD (THE LAW §1): the game's .card box with the
    builder's own anatomy — faction stripe, influence pips, eternal points
-   badge, copies-in-deck disc. Art if the id resolves on the CDN; the text
-   scaffold is the real rendering, exactly like the board. */
+   badge, copies-in-deck disc. The art comes from our own cache (the route
+   resolves the catalog's NSG id, which no CDN would have understood, and
+   which is why this grid used to be a wall of blanks); the text scaffold
+   shows through underneath for a card we have no art for. */
 function builderCardEl(cc, opts) {
   opts = opts || {};
   const d = document.createElement("div");
@@ -4873,9 +4896,12 @@ function renderDeckList() {
     row.appendChild(el("span", "bq", `${n}×`));
     const bt = el("span", "bt", cc.title);
     row.appendChild(bt);
+    // Influence IS per copy (CR 1.4.5a), so the pips multiply. Eternal
+    // points are NOT: the badge is the card's own value, whether the deck
+    // runs one copy or three, exactly as the total counts it.
     const offFaction = idc && cc.faction !== idc.faction && cc.influence_cost > 0;
     if (offFaction) row.appendChild(el("span", "bpips", "●".repeat(cc.influence_cost * n)));
-    if (cc.points > 0) row.appendChild(el("span", "bpips", `${cc.points * n}pt`));
+    if (cc.points > 0) row.appendChild(el("span", "bpips", `${cc.points}pt`));
     const minus = el("button", "chip", "−");
     minus.onclick = () => bumpCard(cc.id, -1);
     const plus = el("button", "chip", "+");

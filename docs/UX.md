@@ -2,8 +2,10 @@
 
 Complex card games on phones are a solved problem — Blizzard and Wizards spent
 nine figures solving it. This document records the lessons we assimilated and
-maps each one to a concrete feature in `ui/`. The card pool is text-rendered
-for now (no art assets), so all the juice budget went into interaction.
+maps each one to a concrete feature in `ui/`. Cards carry their printed ART,
+served from our own box (`/img/card/<code>.jpg`, a local cache the server
+pre-warms with the whole catalog), over a text scaffold that shows through
+only for a card whose art we genuinely do not have.
 
 ## THE LAW: cards are shown as cards, and the board does not move
 
@@ -389,9 +391,14 @@ conflict.
   It overlays rather than reflows — the board's layout never moves (§2) — and
   it is `pointer-events: none`, so the cards under it are still reachable if
   the row it covers is ever full.
-- **No card art.** Text cards with type-colored frames. The information
-  hierarchy (cost badge top-left, strength bottom-left, counters top-right)
-  copies physical Netrunner card anatomy so players' eyes already know it.
+- **Art is ours, and the scaffold is the fallback.** The card box is the
+  physical card's anatomy (cost badge top-left, strength bottom-left,
+  counters top-right) with the printed art filling it. The art is fetched
+  ONCE per printing into a cache under the server's data dir and served from
+  `/img/card/<code>.jpg` — never hot-linked. A CDN that rate-limits or
+  refuses a request does not blank a card in this UI, because by the time a
+  player opens the builder the image is already on our disk; a card with no
+  art anywhere still reads, as the type-coloured text scaffold.
 - **Corp always on top.** Netrunner table convention beats HS mirroring;
   your hand is always yours at the bottom regardless of side.
 
