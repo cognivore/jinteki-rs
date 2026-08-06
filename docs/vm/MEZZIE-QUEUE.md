@@ -136,6 +136,25 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
+**State after the `kernel/vm-deficiencies` wave: 41 of 47 ticked, 6 printed
+sentences still unsayable, 6 cards unticked.** Nine kernel words landed and
+two cards turned out never to have been blocked at all. Entries marked
+LANDED are kept, with what was built and what the entry got wrong, because
+the standing lesson of this queue is that a blocker is a claim about the
+kernel and claims have to be checked against it.
+
+The six that remain, and what each is waiting on:
+
+| Card | Waiting on |
+|---|---|
+| Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
+| Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
+| Marilyn Campaign | one: a trash redirected to a DECK, optionally |
+| Manegarm Skunkworks | one: a nested cost with ALTERNATIVE costs |
+| Hacktivist Meeting | two: an additional cost to REZ described cards, and a random-trash `Cost` component |
+| Tsakhia "Bankhar" Gantulga | two: an ENCOUNTER state requirement, and an ordinal on a static ability |
+
+
 Never approximated. A card that needs one of these is left unticked with the
 word it wants named here, exactly as the identity queue did it.
 
