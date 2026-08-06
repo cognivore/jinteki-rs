@@ -215,7 +215,26 @@ pub enum ProhibitionScope {
     /// target announcement's and a search's do (§12 rule 5); an empty list
     /// describes every card, which is what a sentence naming no restriction
     /// at all would mean.
-    Matching(Vec<crate::instr::TargetFilter>),
+    ///
+    /// `copies_of` is CR 2.1.4 said of cards the effect could not have
+    /// described any other way: "copies of **that agenda**" (Lakshmi
+    /// Smartfabrics) is a question about the NAME of a card the creating
+    /// ability had in hand, and 1.21.6 ends the visibility of a revealed card
+    /// when that ability finishes resolving — so a description re-read later
+    /// would reach nothing. The cards are therefore BOUND when the effect is
+    /// created, exactly as [`Payload::DelayedConditional`]'s `bound_targets`
+    /// are and for the same reason: 9.10.1 makes the effect outlive the frame
+    /// that knew them.
+    ///
+    /// It is a conjunction with `criteria`, and an EMPTY list stipulates
+    /// nothing — which is every prohibition written before this existed.
+    /// The comparison is by name and not by identity (2.1.4), which is the
+    /// whole point: the revealed card is not the copy the sentence forbids
+    /// stealing.
+    Matching {
+        criteria: Vec<crate::instr::TargetFilter>,
+        copies_of: Vec<ObjectId>,
+    },
 }
 
 /// CR 1.2.2: the things a "cannot" ability can forbid a player doing. One

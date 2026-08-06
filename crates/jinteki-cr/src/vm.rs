@@ -2520,8 +2520,21 @@ impl Vm {
                 }
                 match scope {
                     crate::lingering::ProhibitionScope::Object(t) => *t == card,
-                    crate::lingering::ProhibitionScope::Matching(criteria) => {
-                        self.description_reaches(o, criteria, l.source)
+                    crate::lingering::ProhibitionScope::Matching { criteria, copies_of } => {
+                        // 2.1.4: "copies of that card" is a question about the
+                        // NAME, asked of cards bound when the effect was
+                        // created — a conjunction with the re-read
+                        // description, and vacuous where the sentence bound
+                        // none.
+                        cite!("rule_card_name_definition");
+                        let a_copy = copies_of.is_empty()
+                            || copies_of.iter().any(|c| {
+                                self.st
+                                    .objects
+                                    .get(c)
+                                    .is_some_and(|r| r.printed.name == o.printed.name)
+                            });
+                        a_copy && self.description_reaches(o, criteria, l.source)
                     }
                 }
             }
@@ -8696,6 +8709,26 @@ impl Vm {
             // copies of that card" reaches a copy of any of them. An
             // occurrence naming one card leaves a one-element list, which is
             // the same question The Foundry asks.
+            // 2.1.4 + 1.21.6: "copies of that agenda" — the same question
+            // asked of the cards this ability REVEALED rather than of the
+            // ones an occurrence named. The reveal's record is the frame's,
+            // which is where 1.21.6 keeps it for the rest of the resolution.
+            TargetFilter::SameNameAsRevealedByThisAbility => {
+                cite!("rule_card_name_definition");
+                cite!("rule_remain_visible");
+                self.frames
+                    .iter()
+                    .rev()
+                    .find_map(|f| match f {
+                        Frame::Ability(af) => Some(&af.revealed),
+                        _ => None,
+                    })
+                    .is_some_and(|rs| {
+                        rs.iter()
+                            .filter_map(|(id, _)| self.st.objects.get(id))
+                            .any(|r| r.printed.name == o.printed.name)
+                    })
+            }
             TargetFilter::SameNameAsTriggeringCard => {
                 cite!("rule_card_name_definition");
                 self.frames
@@ -8766,7 +8799,34 @@ impl Vm {
                     .subtypes
                     .contains(&s)
             }
-            TargetFilter::PrintedCostAtMost(n) => o.printed.cost.unwrap_or(0) <= n,
+            // 2.3 / 2.4.2 / 2.9: a numeric characteristic against a
+            // quantity. The quantity is evaluated HERE, with the ability's
+            // source in hand, so an announced X (1.16.2c) and a calculated
+            // bound are both re-read wherever the criterion is asked.
+            TargetFilter::CharacteristicIs { of, cmp, value } => {
+                let have: i64 = match of {
+                    crate::instr::CardCharacteristic::PrintedCost => {
+                        cite!("rule_printed_cost_definition");
+                        o.printed.cost.unwrap_or(0) as i64
+                    }
+                    crate::instr::CardCharacteristic::AgendaPoints => {
+                        cite!("rule_agenda_points_location");
+                        o.printed.agenda_points.unwrap_or(0) as i64
+                    }
+                    // 2.9 through the 9.12.1 pipeline: the value the card has
+                    // NOW, which is what every other strength reader uses.
+                    crate::instr::CardCharacteristic::Strength => {
+                        cite!("rule_strength_location");
+                        self.effective_strength(o.id).unwrap_or(0) as i64
+                    }
+                };
+                let want = self.eval_quantity(value, source);
+                match cmp {
+                    crate::instr::NumericCmp::AtMost => have <= want,
+                    crate::instr::NumericCmp::AtLeast => have >= want,
+                    crate::instr::NumericCmp::Exactly => have == want,
+                }
+            }
             TargetFilter::InScoreAreaOf(side) => {
                 cite!("rule_score_area");
                 o.zone == Zone::ScoreArea(side)
@@ -11831,6 +11891,42 @@ impl Vm {
                         // every time, so a card that arrives later is inside
                         // it and a card that leaves is out of it.
                         crate::instr::ProhibitionSpec::Matching(criteria) => {
+                            // 1.21.6 + 9.10.1: a criterion that reads the
+                            // RESOLVING ability's own frame ("copies of that
+                            // agenda") cannot be re-read later — the frame is
+                            // gone by the time the act is offered. It is bound
+                            // here instead, while the frame still holds it,
+                            // the way a delayed conditional's targets are.
+                            cite!("rule_remain_visible");
+                            let copies_of = if criteria.iter().any(|f| {
+                                matches!(
+                                    f,
+                                    crate::instr::TargetFilter::SameNameAsRevealedByThisAbility
+                                )
+                            }) {
+                                self.frames
+                                    .iter()
+                                    .rev()
+                                    .find_map(|fr| match fr {
+                                        Frame::Ability(af) => Some(
+                                            af.revealed.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+                                        ),
+                                        _ => None,
+                                    })
+                                    .unwrap_or_default()
+                            } else {
+                                Vec::new()
+                            };
+                            let criteria: Vec<_> = criteria
+                                .iter()
+                                .filter(|f| {
+                                    !matches!(
+                                        f,
+                                        crate::instr::TargetFilter::SameNameAsRevealedByThisAbility
+                                    )
+                                })
+                                .copied()
+                                .collect();
                             let id = self.next_lingering;
                             self.next_lingering += 1;
                             self.lingering.push(LingeringEffect::new(
@@ -11838,9 +11934,10 @@ impl Vm {
                                 source.obj,
                                 Payload::Prohibited {
                                     by: *by,
-                                    scope: crate::lingering::ProhibitionScope::Matching(
-                                        criteria.clone(),
-                                    ),
+                                    scope: crate::lingering::ProhibitionScope::Matching {
+                                        criteria,
+                                        copies_of,
+                                    },
                                     actions: actions.clone(),
                                 },
                                 dur,
@@ -15433,9 +15530,15 @@ impl Vm {
         }
         // 1.9.2: a counter component is spent from the source, so a card
         // without enough hosted counters cannot pay it.
-        if let Some((kind, n)) = cost.spend_counters {
+        if let Some((kind, amount)) = &cost.spend_counters {
             cite!("rule_counters_default_from_bank");
-            if self.st.objects[&source].counter(kind) < n {
+            // 1.16.2b: the amount is calculated when the cost is to be paid.
+            // 1.16.2d makes a bare X read 0 OUTSIDE a payment — always
+            // payable — and the payer then announces upward under 1.16.1a's
+            // bound, which is what `x_bound` reads from the source's counters.
+            cite!("rule_cost_x_out_of_context");
+            let want = self.eval_quantity(amount, Some(source)).max(0) as u32;
+            if self.st.objects[&source].counter(*kind) < want {
                 return false;
             }
         }
@@ -16070,7 +16173,22 @@ impl Vm {
     fn x_bound(&self, p: &Payment) -> u32 {
         cite!("rule_cost_x");
         cite!("rule_cost_restrictions");
+        // 1.16.1a: the announcement is bounded by what can actually be paid
+        // all at once, and WHAT that is depends on which component holds the
+        // X. Credits are the common case; a counter component is paid out of
+        // the source's own counters (1.9.2), and a payer's credit pool says
+        // nothing about how many it hosts.
         let mut max = self.spendable_credits(p.side);
+        if let Some((kind, amount)) = &p.cost.spend_counters {
+            if amount.mentions_announced_x() {
+                max = self
+                    .st
+                    .objects
+                    .get(&p.source)
+                    .map(|o| o.counter(*kind))
+                    .unwrap_or(0);
+            }
+        }
         if let Some(crate::ability::XBound::AtMost(q)) = &p.cost.x_restriction {
             max = max.min(self.eval_quantity(q, Some(p.source)).max(0) as u32);
         }
@@ -16092,7 +16210,14 @@ impl Vm {
                 if let Some(pm) = self.payment.as_mut() {
                     pm.announced_x = Some(determined);
                 }
-            } else if p.cost.credits.mentions_announced_x() || p.cost.x_restriction.is_some() {
+            } else if p.cost.credits.mentions_announced_x()
+                || p
+                    .cost
+                    .spend_counters
+                    .as_ref()
+                    .is_some_and(|(_, q)| q.mentions_announced_x())
+                || p.cost.x_restriction.is_some()
+            {
                 // 1.16.2c: the announcement is owed whenever the cost
                 // CONTAINS X — a stated restriction is an extra bound on the
                 // value, not what creates the choice (Corporate
@@ -16501,11 +16626,12 @@ impl Vm {
         self.st.player_mut(side).clicks -= cost.clicks + cost.lose_clicks;
         // 1.9.2: counters spent as a cost come off the source and go back to
         // the bank.
-        if let Some((kind, n)) = cost.spend_counters {
+        if let Some((kind, amount)) = cost.spend_counters.clone() {
             cite!("rule_counters_default_from_bank");
+            let want = self.eval_quantity(&amount, Some(source)).max(0) as u32;
             let o = self.st.objects.get_mut(&source).unwrap();
             let have = *o.counters.get(&kind).unwrap_or(&0);
-            let spent = n.min(have);
+            let spent = want.min(have);
             o.counters.insert(kind, have - spent);
             self.changes
                 .record(GameChange::CounterRemoved { obj: Some(source), kind, amount: spent });

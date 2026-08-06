@@ -42,7 +42,7 @@ Identity is COMPLETE. Printed text below is from
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
 - [x] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
-- [ ] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
+- [x] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
 - [x] **Marilyn Campaign** ×1 — asset · Advertisement · cost 2, trash 3
       "When you rez this asset, load 8[credit] onto it. When it is empty, trash it. / When your turn begins, take 2[credit] from this asset. / [interrupt] → When this asset would be trashed, you may shuffle it into R&D instead of adding it to Archives. (It is still considered trashed.)"
@@ -136,19 +136,18 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `work/finish` wave: 45 of 47 ticked, 2 printed
-sentences still unsayable, 2 cards unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 46 of 47 ticked, 1 printed
+sentence still unsayable, 1 card unticked.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
 kernel and claims have to be checked against it.
 
-The two that remain, and what each is waiting on:
+The one that remains, and what it is waiting on:
 
 | Card | Waiting on |
 |---|---|
 | Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
-| Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
 
 
 Never approximated. A card that needs one of these is left unticked with the
@@ -344,26 +343,28 @@ both arms, which is what the printed parenthetical promises.
 
 **Marilyn Campaign** is written and ticked.
 
-### A description stipulating agenda points, or the X announced for the cost (CR 2.4.2 / 1.16.2c / 1.15.2)
+### A description stipulating agenda points, or the X announced for the cost — LANDED (CR 2.3 / 2.5 / 2.7 / 1.16.2c)
 
-The description vocabulary can say a card's type, its subtypes, its name, its
-printed cost at most N, the counters on it, and its rez cost relative to a
-triggering card. It cannot say a card's AGENDA POINTS, and nothing in it can be
-compared against the X a player announced for the ability's own trigger cost
-(1.16.2c) — the announced X is readable as a *quantity* and never as a
-stipulation a described card has to satisfy.
+`TargetFilter::CharacteristicIs { of, cmp, value }`, exactly the word the entry
+asked for: WHICH characteristic (`CardCharacteristic::PrintedCost |
+AgendaPoints | Strength`), WHICH comparison (`NumericCmp::AtMost | AtLeast |
+Exactly`) and the other side as a `Quantity`, which is what lets a description
+be compared against a number the game state produced — 1.16.2c's announced X
+above all. `PrintedCostAtMost(u32)` was folded into it rather than left beside
+it, so the vocabulary has one numeric criterion and not three. The quantity is
+a `&'static` reference so the filter vocabulary stays `Copy`, the way
+`AnyOf` and `Not` already are.
 
-Wanted: agenda points as one more characteristic the shared filter vocabulary
-reads, and one comparison position whose two sides are quantities — so "an
-agenda worth X points", "a card with printed cost X" and "ice with strength X
-or lower" are one word with different content, and not a filter apiece.
-
-Wants it: **Lakshmi Smartfabrics** ("Reveal an agenda worth X points from HQ").
-Its prohibition is no longer a blocker — CR 1.2.2's "cannot" now names
-stealing and takes a description with a duration — but the sentence still
-waits on this word and on the revealed-cards word below, so the card stays
-unticked. Both remaining halves are about the SAME reveal: which agenda may be
-revealed, and which cards "copies of that agenda" then means.
+The entry counted TWO words for this card. It is three, and the one it missed
+is the one everything else hangs off: **"X hosted power counters" was not
+sayable either.** `Cost::spend_counters` held a printed `u32`, and 1.16.2c's X
+has to be ANNOUNCED — `spend_counters_any_source` is the announced one and is
+the wrong word (Freedom Khumalo's counters come from any of the payer's cards;
+these come off THIS one). The amount is now a `Quantity` position like
+`Cost::credits`, `Cost::spend_x_counters` is the shorthand, and `Vm::x_bound`
+learned that an X in a counter component is bounded by what the SOURCE hosts
+and not by the payer's credit pool. Without it the card could not even be
+paid for, and no amount of description vocabulary would have helped.
 
 ### The printed ORDINAL on an additional-cost declaration — LANDED (CR 1.16.10)
 
@@ -540,6 +541,24 @@ carries it for the non-self case, no card in either deck asks for it, and an
 unread field is untested code; it belongs on this atom the day a card prints
 it.
 
+### A card with the same NAME as one this ability revealed — LANDED (CR 2.1.4 / 1.21.6 / 9.10.1)
+
+`TargetFilter::SameNameAsRevealedByThisAbility`, the characteristic reading of
+the record `RevealedByThisAbility` reads as an identity. Both are needed and
+2.1.4 is why: a copy in R&D is a different card with the same name, and the
+copy is what the sentence forbids stealing.
+
+What the entry did not see is that the criterion alone is not enough, and the
+card would have compiled and done nothing. 1.21.6 keeps a revealed card
+visible only "until the entire ability is finished resolving", and the
+prohibition this sentence creates lasts the TURN — so a description re-read
+where the steal is offered reaches nothing at all. The frame-scoped part is
+therefore BOUND when the lingering effect is created, which is what
+`Payload::DelayedConditional`'s `bound_targets` already does for 1.15.4 across
+the same gap: `ProhibitionScope::Matching` gained a `copies_of` position
+holding the cards, compared by NAME (2.1.4) and conjoined with the re-read
+description. Empty at every existing site.
+
 ### The cards THIS ABILITY revealed — LANDED (CR 1.21.6)
 
 `TargetFilter::RevealedByThisAbility`, the twin of `LookedAtByThisAbility`:
@@ -563,11 +582,9 @@ shows. **Embezzle** (`unlisted.rs`) still wants the random-reveal half —
 `Instruction::RevealRandomFromHand` announces nothing and takes no `TargetSpec`,
 so neither 1.15.4's record nor 1.21.6's reaches its cards.
 
-**Lakshmi Smartfabrics** keeps this as one of its two blockers, and it is the
-NAME half rather than the identity half: "copies of that agenda" is every card
-sharing a characteristic with the revealed one, and the filter vocabulary can
-say "the card this ability revealed" (now) and "a card with this printed name"
-(`HasName`) and not "a card with the same name as that one".
+**Lakshmi Smartfabrics** kept this as one of its blockers, and it was the
+NAME half rather than the identity half — see the entry above, where it
+landed.
 
 ### A count of the agendas STOLEN inside a window — LANDED (CR 7.5 / 1.12.6)
 

@@ -2078,6 +2078,18 @@ pub fn trash_this_card() -> Cost {
 pub fn hosted_counters(kind: CounterKind, n: u32) -> Cost {
     Cost::spend_counters(kind, n)
 }
+/// "**X hosted <kind> counters:**" (Lakshmi Smartfabrics; 1.9.2 + 1.16.2c) —
+/// the same component as [`hosted_counters`] with the amount ANNOUNCED
+/// instead of printed. The counters still come off THIS card, which is what
+/// keeps it apart from [`any_x_counters_equal_to`]'s any-source payment, and
+/// 1.16.1a bounds the announcement by how many the card actually hosts.
+///
+/// The announced value is read back by [`jinteki_cr::instr::Quantity::
+/// AnnouncedX`] for the rest of the ability's resolution, which is what lets
+/// a later sentence say "worth X points".
+pub fn x_hosted_counters(kind: CounterKind) -> Cost {
+    Cost::spend_x_counters(kind)
+}
 /// "**Any** X <kind> counters: … X must be equal to <quantity>." (Freedom
 /// Khumalo; 1.16.2c + 1.10.3c.) Neither half of [`hosted_counters`]: the
 /// amount is X, DETERMINED by the equality rather than chosen, and the
@@ -3119,6 +3131,48 @@ pub fn max_hand_size_is(q: Quantity) -> StaticDecl {
 /// the card the occurrence that met this ability's condition named (1.15.4).
 pub fn of_the_same_type_as_the_triggering_card() -> TargetFilter {
     TargetFilter::SameCardTypeAsTriggeringCard
+}
+/// "…**an agenda worth X points**" (Lakshmi Smartfabrics), "…a card with
+/// printed cost 3 or lower", "…ice with strength X or lower" — a numeric
+/// characteristic of the card compared against a quantity (CR 2.3 / 2.5 /
+/// 2.7). One criterion with the characteristic, the comparison and the other
+/// side all as content.
+///
+/// The quantity may be anything the vocabulary can read, including 1.16.2c's
+/// announced X — which is what makes "worth X points" sayable at all, since
+/// X is a number the payment produced and not one printed anywhere.
+pub fn characteristic_is(
+    of: jinteki_cr::instr::CardCharacteristic,
+    cmp: jinteki_cr::instr::NumericCmp,
+    value: Quantity,
+) -> TargetFilter {
+    TargetFilter::CharacteristicIs { of, cmp, value: Box::leak(Box::new(value)) }
+}
+/// "…with printed install/rez/play cost N or lower" (CR 2.3).
+pub fn printed_cost_at_most(n: u32) -> TargetFilter {
+    characteristic_is(
+        jinteki_cr::instr::CardCharacteristic::PrintedCost,
+        jinteki_cr::instr::NumericCmp::AtMost,
+        Quantity::c(n as i64),
+    )
+}
+/// "…an agenda **worth X points**" (Lakshmi Smartfabrics; 2.5.1 + 1.16.2c) —
+/// the printed agenda points equal to the value announced for this ability's
+/// own trigger cost.
+pub fn worth_announced_x_agenda_points() -> TargetFilter {
+    characteristic_is(
+        jinteki_cr::instr::CardCharacteristic::AgendaPoints,
+        jinteki_cr::instr::NumericCmp::Exactly,
+        Quantity::AnnouncedX,
+    )
+}
+/// "…**copies of that agenda**" (Lakshmi Smartfabrics; 2.1.4 + 1.21.6) — a
+/// card whose NAME is the name of a card this ability revealed. Not
+/// [`revealed_by_this_ability`], which is the revealed card ITSELF: a copy in
+/// HQ is a different card with the same name, and 1.15.4 and 2.1.4 are what
+/// keep the two apart.
+pub fn a_copy_of_a_card_this_ability_revealed() -> TargetFilter {
+    TargetFilter::SameNameAsRevealedByThisAbility
 }
 /// "…**another copy of that ice**" (The Foundry) — a card with the same NAME
 /// as the one the occurrence that met this ability's condition named (1.15.4

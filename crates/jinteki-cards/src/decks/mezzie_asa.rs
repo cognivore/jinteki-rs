@@ -424,22 +424,28 @@ pub fn jeeves_model_bioroids() -> Card {
 /// the rez, so the ability is there in time to be met by the occurrence that
 /// activated it.
 ///
-/// The paid ability is marked, and what it waits on is now the REVEAL at both
-/// ends of it rather than the prohibition. The prohibition itself is written:
-/// the CR 1.2.2 wave made stealing (7.5) an act a "cannot" names and gave the
-/// lingering prohibition a description and a duration, so "…for the remainder
-/// of this turn" is sayable.
+/// The paid ability is TWO printed sentences and so two instructions (9.11.3),
+/// and X ties them together.
 ///
-/// What is not sayable is which agenda may be revealed and which cards the
-/// sentence then means. "An agenda worth X points" is a description
-/// stipulating a characteristic the filter vocabulary does not read — the
-/// card's agenda points (2.4.2), compared against the X announced for the
-/// ability's own trigger cost (1.16.2c). And "copies of that agenda" is a
-/// description of cards sharing a characteristic with the card THIS ABILITY
-/// REVEALED, which 1.21.3's reveal records nowhere: unlike 1.21.2's look, a
-/// reveal keeps nothing on the resolving ability for a later instruction to
-/// refer back to. Both are on MEZZIE-QUEUE.md's Blockers as general
-/// capabilities, and both belong to the same reveal.
+/// "X hosted power counters" is 1.9.2's counter cost with 1.16.2c's announced
+/// amount: the counters come off THIS card, and 1.16.1a bounds what the Corp
+/// may announce by how many are actually on it. The announced value is then
+/// readable for the rest of the resolution, which is the only reason the next
+/// sentence can say "worth X points" at all — X is a number the payment
+/// produced and one that appears nowhere in print.
+///
+/// "An agenda worth X points from HQ" is a description with three
+/// stipulations: 2.5.1's printed agenda points compared against that X, the
+/// card type, and the zone — and the zone is load-bearing, because 1.15.2c
+/// would otherwise leave the announcement in the play area where HQ is not.
+///
+/// "Copies of that agenda" is 2.1.4: a question about the NAME and nothing
+/// else, asked of the cards this ability revealed (1.21.6 keeps them on the
+/// resolving ability's frame for exactly this). It is deliberately not "the
+/// card this ability revealed" — a copy in R&D is a different card with the
+/// same name, and the Runner stealing THAT is what the sentence is about.
+/// The prohibition is 1.2.2's, with the act, the player, the description and
+/// the duration all content on it.
 pub fn lakshmi_smartfabrics() -> Card {
     card("Lakshmi Smartfabrics")
         .corp()
@@ -451,7 +457,26 @@ pub fn lakshmi_smartfabrics() -> Card {
         .text("X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
         .when(corp_rezzes_a_card(), [place(CounterKind::Power, 1)])
         .named("a counter for every rez")
-        .unimplemented("X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn.")
+        .paid(
+            x_hosted_counters(CounterKind::Power),
+            [
+                reveal(choose(
+                    1,
+                    &[
+                        in_hand_of(Corp),
+                        of_type(CardType::Agenda),
+                        worth_announced_x_agenda_points(),
+                    ],
+                )),
+                cannot_act_on_matching(
+                    &[in_any_location(), a_copy_of_a_card_this_ability_revealed()],
+                    Some(Runner),
+                    &[ProhibitedAction::Steal],
+                    this_turn(),
+                ),
+            ],
+        )
+        .named("reveal an agenda worth X, and it cannot be stolen")
         .build()
 }
 

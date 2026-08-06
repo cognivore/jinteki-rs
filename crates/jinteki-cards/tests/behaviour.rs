@@ -17758,7 +17758,7 @@ fn lakshmi_smartfabrics_counts_its_own_rez_and_every_other() {
     for rez_the_neighbour in [false, true] {
         let mut vm = Vm::empty(9121);
         let lak =
-            tk::install_root(&mut vm, card_partial("Lakshmi Smartfabrics"), ServerId::Remote(1), false);
+            tk::install_root(&mut vm, card("Lakshmi Smartfabrics"), ServerId::Remote(1), false);
         let other =
             tk::install_root(&mut vm, tk::vanilla_asset("Sample Room", 1, 2), ServerId::Remote(2), false);
         tk::fill_deck(&mut vm, Side::Corp, 8);
@@ -17789,6 +17789,88 @@ fn lakshmi_smartfabrics_counts_its_own_rez_and_every_other() {
             "one counter for its own rez, and one more for the neighbour's \
              (rez_the_neighbour={rez_the_neighbour}): {}",
             t.tail(20)
+        );
+    }
+}
+
+/// Lakshmi Smartfabrics: "X hosted power counters: Reveal an agenda worth X
+/// points from HQ. The Runner cannot steal copies of that agenda for the
+/// remainder of this turn."
+///
+/// X ties the two sentences together, and the board is built so that only one
+/// value of X can be announced: the card carries exactly 2 power counters, so
+/// the Corp announces 2 and the description reaches only the 2-point agenda.
+/// HQ holds one agenda of each value.
+///
+/// What the sentence promises is asserted on the RUNNER'S side of the table,
+/// on a copy of the revealed agenda that was never itself revealed — the
+/// Runner runs a remote holding one, and cannot steal it. The control arm is
+/// the same board with the OTHER agenda in the remote: a different name, so
+/// the prohibition says nothing about it and it is stolen.
+#[test]
+fn lakshmi_smartfabrics_stops_the_runner_stealing_copies_of_what_it_revealed() {
+    for same_name in [true, false] {
+        let mut vm = Vm::empty(9125);
+        let lak =
+            tk::install_root(&mut vm, card("Lakshmi Smartfabrics"), ServerId::Remote(1), true);
+        vm.st.objects.get_mut(&lak).unwrap().counters.insert(CounterKind::Power, 2);
+        // HQ holds one agenda worth 2 and one worth 1, so "worth X points"
+        // with X announced as 2 can only reach the first.
+        let two = vm.new_object(tk::vanilla_agenda("Two Pointer", 3, 2), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(two);
+        let one = vm.new_object(tk::vanilla_agenda("One Pointer", 3, 1), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(one);
+        // A COPY of one of them, out in a remote where the Runner can reach it.
+        let out = tk::install_root(
+            &mut vm,
+            if same_name {
+                tk::vanilla_agenda("Two Pointer", 3, 2)
+            } else {
+                tk::vanilla_agenda("One Pointer", 3, 1)
+            },
+            ServerId::Remote(2),
+            false,
+        );
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        vm.st.corp.credits = 5;
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("reveal an agenda"))
+                .when(Match::declare_x().once(), Reply::DeclareX(2))
+                .when(Match::targets().once(), Reply::target(two)),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+                .stop_at_action(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&lak].counter(CounterKind::Power),
+            0,
+            "1.9.2 + 1.16.2c: the announced X came off THIS card — 2 counters \
+             for X=2 (same_name={same_name}): {}",
+            t.tail(30)
+        );
+        assert!(
+            vm.changes
+                .log
+                .iter()
+                .any(|c| matches!(c, GameChange::CardRevealed { obj, .. } if *obj == two)),
+            "2.5.1: the agenda worth X points is the one revealed, and the \
+             1-pointer beside it in HQ is not (same_name={same_name}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&out].zone == Zone::ScoreArea(Side::Runner),
+            !same_name,
+            "1.2.2 + 2.1.4: a COPY of the revealed agenda cannot be stolen this \
+             turn, and an agenda of another name is untouched by the sentence \
+             (same_name={same_name}): {}",
+            t.tail(30)
         );
     }
 }

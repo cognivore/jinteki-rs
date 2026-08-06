@@ -1407,7 +1407,13 @@ pub struct Cost {
     /// CR 1.9.2: "spend N <kind> counters hosted on this card" (Imp class).
     /// The counters come off the ability's SOURCE, which is what makes an
     /// empty card's ability unusable rather than free.
-    pub spend_counters: Option<(crate::object::CounterKind, u32)>,
+    ///
+    /// The amount is a QUANTITY position (§12 rule 6), exactly as
+    /// [`Cost::credits`] is: a printed number, a calculated amount, or
+    /// 1.16.2c's announced X ("**X** hosted power counters:", Lakshmi
+    /// Smartfabrics). Where it mentions X, the announcement is owed before
+    /// the cost is paid and 1.16.1a bounds it by what the source hosts.
+    pub spend_counters: Option<(crate::object::CounterKind, crate::instr::Quantity)>,
     /// CR 1.16.2c + 1.10.3c: "**Any** X <kind> counters:" (Freedom Khumalo)
     /// — neither half of [`Cost::spend_counters`]: the amount is a quantity
     /// position announced under 1.16.2c rather than a printed number, and
@@ -1480,7 +1486,19 @@ impl Cost {
     }
     /// CR 1.9.2: "spend N hosted counters of a kind" as a cost.
     pub fn spend_counters(kind: crate::object::CounterKind, n: u32) -> Self {
-        Cost { spend_counters: Some((kind, n)), ..Default::default() }
+        Cost { spend_counters: Some((kind, crate::instr::Quantity::c(n as i64))), ..Default::default() }
+    }
+    /// CR 1.9.2 + 1.16.2c: "**X hosted <kind> counters:**" (Lakshmi
+    /// Smartfabrics) — the same component with the amount ANNOUNCED rather
+    /// than printed. 1.16.1a bounds the announcement: the payer can only
+    /// announce a value the source actually hosts, which is what
+    /// [`XBound::AtMost`] says here.
+    pub fn spend_x_counters(kind: crate::object::CounterKind) -> Self {
+        Cost {
+            spend_counters: Some((kind, crate::instr::Quantity::AnnouncedX)),
+            x_restriction: Some(XBound::AtMost(crate::instr::Quantity::CountersOnSource(kind))),
+            ..Default::default()
+        }
     }
     /// CR 1.16.2c + 1.10.3c: "**Any** X <kind> counters: … X must be equal
     /// to <quantity>." (Freedom Khumalo.) The amount is X, announced by the
@@ -1551,7 +1569,7 @@ impl Cost {
             trash_random_from_hand: self.trash_random_from_hand + other.trash_random_from_hand,
             remove_self_from_game: self.remove_self_from_game || other.remove_self_from_game,
             trash_all_from_hand: self.trash_all_from_hand || other.trash_all_from_hand,
-            spend_counters: self.spend_counters.or(other.spend_counters),
+            spend_counters: self.spend_counters.clone().or_else(|| other.spend_counters.clone()),
             spend_counters_any_source: self
                 .spend_counters_any_source
                 .clone()

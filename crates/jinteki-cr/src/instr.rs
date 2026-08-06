@@ -1997,6 +1997,31 @@ pub enum ServerExclusion {
 /// reads a remembered object — which is the only way an instruction can ever
 /// reach one of 4.6.8's remotes, since none exists to name at card-write
 /// time.
+/// CR 2.3 / 2.5 / 2.7: the numeric characteristics of a card a description
+/// can stipulate. Content on [`TargetFilter::CharacteristicIs`] (§12 rule 2),
+/// never a criterion apiece.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardCharacteristic {
+    /// CR 2.3: the printed install/rez/play cost.
+    PrintedCost,
+    /// CR 2.5.1: the printed agenda points. 0 for a card that prints none.
+    AgendaPoints,
+    /// CR 2.7.1 through the 9.12.1 pipeline: strength AS IT IS NOW, so a
+    /// pumped icebreaker or a modified piece of ice answers with the value
+    /// the game state gives it. 0 for a card with no strength.
+    Strength,
+}
+
+/// How a stipulated characteristic is compared with its quantity. Content on
+/// the one criterion (§12 rule 2): "N or lower", "N or more" and "exactly N"
+/// are one word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NumericCmp {
+    AtMost,
+    AtLeast,
+    Exactly,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerRef {
     /// A server the card names outright ("HQ").
@@ -2299,8 +2324,29 @@ pub enum TargetFilter {
     /// `Vec` so the filter vocabulary stays `Copy`, which is what lets a
     /// criterion be read wherever an object is examined.
     HasAnySubtype(&'static [crate::subtype::Subtype]),
-    /// CR 2.3: "…with printed install/rez/play cost N or lower".
-    PrintedCostAtMost(u32),
+    /// CR 2.3 / 2.5 / 2.7: a NUMERIC characteristic of the card, compared
+    /// against a quantity — "…with printed install/rez/play cost N or lower",
+    /// "…an agenda worth X points" (Lakshmi Smartfabrics), "…ice with
+    /// strength X or lower".
+    ///
+    /// One criterion for all of them (§12 rule 2): WHICH characteristic and
+    /// WHICH comparison are content, and the other side is a
+    /// [`Quantity`] — which is what lets a description be compared against a
+    /// number the game state produces, and in particular against 1.16.2c's
+    /// announced X, which is a quantity and was never sayable as a
+    /// stipulation before.
+    ///
+    /// The quantity is a `&'static` reference so the filter vocabulary stays
+    /// `Copy`, exactly as [`TargetFilter::AnyOf`] and [`TargetFilter::Not`]
+    /// already are. It is evaluated where the criterion is asked, so a
+    /// calculated bound is re-read rather than stamped.
+    ///
+    /// A card with no such characteristic printed on it reads 0, which is
+    /// 9.12.2e said of a card rather than of a set: an operation has no
+    /// agenda points, so "an agenda worth 0 points" reaches it — which is
+    /// why a sentence that means agendas says so with `CardTypeIs` beside
+    /// this one, as every printed card of this shape does.
+    CharacteristicIs { of: CardCharacteristic, cmp: NumericCmp, value: &'static Quantity },
     /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed
     /// faceup Corp card.
     Rezzed,
@@ -2331,6 +2377,26 @@ pub enum TargetFilter {
     /// With no such card nothing matches, the same way
     /// [`TargetFilter::SameCardTypeAsTriggeringCard`] reaches nothing.
     SameNameAsTriggeringCard,
+    /// CR 2.1.4 + 1.21.6: "…**copies of that agenda**" (Lakshmi
+    /// Smartfabrics) — a card whose name is the name of a card THIS ABILITY
+    /// REVEALED. 2.1.4 is what makes "copies of" a question about the name
+    /// and nothing else, and 1.21.6 is what keeps the revealed cards on the
+    /// resolving ability's frame for a later sentence to point back at.
+    ///
+    /// The relational sibling of [`TargetFilter::SameNameAsTriggeringCard`],
+    /// differing only in WHICH card stands on the other side — the occurrence
+    /// that met a condition, or the reveal this ability performed.
+    /// [`TargetFilter::RevealedByThisAbility`] is the same record read as an
+    /// IDENTITY ("those cards"); this reads it as a characteristic ("copies
+    /// of that card"), which is the difference 1.15.4 and 2.1.4 draw and the
+    /// reason both are needed: a copy in HQ is not the card that was
+    /// revealed.
+    ///
+    /// It stipulates a characteristic, so 1.15.2c's play-area default still
+    /// applies to it — a sentence about copies in a hidden zone says which
+    /// zone, as every printed card of this shape does. With nothing revealed
+    /// it reaches nothing.
+    SameNameAsRevealedByThisAbility,
     /// CR 1.15.4 + 1.16.4/8.7.2a: "…a card with a printed rez cost exactly
     /// 1[credit] **less than the trashed card's** printed rez cost" (Ob
     /// Superheavy Logistics) — a card whose PRINTED rez cost differs by
@@ -2669,7 +2735,8 @@ impl TargetFilter {
             TargetFilter::CardTypeIs(_)
                 | TargetFilter::HasSubtype(_)
                 | TargetFilter::HasAnySubtype(_)
-                | TargetFilter::PrintedCostAtMost(_)
+                | TargetFilter::CharacteristicIs { .. }
+                | TargetFilter::SameNameAsRevealedByThisAbility
                 | TargetFilter::HasName(_)
                 // 9.10.3: the maintained value IS a characteristic — a name,
                 // a card type or a subtype — so a card chosen for matching it
