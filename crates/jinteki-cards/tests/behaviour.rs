@@ -18448,3 +18448,322 @@ fn fully_operational_gains_two_or_draws_two_as_the_corp_chooses() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Mezzie's Asa — the four agendas and the two upgrades
+// ---------------------------------------------------------------------------
+
+/// Global Food Initiative: "Global Food Initiative is worth 1 fewer agenda
+/// point while in the Runner's score area."
+///
+/// Two printed copies, one into each score area, and the printed 3 reads
+/// differently in each — which is 2.5's point value being a CHARACTERISTIC
+/// (9.12.1a) rather than a number stamped on the card when it changed hands.
+/// 4.5.4 is the reason this is not free: an agenda in the Runner's score area
+/// is inactive "unless stated otherwise", so the whole card rests on 9.1.8b
+/// keeping an ability that states its zone alive in that zone.
+#[test]
+fn global_food_initiative_is_worth_three_scored_and_two_stolen() {
+    let mut vm = Vm::empty(9305);
+    let scored = tk::install_root(&mut vm, card("Global Food Initiative"), ServerId::Remote(1), false);
+    let stolen = tk::install_root(&mut vm, card("Global Food Initiative"), ServerId::Remote(2), false);
+    vm.st.objects.get_mut(&scored).unwrap().counters.insert(CounterKind::Advancement, 5);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.start_turn(Side::Corp);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp().when(Match::paid().once(), Reply::score(scored)).otherwise_click_credit(),
+        Plan::runner()
+            // Halt once to read the Corp's score before the Runner moves.
+            .when(Match::action().first(), Reply::Halt)
+            .when(Match::action().once(), Reply::run(ServerId::Remote(2)))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&scored].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the Corp scored one copy: {}",
+        g.transcript().tail(14)
+    );
+    assert_eq!(
+        vm.score(Side::Corp),
+        3,
+        "the printed 3 — the declaration says nothing about the Corp's score area: {}",
+        g.transcript().tail(14)
+    );
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&stolen].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the Runner stole the other copy: {}",
+        g.transcript().tail(14)
+    );
+    assert_eq!(
+        vm.score(Side::Runner),
+        2,
+        "1 fewer than the printed 3, read where the card now is: {}",
+        g.transcript().tail(14)
+    );
+    assert_eq!(vm.score(Side::Corp), 3, "and the Corp's copy is untouched by any of it");
+}
+
+/// Luminal Transubstantiation: "When you score this agenda, gain
+/// [click][click][click]. …"
+///
+/// PARTIAL — "You cannot score agendas for the remainder of the turn." is
+/// unsayable (see the card's doc comment and MEZZIE-QUEUE.md's Blockers), and
+/// the test says so out loud, twice: once by pinning the marker, and once by
+/// scoring a second agenda in the same turn, which is exactly what the marked
+/// sentence would have forbidden. When it becomes sayable this assertion is the
+/// one that has to flip.
+///
+/// The sentence that IS written is read off the turn itself: 5.6.4a allots the
+/// Corp three clicks, the score happens in the paid window of the first action
+/// window, and the turn then runs to six actions instead of three.
+#[test]
+fn luminal_transubstantiation_pays_three_clicks_when_it_is_scored() {
+    let lt = jinteki_cards::find("Luminal Transubstantiation")
+        .expect("Luminal Transubstantiation is in the card layer");
+    assert_eq!(
+        lt.unimplemented,
+        vec!["You cannot score agendas for the remainder of the turn."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9306);
+    let luminal = tk::install_root(&mut vm, card_partial("Luminal Transubstantiation"), ServerId::Remote(1), false);
+    let other = tk::install_root(&mut vm, tk::vanilla_agenda("Loose Agenda", 3, 1), ServerId::Remote(2), false);
+    for a in [luminal, other] {
+        vm.st.objects.get_mut(&a).unwrap().counters.insert(CounterKind::Advancement, 3);
+    }
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::score(luminal))
+            .when(Match::paid().once(), Reply::score(other))
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.st.objects[&luminal].zone,
+        Zone::ScoreArea(Side::Corp),
+        "Luminal Transubstantiation was scored: {}",
+        t.tail(20)
+    );
+    let corp_actions = t
+        .entries
+        .iter()
+        .filter(|e| e.side == Side::Corp && e.kind() == Kind::Action && e.answer.is_some())
+        .count();
+    assert_eq!(
+        corp_actions, 6,
+        "5.6.4a's three clicks plus the three the agenda gained, spent as actions: {}",
+        t.tail(20)
+    );
+    // The marked sentence, stated as the behaviour it is missing. 1.2.2 would
+    // have removed the (S) option for every agenda for the rest of the turn.
+    assert_eq!(
+        vm.st.objects[&other].zone,
+        Zone::ScoreArea(Side::Corp),
+        "a second agenda scored the same turn — which the marked sentence forbids, \
+         so this assertion flips when it is written: {}",
+        t.tail(20)
+    );
+    assert_eq!(vm.score(Side::Corp), 3, "2 + 1, for the same reason");
+}
+
+/// Project Vitruvius: "When you score this agenda, place 1 agenda counter on it
+/// for each hosted advancement counter past 3." / "Hosted agenda counter: Add 1
+/// card from Archives to HQ."
+///
+/// Scored on 5 advancement counters, so 2 agenda counters — read through
+/// 1.17.8, since 1.17.5 had already returned all five to the bank by the time
+/// the ability resolved. Then one of those counters is spent as a trigger cost
+/// (1.16.1) and a card comes back out of Archives.
+#[test]
+fn project_vitruvius_counts_the_advancements_past_three_and_spends_one_counter() {
+    let mut vm = Vm::empty(9307);
+    let vit = tk::install_root(&mut vm, card("Project Vitruvius"), ServerId::Remote(1), false);
+    vm.st.objects.get_mut(&vit).unwrap().counters.insert(CounterKind::Advancement, 5);
+    let buried = vm.new_object(tk::vanilla_asset("Buried Asset", 1, 2), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+    tk::fill_hand(&mut vm, Side::Corp, 2);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::score(vit))
+            .when(Match::any().once(), Reply::take("archives to hq"))
+            .when(Match::targets().once(), Reply::target(buried))
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert_eq!(
+        vm.st.objects[&vit].zone,
+        Zone::ScoreArea(Side::Corp),
+        "the agenda was scored out of the remote: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&vit].counter(CounterKind::Advancement),
+        0,
+        "1.17.5: the advancement counters went back to the bank with the score"
+    );
+    assert_eq!(
+        vm.st.objects[&vit].counter(CounterKind::Agenda),
+        1,
+        "2 placed for the 2 advancements past 3 (1.17.8's last known number), \
+         1 spent on the paid ability: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&buried].zone,
+        Zone::Hand(Side::Corp),
+        "the counter bought a card out of Archives: {}",
+        t.tail(20)
+    );
+}
+
+/// Project Vacheron: "[interrupt] → When this agenda would be added to the
+/// Runner's score area from anywhere except Archives, instead it is added to
+/// their score area with 4 hosted agenda counters."
+///
+/// PARTIAL — the second printed sentence, which is what the counters are FOR,
+/// is unsayable (see the card's doc comment and MEZZIE-QUEUE.md's Blockers),
+/// and the test says so out loud so the marker cannot quietly disappear.
+///
+/// 9.9.9c is the half worth asserting: the agenda still ENTERS the Runner's
+/// score area, so this is a replacement and not a prevention. Both halves of
+/// "from anywhere except Archives" are on the board — a copy in a remote root
+/// and a copy in Archives — and only one of them arrives with counters.
+#[test]
+fn project_vacheron_is_stolen_with_four_agenda_counters_except_out_of_archives() {
+    let vach = jinteki_cards::find("Project Vacheron").expect("Project Vacheron is in the card layer");
+    assert_eq!(
+        vach.unimplemented.len(),
+        1,
+        "exactly one printed sentence is still unsayable, and it is the second one"
+    );
+
+    let mut vm = Vm::empty(9308);
+    let installed = tk::install_root(&mut vm, card_partial("Project Vacheron"), ServerId::Remote(1), false);
+    let binned = vm.new_object(card_partial("Project Vacheron"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(binned);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 6);
+    tk::fill_deck(&mut vm, Side::Runner, 6);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .when(Match::action().once(), Reply::run(ServerId::Archives))
+            .stop_at_action(),
+    );
+    assert_eq!(
+        vm.st.objects[&installed].zone,
+        Zone::ScoreArea(Side::Runner),
+        "9.9.9c: the replacement's result still includes the steal it replaced: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&installed].counter(CounterKind::Agenda),
+        4,
+        "…and it arrived with the 4 hosted agenda counters (1.9.5: agenda counters, \
+         which 1.17.5 never touches): {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&binned].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the Archives copy was stolen too: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&binned].counter(CounterKind::Agenda),
+        0,
+        "…and it came out of Archives, which the sentence excludes by name: {}",
+        t.tail(24)
+    );
+}
+
+/// Ash 2X3ZB9CY: "Whenever there is a successful run on this server, Trace[4].
+/// If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY
+/// for the remainder of this run."
+///
+/// The trace resolves in the reaction window at step 6.9.5a — after the run is
+/// declared successful and BEFORE the Runner breaches at 6.9.5b — which is the
+/// only order in which the restriction can mean anything. 7.4.2 is what it
+/// does: the agenda sharing the root stops being a candidate, so the Runner's
+/// breach finds only the upgrade. The same board with the trace LOST is the
+/// control, and there the agenda is stolen.
+#[test]
+fn ash_2x3zb9cy_wins_a_trace_and_leaves_the_runner_only_itself_to_access() {
+    for (runner_spend, stolen) in [(0u32, false), (5u32, true)] {
+        let mut vm = Vm::empty(9309);
+        let ash = tk::install_root(&mut vm, card("Ash 2X3ZB9CY"), ServerId::Remote(1), true);
+        let agenda = tk::install_root(&mut vm, tk::vanilla_agenda("Loose Agenda", 3, 1), ServerId::Remote(1), false);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        vm.st.corp.credits = 5;
+        vm.st.runner.credits = 8;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::trace_spend(), Reply::Spend(0)),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(Match::trace_spend(), Reply::Spend(runner_spend))
+                .stop_at_action(),
+        );
+        assert_eq!(
+            vm.st.objects[&agenda].zone == Zone::ScoreArea(Side::Runner),
+            stolen,
+            "trace[4] against {runner_spend}[credit]: the agenda in the same root \
+             is a candidate only when the trace failed: {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.objects[&ash].zone,
+            Zone::Root(ServerId::Remote(1)),
+            "Ash 2X3ZB9CY itself stayed put either way: {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// Manegarm Skunkworks is BLOCKED, and the test pins the marker rather than
+/// the behaviour: nothing of its one printed sentence can be said yet (see the
+/// card's doc comment and MEZZIE-QUEUE.md's Blockers), so the card denotes into
+/// no ability at all and a later wave that quietly deleted the marker without
+/// writing the sentence would fail here.
+#[test]
+fn manegarm_skunkworks_is_still_only_its_printed_text() {
+    let ms = jinteki_cards::find("Manegarm Skunkworks").expect("Manegarm Skunkworks is in the card layer");
+    assert_eq!(
+        ms.unimplemented,
+        vec!["Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."],
+        "the card's only printed sentence is still unsayable"
+    );
+    assert!(
+        ms.printed.abilities.is_empty(),
+        "…so it denotes into nothing: an approximation would show up here as an ability"
+    );
+}

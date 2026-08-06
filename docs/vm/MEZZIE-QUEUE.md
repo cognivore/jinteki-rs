@@ -30,13 +30,13 @@ function, never write a second copy of a card.
 Identity is COMPLETE. Printed text below is from
 `~/Github/jinteki/netrunner-cards-json`, which is the source of truth.
 
-- [ ] **Global Food Initiative** ×1 — agenda · Initiative · adv 5/3
+- [x] **Global Food Initiative** ×1 — agenda · Initiative · adv 5/3
       "Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area."
 - [ ] **Luminal Transubstantiation** ×1 — agenda · Research · adv 3/2
       "When you score this agenda, gain [click][click][click]. You cannot score agendas for the remainder of the turn. / Limit 1 per deck."
 - [ ] **Project Vacheron** ×3 — agenda · Research · adv 5/3
       "[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters. / While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“"
-- [ ] **Project Vitruvius** ×3 — agenda · Research · adv 3/2
+- [x] **Project Vitruvius** ×3 — agenda · Research · adv 3/2
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
 - [x] **Estelle Moon** ◆ ×3 — asset · Executive · cost 2, trash 3
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
@@ -62,7 +62,7 @@ Identity is COMPLETE. Printed text below is from
       "After you resolve this operation, end your action phase. / Install up to 2 cards from Archives (paying all install costs)."
 - [ ] **Fully Operational** ×3 — operation · cost 1
       "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice."
-- [ ] **Ash 2X3ZB9CY** ◆ ×1 — upgrade · Bioroid · cost 2, trash 3
+- [x] **Ash 2X3ZB9CY** ◆ ×1 — upgrade · Bioroid · cost 2, trash 3
       "Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run."
 - [ ] **Manegarm Skunkworks** ◆ ×1 — upgrade · cost 2, trash 3
       "Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."
@@ -177,6 +177,139 @@ Wants it: **Vertigo** ("they cannot steal or trash Corp cards for the
 remainder of this run"); **Lakshmi Smartfabrics** ("the Runner cannot steal
 copies of that agenda for the remainder of this turn" — stealing again, with a
 turn for its duration instead of a run).
+
+### A "cannot" over a DESCRIPTION that also has a duration (CR 9.10.1 / 1.2.2)
+
+The neighbouring gap, and a different one: the ACT is not the problem here.
+The kernel says "cannot" in two shapes and neither is "you cannot <verb>
+<described cards> for <a duration>".
+
+`Payload::Prohibited { target: ObjectId, actions }` is a lingering effect, so
+it has a duration and 9.10.1 keeps it alive after its source is gone — but it
+names ONE object, fixed when the effect was created, which is exactly right
+for Saraswati Mnemonics' and A Teia's "that card" and cannot say "agendas".
+`StaticDecl::CannotScoreMatching { criteria }` describes its cards in the
+shared filter vocabulary — but it is a declaration of an ACTIVE card, with no
+duration at all and no life of its own: forfeiting the source out of the score
+area (24/7 News Cycle, Archer) or blanking it (9.1.9) lifts a prohibition the
+card said nothing about lifting.
+
+Feeding the lingering one a description is not a third option and must not be
+offered as one. `LingeringSpec::Prohibit`'s position resolves through
+`TargetSpec`, and every describing `TargetSpec` (`Choose`, `Each`) resolves to
+the instruction's ANNOUNCED targets (1.15.2) — while `Instruction::
+CreateLingeringEffect` announces nothing, deliberately (9.10.1: the position
+describes rather than targets). So a prohibition written over a description
+resolves to the empty set and forbids nothing, silently, which is how a first
+attempt at Luminal Transubstantiation passed its build and failed its
+behaviour test.
+
+Wanted: the described set as CONTENT on the lingering prohibition — the
+criteria in the same filter vocabulary, read where the act is offered rather
+than resolved once at creation, so "you cannot score agendas for the remainder
+of the turn", "the Runner cannot steal copies of that agenda for the remainder
+of this turn" and "you cannot score or rez that card until your next turn
+begins" are one atom with different content. That also makes the existing
+static a special case of it rather than a second mechanism.
+
+Wants it: **Luminal Transubstantiation** ("You cannot score agendas for the
+remainder of the turn"; the three clicks are done and tested). **Lakshmi
+Smartfabrics** wants this too, on top of the missing act above.
+
+### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
+
+`AbilityDef::condition` holds one `Condition`, and `StaticCond` is a flat list
+of alternatives: an ability can state that it is active in a score area
+(`SourceInScoreAreaOf`, which 9.1.8b also reads to keep it alive there) or that
+some requirement about the game holds (`StateRequirement`), and never both. A
+printed "while this agenda is in the Runner's score area **with 1 or more
+hosted agenda counters**" is one stated condition with two clauses, and there
+is no position for the second.
+
+Wanted: the stated condition as a CONJUNCTION — one list, whose members are
+the existing alternatives — so a sentence naming a zone and a state is one
+condition with two clauses and not two abilities. 9.1.8b must go on reading the
+zone clause wherever it appears in the list, or the ability is inactive in the
+one zone it is about.
+
+Wants it: **Project Vacheron** (its second sentence, which also wants the two
+below).
+
+### Agenda points SET rather than modified (CR 2.5 / 9.12.1a)
+
+`StaticDecl::SelfAgendaPointsMod(Quantity)` is 9.12.1a's third stage — it adds
+to the value, which is what Merger, Global Food Initiative and Project Beale
+print. A card printing "it **is worth 0** agenda points" states the second
+stage instead, and subtracting the printed value only lands on 0 while nothing
+else is modifying it.
+
+Wanted: the set as content beside the modification on the one declaration —
+one position for the value with the STAGE as its content — so "worth 1 more",
+"worth 1 fewer" and "worth 0" are one declaration with different content, and
+9.12.1a's ordering does the rest.
+
+Wants it: **Project Vacheron** ("it is worth 0 agenda points").
+
+### A declaration that grants a STATED conditional ability (CR 9.1.9 / 9.10.2)
+
+`StaticDecl::GainSubroutines { sub, count }` grants a stated SUBROUTINE and
+`StaticDecl::GainAbilitiesOf { criteria }` copies another card's whole text,
+and between them there is no way to write the commonest form of all: a card
+that gains one ability the sentence spells out in quotation marks. The kernel
+has the payload (`Payload::GrantedAbility { to, def }`, 9.10.2) and no
+declaration reaches it.
+
+Wanted: the stated ability as content on one declaration, the way
+`GainSubroutines` already carries a stated subroutine — the ability being an
+`AbilityDef` of any class, so "gains '[subroutine] End the run.'", "gains 'When
+your turn begins, gain 1[credit].'" and "gains 'Hosted agenda counter: …'" are
+one declaration with different content.
+
+Wants it: **Project Vacheron** (gains "When the Runnerʼs turn begins, remove 1
+hosted agenda counter.").
+
+### The approach condition naming WHICH server (CR 6.9.4g)
+
+`TriggerCond::ServerApproached` is a unit variant, met by 6.9.4g's step
+whatever server was approached. The kernel's other two run conditions about a
+server both carry it — `SuccessfulRunOnServer` compares the attacked server
+against the server the source is in, and `RunEnds { on }` carries the list a
+sentence names — but the approach was written for the Formicary class, whose
+sentence names A server and means every one of them.
+
+This is measured, not assumed: an upgrade rezzed in the root of a remote,
+carrying nothing but a `ServerApproached` conditional, ends a run on HQ. A card
+saying "this server" written with the word that exists is not a smaller card
+than the printed one; it is a different and much larger one.
+
+Wanted: the server as CONTENT on the one condition — the source's own server,
+or the named list, in whatever shape `RunEnds` and `SuccessfulRunOnServer`
+already agree on — so "whenever the Runner approaches this server", "…a
+server" and "…HQ" are one condition with different content.
+
+Wants it: **Manegarm Skunkworks**.
+
+### A nested cost with ALTERNATIVE costs (CR 1.16.11b / 9.12.3c)
+
+`Instruction::NestedCostUnless { cost, effect, payer }` holds one `Cost`, and
+`Cost` is a conjunction — every component is paid together. A sentence whose
+escape is a CHOICE of costs ("unless they either spend [click][click] or pay
+5[credit]") has nowhere to put the second one.
+
+Neither workaround is honest. Writing one cost drops whichever door was not
+written, and the two are not interchangeable: a Runner with 5[credit] and no
+clicks escapes by one and a Runner with two clicks and no credits by the other.
+Nesting one inside the other invents an instruction boundary the sentence does
+not have (9.11.3), and with it a checkpoint, a reaction window and an interrupt
+window between the two halves of a single choice.
+
+Wanted: the costs as a LIST on the one instruction, filtered by 1.16.1b's
+payability where it is offered — which is 9.12.3c's rule about a choice among
+options said for costs: the payer picks among the costs they can actually pay,
+and a payer who can pay none faces no choice and the effect resolves.
+
+Wants it: **Manegarm Skunkworks** (its only sentence, which also wants the
+condition above).
 
 ### A quantity that reads a player's click pool (CR 1.11)
 
@@ -381,3 +514,35 @@ chosen/chosen. Until then the sentence is written long-hand as one instruction
 that announces the partner and then exchanges it with this card — same
 instruction, same announcement, same windows — and **Tatu-Bola** is ticked and
 tested on that shape, annotated in its doc comment.
+
+### Two card-layer shorthands the EDSL does not name (CR 9.3.7a / 9.1.8a-b)
+
+NOT blocking any card, and NOT a kernel gap: both kernel words exist and both
+are correct. What is missing is a name for them in `crate::edsl`, whose
+re-exports are otherwise everything a deck file is built out of. Neither
+`AbilityDef` nor `Condition`/`StaticCond`/`AbilityFlag` is among them, so the
+two abilities below cannot be spelled with a `use crate::edsl::*` line alone —
+even though `CardBuilder::ability`, the documented escape hatch, exists to take
+exactly them ("reach for it when a card wants a combination the shorthands do
+not name … a static condition").
+
+Wanted, as two calls beside `declares_while`:
+
+- `declares_while_in_the_score_area_of(side, decls)` — a static ability whose
+  stated condition is `StaticCond::SourceInScoreAreaOf`. It is not
+  interchangeable with `declares_while`: 9.1.8b's first sentence reads THIS
+  condition as the statement that keeps the ability active in the Runner's
+  score area, and 4.5.4 leaves an agenda there inactive without it, so a
+  declaration written with a `StateRequirement` about the same zone would never
+  be read at all.
+- an interrupt (and a conditional) carrying `AbilityFlag::Access` — 9.1.8a's
+  "active while its source is the card being accessed", which is the only
+  moment a card in R&D, in HQ or unrezzed in a remote root has to act in.
+
+Until then both are assembled long-hand in `decks/mezzie_asa.rs`, in two
+private helpers annotated there — the same `AbilityDef` the shorthand would
+build, so nothing about the semantics is long-hand. **Global Food Initiative**
+is ticked and tested on the first (scored for 3, stolen for 2, on one board);
+**Project Vacheron**'s interrupt is written and tested on the second (stolen
+with four agenda counters out of a remote, and without them out of Archives),
+and it stays unticked for its second sentence alone.

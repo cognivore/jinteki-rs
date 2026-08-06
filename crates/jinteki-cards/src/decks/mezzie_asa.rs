@@ -15,6 +15,279 @@
 
 use crate::edsl::*;
 
+// Two of Mezzie's agendas speak from a zone their card is inactive in — one
+// from the Runner's score area (4.5.4), one from the moment it is being
+// accessed (9.1.8a) — and the kernel says both things already. What
+// `crate::edsl` does not do is NAME them: its re-exports are every kernel type
+// a card is built out of except `AbilityDef` and the three words below, so
+// neither ability can be spelled with the helpers. `CardBuilder::ability` is
+// the documented escape hatch for exactly this case ("reach for it when a card
+// wants a combination the shorthands do not name … a static condition"), so
+// the two abilities are assembled long-hand here and the shorthands they want
+// are recorded in `docs/vm/MEZZIE-QUEUE.md`. Nothing about the SEMANTICS is
+// long-hand: these are the same `AbilityDef`s a shorthand would build.
+use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, StaticCond};
+
+/// The printed phrase "while this card is in a player's score area" — CR
+/// 9.3.7a's stated condition, over the zone 4.5 gives each player.
+///
+/// It is also what keeps the ability ALIVE there. 4.5.4 makes agendas in the
+/// Runner's score area inactive "unless stated otherwise", and 9.1.8b's first
+/// sentence — abilities stating that they are active in a particular zone are
+/// active in that zone — reads this very condition as the statement. An
+/// ability that asked the same question any other way (a 9.6.5c requirement
+/// about the game state, say) would be inactive in the one zone it is about,
+/// and would therefore never be read at all.
+fn while_in_the_score_area_of(side: Side, decls: Vec<StaticDecl>) -> AbilityDef {
+    let mut def = AbilityDef::static_ability(decls);
+    def.condition = Some(Condition::Static(StaticCond::SourceInScoreAreaOf(side)));
+    def
+}
+
+/// A mandatory [interrupt] (9.3.6d/9.9.1) that is also active while its source
+/// is the card being ACCESSED (9.1.8a).
+///
+/// The access flag is not decoration. An agenda in R&D, in HQ or unrezzed in a
+/// remote root is INACTIVE (9.1.8), and the only moment this ability has to
+/// act in is the access that is about to steal it — so without 9.1.8a's
+/// exception the interrupt is never active when its own condition is met.
+fn access_interrupt(cond: TriggerCond, instrs: Vec<Instruction>) -> AbilityDef {
+    AbilityDef::conditional(cond, instrs, false)
+        .with_flag(AbilityFlag::Interrupt)
+        .with_flag(AbilityFlag::Access)
+}
+
+// ---------------------------------------------------------------------------
+// Agendas
+// ---------------------------------------------------------------------------
+
+/// Global Food Initiative — Agenda: Initiative. 5/3.
+/// "Global Food Initiative is worth 1 fewer agenda point while in the Runner's
+///  score area."
+///
+/// COMPLETE. One printed sentence, and it is permanently true rather than
+/// something that happens — so a static declaration (9.4), never an ability
+/// that resolves when the agenda changes hands.
+///
+/// 2.5's point value is a CHARACTERISTIC, read through the same 9.12.1a
+/// pipeline as strength: the value is recomputed wherever it is asked (1.17.1's
+/// score, 1.17.2's win condition, the record a score or steal writes), so the
+/// card is worth 3 in one score area and 2 in the other without anything ever
+/// being stamped on it. An ability that fired on the steal and subtracted a
+/// point would be a different card — forfeit it out of the Runner's score area
+/// and back into the Corp's and the printed one goes back to 3.
+///
+/// Where the ability LIVES is the whole difficulty. 4.5.4 makes an agenda in
+/// the Runner's score area inactive "unless stated otherwise", so an ability
+/// that spoke about that zone in any other words would be switched off in the
+/// only zone it is about. 9.1.8b's first sentence is the exception this card is
+/// written on, and [`while_in_the_score_area_of`] is that statement — the
+/// condition is the zone, so the same call both says WHEN the declaration
+/// applies and keeps the ability active where it applies.
+pub fn global_food_initiative() -> Card {
+    card("Global Food Initiative")
+        .corp()
+        .agenda(5, 3)
+        .faction("Neutral")
+        .subtypes(&["Initiative"])
+        .text("Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area.")
+        .ability(while_in_the_score_area_of(
+            Runner,
+            vec![StaticDecl::SelfAgendaPointsMod(amount(-1))],
+        ))
+        .named("1 fewer in the runner's score area")
+        .build()
+}
+
+/// Luminal Transubstantiation — Agenda: Research. 3/2.
+/// "When you score this agenda, gain [click][click][click]. You cannot score
+///  agendas for the remainder of the turn.
+///  Limit 1 per deck."
+///
+/// PARTIAL: the clicks arrive; the sentence that pays for them does not.
+///
+/// The printed line is two sentences and therefore two instructions (9.11.3)
+/// of ONE conditional ability (9.6.1) — the trigger is stated once and governs
+/// both. The first is written; the second is marked, so the ability keeps the
+/// one instruction it can say.
+///
+/// UNIMPLEMENTED: "You cannot score agendas for the remainder of the turn."
+/// The ACT is not the problem — 1.17.3's scoring is one of the two acts the
+/// prohibition vocabulary names, and 1.2.2 would give it precedence over the
+/// (S) option exactly as A Teia's does. What has no words is the SCOPE
+/// together with the DURATION. A prohibition with a stated duration is
+/// 9.10.1's lingering effect, and the kernel's lingering prohibition names ONE
+/// object, fixed when the effect is created: it is the right shape for
+/// Saraswati Mnemonics' "that card" and it cannot say "agendas". The
+/// description-shaped prohibition that exists beside it is a STATIC
+/// declaration of an active card, which has no duration at all — written that
+/// way, forfeiting this agenda out of the score area later the same turn (24/7
+/// News Cycle, Archer) would lift a prohibition the card says nothing about
+/// lifting, and 9.10.1 is explicit that a lingering effect outlives its
+/// source. Feeding the lingering one a description is not a third option: the
+/// position resolves through the announced targets (1.15.2), so a sentence
+/// that announces nothing prohibits nothing, silently — which is what a first
+/// attempt at this card did. The general capability wanted is on
+/// MEZZIE-QUEUE.md's Blockers.
+///
+/// "Limit 1 per deck" is a deckbuilding restriction (1.4), not a sentence this
+/// card does: it is carried as printed text and denotes into nothing, the same
+/// treatment Rebirth's identical line already has.
+pub fn luminal_transubstantiation() -> Card {
+    card("Luminal Transubstantiation")
+        .corp()
+        .agenda(3, 2)
+        .faction("Haas-Bioroid")
+        .subtypes(&["Research"])
+        .text("When you score this agenda, gain [click][click][click]. You cannot score agendas for the remainder of the turn.")
+        .text("Limit 1 per deck.")
+        .when(scored(), [gain_clicks(Corp, 3)])
+        .named("three clicks on the score")
+        .unimplemented("You cannot score agendas for the remainder of the turn.")
+        .build()
+}
+
+/// Project Vacheron — Agenda: Research. 5/3.
+/// "[interrupt] → When this agenda would be added to the Runnerʼs score area
+///  from anywhere except Archives, instead it is added to their score area with
+///  4 hosted agenda counters.
+///  While this agenda is in the Runnerʼs score area with 1 or more hosted
+///  agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs
+///  turn begins, remove 1 hosted agenda counter.“"
+///
+/// PARTIAL: the steal arrives with its counters; what the counters DO is
+/// marked.
+///
+/// The first sentence is 9.9.8c's replacement effect, created ahead of the
+/// effect it replaces by an interrupt on the imminent steal. 9.9.9c is the part
+/// that makes it a replacement rather than a prevention: the agenda IS still
+/// added to the Runner's score area — the replacement's result still includes
+/// the effect it replaced — and the replacement cannot then apply to its own
+/// result. So the Runner steals it, and 1.17.7's "when stolen" abilities are
+/// met exactly as they would have been.
+///
+/// The counters are AGENDA counters (1.9.5), which are not advancement
+/// counters and are not touched by 1.17.5's return of the advancement counters
+/// to the bank; they are hosted on a card in a score area, which is a place
+/// only 4.5 and this card ever look at.
+///
+/// The ability has to be active in three zones the card is inactive in — R&D,
+/// HQ, and a remote root — because the sentence names every one of them by
+/// exclusion. 9.1.8a is the rule that reaches them: an ability is active while
+/// its source is the card being accessed, which is the only moment a steal is
+/// ever imminent. See [`access_interrupt`].
+///
+/// ANNOTATED SHAPE. "From anywhere except Archives" is written as a 9.6.5c
+/// requirement INSIDE the instruction rather than on the trigger condition,
+/// because the condition the kernel has for an imminent steal of this agenda
+/// takes no requirements. It is load-bearing where it stands, and measured to
+/// be: with the requirement removed, a copy stolen out of Archives arrives with
+/// the four counters. So the difference the shape makes is only that the
+/// interrupt joins a window it then does nothing in — 9.9.8c's replacement is
+/// the only thing this ability does, and it is not created either way. The
+/// requirement itself is exact: 8.5.13's facedown Archives and the faceup half
+/// are one zone (4.4), and the zone the agenda is in when the steal becomes
+/// imminent is what the sentence asks about.
+///
+/// UNIMPLEMENTED: the second sentence, on three counts. It is one static
+/// ability whose stated condition is a zone AND a number of hosted counters,
+/// and 9.3.7a's condition slot holds one or the other and never both. Its
+/// first declaration SETS the point value ("it is worth 0 agenda points"),
+/// which is 9.12.1a's second stage, and the declaration that exists modifies
+/// the value instead — a subtraction of the printed 3 gives 0 only while
+/// nothing else is modifying it. Its second declaration grants the card a
+/// stated CONDITIONAL ability, and the only stated ability a declaration can
+/// grant is a subroutine. Written with any of the three approximated the card
+/// would be worth the wrong number of points in the Runner's score area, which
+/// is the one thing this agenda is about. The general capabilities wanted are
+/// on MEZZIE-QUEUE.md's Blockers.
+pub fn project_vacheron() -> Card {
+    card("Project Vacheron")
+        .corp()
+        .agenda(5, 3)
+        .faction("Haas-Bioroid")
+        .subtypes(&["Research"])
+        .text("[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters.")
+        .text("While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“")
+        .ability(access_interrupt(
+            TriggerCond::WouldStealSelfAgenda,
+            vec![if_met(
+                &[source_not_in_archives()],
+                [Instruction::CreateLingeringEffect {
+                    payload: LingeringSpec::Replacement {
+                        applies_to: EffectClass::StealAgenda,
+                        with: ReplacementTransform::StealWithHostedCounters {
+                            kind: CounterKind::Agenda,
+                            amount: 4,
+                        },
+                        optional: false,
+                    },
+                    duration: WantedDuration::ThisRun,
+                }],
+            )],
+        ))
+        .named("stolen with four agenda counters")
+        .unimplemented("While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“")
+        .build()
+}
+
+/// Project Vitruvius — Agenda: Research. 3/2.
+/// "When you score this agenda, place 1 agenda counter on it for each hosted
+///  advancement counter past 3.
+///  Hosted agenda counter: Add 1 card from Archives to HQ."
+///
+/// COMPLETE. Two printed sentences: a conditional ability met by the scoring,
+/// and a paid ability whose trigger cost is one of the counters it placed.
+///
+/// The extra advancement counters do NOT survive the scoring — 1.17.5 returns
+/// every advancement counter on a scored agenda to the bank as it becomes
+/// uninstalled, before this ability resolves. 1.17.8 is the rule that makes the
+/// sentence mean anything at all: an ability meeting its trigger condition from
+/// its agenda being scored reads that agenda's LAST KNOWN number of advancement
+/// counters, so "for each hosted advancement counter past 3" is answered from
+/// the moment scoring began and not from the empty card in the score area.
+/// Project Beale prints the same arithmetic at a different rate.
+///
+/// "Past 3" is the printed 3 and not the advancement requirement, which happens
+/// to be the same number here (1.18: they are different questions, and a
+/// declaration modifying the requirement would not move this). A card scored on
+/// exactly its requirement places nothing, and 9.12.2's calculated quantity
+/// floors at zero rather than going negative.
+///
+/// The paid ability is 1.16.1's trigger cost — everything before the colon —
+/// spending one of the hosted agenda counters, which is what AstroScript Pilot
+/// Program already does with the counter it places. 1.15.2c is why "from
+/// Archives" is written: a description reaches installed cards unless it names
+/// another zone, and 4.4.4's inactive cards there are no obstacle to being
+/// added to a hand.
+pub fn project_vitruvius() -> Card {
+    card("Project Vitruvius")
+        .corp()
+        .agenda(3, 2)
+        .faction("Haas-Bioroid")
+        .subtypes(&["Research"])
+        .text("When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3.")
+        .text("Hosted agenda counter: Add 1 card from Archives to HQ.")
+        .when(
+            scored(),
+            [place_on_q(
+                this_card(),
+                CounterKind::Agenda,
+                Quantity::Minus(
+                    Box::new(per_hosted_counter(CounterKind::Advancement)),
+                    Box::new(amount(3)),
+                ),
+            )],
+        )
+        .named("a counter for every advancement past three")
+        .paid(
+            hosted_counters(CounterKind::Agenda, 1),
+            [add_to_hand(choose(1, &[in_archives()]))],
+        )
+        .named("archives to hq")
+        .build()
+}
+
 // ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
@@ -552,6 +825,98 @@ pub fn fully_operational() -> Card {
 }
 
 // ---------------------------------------------------------------------------
+// Upgrades
+// ---------------------------------------------------------------------------
+
+/// Ash 2X3ZB9CY — Upgrade: Bioroid. Rez 2, trash 3. ◆
+/// "Whenever there is a successful run on this server, Trace[4]. If successful,
+///  the Runner cannot access any cards other than Ash 2X3ZB9CY for the
+///  remainder of this run."
+///
+/// COMPLETE. One printed sentence and one instruction: 10.8's trace, whose
+/// "if successful" branch is part of the same instruction rather than a second
+/// one — 10.8.6 resolves the outcome as the trace completes.
+///
+/// WHEN it happens is the card. 6.9.5a declares the run successful and then
+/// opens a reaction window, and the Runner's breach is step 6.9.5b — so this
+/// ability resolves BEFORE the Runner accesses anything, which is the only
+/// order in which "cannot access any cards other than this one" can mean
+/// anything. (It is also why the Runner is still choosing whether to trash Ash
+/// with the access it does get.) 4.6.6e is what "on this server" reads: the
+/// upgrade sits in the root, and the run's attacked server is compared against
+/// the server its source is in, so a rezzed copy in a remote says nothing
+/// about a run on HQ.
+///
+/// The restriction is 7.4.2 in the CR's own words: a card the Runner is
+/// prohibited from accessing "ceases to be a candidate", and cannot become one
+/// again while the prohibition lasts. So the Runner does not access fewer
+/// cards than they were entitled to — there is simply one candidate left, and
+/// it is the upgrade that did this to them. It is a lingering effect for the
+/// remainder of the RUN (9.10.4 binds it to the run in progress), so a second
+/// run on the same server that turn is unaffected.
+pub fn ash_2x3zb9cy() -> Card {
+    card("Ash 2X3ZB9CY")
+        .corp()
+        .upgrade()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Bioroid"])
+        .cost(2)
+        .trash_cost(3)
+        .unique()
+        .text("Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run.")
+        .when(
+            TriggerCond::SuccessfulRunOnServer,
+            [trace(4, [Instruction::RestrictAccessToSelf])],
+        )
+        .named("trace on a successful run here")
+        .build()
+}
+
+/// Manegarm Skunkworks — Upgrade. Rez 2, trash 3. ◆
+/// "Whenever the Runner approaches this server, end the run unless they either
+///  spend [click][click] or pay 5[credit]."
+///
+/// UNIMPLEMENTED: the card's only sentence, on two counts that are each enough
+/// on their own.
+///
+/// "Approaches THIS server" is 6.9.4g's step with the server as a stipulation,
+/// and the approach condition takes none. The kernel's other two run
+/// conditions about a server carry it — a successful run "on this server"
+/// (Ash, above) and a run on this server ending (the AMAZE class) both compare
+/// the attacked server against the server the source is in — but the approach
+/// was written for the Formicary class, whose sentence names A server and means
+/// every one of them. Written with the word that exists, a rezzed copy in a
+/// remote would end runs on HQ and R&D, which is not a smaller card than the
+/// printed one; it is a different and much larger one.
+///
+/// "Unless they either spend [click][click] or pay 5[credit]" is 1.16.11b's
+/// nested cost with TWO costs, and the nested cost holds one. The two are not
+/// interchangeable and neither is a subset of the other: 1.11 clicks and 1.10
+/// credits are different resources, and a Runner with 5[credit] and no clicks
+/// escapes by one door while a Runner with two clicks and no credits escapes by
+/// the other. Writing it as one cost drops whichever door was not written and
+/// ends runs the Runner had paid to continue; writing it as two nested costs
+/// one inside the other invents an instruction boundary the sentence does not
+/// have (9.11.3), and with it a checkpoint and an interrupt window between the
+/// two halves of a single choice. 9.12.3c is the shape the sentence actually
+/// has — a choice among options, restricted to the ones that can be fully
+/// resolved — so a Runner who can afford neither faces no choice at all and
+/// the run ends. The general capabilities wanted are on MEZZIE-QUEUE.md's
+/// Blockers.
+pub fn manegarm_skunkworks() -> Card {
+    card("Manegarm Skunkworks")
+        .corp()
+        .upgrade()
+        .faction("Haas-Bioroid")
+        .cost(2)
+        .trash_cost(3)
+        .unique()
+        .text("Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit].")
+        .unimplemented("Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit].")
+        .build()
+}
+
+// ---------------------------------------------------------------------------
 // Ice
 // ---------------------------------------------------------------------------
 
@@ -832,6 +1197,10 @@ pub fn tour_guide() -> Card {
 pub fn deck() -> Vec<Card> {
     vec![
         super::identities::corp_haas_bioroid::asa_group(),
+        global_food_initiative(),
+        luminal_transubstantiation(),
+        project_vacheron(),
+        project_vitruvius(),
         estelle_moon(),
         jeeves_model_bioroids(),
         lakshmi_smartfabrics(),
@@ -844,6 +1213,8 @@ pub fn deck() -> Vec<Card> {
         flood_the_market(),
         friends_in_high_places(),
         fully_operational(),
+        ash_2x3zb9cy(),
+        manegarm_skunkworks(),
         tatu_bola(),
         vanilla(),
         fairchild_3_0(),
