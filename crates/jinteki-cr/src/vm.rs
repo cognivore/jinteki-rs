@@ -6779,6 +6779,22 @@ impl Vm {
                         1 => {
                             let only = resolvable[0];
                             let inject = wrap_all(options[only].1.clone(), chooser_override);
+                            // 9.12.3c left exactly one option resolvable, so
+                            // nobody was asked — but WHICH one resolved is
+                            // still the thing a reader cannot see in the
+                            // state, so it is recorded exactly as an answered
+                            // choice is.
+                            let src = {
+                                let Some(Frame::Ability(af)) = self.frames.last() else {
+                                    unreachable!()
+                                };
+                                af.source.obj
+                            };
+                            self.changes.record(GameChange::OptionChosen {
+                                source: src,
+                                side: controller,
+                                label: options[only].0,
+                            });
                             if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                                 for (k, ins) in inject.into_iter().enumerate() {
                                     af.instructions.insert(af.idx + 1 + k, ins);
@@ -9366,7 +9382,8 @@ impl Vm {
                     with: None,
                 });
             }
-            self.changes.record(GameChange::CardDrawn { side, obj: id });
+            let src = self.current_source();
+            self.changes.record(GameChange::CardDrawn { side, obj: id, source: src });
         }
     }
 
@@ -16500,7 +16517,8 @@ impl Vm {
                 return;
             }
             let id = self.draw_card_silent(side).unwrap();
-            self.changes.record(GameChange::CardDrawn { side, obj: id });
+            let src = self.current_source();
+            self.changes.record(GameChange::CardDrawn { side, obj: id, source: src });
         }
     }
 
@@ -17594,6 +17612,18 @@ impl Vm {
                         .collect();
                     let chosen = resolvable.get(i).copied().unwrap_or(0);
                     let inject = wrap_all(options[chosen].1.clone(), chooser_override);
+                    // 9.11.4g: WHICH option was taken is the one part of a
+                    // modal card the resulting state never says. Recorded
+                    // here, where it is known, and read back by the log.
+                    let (source, chooser) = {
+                        let Some(Frame::Ability(af)) = self.frames.last() else { unreachable!() };
+                        (af.source.obj, chooser_override.unwrap_or(af.controller))
+                    };
+                    self.changes.record(GameChange::OptionChosen {
+                        source,
+                        side: chooser,
+                        label: options[chosen].0,
+                    });
                     if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                         for (k, ins) in inject.into_iter().enumerate() {
                             af.instructions.insert(idx + 1 + k, ins);

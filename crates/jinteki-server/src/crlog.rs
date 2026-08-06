@@ -130,6 +130,35 @@ fn sub_label(vm: &Vm, ice: ObjectId, index: usize) -> Option<&'static str> {
     vm.current_subs(ice).get(index).map(|(_, d)| d.label)
 }
 
+/// The line's SPEAKER — "Corp: " on its own, or "Corp: Predictive Planogram —"
+/// where a card is what did it.
+///
+/// One shape, everywhere: `<Side>: <Card> — <effect>`. The log used to say
+/// only the effect ("Corp: gains 1[c]."), which is the same sentence whether
+/// the credit came from a click, from Hedge Fund or from an identity that
+/// flipped — a reader could see WHAT the game did and never WHY. The change
+/// records already carry `source` (9.1.3: the ability's source object); this
+/// reads it back.
+///
+/// CR 10.2.2b still governs: a source this viewer may not see is not named,
+/// and the line falls back to the bare speaker rather than saying "a card did
+/// something" — the vaguer line is the one that already existed and it leaks
+/// nothing. `card_name_for` is the same entitlement predicate the rest of the
+/// module uses.
+///
+/// The em dash is the shape [`abilityText`](../../ui/app.js) already renders
+/// for "this card — this ability", so a log line and a rail chip about the
+/// same ability read the same way.
+fn did(vm: &Vm, viewer: Side, side: Side, src: Option<ObjectId>) -> String {
+    let named = src.filter(|id| vm.identity_visible_to(*id, viewer)).and_then(|id| {
+        vm.st.objects.get(&id).map(|o| o.printed.name)
+    });
+    match named {
+        Some(n) => format!("{}: {n} —", side_name(side)),
+        None => format!("{}:", side_name(side)),
+    }
+}
+
 /// ONE record, as ONE viewer is entitled to read it. `None` is "this record
 /// is bookkeeping, not news" — the CR records a great deal that no player
 /// would say out loud (every cost of zero, every click spent, every internal
@@ -144,6 +173,9 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         Some(s) => format!(" from {}", server_label(s)),
         None => String::new(),
     };
+    // "<Side>: <Card> — <what it did>" (see `did`). The speaker alone, for a
+    // change no card is responsible for.
+    let by = |side: Side, src: Option<ObjectId>| did(vm, viewer, side, src);
     let line = match c {
         GameChange::GameBegan => "The game begins.".to_string(),
         GameChange::TurnBegan { side } => {
@@ -151,11 +183,11 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         }
 
         // ── credits, clicks, costs ─────────────────────────────────────
-        GameChange::CreditsGained { side, amount, .. } => {
-            format!("{}: gains {amount}[c].", side_name(*side))
+        GameChange::CreditsGained { side, amount, source } => {
+            format!("{} gains {amount}[c].", by(*side, *source))
         }
-        GameChange::CreditsLost { side, amount, .. } => {
-            format!("{}: loses {amount}[c].", side_name(*side))
+        GameChange::CreditsLost { side, amount, source } => {
+            format!("{} loses {amount}[c].", by(*side, *source))
         }
         GameChange::ClicksGained { side, amount } => {
             format!("{}: gains {amount}[click].", side_name(*side))
@@ -166,13 +198,23 @@ pub fn narrate(vm: &Vm, c: &GameChange, viewer: Side) -> Option<String> {
         // CR 1.16.3: paying credits is the ONLY record of the spend — the
         // pool is decremented inside the payment, without a `CreditsLost`.
         // The trashed and forfeited parts of a cost report themselves.
-        GameChange::CostPaid { side, credits, .. } if *credits > 0 => {
-            format!("{}: pays {credits}[c].", side_name(*side))
+        GameChange::CostPaid { side, credits, source, .. } if *credits > 0 => {
+            format!("{} pays {credits}[c].", by(*side, *source))
+        }
+
+        // ── what a card's own text did (9.11.4g) ───────────────────────
+        // The chosen mode of a modal card. Everything else in this match
+        // reports a change to the game state; this reports a DECISION, which
+        // is the only part of a modal card the state never shows. The label
+        // is the option exactly as it was offered, so the line can be read
+        // against the prompt the player answered.
+        GameChange::OptionChosen { source, side, label } => {
+            format!("{} resolves {}.", by(*side, Some(*source)), label.trim_end_matches('.'))
         }
 
         // ── cards moving ───────────────────────────────────────────────
-        GameChange::CardDrawn { side, obj } => {
-            format!("{}: draws {}.", side_name(*side), card(*obj))
+        GameChange::CardDrawn { side, obj, source } => {
+            format!("{} draws {}.", by(*side, *source), card(*obj))
         }
         GameChange::CardPlayed { obj, side } => {
             format!("{}: plays {}.", side_name(*side), card(*obj))
@@ -485,6 +527,9 @@ mod tests {
             | GameChange::AccessEnded { obj }
             | GameChange::AbilityUsed { source: obj }
             | GameChange::TrashAbilityUsed { source: obj, .. }
+            // 9.11.4g: the chosen option is ABOUT the card that offered it,
+            // so the same entitlement governs naming it.
+            | GameChange::OptionChosen { source: obj, .. }
             | GameChange::DamagePrevented { by: obj, .. } => vec![*obj],
             GameChange::CardHosted { obj, host } => vec![*obj, *host],
             GameChange::CounterRemoved { obj, .. } => obj.iter().copied().collect(),
@@ -565,7 +610,7 @@ mod tests {
 
         let mut checked = [0usize; 2];
         for c in vm.changes.log.clone() {
-            let GameChange::CardDrawn { side, obj } = c else { continue };
+            let GameChange::CardDrawn { side, obj, .. } = c else { continue };
             // Only while it is still in hand — a card played since is open
             // information to everyone, and says nothing about the rule.
             if vm.st.objects[&obj].zone != Zone::Hand(side) {
@@ -672,5 +717,93 @@ mod tests {
             vm.changes.log.len()
         );
         assert_no_leaks(&vm, 0);
+    }
+
+    /// The log says WHAT A CARD DID, in one shape: `<Side>: <Card> — <effect>`.
+    ///
+    /// A real modal card, played for real. Before this, the whole of
+    /// Predictive Planogram's turn read "Corp: plays Predictive Planogram." /
+    /// "Corp: gains 3[c]." — the same second line a click for credit writes,
+    /// with nothing saying which of the card's two modes the Corp had chosen.
+    /// Now the choice is a line of its own and the effect carries the card
+    /// that caused it, so the decision is auditable from the log alone.
+    #[test]
+    fn a_modal_cards_log_names_the_card_and_the_mode_it_resolved() {
+        use jinteki_cr::object::Zone;
+        use jinteki_cr::plan::Kind;
+
+        let mut vm = Vm::empty(4472);
+        let pp = vm.new_object(
+            jinteki_cards::find("Predictive Planogram").unwrap().printed,
+            Zone::Hand(Side::Corp),
+        );
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(pp);
+        for _ in 0..8 {
+            let c = vm.new_object(cards::hedge_fund(), Zone::Deck(Side::Corp));
+            vm.st.deck.get_mut(&Side::Corp).unwrap().push(c);
+        }
+        for _ in 0..3 {
+            let c = vm.new_object(cards::sure_gamble(), Zone::Deck(Side::Runner));
+            vm.st.deck.get_mut(&Side::Runner).unwrap().push(c);
+        }
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let from = vm.changes.log.len();
+        let mut s = Script::new(
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(pp))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("Draw 3 cards."))
+                .when(Match::action().once(), Reply::Halt),
+            Plan::runner(),
+        );
+        s.run(&mut vm);
+
+        let corp: Vec<String> = vm.changes.log[from..]
+            .iter()
+            .filter_map(|c| narrate(&vm, c, Side::Corp))
+            .collect();
+        let joined = corp.join("\n");
+        assert!(
+            corp.iter().any(|l| l == "Corp: Predictive Planogram — resolves Draw 3 cards."),
+            "the chosen MODE is named, by the card that offered it:\n{joined}"
+        );
+        assert_eq!(
+            corp.iter().filter(|l| l.starts_with("Corp: Predictive Planogram — draws ")).count(),
+            3,
+            "…and each card it drew is attributed to it:\n{joined}"
+        );
+        // The rules' own draw keeps its bare form: 5.6.2b's mandatory draw is
+        // nobody's card, and a line claiming it was would be a lie.
+        assert!(
+            corp.iter().any(|l| l.starts_with("Corp: draws ")),
+            "the mandatory draw stays unattributed:\n{joined}"
+        );
+        assert_no_leaks(&vm, from);
+    }
+
+    /// The other half of the same rule: a change the RULES caused carries no
+    /// card, so the basic action's own credit reads exactly as it always did.
+    #[test]
+    fn a_basic_action_is_not_attributed_to_any_card() {
+        let mut vm = Vm::new_game(setup(mixed_corp_deck(), 4473));
+        let from = vm.changes.log.len();
+        let mut s = Script::new(
+            Plan::corp().when(Match::action().nth(2), Reply::Halt).otherwise_click_credit(),
+            Plan::runner().otherwise_click_credit(),
+        );
+        s.run(&mut vm);
+        let lines: Vec<String> = vm.changes.log[from..]
+            .iter()
+            .filter_map(|c| narrate(&vm, c, Side::Corp))
+            .collect();
+        assert!(
+            lines.iter().any(|l| l == "Corp: gains 1[c]."),
+            "a click for credit is the rules', not a card's: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.starts_with("Corp: Test Corp —")),
+            "and it is not blamed on the identity that happened to be out: {lines:?}"
+        );
     }
 }

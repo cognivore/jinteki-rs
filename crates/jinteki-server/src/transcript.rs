@@ -312,7 +312,7 @@ mod tests {
         let mut t = Transcript::open_in(&dir, "abc123");
         t.started(7, "you", "bot", json!({"corp": "gauntlet"}));
         t.change(&GameChange::GameBegan);
-        t.change(&GameChange::CardDrawn { side: Side::Corp, obj: ObjectId(3) });
+        t.change(&GameChange::CardDrawn { side: Side::Corp, obj: ObjectId(3), source: None });
         t.decision(Side::Runner, &DecisionSpec::Mulligan);
         t.answer(Side::Runner, "human", &DecisionAnswer::KeepHand);
         t.flush();

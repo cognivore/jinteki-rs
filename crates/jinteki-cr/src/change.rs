@@ -74,7 +74,12 @@ pub enum GameChange {
     /// [`GameChange::CardRezzed`] carries the card type.
     ActionCompleted { side: Side, action: ActionIdentity },
     ClicksLost { side: Side, amount: u32 },
-    CardDrawn { side: Side, obj: ObjectId },
+    /// CR 8.4: a card was drawn. `source` is the ability that said to (9.1.3),
+    /// and `None` is a draw the RULES required — 5.6.2b's mandatory draw and
+    /// the basic draw action, which no card can be said to have caused. It is
+    /// the same field [`GameChange::CreditsGained`] carries, and the log tells
+    /// "Corp: Predictive Planogram — draws X." from "Corp: draws X." with it.
+    CardDrawn { side: Side, obj: ObjectId, source: Option<ObjectId> },
     /// One record per point batch: `cards` are the simultaneous random trashes.
     ///
     /// `responsible` is 10.4.1's responsible player, a fact about the
@@ -311,6 +316,21 @@ pub enum GameChange {
     },
     /// CR 9.1.6: an ability/source was used.
     AbilityUsed { source: ObjectId },
+    /// CR 9.11.4g: a player chose one of an instruction's options, and this
+    /// is WHICH — the option's own printed label, as it was offered.
+    ///
+    /// The choice is the only part of a modal card that the resulting state
+    /// does not say. "Corp: gains 3[c]." is true of Predictive Planogram, of
+    /// Hedge Fund and of an identity's trigger alike; nothing downstream can
+    /// reconstruct that the Corp was ASKED and answered "Gain 3[credit]."
+    /// rather than "Draw 3 cards." So the answer is recorded where it is
+    /// made, and the log reads it back — a modal card's decision is a thing
+    /// players audit, and 10.2.1 makes it open information.
+    ///
+    /// `label` is the offered string verbatim rather than an index, because
+    /// an index means nothing to a reader and the resolvable-options filter
+    /// (9.12.3c) makes indices differ between the offer and the printed list.
+    OptionChosen { source: ObjectId, side: Side, label: &'static str },
     /// A trash ability was used. `basic` says WHICH: `true` is 7.1.5's basic
     /// trash ability, where the Runner pays an accessed card's trash cost;
     /// `false` is a card's own printed [trash] ability, whose 1.19.4 trigger
