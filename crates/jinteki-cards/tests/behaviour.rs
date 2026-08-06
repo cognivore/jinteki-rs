@@ -8682,6 +8682,70 @@ fn strategic_innovations_recycles_archives_only_while_hb_leads_the_rezzed_cards(
     }
 }
 
+/// The same sentence, counted over cards the CARD LAYER printed rather than
+/// cards this file made up.
+///
+/// 2.13.1 makes a faction a printed characteristic, and the kernel compares it
+/// as a `&'static str` (`TriggerRequirement::LargestFactionGroupIs`). Every
+/// other test of that requirement builds its cards with the local
+/// `of_faction` helper, so the spelling on both sides of the comparison is
+/// written in this file: were the card layer to print "HB" or "haas-bioroid",
+/// the rule would put each card in a group of its own and quietly stop firing,
+/// and no test would notice. That is the shape CR 3.6.5's region rule was
+/// broken in — a fixture agreeing with the defect — so this one names REAL
+/// cards on both sides and lets the card layer supply the strings.
+///
+/// Estelle Moon and Jeeves Model Bioroids print [haas-bioroid]; Jackson Howard
+/// prints [nbn]. Rezzing the second Haas-Bioroid card is the whole difference
+/// between a tie (which "more than" excludes) and a strict lead.
+#[test]
+fn strategic_innovations_counts_the_factions_real_cards_print() {
+    for leading in [false, true] {
+        let mut vm = Vm::empty(6182);
+        tk::install_identity(
+            &mut vm,
+            card("Strategic Innovations: Future Forward"),
+            Side::Corp,
+        );
+        tk::install_root(&mut vm, card("Estelle Moon"), ServerId::Remote(1), true);
+        tk::install_root(&mut vm, card("Jackson Howard"), ServerId::Remote(2), true);
+        tk::install_root(
+            &mut vm,
+            card("Jeeves Model Bioroids"),
+            ServerId::Remote(3),
+            leading,
+        );
+        let buried = vm.new_object(tk::corp_filler("Buried"), Zone::Discard(Side::Corp));
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(buried);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        let deck_before = vm.st.deck[&Side::Corp].len();
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::targets().once(), Reply::Targets(vec![buried]))
+                .when(Match::action(), Reply::Halt),
+            Plan::runner().otherwise_click_credit(),
+        );
+        assert_eq!(vm.st.turn_side, Side::Corp, "the Runner's turn ended: {}", t.tail(30));
+        assert_eq!(
+            vm.st.discard[&Side::Corp].len(),
+            usize::from(!leading),
+            "Archives emptied exactly when the two cards the card layer prints as \
+             Haas-Bioroid outnumbered the one it prints as NBN (leading={leading}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.deck[&Side::Corp].len(),
+            deck_before - 1 + usize::from(leading),
+            "and the card went into R&D (leading={leading}): {}",
+            t.tail(30)
+        );
+    }
+}
+
 /// Fringe Applications: "If you have more [weyland-consortium] cards rezzed
 /// than any other faction, when the Runner's turn begins, place an
 /// advancement token on a piece of ice."
@@ -18649,12 +18713,12 @@ fn spin_doctor_removes_itself_from_the_game_to_shuffle_two_of_three_back() {
 /// Enhanced Login Protocol: "This operation is not trashed until another
 /// current is played or an agenda is stolen." (8.6.6c / 3.5.1b.)
 ///
-/// PARTIAL — the additional cost on the basic run action is unsayable (see the
-/// card's doc comment and MEZZIE-QUEUE.md's Blockers), and the test says so out
-/// loud so the marker cannot quietly disappear. The sentence that IS expressed
-/// is the one that keeps the card on the table at all: played, it stays in the
-/// play area instead of being trashed at step 8.6.7g, and the Runner stealing
-/// an agenda is what ends it.
+/// One of the card's two printed sentences; the additional cost on the basic
+/// run action is the other, and it is driven by
+/// [`enhanced_login_protocol_tolls_only_the_first_run_of_the_turn`]. The
+/// sentence asserted here is the one that keeps the card on the table at all:
+/// played, it stays in the play area instead of being trashed at step 8.6.7g,
+/// and the Runner stealing an agenda is what ends it.
 #[test]
 fn enhanced_login_protocol_stays_in_the_play_area_until_an_agenda_is_stolen() {
     let mut vm = Vm::empty(9131);
@@ -19873,10 +19937,10 @@ fn hacktivist_meeting_stays_in_the_play_area_until_an_agenda_is_scored() {
 
 /// I've Had Worse: "Draw 3 cards."
 ///
-/// PARTIAL — "Whenever I've Had Worse is trashed by taking net or meat
-/// damage, draw 3 cards." is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear.
+/// The play ability alone. "Whenever I've Had Worse is trashed by taking net
+/// or meat damage, draw 3 cards." is the card's other printed sentence, and it
+/// is driven by
+/// [`ive_had_worse_draws_three_more_on_a_net_or_meat_trash_and_not_on_a_core_one`].
 #[test]
 fn ive_had_worse_draws_three() {
     let mut vm = Vm::empty(9407);
@@ -19952,10 +20016,10 @@ fn ive_had_worse_draws_three_more_on_a_net_or_meat_trash_and_not_on_a_core_one()
 
 /// Steelskin Scarring: "Draw 3 cards."
 ///
-/// PARTIAL — "When this event is trashed from your grip or stack, you may
-/// draw 2 cards." is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear.
+/// The play ability alone. "When this event is trashed from your grip or
+/// stack, you may draw 2 cards." is the card's other printed sentence, and it
+/// is driven by
+/// [`steelskin_scarring_draws_two_more_when_it_is_trashed_from_the_grip_or_the_stack`].
 #[test]
 fn steelskin_scarring_draws_three() {
     let mut vm = Vm::empty(9408);
@@ -20301,9 +20365,9 @@ fn raindrops_cut_stone_counts_every_subroutine_that_resolved_including_the_last(
 /// Stimhack: "Place 9[credit] on this event, then run any server." / "When
 /// that run ends, suffer 1 core damage. This damage cannot be prevented."
 ///
-/// PARTIAL — the credit-pool sentence is unsayable (see the card's doc comment
-/// and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the
-/// marker cannot quietly disappear.
+/// The run and the damage. The credit-pool half of the first sentence — that
+/// the 9 credits are spendable during that run — is driven by
+/// [`stimhack_puts_its_nine_credits_in_the_pool_for_the_run`].
 ///
 /// Everything else is asserted on one board, and the unpreventability is
 /// asserted against a card that really would have stopped it: a free paid
