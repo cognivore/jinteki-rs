@@ -1472,7 +1472,10 @@ pub fn vanilla_upgrade(name: &'static str, rez: u32) -> PrintedCard {
 /// A region upgrade (8.5.6a must-trash class).
 pub fn region_upgrade(name: &'static str, rez: u32) -> PrintedCard {
     let mut c = vanilla_upgrade(name, rez);
-    c.subtypes = vec!["region"];
+    // "Region", the way NSG data and every real card print it. This fixture
+    // spelled it lowercase, matching a kernel that also spelled it lowercase —
+    // so `like_cards` was wrong for every real card and the test still passed.
+    c.subtypes = vec!["Region"];
     c
 }
 

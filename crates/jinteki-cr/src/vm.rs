@@ -7798,8 +7798,19 @@ impl Vm {
         };
         let both_assetish = matches!(x.printed.card_type, CardType::Asset | CardType::Agenda)
             && matches!(y.printed.card_type, CardType::Asset | CardType::Agenda);
-        let both_regions = x.printed.subtypes.contains(&"region")
-            && y.printed.subtypes.contains(&"region");
+        // Case-INSENSITIVELY, and that is the whole point of this comment.
+        // This was the one place in the kernel that hard-codes a subtype
+        // string instead of taking it from the card layer, and it spelled it
+        // "region" while every real card prints "Region" (Crisium Grid, La
+        // Costa Grid, and NSG's data). So 3.6.5 fired for no card that has
+        // ever been played. The kernel TEST passed the whole time, because
+        // the testkit shape spelled it lowercase too — the fixture agreed
+        // with the defect, which is why nothing caught it. Everywhere else
+        // the string comes from the card that is asking, so both sides agree
+        // by construction and only this site could drift.
+        let is_region =
+            |o: &crate::object::Object| o.printed.subtypes.iter().any(|s| s.eq_ignore_ascii_case("region"));
+        let both_regions = is_region(x) && is_region(y);
         both_assetish || both_regions
     }
 
