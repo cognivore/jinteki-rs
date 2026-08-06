@@ -213,6 +213,18 @@ pub fn count_labelled(options: &[WindowOption], needle: &str) -> usize {
     options.iter().filter(|o| labelled(o, needle)).count()
 }
 
+/// The same question asked of an ACTION window's options. CR 9.5.2a: a paid
+/// ability whose trigger cost begins with [click] is an action, so it is
+/// offered here and never in a paid window — and an assertion about whether
+/// such an ability was on offer has to read this list, or it would answer
+/// "never offered" no matter what the game did.
+pub fn count_labelled_actions(options: &[ActionOption], needle: &str) -> usize {
+    options
+        .iter()
+        .filter(|o| matches!(o, ActionOption::CardAction { label, .. } if label.contains(needle)))
+        .count()
+}
+
 impl Pick {
     /// Resolve against a priority window's options.
     pub fn find_window(&self, options: &[WindowOption]) -> Option<WindowOption> {
@@ -897,7 +909,7 @@ impl Entry {
     }
     /// How many offered options carry this label (9.6.4b multiplicity).
     pub fn count(&self, needle: &str) -> usize {
-        count_labelled(self.options(), needle)
+        count_labelled(self.options(), needle) + count_labelled_actions(self.actions(), needle)
     }
     pub fn offered(&self, needle: &str) -> bool {
         self.count(needle) > 0

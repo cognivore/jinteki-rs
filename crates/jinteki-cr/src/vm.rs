@@ -6452,6 +6452,12 @@ impl Vm {
                 if !self.break_ability_timing_ok(a) {
                     continue;
                 }
+                // 9.3.3b/9.1.8c: an interrupt is offered on the same terms — a
+                // play its own card's restriction forbids is not an effect it
+                // could have.
+                if !self.play_effect_permitted(o, a) {
+                    continue;
+                }
                 if !self.paid_ability_cost_payable(
                     side,
                     o.id,
@@ -7421,6 +7427,35 @@ impl Vm {
                     .collect();
                 candidates.retain(|c| !af.targets.contains(c));
                 let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                Some((af.controller, self.announcement(candidates, want)))
+            }
+            // 9.3.3b/1.15.3: "play an event from your heap", "play 1 current
+            // from HQ or Archives" — a card whose own restriction forbids
+            // playing it right now is not a card this instruction could play,
+            // so it is not a valid target for it. The same derivation the
+            // install arm below makes from a "cannot install" declaration, and
+            // 9.1.8c is what lets an inactive card in a discard pile be read
+            // for it at all.
+            (Instruction::PlayCard { .. }, 0) => {
+                cite!("rule_act_restriction");
+                cite!("rule_active_exception_modify_play_install_rez");
+                cite!("rule_distinct_targets");
+                let mut candidates = self.filter_candidates_from(criteria, Some(af.source.obj));
+                candidates.retain(|c| self.play_permitted(*c));
+                let want = self.eval_quantity(count, Some(af.source.obj)).max(0) as u32;
+                if *up_to {
+                    let n = want.min(candidates.len() as u32);
+                    return Some((
+                        af.controller,
+                        DecisionSpec::ChooseTargets {
+                            candidates,
+                            count: n,
+                            up_to: true,
+                            min: 0,
+                            distinct_names: false,
+                        },
+                    ));
+                }
                 Some((af.controller, self.announcement(candidates, want)))
             }
             // 8.5.16b/9.5.5: the card an install picks, and the set-aside
@@ -14856,6 +14891,12 @@ impl Vm {
                 if !self.use_restriction_ok(o, a) {
                     continue;
                 }
+                // 9.3.3b/9.1.8c: an ability that would PLAY a card the card's
+                // own restriction forbids is not offered (Petty Cash's second
+                // play, the turn its first one finished an action).
+                if !self.play_effect_permitted(o, a) {
+                    continue;
+                }
                 // 9.3.6g: "usable once per turn" is a property of the ABILITY,
                 // not of the window it is offered in — a paid ability whose
                 // cost includes [click] is only ever offered here (5.2.1), so
@@ -14950,6 +14991,50 @@ impl Vm {
         !crate::instr::could_break_subroutines(&a.instructions) || self.st.encounter.is_some()
     }
 
+    /// CR 9.3.3b: "constraints on when or where a card can be installed,
+    /// rezzed, PLAYED, or scored are restrictions" — a constraint on the CARD,
+    /// so it holds for every play of it and not only for 5.2.6e's basic
+    /// action; 9.1.8c keeps it active while the card sits inactive in Archives,
+    /// which is the only place a "play this from Archives" ability could read
+    /// it from.
+    ///
+    /// An ability whose instruction is that play therefore has nothing it
+    /// could do while the restriction is unmet, and 9.5.6 is the shape for
+    /// that: "paid abilities with certain effects can only be triggered in
+    /// specific situations", derived from the instruction list exactly as
+    /// 9.5.6a's break gate is. Offering it anyway would sell the player a
+    /// [click] for nothing — 9.5.3 spends the trigger cost the moment the
+    /// ability is used, and the play it paid for is one the rules forbid.
+    ///
+    /// The scan is shallow (wrappers are not looked inside) and reads only the
+    /// plays whose card is NAMED — `SelfSource` and an outright object list. A
+    /// play that chooses its card is filtered where the choice is announced
+    /// (1.15.3), because which cards are legal is not known until then.
+    fn play_effect_permitted(&self, o: &Object, a: &AbilityDef) -> bool {
+        cite!("rule_act_restriction");
+        cite!("rule_active_exception_modify_play_install_rez");
+        cite!("rule_paid_ability_effect_based_timing_restrictions");
+        a.instructions.iter().all(|i| match i {
+            Instruction::PerformedBy { instr, .. } => match instr.as_ref() {
+                Instruction::PlayCard { card, .. } => self.named_plays_permitted(o, card),
+                _ => true,
+            },
+            Instruction::PlayCard { card, .. } => self.named_plays_permitted(o, card),
+            _ => true,
+        })
+    }
+
+    /// The half of [`Vm::play_effect_permitted`] that reads one play's card
+    /// position: a spec naming its cards outright is judged now, and one that
+    /// announces a choice is judged when the choice is made.
+    fn named_plays_permitted(&self, o: &Object, card: &TargetSpec) -> bool {
+        match card {
+            TargetSpec::SelfSource => self.play_permitted(o.id),
+            TargetSpec::Objects(ids) => ids.iter().all(|c| self.play_permitted(*c)),
+            _ => true,
+        }
+    }
+
     fn paid_window_options(&self, side: Side, classes: PawClasses) -> Vec<WindowOption> {
         cite!("rule_paid_ability_window_options");
         let mut out = Vec::new();
@@ -14988,6 +15073,12 @@ impl Vm {
                 // so it holds for a card that names no ice at all (Botulus's
                 // "break 1 subroutine on host ice").
                 if !self.break_ability_timing_ok(a) {
+                    continue;
+                }
+                // 9.3.3b/9.1.8c: the other effect-based gate — an ability whose
+                // instruction is a play the played card's own restriction
+                // forbids can do nothing, so it is not on offer.
+                if !self.play_effect_permitted(o, a) {
                     continue;
                 }
                 // 9.5.6: effect-based timing restrictions.
@@ -15316,6 +15407,8 @@ impl Vm {
                     && a.has_flag(AbilityFlag::Access)
                     && ability_active(src, a, None, self.st.accessed, threat)
                     && self.break_ability_timing_ok(a)
+                    // 9.3.3b/9.1.8c: as everywhere else an ability is offered.
+                    && self.play_effect_permitted(src, a)
                     && !(in_archives
                         && crate::instr::could_trash_accessed_card(&a.instructions))
                     && self.accessed_card_stipulations_met(src.id, &a.instructions)

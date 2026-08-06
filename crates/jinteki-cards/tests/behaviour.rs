@@ -3730,6 +3730,163 @@ fn petty_cash_replays_itself_out_of_archives_and_leaves_the_game() {
     assert_eq!(vm.st.corp.clicks, 3, "{}", t.tail(20));
 }
 
+/// Petty Cash: "Play only if you have not finished an action yet this turn."
+/// against its own "[click]: Play this operation from Archives."
+///
+/// The card's first line restricts PLAYING it (9.3.3b), not one particular way
+/// of playing it, and 9.1.8c keeps that restriction active while the card lies
+/// inactive in Archives — which is the only place the third line could ever
+/// read it from. So the moment the first play FINISHES an action (5.2.2a), the
+/// third line's whole effect is a play the rules forbid, and an ability that
+/// can do nothing at all is not offered: 9.5.6's shape, and the same offer
+/// discipline 9.12.3c states for a choice between effects.
+///
+/// The bite is 9.5.3 — "a paid ability and its source are considered used when
+/// the ability's trigger cost is paid" — so an offer made anyway costs the
+/// [click] before the play is refused, and every remaining click of the turn
+/// can be burned the same way.
+#[test]
+fn petty_cash_does_not_offer_a_play_its_own_restriction_forbids() {
+    let mut vm = Vm::empty(6031);
+    let pc = vm.new_object(card("Petty Cash"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(pc);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 9;
+    vm.start_turn(Side::Corp);
+
+    // The first action of the turn is playing it out of HQ — legal, because
+    // nothing had finished yet — and it lands in Archives.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::action().once(), Reply::play_card(pc)).stop_at_action(),
+        Plan::runner(),
+    );
+    assert_eq!(vm.st.objects[&pc].zone, Zone::Discard(Side::Corp), "{}", t.tail(12));
+    let credits = vm.st.corp.credits;
+    let clicks = vm.st.corp.clicks;
+
+    // …and for the rest of that turn the third line is not on offer at all.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().offering("play it again from archives"), Reply::Forbid)
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+    assert!(
+        !t.ever_offered("play it again from archives"),
+        "an action has finished, so the play it would make is illegal: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&pc].zone,
+        Zone::Discard(Side::Corp),
+        "1.2.2: the forbidden play never happened: {}",
+        t.tail(20)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        credits + clicks,
+        "the remaining clicks went to the credit action, not to a [click] paid \
+         for a play that could not resolve (9.5.3): {}",
+        t.tail(20)
+    );
+}
+
+/// Petty Cash: the same third line, on the turn the restriction PERMITS it.
+///
+/// The card starts in Archives, so nothing about the turn has been spent when
+/// the ability is used as the first action — no action has finished, the play
+/// is legal, and the whole sentence runs: the play cost is paid, 5[credit] is
+/// gained, the "from anywhere except HQ" half pays the [click] back, and
+/// 8.6.6d removes the card from the game instead of trashing it.
+#[test]
+fn petty_cash_from_archives_is_offered_as_the_first_action_and_resolves() {
+    let mut vm = Vm::empty(6032);
+    let pc = vm.new_object(card("Petty Cash"), Zone::Discard(Side::Corp));
+    vm.st.discard.get_mut(&Side::Corp).unwrap().push(pc);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 8);
+    vm.st.corp.credits = 9;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::take("play it again from archives"))
+            .stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(
+        t.ever_offered("play it again from archives"),
+        "no action had finished, so the play is permitted: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&pc].zone,
+        Zone::RemovedFromGame,
+        "8.6.6d: not trashed, removed: {}",
+        t.tail(16)
+    );
+    assert_eq!(vm.st.corp.credits, 9 - 3 + 5, "the play cost and the gain: {}", t.tail(16));
+    assert_eq!(
+        vm.st.corp.clicks,
+        3,
+        "3 allotted − 1 for the ability + 1 for the play from anywhere except HQ: {}",
+        t.tail(16)
+    );
+}
+
+/// Same Old Thing: "[click], [click], [trash]: Play an event from your heap
+/// (paying its play cost)." — against Blackmail's "Play only if the Corp has
+/// at least 1 bad publicity."
+///
+/// The general half of the same rule, on a play that CHOOSES its card instead
+/// of naming it. 9.3.3b's restriction belongs to Blackmail wherever Blackmail
+/// is played from, so a heap Blackmail is not a card this instruction could
+/// play while the Corp is clean, and 1.15.3 keeps it out of the announcement —
+/// the same derivation an install makes from a "cannot install" declaration.
+/// One bad publicity later it is a candidate like any other.
+#[test]
+fn a_play_from_the_heap_cannot_choose_a_card_its_restriction_forbids() {
+    const SOT: &str = "same old thing: replay an event out of the heap";
+    for bad_publicity in [0u32, 1u32] {
+        let mut vm = Vm::empty(9406);
+        tk::install_rig(&mut vm, card("Same Old Thing"));
+        let blackmail = vm.new_object(card("Blackmail"), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(blackmail);
+        let gamble = vm.new_object(card("Sure Gamble"), Zone::Discard(Side::Runner));
+        vm.st.discard.get_mut(&Side::Runner).unwrap().push(gamble);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.st.runner.credits = 5;
+        vm.st.corp.bad_publicity = bad_publicity;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().offering(SOT).once(), Reply::take(SOT))
+                .when(Match::targets().once(), Reply::Halt),
+        );
+        let candidates = t.last().expect("the announcement was reached").candidates();
+        assert!(
+            candidates.contains(&gamble),
+            "an unrestricted event in the heap is always a candidate: {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            candidates.contains(&blackmail),
+            bad_publicity >= 1,
+            "9.3.3b/1.15.3 gate the choice on 10.6.1's count \
+             (bad_publicity={bad_publicity}): {}",
+            t.tail(16)
+        );
+    }
+}
+
 /// Slot Machine: "When the Runner encounters this ice, they put the top card
 /// of the stack on the bottom, then you reveal the top 3 cards of the stack."
 /// / "[subroutine] The Runner loses 3[credit]." / "…If you revealed 2 or more
