@@ -408,6 +408,59 @@ conflict.
     SEVERAL options still opens a sheet naming each: one ring cannot name
     two acts, and 9.2.7f makes whichever is taken resolve to the end.
 
+18. **A server's root is one tight stack, newest on top.** The root was a
+    column of separated cards, which said something false about the game —
+    that these are four places rather than one pile — and spent the vertical
+    budget four times over, on the axis that runs out first. Now the cards
+    tuck: each new one slides onto the stack (`renderServers` → `rootStack`,
+    `.root-stack.tucked`), covering all but a sliver of the one before, so
+    the stack has visible depth and can be counted at a glance.
+
+    The sliver is sized to a JOB and not to taste: 26px on a 64×88 card
+    (22px on a phone's 52×72) clears the 1.9em cost disc, the 1.7em counter
+    badges and the first line of the name, so every member of the stack is
+    still identifiable and tappable. Below that it would be depth without
+    identity. Later siblings paint over earlier ones by DOM order, so
+    "newest on top" needs no z-index — only the ARMED card is lifted, since
+    that is the one the next tap acts on and a gate you can only half see is
+    not a gate.
+
+    §11's law follows the same rule it always did: the badges ride the edge
+    that SURVIVES. Here the tuck covers each card's bottom, so counters stay
+    in their top-right corner — and on the flipped board, where they had
+    moved to the bottom because the columns hang from the bottom edge, they
+    come back to the top for the covered cards alone. Facedown cards stay
+    card backs (lesson 16's twin); their faces are read where every other
+    hidden face is read — the reader, and the rail when the game is actually
+    asking about them.
+
+19. **Compress to slivers first; then SCROLL, never squeeze.** Ice collapses
+    to slivers because that is the right answer to depth (§4/§5: a chip is
+    still a card). But a glacier deck stacks five or six on one server, and
+    six legible slivers are taller than the Corp half however small the rest
+    of the board gets. The sliver has a FLOOR — 92px wide on a landscape
+    phone, sized so "Tollbooth" reads as a name and not "Tol…" — and past
+    that floor the honest answer is to pan the region, not to keep shrinking
+    until the stack is a striped bar.
+
+    So `.servers` owns both axes: across for more remotes than the screen is
+    wide (lesson 15), down for a column deeper than the half. Both carry the
+    same edge affordance, a chevron that appears only while there is
+    somewhere to go, laid out so the two pairs never overlap. This is the
+    player's hand moving a window over the board, not the board moving
+    (§2): no card changes place, and at ordinary depths nothing appears.
+
+    Two details are load-bearing. `align-items: safe flex-end` on the
+    flipped board: a flex container that aligns to the END and then
+    overflows puts the overflow off the START edge, where no browser will
+    scroll to it — without `safe`, the deepest ice would be unreachable in
+    the Corp's own seat and in no other. And `touch-action` stays at the
+    global `manipulation`, so the BROWSER owns both pans: a pan it claims
+    fires `pointercancel`, which is how a drag over the ice cancels a
+    pending long-press instead of opening a reader under the player's thumb
+    (the other two routes — the 14px movement threshold and the
+    capture-phase `scroll` listener — cover the rest).
+
 ## Deliberate deviations
 
 - **No drag-to-play, and no drag-to-navigate.** HS drags cards; we

@@ -193,7 +193,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 /* Corp seat: your servers on your (bottom) half, runner rig up top. */
 #board.flipped { flex-direction: column-reverse; }
 #board.flipped .server { flex-direction: column-reverse; }
-#board.flipped .servers { align-items: flex-end; }
+/* `safe` is load-bearing, not decoration: a flex container that aligns to
+   the END and then overflows puts the overflow off the START edge, where
+   every browser refuses to scroll to it. Hanging the columns from the bottom
+   and letting a glacier column grow past the top is exactly that case, and
+   without `safe` the deepest ice would be unreachable in this seat alone. */
+#board.flipped .servers { align-items: safe flex-end; }
 .zone-half { flex: 1; overflow: hidden; position: relative; }
 /* The clipped edge of the server row says there is more, and is the way
    there for a mouse: the same chip the fan's rail uses, floating over the
@@ -206,6 +211,14 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   pointer-events: auto; cursor: pointer; }
 .srvchev.left { left: 2px; }
 .srvchev.right { right: 2px; }
+/* The DEPTH axis: a glacier column taller than the half. Same chip, on the
+   edge that is clipping, laid out along the other axis so the two never sit
+   on top of each other — the horizontal pair own the middle of the sides,
+   the vertical pair own the middle of the top and bottom. */
+.srvchev.up, .srvchev.down { top: auto; bottom: auto; left: 50%;
+  transform: translateX(-50%); min-width: 44px; min-height: 30px; }
+.srvchev.up { top: 2px; }
+.srvchev.down { bottom: 2px; }
 .srvchev:active { background: rgba(53,208,186,.25); }
 #mid-strip { height: 26px; display: flex; align-items: center; justify-content: center; position: relative; }
 .phase-pill { background: var(--gold); color: #241c04; font-weight: 700; padding: 4px 14px;
@@ -213,8 +226,23 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 @keyframes pop { from { transform: scale(.6); opacity: 0; } }
 
 /* servers */
-.servers { display: flex; gap: 10px; height: 100%; overflow-x: auto; padding: 4px 10px;
-  align-items: flex-start; scroll-snap-type: x proximity; }
+/* Both axes. Across: more remotes than the screen is wide. Down: a glacier
+   deck stacking five or six ice on one server, which is taller than the Corp
+   half at ANY legible sliver size — the sliver has a floor (92px on a
+   landscape phone, so that "Tollbooth" reads as a name), and past that floor
+   the honest answer is to pan the region rather than squeeze the slivers
+   into a striped bar. `scroll-snap-type` stays on X alone: the columns are
+   the things worth landing on, and snapping the depth axis would fight a
+   player reading down a stack.
+
+   `touch-action` is deliberately left at the global `manipulation`, which is
+   pan-x + pan-y + pinch: the BROWSER owns both pans, which is what makes a
+   drag over the ice cancel a pending long-press (a claimed pan fires
+   `pointercancel`, and `cancelPendingPresses` listens for it in the capture
+   phase) instead of opening a reader under the player's thumb. */
+.servers { display: flex; gap: 10px; height: 100%; overflow-x: auto; overflow-y: auto;
+  padding: 4px 10px; align-items: flex-start; scroll-snap-type: x proximity;
+  overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .server { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 108px;
   scroll-snap-align: center; padding: 4px; border-radius: 12px; border: 1px solid transparent; }
 .server.run-target { border-color: var(--danger); background: rgba(255,92,92,.08);
@@ -226,10 +254,43 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   justify-content: center; font-size: 11px; color: var(--dim); }
 .server .central b { color: var(--text); font-size: 15px; }
 /* The gap is what says "these are TWO pieces of ice". At 3px a stack of four
-   read as one striped bar; the vertical budget is the tight one here (the
-   zone-half clips, it does not scroll), so the separation buys one pixel and
-   the legibility comes out of the WIDTH below. */
+   read as one striped bar; the legibility comes out of the WIDTH below, and
+   when the depth outgrows the half the CORP REGION SCROLLS rather than the
+   slivers shrinking past the point where "Tollbooth" reads. */
 .ice-stack { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+
+/* ── A server's ROOT is one tight stack (CR 4.6.6) ──────────────────────
+   Newest ON TOP, every earlier card tucked under it, offset by just enough
+   to see the stack has depth and to count it. This is the physical table:
+   you slide the new card onto the pile, you do not lay out a row.
+
+   `--tuck` is how much of a covered card survives, and it is sized to a JOB
+   rather than to taste: the cost disc is 1.9em, the counter badges are at
+   most 1.7em, and `.cname` starts 2px below the 4px padding — so 26px on a
+   64x88 card shows the disc, the counters and the first line of the name.
+   Below that the stack would be depth without identity.
+
+   Later siblings paint over earlier ones by DOM order (every card is
+   `position: relative`), so "newest on top" needs no z-index. */
+.root-stack { display: flex; flex-direction: column; align-items: center; gap: 4px;
+  --tuck: 26px; }
+.root-stack.tucked { gap: 0; }
+.root-stack.tucked .card + .card { margin-top: calc(var(--tuck) - 88px); }
+/* THE ARMED card comes forward, whole. It is the one the next tap acts on
+   (9.2.7f: what it takes resolves to the end), and a gate you can only half
+   see is not a gate. Nothing else is reordered — the stack's meaning is its
+   order, and arming is a moment, not a state of the board. */
+.root-stack.tucked .card.armed { z-index: 6; }
+/* Badges ride the edge that SURVIVES, the same law the fan follows: here the
+   tuck covers the bottom of every card but the last, so a covered card's
+   counters stay in their top-right corner — which is where they already are.
+   The flipped board moved them to the bottom (its columns hang from the
+   bottom edge and clip at the top); under a tuck that bottom is exactly what
+   is covered, so they come back to the top for the covered cards only. */
+#board.flipped .root-stack.tucked .card:not(:last-child) .badges {
+  top: 1px; bottom: auto; align-content: flex-start; }
+#board.flipped .root-stack.tucked .card:not(:last-child).hascost .badges {
+  max-width: calc(100% - 2px - 2.2em); }
 
 /* rig */
 .rig { display: flex; flex-direction: column; gap: 4px; padding: 4px 10px; height: 100%; }
@@ -969,6 +1030,11 @@ button.go.alt { background: var(--gold); color: #2a2005; }
      font shrinks them with it — one number, not a second set per breakpoint. */
   .card { width: 52px; height: 72px; font-size: 8.5px; border-radius: 6px; }
   .card.ice { width: 72px; height: 46px; }
+  /* The tuck is sized off the card, not off the screen: 22px still clears a
+     1.9em cost disc and a 1.7em counter at this font, and the card is 72px
+     tall here rather than 88. */
+  .root-stack { --tuck: 22px; }
+  .root-stack.tucked .card + .card { margin-top: calc(var(--tuck) - 72px); }
   .server { min-width: 96px; gap: 2px; }
   .server .central { width: 62px; height: 42px; font-size: 10px; }
   .server .central b { font-size: 13px; }

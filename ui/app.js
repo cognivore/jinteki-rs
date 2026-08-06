@@ -1041,6 +1041,33 @@ function boardQuestion(p) {
   return false;
 }
 
+/* CR 4.6.6: a server's ROOT, drawn as one TIGHT STACK — newest on top.
+
+   The root is not a list. At the table you slide the new card onto the ones
+   already there, and what you see is a stack with the last card face-on and
+   the earlier ones peeking out from under it. A column of separated cards
+   said something false about the game (that these are four places) and cost
+   the vertical budget four times over, which on a landscape phone is the
+   budget that runs out first.
+
+   The tuck leaves the TOP sliver of every covered card showing: enough for
+   its cost disc, its counters and the first line of its name, so the stack
+   is countable and each member is nameable and tappable. Later siblings are
+   positioned and paint over earlier ones by DOM order, so "newest on top"
+   needs no z-index at all — only the ARMED card is lifted, because that is
+   the one the next tap acts on and it has to be unmistakable.
+
+   The cards the board can only draw as backs are ALSO in the effects rail
+   whenever the game is asking about them (THE LAW §1), so the sliver is
+   never the only way to reach an unreadable card. */
+function rootStack(content) {
+  const box = el("div", "root-stack");
+  (content || []).forEach((c) => box.appendChild(cardEl(c, { side: "corp" })));
+  // A single card is a card, not a stack: no tuck, no class to reason about.
+  if ((content || []).length > 1) box.classList.add("tucked");
+  return box;
+}
+
 /* The uuid choices for one server column ("Server 2", "Protecting Server 2").
    Keys are the board's own server keys; "new" is the remote that does not
    exist yet, drawn as a placeholder column. */
@@ -1560,7 +1587,7 @@ const SERVER_NAME = (k) => (k === "hq" ? "HQ" : k === "rd" ? "R&D" : k === "arch
 
 function renderServers() {
   const wrap = $("servers");
-  const scroll = wrap.scrollLeft;
+  const scroll = wrap.scrollLeft, scrollY = wrap.scrollTop;
   wrap.innerHTML = "";
   const corp = S.corp || {};
   const servers = corp.servers || {};
@@ -1609,7 +1636,7 @@ function renderServers() {
       // readable from the seat rail's Archives stat.
       box.onclick = () => { if (key === "archives" && !srvChoices.has(key)) zoomPile(corp.discard || [], `Archives (${(corp.discard || []).length})`); };
       col.appendChild(box);
-      (srv.content || []).forEach((c) => col.appendChild(cardEl(c, { side: "corp" })));
+      col.appendChild(rootStack(srv.content || []));
     } else {
       const content = srv.content || [];
       if (content.length === 0) {
@@ -1617,7 +1644,7 @@ function renderServers() {
         box.className = "central"; box.innerHTML = `<span>empty</span>`;
         col.appendChild(box);
       }
-      content.forEach((c) => col.appendChild(cardEl(c, { side: "corp" })));
+      col.appendChild(rootStack(content));
     }
 
     // Compact ice: MTGA aura-stack style slivers, innermost at top.
@@ -1696,7 +1723,7 @@ function renderServers() {
     wireServerTarget(col, "new", srvChoices.get("new"));
     wrap.appendChild(col);
   }
-  wrap.scrollLeft = scroll;
+  wrap.scrollLeft = scroll; wrap.scrollTop = scrollY;
   wireServerScroll(wrap);
   updateServerChevrons(wrap);
 }
@@ -1740,7 +1767,16 @@ function wireServerScroll(wrap) {
     // A vertical wheel over a row that only scrolls sideways: give it the
     // axis. Shift+wheel and trackpads already pan natively and keep doing
     // so (their deltaX dominates, so this leaves them alone).
-    if (wrap.scrollWidth <= wrap.clientWidth + 1) return;
+    //
+    // Once a glacier deck stacks a column deeper than the half (see
+    // `.servers { overflow-y: auto }`), the row has a vertical axis of its
+    // own and the wheel belongs to THAT — the axis the pointer is over is
+    // the axis the player means. Only when there is nowhere to go down does
+    // the wheel get borrowed sideways.
+    const canY = wrap.scrollHeight > wrap.clientHeight + 1;
+    const canX = wrap.scrollWidth > wrap.clientWidth + 1;
+    if (canY) return;                                  // the browser owns it
+    if (!canX) return;
     if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
     wrap.scrollLeft += e.deltaY;
     e.preventDefault();
@@ -1751,19 +1787,32 @@ function wireServerScroll(wrap) {
     setTimeout(() => updateServerChevrons(wrap), 200);
   }, { passive: false });
 }
+/* Both axes, and a cue on every clipped edge.
+
+   Ice compresses to slivers first — that is right and stays — but a glacier
+   deck can stack six on one server, and six legible slivers are taller than
+   the Corp half however small the rest gets. The sliver has a floor (92px
+   wide on a landscape phone, sized so "Tollbooth" reads as a name), and the
+   answer past that floor is to PAN THE REGION, not to squeeze further: a
+   window the player moves over the board, never the board rearranging
+   itself (THE LAW §2). */
 function updateServerChevrons(wrap) {
   const host = wrap.parentElement;
   if (!host) return;
-  let L = host.querySelector(".srvchev.left"), R = host.querySelector(".srvchev.right");
+  let L = host.querySelector(".srvchev.left");
   if (!L) {
-    const mk = (cls, glyph, dir) => {
+    const mk = (cls, glyph, dx, dy) => {
       const b = el("button", "srvchev " + cls, glyph);
       b.onclick = () => {
         // "auto", not "smooth": embedded/zoomed webviews were seen dropping
         // smooth programmatic scrolls outright (the row simply did not
         // move), and an instant jump that always happens beats an animation
         // that sometimes does not. The snap rule still settles the landing.
-        wrap.scrollBy({ left: dir * Math.max(120, wrap.clientWidth - 80), behavior: "auto" });
+        wrap.scrollBy({
+          left: dx * Math.max(120, wrap.clientWidth - 80),
+          top: dy * Math.max(80, wrap.clientHeight - 60),
+          behavior: "auto",
+        });
         // Refresh after the proximity snap settles — see the wheel
         // handler's note on dropped scroll events.
         setTimeout(() => updateServerChevrons(wrap), 250);
@@ -1771,12 +1820,20 @@ function updateServerChevrons(wrap) {
       host.appendChild(b);
       return b;
     };
-    L = mk("left", "‹", -1);
-    R = mk("right", "›", 1);
+    L = mk("left", "‹", -1, 0);
+    mk("right", "›", 1, 0);
+    mk("up", "⌃", 0, -1);
+    mk("down", "⌄", 0, 1);
   }
-  const max = wrap.scrollWidth - wrap.clientWidth;
+  const R = host.querySelector(".srvchev.right");
+  const U = host.querySelector(".srvchev.up");
+  const D = host.querySelector(".srvchev.down");
+  const maxX = wrap.scrollWidth - wrap.clientWidth;
+  const maxY = wrap.scrollHeight - wrap.clientHeight;
   L.style.display = wrap.scrollLeft > 4 ? "" : "none";
-  R.style.display = wrap.scrollLeft < max - 4 ? "" : "none";
+  if (R) R.style.display = wrap.scrollLeft < maxX - 4 ? "" : "none";
+  if (U) U.style.display = wrap.scrollTop > 4 ? "" : "none";
+  if (D) D.style.display = wrap.scrollTop < maxY - 4 ? "" : "none";
 }
 
 /* Focused decision panel: when a run reaches ice, show exactly what the
