@@ -11,6 +11,7 @@ pub mod identities;
 pub mod mezzie_asa;
 pub mod mezzie_valencia;
 pub mod notw_restoring_humanity;
+pub mod notw_sable;
 pub mod unlisted;
 
 /// Every card of both decks — the deck proper, plus CR 1.5.4a's pile of
@@ -32,6 +33,7 @@ pub fn identity_pile(deck: &str) -> Option<Vec<Card>> {
         "mezzie_asa" => Some(mezzie_asa::additional_identities()),
         "mezzie_valencia" => Some(mezzie_valencia::additional_identities()),
         "notw_restoring_humanity" => Some(notw_restoring_humanity::additional_identities()),
+        "notw_sable" => Some(notw_sable::additional_identities()),
         _ => None,
     }
 }
@@ -73,6 +75,8 @@ pub fn mezzie_decks() -> Vec<Card> {
 pub fn deck_of_the_week() -> Vec<Card> {
     let mut out = notw_restoring_humanity::deck();
     out.extend(notw_restoring_humanity::additional_identities());
+    out.extend(notw_sable::deck());
+    out.extend(notw_sable::additional_identities());
     out
 }
 
@@ -122,6 +126,7 @@ pub const SOURCES: &[(&str, &str)] = &[
         "notw_restoring_humanity.rs",
         include_str!("notw_restoring_humanity.rs"),
     ),
+    ("notw_sable.rs", include_str!("notw_sable.rs")),
     ("unlisted.rs", include_str!("unlisted.rs")),
     (
         "identities/runner_criminal.rs",

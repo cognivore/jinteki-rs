@@ -85,7 +85,10 @@ three blocked below. Behaviour tests are in
 **Runner** — identity **Nyusha "Sable" Sintashta: Symphonic Prodigy**  ✅ already implemented
 Module: `crates/jinteki-cards/src/decks/notw_sable.rs`
 
-18 distinct cards, 13 to write.
+18 distinct cards, 13 to write. All thirteen are written in
+`crates/jinteki-cards/src/decks/notw_sable.rs`; three are complete and ten are
+partial or blocked below. Behaviour tests are in
+`crates/jinteki-cards/tests/behaviour.rs` under "kit costume party".
 
 - [ ] **Always Have a Backup Plan** ×3 — event
       "Run any server. When that run ends, if it was unsuccessful, you may run the attacked server again, ignoring any additional costs to run. During the second run, whenever you encounter the last piece of ice you encountered during the first run, bypass it."
@@ -93,7 +96,7 @@ Module: `crates/jinteki-cards/src/decks/notw_sable.rs`
 - [ ] **Backstitching** ×3 — resource
       "When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.) / Whenever you encounter a piece of ice during a run on your mark, you may trash this resource to bypass that ice."
 - [x] **Boomerang** ◆ ×3 — hardware
-- [ ] **Buffer Drive** ◆ ×3 — hardware
+- [x] **Buffer Drive** ◆ ×3 — hardware
       "The first time each turn 1 or more cards are trashed from your grip or stack, you may add 1 of those cards to the bottom of your stack. / Remove this hardware from the game: Add 1 card from your heap to the top of your stack."
 - [ ] **Carmen** ×1 — program
       "If you made a successful run this turn, this program costs 2[credit] less to install. / Interface → 1[credit]: Break 1 sentry subroutine. / 2[credit]: +3 strength."
@@ -102,14 +105,14 @@ Module: `crates/jinteki-cards/src/decks/notw_sable.rs`
 - [x] **Clean Getaway** ×3 — event
 - [ ] **Curupira** ×1 — program
       "Whenever you encounter a barrier, you may spend 3 hosted power counters to bypass it. / Whenever this program fully breaks a piece of ice, place 1 power counter on this program. / Interface → 1[credit]: Break 1 barrier subroutine. / 1[credit]: +1 strength."
-- [ ] **Hyperbaric** ×1 — program
+- [x] **Hyperbaric** ×1 — program
       "When you install this program, place 1 power counter on it. / This program gets +1 strength for each hosted power counter. / Interface → 1[credit]: Break 1 code gate subroutine. / 2[credit]: Place 1 power counter on this program."
 - [ ] **Jeitinho** ◆ ×3 — hardware
       "When your turn ends, if you made a successful run on HQ, R&D, and Archives this turn, you may add this hardware to your score area as an assassination agenda worth 0 agenda points. Then, if you have 3 assassination agendas in your score area, you win the game. / Threat 3 → Whenever you bypass a piece of ice, you may spend [click] to install this hardware from your heap."
 - [x] **Mutual Favor** ×3 — event
 - [ ] **S-Dobrado** ×3 — event
       "Run a central server. The first time you encounter a piece of ice during that run, bypass it. / Threat 4 → The second time you encounter a piece of ice during that run, you may spend [click] to bypass it. (This ability is active if any player has 4 or more agenda points.)"
-- [ ] **Swift** ◆ ×2 — hardware
+- [x] **Swift** ◆ ×2 — hardware
       "+1[mu] / The first time each turn you play a run event, gain [click]. / Limit 1 console per player."
 - [ ] **The Back** ◆ ×2 — resource
       "The first time each turn you use a piece of hardware during a run, place 1 power counter on this resource. / [click], remove this resource from the game: For each hosted power counter, choose up to 2 cards in your heap with [trash] abilities. Shuffle the chosen cards into your stack."
@@ -210,3 +213,201 @@ Hoisting `requires` out of the variants onto the condition itself would make
 every condition able to carry one.
 
 Not blocking any card.
+
+### 7. The MARK as a server the run vocabulary can name (CR 10.11.1)
+
+10.11.1 designates a SERVER as the mark and 10.11.1a allows only one, so the
+kernel already holds it — `Vm::mark()` reads it and
+`TriggerCond::SuccessfulRunOnMark` compares an occurrence against it. What no
+position can say is "the mark" where a server is *named*: a run instruction's
+server is a fixed `ServerId` or a free choice from a `RunServerSet`, and
+`TriggerRequirement::RunInProgress`'s `on` is a fixed list. The capability is
+the mark as one more thing those positions may name, content on the atoms that
+already take a server rather than an atom per card.
+
+Waiting on it, one position each: **Carpe Diem**'s "You may run your mark"
+(the instruction side) and **Backstitching**'s "whenever you encounter a piece
+of ice during a run on your mark" (the requirement side). Written with the
+words that exist, either would reach every server there is.
+
+### 8. The full-break occurrence naming the card that BROKE (CR 6.5.7a)
+
+`GameChange::AllSubsBroken` records the ICE and nobody else, so
+`TriggerCond::SelfFullyBroken` — which compares that ice against the source —
+says "when the Runner fully breaks **this ice**" (Paper Wall) and cannot say
+"whenever **this program** fully breaks a piece of ice" (Curupira, Bukhgalter,
+Cleaver), where the source is the breaker. The unscoped
+`AllSubsBrokenOnEncounteredIce` is met by any full break by any breaker, which
+is a larger card. The capability is the breaker on the record, and the
+stipulation about whom the sentence names as content on the condition.
+
+Waiting on it: **Curupira**'s "Whenever this program fully breaks a piece of
+ice, place 1 power counter on this program."
+
+NOTE for whoever lands it: `andromeda.rs`'s **Bukhgalter** already writes the
+program-side sentence with the ice-side condition
+(`.when_first_each_turn(TriggerCond::SelfFullyBroken, …)` for "the first time
+each turn **this program** fully breaks a piece of ice, gain 2[credit]"). Its
+doc comment still reads "UNIMPLEMENTED: the third sentence" and the card
+carries no marker, so it is counted complete while that sentence can never
+fire. Not touched here — it is a priority-deck card and `decks.rs` pins that
+deck at zero partial cards — but it is the same defect and should be fixed in
+the same wave.
+
+### 9. An ordinal that names WHICH occurrence, not only the first (CR 9.6.5c)
+
+`AbilityDef::ordinal` is an `Option<OrdinalScope>`: `Some(span)` is "the first
+time" in that span and `None` is no ordinal at all. A sentence naming a later
+occurrence has nowhere to say so. The capability is the INDEX as content beside
+the span — one stipulation with two pieces of content, never an atom per
+ordinal.
+
+Waiting on it: **S-Dobrado**'s "Threat 4 → **The second time** you encounter a
+piece of ice during that run, you may spend [click] to bypass it." Written as
+the first it would fire on the encounter the line above already bypassed.
+
+### 10. A run that ended, read afterwards: its OUTCOME and its server (CR 6.9.5 / 6.9.7)
+
+Two words on one occurrence. `TriggerCond::RunEnds` carries
+`successful_only: bool`, where `false` is a sentence naming no outcome rather
+than the failing one, so "**if it was unsuccessful**" cannot be stated; and
+every run instruction names its server as a fixed `ServerId` or leaves the
+choice to the Runner, so "run **the attacked server** again" — the server of
+the run that just ended — cannot be stated either. Both are stipulations about
+a run the game has already finished, which 10.2.1's open history can answer.
+
+Waiting on both: **Always Have a Backup Plan**'s "When that run ends, if it was
+unsuccessful, you may run the attacked server again, ignoring any additional
+costs to run."
+
+### 11. A card described by its place in an EARLIER run's encounter history (CR 6.5.4)
+
+The description vocabulary reaches the ice being encountered, the ice
+protecting a server, and the ice passed during *this* run. "The last piece of
+ice you encountered during the **first** run" is a card picked out by an
+ordinal over another run's encounters, and no filter is that set.
+
+Waiting on it: **Always Have a Backup Plan**'s third sentence.
+
+### 12. CR 9.1.8d over every declaration that modifies the source's own cost
+
+9.1.8d: "abilities that modify the cost to install, rez, or play their source
+card are active even while that card is inactive." `ability_active` implements
+it for exactly one declaration — 1.16.2e's `AlternatePaymentForSelf` — so a
+`StaticDecl::InherentCostMod` whose criteria describe its own source is inert
+in the one place it is printed to work: the card is in the grip when its
+install cost is calculated, and 4.5.4 leaves it inactive there. The capability
+is the exception read over the class the rule states it about.
+
+Waiting on it: **Carmen**'s "If you made a successful run this turn, this
+program costs 2[credit] less to install."
+
+### 13. 10.1.3's score-area conversion carrying the SUBTYPE the sentence names
+
+`Instruction::AddToScoreArea`'s `as_agenda: Option<i32>` turns a non-agenda
+into "an agenda worth N agenda points" and stops there. A sentence that also
+states what KIND of agenda has nowhere to put it — and on the card below it is
+not decoration, it is what the very next sentence counts.
+
+Waiting on it: **Jeitinho**'s "add this hardware to your score area as an
+**assassination** agenda worth 0 agenda points."
+
+### 14. An instruction that ends the game (CR 1.17.1-adjacent)
+
+1.17.1's win is a checkpoint condition on agenda points and
+`StaticDecl::AgendaPointsToWinMod` moves the threshold. An ALTERNATE win stated
+by a card — "if <state>, you win the game" — is a different thing and has no
+position at all.
+
+Waiting on it: **Jeitinho**'s "Then, if you have 3 assassination agendas in
+your score area, you win the game."
+
+### 15. The BYPASS as an occurrence (CR 6.5.8)
+
+The kernel performs a bypass (`Instruction::BypassEncounteredIce`) and records
+enough for `IcePassed` to tell a pass after a bypass from a pass after an
+encounter, but the bypass is not itself an occurrence any condition names.
+
+Waiting on it: **Jeitinho**'s "Threat 3 → Whenever you bypass a piece of ice,
+you may spend [click] to install this hardware from your heap."
+
+### 16. The USE of an ability, with its source DESCRIBED (CR 9.1.6)
+
+9.1.6: "a player uses an ability by paying its costs and beginning its
+resolution." The kernel has one use-condition and it is the [trash]-symbol
+special case (`TriggerCond::UsesTrashAbility`, Aeneas class), whose only
+content is which player and whether the basic trash ability counts. There is no
+position for a description of the card whose ability was used, so a sentence
+naming the KIND of card cannot be written. The general form — the use as the
+occurrence, the source described in the shared filter vocabulary — carries the
+whole class, and `UsesTrashAbility` becomes one of its stipulations.
+
+Waiting on it: **The Back**'s "The first time each turn you use a piece of
+hardware during a run, place 1 power counter on this resource."
+
+### 17. A card described by the KIND OF ABILITY printed on it (CR 1.16.10)
+
+"Cards in your heap **with [trash] abilities**" describes a card by the trash
+symbol appearing in one of its trigger costs. `TargetFilter::HasTrashCost` is
+CR 2.6's printed trash COST and a different thing entirely — a number in the
+corner of a Corp card, which no Runner card in a heap has — so the nearest word
+reaches nothing at all.
+
+Waiting on it: **The Back**'s "[click], remove this resource from the game: For
+each hosted power counter, choose up to 2 cards in your heap with [trash]
+abilities."
+
+### 18. A 9.3.3c use-restriction whose content is a STATE
+
+9.3.3c: "limits on when, where, or how often an ability can be used are
+restrictions." Every `TimingRestriction` the kernel has names a place — an
+encounter, an approach, a run in progress, the zone the source sits in. The
+requirement vocabulary that could answer "if you made a successful run on HQ,
+R&D, and Archives this turn" is reachable from a trigger condition (9.6.5c) and
+from a static ability's stated condition (9.3.7a), and not from a restriction
+on a paid ability.
+
+Waiting on it: **The Wizard's Chest**'s "Use this hardware only if you made a
+successful run on HQ, R&D, and Archives this turn."
+
+### 19. A set-aside whose count is a stopping CONDITION (CR 4.8)
+
+`Instruction::SetAsideTopOfDeck` takes a quantity. "Set aside cards from the
+top of your stack faceup **until you set aside 2 cards of the chosen type**"
+states a stopping condition over a growing group instead, and the sentences
+that follow are written against what that search produced.
+
+Waiting on it: **The Wizard's Chest**'s second sentence.
+
+### 20. Which ACTION an imminent instruction belongs to (CR 5.2.6b)
+
+A sentence naming "the basic action to draw 1 card" is not a sentence about a
+draw: it is a sentence about 5.2.6b's action. `TriggerCond::WouldDraw` carries
+only whose draw it is, and no requirement asks which action an imminent
+instruction is part of — so an ability written without it replaces the draw of
+every card that draws exactly one.
+
+Waiting on it: **Verbal Plasticity**'s only printed line.
+
+### 21. A DRAW's card count as a modifiable value (CR 9.9.6)
+
+The kernel has 9.9.6's modifiable value for damage
+(`Instruction::IncreaseImminentDamage`) and for a cost
+(`Instruction::ReduceImminentCost`) and not for a draw: the quantity an
+interrupt can READ (`Quantity::ImminentValueOf(EffectClass::Draw)`, which The
+Class Act uses) has no writing half. "**Instead** draw 2 cards" is that half.
+
+Waiting on it: **Verbal Plasticity**'s only printed line.
+
+---
+
+## Fixed while writing this deck, not blocked
+
+`checkpoint.rs`: 9.6.5c's ordinal was checked per CHANGE, before 9.12.2a's
+per-event grouping collected the cards of one occurrence — so on a condition
+that is both plural-noun and ordinal'd, the first card of an event spent the
+ordinal and every later card of the SAME event was dropped before the grouping
+could see it. A sentence saying "1 of **those** cards" then reached only the
+first. Two net damage now offers both of the cards it trashed, which is what
+**Buffer Drive** prints. The fix is general: a change sharing this occurrence's
+group is not an earlier TIME, it is this one said of another of its cards.

@@ -4911,3 +4911,71 @@ pub fn the_triggering_card_matching() -> TargetFilter {
 pub fn the_heap() -> Zone {
     Zone::Discard(Runner)
 }
+
+// ---- the deck-of-the-week wave's words -------------------------------------
+
+/// "…**1 or more cards are trashed** from your grip or stack" (Buffer Drive)
+/// — the same trash [`trashes_at_least_one_card_from`] names, said in the
+/// PASSIVE. The sentence stipulates whose zone the cards left (the owner) and
+/// says nothing at all about who did the trashing, which is the whole point:
+/// the commonest way a card leaves the grip is 10.4.2's damage, and that is
+/// the Corp's doing, so a condition naming the Runner as the trasher would
+/// miss every one of them.
+pub fn cards_are_trashed_from(owner: Side, zone: Zone) -> TriggerCond {
+    TriggerCond::CardTrashed {
+        owner: Some(owner),
+        by: None,
+        of_types: Vec::new(),
+        installed_only: false,
+        while_accessed: false,
+        from_zone: Some(zone),
+        at_least_one: true,
+        rezzed_only: false,
+        except_during_install: false,
+        requires: Vec::new(),
+    }
+}
+
+/// "Run a **central** server." (S-Dobrado; CR 4.6.6a names the three.) The
+/// same position [`run_any_server_during_which`] leaves open, with the
+/// sentence's stipulation about which servers may be announced (6.7.4a) as
+/// content, and with what the sentence says about the run it initiates riding
+/// on the instruction for 5.2.2b's reason.
+pub fn run_a_central_server_during_which(
+    during: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::InitiateRun {
+        // 6.9.1a: no server named by the effect, so the Runner announces one
+        // from `allowed` when the run is initiated.
+        server: None,
+        allowed: jinteki_cr::instr::RunServerSet::These(vec![
+            ServerId::Hq,
+            ServerId::Rnd,
+            ServerId::Archives,
+        ]),
+        if_successful: Vec::new(),
+        if_would_be_successful: Vec::new(),
+        during: during.into_iter().collect(),
+    }
+}
+
+/// "**The first time** you <do something> **during that run**, …" — a delayed
+/// conditional (9.6.13) that lasts the run, carrying 9.6.5c's ordinal with
+/// 9.6.5c's other span. `OrdinalScope` is the stipulation and the span is its
+/// content, so "the first time each turn" and "the first time each run" are
+/// one word said twice; this is the run one, for a sentence a run-initiating
+/// instruction creates.
+pub fn the_first_time_this_run(
+    label: &'static str,
+    cond: TriggerCond,
+    instrs: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    Instruction::CreateDelayedConditional {
+        def: Box::new(
+            AbilityDef::conditional(cond, instrs.into_iter().collect(), false)
+                .first_time_each_run()
+                .labeled(label),
+        ),
+        duration: WantedDuration::ThisRun,
+    }
+}

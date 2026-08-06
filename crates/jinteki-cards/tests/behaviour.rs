@@ -9,7 +9,7 @@
 use jinteki_cr::Subtype;
 
 use jinteki_cr::change::{ActionIdentity, BasicAction, GameChange};
-use jinteki_cr::decision::{ActionOption, DecisionSpec};
+use jinteki_cr::decision::{ActionOption, DecisionAnswer, DecisionSpec};
 use jinteki_cr::effects::DamageKind;
 
 use jinteki_cr::instr::Instruction;
@@ -22924,4 +22924,649 @@ fn fairchild_3_0_pay_or_trash_is_a_real_choice_when_both_can_be_resolved() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Deck of the week — kit costume party (docs/vm/DECK-OF-THE-WEEK.md)
+// ---------------------------------------------------------------------------
+
+/// Buffer Drive: "The first time each turn 1 or more cards are trashed from
+/// your grip or stack, you may add 1 of those cards to the bottom of your
+/// stack."
+///
+/// The trashing is 10.4.2's net damage — the Corp's doing, from the Runner's
+/// grip — which is what the passive sentence is written for: a condition
+/// naming the Runner as the trasher would miss every point of damage there is.
+/// 9.12.2a's plural noun makes 2 net damage ONE occurrence, so the ability
+/// fires once and "1 of those cards" reaches both of the cards it trashed.
+/// The ordinal is the second half of the test: the Corp hurts the Runner
+/// twice in the one turn and the offer comes only for the first.
+#[test]
+fn buffer_drive_keeps_one_card_the_damage_took() {
+    let mut vm = Vm::empty(9601);
+    tk::install_rig(&mut vm, card("Buffer Drive"));
+    tk::install_root(&mut vm, tk::net_damage_button("Hurt", 2), ServerId::Remote(1), true);
+    let grip: Vec<ObjectId> = ["Kept", "Lost", "Spare", "Spare 2"]
+        .into_iter()
+        .map(|n| {
+            let id = vm.new_object(copy_card(n), Zone::Hand(Side::Runner));
+            vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        })
+        .collect();
+    let stack = tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    vm.start_turn(Side::Corp);
+
+    // 10.4.3's randomiser picks which two cards the first hit takes, so the
+    // choice is left to the driver's neutral policy (the first candidate) and
+    // the candidates themselves are what the assertions read.
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().offering("do net damage").times(2), Reply::take("do net damage"))
+            .stop_at_action(),
+        Plan::runner()
+            .when(Match::reaction().offering("one of those cards"), Reply::take("one of those cards")),
+    );
+
+    let choice = t
+        .of_kind(Kind::Targets)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("the Runner was asked which card to keep: {}", t.tail(30)))
+        .clone();
+    let offered = choice.candidates().to_vec();
+    assert_eq!(
+        offered.len(),
+        2,
+        "9.12.2a + 1.15.4: 2 net damage is ONE occurrence, so 'those cards' is \
+         BOTH of the cards it trashed: {}",
+        t.tail(30)
+    );
+    for c in &offered {
+        assert!(
+            grip.contains(c),
+            "…and each of them is a card that was in the grip when the damage \
+             landed: {}",
+            t.tail(30)
+        );
+    }
+    let Some(DecisionAnswer::Targets(kept)) = choice.answer.clone() else {
+        panic!("the Runner named a card: {:?}", choice.answer)
+    };
+    assert_eq!(
+        vm.st.objects[&kept[0]].zone,
+        Zone::Deck(Side::Runner),
+        "the card the Runner chose left the heap for the stack: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.deck[&Side::Runner].last(),
+        Some(&kept[0]),
+        "8.2: 'to the BOTTOM of your stack' — under all 5 cards that were there: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.deck[&Side::Runner].len(),
+        stack.len() + 1,
+        "exactly one card was added: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        t.times_taken("one of those cards"),
+        1,
+        "9.6.5c's ordinal: the Corp did damage twice this turn and the ability \
+         was taken once: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.discard[&Side::Runner].len(),
+        3,
+        "10.4.2 trashed 4 cards across the two hits and 1 of them was rescued: {}",
+        t.tail(30)
+    );
+}
+
+/// Buffer Drive: "Remove this hardware from the game: Add 1 card from your
+/// heap to the top of your stack."
+///
+/// 1.16.10's trigger cost is 4.9's removal, so the ability is worth exactly one
+/// use — the card is gone when the effect resolves, and a second attempt finds
+/// nothing to offer.
+#[test]
+fn buffer_drive_cashes_itself_in_for_a_card_off_the_heap() {
+    let mut vm = Vm::empty(9602);
+    let drive = tk::install_rig(&mut vm, card("Buffer Drive"));
+    let wanted = vm.new_object(copy_card("Wanted"), Zone::Discard(Side::Runner));
+    vm.st.discard.get_mut(&Side::Runner).unwrap().push(wanted);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::paid().offering("cash it in").times(2), Reply::take("cash it in"))
+            .when(Match::targets().once(), Reply::Targets(vec![wanted]))
+            .stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.st.deck[&Side::Runner].first(),
+        Some(&wanted),
+        "8.2: 'to the TOP of your stack': {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.objects[&drive].zone,
+        Zone::RemovedFromGame,
+        "4.9: the removal is the cost, paid before the effect: {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        t.times_taken("cash it in"),
+        1,
+        "1.16.1: the cost cannot be paid twice, so it is never offered again: {}",
+        t.tail(24)
+    );
+}
+
+/// Curupira: "Whenever you encounter a barrier, you may spend 3 hosted power
+/// counters to bypass it."
+///
+/// Both arms of 1.16.11a's nested cost. Paying walks the Runner past a barrier
+/// nothing on the board could break — strength 5 against a fracter that pumps
+/// 1 for 1 out of an empty pool — so a run that succeeds at all succeeded
+/// through 6.5.8 and not through breaking. Declining leaves the subroutine to
+/// resolve and the counters where they were.
+#[test]
+fn curupira_spends_three_counters_to_walk_past_a_barrier() {
+    for pay in [true, false] {
+        let mut vm = Vm::empty(9603);
+        let cur = tk::install_rig(&mut vm, card_partial("Curupira"));
+        tk::place_counters(&mut vm, cur, CounterKind::Power, 3);
+        let mut wall = tk::etr_ice("Great Wall", 0, 5);
+        wall.subtypes = vec![Subtype::Barrier];
+        tk::install_ice(&mut vm, wall, ServerId::Hq, true);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 0;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Hq))
+                .when(Match::nested_cost().once(), Reply::PayCost(pay))
+                .stop_at_action(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&cur].counter(CounterKind::Power),
+            if pay { 0 } else { 3 },
+            "1.16.10: the 3 counters are the cost, spent exactly when the Runner \
+             pays (pay={pay}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
+            !pay,
+            "6.5.8: a bypassed encounter resolves no subroutines, and a declined \
+             one resolves the wall's (pay={pay}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+            pay,
+            "…so the run reaches HQ exactly when the Runner paid (pay={pay}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Curupira: "Interface → 1[credit]: Break 1 barrier subroutine." /
+/// "1[credit]: +1 strength."
+///
+/// 9.3.6c's strength gate against a barrier of strength 2: the interface is
+/// not offered until the pump has run, which is the whole difference between
+/// the two abilities.
+#[test]
+fn curupira_pumps_then_breaks_a_barrier() {
+    let mut vm = Vm::empty(9604);
+    let cur = tk::install_rig(&mut vm, card_partial("Curupira"));
+    assert_eq!(vm.effective_strength(cur), Some(1), "printed strength 1");
+    let mut wall = tk::etr_ice("Small Wall", 0, 2);
+    wall.subtypes = vec![Subtype::Barrier];
+    tk::install_ice(&mut vm, wall, ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("pump").once(),
+                Reply::take("pump"),
+            )
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("interface").once(),
+                Reply::take("interface"),
+            )
+            .stop_at_action(),
+    );
+    assert_eq!(vm.st.runner.credits, 3, "1 to pump, 1 to break: {}", t.tail(20));
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
+        "the wall's subroutine was broken, so it did not resolve: {}",
+        t.tail(20)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "…and the run reached HQ: {}",
+        t.tail(20)
+    );
+}
+
+/// Hyperbaric: "When you install this program, place 1 power counter on it." /
+/// "This program gets +1 strength for each hosted power counter." /
+/// "2[credit]: Place 1 power counter on this program."
+///
+/// The install is the real 5.2.7d basic action, because the first sentence is
+/// about installing and a card put on the board by hand never installs at all.
+/// Strength 0 printed, 1 after the install, 2 after the paid counter — and the
+/// second one is bought mid-encounter, which is where the difference between
+/// this card and a pump shows: 3.9.5b would expire a strength change when the
+/// encounter ended and a placed counter outlives it.
+#[test]
+fn hyperbaric_arrives_with_a_counter_and_grows_by_the_ones_it_buys() {
+    let mut vm = Vm::empty(9605);
+    let hyp = vm.new_object(card("Hyperbaric"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(hyp);
+    let mut gate = tk::etr_ice("Small Gate", 0, 2);
+    gate.subtypes = vec![Subtype::CodeGate];
+    tk::install_ice(&mut vm, gate, ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 10;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(hyp)))
+            .when(Match::action().once(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("buy another counter").once(),
+                Reply::take("buy another counter"),
+            )
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("interface").once(),
+                Reply::take("interface"),
+            )
+            .stop_at_action(),
+    );
+
+    assert_eq!(vm.st.objects[&hyp].zone, Zone::Rig, "it installed: {}", t.tail(30));
+    assert_eq!(
+        vm.st.objects[&hyp].counter(CounterKind::Power),
+        2,
+        "1 placed by the install, 1 bought for 2[credit]: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.effective_strength(hyp),
+        Some(2),
+        "9.12.1b: printed 0 plus 1 for each hosted power counter: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        4,
+        "10 − 3 install − 2 counter − 1 break: {}",
+        t.tail(30)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
+        "the code gate's subroutine was broken, so it did not resolve: {}",
+        t.tail(30)
+    );
+}
+
+/// Swift: "+1[mu]" / "The first time each turn you play a run event, gain
+/// [click]."
+///
+/// Two run events in the one turn: the first hands a click back and the second
+/// does not, which is 9.6.5c's ordinal about the OCCURRENCE. The events are
+/// bare — they cost nothing and do nothing — so the clicks counted are the
+/// action's and the ability's and nothing else.
+#[test]
+fn swift_raises_memory_and_hands_back_a_click_for_the_first_run_event() {
+    // Both arms of the same script: the only difference on the board is
+    // whether Swift is in the rig, so the click the Runner has left at the end
+    // is the ability and nothing else.
+    let mut left = Vec::new();
+    for with_swift in [true, false] {
+        let mut vm = Vm::empty(9606);
+        if with_swift {
+            let base = vm.memory_limit();
+            tk::install_rig(&mut vm, card("Swift"));
+            assert_eq!(vm.memory_limit(), base + 1, "1.19: +1[mu]");
+        }
+
+        let mut runner = Plan::runner();
+        let mut played = Vec::new();
+        for name in ["Sprint", "Sprint Again"] {
+            let mut printed = tk::event(name, 0, Vec::new());
+            printed.subtypes = vec![Subtype::Run];
+            let id = vm.new_object(printed, Zone::Hand(Side::Runner));
+            vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+            played.push(id);
+        }
+        // A third event with NO run subtype: the sentence names one, so this
+        // must not be counted by it either way round.
+        let plain = vm.new_object(tk::event("Errand", 0, Vec::new()), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(plain);
+        played.push(plain);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.start_turn(Side::Runner);
+
+        for id in &played {
+            runner = runner.when(Match::action().once(), Reply::play_card(*id));
+        }
+        let t = plan::play(&mut vm, Plan::corp(), runner.stop_at_action());
+
+        for id in &played {
+            assert_eq!(
+                vm.st.objects[id].zone,
+                Zone::Discard(Side::Runner),
+                "8.6.7g: every event was played and trashed (with_swift={with_swift}): {}",
+                t.tail(24)
+            );
+        }
+        assert_eq!(
+            t.offers("a click back"),
+            usize::from(with_swift),
+            "9.6.5c's ordinal: three events were played and the ability came up \
+             at most once (with_swift={with_swift}): {}",
+            t.tail(24)
+        );
+        left.push(vm.st.runner.clicks);
+    }
+    assert_eq!(
+        left[0],
+        left[1] + 1,
+        "1.11.3a + 9.6.5c: exactly one click came back across three plays — the \
+         FIRST run event's, not the second's and not the plain event's \
+         (with Swift: {}, without: {})",
+        left[0],
+        left[1]
+    );
+}
+
+/// S-Dobrado: "Run a central server. The first time you encounter a piece of
+/// ice during that run, bypass it."
+///
+/// Two walls on HQ, both able to end the run. The outer one is bypassed
+/// (6.5.8) and the inner one is not, which is 9.6.5c's ordinal counted over
+/// 6.1.1's run: exactly one subroutine resolves, and it is the inner wall's.
+/// The attacked server is announced by the Runner from the set the sentence
+/// allows (6.7.4a), and the second assertion is that the set is the three
+/// centrals and not every server.
+#[test]
+fn s_dobrado_runs_a_central_and_bypasses_only_the_first_ice_of_that_run() {
+    let mut vm = Vm::empty(9607);
+    let dobrado = vm.new_object(card_partial("S-Dobrado"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(dobrado);
+    let inner = tk::install_ice(&mut vm, tk::etr_ice("Inner Wall", 0, 5), ServerId::Hq, true);
+    let outer = tk::install_ice(&mut vm, tk::etr_ice("Outer Wall", 0, 5), ServerId::Hq, true);
+    // A remote with a card in its root, so the board really has a fourth
+    // server for the announcement to have declined.
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 2), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(dobrado))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Hq))
+            .stop_at_action(),
+    );
+
+    let announcement = t
+        .of_kind(Kind::AttackedServer)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("the Runner announced a server: {}", t.tail(30)))
+        .clone();
+    let DecisionSpec::DeclareAttackedServer { options, .. } = &announcement.spec else {
+        panic!("6.9.1a's announcement: {:?}", announcement.spec)
+    };
+    let mut offered = options.clone();
+    offered.sort_by_key(|s| format!("{s:?}"));
+    assert_eq!(
+        offered,
+        vec![ServerId::Archives, ServerId::Hq, ServerId::Rnd],
+        "6.7.4a: 'a CENTRAL server' — the remote was on the board and was not \
+         offered: {}",
+        t.tail(30)
+    );
+
+    let resolved: Vec<ObjectId> = vm
+        .changes
+        .log
+        .iter()
+        .filter_map(|c| match c {
+            GameChange::SubroutineResolved { ice, .. } => Some(*ice),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        resolved,
+        vec![inner],
+        "the outer wall was bypassed and the inner one was not — one subroutine, \
+         and it is the second wall's (outer={outer:?}): {}",
+        t.tail(30)
+    );
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredSuccessful { .. })),
+        "…so the inner wall ended the run: {}",
+        t.tail(30)
+    );
+}
+
+/// Carmen: "Interface → 1[credit]: Break 1 sentry subroutine." / "2[credit]:
+/// +3 strength."
+///
+/// Printed strength 2 against a sentry of strength 5: 9.3.6c withholds the
+/// interface until the pump has run, and the pump is one purchase because the
+/// card buys 3 strength at a time.
+#[test]
+fn carmen_pumps_then_breaks_a_sentry() {
+    let mut vm = Vm::empty(9608);
+    let carmen = tk::install_rig(&mut vm, card_partial("Carmen"));
+    assert_eq!(vm.effective_strength(carmen), Some(2), "printed strength 2");
+    let mut sentry = tk::etr_ice("Big Sentry", 0, 5);
+    sentry.subtypes = vec![Subtype::Sentry];
+    tk::install_ice(&mut vm, sentry, ServerId::Hq, true);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().first(), Reply::run(ServerId::Hq))
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("pump").once(),
+                Reply::take("pump"),
+            )
+            .when(
+                Match::paid().during(StructKind::Encounter).offering("interface").once(),
+                Reply::take("interface"),
+            )
+            .stop_at_action(),
+    );
+    // 3.9.5b: the pump lasts the encounter, so by the time the assertions run
+    // Carmen is back to its printed 2 — what the +3 did is legible in the
+    // break it made possible against a sentry of strength 5, and in the pool.
+    assert_eq!(vm.effective_strength(carmen), Some(2), "the pump expired with the encounter");
+    assert_eq!(vm.st.runner.credits, 2, "2 to pump, 1 to break: {}", t.tail(20));
+    assert!(
+        !vm.changes.log.iter().any(|c| matches!(c, GameChange::SubroutineResolved { .. })),
+        "the sentry's subroutine was broken, so it did not resolve: {}",
+        t.tail(20)
+    );
+}
+
+/// Carpe Diem: "Identify your mark." / "Gain 4[credit]."
+///
+/// 10.11.2 with no mark designated: a random CENTRAL becomes it, and 10.11.3
+/// makes the designation immutable for the turn — a second Carpe Diem the same
+/// turn identifies the same server, which is the arm that proves the
+/// instruction is 10.11.3's and not a re-roll.
+#[test]
+fn carpe_diem_identifies_the_mark_and_gains_four() {
+    let mut vm = Vm::empty(9609);
+    let first = vm.new_object(card_partial("Carpe Diem"), Zone::Hand(Side::Runner));
+    let second = vm.new_object(card_partial("Carpe Diem"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().extend([first, second]);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.st.runner.credits = 2;
+    vm.start_turn(Side::Runner);
+    assert!(vm.mark().is_none(), "10.11.1a: no server is the mark to begin with");
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(first))
+            .when(Match::action().once(), Reply::play_card(second))
+            .stop_at_action(),
+    );
+
+    let (mark, _) = vm.mark().unwrap_or_else(|| panic!("a mark was identified: {}", t.tail(24)));
+    assert!(
+        matches!(mark, ServerId::Hq | ServerId::Rnd | ServerId::Archives),
+        "10.11.2a: a random CENTRAL server became the mark, not a remote \
+         (mark={mark:?}): {}",
+        t.tail(24)
+    );
+    assert_eq!(
+        vm.st.runner.credits,
+        2 - 1 + 4 - 1 + 4,
+        "9.11.3: the gain is its own instruction and both copies paid it: {}",
+        t.tail(24)
+    );
+    let designations = vm
+        .lingering
+        .iter()
+        .filter(|l| matches!(l.payload, jinteki_cr::lingering::Payload::MarkDesignation { .. }))
+        .count();
+    assert_eq!(
+        designations,
+        1,
+        "10.11.3/10.11.4: the designation is ONE lingering effect — a server is \
+         already the mark, so the second copy designates nothing: {}",
+        t.tail(24)
+    );
+}
+
+/// Backstitching: "When your turn begins, identify your mark."
+///
+/// The identity's own opening sentence, said by a resource — and the board
+/// carries no identity at all, so the designation that happens is this card's.
+#[test]
+fn backstitching_identifies_the_mark_when_the_turn_begins() {
+    let mut vm = Vm::empty(9610);
+    tk::install_rig(&mut vm, card_partial("Backstitching"));
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    assert!(vm.mark().is_none(), "10.11.1a: no mark before the turn begins");
+
+    vm.start_turn(Side::Runner);
+    let t = plan::play(&mut vm, Plan::corp(), Plan::runner().stop_at_action());
+
+    let (mark, _) = vm
+        .mark()
+        .unwrap_or_else(|| panic!("the turn began and a mark was identified: {}", t.tail(16)));
+    assert!(
+        matches!(mark, ServerId::Hq | ServerId::Rnd | ServerId::Archives),
+        "10.11.2a: a random central (mark={mark:?}): {}",
+        t.tail(16)
+    );
+}
+
+/// Always Have a Backup Plan: "Run any server."
+///
+/// 6.9.1a with no server named by the effect, so the Runner announces one —
+/// and the offer is every server on the board, which is what "any" means and
+/// what tells this card's first sentence from S-Dobrado's.
+#[test]
+fn always_have_a_backup_plan_runs_a_server_the_runner_names() {
+    let mut vm = Vm::empty(9611);
+    let plan_card = vm.new_object(card_partial("Always Have a Backup Plan"), Zone::Hand(Side::Runner));
+    vm.st.hand.get_mut(&Side::Runner).unwrap().push(plan_card);
+    tk::install_root(&mut vm, tk::vanilla_asset("Bait", 0, 2), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().once(), Reply::play_card(plan_card))
+            .when(Match::attacked_server().once(), Reply::Server(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+
+    let announcement = t
+        .of_kind(Kind::AttackedServer)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("the Runner announced a server: {}", t.tail(30)))
+        .clone();
+    let DecisionSpec::DeclareAttackedServer { options, .. } = &announcement.spec else {
+        panic!("6.9.1a's announcement: {:?}", announcement.spec)
+    };
+    assert!(
+        options.contains(&ServerId::Remote(1))
+            && options.contains(&ServerId::Hq)
+            && options.contains(&ServerId::Rnd)
+            && options.contains(&ServerId::Archives),
+        "6.7.4a: 'any server' — the remote and all three centrals were offered: {}",
+        t.tail(30)
+    );
+    assert!(
+        vm.changes.log.iter().any(|c| matches!(
+            c,
+            GameChange::RunDeclaredSuccessful { server: ServerId::Remote(1), .. }
+        )),
+        "the run the event initiated reached the server the Runner named: {}",
+        t.tail(30)
+    );
 }

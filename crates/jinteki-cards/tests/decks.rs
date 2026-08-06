@@ -93,42 +93,43 @@ fn mezzies_decks_are_honest_as_far_as_they_go() {
 fn the_deck_of_the_week_is_honest_as_far_as_it_goes() {
     let cards = deck_of_the_week();
     assert!(!cards.is_empty(), "the module is registered and returns its cards");
-    // 16 distinct cards on NRDB #97714's list, plus the identity CR 1.5.4a
-    // brings along with the deck.
-    let key = "notw_restoring_humanity";
-    let deck = deck_named(key).unwrap_or_else(|| panic!("the card layer has no deck {key:?}"));
-    assert_eq!(deck.len(), 17, "{key}: 16 distinct cards and the identity");
-    for c in &deck {
-        assert!(!c.oracle_text.trim().is_empty(), "{key}: {} has no printed text", c.name());
-        assert!(c.printed.faction.is_some(), "{key}: {} prints a faction (2.13)", c.name());
-        for a in &c.printed.abilities {
-            assert!(
-                a.label.starts_with(&c.name().to_lowercase()) || a.label == "base link",
-                "{key}: {}'s ability label {:?} does not name its card",
-                c.name(),
-                a.label
-            );
+    // 16 distinct cards on NRDB #97714's list and 18 on #97727's, each plus
+    // the identity CR 1.5.4a brings along with the deck.
+    for (key, expect) in [("notw_restoring_humanity", 17usize), ("notw_sable", 19usize)] {
+        let deck = deck_named(key).unwrap_or_else(|| panic!("the card layer has no deck {key:?}"));
+        assert_eq!(deck.len(), expect, "{key}: the distinct cards and the identity");
+        for c in &deck {
+            assert!(!c.oracle_text.trim().is_empty(), "{key}: {} has no printed text", c.name());
+            assert!(c.printed.faction.is_some(), "{key}: {} prints a faction (2.13)", c.name());
+            for a in &c.printed.abilities {
+                assert!(
+                    a.label.starts_with(&c.name().to_lowercase()) || a.label == "base link",
+                    "{key}: {}'s ability label {:?} does not name its card",
+                    c.name(),
+                    a.label
+                );
+            }
+            if c.is_complete() {
+                assert!(
+                    !c.printed.abilities.is_empty()
+                        || c.printed.additional_steal_cost.is_some()
+                        || c.printed.additional_play_cost.is_some(),
+                    "{key}: {} is marked complete but denotes into nothing",
+                    c.name()
+                );
+            }
         }
-        if c.is_complete() {
-            assert!(
-                !c.printed.abilities.is_empty()
-                    || c.printed.additional_steal_cost.is_some()
-                    || c.printed.additional_play_cost.is_some(),
-                "{key}: {} is marked complete but denotes into nothing",
-                c.name()
-            );
-        }
+        let complete = deck.iter().filter(|c| c.is_complete()).count();
+        let sentences: usize = deck.iter().map(|c| c.unimplemented.len()).sum();
+        println!(
+            "{key}: {} cards written, {complete} complete, {} partial, \
+             {sentences} printed sentences still unsayable",
+            deck.len(),
+            deck.len() - complete
+        );
+        // CR 1.5.4a: the pile is the Runner's, and NRDB #97727 lists none.
+        assert!(pile_named(key).unwrap().is_empty(), "neither list carries a 1.5.4a pile");
     }
-    let complete = deck.iter().filter(|c| c.is_complete()).count();
-    let sentences: usize = deck.iter().map(|c| c.unimplemented.len()).sum();
-    println!(
-        "{key}: {} cards written, {complete} complete, {} partial, \
-         {sentences} printed sentences still unsayable",
-        deck.len(),
-        deck.len() - complete
-    );
-    // CR 1.5.4a: a Corp deck brings no pile at all.
-    assert!(pile_named(key).unwrap().is_empty(), "a Corp deck brings no 1.5.4a pile");
 }
 
 /// CR 1.5.4a: every card of the pile is a Runner IDENTITY, and 1.5.4b's
@@ -273,7 +274,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 281, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face, Ascending to Orbit is Earth Station's; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue; mezzie_asa.rs is 6 of Mezzie's ice, 7 of her assets, 4 of her operations, her 4 agendas and her 2 upgrades, mezzie_valencia.rs is Zer0, three programs, and the ten events and four resources of Valencia's own list, notw_restoring_humanity.rs is the 12 of Boring.dec's 16 no earlier deck had written)");
+    assert_eq!(checked, 294, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face, Ascending to Orbit is Earth Station's; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue; mezzie_asa.rs is 6 of Mezzie's ice, 7 of her assets, 4 of her operations, her 4 agendas and her 2 upgrades, mezzie_valencia.rs is Zer0, three programs, and the ten events and four resources of Valencia's own list, notw_restoring_humanity.rs is the 12 of Boring.dec's 16 no earlier deck had written, notw_sable.rs is the 13 of kit costume party's 18 no earlier deck had written)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and
@@ -329,7 +330,7 @@ fn every_definition_is_reachable_from_all_cards() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 281, "one reachability check per card definition");
+    assert_eq!(checked, 294, "one reachability check per card definition");
 }
 
 /// What `cards_in` reports for a card that declared `.no_printed_text()` —
