@@ -168,7 +168,20 @@ pub enum DecisionSpec {
     /// `LoopCount(n)`.
     LoopCount { period: usize },
     /// CR 9.11.4f / 1.16.10-11: pay a (nested or additional) cost or decline.
-    NestedCost { cost: crate::ability::Cost },
+    ///
+    /// The costs are the ways the sentence OFFERS, already filtered by 1.16.1
+    /// to the ones this payer can pay in full — a door they cannot walk
+    /// through is not a door. One element is every ordinary nested cost and
+    /// every additional cost; several are 1.16.11b's "unless they **either**
+    /// spend [click][click] **or** pay 5[credit]", where the payer picks
+    /// which door as well as whether to walk through one. Answer with
+    /// `PayNestedCost(Some(i))` naming an index into THIS list, or
+    /// `PayNestedCost(None)` to decline.
+    ///
+    /// The decision is not asked at all when the list would be empty: with
+    /// nothing payable there is no choice to put (1.16.1), and the effect
+    /// the cost would have suppressed simply resolves.
+    NestedCost { costs: Vec<crate::ability::Cost> },
     /// Decline or resolve an optional part (9.6.9c).
     OptionalEffect { label: &'static str },
     /// CR 11.5 step 4a: the Runner chooses a candidate to access.
@@ -267,7 +280,12 @@ pub enum DecisionAnswer {
     /// CR 1.15.1: announced subroutine targets (9.8.6).
     Subroutines(Vec<SubKey>),
     Option(usize),
-    PayNestedCost(bool),
+    /// CR 1.16.11 / 1.16.10a: `Some(i)` pays the i-th cost the matching
+    /// [`DecisionSpec::NestedCost`] offered; `None` declines. The index is
+    /// what a sentence with ALTERNATIVE costs needs and what every
+    /// single-cost sentence answers as `Some(0)` — one position with
+    /// content, not a second answer for the two-door case.
+    PayNestedCost(Option<usize>),
     ResolveOptional(bool),
     Candidate(ObjectId),
     JackOut(bool),

@@ -524,7 +524,30 @@ pub enum Instruction {
     /// CR 1.16.11b: "[effect] unless [cost]" — paying suppresses the effect;
     /// declining (or being unable to pay) makes it the next instruction.
     NestedCostUnless {
-        cost: crate::ability::Cost,
+        /// The ways OUT the sentence offers, as a list (§12 rule 2): one
+        /// element is 1.16.11b's ordinary "unless they pay 3[credit]", and
+        /// several are its "unless they **either** spend [click][click]
+        /// **or** pay 5[credit]" — one instruction with two doors, not two
+        /// instructions.
+        ///
+        /// A [`crate::ability::Cost`] is a CONJUNCTION: every component of
+        /// one element is paid together. The list is the disjunction over
+        /// it, so the two nest the way the printed words do.
+        ///
+        /// 1.16.1 filters the list where it is offered: a cost the payer
+        /// cannot pay in full is not a door, so it is not put to them. That
+        /// is 9.12.3c's rule about a choice among effects, said about costs
+        /// — the payer picks among the ones that can actually be paid, and
+        /// a payer who can pay none faces no choice at all and the effect
+        /// resolves. It is also why the list is never a nesting of one
+        /// `NestedCostUnless` inside another: nesting would invent an
+        /// instruction boundary the sentence does not have (9.11.3), and
+        /// with it a checkpoint, a reaction window and an interrupt window
+        /// between the two halves of a single choice.
+        ///
+        /// An EMPTY list is an authoring error and reads as an unpayable
+        /// cost: the effect resolves, unconditionally.
+        costs: Vec<crate::ability::Cost>,
         effect: Box<Instruction>,
         payer: Option<crate::object::Side>,
     },

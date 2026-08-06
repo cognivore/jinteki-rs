@@ -19391,23 +19391,111 @@ fn ash_2x3zb9cy_wins_a_trace_and_leaves_the_runner_only_itself_to_access() {
     }
 }
 
-/// Manegarm Skunkworks is BLOCKED, and the test pins the marker rather than
-/// the behaviour: nothing of its one printed sentence can be said yet (see the
-/// card's doc comment and MEZZIE-QUEUE.md's Blockers), so the card denotes into
-/// no ability at all and a later wave that quietly deleted the marker without
-/// writing the sentence would fail here.
+/// Manegarm Skunkworks: "Whenever the Runner approaches this server, end the
+/// run unless they either spend [click][click] or pay 5[credit]."
+///
+/// The sentence promises the Runner a choice of TWO doors and promises the
+/// Corp that a Runner who can walk through neither loses the run. All three
+/// halves are on one board here: the two arms that pay each door and continue
+/// to a successful run, and the arm with 1[click] and 4[credit] — enough for
+/// neither — where no choice is put at all and the run ends before the breach.
+///
+/// The doors are measured by what they COST (read off the payment records,
+/// since paying the click door can empty the Runner's turn), which is the one
+/// thing a single-cost approximation could not get right: clicks (1.11) and
+/// credits (1.10) are different resources and neither door is a subset of the
+/// other.
 #[test]
-fn manegarm_skunkworks_is_still_only_its_printed_text() {
-    let ms = jinteki_cards::find("Manegarm Skunkworks").expect("Manegarm Skunkworks is in the card layer");
-    assert_eq!(
-        ms.unimplemented,
-        vec!["Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."],
-        "the card's only printed sentence is still unsayable"
-    );
-    assert!(
-        ms.printed.abilities.is_empty(),
-        "…so it denotes into nothing: an approximation would show up here as an ability"
-    );
+fn manegarm_skunkworks_ends_the_run_unless_the_runner_pays_one_of_two_costs() {
+    // (clicks at the approach, credits, which door — None: neither is payable)
+    let arms: [(u32, u32, Option<usize>); 3] = [
+        (2, 5, Some(0)), // both doors; the Runner spends [click][click]
+        (2, 5, Some(1)), // both doors; the Runner pays 5[credit]
+        (1, 4, None),    // neither door is payable: the run ends
+    ];
+    for (clicks, credits, door) in arms {
+        let mut vm = Vm::empty(9310);
+        let ms = tk::install_root(&mut vm, card("Manegarm Skunkworks"), ServerId::Remote(1), true);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Loose Agenda", 3, 1),
+            ServerId::Remote(1),
+            false,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 6);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        vm.st.runner.credits = credits;
+        // CR 1.11.2: the turn allots the clicks. The basic run action spends
+        // one before the approach, so the Runner meets the nested cost with
+        // exactly `clicks` left.
+        vm.st.runner.allotted_clicks = clicks + 1;
+        vm.start_turn(Side::Runner);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(
+                    Match::nested_cost(),
+                    match door {
+                        Some(i) => Reply::PayCostWith(i),
+                        None => Reply::PayCost(false),
+                    },
+                )
+                .stop_at_action(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&agenda].zone == Zone::ScoreArea(Side::Runner),
+            door.is_some(),
+            "the run reaches the breach only when a door was paid \
+             ({clicks}[click], {credits}[credit]): {}",
+            t.tail(24)
+        );
+        let offered = t.windows(Kind::NestedCost, Side::Runner);
+        assert_eq!(
+            offered.len(),
+            usize::from(door.is_some()),
+            "1.16.1: with 1[click] and 4[credit] neither door is payable, so no \
+             choice is put at all ({clicks}[click], {credits}[credit]): {}",
+            t.tail(24)
+        );
+        if door.is_some() {
+            assert_eq!(
+                offered[0].costs().len(),
+                2,
+                "both doors were put to a Runner who could pay both: {}",
+                t.tail(24)
+            );
+        }
+        let paid = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::CostPaid { side: Side::Runner, credits, clicks, source, .. }
+                    if *source == Some(ms) =>
+                {
+                    Some((*clicks, *credits))
+                }
+                _ => None,
+            })
+            .fold((0u32, 0u32), |a, b| (a.0 + b.0, a.1 + b.1));
+        let want = match door {
+            Some(0) => (2, 0),
+            Some(_) => (0, 5),
+            None => (0, 0),
+        };
+        assert_eq!(
+            paid, want,
+            "the door the Runner named is the one they paid — [click][click] or \
+             5[credit], never both and never a mixture \
+             ({clicks}[click], {credits}[credit]): {}",
+            t.tail(24)
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

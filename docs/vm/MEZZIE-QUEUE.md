@@ -64,7 +64,7 @@ Identity is COMPLETE. Printed text below is from
       "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice."
 - [x] **Ash 2X3ZB9CY** ◆ ×1 — upgrade · Bioroid · cost 2, trash 3
       "Whenever there is a successful run on this server, Trace[4]. If successful, the Runner cannot access any cards other than Ash 2X3ZB9CY for the remainder of this run."
-- [ ] **Manegarm Skunkworks** ◆ ×1 — upgrade · cost 2, trash 3
+- [x] **Manegarm Skunkworks** ◆ ×1 — upgrade · cost 2, trash 3
       "Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit]."
 - [x] **Tatu-Bola** ×1 — ice · Barrier · cost 2, str 1
       "When the Runner passes this ice, you may swap it with a piece of ice from HQ. If you do, gain 4[credit]. (The new ice is installed unrezzed. You do not pay an install cost.) / [subroutine] End the run."
@@ -136,8 +136,8 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `kernel/vm-deficiencies` wave: 41 of 47 ticked, 6 printed
-sentences still unsayable, 6 cards unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 42 of 47 ticked, 5 printed
+sentences still unsayable, 5 cards unticked.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
@@ -150,7 +150,6 @@ The six that remain, and what each is waiting on:
 | Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
 | Lakshmi Smartfabrics | two: agenda points as a description, and "a card with the same NAME as the one this ability revealed" |
 | Marilyn Campaign | one: a trash redirected to a DECK, optionally |
-| Manegarm Skunkworks | one: a nested cost with ALTERNATIVE costs |
 | Hacktivist Meeting | two: an additional cost to REZ described cards, and a random-trash `Cost` component |
 | Tsakhia "Bankhar" Gantulga | two: an ENCOUNTER state requirement, and an ordinal on a static ability |
 
@@ -254,30 +253,47 @@ said, so nothing moved. Measured rather than assumed: the kernel test
 `an_approach_condition_scoped_to_this_server_ignores_every_other` runs the
 same upgrade against its own remote and against HQ.
 
-**Manegarm Skunkworks** is now blocked on ONE word rather than two — the
-alternative-cost entry below — and stays unticked.
+**Manegarm Skunkworks** was left blocked on ONE word rather than two — the
+alternative-cost entry below, which has since landed too.
 
-### A nested cost with ALTERNATIVE costs (CR 1.16.11b / 9.12.3c)
+### A nested cost with ALTERNATIVE costs — LANDED (CR 1.16.11b / 1.16.1)
 
-`Instruction::NestedCostUnless { cost, effect, payer }` holds one `Cost`, and
-`Cost` is a conjunction — every component is paid together. A sentence whose
-escape is a CHOICE of costs ("unless they either spend [click][click] or pay
-5[credit]") has nowhere to put the second one.
+`Instruction::NestedCostUnless { costs: Vec<Cost>, effect, payer }` — the ways
+out as a LIST, exactly as the entry asked. One element is every existing site
+(1.16.11b's ordinary "unless they pay 3[credit]"), so nothing moved; several
+are "unless they **either** spend [click][click] **or** pay 5[credit]", one
+instruction with two doors. `Cost` stays a conjunction and the list is the
+disjunction over it, which is how the two nest in the printed words.
 
-Neither workaround is honest. Writing one cost drops whichever door was not
-written, and the two are not interchangeable: a Runner with 5[credit] and no
-clicks escapes by one and a Runner with two clicks and no credits by the other.
-Nesting one inside the other invents an instruction boundary the sentence does
-not have (9.11.3), and with it a checkpoint, a reaction window and an interrupt
-window between the two halves of a single choice.
+The filter is **1.16.1** rather than the 1.16.1b the entry named — "if a player
+cannot pay the full cost … they cannot use the effect associated with that
+cost" — asked of each alternative where the choice is OFFERED. 9.12.3c is the
+analogy and not the rule: it governs a choice among *effects* in a "must"
+ability, and the shape it describes ("must choose an effect that can be fully
+resolved; if none can, the ability does nothing") is what the cost list does.
+Filing it under 9.12.3c alone would have pointed the next reader at the wrong
+sentence.
 
-Wanted: the costs as a LIST on the one instruction, filtered by 1.16.1b's
-payability where it is offered — which is 9.12.3c's rule about a choice among
-options said for costs: the payer picks among the costs they can actually pay,
-and a payer who can pay none faces no choice and the effect resolves.
+What the entry did not mention, and it is the half that costs the most:
+`DecisionSpec::NestedCost` and `DecisionAnswer::PayNestedCost` both had to
+learn WHICH cost. They are now `NestedCost { costs: Vec<Cost> }` — the payable
+ones, in printed order — and `PayNestedCost(Option<usize>)`, an index into
+that same list, with `None` for declining. The offered list is rebuilt from
+one helper (`Vm::payable_nested_costs`) at the ask and at the answer, so the
+two are the same list by construction. The ~20 driver call sites did NOT move:
+`Reply::PayCost(true)` still means "pay", and now means `Some(0)` — the only
+door wherever a sentence states one — with `Reply::PayCostWith(i)` for the
+two-door case. The server's prompt renders one button per door, named by what
+it costs, and a bare "Pay" when there is only one.
 
-Wants it: **Manegarm Skunkworks** (its only sentence, which also wants the
-condition above).
+Measured on a real board by
+`a_nested_cost_offers_only_the_alternatives_the_payer_can_pay`: five arms over
+the same upgrade, holding one resource payable and starving the other, so that
+which doors were offered, which was walked through and what it cost are all
+visible. The arm with 1[click] and 4[credit] is the one no single-cost writing
+could reach — neither door payable, no decision put, run ended.
+
+**Manegarm Skunkworks** is written and ticked.
 
 ### A trash whose destination an ABILITY redirects (CR 9.9.8a-b / 8.2.2)
 

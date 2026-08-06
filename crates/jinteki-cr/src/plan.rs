@@ -624,8 +624,16 @@ pub enum Reply {
     /// 9.11.4g / 9.9.11: choose the option whose label contains this needle
     /// (option lists are labelled, e.g. the replacement-ordering Decision).
     ChooseNamed(&'static str),
-    /// 1.16.10-11: pay (true) or decline (false).
+    /// 1.16.10-11: pay (true) or decline (false). Paying takes the FIRST way
+    /// out the decision offered, which is the only one wherever a sentence
+    /// states one cost.
     PayCost(bool),
+    /// CR 1.16.11b: pay the nth way out, where the sentence offered several
+    /// ("unless they **either** spend [click][click] **or** pay 5[credit]").
+    /// The index is into the costs the decision actually put — 1.16.1 has
+    /// already dropped the ones this payer cannot pay — so `PayCostWith(0)`
+    /// and `PayCost(true)` are the same reply.
+    PayCostWith(usize),
     /// 9.6.9c: resolve (true) or decline (false) an optional part; also
     /// 10.3.1j candidacy declaration.
     Optional(bool),
@@ -853,11 +861,23 @@ impl Entry {
     }
     /// The cost put to the player at a nested/additional-cost decision, or
     /// the alternate payment offered at a 1.16.2e decision.
+    ///
+    /// The FIRST way out, where 1.16.11b's sentence offered several — see
+    /// [`Decision::costs`] for the whole list.
     pub fn cost(&self) -> Option<&crate::ability::Cost> {
         match &self.spec {
-            DecisionSpec::NestedCost { cost } => Some(cost),
+            DecisionSpec::NestedCost { costs } => costs.first(),
             DecisionSpec::AlternatePayment { instead, .. } => Some(instead),
             _ => None,
+        }
+    }
+    /// CR 1.16.11b: every way out this nested cost offered, in printed order
+    /// and already filtered to the ones the payer can pay (1.16.1). Empty for
+    /// every other decision.
+    pub fn costs(&self) -> &[crate::ability::Cost] {
+        match &self.spec {
+            DecisionSpec::NestedCost { costs } => costs,
+            _ => &[],
         }
     }
     /// CR 1.16.2c: the greatest value of X this announcement allows.
@@ -1180,7 +1200,8 @@ fn resolve(reply: &Reply, spec: &DecisionSpec, t: &Transcript) -> Option<Decisio
         Reply::LoopCount(n) => DecisionAnswer::LoopCount(*n),
         Reply::Counters(v) => DecisionAnswer::Counters(v.clone()),
         Reply::SubOrder(v) => DecisionAnswer::SubroutineOrder(v.clone()),
-        Reply::PayCost(b) => DecisionAnswer::PayNestedCost(*b),
+        Reply::PayCost(b) => DecisionAnswer::PayNestedCost(b.then_some(0)),
+        Reply::PayCostWith(i) => DecisionAnswer::PayNestedCost(Some(*i)),
         Reply::Optional(b) => DecisionAnswer::ResolveOptional(*b),
         Reply::Candidate(o) => DecisionAnswer::Candidate(*o),
         Reply::JackOut(b) => DecisionAnswer::JackOut(*b),
@@ -1267,7 +1288,7 @@ pub fn default_answer(spec: &DecisionSpec) -> DecisionAnswer {
             candidates.iter().take(*count as usize).map(|(k, _)| *k).collect(),
         ),
         DecisionSpec::ChooseOption { .. } => DecisionAnswer::Option(0),
-        DecisionSpec::NestedCost { .. } => DecisionAnswer::PayNestedCost(false),
+        DecisionSpec::NestedCost { .. } => DecisionAnswer::PayNestedCost(None),
         DecisionSpec::OptionalEffect { .. } => DecisionAnswer::ResolveOptional(false),
         DecisionSpec::ChooseCandidate { candidates } => DecisionAnswer::Candidate(candidates[0]),
         // 10.3.1j: the neutral policy declines candidacy; plans opt in.

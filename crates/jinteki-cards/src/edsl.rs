@@ -1707,7 +1707,31 @@ pub fn may_pay(cost: Cost, instr: Instruction) -> Instruction {
 /// "… **unless** the Runner pays <cost>." (1.16.11b): paying suppresses the
 /// effect; declining makes it happen.
 pub fn unless_pays(payer: Side, cost: Cost, instr: Instruction) -> Instruction {
-    Instruction::NestedCostUnless { cost, effect: Box::new(instr), payer: Some(payer) }
+    Instruction::NestedCostUnless {
+        costs: vec![cost],
+        effect: Box::new(instr),
+        payer: Some(payer),
+    }
+}
+/// "… **unless** they **either** <cost> **or** <cost>." (1.16.11b; Manegarm
+/// Skunkworks.) The same nested cost with more than one way out — ONE
+/// instruction and one choice, not a nesting, because 9.11.3 gives the
+/// sentence no boundary between its two doors and a nesting would put a
+/// checkpoint, a reaction window and an interrupt window there.
+///
+/// 1.16.1 filters the doors where they are offered: the payer is put only the
+/// ones they can pay in full, and a payer who can pay none faces no choice at
+/// all and the effect resolves — 9.12.3c's shape, said about costs.
+pub fn unless_pays_one_of(
+    payer: Side,
+    costs: impl IntoIterator<Item = Cost>,
+    instr: Instruction,
+) -> Instruction {
+    Instruction::NestedCostUnless {
+        costs: costs.into_iter().collect(),
+        effect: Box::new(instr),
+        payer: Some(payer),
+    }
 }
 /// "**Repeat this process** for each <amount>." / "…<effects>, for each
 /// <amount>." (Fully Operational; CR 9.12.2b.) The effects TIED to a

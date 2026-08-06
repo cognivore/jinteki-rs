@@ -270,7 +270,7 @@ pub fn pup() -> PrintedCard {
     c.strength = Some(0);
     let sub = || {
         AbilityDef::subroutine(vec![Instruction::NestedCostUnless {
-            cost: Cost::credits(1),
+            costs: vec![Cost::credits(1)],
             effect: Box::new(Instruction::Damage {
                 kind: DamageKind::Net,
                 amount: Quantity::c(1),

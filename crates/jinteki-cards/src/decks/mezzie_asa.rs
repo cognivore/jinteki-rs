@@ -931,28 +931,29 @@ pub fn ash_2x3zb9cy() -> Card {
 /// "Whenever the Runner approaches this server, end the run unless they either
 ///  spend [click][click] or pay 5[credit]."
 ///
-/// UNIMPLEMENTED: the card's only sentence, on ONE count now rather than two.
+/// COMPLETE. One printed sentence, one instruction (9.11.3) — an end-the-run
+/// whose escape is a nested cost with TWO ways out.
 ///
-/// "Approaches THIS server" is no longer among them: 6.9.4g's condition now
-/// carries the server the way `IcePassed` carries its ice, so
-/// `runner_approaches_this_server()` says exactly what the card prints, and
-/// the kernel test measures the difference the scoping makes.
+/// WHEN is 6.9.4g's step, scoped to the source's own server: the condition
+/// carries the server the way `IcePassed` carries its ice, so a rezzed copy in
+/// a remote says nothing about a run on HQ, and the approach is reached once
+/// every piece of ice protecting the attacked server has been passed — or
+/// straight away when none is.
 ///
-/// What is left is "unless they either spend [click][click] or pay 5[credit]",
-/// which is 1.16.11b's
-/// nested cost with TWO costs, and the nested cost holds one. The two are not
-/// interchangeable and neither is a subset of the other: 1.11 clicks and 1.10
-/// credits are different resources, and a Runner with 5[credit] and no clicks
-/// escapes by one door while a Runner with two clicks and no credits escapes by
-/// the other. Writing it as one cost drops whichever door was not written and
-/// ends runs the Runner had paid to continue; writing it as two nested costs
-/// one inside the other invents an instruction boundary the sentence does not
-/// have (9.11.3), and with it a checkpoint and an interrupt window between the
-/// two halves of a single choice. 9.12.3c is the shape the sentence actually
-/// has — a choice among options, restricted to the ones that can be fully
-/// resolved — so a Runner who can afford neither faces no choice at all and
-/// the run ends. The general capability wanted is on MEZZIE-QUEUE.md's
-/// Blockers.
+/// The escape is 1.16.11b written with a LIST of costs, and the list is
+/// load-bearing: 1.11 clicks and 1.10 credits are different resources, so
+/// neither door is a subset of the other. A Runner with 5[credit] and no
+/// clicks escapes by one and a Runner with two clicks and no credits by the
+/// other; writing one cost would end runs the Runner had paid to continue.
+/// Nesting one inside the other is the other wrong answer — it invents an
+/// instruction boundary the sentence does not have (9.11.3) and with it a
+/// checkpoint, a reaction window and an interrupt window between the two
+/// halves of a single choice.
+///
+/// 1.16.1 is what makes the list behave: a door the Runner cannot pay in full
+/// is not put to them, and a Runner who can pay neither faces no choice at all
+/// and the run ends — 9.12.3c's shape ("that player must choose an effect that
+/// can be fully resolved"), said about costs.
 pub fn manegarm_skunkworks() -> Card {
     card("Manegarm Skunkworks")
         .corp()
@@ -962,7 +963,15 @@ pub fn manegarm_skunkworks() -> Card {
         .trash_cost(3)
         .unique()
         .text("Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit].")
-        .unimplemented("Whenever the Runner approaches this server, end the run unless they either spend [click][click] or pay 5[credit].")
+        .when(
+            runner_approaches_this_server(),
+            [unless_pays_one_of(
+                Side::Runner,
+                [clicks(2), credits(5)],
+                end_the_run(),
+            )],
+        )
+        .named("end the run here unless they spend 2 clicks or pay 5")
         .build()
 }
 

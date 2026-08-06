@@ -2310,7 +2310,7 @@ impl Vm {
                     cite!("rule_candidates_already_accessed");
                     self.ask(
                         Side::Runner,
-                        DecisionSpec::NestedCost { cost: access_cost },
+                        DecisionSpec::NestedCost { costs: vec![access_cost] },
                         DecisionCtx::AccessCost(card),
                     );
                     return;
@@ -2380,7 +2380,7 @@ impl Vm {
                         // 1.16.10a: the Runner may pay or decline.
                         self.ask(
                             Side::Runner,
-                            DecisionSpec::NestedCost { cost: total },
+                            DecisionSpec::NestedCost { costs: vec![total] },
                             DecisionCtx::StealCost(card),
                         );
                     }
@@ -6727,10 +6727,17 @@ impl Vm {
                             return;
                         }
                     }
-                    Instruction::NestedCostUnless { cost, effect, .. } => {
-                        let (payer, source) = self.nested_cost_payer(&instr);
-                        if !self.cost_payable(payer, source, cost) {
+                    Instruction::NestedCostUnless { costs, effect, .. } => {
+                        // 1.16.1: each way out is offered only if the payer
+                        // can pay it in FULL, so a sentence with two doors
+                        // ("either spend [click][click] or pay 5[credit]")
+                        // puts only the ones they can walk through — which
+                        // is 9.12.3c's rule about a choice among effects,
+                        // said about costs. With none of them payable there
+                        // is no choice to put at all.
+                        if self.payable_nested_costs(&instr, costs).is_empty() {
                             cite!("rule_cost_interrupt_static_mandatory");
+                            cite!("rule_mandatory_choice");
                             // Cannot pay: the "unless" effect is forced.
                             let eff = (**effect).clone();
                             let idx_now = {
@@ -6944,18 +6951,43 @@ impl Vm {
         let Some(Frame::Ability(af)) = self.frames.last() else {
             return (Side::Runner, ObjectId(0));
         };
-        let (cost, explicit) = match instr {
-            Instruction::NestedCostThen { cost, payer, .. }
-            | Instruction::NestedCostUnless { cost, payer, .. } => (cost, *payer),
+        let (costs, explicit): (&[Cost], _) = match instr {
+            Instruction::NestedCostThen { cost, payer, .. } => {
+                (std::slice::from_ref(cost), *payer)
+            }
+            Instruction::NestedCostUnless { costs, payer, .. } => (costs.as_slice(), *payer),
             _ => return (af.controller, af.source.obj),
         };
-        let payer = explicit.unwrap_or(if cost.tags > 0 || cost.net_damage > 0 {
-            // Tag/damage components are things the Runner suffers.
-            Side::Runner
-        } else {
-            af.controller
-        });
+        // One sentence names ONE payer, whichever of its doors they take, so
+        // the derivation asks the list: a tag or damage component anywhere in
+        // it is something the Runner suffers.
+        let payer = explicit.unwrap_or(
+            if costs.iter().any(|c| c.tags > 0 || c.net_damage > 0) {
+                // Tag/damage components are things the Runner suffers.
+                Side::Runner
+            } else {
+                af.controller
+            },
+        );
         (payer, af.source.obj)
+    }
+
+    /// CR 1.16.1: the ways out of a 1.16.11b nested cost that this payer can
+    /// actually take — "if a player cannot pay the full cost … they cannot
+    /// use the effect associated with that cost", asked of each alternative
+    /// in turn.
+    ///
+    /// The result is the list a [`DecisionSpec::NestedCost`] offers and the
+    /// list a [`DecisionAnswer::PayNestedCost`] indexes, so the two are the
+    /// same list by construction; an empty result means no choice is put at
+    /// all (9.12.3c's shape, said about costs).
+    fn payable_nested_costs(&self, instr: &Instruction, costs: &[Cost]) -> Vec<Cost> {
+        let (payer, source) = self.nested_cost_payer(instr);
+        costs
+            .iter()
+            .filter(|c| self.cost_payable(payer, source, c))
+            .cloned()
+            .collect()
     }
 
     /// CR 1.15.2: how many separate announcements this instruction requires
@@ -7398,10 +7430,19 @@ impl Vm {
                     DecisionSpec::ChooseCounters { candidates, count: n, up_to: *up_to },
                 ))
             }
-            Instruction::NestedCostThen { cost, .. }
-            | Instruction::NestedCostUnless { cost, .. } => {
+            Instruction::NestedCostThen { cost, .. } => {
                 let (payer, _) = self.nested_cost_payer(instr);
-                Some((payer, DecisionSpec::NestedCost { cost: cost.clone() }))
+                Some((payer, DecisionSpec::NestedCost { costs: vec![cost.clone()] }))
+            }
+            Instruction::NestedCostUnless { costs, .. } => {
+                // 1.16.1 has already forced the branch if none of them is
+                // payable, so what is offered here is a non-empty list of
+                // doors the payer can walk through.
+                let (payer, _) = self.nested_cost_payer(instr);
+                Some((
+                    payer,
+                    DecisionSpec::NestedCost { costs: self.payable_nested_costs(instr, costs) },
+                ))
             }
             // 9.6.9: the optional component's yes/no.
             Instruction::DeclineableChoice(_) => Some((
@@ -13138,7 +13179,7 @@ impl Vm {
                     let total = base.plus(&add);
                     self.ask(
                         Side::Corp,
-                        DecisionSpec::NestedCost { cost: total },
+                        DecisionSpec::NestedCost { costs: vec![total] },
                         DecisionCtx::RezAdditionalCost,
                     );
                     return;
@@ -17731,9 +17772,9 @@ impl Vm {
                 if let Some(Frame::Ability(af)) = self.frames.last_mut() {
                     af.phase = AbilityPhase::Checkpoint;
                 }
-                match instr {
+                match instr.clone() {
                     Instruction::NestedCostThen { cost, effect, .. } => {
-                        if pay {
+                        if pay.is_some() {
                             cite!("rule_nested_cost_may");
                             // 1.16.11: the effect is what comes next. Queued
                             // before the payment for the same reason.
@@ -17767,12 +17808,22 @@ impl Vm {
                             self.changes.record(GameChange::AbilityUsed { source: source.obj });
                         }
                     }
-                    Instruction::NestedCostUnless { cost, effect, .. } => {
+                    Instruction::NestedCostUnless { costs, effect, .. } => {
                         cite!("rule_nested_cost_unless");
-                        if pay {
-                            self.pay_cost(payer, source.obj, &cost);
-                        } else if let Some(Frame::Ability(af)) = self.frames.last_mut() {
-                            af.instructions.insert(idx + 1, (*effect).clone());
+                        // The answer indexes the list that was OFFERED —
+                        // 1.16.1's payable ones — which is why it is rebuilt
+                        // here from the same helper rather than indexing the
+                        // printed list: nothing has changed the game state
+                        // between the ask and the answer, so the two lists
+                        // are the same list.
+                        let offered = self.payable_nested_costs(&instr, &costs);
+                        match pay.and_then(|i| offered.get(i).cloned()) {
+                            Some(chosen) => self.pay_cost(payer, source.obj, &chosen),
+                            None => {
+                                if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+                                    af.instructions.insert(idx + 1, (*effect).clone());
+                                }
+                            }
                         }
                     }
                     _ => unreachable!(),
@@ -17782,7 +17833,7 @@ impl Vm {
                 // CR 1.16.10a/1.17.3d: an additional cost to steal may be
                 // declined; declining means the agenda is not stolen.
                 cite!("rule_decline_additional_cost");
-                if pay {
+                if pay.is_some() {
                     // 1.16.10b: all additional costs are one all-at-once
                     // payment; the frame's PayCost phase pays first, so the
                     // cost-paid checkpoint's reactions resolve BEFORE the
@@ -17839,7 +17890,7 @@ impl Vm {
                 // the player may then spend the click on anything.
                 cite!("rule_must_cannot_force_additional_cost");
                 self.st.run_requirement_discharged = true;
-                if pay {
+                if pay.is_some() {
                     // 6.3.4: the [click] and the additional cost are both paid
                     // to MAKE the run; the run formally begins afterwards.
                     cite!("rule_abilities_during_a_run");
@@ -17853,7 +17904,7 @@ impl Vm {
                 // CR 1.16.10a: the Corp may decline the additional cost, and
                 // declining means the agenda is not scored.
                 cite!("rule_decline_additional_cost");
-                if pay {
+                if pay.is_some() {
                     // 1.16.10c: "the additional cost is paid and a checkpoint
                     // is resolved BEFORE performing the usual procedure to
                     // carry out that effect" — which is exactly what an
@@ -17923,7 +17974,7 @@ impl Vm {
                 // means no access occurs — but the chosen card already
                 // ceased to be a candidate.
                 cite!("rule_candidates_already_accessed");
-                if pay {
+                if pay.is_some() {
                     let cost = self.additional_access_cost(card);
                     self.begin_payment(
                         Side::Runner,
@@ -18222,7 +18273,7 @@ impl Vm {
                 cite!("rule_inherent_and_additional_cost");
                 let Some(p) = self.installs.last().cloned() else { return };
                 let c = p.card;
-                if pay {
+                if pay.is_some() {
                     let base = if p.ignore_costs {
                         Cost::free()
                     } else {
@@ -18511,7 +18562,7 @@ impl Vm {
                     cite!("rule_decline_additional_cost");
                     self.ask(
                         side,
-                        DecisionSpec::NestedCost { cost: extra },
+                        DecisionSpec::NestedCost { costs: vec![extra] },
                         DecisionCtx::RunActionCost { server, click_discount },
                     );
                     return;
@@ -18846,7 +18897,7 @@ impl Vm {
                     cite!("rule_decline_additional_cost");
                     self.ask(
                         Side::Corp,
-                        DecisionSpec::NestedCost { cost },
+                        DecisionSpec::NestedCost { costs: vec![cost] },
                         DecisionCtx::ScoreCost(card),
                     );
                 }
