@@ -22361,3 +22361,410 @@ fn predictive_planogram_offers_both_to_a_tagged_runner() {
     // 1 (the operation) + 1 (mandatory draw) − 1 (played) + 3 = 4.
     assert_eq!(vm.st.hand[&Side::Corp].len(), 4, "…and the cards: {}", t.tail(30));
 }
+
+// ---------------------------------------------------------------------------
+// The modal class (CR 9.11.4g), option by option
+//
+// `crates/jinteki-cards/tests/modal.rs` is the guard that keeps this section
+// honest: it walks every `Instruction::ChooseOne` the corpus builds and fails
+// if any printed option is never taken by a test here. The tests below are
+// the ones that walk found missing.
+//
+// Each is written the same way, and the shape is load-bearing. Taking an
+// option by NAME goes through `Reply::ChooseNamed`, which panics unless the
+// label is among the options the VM actually offered — so an arm per option
+// proves 9.11.4g's "set of options" was offered in full, and the assertions
+// after it prove each one "creates a different effect".
+// ---------------------------------------------------------------------------
+
+/// Data Raven: "When the Runner encounters this ice, they must take 1 tag or
+/// end the run."
+///
+/// CR 9.11.4g's own worked example, and 9.12.3d's. [`data_raven`] takes the
+/// tag; this takes both options in turn, so the branch that ENDS the run —
+/// which no test drove — is shown to exist and to do what it says.
+///
+/// The two arms differ in more than the tag: ending the run stops the ice
+/// before its subroutine, so the trace never runs and no power counter is
+/// placed. That is 9.11.4g's "each option begins its own instruction" made
+/// visible on the board.
+#[test]
+fn data_raven_offers_both_printed_options_and_resolves_each() {
+    for take_tag in [true, false] {
+        let mut vm = Vm::empty(4480);
+        let raven = tk::install_ice(&mut vm, card("Data Raven"), ServerId::Hq, true);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let pick = if take_tag { "take 1 tag" } else { "end the run" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Hq))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+        );
+
+        let asked = t.of_kind(Kind::Options);
+        assert!(
+            !asked.is_empty(),
+            "9.11.4g: the encounter put the choice (take_tag={take_tag}): {}",
+            t.tail(24)
+        );
+        let DecisionSpec::ChooseOption { options } = &asked[0].spec else {
+            panic!("an option choice: {:?}", asked[0].spec)
+        };
+        assert_eq!(
+            options,
+            &["take 1 tag", "end the run"],
+            "both printed bullets were offered, under the labels the card prints \
+             (take_tag={take_tag})"
+        );
+        assert_eq!(
+            asked[0].side,
+            Side::Runner,
+            "1.14.5: the sentence says THEY must, so the Runner chooses"
+        );
+        assert_eq!(
+            vm.st.runner.tags,
+            u32::from(take_tag),
+            "the tag arrives on exactly that branch (take_tag={take_tag}): {}",
+            t.tail(24)
+        );
+        let ended =
+            vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. }));
+        assert_eq!(
+            ended, !take_tag,
+            "…and the run ends on exactly the other (take_tag={take_tag}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.objects[&raven].counter(CounterKind::Power),
+            u32::from(take_tag),
+            "9.11.4g: ending the run at the encounter's conditional ability stops the \
+             ice before its subroutine, so the trace that places the counter only \
+             happens on the tag branch (take_tag={take_tag}): {}",
+            t.tail(24)
+        );
+    }
+}
+
+/// NBN: Reality Plus — "The first time each turn the Runner takes a tag, gain
+/// 2[credit] or draw 2 cards."
+///
+/// [`reality_plus_pays_once_a_turn_and_lets_the_corp_pick_how`] is about the
+/// ordinal and only ever took the credits. This is 9.11.4g: both printed
+/// options offered, each one taken, each one landing somewhere different.
+#[test]
+fn reality_plus_offers_both_printed_options_and_resolves_each() {
+    for draw_branch in [false, true] {
+        let mut vm = Vm::empty(6122);
+        tk::install_identity(&mut vm, card("NBN: Reality Plus"), Side::Corp);
+        tk::install_root(&mut vm, tk::corp_tags_button("Tag Me", 1), ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+
+        let pick = if draw_branch { "draw 2 cards" } else { "gain 2[credit]" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::paid().once(), Reply::take("tag"))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+
+        let asked = t.of_kind(Kind::Options);
+        assert_eq!(
+            asked.len(),
+            1,
+            "one choice, on the tag (draw_branch={draw_branch}): {}",
+            t.tail(24)
+        );
+        let DecisionSpec::ChooseOption { options } = &asked[0].spec else {
+            panic!("an option choice: {:?}", asked[0].spec)
+        };
+        assert_eq!(
+            options,
+            &["gain 2[credit]", "draw 2 cards"],
+            "both printed options were offered (draw_branch={draw_branch})"
+        );
+        // The Corp's own turn, so 5.6.2b's mandatory draw already put one card
+        // in HQ; the ability's two are the only others that could arrive.
+        if draw_branch {
+            assert_eq!(
+                vm.st.hand[&Side::Corp].len(),
+                3,
+                "the draw branch drew 2 on top of the mandatory draw: {}",
+                t.tail(24)
+            );
+            assert_eq!(vm.st.corp.credits, 0, "…and gained nothing: {}", t.tail(24));
+        } else {
+            assert_eq!(vm.st.corp.credits, 2, "the gain branch gained 2: {}", t.tail(24));
+            assert_eq!(
+                vm.st.hand[&Side::Corp].len(),
+                1,
+                "…and drew nothing but 5.6.2b's mandatory card: {}",
+                t.tail(24)
+            );
+        }
+    }
+}
+
+/// Omar Keung: "…change the attacked server to HQ or R&D for the remainder of
+/// that run."
+///
+/// [`omar_keung_succeeds_on_hq_without_ever_meeting_the_ice_protecting_it`]
+/// is about 6.1.2d and only ever named HQ. This is the choice itself: both
+/// printed servers are offered, and the run lands on the one named — so R&D,
+/// which no test reached, is shown to be a real branch and not a label.
+#[test]
+fn omar_keung_offers_both_printed_servers_and_runs_on_each() {
+    for server in [ServerId::Hq, ServerId::Rnd] {
+        let mut vm = Vm::empty(6222);
+        tk::install_identity(&mut vm, card("Omar Keung: Conspiracy Theorist"), Side::Runner);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.start_turn(Side::Runner);
+
+        let pick = if server == ServerId::Hq { "HQ" } else { "R&D" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::take("run archives"))
+                .when(Match::interrupt(), Reply::take("Omar"))
+                .when(Match::options().once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+        );
+
+        let asked = t.of_kind(Kind::Options);
+        assert_eq!(asked.len(), 1, "one choice was put ({pick}): {}", t.tail(30));
+        let DecisionSpec::ChooseOption { options } = &asked[0].spec else {
+            panic!("an option choice: {:?}", asked[0].spec)
+        };
+        assert_eq!(
+            options,
+            &["HQ", "R&D"],
+            "both printed servers were offered, and only those two ({pick})"
+        );
+        let declared: Vec<ServerId> = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::RunDeclaredSuccessful { server, .. } => Some(*server),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            declared,
+            vec![server],
+            "6.9.5a declared the run successful on the server the Runner named, and \
+             never on Archives ({pick}): {}",
+            t.tail(30)
+        );
+        let breached: Vec<ServerId> = vm
+            .changes
+            .log
+            .iter()
+            .filter_map(|c| match c {
+                GameChange::BreachBegan { server } => Some(*server),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            breached,
+            vec![server],
+            "6.9.5b breached that same server ({pick}): {}",
+            t.tail(30)
+        );
+    }
+}
+
+/// Mystic Maemi: "When your turn ends, if there are 3 or more hosted credits,
+/// you must trash 1 card from your grip at random or trash this resource."
+///
+/// [`mystic_maemi_banks_a_credit_each_turn_and_asks_to_be_paid_at_its_end`]
+/// only ever trashed her. This is the other option — the bill paid out of the
+/// grip instead — and it is the one that leaves her on the board, which is
+/// what makes the two branches tell apart.
+#[test]
+fn mystic_maemi_offers_both_printed_options_and_resolves_each() {
+    for pay_from_grip in [true, false] {
+        let mut vm = Vm::empty(9415);
+        let maemi = tk::install_rig(&mut vm, card("Mystic Maemi"));
+        tk::place_counters(&mut vm, maemi, CounterKind::Credit, 2);
+        tk::fill_hand(&mut vm, Side::Runner, 3);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        vm.start_turn(Side::Runner);
+
+        let pick = if pay_from_grip {
+            "trash 1 card from your grip at random"
+        } else {
+            "trash this resource"
+        };
+        let mut g = jinteki_cr::plan::Script::new(
+            Plan::corp().stop_at_action(),
+            Plan::runner()
+                .when(Match::action().first(), Reply::Halt)
+                .when(Match::options().once(), Reply::ChooseNamed(pick))
+                .otherwise_click_credit(),
+        );
+        g.run(&mut vm);
+        let grip_before = vm.st.hand[&Side::Runner].len();
+        let discard_before = vm.st.discard[&Side::Runner].len();
+        g.run(&mut vm);
+
+        let t = g.transcript();
+        let asked = t.of_kind(Kind::Options);
+        assert!(
+            !asked.is_empty(),
+            "9.11.4g: the turn's end put the choice (pay_from_grip={pay_from_grip}): {}",
+            t.tail(24)
+        );
+        let DecisionSpec::ChooseOption { options } = &asked[0].spec else {
+            panic!("an option choice: {:?}", asked[0].spec)
+        };
+        assert_eq!(
+            options,
+            &["trash 1 card from your grip at random", "trash this resource"],
+            "both printed options were offered (pay_from_grip={pay_from_grip})"
+        );
+        assert_eq!(
+            asked[0].side,
+            Side::Runner,
+            "1.14.5: 'YOU must' on the Runner's own resource, so the Runner chooses"
+        );
+        if pay_from_grip {
+            assert_eq!(
+                vm.st.objects[&maemi].zone,
+                Zone::Rig,
+                "the grip paid the bill, so she is still installed: {}",
+                t.tail(24)
+            );
+            assert_eq!(
+                vm.st.hand[&Side::Runner].len(),
+                grip_before - 1,
+                "…and exactly one card left the grip for it: {}",
+                t.tail(24)
+            );
+            assert_eq!(
+                vm.st.discard[&Side::Runner].len(),
+                discard_before + 1,
+                "…and landed in the heap: {}",
+                t.tail(24)
+            );
+        } else {
+            assert_eq!(
+                vm.st.objects[&maemi].zone,
+                Zone::Discard(Side::Runner),
+                "the other option trashes her instead: {}",
+                t.tail(24)
+            );
+            assert_eq!(
+                vm.st.hand[&Side::Runner].len(),
+                grip_before,
+                "…and the grip is untouched: {}",
+                t.tail(24)
+            );
+        }
+    }
+}
+
+/// Fairchild 3.0: "[subroutine] The Runner must pay 3[credit] or trash 1 of
+/// their installed cards." — printed twice.
+///
+/// [`fairchild_3_0_subroutines_are_a_mandatory_choice`] is about 9.12.3c and
+/// reaches each branch by making the OTHER one impossible, so the Runner is
+/// never actually offered two options and never actually chooses. This is the
+/// case that rule is the exception to: a Runner who can afford either, twice,
+/// is offered both and takes the one they name.
+#[test]
+fn fairchild_3_0_pay_or_trash_is_a_real_choice_when_both_can_be_resolved() {
+    for pay in [true, false] {
+        let mut vm = Vm::empty(9113);
+        tk::install_ice(&mut vm, card("Fairchild 3.0"), ServerId::Hq, true);
+        let first = tk::install_rig(&mut vm, tk::vanilla_runner_card("Sacrifice", CardType::Program));
+        let second =
+            tk::install_rig(&mut vm, tk::vanilla_runner_card("Spare", CardType::Program));
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        // Two installed cards and 7[credit]: both options are fully resolvable
+        // at BOTH subroutines, so 9.12.3c narrows nothing and the choice is
+        // the Runner's on all four counts.
+        vm.st.runner.credits = 7;
+        vm.start_turn(Side::Runner);
+
+        let pick = if pay { "pay 3[credit]" } else { "trash 1 of their installed cards" };
+        let t = plan::play(
+            &mut vm,
+            // The third subroutine is the Corp's own choice; ending the run
+            // there keeps it from doing core damage the arms would differ on.
+            Plan::corp().when(Match::options(), Reply::ChooseNamed("end the run")),
+            Plan::runner()
+                .when(Match::action().first(), Reply::run(ServerId::Hq))
+                .when(Match::options().times(2), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+        );
+
+        let runners: Vec<&plan::Entry> = t
+            .of_kind(Kind::Options)
+            .into_iter()
+            .filter(|e| e.side == Side::Runner)
+            .collect();
+        assert_eq!(
+            runners.len(),
+            2,
+            "the sentence is printed twice, so the Runner was asked twice (pay={pay}): {}",
+            t.tail(30)
+        );
+        for e in &runners {
+            let DecisionSpec::ChooseOption { options } = &e.spec else {
+                panic!("an option choice: {:?}", e.spec)
+            };
+            assert_eq!(
+                options,
+                &["pay 3[credit]", "trash 1 of their installed cards"],
+                "9.12.3c narrowed nothing — both printed options were offered (pay={pay})"
+            );
+        }
+        if pay {
+            assert_eq!(
+                vm.st.runner.credits,
+                1,
+                "7 − 3 − 3: the Runner paid both times: {}",
+                t.tail(30)
+            );
+            assert_eq!(vm.st.objects[&first].zone, Zone::Rig, "…and trashed nothing");
+            assert_eq!(vm.st.objects[&second].zone, Zone::Rig, "…neither of them");
+        } else {
+            assert_eq!(
+                vm.st.runner.credits,
+                7,
+                "the trash branch costs no credits (pay={pay}): {}",
+                t.tail(30)
+            );
+            assert_eq!(
+                vm.st.objects[&first].zone,
+                Zone::Discard(Side::Runner),
+                "…and one installed card went for each of the two subroutines: {}",
+                t.tail(30)
+            );
+            assert_eq!(
+                vm.st.objects[&second].zone,
+                Zone::Discard(Side::Runner),
+                "…both of them: {}",
+                t.tail(30)
+            );
+        }
+    }
+}

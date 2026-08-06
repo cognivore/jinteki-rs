@@ -589,12 +589,21 @@ pub fn data_raven() -> Card {
         .text("When the Runner encounters this ice, they must take 1 tag or end the run.")
         .text("Hosted power counter: Give the Runner 1 tag.")
         .text("[subroutine] Trace[3]. If successful, place 1 power counter on this ice.")
+        // 1.14.5: the ability is the Corp's — it is printed on the Corp's ice
+        // — but the sentence says "THEY must", and the choice belongs to the
+        // player the sentence names. CR 9.12.3d spells it out about this very
+        // card: "If the Runner encounters Data Raven, they must choose to
+        // either take a tag or end the run." Without the wrapper the choice
+        // reaches the Corp, who would simply always end the run.
         .when(
             encountered(),
-            [choose_one([
-                ("take 1 tag", vec![give_tags(1)]),
-                ("end the run", vec![end_the_run()]),
-            ])],
+            [performed_by(
+                Runner,
+                choose_one([
+                    ("take 1 tag", vec![give_tags(1)]),
+                    ("end the run", vec![end_the_run()]),
+                ]),
+            )],
         )
         .paid(hosted_counters(CounterKind::Power, 1), [give_tags(1)])
         .subroutine([trace(3, [place(CounterKind::Power, 1)])])
