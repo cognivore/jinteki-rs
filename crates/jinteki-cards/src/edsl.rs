@@ -1176,7 +1176,7 @@ pub fn runner_moves_to_outermost_of_remembered(key: &'static str) -> Instruction
 /// the sentence names outright instead of one a 9.10.3 choice is remembering
 /// — which is the only difference between the two spellings, and why the
 /// server is content on one instruction rather than an instruction of its own.
-/// The parenthetical "(They approach any ice in that position.)" is 1.4
+/// The parenthetical "(They approach any ice in that position.)" is 2.17.3
 /// reminder text for what the move already is.
 pub fn runner_moves_to_outermost_of(server: ServerId) -> Instruction {
     Instruction::MoveRunnerToOutermost { server: jinteki_cr::instr::ServerRef::Server(server) }
@@ -1454,7 +1454,7 @@ pub fn set_aside_with_this_card() -> TargetFilter {
     TargetFilter::SetAsideWithSource
 }
 /// "**Look at** the top N cards of R&D…" (Precognition / Indexing class; CR
-/// 8.3.2 + 9.11.4e.) The look is its own instruction — 9.11.4e splits it off
+/// 8.3.3 + 9.11.4e.) The look is its own instruction — 9.11.4e splits it off
 /// the sentence it shares a line with — and it works by setting the cards
 /// aside where the looking player can see them, which is what lets the next
 /// sentence act on them ([`set_aside_by_this_ability`]) or put them back in a
@@ -1599,7 +1599,7 @@ pub fn rez(target: TargetSpec) -> Instruction {
 /// "only an unrezzed card can be rezzed" is not a stipulation on the
 /// announcement (contrast 1.15.2's charge rule, which the CR states
 /// explicitly): an already-rezzed card announced here is simply not rezzed
-/// again, which is 1.2.3's "do as much as possible".
+/// again, which is 1.2.4's "as much of that instruction as possible".
 pub fn rez_ignoring_all_costs(target: TargetSpec) -> Instruction {
     Instruction::RezCard { target, ignore_costs: true, reduce: Quantity::c(0) }
 }
@@ -2871,7 +2871,7 @@ pub fn encounter_with_advanced_ice_ends() -> TriggerCond {
     TriggerCond::EncounterEnds { criteria: Vec::new(), with_advanced_ice: true }
 }
 /// "Whenever an encounter with **this ice** ends…" (Knowledge Seeker) — the
-/// same 6.5.10 moment, with the printed "this" said in the ordinary
+/// same 6.5.6 moment, with the printed "this" said in the ordinary
 /// description vocabulary ([`this_very_card`]) rather than as a condition of
 /// its own. It is not the same sentence as an encounter with any ice ending:
 /// the ice the encounter was with is what the criteria are read against.
@@ -2879,7 +2879,7 @@ pub fn encounter_with_this_ice_ends() -> TriggerCond {
     TriggerCond::EncounterEnds { criteria: vec![this_very_card()], with_advanced_ice: false }
 }
 /// "Whenever an encounter with this ice ends, **if <state>**, …" (Knowledge
-/// Seeker) — the same moment with 9.6.5c's requirements riding ON the
+/// Seeker) — the same 6.5.6 moment with 9.6.5c's requirements riding ON the
 /// condition, so they are checked when the condition would be met and an
 /// unmet one leaves the ability unmarked rather than pending-and-idle.
 ///

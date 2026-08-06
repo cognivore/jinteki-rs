@@ -99,7 +99,7 @@ unticked with the GENERAL kernel word it wants named here (ARCHITECTURE §12).
 Each is a CAPABILITY, stated over the class it belongs to and never as "make
 card X work".
 
-### 1. "This server" as content on the approach condition (CR 6.9.4g)
+### 1. "This server" as content on the approach condition (CR 6.9.4g / 4.6.6i)
 
 The kernel scopes three run occurrences to the SOURCE's server — a successful
 run on it (`SuccessfulRunOnServer`), a run on it ending (`RunOnThisServerEnds`)
@@ -125,27 +125,30 @@ the requirement-side twin of blocker 1, so that any condition at all can carry
 Waiting on it: **Flyswatter**'s "When you rez this ice during a run against
 this server, purge virus counters."
 
-### 3. A description reaching the ROOT of the source's own server (CR 4.6.6b)
+### 3. A description reaching the ROOT of the source's own server (CR 4.6.6e)
 
-`TargetFilter::IceProtectingSourceServer` is the ice half of this idea and has
+4.6.6e gives every server a root and 4.6.6d gives it ice; 4.6.6i is the phrase
+"this server" that a card in one uses to name it.
+`TargetFilter::IceProtectingSourceServer` is the ice half of that idea and has
 no root half. No other description is the same set: `InRemoteServer` is every
 remote, `InAttackedServer` reads a run, and `HostedOnSource` is hosting rather
 than a shared server. A general form — the source's server as a stipulation in
 the shared description vocabulary, over the root, over what protects it, or
-over both (4.6.6b puts both halves *in* the server) — would carry the whole
-class.
+over both — would carry the whole class.
 
 Waiting on it: **La Costa Grid**'s "place 1 advancement counter on a card in
 the root of this server."
 
-### 4. An install restriction stating WHERE a card may be installed (CR 8.5)
+### 4. An install restriction stating WHERE a card may be installed (CR 8.5.12)
 
-`StaticDecl::InstallOnlyHostedOn` is the hosted case of the rule the CR states
-at `rule_host_on_ability` ("if a card has an ability stipulating that it can
-only be installed hosted onto another card…"). The same rule shape over
-SERVERS — "remote server only", and the class of cards that name where they go
-— has no word. Without it a card carrying such a line installs anywhere, which
-is a larger card than the printed one.
+8.5.12 is a rule the kernel does not mention anywhere: "some upgrades have an
+ability that specifies 'central server', 'remote server', or 1 or more
+particular central servers followed by the word 'only'. This is a restriction
+on the locations an upgrade can occupy that applies at all times, even if the
+upgrade is [unrezzed]." 4.6.6h points at it from the server's side. The kernel
+carries the HOSTED case of the same shape (`StaticDecl::InstallOnlyHostedOn`,
+CR 8.5.1a) and nothing over servers. Without it a card carrying such a line
+installs anywhere, which is a larger card than the printed one.
 
 Waiting on it: **La Costa Grid**'s "Remote server only."
 

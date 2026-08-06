@@ -66,7 +66,7 @@ pub fn fujii_asset_retrieval() -> Card {
 ///
 /// COMPLETE.
 ///
-/// The first sentence is 1.9.5e's agenda counter, PLACED (1.18.2) rather than
+/// The first sentence is 1.9.5i's agenda counter, PLACED (1.18.2) rather than
 /// loaded — nothing about this card asks "when it is empty" — on the agenda
 /// itself, which by then is in the Corp's score area. 4.5.4 leaves cards in
 /// the Corp's score area active, so the paid ability below is offered from
@@ -76,7 +76,7 @@ pub fn fujii_asset_retrieval() -> Card {
 /// The cost is everything before the colon, 1.16.10's trigger cost paid by
 /// spending the counter the first sentence placed — so the agenda is worth
 /// exactly one use, and a second attempt finds no counter and is not offered
-/// (1.16.1b).
+/// (1.16.1).
 ///
 /// "The Runner moves to the outermost position of Archives" is 6.2.8b, which
 /// the CR states over a POSITION and not over a card: Archives becomes the
@@ -84,7 +84,7 @@ pub fn fujii_asset_retrieval() -> Card {
 /// and with ice protecting Archives the Runner's position becomes the
 /// outermost piece's and the run's timing step becomes the Approach Ice Phase.
 /// With none, the Runner ceases to have a position and the step becomes the
-/// Movement Phase. The parenthetical is 1.4 reminder text for exactly that,
+/// Movement Phase. The parenthetical is 2.17.3 reminder text for exactly that,
 /// and denotes into nothing of its own.
 ///
 /// "Use this ability only during a run" is 9.3.3c's restriction on WHEN,
@@ -129,7 +129,7 @@ pub fn proprionegation() -> Card {
 /// rezzed" is NOT a stipulation on the announcement — the CR states such a
 /// restriction where it means one (1.15.2's charge rule names cards with a
 /// hosted power counter) and states none here — so a Corp who announces a
-/// rezzed piece of ice rezzes nothing, which is 1.2.3 doing as much as
+/// rezzed piece of ice rezzes nothing, which is 1.2.4 doing as much as
 /// possible.
 ///
 /// "Ignoring all costs" is 1.16.5c on the rez: the inherent rez cost goes,
@@ -184,7 +184,7 @@ pub fn send_a_message() -> Card {
 /// The third line's cost is everything before the colon and it is TWO
 /// components paid together (1.16.10): the [trash] symbol and one hosted
 /// advancement counter. Both are required, so a Charlotte with no counters
-/// cannot be cashed in (1.16.1b) — which is the difference between this card
+/// cannot be cashed in (1.16.1) — which is the difference between this card
 /// and a plain trash-for-3.
 pub fn charlotte_cacador() -> Card {
     card("Charlotte Caçador")
@@ -237,7 +237,8 @@ pub fn charlotte_cacador() -> Card {
 ///
 /// "Trash 1 of them" is the Corp's own choice among their own hidden zone
 /// (4.3): a 1.15.2 announcement, so the card is chosen when the instruction
-/// becomes imminent and 1.15.2e forces one if any exist.
+/// becomes imminent and 1.15.2e takes as many as there are, which for a count
+/// of 1 is the one card.
 pub fn hansei_review() -> Card {
     card("Hansei Review")
         .corp()
@@ -308,9 +309,13 @@ pub fn anoetic_void() -> Card {
 /// UNIMPLEMENTED: the first two lines.
 ///
 /// "Remote server only" is an install restriction stated on the card — the
-/// server-side twin of the hosted restriction the CR states at 8.5.1a and the
-/// kernel carries as `StaticDecl::InstallOnlyHostedOn`. Nothing states WHERE a
-/// card may be installed in terms of servers, so an unmarked La Costa Grid
+/// CR 8.5.12 in person: "some upgrades have an ability that specifies 'central
+/// server', 'remote server', or 1 or more particular central servers followed by
+/// the word 'only'. This is a restriction on the locations an upgrade can occupy
+/// that applies at all times." 4.6.6h points at the same rule from the server's
+/// side. The kernel has the HOSTED restriction of 8.5.1a
+/// (`StaticDecl::InstallOnlyHostedOn`) and nothing over servers, so an unmarked
+/// La Costa Grid
 /// would install into the root of HQ and then place a counter there every
 /// turn, which is a card the printed one is not.
 ///
@@ -365,7 +370,7 @@ pub fn la_costa_grid() -> Card {
 /// their source is the card being accessed" — which is the only reason an
 /// ambush in an unrezzed remote root ever speaks.
 ///
-/// The "you may" belongs to the purge and not to the ability: 9.6.9d's
+/// The "you may" belongs to the purge and not to the ability: 9.6.9c's
 /// optional part INSIDE an instruction, so the second sentence resolves
 /// whether or not the Corp takes the first. That is the whole point of the
 /// card — a Corp who purges is telling the Runner what they hit, and a Corp
@@ -433,7 +438,7 @@ pub fn mavirus() -> Card {
 /// the Corp — who controls the ice — is not. "…on **this ice**" is 9.5.6c,
 /// which confines the ability to an encounter with this very card.
 ///
-/// The first subroutine is 8.5.13a's install with three stipulations.
+/// The first subroutine is an install (8.5) with three stipulations.
 ///
 /// "From HQ or Archives" is ONE description with two alternatives (1.15.2c's
 /// zone statement, twice over), so it is one announcement and the Corp picks
@@ -453,7 +458,7 @@ pub fn mavirus() -> Card {
 /// included — and this subroutine always adds to a server that has at least
 /// this ice on it, so there is always such a charge to ignore.
 ///
-/// The printed "you may" is 9.6.9d's optional part inside the instruction: the
+/// The printed "you may" is 9.6.9c's optional part inside the instruction: the
 /// subroutine resolves whether or not the Corp takes what it offers.
 pub fn bran_1_0() -> Card {
     card("Brân 1.0")
@@ -511,7 +516,7 @@ pub fn bran_1_0() -> Card {
 /// printed order, with a checkpoint between them — so a Runner who is flatlined
 /// by the net damage (1.17.2b) never reaches the tag.
 ///
-/// "You may add 1 card from HQ to the top of R&D" is 9.6.9d's optional part
+/// "You may add 1 card from HQ to the top of R&D" is 9.6.9c's optional part
 /// inside the instruction, and "from HQ" is the zone statement 1.15.2c wants
 /// before a description may reach a hidden zone. 8.2's add names the END of
 /// the deck as content, which is why "to the top" is not a sentence of its own.
@@ -554,7 +559,7 @@ pub fn empiricist() -> Card {
 /// point of the card is that the Runner chooses when it goes off. The general
 /// capability wanted is on the Blockers list.
 ///
-/// The subroutine is complete: 6.9.3's end of the run, on a piece of ice whose
+/// The subroutine is complete: 6.1.4's end of the run, on a piece of ice whose
 /// strength is 0 so that the Runner can break it with anything.
 pub fn flyswatter() -> Card {
     card("Flyswatter")
@@ -580,7 +585,7 @@ pub fn flyswatter() -> Card {
 ///
 /// COMPLETE.
 ///
-/// The first line is 6.5.10's end of an encounter, scoped to this card by an
+/// The first line is 6.5.6's end of an encounter, scoped to this card by an
 /// ordinary description word rather than by a condition of its own — the ice
 /// the encounter was with is what "this ice" describes. "If it has 3 or more
 /// hosted virus counters" is 9.6.5c's requirement, a 9.12.2 count of the
@@ -588,23 +593,25 @@ pub fn flyswatter() -> Card {
 /// condition would be met. "Purge virus counters and derez this ice" is ONE
 /// sentence joined by "and" and therefore ONE instruction (9.11.3), which is
 /// load-bearing: the purge takes this ice's own counters (10.1.2 removes every
-/// virus counter in play, and 1.9.5c makes these virus counters like any
+/// virus counter in play, and 1.9.5g makes these virus counters like any
 /// other), so a split would let the requirement be re-read between the halves
 /// with the counters already gone.
 ///
 /// The card is its own clock: each encounter's first subroutine adds a
 /// counter, and the third one ends the encounter that puts the count over the
-/// line. Derezzing (8.1.3) is what it costs the Corp — 8.1.3a leaves the card
-/// installed and inactive, so it must be paid for again.
+/// line. Derezzing (8.1.3) is what it costs the Corp — the card is turned
+/// facedown and stays installed, so 8.1.1 makes it unrezzed again and it must
+/// be paid for a second time.
 ///
 /// "Place 1 virus counter on this ice" is 1.18.2's placement, not a load: no
 /// sentence on this card asks "when it is empty".
 ///
 /// "Look at the top 4 cards of R&D and arrange them in any order" is 9.11.4e's
 /// exception in person — the look is its own instruction even though it shares
-/// a sentence with what follows. 8.3.2 is the look, 8.3.3 is the arrangement:
-/// the Corp "secretly puts them in the order of their choice, and returns them
-/// to the top of that deck", and 1.12.3 makes every returned card a NEW object
+/// a sentence with what follows. 8.3.3 is both halves of what is left: the Corp
+/// "sets aside the appropriate number of cards facedown, secretly puts them in
+/// the order of their choice, and returns them to the top of that deck", and
+/// 1.12.3 makes every returned card a NEW object
 /// — which is why a breach in progress forgets it had already chosen them.
 pub fn knowledge_seeker() -> Card {
     card("Knowledge Seeker")

@@ -20075,7 +20075,7 @@ fn proprionegation_sends_the_runner_out_to_archives_and_only_during_a_run() {
     assert_eq!(
         vm.st.objects[&prop].counter(CounterKind::Agenda),
         1,
-        "1.9.5e: scoring placed 1 agenda counter on it: {}",
+        "1.9.5i: scoring placed 1 agenda counter on it: {}",
         g.transcript().tail(16)
     );
     assert!(
@@ -20105,7 +20105,7 @@ fn proprionegation_sends_the_runner_out_to_archives_and_only_during_a_run() {
             .log
             .iter()
             .any(|c| matches!(c, GameChange::BreachBegan { server: ServerId::Archives })),
-        "6.1.2d: Archives had become the attacked server, so that is what the run \
+        "6.2.8b: Archives had become the attacked server, so that is what the run \
          went on to breach: {}",
         g.transcript().tail(28)
     );
@@ -20123,7 +20123,7 @@ fn proprionegation_sends_the_runner_out_to_archives_and_only_during_a_run() {
 ///
 /// CR 9.1.8f is the whole of it: "abilities that allow their source card to be
 /// advanced are active while that card is installed", so the basic advance
-/// action (5.2.7c) is offered on an UNREZZED asset — which is the shape of the
+/// action (5.2.6f) is offered on an UNREZZED asset — which is the shape of the
 /// card, since the Corp buys the counters before the Runner knows what they
 /// are for. 1.18.3 is the permission itself: without the printed sentence an
 /// asset cannot be advanced at all.
@@ -20154,7 +20154,7 @@ fn charlotte_cacador_can_be_advanced_while_she_is_still_unrezzed() {
          card, and the basic action put two counters on her: {}",
         t.tail(16)
     );
-    assert_eq!(vm.st.corp.credits, 3, "5.2.7c: 1[credit] per advance: {}", t.tail(16));
+    assert_eq!(vm.st.corp.credits, 3, "5.2.6f: 1[credit] per advance: {}", t.tail(16));
     assert_eq!(
         vm.st.objects[&plain].counter(CounterKind::Advancement),
         0,
@@ -20218,7 +20218,7 @@ fn charlotte_cacador_cashes_a_counter_for_four_and_a_card_when_the_turn_begins()
 
 /// Charlotte Caçador: "[trash], hosted advancement counter: Gain 3[credit]."
 ///
-/// Two components in one 1.16.10 cost, so 1.16.1b is what the second arm
+/// Two components in one 1.16.10 cost, so 1.16.1 is what the second arm
 /// asserts: with no counter on her the ability cannot be paid for and is never
 /// offered, which is the difference between this card and a plain trash-for-3.
 #[test]
@@ -20245,7 +20245,7 @@ fn charlotte_cacador_cashes_herself_in_only_with_a_counter_to_spend() {
         assert_eq!(
             t.ever_offered_to(Side::Corp, "cash her in"),
             counters > 0,
-            "1.16.1b: both halves of the cost are required (counters={counters}): {}",
+            "1.16.1: both halves of the cost are required (counters={counters}): {}",
             t.tail(16)
         );
         assert_eq!(
@@ -20308,7 +20308,7 @@ fn hansei_review_gains_ten_then_trashes_a_card_from_hq_if_there_is_one() {
         assert_eq!(
             vm.st.objects[&review].zone,
             Zone::Discard(Side::Corp),
-            "8.6.7's played operation is trashed (stocked={stocked}): {}",
+            "8.6.7g: the played operation is trashed (stocked={stocked}): {}",
             t.tail(20)
         );
     }
@@ -20339,7 +20339,7 @@ fn mavirus_purges_on_access_and_only_a_rezzed_copy_does_the_damage() {
 
         let t = plan::play(
             &mut vm,
-            // 9.6.9d: the "you may" is inside the instruction, so it is an
+            // 9.6.9c: the "you may" is inside the instruction, so it is an
             // optional-part decision and not an optional ability.
             Plan::corp().when(Match::optional().once(), Reply::Optional(true)),
             Plan::runner()
@@ -20631,8 +20631,8 @@ fn empiricist_draws_before_it_asks_which_card_goes_back_on_top() {
 /// which is the other half of what the ice is for) and 8.1.3 derezzes it. With
 /// one counter it makes two, the requirement is not met, and nothing happens.
 ///
-/// The middle subroutine is 9.11.4e's split — 8.3.2's look, then 8.3.3's
-/// arrangement — driven by putting the fourth card of R&D on top. 1.12.3 makes
+/// The middle subroutine is 9.11.4e's split — the look, then 8.3.3's set-aside
+/// and arrangement — driven by putting the fourth card of R&D on top. 1.12.3 makes
 /// every arranged card a NEW object, so the assertion is by name: the identity
 /// the Corp announced does not survive the return.
 #[test]
@@ -20733,7 +20733,7 @@ fn flyswatter_subroutine_ends_the_run() {
     );
     assert!(
         vm.changes.log.iter().any(|c| matches!(c, GameChange::RunDeclaredUnsuccessful { .. })),
-        "6.9.3: the subroutine ended the run before it could breach HQ: {}",
+        "6.1.4: the subroutine ended the run before it could breach HQ: {}",
         t.tail(20)
     );
     assert!(
@@ -20761,7 +20761,7 @@ fn the_two_blocked_upgrades_of_boring_dec_say_which_sentences_they_cannot_say() 
         av.printed.card_type, CardType::Upgrade,
         "the card's printed facts are exact even where its sentence is not"
     );
-    assert_eq!(av.printed.trash_cost, Some(1), "…including 2.6's trash cost");
+    assert_eq!(av.printed.trash_cost, Some(1), "…including 2.6.1's trash cost");
 
     let lcg = jinteki_cards::find("La Costa Grid").expect("La Costa Grid is in the card layer");
     assert_eq!(
