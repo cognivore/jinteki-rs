@@ -569,12 +569,24 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 #play-rail .playtag { font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
   color: #1a1200; background: var(--gold); border-radius: 999px;
   padding: 1px 7px; font-weight: 700; position: relative; z-index: 2; }
+/* The VERB a group of rail cards is filed under ("Score", "Rez", "Use").
+   Quiet — it is a filing label, not an affordance, and the affordance is the
+   glow on the card beneath it. It sits ABOVE its cards and does not overlap
+   them, because a badge on a card is already a counter (the badge-survival
+   law) and a second kind of overlay there would read as one. */
+#play-rail .railsection { font-size: 9px; letter-spacing: .10em; text-transform: uppercase;
+  color: var(--dim); font-weight: 700; text-align: center; padding: 2px 0 0;
+  pointer-events: none; }
+#play-rail .railsection:not(:first-child) { margin-top: 8px;
+  border-top: 1px solid rgba(255,255,255,.10); }
 /* Phones: smaller still, and it must not eat the board. */
 @media (max-height: 640px) {
   #play-rail { right: calc(40px + var(--sar, 0px)); gap: 3px;
     max-height: min(calc(100vh - 150px), calc(50vh - 56px - var(--sat, 0px))); }
   #play-rail .card { transform: scale(.55); margin-bottom: -34px; }
   #play-rail .playtag { font-size: 8px; padding: 0 5px; }
+  #play-rail .railsection { font-size: 8px; padding-top: 1px; }
+  #play-rail .railsection:not(:first-child) { margin-top: 5px; }
 }
 
 /* CR 8.3.3 arrangement: drag the cards into an order. Leftmost is topmost,
@@ -646,9 +658,15 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 
 /* The rail's confirm hint: what is armed, said next to the Cancel that
    un-arms it. Text, not a button — the confirming tap is on the board. */
+/* The hint is the GATE now, not a caption: with the paid window's cards in
+   the effects rail and no sheet anywhere, this line is the only thing that
+   says WHAT the next tap commits (9.2.7f: what it takes resolves to the
+   end). "Score Breaking News — ta…" is a gate that does not name the act.
+   So it WRAPS instead of ellipsing — two short lines in the action rail
+   cost nothing and are always readable, and the rail already wraps. */
 .armed-hint { color: #fff; font-size: 12px; align-self: center;
-  padding: 0 4px; max-width: 40vw; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
+  padding: 0 4px; max-width: 100%; white-space: normal;
+  line-height: 1.2; overflow-wrap: anywhere; }
 /* Tapping a focused card whose play is a QUESTION (install into which
    server?) raises it out of the fan while the sheet asks. */
 .fanrow > .cardpick.raised { transform: translateY(-40px) scale(1.6);

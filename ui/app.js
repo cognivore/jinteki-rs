@@ -1029,6 +1029,12 @@ function boardQuestion(p) {
   if (p.card && p.card.title) return false;          // a reader, not a reminder
   if (p.arrange && p.arrange.length > 1) return false;
   if (p.select) return p["select-onboard"] === true;
+  // A §9.2 window: every offer is a verb and a card, so the cards answer it
+  // — on the board where the board shows their face, in the effects rail
+  // where it does not (an unrezzed asset, the Corp's own facedown agenda).
+  // The pass docks in the action rail with the other things that end a
+  // window. Nothing here is a sentence, so nothing here needs a sheet.
+  if (p["window-cards"] === true) return true;
   if (p["choices-onboard"] === true) return true;
   // A server choice: every server is on the board by definition.
   if ((p.choices || []).some((ch) => ch.server)) return true;
@@ -1050,7 +1056,17 @@ function serverChoices() {
   return m;
 }
 
-/* What the armed thing is CALLED, for the rail's confirm hint. */
+/* What the armed thing is CALLED, for the rail's confirm hint.
+
+   Where the armed card carries exactly ONE offered option, the hint names
+   the OPTION and not the card: "Score AstroScript Pilot Program", not
+   "AstroScript Pilot Program". 9.2.7f makes a chosen option resolve to the
+   end, so the tap that takes it is the last moment anything can be called
+   off — and a gate that says "tap again" without saying to WHAT is not a
+   gate (the Jackson Howard trap: its only paid-window option removes it from
+   the game, on a card players reach for to draw two). Naming the act is what
+   makes the ring a gate, which is why a card with SEVERAL options still gets
+   a sheet: one ring cannot name two acts. */
 function armedName() {
   if (armed == null) return "";
   if (typeof armed === "string" && armed.startsWith("srv:")) {
@@ -1058,6 +1074,11 @@ function armedName() {
     return k === "new" ? "a new remote" : SERVER_NAME(k);
   }
   const p = myPrompt() || {};
+  const offered = promptChoicesFor(armed);
+  if (offered.length === 1) {
+    const ch = offered[0];
+    return abilityText(ch.value, ch.card && ch.card.title, false) || "this card";
+  }
   const inSel = (p["select-cards"] || []).find((c) => c.cid === armed);
   if (inSel) return inSel.title || "the facedown card";
   const inCh = (p.choices || []).find((ch) => ch.cid === armed && ch.card);
@@ -2592,13 +2613,13 @@ function cardEl(c, opts) {
       repaintArmed();                    // one draw, for the whole board
       return;
     }
-    // Where the window offers named options on this card, the SHEET is the
-    // gate and the arming ring would only be a third tap: the ring says "the
-    // next tap commits" without saying to what, and the sheet says exactly
-    // what. Two taps either way — this one just spends them on the question
-    // instead of on the ceremony. (Cards with no options keep the ring:
+    // SEVERAL named options on this card: the SHEET is the gate and the ring
+    // would only be a third tap, because one ring cannot name two acts. One
+    // option keeps the ring — `armedName` names it there, so the ring says
+    // both "the next tap commits" and what it commits to, which is the whole
+    // job the sheet was doing. (Cards with no options keep the ring too:
     // there is nothing to name, and 9.2.7f still makes the choice final.)
-    if (!opts.hand && promptChoicesFor(c.cid).length) { onCardTap(c, opts, el); return; }
+    if (!opts.hand && promptChoicesFor(c.cid).length > 1) { onCardTap(c, opts, el); return; }
     if (armed !== c.cid) { setArmed(c.cid); return; }
     onCardTap(c, opts, el);
   });
@@ -2810,6 +2831,14 @@ function onCardTap(c, opts, el) {
   // the act is not a gate. Now the sheet always names it, and the tap on the
   // NAME is the commit — still two taps, and both of them informed.
   const offered = promptChoicesFor(c.cid);
+  // ONE option needs no sheet: the arming ring already named it in the action
+  // rail ("Score AstroScript Pilot Program — tap again to confirm", see
+  // `armedName`), and this IS the second tap. Naming the act is what the
+  // gate is for; a popup that names one thing is ceremony over the board.
+  if (offered.length === 1) {
+    act("choice", { choice: { uuid: offered[0].uuid } });
+    return;
+  }
   if (offered.length) {
     const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 40, bottom: 120 };
     openSheet(offered.map((ch) => [
@@ -3077,7 +3106,7 @@ function ensureAnswerable(sheet, p) {
   btns.appendChild(b);
 }
 
-/* CR 4.6.7: the play area, on its own rail.
+/* CR 4.6.7 and §9.2: the EFFECTS STACK — everything the board cannot show.
 
    A card BEING PLAYED sits in the play area while it resolves (8.6.7g), and
    an active current stays there until another current replaces it (3.7.1b).
@@ -3085,53 +3114,137 @@ function ensureAnswerable(sheet, p) {
    anywhere, so a run event mid-resolution had no card on screen to outline,
    and a current did its work invisibly.
 
-   The rail is pinned right and never reflows the board (THE LAW §2). Cards
-   are real `cardEl`s, so hover and long-press preview work and the green
-   `.usable` outline lands on them like any other card. */
+   The rail then took a second job (Petty Cash, CR 9.3.3c: "[click]: Play this
+   operation from Archives") and now a third, which is the point of the whole
+   thing: A CARD THE BOARD DRAWS AS A CARD BACK IS NOT SHOWN. The Corp's own
+   installed agenda is facedown until it scores, so a paid window offering
+   "Score AstroScript Pilot Program" was asking about a blank rectangle. The
+   sheet used to solve that by covering the table with a modal; the rail
+   solves it by being the one place the card's face can honestly appear
+   (THE LAW §1 without breaking §2 — the rail is pinned and never reflows).
+
+   Three kinds land here, each under a VERB the player can act on:
+     • an action the engine offers on a card drawn nowhere ("Play", from a
+       pile), tagged with the zone it acts from;
+     • a §9.2 window's offers ("Score", "Rez", "Use", "Trash");
+     • the play area itself ("Resolving").
+   A card the board is already showing FACE UP is not copied here — the board
+   answers where the board can (THE LAW §3), and two copies of one card is
+   the defect this rail exists to avoid, not to commit. */
 function renderPlayRail() {
   const rail = $("play-rail");
   if (!rail) return;
-  const cards = [...((S.corp || {})["play-area"] || []).map((c) => ["corp", c, null]),
-                 ...((S.runner || {})["play-area"] || []).map((c) => ["runner", c, null])];
-  // THE LAW §3: where the board itself can answer, ask it there — which
-  // requires the board to be DRAWING the card the answer lives on. An
-  // ability can act from a zone the board draws only as a count: "[click]:
-  // Play this operation from Archives" (Petty Cash, CR 9.3.3c) puts a legal
-  // action on a card whose only pixels were "Archives 1", so the affordance
-  // had nowhere to land and the play existed only for a player who thought
-  // to open the pile reader. Any card the engine is offering an action on
-  // that is drawn nowhere joins this rail, tagged with the zone it is
-  // acting from, wearing the same glow ladder and answering the same tap
-  // as every other card. (Prompt choices need no copy here: a choice's card
-  // is already drawn in the sheet, THE LAW §1.)
+  const p = myPrompt();
+  const items = [];   // {side, card, section, tag, choice}
+  const taken = new Set();
+  const add = (side, c, section, tag, choice) => {
+    if (!c || c.cid == null || taken.has(c.cid)) return;
+    taken.add(c.cid);
+    items.push({ side, card: c, section, tag, choice });
+  };
+
+  // A §9.2 window's own offers. `window-cards` is the server saying "every
+  // offer here is a verb and a card" — a target announcement over three
+  // cards in the stack also carries cards, and that one keeps its panel,
+  // because there the question is WHICH and not what to do with it.
+  if (p && p["window-cards"]) {
+    (p.choices || []).forEach((ch) => {
+      if (!ch.card || ch.cid == null) return;
+      // Already legible on the board? Then the board answers it, glowing,
+      // and a rail copy would be the same card twice.
+      if (legibleOnBoard(ch.cid)) return;
+      add(myFace(), ch.card, ch.section || "Use", null, ch);
+    });
+  }
+
+  ((S.corp || {})["play-area"] || []).forEach((c) => add("corp", c, railCurrent(c), null, null));
+  ((S.runner || {})["play-area"] || []).forEach((c) => add("runner", c, railCurrent(c), null, null));
+
+  // THE LAW §3 again: an ability can act from a zone the board draws only as
+  // a count, so the affordance has nowhere to land. Petty Cash's play out of
+  // Archives existed only for a player who thought to open the pile reader.
   const drawn = drawnCids();
-  const offered = [];
   ACTIONS.forEach((a) => {
-    if (a.cid != null && !drawn.has(a.cid) && !offered.includes(a.cid)) offered.push(a.cid);
+    if (a.cid == null || drawn.has(a.cid)) return;
+    const found = findUndrawnCard(a.cid);
+    if (found) add(found[0], found[1], actionSection(a), found[2], null);
   });
-  offered.forEach((cid) => {
-    const found = findUndrawnCard(cid);
-    if (found) cards.push(found);
-  });
-  if (!cards.length) { rail.style.display = "none"; rail.innerHTML = ""; return; }
+
+  if (!items.length) { rail.style.display = "none"; rail.innerHTML = ""; return; }
   rail.style.display = "flex";
   rail.innerHTML = "";
-  cards.forEach(([side, c, tag]) => {
-    const wrap = el("div", "playslot");
-    // The rail exists to show a card an action lives on (a facedown card in
-    // Archives the Corp may play out, say) — a read surface for a card the
-    // viewer is entitled to: `findUndrawnCard` only returns faces the state
-    // carries, and the state only carries faces the viewer may see.
-    wrap.appendChild(cardEl(c, { side, reveal: true }));
-    const sub = (c.subtypes || []).map(String);
-    if (sub.some((x) => x.toLowerCase() === "current")) {
-      wrap.appendChild(el("div", "playtag", "current"));
-    } else if (tag) {
-      wrap.appendChild(el("div", "playtag", tag));
-    }
-    rail.appendChild(wrap);
+  // Grouped, in a fixed order, so a player learns where "Score" appears and
+  // stops reading the rail. Unknown verbs keep their first-seen order after
+  // the known ones rather than being dropped.
+  const ORDER = ["Score", "Rez", "Play", "Install", "Use", "Trash", "Resolving"];
+  const rank = (s) => { const i = ORDER.indexOf(s); return i < 0 ? ORDER.length : i; };
+  const groups = new Map();
+  items.forEach((it) => {
+    const k = it.section || "Use";
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(it);
+  });
+  [...groups.keys()].sort((a, b) => rank(a) - rank(b) || 0).forEach((section) => {
+    rail.appendChild(el("div", "railsection", section));
+    groups.get(section).forEach((it) => {
+      const wrap = el("div", "playslot");
+      // The rail exists to show a card an action lives on — a read surface
+      // for a card the viewer is entitled to: `findUndrawnCard` and the
+      // prompt's own `card` only carry faces the state carries, and the
+      // state only carries faces §10.2 lets this viewer see.
+      // No special tap wiring: `glowClass` already paints a card the prompt
+      // offers something on, and `promptChoicesFor` finds the option by cid
+      // from wherever the card is drawn. One path, board and rail alike.
+      wrap.appendChild(cardEl(it.card, { side: it.side, reveal: true }));
+      if (it.tag) wrap.appendChild(el("div", "playtag", it.tag));
+      rail.appendChild(wrap);
+    });
   });
 }
+
+/* 3.7.1b: a current is its own thing and says so; everything else in the
+   play area is mid-resolution (8.6.7g). */
+function railCurrent(c) {
+  const sub = (c.subtypes || []).map((x) => String(x).toLowerCase());
+  return sub.includes("current") ? "Current" : "Resolving";
+}
+
+/* The verb an offered ACTION reads as. The engine's command is the honest
+   source: "play" is a play, an install is an install, everything else is a
+   card's own text going off. */
+function actionSection(a) {
+  switch (a.command) {
+    case "play": return "Play";
+    case "runner-install": case "corp-install": return "Install";
+    case "score": return "Score";
+    case "rez": return "Rez";
+    default: return "Use";
+  }
+}
+
+/* Is the board showing this card's FACE — not merely a rectangle where it
+   sits? The facedown law draws an unrezzed Corp card as a card back for
+   everyone, its owner included, so "the board is drawing it" and "the player
+   can read it" stopped being the same question. The rail answers the second
+   one; `drawnCids`/`on_screen` answer the first. */
+function legibleOnBoard(cid) {
+  if (!drawnCids().has(cid)) return false;
+  const seek = (list) => (list || []).find((c) => c && c.cid === cid);
+  const corp = S.corp || {}, runner = S.runner || {};
+  let c = null;
+  Object.values(corp.servers || {}).forEach((srv) => {
+    c = c || seek(srv.content) || seek(srv.ices);
+  });
+  const rig = runner.rig || {};
+  ["program", "hardware", "resource"].forEach((k) => { c = c || seek(rig[k]); });
+  c = c || seek(corp["play-area"]) || seek(runner["play-area"]) || seek(me().hand);
+  if (!c) return true;                       // an identity: always legible
+  return !(c.facedown || c.rezzed === false);
+}
+
+/* Whose side of the table the viewer sits on, for a rail card the prompt
+   handed us without one. */
+function myFace() { return mySide === "runner" ? "runner" : "corp"; }
 
 /* Every cid the board is drawing AS A CARD somewhere a glow could land:
    server contents and ice, the rig, both play areas, the viewer's own hand,

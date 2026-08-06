@@ -369,6 +369,45 @@ conflict.
     CANNOT draw — hidden-zone picks, option lists, arrangements, divisions,
     numbers — and a panel that is real UI is not a reminder.
 
+17. **A window of cards is answered from the RAIL, never from a modal —
+    because a card the board draws as a BACK is not shown.** Lesson 16 sent
+    a decision to the board whenever the board was drawing its cards, and
+    lesson 16's twin (the facedown law) then made "drawing it" and "showing
+    it" different things: the Corp's own installed agenda is facedown until
+    it scores, so the paid ability window that offers "Score AstroScript
+    Pilot Program" was pointing at a blank rectangle. The old answer was a
+    modal with the agenda inside it, over the table, with a Pass button —
+    THE LAW §1 satisfied by breaking §2.
+
+    The right-hand rail (`#play-rail`, `renderPlayRail`) is the answer. It
+    already existed for the two other cases where the board cannot show a
+    card — the play area mid-resolution, and a card playable out of a pile
+    (lesson 14) — and a §9.2 window is the third: its offers go there as
+    real cards, grouped under the VERB each one is ("Score", "Rez", "Play",
+    "Install", "Use", "Trash", "Resolving"), in a fixed order so a player
+    learns where "Score" appears and stops reading the rail. The server says
+    which decisions qualify (`window-cards`: a paid/reaction/interrupt/
+    mid-access window whose every offer but the pass carries a card), so the
+    client never has to guess — a target announcement over three cards in
+    the stack also carries cards, and THAT one keeps its panel, because
+    there the question is which card and not what to do with one.
+
+    A card the board is already showing FACE UP is not copied into the rail:
+    the board answers where the board can (§3), and two copies of one card
+    is the defect the rail exists to avoid. The pass docks in the bottom
+    action rail beside "Gain 1⬡", labelled for the window it ends ("Pass the
+    paid window") because a bare "Pass" among the turn's chips is a button
+    with no sentence. The window's own sentence — including 5.6.2a's last
+    call, which was reported from a real game as five advancement counters
+    lost to one tap — is a LOG LINE, exactly as lesson 16 does it.
+
+    The two-tap gate survives, and got sharper: with one option offered, the
+    armed hint NAMES it ("Score AstroScript Pilot Program — tap again to
+    confirm") instead of the sheet doing so, and the hint wraps rather than
+    ellipsing, because that line is now the whole gate. A card offering
+    SEVERAL options still opens a sheet naming each: one ring cannot name
+    two acts, and 9.2.7f makes whichever is taken resolve to the end.
+
 ## Deliberate deviations
 
 - **No drag-to-play, and no drag-to-navigate.** HS drags cards; we

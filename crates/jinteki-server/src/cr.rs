@@ -485,12 +485,20 @@ struct Pending {
     seq: u64,
     spec: DecisionSpec,
     msg: String,
-    /// (uuid, label, the answer taking it produces, the card it is about).
+    /// (uuid, label, the answer taking it produces, the card it is about,
+    /// the VERB that groups it in the rail).
     /// The card rides WITH the option because a decision about cards has to
     /// render as cards (UX.md THE LAW §1), and the answer alone cannot always
     /// say which card an option is about — a division of credits answers with
     /// numbers, a minimal set with an index.
-    choices: Vec<(String, String, DecisionAnswer, Option<ObjectId>)>,
+    ///
+    /// The verb rides with it for the same reason. A window's options are a
+    /// heap of unlike things — score this, rez that, use the other — and a
+    /// rail that stacks them without saying which is which is a pile of card
+    /// art. `window_section` names each one in the player's own vocabulary;
+    /// `None` is an option that is not about doing something TO a card (the
+    /// pass), which docks in the action rail instead.
+    choices: Vec<(String, String, DecisionAnswer, Option<ObjectId>, Option<&'static str>)>,
     /// Card-tap selection, where the decision is about cards on the board.
     select: Option<Select>,
     /// A decision ABOUT one card puts the card itself in front of the player.
@@ -1589,6 +1597,33 @@ fn choice_card(vm: &Vm, a: &DecisionAnswer) -> Option<ObjectId> {
     }
 }
 
+/// The VERB a window option offers, which is how the rail groups it.
+///
+/// A §9.2.7 paid window is a heap of unlike offers — score this agenda, rez
+/// that asset, use the other card's ability — and the player thinks of them
+/// by what they DO, not by which rule opened the window. These are the words
+/// on the cards and in the rules, and they are STABLE: a player learns where
+/// "Score" appears and stops reading the rail.
+///
+/// `None` for an option that is not something done to a card. The pass is
+/// the whole of that category, and it docks in the bottom action rail where
+/// the other things that end a window live.
+fn window_section(a: &DecisionAnswer) -> Option<&'static str> {
+    let DecisionAnswer::Take(w) = a else { return None };
+    Some(match w {
+        // 9.2.7d.
+        WindowOption::Score { .. } => "Score",
+        // 9.2.7c/e.
+        WindowOption::Rez { .. } | WindowOption::RezApproachedIce { .. } => "Rez",
+        // 7.1.5's basic trash ability, which is the Runner paying to trash
+        // what they are accessing — its own act, not "using" the card.
+        WindowOption::BasicTrash { .. } => "Trash",
+        // 9.5's paid abilities and 9.6's pending conditional instances: both
+        // are a card's own text going off, which is what "use" means (9.1.6).
+        WindowOption::TriggerPaid { .. } | WindowOption::TriggerInstance { .. } => "Use",
+    })
+}
+
 /// The server a choice IS, where it is one — the board key the client draws
 /// that server under, so the gold can land on the server column itself
 /// (THE LAW §3: where the board can answer, ask it there). `"new"` stands
@@ -1700,7 +1735,7 @@ fn apply_command(g: &mut CrGame, actor: Side, v: &Value) -> Result<bool, String>
             .choices
             .iter()
             .find(|(u, ..)| u == uuid)
-            .map(|(_, _, a, _)| a.clone())
+            .map(|(_, _, a, _, _)| a.clone())
             .ok_or("that choice is not on offer")?;
         return Ok(answer_now(g, answer));
     }
@@ -1902,8 +1937,40 @@ fn decision_wait_lines(vm: &Vm, side: Side, spec: &DecisionSpec) -> [Option<Stri
         DS::DivideCreditPayment { .. }
         | DS::DivideCounterPayment { .. }
         | DS::DivideCostReduction { .. } => ("dividing payment for".into(), None),
-        // Windows, option lists, mulligans, traces, psi bids, arrangements:
-        // real panels, not reminders — nothing to narrate.
+        // A §9.2 window whose every offer is a card is a BOARD QUESTION now
+        // (the cards go to the effects rail, the pass to the action rail), so
+        // it needs the sentence its sheet used to carry — including 5.6.2a's
+        // last-call warning, which was reported from a real game as five
+        // advancement counters lost to a bare "Pass" and must not go back to
+        // being invisible. Windows whose offers are not all cards keep their
+        // panel and say nothing here.
+        DS::PaidWindow { classes, options } => {
+            let scoreable: Vec<ObjectId> = options
+                .iter()
+                .filter_map(|o| match o {
+                    WindowOption::Score { card } => Some(*card),
+                    _ => None,
+                })
+                .collect();
+            let mut s = if classes.rez_approached_ice {
+                "in a paid ability window — the approached ice may be rezzed (9.2.7e)".to_string()
+            } else if classes.score {
+                "in a paid ability window — an agenda may be scored (9.2.7d)".to_string()
+            } else {
+                "in a paid ability window (9.2.7)".to_string()
+            };
+            if !scoreable.is_empty() && vm.st.corp.clicks == 0 {
+                s.push_str(
+                    ". No [click] left: this is the last window of the action phase, so passing \
+                     leaves the agenda unscored",
+                );
+            }
+            (s, None)
+        }
+        DS::ReactionWindow { .. } => ("in a reaction window (9.2.8)".into(), None),
+        DS::InterruptWindow { .. } => ("in an interrupt window (9.2.9)".into(), None),
+        // Option lists, mulligans, traces, psi bids, arrangements: real
+        // panels, not reminders — nothing to narrate.
         _ => return [None, None],
     };
     let identity = vm
@@ -1968,12 +2035,14 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
     };
     let push = |p: &mut Pending, label: String, a: DecisionAnswer| {
         let card = choice_card(vm, &a);
-        p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, card));
+        let section = window_section(&a);
+        p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, card, section));
     };
     // The same, where the option is about a card the ANSWER does not name
     // (a division of credits, a set to trash): the arm knows, so it says.
     let push_on = |p: &mut Pending, label: String, a: DecisionAnswer, card: ObjectId| {
-        p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, Some(card)));
+        let section = window_section(&a);
+        p.choices.push((format!("{seq}-{}", p.choices.len()), label, a, Some(card), section));
     };
     // Every card the board should light up GOLD for this decision, as an
     // affordance the client already knows how to draw and tap (THE LAW §3).
@@ -2044,9 +2113,17 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             for o in options {
                 push(&mut p, window_label(vm, &view, o), DecisionAnswer::Take(o.clone()));
             }
+            // The pass docks in the action rail beside "Gain 1[c]" now, with
+            // no sheet around it to say which question it answers — so it
+            // says so itself. A bare "Pass" among the turn's other chips is
+            // a button with no sentence.
             push(
                 &mut p,
-                if last_call { "Pass — end your action phase".into() } else { "Pass".to_string() },
+                if last_call {
+                    "Pass — end your action phase".into()
+                } else {
+                    "Pass the paid window".to_string()
+                },
                 DecisionAnswer::Pass,
             );
         }
@@ -2056,7 +2133,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, window_label(vm, &view, o), DecisionAnswer::Take(o.clone()));
             }
             if *can_pass {
-                push(&mut p, "Pass".into(), DecisionAnswer::Pass);
+                push(&mut p, "Pass the reaction window".into(), DecisionAnswer::Pass);
             }
         }
         DecisionSpec::InterruptWindow { options, can_pass } => {
@@ -2065,7 +2142,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
                 push(&mut p, window_label(vm, &view, o), DecisionAnswer::Take(o.clone()));
             }
             if *can_pass {
-                push(&mut p, "Pass".into(), DecisionAnswer::Pass);
+                push(&mut p, "Pass the interrupt window".into(), DecisionAnswer::Pass);
             }
         }
         DecisionSpec::MidAccessWindow { options, can_pass } => {
@@ -2119,7 +2196,7 @@ fn present(vm: &Vm, asked: Side, spec: &DecisionSpec) -> Pending {
             // candidate list still travels (as `select`), so the prompt shows
             // the cards and the board lights them — the tap is not a guess.
             if *count > 1 {
-                p.choices.retain(|(_, _, a, _)| {
+                p.choices.retain(|(_, _, a, _, _)| {
                     matches!(a, DecisionAnswer::Targets(t) if t.is_empty())
                 });
                 p.msg.push_str(" Tap the cards.");
@@ -2928,13 +3005,13 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
     // sheet keeps only the sentence and the labels. All or nothing, and the
     // same `on_screen` the select path uses, so a prompt can never hide a card
     // the board is not drawing.
-    let option_cards: Vec<ObjectId> = p.choices.iter().filter_map(|(_, _, _, c)| *c).collect();
+    let option_cards: Vec<ObjectId> = p.choices.iter().filter_map(|(_, _, _, c, _)| *c).collect();
     let choices_onboard = !option_cards.is_empty()
         && option_cards.iter().all(|c| on_screen(&g.vm, viewer, *c));
     let mut obj = json!({
         "msg": msg,
         "prompt-type": "prompt",
-        "choices": p.choices.iter().map(|(u, l, a, card)| {
+        "choices": p.choices.iter().map(|(u, l, a, card, section)| {
             // The card the option LIVES ON, where it has one. Without this a
             // client can only render a wall of text buttons: nothing maps
             // "use this ability" back to the card it belongs to, so the board
@@ -2960,6 +3037,11 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
                     m.insert("server".into(), json!(k));
                 }
             }
+            // The verb this option is filed under in the rail ("Score",
+            // "Rez", "Use", "Trash"). Presentation only, like `server`.
+            if let (Some(s), Some(m)) = (section, ch.as_object_mut()) {
+                m.insert("section".into(), json!(s));
+            }
             ch
         }).collect::<Vec<_>>(),
         "select": p.select.is_some(),
@@ -2973,6 +3055,26 @@ fn prompt_json(g: &CrGame, view: &View, viewer: Side) -> Value {
             DecisionSpec::NameValue { of: jinteki_cr::instr::NameSpace::CardName, .. }
         ),
         "choices-onboard": choices_onboard,
+        // A §9.2 WINDOW whose every offer is something done to a card: score
+        // this, rez that, use the other, pass. Nothing here is a sentence to
+        // read — it is a set of cards and a verb each — so the client puts
+        // the cards in the rail and the pass in the action rail, and no sheet
+        // covers the board at all (THE LAW §1 and §2 together).
+        //
+        // Stated as a fact about the DECISION rather than left for the client
+        // to infer, because "every choice carries a card" is also true of a
+        // target announcement over three cards in the stack, and that one
+        // genuinely needs its panel: the cards are in a hidden zone and the
+        // question is which, not what to do with them. A window is the case
+        // where the verb is the content.
+        "window-cards": matches!(
+            p.spec,
+            DecisionSpec::PaidWindow { .. }
+                | DecisionSpec::ReactionWindow { .. }
+                | DecisionSpec::InterruptWindow { .. }
+                | DecisionSpec::MidAccessWindow { .. }
+        ) && p.choices.iter().any(|(_, _, _, c, _)| c.is_some())
+            && p.choices.iter().all(|(_, _, a, c, _)| c.is_some() || matches!(a, DecisionAnswer::Pass)),
         // These choices are DESTINATIONS/TARGETS, not abilities: a host to
         // install onto, a server to run or install into. The board paints a
         // target GOLD (THE LAW §3) where an ability would be green — the
@@ -3948,6 +4050,80 @@ mod tests {
         }
     }
 
+    /// A §9.2 window is a set of cards and a verb each — never a sheet.
+    ///
+    /// The Corp's own installed agenda is FACEDOWN until it scores, so "Score
+    /// AstroScript Pilot Program" was a question about a blank rectangle and
+    /// the only way to show the face was a modal over the table. `window-cards`
+    /// is what lets the client answer it from the effects rail instead: every
+    /// offer carries its card and the verb it is filed under, and the only
+    /// cardless offer is the pass.
+    ///
+    /// The negative half matters as much: a TARGET announcement over cards in
+    /// a hidden zone also carries cards, and it keeps its panel — there the
+    /// question is WHICH card, not what to do with one, and the cards are
+    /// nowhere the board or the rail could honestly put them.
+    #[test]
+    fn a_window_of_cards_is_answered_from_the_rail_and_a_search_is_not() {
+        use jinteki_cr::window::PawClasses;
+        let mut g = dealt_game();
+        let agenda = g
+            .vm
+            .st
+            .objects
+            .values()
+            .find(|o| o.printed.card_type == CardType::Agenda)
+            .expect("an agenda somewhere")
+            .id;
+        g.vm.move_card(agenda, Zone::Root(ServerId::Remote(1)));
+        g.vm.st.objects.get_mut(&agenda).expect("a card").faceup = false;
+        let spec = DecisionSpec::PaidWindow {
+            classes: PawClasses::prs(),
+            options: vec![WindowOption::Score { card: agenda }],
+        };
+        // Clicks in hand, so this is an ordinary window and not 5.6.2a's
+        // last call — that sentence has a test of its own.
+        g.vm.st.corp.clicks = 2;
+        g.pending = Some(present(&g.vm, Side::Corp, &spec));
+        let view = g.vm.view_of(Side::Corp);
+        let out = prompt_json(&g, &view, Side::Corp);
+        assert_eq!(out["window-cards"], json!(true), "{out:#?}");
+        let ch = &out["choices"].as_array().expect("choices")[0];
+        assert_eq!(ch["section"], json!("Score"), "filed under the verb: {ch:#?}");
+        assert_eq!(ch["cid"].as_u64(), Some(agenda.0 as u64));
+        assert_eq!(
+            ch["card"]["facedown"],
+            json!(true),
+            "and the board draws it as a back, which is the whole reason the \
+             rail has to draw its face: {ch:#?}"
+        );
+        // The pass is the one offer with no card, so it docks in the action
+        // rail — and it says which window it ends.
+        let pass = &out["choices"].as_array().expect("choices")[1];
+        assert!(pass.get("card").is_none(), "the pass is not a card: {pass:#?}");
+        assert!(
+            pass["value"].as_str().unwrap_or("").contains("paid window"),
+            "…and names what it ends: {pass:#?}"
+        );
+
+        // A search is not a window: it keeps its panel.
+        let deep: Vec<ObjectId> = g.vm.cards_in_zone(Zone::Deck(Side::Corp)).into_iter().take(3).collect();
+        let spec = DecisionSpec::ChooseTargets {
+            candidates: deep.clone(),
+            count: 1,
+            min: 1,
+            up_to: false,
+            distinct_names: false,
+        };
+        g.pending = Some(present(&g.vm, Side::Corp, &spec));
+        let out = prompt_json(&g, &view, Side::Corp);
+        assert_eq!(
+            out["window-cards"],
+            json!(false),
+            "the question is WHICH card, and R&D is nowhere the board can show: {out:#?}"
+        );
+    }
+
     /// CR 5.6.2: the LAST paid ability window of the action phase says so.
     ///
     /// The action phase is a loop — (a) this window, (b) take an action "if
@@ -3975,18 +4151,25 @@ mod tests {
         };
         let name = g.vm.st.objects[&agenda].printed.name;
 
-        // With clicks in hand, another action window follows: an ordinary Pass.
+        // With clicks in hand, another action window follows: the pass names
+        // the window it ends and nothing more. It has to name at least that
+        // much — the window's cards now answer from the effects rail and the
+        // pass docks among the turn's other chips, where a bare "Pass" would
+        // be a button beside "Gain 1[c]" with no sentence anywhere near it.
         g.vm.st.corp.clicks = 2;
         let p = present(&g.vm, Side::Corp, &spec);
-        let labels: Vec<&str> = p.choices.iter().map(|(_, l, _, _)| l.as_str()).collect();
-        assert!(labels.contains(&"Pass"), "an ordinary window passes plainly: {labels:?}");
+        let labels: Vec<&str> = p.choices.iter().map(|(_, l, _, _, _)| l.as_str()).collect();
+        assert!(
+            labels.contains(&"Pass the paid window"),
+            "an ordinary window passes plainly, naming only itself: {labels:?}"
+        );
         assert!(!p.msg.contains("last window"), "nothing is being lost yet: {}", p.msg);
 
         // With none, this is the last call — and both the sentence and the
         // button say what the tap ENDS, naming the agenda it would strand.
         g.vm.st.corp.clicks = 0;
         let p = present(&g.vm, Side::Corp, &spec);
-        let labels: Vec<&str> = p.choices.iter().map(|(_, l, _, _)| l.as_str()).collect();
+        let labels: Vec<&str> = p.choices.iter().map(|(_, l, _, _, _)| l.as_str()).collect();
         assert!(
             labels.contains(&"Pass — end your action phase"),
             "the button names what it ends: {labels:?}"
