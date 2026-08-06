@@ -4,6 +4,8 @@
 //! (`crates/jinteki-core/carddata/cards.json`); behaviour written from that
 //! text alone (SYS-D-10).
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Sunny Lebeau: Security Specialist — Identity: Natural. Link 2.
@@ -22,7 +24,7 @@ pub fn sunny_lebeau() -> Card {
         .runner()
         .identity()
         .faction("Sunny Lebeau")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(2)
         .no_printed_text()
         .build()

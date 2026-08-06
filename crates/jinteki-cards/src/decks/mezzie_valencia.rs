@@ -15,6 +15,8 @@
 //! written as siblings of. Every card of the queue's list is now written;
 //! "written" is not "complete", and the tick-boxes are what count.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 // ---------------------------------------------------------------------------
@@ -72,7 +74,7 @@ pub fn blackmail() -> Card {
         .runner()
         .event()
         .faction("Neutral")
-        .subtypes(&["Run"])
+        .subtypes(&[Subtype::Run])
         .cost(1)
         .text("Play only if the Corp has at least 1 bad publicity.")
         .text("Run any server. The Corp cannot rez ice during that run.")
@@ -114,7 +116,7 @@ pub fn hacktivist_meeting() -> Card {
         .runner()
         .event()
         .faction("Anarch")
-        .subtypes(&["Current"])
+        .subtypes(&[Subtype::Current])
         .cost(1)
         .text("This card is not trashed until another current is played or an agenda is scored.")
         .text("As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ.")
@@ -308,7 +310,7 @@ pub fn mad_dash() -> Card {
         .runner()
         .event()
         .faction("Neutral")
-        .subtypes(&["Run"])
+        .subtypes(&[Subtype::Run])
         .cost(0)
         .text("Run any server. When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point. Otherwise, suffer 1 meat damage.")
         .play([run_any_server([])])
@@ -395,7 +397,7 @@ pub fn raindrops_cut_stone() -> Card {
         .runner()
         .event()
         .faction("Anarch")
-        .subtypes(&["Run"])
+        .subtypes(&[Subtype::Run])
         .cost(1)
         .text("Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event.")
         .text("When that run ends, draw 1 card for each hosted power counter and gain 3[credit].")
@@ -500,7 +502,7 @@ pub fn stimhack() -> Card {
         .runner()
         .event()
         .faction("Anarch")
-        .subtypes(&["Run"])
+        .subtypes(&[Subtype::Run])
         .cost(0)
         .text("Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented.")
         .play([
@@ -610,7 +612,7 @@ pub fn clan_vengeance() -> Card {
         .runner()
         .resource()
         .faction("Anarch")
-        .subtypes(&["Clan"])
+        .subtypes(&[Subtype::Clan])
         .cost(3)
         .text("Whenever you suffer any amount of damage, place 1 power counter on Clan Vengeance.")
         .text("[trash]: Trash 1 card from HQ at random for each power counter on Clan Vengeance.")
@@ -668,7 +670,7 @@ pub fn mystic_maemi() -> Card {
         .runner()
         .resource()
         .faction("Anarch")
-        .subtypes(&["Companion", "Virtual"])
+        .subtypes(&[Subtype::Companion, Subtype::Virtual])
         .cost(1)
         .unique()
         .text("When your turn begins and whenever you steal an agenda, place 1[credit] on this resource.")
@@ -764,7 +766,7 @@ pub fn tsakhia_bankhar_gantulga() -> Card {
         .runner()
         .resource()
         .faction("Anarch")
-        .subtypes(&["Connection"])
+        .subtypes(&[Subtype::Connection])
         .cost(1)
         .unique()
         .text("When your turn begins, you may choose a server.")
@@ -826,14 +828,14 @@ pub fn black_orchestra() -> Card {
         .runner()
         .program()
         .faction("Anarch")
-        .subtypes(&["Icebreaker", "Decoder"])
+        .subtypes(&[Subtype::Icebreaker, Subtype::Decoder])
         .cost(3)
         .strength(2)
         .memory(1)
         .text("Whenever you encounter a code gate, you may install this program from your heap.")
         .text("3[credit]: +2 strength. Then, if this program can interface with the code gate you are encountering, break up to 2 subroutines.")
         .may_when(
-            encounters_a("Code Gate", &[source_in_discard()]),
+            encounters_a(Subtype::CodeGate, &[source_in_discard()]),
             [install_this_card()],
         )
         .named("out of the heap")
@@ -842,7 +844,7 @@ pub fn black_orchestra() -> Card {
             [
                 pump(2),
                 if_met(
-                    &[can_interface_with_the_encountered("Code Gate")],
+                    &[can_interface_with_the_encountered(Subtype::CodeGate)],
                     [break_up_to(2)],
                 ),
             ],
@@ -874,14 +876,14 @@ pub fn mkultra() -> Card {
         .runner()
         .program()
         .faction("Anarch")
-        .subtypes(&["Icebreaker", "Killer"])
+        .subtypes(&[Subtype::Icebreaker, Subtype::Killer])
         .cost(2)
         .strength(1)
         .memory(1)
         .text("Whenever you encounter a sentry, you may install this program from your heap.")
         .text("3[credit]: +2 strength. Then, if this program can interface with the sentry you are encountering, break up to 2 subroutines.")
         .may_when(
-            encounters_a("Sentry", &[source_in_discard()]),
+            encounters_a(Subtype::Sentry, &[source_in_discard()]),
             [install_this_card()],
         )
         .named("out of the heap")
@@ -890,7 +892,7 @@ pub fn mkultra() -> Card {
             [
                 pump(2),
                 if_met(
-                    &[can_interface_with_the_encountered("Sentry")],
+                    &[can_interface_with_the_encountered(Subtype::Sentry)],
                     [break_up_to(2)],
                 ),
             ],

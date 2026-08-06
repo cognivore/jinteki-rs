@@ -16,6 +16,8 @@
 //!   the ability, and a declined optional ability was never used — so the
 //!   offer comes back on the next occurrence of the same turn.
 
+use jinteki_cr::Subtype;
+
 use jinteki_cr::change::GameChange;
 use jinteki_cr::object::{CardType, CounterKind, PrintedCard, ServerId, Side, Zone};
 use jinteki_cr::plan::{self, Kind, Match, Pick, Plan, Reply};
@@ -254,7 +256,7 @@ fn khan_declined_install_is_not_offered_on_the_second_pass() {
         let mut c = tk::vanilla_runner_card("Some Breaker", CardType::Program);
         c.cost = Some(1);
         c.memory_cost = Some(1);
-        c.subtypes = vec!["Icebreaker"];
+        c.subtypes = vec![Subtype::Icebreaker];
         let id = vm.new_object(c, Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
         id
@@ -324,7 +326,7 @@ fn nero_severn_declined_jack_out_returns_on_the_next_sentry() {
     tk::install_identity(&mut vm, card("Nero Severn: Information Broker"), Side::Runner);
     tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("Some Sentry", vec!["Sentry"], 0, 1),
+        tk::subtyped_ice("Some Sentry", vec![Subtype::Sentry], 0, 1),
         ServerId::Hq,
         true,
     );
@@ -417,7 +419,7 @@ fn muslihat_declined_reveal_leaves_the_card_and_returns_next_turn() {
     let mut vm = Vm::empty(8010);
     tk::install_identity(&mut vm, card("MuslihaT: Multifarious Marketeer"), Side::Runner);
     let mut top = tk::program_cost("Top Card", 0);
-    top.subtypes = vec!["Icebreaker"];
+    top.subtypes = vec![Subtype::Icebreaker];
     let top = vm.new_object(top, Zone::Deck(Side::Runner));
     vm.st.deck.get_mut(&Side::Runner).unwrap().push(top);
     tk::fill_deck(&mut vm, Side::Runner, 3);
@@ -1078,19 +1080,19 @@ fn architects_of_tomorrow_declined_pass_spends_the_ordinal() {
     tk::install_identity(&mut vm, card("Haas-Bioroid: Architects of Tomorrow"), Side::Corp);
     tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("First Bioroid", vec!["Bioroid"], 0, 1),
+        tk::subtyped_ice("First Bioroid", vec![Subtype::Bioroid], 0, 1),
         ServerId::Hq,
         true,
     );
     tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("Second Bioroid", vec!["Bioroid"], 0, 1),
+        tk::subtyped_ice("Second Bioroid", vec![Subtype::Bioroid], 0, 1),
         ServerId::Rnd,
         true,
     );
     let asset = {
         let mut c = tk::vanilla_asset("Bioroid Asset", 5, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(&mut vm, c, ServerId::Remote(1), false)
     };
     tk::fill_hand(&mut vm, Side::Corp, 2);
@@ -1126,19 +1128,19 @@ fn architects_of_tomorrow_derez_does_not_rewrite_the_spent_pass() {
     tk::install_identity(&mut vm, card("Haas-Bioroid: Architects of Tomorrow"), Side::Corp);
     let first = tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("First Bioroid", vec!["Bioroid"], 0, 1),
+        tk::subtyped_ice("First Bioroid", vec![Subtype::Bioroid], 0, 1),
         ServerId::Hq,
         true,
     );
     tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("Second Bioroid", vec!["Bioroid"], 0, 1),
+        tk::subtyped_ice("Second Bioroid", vec![Subtype::Bioroid], 0, 1),
         ServerId::Rnd,
         true,
     );
     let asset = {
         let mut c = tk::vanilla_asset("Bioroid Asset", 5, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(&mut vm, c, ServerId::Remote(1), false)
     };
     // A Divert-Power-shaped button that derezzes the first bioroid.
@@ -1560,7 +1562,7 @@ fn leo_construction_flag_refuses_a_second_use_the_same_turn() {
     tk::install_identity(&mut vm, card("LEO Construction: Labor Solutions"), Side::Corp);
     let bioroid = |vm: &mut Vm, name: &'static str, server| {
         let mut c = tk::vanilla_asset(name, 0, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(vm, c, server, true)
     };
     let first = bioroid(&mut vm, "First Bioroid", ServerId::Remote(1));
@@ -1827,7 +1829,7 @@ fn leo_construction_flag_resets_for_the_next_runner_turn() {
     tk::install_identity(&mut vm, card("LEO Construction: Labor Solutions"), Side::Corp);
     let bioroid = |vm: &mut Vm, name: &'static str, server| {
         let mut c = tk::vanilla_asset(name, 0, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(vm, c, server, true)
     };
     let first = bioroid(&mut vm, "First Bioroid", ServerId::Remote(1));

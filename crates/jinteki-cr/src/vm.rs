@@ -6,6 +6,8 @@
 //! between imminence and resolution. Every player decision suspends the
 //! machine: `step()` yields typed [`Yield`] values and never blocks.
 
+use crate::subtype::Subtype;
+
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -3718,14 +3720,14 @@ impl Vm {
                                 out.push(CharEffect {
                                     source: o.id,
                                     target: o.id,
-                                    op: CharOp::AddSubtype(t),
+                                    op: CharOp::AddSubtype(*t),
                                 });
                             }
                             for t in remove {
                                 out.push(CharEffect {
                                     source: o.id,
                                     target: o.id,
-                                    op: CharOp::RemoveSubtype(t),
+                                    op: CharOp::RemoveSubtype(*t),
                                 });
                             }
                         }
@@ -3853,14 +3855,14 @@ impl Vm {
                     out.push(crate::object::CharEffect {
                         source: l.source,
                         target: *target,
-                        op: crate::object::CharOp::AddSubtype(t),
+                        op: crate::object::CharOp::AddSubtype(*t),
                     });
                 }
                 for t in remove {
                     out.push(crate::object::CharEffect {
                         source: l.source,
                         target: *target,
-                        op: crate::object::CharOp::RemoveSubtype(t),
+                        op: crate::object::CharOp::RemoveSubtype(*t),
                     });
                 }
             }
@@ -3885,9 +3887,9 @@ impl Vm {
 
     /// CR 2.16 through the 9.12.1b pipeline: does this object currently have
     /// the named subtype?
-    pub fn has_subtype(&self, obj: ObjectId, s: &str) -> bool {
+    pub fn has_subtype(&self, obj: ObjectId, s: crate::subtype::Subtype) -> bool {
         let effects = self.char_effects();
-        crate::object::compute_effective(&self.st.objects, &effects, obj).subtypes.contains(s)
+        crate::object::compute_effective(&self.st.objects, &effects, obj).subtypes.contains(&s)
     }
 
     // ------------------------------------------------------------------
@@ -7798,18 +7800,16 @@ impl Vm {
         };
         let both_assetish = matches!(x.printed.card_type, CardType::Asset | CardType::Agenda)
             && matches!(y.printed.card_type, CardType::Asset | CardType::Agenda);
-        // Case-INSENSITIVELY, and that is the whole point of this comment.
-        // This was the one place in the kernel that hard-codes a subtype
-        // string instead of taking it from the card layer, and it spelled it
-        // "region" while every real card prints "Region" (Crisium Grid, La
-        // Costa Grid, and NSG's data). So 3.6.5 fired for no card that has
-        // ever been played. The kernel TEST passed the whole time, because
-        // the testkit shape spelled it lowercase too — the fixture agreed
-        // with the defect, which is why nothing caught it. Everywhere else
-        // the string comes from the card that is asking, so both sides agree
-        // by construction and only this site could drift.
+        // The subtype is named as [`Subtype::Region`] and not as a string.
+        // This site used to spell it "region" while every real card prints
+        // "Region" (Crisium Grid, La Costa Grid, and NSG's data), so 3.6.5
+        // fired for no card that has ever been played — and the kernel test
+        // passed throughout, because the testkit shape spelled it lowercase
+        // too. The fixture agreed with the defect. `Subtype` is a closed
+        // enum precisely so that this cannot be written wrong again: there
+        // is one spelling of a subtype in the tree, in `Subtype::as_str`.
         let is_region =
-            |o: &crate::object::Object| o.printed.subtypes.iter().any(|s| s.eq_ignore_ascii_case("region"));
+            |o: &crate::object::Object| o.printed.subtypes.contains(&Subtype::Region);
         let both_regions = is_region(x) && is_region(y);
         both_assetish || both_regions
     }
@@ -8680,7 +8680,7 @@ impl Vm {
             // through the 9.12.1b pipeline like a single one.
             TargetFilter::HasAnySubtype(list) => {
                 cite!("rule_subtypes");
-                list.iter().any(|s| self.has_subtype(o.id, s))
+                list.iter().any(|s| self.has_subtype(o.id, *s))
             }
             // 2.1.5: a set criterion, never a per-object one. It reaches here
             // only if something forgot `TargetFilter::is_set_criterion`, and
@@ -9944,7 +9944,7 @@ impl Vm {
                 let Some(src) = source else { return false };
                 let Some(ice) = self.st.encounter.as_ref().map(|e| e.ice) else { return false };
                 if let Some(sub) = required_subtype {
-                    if !self.has_subtype(ice, sub) {
+                    if !self.has_subtype(ice, *sub) {
                         return false;
                     }
                 }
@@ -11725,7 +11725,7 @@ impl Vm {
                         Some(crate::lingering::ChoiceValue::Server(*s))
                     }
                     crate::instr::ChoiceSpec::Subtype(t) => {
-                        Some(crate::lingering::ChoiceValue::Subtype(t))
+                        Some(crate::lingering::ChoiceValue::Subtype(*t))
                     }
                     crate::instr::ChoiceSpec::CardType(t) => {
                         cite!("rule_card_type_list");
@@ -11903,12 +11903,18 @@ impl Vm {
                     // that "until the next checkpoint" when there is no
                     // encounter, which is what binding an inapplicable
                     // structure already does (9.10.4).
+                    //
+                    // The subtype is named as [`Subtype::Icebreaker`]. This
+                    // site used to spell it "icebreaker", which matches no
+                    // real card — every printed icebreaker says "Icebreaker"
+                    // — so 3.9.5b's implicit duration was never applied to
+                    // one, and every self-pump on Paperclip, Black Orchestra,
+                    // MKUltra, Bukhgalter and Shibboleth got the wrong
+                    // duration. The kernel test passed because the testkit
+                    // icebreaker shapes spelled it lowercase too.
                     let self_icebreaker = t == source.obj
-                        && self.has_subtype(t, "icebreaker");
-                    let (stated, implicit) = match duration {
-                        Some(w) => (Some(*w), self_icebreaker),
-                        None => (None, true),
-                    };
+                        && self.has_subtype(t, Subtype::Icebreaker);
+                    let stated = duration.as_ref().copied();
                     let base = match stated {
                         Some(w) => crate::lingering::bind_duration(w, enc, run, turn),
                         None => {
@@ -11931,12 +11937,28 @@ impl Vm {
                         Payload::StrengthMod { target: t, delta },
                         base,
                     );
-                    // 3.9.5c / 3.4.4a: a STATED duration runs alongside the
-                    // implicit encounter one; the effect ends when both have.
-                    if stated.is_some() && (implicit || !self.st.objects[&t].zone.is_installed()) {
-                        cite!("rule_icebreaker_strength_increase_specified");
-                    }
-                    if stated.is_some() {
+                    // 3.9.5c: "If an icebreaker's paid ability specifies
+                    // another duration for modifying ITS strength, that
+                    // modification lasts until both the stated duration and
+                    // the implicit encounter duration have expired."
+                    cite!("rule_icebreaker_strength_increase_specified");
+                    // 3.4.4a: "If an ability modifies the strength of a piece
+                    // of ice for the remainder of a run, and that ability
+                    // resolves during an encounter OUTSIDE of a run, the
+                    // modification instead lasts for the remainder of that
+                    // encounter." A separate rule from 3.9.5c, and the only
+                    // other one that attaches an implicit encounter duration.
+                    let ice_run_outside_a_run = matches!(
+                        stated,
+                        Some(crate::lingering::WantedDuration::ThisRun)
+                    ) && run.is_none()
+                        && self.st.objects[&t].printed.card_type == CardType::Ice;
+                    // Scoped to the two rules that state it. It used to be
+                    // attached to EVERY stated-duration strength modification;
+                    // `self_icebreaker` was computed for exactly this gate and
+                    // reached only a `cite!`, which expands to a const and so
+                    // decides nothing at runtime.
+                    if stated.is_some() && (self_icebreaker || ice_run_outside_a_run) {
                         cite!("rule_ice_strength_modification_duration");
                         l.also = enc.map(crate::lingering::Duration::Encounter);
                     }
@@ -14664,7 +14686,7 @@ impl Vm {
                                 &effects,
                                 ice,
                             );
-                            if !eff.subtypes.contains(sub) {
+                            if !eff.subtypes.contains(&sub) {
                                 continue;
                             }
                         }

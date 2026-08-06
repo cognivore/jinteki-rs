@@ -1066,7 +1066,14 @@ fn step_d_uniqueness(vm: &mut Vm) {
     // Consoles per controller.
     let mut consoles: BTreeMap<Side, Vec<(u64, ObjectId)>> = BTreeMap::new();
     for o in vm.st.objects.values() {
-        if o.printed.console && o.zone.is_installed() {
+        // 10.3.1d's "console" is CR 2.16's subtype, read off the card and
+        // not off a parallel bool. The bool used to be set by hand beside
+        // `.subtypes(&[Subtype::Console])`, so a console written with only
+        // the subtype escaped the limit entirely — the same class of defect
+        // as spelling a subtype in two places and letting them drift.
+        if o.printed.subtypes.contains(&crate::subtype::Subtype::Console)
+            && o.zone.is_installed()
+        {
             consoles
                 .entry(o.controller)
                 .or_default()

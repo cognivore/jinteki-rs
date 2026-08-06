@@ -16,6 +16,8 @@
 //! Launch out of the Gauntlet, Spin Doctor and Tatu-Bola out of Mezzie's Asa.
 //! [`deck`] lists them from there.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 // ---------------------------------------------------------------------------
@@ -49,7 +51,7 @@ pub fn fujii_asset_retrieval() -> Card {
         .corp()
         .agenda(5, 3)
         .faction("Jinteki")
-        .subtypes(&["Ambush", "Security"])
+        .subtypes(&[Subtype::Ambush, Subtype::Security])
         .text("When this agenda is scored or stolen, do 2 net damage.")
         .when(scored(), [net_damage(Corp, 2)])
         .named("two net on the score")
@@ -97,7 +99,7 @@ pub fn proprionegation() -> Card {
         .corp()
         .agenda(4, 2)
         .faction("Jinteki")
-        .subtypes(&["Security"])
+        .subtypes(&[Subtype::Security])
         .text("When you score this agenda, place 1 agenda counter on it.")
         .text("Hosted agenda counter: The Runner moves to the outermost position of Archives. (They approach any ice in that position.) Use this ability only during a run.")
         .when(scored(), [place(CounterKind::Agenda, 1)])
@@ -139,7 +141,7 @@ pub fn send_a_message() -> Card {
         .corp()
         .agenda(5, 3)
         .faction("Neutral")
-        .subtypes(&["Security"])
+        .subtypes(&[Subtype::Security])
         .text("When this agenda is scored or stolen, you may rez 1 installed piece of ice, ignoring all costs.")
         .may_when(
             scored(),
@@ -191,7 +193,7 @@ pub fn charlotte_cacador() -> Card {
         .corp()
         .asset()
         .faction("Jinteki")
-        .subtypes(&["Clone"])
+        .subtypes(&[Subtype::Clone])
         .cost(0)
         .trash_cost(2)
         .unique()
@@ -244,7 +246,7 @@ pub fn hansei_review() -> Card {
         .corp()
         .operation()
         .faction("Jinteki")
-        .subtypes(&["Transaction"])
+        .subtypes(&[Subtype::Transaction])
         .cost(5)
         .text("Gain 10[credit]. If there are any cards in HQ, trash 1 of them.")
         .play([
@@ -336,7 +338,7 @@ pub fn la_costa_grid() -> Card {
         .corp()
         .upgrade()
         .faction("Jinteki")
-        .subtypes(&["Region", "Seedy"])
+        .subtypes(&[Subtype::Region, Subtype::Seedy])
         .cost(3)
         .trash_cost(4)
         .text("Remote server only.")
@@ -390,7 +392,7 @@ pub fn mavirus() -> Card {
         .corp()
         .upgrade()
         .faction("Jinteki")
-        .subtypes(&["Ambush"])
+        .subtypes(&[Subtype::Ambush])
         .cost(3)
         .trash_cost(0)
         .text("While the Runner is accessing this upgrade in R&D, they must reveal it.")
@@ -465,7 +467,7 @@ pub fn bran_1_0() -> Card {
         .corp()
         .ice(6)
         .faction("Haas-Bioroid")
-        .subtypes(&["Barrier", "Bioroid"])
+        .subtypes(&[Subtype::Barrier, Subtype::Bioroid])
         .cost(6)
         .text("Lose [click]: Break 1 subroutine on this ice. Only the Runner can use this ability.")
         .text("[subroutine] You may install 1 piece of ice from HQ or Archives directly inward from this ice, ignoring all costs.")
@@ -525,7 +527,7 @@ pub fn empiricist() -> Card {
         .corp()
         .ice(5)
         .faction("Jinteki")
-        .subtypes(&["Sentry", "AP", "Observer"])
+        .subtypes(&[Subtype::Sentry, Subtype::Ap, Subtype::Observer])
         .cost(7)
         .text("[subroutine] Draw 1 card. You may add 1 card from HQ to the top of R&D.")
         .text("[subroutine] Do 1 net damage. Give the Runner 1 tag.")
@@ -566,7 +568,7 @@ pub fn flyswatter() -> Card {
         .corp()
         .ice(0)
         .faction("Neutral")
-        .subtypes(&["Code Gate"])
+        .subtypes(&[Subtype::CodeGate])
         .cost(2)
         .text("When you rez this ice during a run against this server, purge virus counters.")
         .text("[subroutine] End the run.")
@@ -618,7 +620,7 @@ pub fn knowledge_seeker() -> Card {
         .corp()
         .ice(5)
         .faction("Jinteki")
-        .subtypes(&["Code Gate"])
+        .subtypes(&[Subtype::CodeGate])
         .cost(5)
         .text("Whenever an encounter with this ice ends, if it has 3 or more hosted virus counters, purge virus counters and derez this ice.")
         .text("[subroutine] Place 1 virus counter on this ice.")

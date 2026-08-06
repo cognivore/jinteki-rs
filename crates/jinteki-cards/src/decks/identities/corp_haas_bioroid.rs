@@ -4,6 +4,8 @@
 //! (`crates/jinteki-core/carddata/cards.json`); behaviour written from that
 //! text alone (SYS-D-10).
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Haas-Bioroid: Engineering the Future — Identity: Megacorp.
@@ -23,7 +25,7 @@ pub fn haas_bioroid_engineering_the_future() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("The first time you install a card each turn, gain 1[credit].")
         .when_first_each_turn(installs_a_card(Corp), [gain(Corp, 1)])
         .named("the first install of the turn")
@@ -48,7 +50,7 @@ pub fn sportsmetal() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Subsidiary"])
+        .subtypes(&[Subtype::Subsidiary])
         .text("Whenever an agenda is scored or stolen, gain 2[credit] or draw 2 cards.")
         .when(corp_scores_agenda(), [go_big_or_go_home()])
         .named("an agenda was scored")
@@ -80,7 +82,7 @@ pub fn thule_subsea() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever the Runner steals an agenda, do 1 core damage unless they spend [click] and 2[credit].")
         .when(
             runner_steals_agenda(),
@@ -102,7 +104,7 @@ pub fn custom_biotics() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("You cannot include Jinteki cards in this deck.")
         .build()
 }
@@ -120,7 +122,7 @@ pub fn cybernetics_division() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Each player's maximum hand size is reduced by 1.")
         .declares([each_players_max_hand_size_mod(-1)])
         .named("humanity upgraded")
@@ -145,7 +147,7 @@ pub fn haas_bioroid_precision_design() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("You get +1 maximum hand size.")
         .text("Whenever you score an agenda, you may add 1 card from Archives to HQ.")
         .declares([max_hand_size_mod(1)])
@@ -176,7 +178,7 @@ pub fn poetri_luxury_brands() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever you score an agenda, look at the top 3 cards of R&D. You may install 1 non-agenda card from among them.")
         .text("Whenever an agenda is stolen, you may install 1 non-agenda card from HQ.")
         .when(
@@ -220,7 +222,7 @@ pub fn seidr_laboratories() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn the Runner loses or spends [click] during a run, you may add 1 card from Archives to the top of R&D.")
         .may_when_first_each_turn(
             spends_or_loses_click_during_run(Runner),
@@ -253,7 +255,7 @@ pub fn asa_group() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn you install a card, you may install 1 non-agenda card from HQ in the root of or protecting the same server.")
         .may_when_first_each_turn(
             installs_a_card(Corp),
@@ -286,7 +288,7 @@ pub fn cerebral_imaging() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Your maximum hand size is equal to the number of credits in your credit pool.")
         .declares([max_hand_size_is(credits_in_pool_of(Corp))])
         .named("infinite frontiers")
@@ -318,11 +320,11 @@ pub fn haas_bioroid_architects_of_tomorrow() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("The first time each turn the Runner passes a rezzed piece of bioroid ice, you may rez 1 bioroid card, paying 4[credit] less.")
         .may_when_first_each_turn(
-            passes_rezzed_ice_matching(&[with_subtype("Bioroid"), of_type(CardType::Ice)]),
-            [rez_paying_less(choose(1, &[with_subtype("Bioroid"), unrezzed()]), 4)],
+            passes_rezzed_ice_matching(&[with_subtype(Subtype::Bioroid), of_type(CardType::Ice)]),
+            [rez_paying_less(choose(1, &[with_subtype(Subtype::Bioroid), unrezzed()]), 4)],
         )
         .named("architects of tomorrow")
         .build()
@@ -349,12 +351,12 @@ pub fn leo_construction() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Once per turn → Trash 1 rezzed bioroid card in the root of or protecting the attacked server: End the run.")
         .paid_once_per_turn(
             trash_cards_matching(
                 1,
-                &[rezzed(), with_subtype("Bioroid"), in_the_attacked_server()],
+                &[rezzed(), with_subtype(Subtype::Bioroid), in_the_attacked_server()],
             ),
             [end_the_run()],
         )
@@ -382,7 +384,7 @@ pub fn the_foundry() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time you rez a piece of ice each turn, you may search R&D for another copy of that ice, reveal it, and add it to HQ. Shuffle R&D.")
         .may_when_first_each_turn(
             corp_rezzes_a(CardType::Ice),
@@ -417,11 +419,11 @@ pub fn thunderbolt_armaments() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever you rez a piece of AP or destroyer ice during a run, that ice gets +1 strength and gains “[subroutine] End the run unless the Runner trashes 1 of their installed cards.” after its other subroutines for the remainder of that run.")
         .when(
             corp_rezzes_matching(
-                &[of_type(CardType::Ice), with_any_subtype(&["AP", "Destroyer"])],
+                &[of_type(CardType::Ice), with_any_subtype(&[Subtype::Ap, Subtype::Destroyer])],
                 &[during_a_run()],
             ),
             [combined([
@@ -466,7 +468,7 @@ pub fn strategic_innovations() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Draft format only.")
         .text("If you have more [haas-bioroid] cards rezzed than any other faction, when the Runner's turn ends, shuffle 1 card in Archives into R&D.")
         .when(
@@ -510,9 +512,9 @@ pub fn haas_bioroid_stronger_together() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("All bioroid ice has +1 strength.")
-        .declares([strength_mod_of(&[of_type(CardType::Ice), with_subtype("Bioroid")], 1)])
+        .declares([strength_mod_of(&[of_type(CardType::Ice), with_subtype(Subtype::Bioroid)], 1)])
         .build()
 }
 
@@ -552,7 +554,7 @@ pub fn chronos_protocol_haas_bioroid() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever the Runner trashes a card for brain damage, they remove all copies of that card from the game (installed, in the heap, stack, grip, or any other location). Then, they shuffle their stack.")
         .when(
             trashes_a_card_for_damage(DamageKind::Core),
@@ -603,7 +605,7 @@ pub fn next_design() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Before taking your first turn, you may install up to 3 pieces of ice, with no more than a single piece of ice per server. Draw until you have 5 cards in HQ.")
         .when(
             before_taking_first_turn(),
@@ -655,7 +657,7 @@ pub fn mirrormorph() -> Card {
         .corp()
         .identity()
         .faction("Haas-Bioroid")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("If the first, second, and third actions you take on your turn are each different from one another, when the third action completes, you may gain 1[credit] or take another different action, paying [click] less.")
         .may_when(
             different_actions_this_turn(Corp, 3),

@@ -6,6 +6,8 @@
 //! file — no hand-written `PrintedCard` — puts it on a board and drives it
 //! with the shared plan driver, then asserts the printed sentence's effect.
 
+use jinteki_cr::Subtype;
+
 use jinteki_cr::change::{ActionIdentity, BasicAction, GameChange};
 use jinteki_cr::decision::{ActionOption, DecisionSpec};
 use jinteki_cr::effects::DamageKind;
@@ -543,7 +545,7 @@ fn shibboleth() {
     // A code gate of strength 3 can be interfaced with (9.3.6c); the break
     // ability is usable only during that encounter (9.5.6a/c).
     let mut gate = tk::etr_ice("Some Gate", 0, 3);
-    gate.subtypes = vec!["Code Gate"];
+    gate.subtypes = vec![Subtype::CodeGate];
     tk::install_ice(&mut vm, gate, ServerId::Hq, true);
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -1108,7 +1110,7 @@ fn bukhgalter_pumps_then_breaks_a_sentry() {
     let bukh = tk::install_rig(&mut vm, card_partial("Bukhgalter"));
     assert_eq!(vm.effective_strength(bukh), Some(1), "printed strength 1");
     let mut sentry = tk::etr_ice("Some Sentry", 0, 2);
-    sentry.subtypes = vec!["Sentry"];
+    sentry.subtypes = vec![Subtype::Sentry];
     tk::install_ice(&mut vm, sentry, ServerId::Hq, true);
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -2457,7 +2459,7 @@ fn ip_block_taxes_only_while_an_ai_is_installed() {
         if ai_installed {
             let mut ai = tk::runner_filler("Bogus AI");
             ai.card_type = CardType::Program;
-            ai.subtypes = vec!["AI", "Icebreaker"];
+            ai.subtypes = vec![Subtype::Ai, Subtype::Icebreaker];
             tk::install_rig(&mut vm, ai);
         }
         tk::fill_hand(&mut vm, Side::Corp, 3);
@@ -2486,7 +2488,7 @@ fn mutual_favor_without_a_run_puts_the_breaker_in_the_grip() {
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(mf);
     let mut breaker = tk::runner_filler("Bogus Breaker");
     breaker.card_type = CardType::Program;
-    breaker.subtypes = vec!["Icebreaker"];
+    breaker.subtypes = vec![Subtype::Icebreaker];
     breaker.cost = Some(0);
     let brk = vm.new_object(breaker, Zone::Deck(Side::Runner));
     vm.st.deck.get_mut(&Side::Runner).unwrap().push(brk);
@@ -3334,7 +3336,7 @@ fn wari_names_a_subtype_and_bounces_matching_ice() {
         let mut vm = Vm::empty(107);
         let wari = tk::install_rig(&mut vm, card("Wari"));
         let mut barrier = tk::vanilla_ice("Loose Barrier", 1, 1);
-        barrier.subtypes = vec!["Barrier"];
+        barrier.subtypes = vec![Subtype::Barrier];
         let ice = tk::install_ice(&mut vm, barrier, ServerId::Remote(1), false);
         tk::fill_deck(&mut vm, Side::Corp, 5);
         tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -3416,11 +3418,11 @@ fn asmund_pudlat_finds_two_differently_named_virus_or_weapon_cards() {
     let asmund = vm.new_object(card("Asmund Pudlat"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(asmund);
     let mut virus = PrintedCard::vanilla("Loose Virus", Side::Runner, CardType::Program);
-    virus.subtypes = vec!["Virus"];
+    virus.subtypes = vec![Subtype::Virus];
     let v1 = vm.new_object(virus.clone(), Zone::Deck(Side::Runner));
     let v2 = vm.new_object(virus, Zone::Deck(Side::Runner));
     let mut weapon = PrintedCard::vanilla("Loose Weapon", Side::Runner, CardType::Program);
-    weapon.subtypes = vec!["Weapon"];
+    weapon.subtypes = vec![Subtype::Weapon];
     let w = vm.new_object(weapon, Zone::Deck(Side::Runner));
     let plain = vm.new_object(card("Sure Gamble"), Zone::Deck(Side::Runner));
     vm.st.deck.get_mut(&Side::Runner).unwrap().extend([v1, v2, w, plain]);
@@ -3980,7 +3982,7 @@ fn boomerang_installed_with_no_ice_on_the_table_asks_nothing_and_stops_nothing()
 fn paperclip_installs_itself_out_of_the_heap_and_pumps_before_it_breaks() {
     let mut vm = Vm::empty(607);
     let wall = tk::install_ice(&mut vm, tk::etr_ice("Big Wall", 0, 3), ServerId::Hq, true);
-    vm.st.objects.get_mut(&wall).unwrap().printed.subtypes = vec!["Barrier"];
+    vm.st.objects.get_mut(&wall).unwrap().printed.subtypes = vec![Subtype::Barrier];
     let clip = vm.new_object(card("Paperclip"), Zone::Discard(Side::Runner));
     vm.st.discard.get_mut(&Side::Runner).unwrap().push(clip);
     tk::fill_hand(&mut vm, Side::Corp, 3);
@@ -4571,9 +4573,9 @@ fn rielle_kit_peddler_makes_the_first_ice_of_the_turn_a_code_gate() {
     let mut vm = Vm::empty(6013);
     tk::install_identity(&mut vm, card("Rielle \"Kit\" Peddler: Transhuman"), Side::Runner);
     let mut barrier = tk::vanilla_ice("Some Barrier", 0, 1);
-    barrier.subtypes = vec!["Barrier"];
+    barrier.subtypes = vec![Subtype::Barrier];
     let mut sentry = tk::vanilla_ice("Some Sentry", 0, 1);
-    sentry.subtypes = vec!["Sentry"];
+    sentry.subtypes = vec![Subtype::Sentry];
     // 6.2.2a: `install_ice` places each piece outermost, so the sentry is the
     // inner one and the barrier is encountered first.
     let inner = tk::install_ice(&mut vm, sentry, ServerId::Archives, true);
@@ -4595,14 +4597,14 @@ fn rielle_kit_peddler_makes_the_first_ice_of_the_turn_a_code_gate() {
     script.run(&mut vm);
     let t = script.transcript();
     assert!(
-        vm.has_subtype(outer, "Code Gate"),
+        vm.has_subtype(outer, Subtype::CodeGate),
         "the first ice encountered gained it, and still has it now the encounter has ended: {}",
         t.tail(28)
     );
     // 2.16.5 counts instances: the grant ADDS, it does not replace.
-    assert!(vm.has_subtype(outer, "Barrier"), "and is still a barrier");
+    assert!(vm.has_subtype(outer, Subtype::Barrier), "and is still a barrier");
     assert!(
-        !vm.has_subtype(inner, "Code Gate"),
+        !vm.has_subtype(inner, Subtype::CodeGate),
         "the second piece of ice has not been encountered yet: {}",
         t.tail(28)
     );
@@ -4610,12 +4612,12 @@ fn rielle_kit_peddler_makes_the_first_ice_of_the_turn_a_code_gate() {
     script.run(&mut vm); // resume: encounter the second ice and finish the run
     let t = script.transcript();
     assert!(
-        !vm.has_subtype(inner, "Code Gate"),
+        !vm.has_subtype(inner, Subtype::CodeGate),
         "the second encounter of the turn is not the first: {}",
         t.tail(28)
     );
     assert!(
-        !vm.has_subtype(outer, "Code Gate"),
+        !vm.has_subtype(outer, Subtype::CodeGate),
         "and the grant died with the run it was made for: {}",
         t.tail(28)
     );
@@ -5026,13 +5028,13 @@ fn noise_mills_rnd_only_for_a_virus_program() {
     let mut vm = Vm::empty(6107);
     tk::install_identity(&mut vm, card("Noise: Hacker Extraordinaire"), Side::Runner);
     let mut virus = tk::vanilla_runner_card("Some Virus", CardType::Program);
-    virus.subtypes = vec!["Virus"];
+    virus.subtypes = vec![Subtype::Virus];
     virus.cost = Some(0);
     let mut plain = tk::vanilla_runner_card("Some Program", CardType::Program);
     plain.cost = Some(0);
     // A virus that is NOT a program — the type stipulation on its own.
     let mut virus_hardware = tk::vanilla_runner_card("Some Virus Rig", CardType::Hardware);
-    virus_hardware.subtypes = vec!["Virus"];
+    virus_hardware.subtypes = vec![Subtype::Virus];
     virus_hardware.cost = Some(0);
     let ids: Vec<_> = [virus, plain, virus_hardware]
         .into_iter()
@@ -5807,7 +5809,7 @@ fn building_a_better_world_pays_for_every_transaction_and_no_other_operation() {
     let mut make = |name: &'static str, transaction: bool| {
         let mut c = tk::operation(name, 0, vec![]);
         if transaction {
-            c.subtypes = vec!["Transaction"];
+            c.subtypes = vec![Subtype::Transaction];
         }
         let id = vm.new_object(c, Zone::Hand(Side::Corp));
         vm.st.hand.get_mut(&Side::Corp).unwrap().push(id);
@@ -5890,13 +5892,13 @@ fn quetzal_breaks_one_barrier_subroutine_a_turn_and_never_a_sentry() {
     // sentry goes on innermost and the barrier over it.
     let sentry = tk::install_ice(
         &mut vm,
-        tk::subtyped_etr_ice("Some Sentry", "Sentry", 0, 1),
+        tk::subtyped_etr_ice("Some Sentry", Subtype::Sentry, 0, 1),
         ServerId::Archives,
         true,
     );
     let barrier = tk::install_ice(
         &mut vm,
-        tk::subtyped_etr_ice("Some Barrier", "Barrier", 0, 1),
+        tk::subtyped_etr_ice("Some Barrier", Subtype::Barrier, 0, 1),
         ServerId::Archives,
         true,
     );
@@ -5996,7 +5998,7 @@ fn spark_agency_taxes_the_first_advertisement_rez_of_the_turn_only() {
     let mut vm = Vm::empty(6128);
     tk::install_identity(&mut vm, card("Spark Agency: Worldswide Reach"), Side::Corp);
     let mut ad = tk::vanilla_asset("Some Advert", 0, 2);
-    ad.subtypes = vec!["Advertisement"];
+    ad.subtypes = vec![Subtype::Advertisement];
     let first = tk::install_root(&mut vm, ad.clone(), ServerId::Remote(1), false);
     let second = tk::install_root(&mut vm, ad, ServerId::Remote(2), false);
     let plain = tk::install_root(&mut vm, tk::vanilla_asset("Plain Asset", 0, 2), ServerId::Remote(3), false);
@@ -6652,8 +6654,8 @@ fn muslihat_takes_an_icebreaker_or_a_run_event_and_nothing_else() {
             _ => tk::program_cost("Top Card", 0),
         };
         top.subtypes = match kind {
-            "icebreaker" => vec!["Icebreaker"],
-            "run event" => vec!["Run"],
+            "icebreaker" => vec![Subtype::Icebreaker],
+            "run event" => vec![Subtype::Run],
             _ => Vec::new(),
         };
         let top = vm.new_object(top, Zone::Deck(Side::Runner));
@@ -7341,7 +7343,7 @@ fn clicks_gained_by_the_runner(vm: &Vm) -> usize {
 fn az_mccaffrey_lowers_the_first_matching_install_of_the_turn_only() {
     let mut vm = Vm::empty(6140);
     tk::install_identity(&mut vm, card("Az McCaffrey: Mechanical Prodigy"), Side::Runner);
-    let mut mk = |name: &'static str, ty: CardType, subtype: Option<&'static str>| {
+    let mut mk = |name: &'static str, ty: CardType, subtype: Option<Subtype>| {
         let mut c = tk::vanilla_runner_card(name, ty);
         c.cost = Some(3);
         if let Some(s) = subtype {
@@ -7352,7 +7354,7 @@ fn az_mccaffrey_lowers_the_first_matching_install_of_the_turn_only() {
         id
     };
     let plain = mk("Plain Resource", CardType::Resource, None);
-    let job = mk("Job Resource", CardType::Resource, Some("Job"));
+    let job = mk("Job Resource", CardType::Resource, Some(Subtype::Job));
     let hardware = mk("Some Hardware", CardType::Hardware, None);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -7486,7 +7488,7 @@ fn khan_installs_an_icebreaker_for_one_less_on_the_turns_first_pass() {
         let mut c = tk::vanilla_runner_card("Some Breaker", CardType::Program);
         c.cost = Some(3);
         c.memory_cost = Some(1);
-        c.subtypes = vec!["Icebreaker"];
+        c.subtypes = vec![Subtype::Icebreaker];
         let id = vm.new_object(c, Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
         id
@@ -7953,14 +7955,14 @@ fn architects_of_tomorrow_rezzes_a_bioroid_for_four_less_on_a_bioroid_pass() {
     // Innermost first: the rezzed bioroid, which the run reaches second.
     tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("Inner Bioroid", vec!["Bioroid"], 0, 1),
+        tk::subtyped_ice("Inner Bioroid", vec![Subtype::Bioroid], 0, 1),
         ServerId::Archives,
         true,
     );
     tk::install_ice(&mut vm, tk::vanilla_ice("Outer Plain", 0, 1), ServerId::Archives, false);
     let asset = {
         let mut c = tk::vanilla_asset("Bioroid Asset", 5, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(&mut vm, c, ServerId::Remote(1), false)
     };
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -8006,13 +8008,13 @@ fn architects_of_tomorrow_ice_rezzed_after_a_pass_does_not_rewrite_that_pass() {
     tk::install_identity(&mut vm, card("Haas-Bioroid: Architects of Tomorrow"), Side::Corp);
     let gate = tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("Bioroid Gate", vec!["Bioroid"], 0, 1),
+        tk::subtyped_ice("Bioroid Gate", vec![Subtype::Bioroid], 0, 1),
         ServerId::Archives,
         false,
     );
     let asset = {
         let mut c = tk::vanilla_asset("Bioroid Asset", 5, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(&mut vm, c, ServerId::Remote(1), false)
     };
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -8084,7 +8086,7 @@ fn leo_construction_ends_the_run_for_a_bioroid_in_the_attacked_server_only() {
     tk::install_identity(&mut vm, card("LEO Construction: Labor Solutions"), Side::Corp);
     let bioroid = |vm: &mut Vm, name: &'static str, server| {
         let mut c = tk::vanilla_asset(name, 0, 2);
-        c.subtypes = vec!["Bioroid"];
+        c.subtypes = vec![Subtype::Bioroid];
         tk::install_root(vm, c, server, true)
     };
     let attacked = bioroid(&mut vm, "In The Attacked Server", ServerId::Remote(1));
@@ -8192,7 +8194,7 @@ fn thunderbolt_armaments_pumps_and_arms_a_destroyer_rezzed_during_a_run() {
     tk::install_identity(&mut vm, card("Thunderbolt Armaments: Peace Through Power"), Side::Corp);
     let ice = tk::install_ice(
         &mut vm,
-        tk::subtyped_ice("Some Destroyer", vec!["Destroyer"], 1, 2),
+        tk::subtyped_ice("Some Destroyer", vec![Subtype::Destroyer], 1, 2),
         ServerId::Archives,
         false,
     );
@@ -8252,10 +8254,10 @@ fn stronger_together_puts_bioroid_ice_out_of_a_breakers_reach() {
     let mut vm = Vm::empty(6152);
     tk::install_identity(&mut vm, card("Haas-Bioroid: Stronger Together"), Side::Corp);
     let mut plain_card = tk::etr_ice("Plain Gate", 0, 3);
-    plain_card.subtypes = vec!["Code Gate"];
+    plain_card.subtypes = vec![Subtype::CodeGate];
     let plain = tk::install_ice(&mut vm, plain_card, ServerId::Rnd, true);
     let mut bioroid_card = tk::etr_ice("Bioroid Gate", 0, 3);
-    bioroid_card.subtypes = vec!["Code Gate", "Bioroid"];
+    bioroid_card.subtypes = vec![Subtype::CodeGate, Subtype::Bioroid];
     let bioroid = tk::install_ice(&mut vm, bioroid_card, ServerId::Hq, true);
     tk::install_rig(&mut vm, card("Shibboleth"));
     tk::fill_hand(&mut vm, Side::Corp, 3);
@@ -8327,12 +8329,12 @@ fn editorial_division_fetches_a_gray_ops_card_when_bad_publicity_arrives() {
     tk::install_root(&mut vm, tk::take_bad_pub_button("Bad Press", 1), ServerId::Remote(1), true);
     let wanted = {
         let mut c = tk::vanilla_asset("Gray Ops Card", 0, 2);
-        c.subtypes = vec!["Gray Ops"];
+        c.subtypes = vec![Subtype::GrayOps];
         vm.new_object(c, Zone::Deck(Side::Corp))
     };
     let agenda = {
         let mut c = tk::vanilla_agenda("Gray Ops Agenda", 3, 2);
-        c.subtypes = vec!["Gray Ops"];
+        c.subtypes = vec![Subtype::GrayOps];
         vm.new_object(c, Zone::Deck(Side::Corp))
     };
     let plain = vm.new_object(tk::vanilla_asset("Plain Card", 0, 2), Zone::Deck(Side::Corp));
@@ -9761,12 +9763,13 @@ fn smoke_pays_for_using_icebreakers_and_nothing_else() {
         // for the interface ability to be offered, so the ice is strength 0.
         let ice = tk::install_ice(
             &mut vm,
-            tk::subtyped_etr_ice("Some Sentry", "Sentry", 0, 0),
+            tk::subtyped_etr_ice("Some Sentry", Subtype::Sentry, 0, 0),
             ServerId::Archives,
             true,
         );
         let mut breaker = tk::vanilla_runner_card("Some Breaker", CardType::Program);
-        breaker.subtypes = if icebreaker { vec!["Icebreaker", "Killer"] } else { vec!["Killer"] };
+        breaker.subtypes =
+            if icebreaker { vec![Subtype::Icebreaker, Subtype::Killer] } else { vec![Subtype::Killer] };
         breaker.strength = Some(1);
         breaker.abilities = vec![jinteki_cr::ability::AbilityDef::paid(
             jinteki_cr::ability::Cost::credits(1),
@@ -9779,7 +9782,7 @@ fn smoke_pays_for_using_icebreakers_and_nothing_else() {
         )
         .with_flag(jinteki_cr::ability::AbilityFlag::Interface)
         .with_timing(jinteki_cr::ability::TimingRestriction::EncounterOnly {
-            required_subtype: Some("Sentry"),
+            required_subtype: Some(Subtype::Sentry),
             required_choice: None, required_self: false,
         })
         .labeled("interface: break 1 sentry subroutine")];
@@ -10049,7 +10052,7 @@ fn nero_severn_jacks_out_of_an_encounter_with_a_sentry_and_not_with_a_barrier() 
     for sentry in [false, true] {
         let mut vm = Vm::empty(6165);
         tk::install_identity(&mut vm, card("Nero Severn: Information Broker"), Side::Runner);
-        let subtype = if sentry { "Sentry" } else { "Barrier" };
+        let subtype = if sentry { Subtype::Sentry } else { Subtype::Barrier };
         tk::install_ice(
             &mut vm,
             tk::subtyped_ice("Some Ice", vec![subtype], 0, 1),
@@ -10467,7 +10470,7 @@ fn arissana_trashes_the_program_she_installed_unless_it_is_a_trojan() {
         let mut prog = tk::vanilla_runner_card("Some Program", CardType::Program);
         prog.cost = Some(1);
         if trojan {
-            prog.subtypes = vec!["Trojan"];
+            prog.subtypes = vec![Subtype::Trojan];
         }
         let program = vm.new_object(prog, Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(program);
@@ -10649,7 +10652,7 @@ fn apex_cannot_install_a_resource_that_is_not_virtual() {
     let plain = vm.new_object(plain, Zone::Hand(Side::Runner));
     let mut virt = tk::vanilla_runner_card("Some Virtual Resource", CardType::Resource);
     virt.cost = Some(0);
-    virt.subtypes = vec!["Virtual"];
+    virt.subtypes = vec![Subtype::Virtual];
     let virt = vm.new_object(virt, Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().extend([plain, virt]);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -10700,7 +10703,7 @@ fn apexs_facedown_install_takes_a_non_virtual_resource() {
     let plain = vm.new_object(plain, Zone::Hand(Side::Runner));
     let mut virt = tk::vanilla_runner_card("Some Virtual Resource", CardType::Resource);
     virt.cost = Some(0);
-    virt.subtypes = vec!["Virtual"];
+    virt.subtypes = vec![Subtype::Virtual];
     let virt = vm.new_object(virt, Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().extend([plain, virt]);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -10846,7 +10849,7 @@ fn kabonesa_wu_removes_the_program_her_search_installed_and_no_other() {
     vm.st.deck.get_mut(&Side::Runner).unwrap().push(found);
     let mut virus = tk::vanilla_runner_card("Stack Virus", CardType::Program);
     virus.cost = Some(1);
-    virus.subtypes = vec!["Virus"];
+    virus.subtypes = vec![Subtype::Virus];
     let unwanted = vm.new_object(virus, Zone::Deck(Side::Runner));
     vm.st.deck.get_mut(&Side::Runner).unwrap().push(unwanted);
     tk::fill_deck(&mut vm, Side::Runner, 4);
@@ -10923,7 +10926,7 @@ fn kabonesa_wu_removes_nothing_when_her_search_installed_nothing() {
 
     let mut virus = tk::vanilla_runner_card("Stack Virus", CardType::Program);
     virus.cost = Some(1);
-    virus.subtypes = vec!["Virus"];
+    virus.subtypes = vec![Subtype::Virus];
     let unwanted = vm.new_object(virus, Zone::Deck(Side::Runner));
     vm.st.deck.get_mut(&Side::Runner).unwrap().push(unwanted);
     tk::fill_deck(&mut vm, Side::Runner, 4);
@@ -11470,7 +11473,7 @@ fn nuvem_reads_an_action_only_on_a_card_the_sentence_describes() {
         let mut vm = Vm::empty(6209);
         tk::install_identity(&mut vm, card("Nuvem SA: Law of the Land"), Side::Corp);
         let mut button = PrintedCard::vanilla("Paper Shredder", Side::Corp, CardType::Asset);
-        button.subtypes = if expendable { vec!["Expendable"] } else { Vec::new() };
+        button.subtypes = if expendable { vec![Subtype::Expendable] } else { Vec::new() };
         button.abilities = vec![jinteki_cr::ability::AbilityDef::paid(
             jinteki_cr::ability::Cost {
                 clicks: 1,
@@ -15362,7 +15365,7 @@ fn adam_starts_the_game_with_three_directives_installed_and_active() {
         .st
         .objects
         .values()
-        .filter(|o| o.printed.subtypes.contains(&"Directive"))
+        .filter(|o| o.printed.subtypes.contains(&Subtype::Directive))
         .map(|o| o.id)
         .collect();
     assert_eq!(directives.len(), 3, "exactly the three brought cards exist");
@@ -15408,7 +15411,7 @@ fn sebastiao_installs_a_connection_at_a_discount_when_the_first_tags_land() {
     );
     let conn = {
         let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
-        c.subtypes = vec!["Connection"];
+        c.subtypes = vec![Subtype::Connection];
         c.cost = Some(3);
         let id = vm.new_object(c, Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
@@ -15462,7 +15465,7 @@ fn sebastiao_stays_quiet_when_the_runner_already_had_a_tag() {
     );
     let conn = {
         let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
-        c.subtypes = vec!["Connection"];
+        c.subtypes = vec![Subtype::Connection];
         c.cost = Some(3);
         let id = vm.new_object(c, Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
@@ -15578,7 +15581,7 @@ fn sebastiaos_connection_tax_makes_the_corp_trash_a_chosen_card_from_hq() {
     );
     let conn = {
         let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
-        c.subtypes = vec!["Connection"];
+        c.subtypes = vec![Subtype::Connection];
         tk::install_rig(&mut vm, c)
     };
     tk::fill_hand(&mut vm, Side::Corp, 3);
@@ -15641,7 +15644,7 @@ fn an_empty_hq_shields_connections_from_the_basic_trash_action() {
     );
     let conn = {
         let mut c = tk::vanilla_runner_card("Union Contact", CardType::Resource);
-        c.subtypes = vec!["Connection"];
+        c.subtypes = vec![Subtype::Connection];
         tk::install_rig(&mut vm, c)
     };
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -18112,7 +18115,7 @@ fn black_orchestra_installs_itself_from_the_heap_and_breaks_the_code_gate() {
     for breaks in [false, true] {
         let mut vm = Vm::empty(9301);
         let gate = tk::install_ice(&mut vm, tk::little_engine_like("Sunburst"), ServerId::Hq, true);
-        vm.st.objects.get_mut(&gate).unwrap().printed.subtypes = vec!["Code Gate"];
+        vm.st.objects.get_mut(&gate).unwrap().printed.subtypes = vec![Subtype::CodeGate];
         let bo = vm.new_object(card("Black Orchestra"), Zone::Discard(Side::Runner));
         vm.st.discard.get_mut(&Side::Runner).unwrap().push(bo);
         tk::fill_hand(&mut vm, Side::Corp, 3);
@@ -18193,7 +18196,7 @@ fn mkultra_breaks_the_sentry_only_once_it_has_pumped_high_enough() {
     for uses in [1usize, 2usize] {
         let mut vm = Vm::empty(9302);
         let sentry = tk::install_ice(&mut vm, tk::etr_ice("Grim Visage", 0, 4), ServerId::Hq, true);
-        vm.st.objects.get_mut(&sentry).unwrap().printed.subtypes = vec!["Sentry"];
+        vm.st.objects.get_mut(&sentry).unwrap().printed.subtypes = vec![Subtype::Sentry];
         let mk = vm.new_object(card("MKUltra"), Zone::Discard(Side::Runner));
         vm.st.discard.get_mut(&Side::Runner).unwrap().push(mk);
         tk::fill_hand(&mut vm, Side::Corp, 3);
@@ -21481,7 +21484,167 @@ fn the_two_blocked_upgrades_of_boring_dec_say_which_sentences_they_cannot_say() 
         "the region line is carried as printed text and denotes into nothing"
     );
     assert!(
-        lcg.printed.subtypes.contains(&"Region"),
+        lcg.printed.subtypes.contains(&Subtype::Region),
         "3.6.5: the subtype the rule is stated over is on the card"
+    );
+}
+
+/// CR 3.6.5 with the two REAL regions the card layer prints.
+///
+/// "Limit 1 region per server." is printed on every region (3.6.5a) and stated
+/// as a rule of the game by 3.6.5b, so it denotes into nothing on either card:
+/// the second region installed into a server root forces the first out, as the
+/// must-trash component of 8.5.6a.
+///
+/// Driven with Crisium Grid and La Costa Grid and NOT with a testkit shape,
+/// because a fixture is exactly what hid this. The kernel compared the subtype
+/// as `"region"` while every real card prints `"Region"`, so the rule fired for
+/// no card that has ever been played — and `tk::region_upgrade` spelled it
+/// lowercase too, so the kernel test agreed with the defect and passed.
+#[test]
+fn a_second_real_region_forces_the_first_out_of_the_same_server_root() {
+    let mut vm = Vm::empty(3650);
+    let crisium = tk::install_root(&mut vm, card("Crisium Grid"), ServerId::Remote(1), true);
+    assert!(
+        vm.st.objects[&crisium].printed.subtypes.contains(&Subtype::Region),
+        "the rule is stated over the printed subtype, so the card must carry it"
+    );
+
+    // La Costa Grid still carries `.unimplemented(…)` for its own two
+    // sentences, so it does not go through `card()`. Its PRINTED facts are
+    // exact regardless, and 3.6.5 is a rule about the subtype and not about
+    // either card's text.
+    let lcg_printed = jinteki_cards::find("La Costa Grid")
+        .expect("La Costa Grid is in the card layer")
+        .printed;
+    assert!(
+        lcg_printed.subtypes.contains(&Subtype::Region),
+        "and so must the card being installed over it"
+    );
+    let lcg = vm.new_object(lcg_printed, Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(lcg);
+
+    // An install button in a DIFFERENT server's root, so the button itself is
+    // never a party to the 3.6.5 question it triggers.
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button(
+            "Install-Button",
+            lcg,
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1)),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("corp-install")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("corp-install"), "the install ability was offered and used: {}", t.tail(4));
+    assert_eq!(
+        vm.st.objects[&lcg].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "La Costa Grid is installed in the root it was sent to"
+    );
+    assert_eq!(
+        vm.st.objects[&crisium].zone,
+        Zone::Discard(Side::Corp),
+        "3.6.5b / 8.5.6a: the region already in that root is trashed when a \
+         second region is installed there"
+    );
+}
+
+/// The other half of 3.6.5: the limit is per SERVER, so a region in one
+/// remote's root leaves a region in another remote's root alone. Without this
+/// the test above would also pass on a kernel that trashed every region
+/// anywhere on installing one.
+#[test]
+fn a_real_region_in_another_server_is_left_alone() {
+    let mut vm = Vm::empty(3651);
+    let crisium = tk::install_root(&mut vm, card("Crisium Grid"), ServerId::Remote(1), true);
+    let lcg_printed = jinteki_cards::find("La Costa Grid")
+        .expect("La Costa Grid is in the card layer")
+        .printed;
+    let lcg = vm.new_object(lcg_printed, Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(lcg);
+    tk::install_root(
+        &mut vm,
+        tk::corp_install_button(
+            "Install-Button",
+            lcg,
+            // …into a DIFFERENT remote from the one Crisium sits in.
+            jinteki_cr::instr::InstallDest::Root(ServerId::Remote(3)),
+        ),
+        ServerId::Remote(2),
+        true,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::take("corp-install")).stop_at_action(),
+        Plan::runner(),
+    );
+    assert!(t.took("corp-install"), "the install ability was offered and used: {}", t.tail(4));
+    assert_eq!(
+        vm.st.objects[&lcg].zone,
+        Zone::Root(ServerId::Remote(3)),
+        "the second region installs into its own server"
+    );
+    assert_eq!(
+        vm.st.objects[&crisium].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "3.6.5: the limit is 1 region per SERVER, so a region elsewhere stays"
+    );
+}
+
+/// CR 10.3.1d's console limit is CR 2.16's SUBTYPE, read off the card.
+///
+/// The kernel used to read a parallel `console: bool` set by hand beside
+/// `.subtypes(&[Subtype::Console])`, so a console written with only the
+/// subtype — the way every console is actually printed — escaped the limit
+/// entirely. That is the same class as spelling a subtype in two places and
+/// letting them drift, so the bool is gone and the checkpoint reads the
+/// subtype.
+///
+/// Desperado is the real console; the second is a plain shape carrying only
+/// the printed subtype and a different name, because Desperado is ◆ unique
+/// (2.2) and two copies of it would be trashed by 10.3.1d's OTHER half —
+/// which would prove nothing about consoles.
+#[test]
+fn a_second_console_is_trashed_even_though_it_shares_no_name_with_the_first() {
+    let mut vm = Vm::empty(10314);
+    let desperado = tk::install_rig(&mut vm, card("Desperado"));
+    assert!(
+        vm.st.objects[&desperado].printed.subtypes.contains(&Subtype::Console),
+        "the real card carries the subtype the limit is stated over"
+    );
+    assert!(
+        vm.st.objects[&desperado].printed.unique,
+        "…and is ◆ unique, which is why the second console must be another card"
+    );
+
+    let mut other = tk::vanilla_runner_card("Other-Console", CardType::Hardware);
+    other.subtypes = vec![Subtype::Console];
+    let second = tk::install_rig(&mut vm, other);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    // 10.3.1 is the checkpoint, so the limit applies at the next one.
+    jinteki_cr::checkpoint::run_checkpoint(&mut vm);
+
+    assert_eq!(
+        vm.st.objects[&desperado].zone,
+        Zone::Discard(Side::Runner),
+        "10.3.1d: the console installed earlier is trashed, keeping the one \
+         that became active most recently"
+    );
+    assert_eq!(
+        vm.st.objects[&second].zone,
+        Zone::Rig,
+        "and the newer console stays installed"
     );
 }

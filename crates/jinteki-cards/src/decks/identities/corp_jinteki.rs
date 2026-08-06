@@ -4,6 +4,8 @@
 //! (`crates/jinteki-core/carddata/cards.json`); behaviour written from that
 //! text alone (SYS-D-10).
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// One installed piece of ice — the description Synthetic Systems' sentence
@@ -31,7 +33,7 @@ pub fn jinteki_personal_evolution() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Whenever an agenda is scored or stolen, do 1 net damage.")
         .when(corp_scores_agenda(), [net_damage(Corp, 1)])
         .named("an agenda was scored")
@@ -59,7 +61,7 @@ pub fn jinteki_potential_unleashed() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Whenever the Runner takes at least 1 net damage, trash the top card of the stack.")
         .when(suffers_damage(DamageKind::Net), [trash(top_of_stack(amount(1)))])
         .named("potential unleashed")
@@ -83,7 +85,7 @@ pub fn palana_foods() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn the Runner draws a card, gain 1[credit].")
         .when_first_each_turn(draws_a_card(Runner), [gain(Corp, 1)])
         .named("the first runner draw of the turn")
@@ -110,7 +112,7 @@ pub fn tennin_institute() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When your turn begins, if the Runner did not make a successful run during their last turn, you may place 1 advancement counter on an installed card.")
         .may_when(
             turn_begins_if(Corp, &[runner_made_no_successful_run_last_turn()]),
@@ -139,7 +141,7 @@ pub fn jinteki_restoring_humanity() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("When your discard phase ends, if there is a facedown card in Archives, gain 1[credit].")
         .when(
             your_discard_phase_ends_if(Corp, &[board_has(&[in_archives(), facedown()], 1)]),
@@ -169,7 +171,7 @@ pub fn synthetic_systems() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Draft format only.")
         .text("If you have more [jinteki] cards rezzed than any other faction, when your turn begins, you may swap 2 pieces of installed ice.")
         .may_when(
@@ -216,7 +218,7 @@ pub fn pt_untaian() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When your discard phase ends, if there are 3 or fewer cards in HQ, you may pay 1[credit] to place 1 advancement counter on an unrezzed card you can advance. (You cannot score that card this turn.)")
         .when(
             your_discard_phase_ends_if(Corp, &[board_has_at_most(&[in_hand_of(Corp)], 3)]),
@@ -254,7 +256,7 @@ pub fn industrial_genomics() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The trash cost of each card is increased by 1 for each facedown card in Archives.")
         .declares([trash_costs_increased_by(
             &[],
@@ -295,7 +297,7 @@ pub fn jinteki_replicating_perfection() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("The Runner cannot run on remote servers. Ignore this ability until the end of the turn whenever the Runner runs on a central server.")
         .declares_while(
             &[runner_made_no_run_this_turn_on(&[
@@ -335,7 +337,7 @@ pub fn hyoubu_institute() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn you reveal a card, gain 1[credit].")
         .text("[click]: Reveal 1 card from the grip at random or the top card of the stack.")
         .when_first_each_turn(reveals_a_card(Corp), [gain(Corp, 1)])
@@ -374,7 +376,7 @@ pub fn harmony_medtech() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Each player needs 1 fewer agenda point to win the game.")
         .declares([each_player_needs_fewer_agenda_points_to_win(1)])
         .named("biomedical pioneer")
@@ -413,7 +415,7 @@ pub fn issuaq_adaptics() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever you score an agenda that you did not install or advance this turn, place 1 power counter on this identity.")
         .text("For each hosted power counter, you need 1 less agenda point to win the game.")
         .when(
@@ -453,7 +455,7 @@ pub fn nisei_division() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever you and the Runner reveal secretly spent credits, gain 1[credit].")
         .when(secretly_spent_credits_are_revealed(), [gain(Corp, 1)])
         .named("the next generation")
@@ -505,7 +507,7 @@ pub fn mti_mwekundu() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Once per turn → When the Runner approaches a server, you may install 1 piece of ice from HQ in the innermost position protecting that server, ignoring all costs. The Runner moves to that ice and approaches it. If this is not the first time they have approached ice this run, they may jack out.")
         .may_when_once_per_turn(
             runner_approaches_a_server(),
@@ -565,7 +567,7 @@ pub fn chronos_protocol_selective_mind_mapping() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("For the first net damage the Runner suffers each turn, you may look at the Runner's grip and select the card that is trashed.")
         .declares([may_select_first_damage_trashes_each_turn(
             Corp,
@@ -617,7 +619,7 @@ pub fn saraswati_mnemonics() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("[click], 1[credit]: Install 1 card from HQ in the root of a remote server, then place 1 advancement counter on it. You cannot score or rez that card until your next turn begins.")
         .paid(
             clicks(1).plus_cost(credits(1)),
@@ -690,7 +692,7 @@ pub fn a_teia() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Limit 2 remote servers.")
         .text("The first time each turn you install a card in the root of or protecting a remote server, you may install 1 card from HQ in the root of or protecting another remote server, ignoring all costs. You cannot score the second card this turn.")
         .declares([remote_server_limit(2)])
@@ -741,7 +743,7 @@ pub fn au_co() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever you do damage or trash 1 or more cards from HQ, place 1 power counter on this identity.")
         .text("When your turn begins, you may remove 2 hosted power counters to look at the top 3 cards of R&D. Trash 1 of those cards and add the rest to HQ.")
         .when(
@@ -807,7 +809,7 @@ pub fn melies_u_only_the_brightest() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When your discard phase ends, secretly set your identity to any copy of Méliès U: Only the Brightest.")
         .text("When the Runner makes a successful run on a central server, flip this identity.")
         .text("When the Runner’s action phase ends, gain 1[credit].")
@@ -853,7 +855,7 @@ pub fn tenure_floors_melies_u() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When you flip this identity to this side during a run on HQ, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.")
         .text("When the Runner’s discard phase ends, flip this identity.")
         .when(
@@ -886,7 +888,7 @@ pub fn subsurface_labs_melies_u() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When you flip this identity to this side during a run on R&D, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.")
         .text("When the Runner’s discard phase ends, flip this identity.")
         .when(
@@ -919,7 +921,7 @@ pub fn disposal_grounds_melies_u() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When you flip this identity to this side during a run on Archives, look at the top card of R&D. You may trash that card. If you do, add 1 card from Archives to HQ.")
         .text("When the Runner’s discard phase ends, flip this identity.")
         .when(
@@ -986,7 +988,7 @@ pub fn jinteki_biotech() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Before taking your first turn, you may switch this identity with any copy of Jinteki Biotech.")
         .text("[click][click][click]: Flip this identity.")
         .when(before_taking_first_turn(), [secretly_set_identity_face(Corp)])
@@ -1015,7 +1017,7 @@ pub fn the_brewery_jinteki_biotech() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When you flip this identity, do 2 net damage.")
         .when(flipped_to_this_side(), [net_damage(Corp, 2)])
         .named("the brewery: 2 net damage")
@@ -1037,7 +1039,7 @@ pub fn the_tank_jinteki_biotech() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When you flip this identity, shuffle all cards in Archives into R&D.")
         .when(
             flipped_to_this_side(),
@@ -1064,7 +1066,7 @@ pub fn the_greenhouse_jinteki_biotech() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When you flip this identity, place 4 advancement counters on 1 installed card that you can advance.")
         .when(
             flipped_to_this_side(),
@@ -1119,7 +1121,7 @@ pub fn ag_infusion() -> Card {
         .corp()
         .identity()
         .faction("Jinteki")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Once per turn → Trash the unrezzed piece of ice the Runner is approaching: Choose a server other than the attacked server. The Runner moves to the outermost position of that server and encounters any ice there.")
         .paid_once_per_turn_while_approaching_unrezzed_ice(
             trash_the_approached_unrezzed_ice(),

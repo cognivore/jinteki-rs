@@ -5,6 +5,8 @@
 //! test at the bottom is the DP-7a odometer (implemented / 243); the
 //! `#[ignore]`d placeholder enumerates every example id still to be done.
 
+use jinteki_cr::Subtype;
+
 use jinteki_cr::change::GameChange;
 use jinteki_cr::decision::{ActionOption, DecisionAnswer, DecisionSpec, WindowOption};
 use jinteki_cr::effects::DamageKind;
@@ -1371,7 +1373,7 @@ fn example_rule_paid_ability_refers_to_approached_ice_1() {
     // Rezzed bioroid approach: offered in the approach window.
     let mut vm = Vm::empty(41);
     let mut bio = tk::vanilla_ice("Eli-like", 0, 3);
-    bio.subtypes = vec!["bioroid", "barrier"];
+    bio.subtypes = vec![Subtype::Bioroid, Subtype::Barrier];
     tk::install_ice(&mut vm, bio, ServerId::Hq, true);
     let w = vm.new_object(tk::wotan_like("Wotan-like"), Zone::ScoreArea(Side::Corp));
     vm.st.score_area.get_mut(&Side::Corp).unwrap().push(w);
@@ -3974,7 +3976,7 @@ fn example_rule_independent_effects_1() {
     use jinteki_cr::instr::Instruction;
     let mut vm = Vm::empty(1012);
     let mut ansel = tk::vanilla_ice("Ansel-1.0-like", 4, 4);
-    ansel.subtypes = vec!["bioroid", "sentry"];
+    ansel.subtypes = vec![Subtype::Bioroid, Subtype::Sentry];
     ansel.abilities = vec![AbilityDef::subroutine(vec![Instruction::Damage {
         kind: DamageKind::Net,
         amount: Quantity::c(1),
@@ -3992,7 +3994,7 @@ fn example_rule_independent_effects_1() {
         &mut vm,
         tk::warden_fatuma_like(
             "Warden-Fatuma-like",
-            "bioroid",
+            Subtype::Bioroid,
             AbilityDef::subroutine(vec![Instruction::LoseCredits(Side::Runner, Quantity::c(1))])
                 .labeled("[sub] the runner loses a credit"),
         ),
@@ -4003,7 +4005,7 @@ fn example_rule_independent_effects_1() {
     // Without Hush, Mother Goddess's own effect is independent and gives it
     // every other rezzed ice's subtypes — including bioroid, which is what
     // makes Warden Fatuma's effect depend on it.
-    assert!(vm.has_subtype(mg, "bioroid"), "9.12.1d: Mother Goddess gains Ansel's subtypes");
+    assert!(vm.has_subtype(mg, Subtype::Bioroid), "9.12.1d: Mother Goddess gains Ansel's subtypes");
     assert_eq!(
         vm.current_subs(mg).len(),
         1,
@@ -4016,7 +4018,7 @@ fn example_rule_independent_effects_1() {
     tk::host_on(&mut vm, hush, mg);
 
     assert!(
-        !vm.has_subtype(mg, "bioroid"),
+        !vm.has_subtype(mg, Subtype::Bioroid),
         "9.12.1e: Hush is applied first, so Mother Goddess's effect never applies"
     );
     let mg_subs = vm.current_subs(mg);
@@ -4069,20 +4071,20 @@ fn example_rule_lingering_effect_maintaining_choice_default_duration_1() {
     use jinteki_cr::lingering::ChoiceValue;
     let mut vm = Vm::empty(1301);
     let ice = tk::install_ice(&mut vm, tk::vanilla_ice("Plain-Ice", 0, 1), ServerId::Hq, true);
-    let pelangi = tk::install_rig(&mut vm, tk::pelangi_like("Pelangi-like", &["barrier", "sentry"]));
+    let pelangi = tk::install_rig(&mut vm, tk::pelangi_like("Pelangi-like", &[Subtype::Barrier, Subtype::Sentry]));
     tk::install_rig(&mut vm, tk::break_button("Break-button"));
     vm.st.runner.credits = 5;
     vm.start_turn(Side::Runner);
 
     // The plan: run HQ, use Pelangi in the encounter's paid window choosing
-    // "sentry", then halt in the NEXT paid window of that encounter so the
+    // "Sentry", then halt in the NEXT paid window of that encounter so the
     // effect can be read while the encounter still lasts.
     let mut g = plan::Script::new(
         Plan::corp().when(Match::optional(), Reply::Optional(true)),
         Plan::runner()
             .when(Match::action().first(), Reply::run(ServerId::Hq))
             .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("pelangi"))
-            .when(Match::options().once(), Reply::ChooseNamed("sentry"))
+            .when(Match::options().once(), Reply::ChooseNamed(Subtype::Sentry.as_str()))
             .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
             .when(Match::optional(), Reply::Optional(true))
             .stop_at_action(),
@@ -4091,10 +4093,10 @@ fn example_rule_lingering_effect_maintaining_choice_default_duration_1() {
     assert!(vm.st.encounter.is_some(), "the readings below are taken mid-encounter");
     assert_eq!(
         vm.maintained_choice(pelangi, "pelangi-subtype"),
-        Some(ChoiceValue::Subtype("sentry")),
+        Some(ChoiceValue::Subtype(Subtype::Sentry)),
         "9.10.3: the choice is maintained by a lingering effect"
     );
-    assert!(vm.has_subtype(ice, "sentry"), "and the effect it feeds is applying");
+    assert!(vm.has_subtype(ice, Subtype::Sentry), "and the effect it feeds is applying");
 
     g.run(&mut vm);
     assert!(vm.st.encounter.is_none(), "the encounter is over");
@@ -4103,7 +4105,7 @@ fn example_rule_lingering_effect_maintaining_choice_default_duration_1() {
         None,
         "9.10.3a: the choice expires with the effect that referred to it"
     );
-    assert!(!vm.has_subtype(ice, "sentry"), "and so does the subtype it granted");
+    assert!(!vm.has_subtype(ice, Subtype::Sentry), "and so does the subtype it granted");
 }
 
 /// example_rule_lingering_effect_maintaining_choice_turn_begins_duration_1
@@ -4979,7 +4981,7 @@ fn example_rule_host_via_install_1() {
         let oca = tk::install_rig(&mut vm, tk::off_campus_like("OffCampus-like"));
         let mut card = tk::vanilla_runner_card("Installee", jinteki_cr::object::CardType::Resource);
         if connection {
-            card.subtypes = vec!["connection"];
+            card.subtypes = vec![Subtype::Connection];
         }
         let installee = vm.new_object(card, Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(installee);
@@ -6458,7 +6460,7 @@ fn example_rule_paid_ability_refers_to_encountered_ice_2() {
     let mut weak = Vm::empty(634);
     tk::install_ice(
         &mut weak,
-        tk::subtyped_etr_ice("CodeGate-like", "code gate", 0, 4),
+        tk::subtyped_etr_ice("CodeGate-like", Subtype::CodeGate, 0, 4),
         ServerId::Hq,
         true,
     );
@@ -6489,7 +6491,7 @@ fn example_rule_paid_ability_refers_to_encountered_ice_2() {
     let mut strong = Vm::empty(635);
     tk::install_ice(
         &mut strong,
-        tk::subtyped_etr_ice("CodeGate-like", "code gate", 0, 4),
+        tk::subtyped_etr_ice("CodeGate-like", Subtype::CodeGate, 0, 4),
         ServerId::Hq,
         true,
     );
@@ -6507,7 +6509,7 @@ fn example_rule_paid_ability_refers_to_encountered_ice_2() {
     let mut wrong = Vm::empty(636);
     tk::install_ice(
         &mut wrong,
-        tk::subtyped_etr_ice("Sentry-like", "sentry", 0, 1),
+        tk::subtyped_etr_ice("Sentry-like", Subtype::Sentry, 0, 1),
         ServerId::Hq,
         true,
     );
@@ -6844,7 +6846,7 @@ fn example_rule_target_1() {
 #[test]
 fn example_rule_choose_instruction_1() {
     let mut vm = Vm::empty(708);
-    let lycan = tk::install_ice(&mut vm, tk::morph_ice("Lycan-like", "sentry", "sentry"), ServerId::Hq, true);
+    let lycan = tk::install_ice(&mut vm, tk::morph_ice("Lycan-like", Subtype::Sentry, Subtype::Sentry), ServerId::Hq, true);
     let other = tk::install_ice(&mut vm, tk::vanilla_ice("Plain-Ice", 1, 1), ServerId::Rnd, true);
     let tinkering = vm.new_object(tk::tinkering_like("Tinkering-like"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(tinkering);
@@ -6852,7 +6854,7 @@ fn example_rule_choose_instruction_1() {
     vm.start_turn(Side::Runner);
 
     // Before: the morph ice's printed sentry is cancelled by its own ability.
-    assert!(!vm.has_subtype(lycan, "sentry"), "printed once, removed once");
+    assert!(!vm.has_subtype(lycan, Subtype::Sentry), "printed once, removed once");
 
     let t = plan::play(
         &mut vm,
@@ -6871,10 +6873,10 @@ fn example_rule_choose_instruction_1() {
     );
     assert!(announce[0].candidates().contains(&lycan) && announce[0].candidates().contains(&other));
     // 2.16.5: printed once + gained once - removed once = still a sentry.
-    assert!(vm.has_subtype(lycan, "sentry"), "two instances added, one removed");
-    assert!(vm.has_subtype(lycan, "code gate"));
-    assert!(vm.has_subtype(lycan, "barrier"));
-    assert!(!vm.has_subtype(other, "barrier"), "only the announced target");
+    assert!(vm.has_subtype(lycan, Subtype::Sentry), "two instances added, one removed");
+    assert!(vm.has_subtype(lycan, Subtype::CodeGate));
+    assert!(vm.has_subtype(lycan, Subtype::Barrier));
+    assert!(!vm.has_subtype(other, Subtype::Barrier), "only the announced target");
 }
 
 /// example_rule_add_remove_subtypes_1 (2.16.5) — asserted above, from the
@@ -6883,11 +6885,11 @@ fn example_rule_choose_instruction_1() {
 #[test]
 fn example_rule_add_remove_subtypes_1() {
     let mut vm = Vm::empty(709);
-    let lycan = tk::install_ice(&mut vm, tk::morph_ice("Lycan-like", "sentry", "sentry"), ServerId::Hq, true);
-    assert!(!vm.has_subtype(lycan, "sentry"), "1 printed - 1 removed = not a sentry");
-    let plain = tk::install_ice(&mut vm, tk::morph_ice("Plain-Morph", "sentry", "code gate"), ServerId::Rnd, true);
-    assert!(vm.has_subtype(plain, "sentry"), "removing an absent subtype changes nothing");
-    assert!(!vm.has_subtype(plain, "code gate"));
+    let lycan = tk::install_ice(&mut vm, tk::morph_ice("Lycan-like", Subtype::Sentry, Subtype::Sentry), ServerId::Hq, true);
+    assert!(!vm.has_subtype(lycan, Subtype::Sentry), "1 printed - 1 removed = not a sentry");
+    let plain = tk::install_ice(&mut vm, tk::morph_ice("Plain-Morph", Subtype::Sentry, Subtype::CodeGate), ServerId::Rnd, true);
+    assert!(vm.has_subtype(plain, Subtype::Sentry), "removing an absent subtype changes nothing");
+    assert!(!vm.has_subtype(plain, Subtype::CodeGate));
 }
 
 /// example_rule_choice_instruction_1 (9.11.4g): a Data-Raven-class ability
@@ -10206,7 +10208,7 @@ fn example_rule_subroutine_origin_external_before_1() {
         &mut vm,
         tk::warden_fatuma_like(
             "WardenFatuma-like",
-            "Bioroid",
+            Subtype::Bioroid,
             jinteki_cr::ability::AbilityDef::subroutine(vec![
                 jinteki_cr::instr::Instruction::LoseCredits(Side::Runner, Quantity::c(1)),
             ])
@@ -10220,7 +10222,7 @@ fn example_rule_subroutine_origin_external_before_1() {
         jinteki_cr::ability::AbilityDef::subroutine(vec![jinteki_cr::instr::Instruction::EndTheRun])
             .labeled("[sub] loki printed"),
     );
-    loki.subtypes.push("Bioroid");
+    loki.subtypes.push(Subtype::Bioroid);
     let loki = tk::install_ice(&mut vm, loki, ServerId::Hq, true);
     // SIMPLIFICATION: the printed Stick and Poke is a Runner card; the kernel
     // shape is the Corp-side Marker granter, because what 9.8.3a turns on is
@@ -12335,5 +12337,69 @@ fn example_rule_step_sequences_1() {
     assert!(
         removed < installed,
         "…which is still during the installation, before 8.5.16f"
+    );
+}
+
+/// CR 3.9.5b/c are stated about an ability **on an icebreaker** modifying
+/// **that icebreaker's** strength, so the implicit "for the remainder of the
+/// current encounter" duration is scoped by the SUBTYPE and by nothing else.
+///
+/// This is the A/B that pins that scope. Two cards of the SAME shape — a paid
+/// ability stating "+1 strength for the remainder of this run" about its own
+/// strength — differing only in whether they carry `Subtype::Icebreaker`, both
+/// used during a FORCED encounter with no run in progress (6.5.9a). The stated
+/// duration names a structure that is not in progress, so 9.10.4 expires it at
+/// once; only the icebreaker also lives under 3.9.5c's implicit encounter
+/// duration and keeps the bonus for the rest of the encounter.
+///
+/// The kernel used to attach that implicit encounter duration to EVERY stated
+/// duration strength modification. `self_icebreaker` was computed for exactly
+/// this gate and reached only a `cite!`, which expands to a const and decides
+/// nothing at runtime — so the subtype comparison there was dead either way,
+/// and its lowercase spelling was invisible for that reason rather than
+/// harmless.
+#[test]
+fn the_implicit_encounter_duration_is_scoped_to_icebreakers() {
+    let mut vm = Vm::empty(3955);
+    let archangel =
+        vm.new_object(tk::accessed_encounter_ice("Archangel-like", 6, 0), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(archangel);
+    tk::install_rig(&mut vm, tk::hq_access_button("GangSign-like"));
+    let breaker = tk::install_rig(&mut vm, tk::run_pump_breaker("Gordian-like", 2));
+    let plain = tk::install_rig(&mut vm, tk::run_pump_non_breaker("Gordian-like-but-not-a-breaker", 2));
+    assert!(vm.has_subtype(breaker, Subtype::Icebreaker), "the A side is an icebreaker");
+    assert!(!vm.has_subtype(plain, Subtype::Icebreaker), "and the B side is the same card without it");
+    tk::fill_hand(&mut vm, Side::Runner, 3);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    let mut script = plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .uses("access-hq")
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("gordian"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::take("plain-pump"))
+            .when(Match::paid().at_step("step_encounter_paw").once(), Reply::Halt)
+            .stop_at_action(),
+    );
+    script.run(&mut vm);
+    assert!(
+        vm.st.encounter.is_some() && vm.current_run.is_none(),
+        "an encounter with no run in progress: {}",
+        script.transcript().tail(8)
+    );
+    assert_eq!(
+        vm.effective_strength(breaker),
+        Some(3),
+        "3.9.5c: the icebreaker's stated duration runs ALONGSIDE the implicit \
+         encounter one, so the pump holds for the rest of the encounter"
+    );
+    assert_eq!(
+        vm.effective_strength(plain),
+        Some(2),
+        "3.9.5b/c are about an ability on an ICEBREAKER modifying that \
+         icebreaker's strength. Without the subtype there is no implicit \
+         encounter duration, so 9.10.4 expired the run duration it stated \
+         while no run was in progress"
     );
 }
