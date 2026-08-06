@@ -5640,16 +5640,34 @@ pub fn successful_run_trace_upgrade(name: &'static str, base: i64) -> PrintedCar
 // W13c shapes: additional costs on the basic run action (§6.3.4, §9.12.3e)
 // ---------------------------------------------------------------------------
 
-/// Enhanced Login Protocol / Service Outage shape (6.3.4 / 1.16.10): "the
-/// Runner must pay [cost] as an additional cost to make a run." The sentence
-/// names no server, so the declaration's set is every server.
+/// Service Outage shape (6.3.4 / 1.16.10): "the Runner must pay [cost] as an
+/// additional cost to make a run." The sentence names no server, so the
+/// declaration's set is every server, and it prints no ORDINAL — the cost is
+/// charged on every run action.
 pub fn run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
     let mut c = vanilla_asset(name, 0, 3);
     c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost {
         cost: extra,
         on: crate::instr::RunServerSet::Any,
+        first_each_turn: false,
     }])
     .labeled("surcharge: additional cost to make a run")];
+    c
+}
+
+/// Enhanced Login Protocol shape (1.16.10 / 5.2.5a): the same sentence with
+/// the printed ORDINAL on it — "…to take the basic action to run a server
+/// **for the first time each turn**". Its neighbour above is the same
+/// declaration without one, which is what the original printing of the card
+/// this shape is named for actually said.
+pub fn first_run_surcharge_asset(name: &'static str, extra: Cost) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::AdditionalRunActionCost {
+        cost: extra,
+        on: crate::instr::RunServerSet::Any,
+        first_each_turn: true,
+    }])
+    .labeled("surcharge: additional cost to make the first run each turn")];
     c
 }
 

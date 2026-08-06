@@ -3016,6 +3016,24 @@ pub fn additional_cost_to_run(servers: &[ServerId], c: Cost) -> StaticDecl {
     StaticDecl::AdditionalRunActionCost {
         cost: c,
         on: jinteki_cr::instr::RunServerSet::These(servers.to_vec()),
+        first_each_turn: false,
+    }
+}
+/// "As an additional cost to take the basic action to run a server **for the
+/// first time each turn**, the Runner must pay <cost>." (Enhanced Login
+/// Protocol; 1.16.10 / 5.2.5a.) The same declaration with the printed ORDINAL
+/// on it, and the sentence names no server, so the set is every one.
+///
+/// The ordinal is not a conditional ability met by the first run each turn.
+/// 1.16.1b makes an additional cost a GATE on the action, paid at 6.9.1a to
+/// initiate it; a conditional resolves after the action and gates nothing.
+/// (The CR's own Heinlein Grid example turns on that distinction: the click
+/// this cost charges is spent to initiate the run and is not spent during it.)
+pub fn additional_cost_to_run_the_first_time_each_turn(c: Cost) -> StaticDecl {
+    StaticDecl::AdditionalRunActionCost {
+        cost: c,
+        on: jinteki_cr::instr::RunServerSet::Any,
+        first_each_turn: true,
     }
 }
 /// "As an additional cost to run **a remote server**, the Runner must pay
@@ -3024,7 +3042,11 @@ pub fn additional_cost_to_run(servers: &[ServerId], c: Cost) -> StaticDecl {
 /// this is [`jinteki_cr::instr::RunServerSet::AnyRemote`] and never an
 /// enumeration.
 pub fn additional_cost_to_run_a_remote_server(c: Cost) -> StaticDecl {
-    StaticDecl::AdditionalRunActionCost { cost: c, on: jinteki_cr::instr::RunServerSet::AnyRemote }
+    StaticDecl::AdditionalRunActionCost {
+        cost: c,
+        on: jinteki_cr::instr::RunServerSet::AnyRemote,
+        first_each_turn: false,
+    }
 }
 /// "The Runner pays 1[credit] more when spending a [click] to remove a tag
 /// **(not through a card ability)**." (SYNC, front face; 1.16.2 / 5.2.7g.)

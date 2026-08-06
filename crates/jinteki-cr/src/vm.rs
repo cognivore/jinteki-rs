@@ -14977,14 +14977,54 @@ impl Vm {
     pub fn run_action_cost(&self, server: ServerId) -> Cost {
         cite!("rule_additional_cost");
         let mut total = Cost::free();
+        let first = self.earlier_run_actions_this_turn() == 0;
         for (_, d) in self.active_statics() {
-            if let StaticDecl::AdditionalRunActionCost { cost, on } = d {
+            if let StaticDecl::AdditionalRunActionCost { cost, on, first_each_turn } = d {
+                // 1.16.10 + 5.2.5a: the printed ordinal says WHICH takings of
+                // the action the cost attaches to. Without it the cost is
+                // charged every time, and 1.16.1b makes that a gate on an
+                // action the player is entitled to take for free.
+                if first_each_turn && !first {
+                    continue;
+                }
                 if on.allows(server) {
                     total = total.plus(&cost);
                 }
             }
         }
         total
+    }
+
+    /// CR 5.2.5a / 10.2.1: how many basic RUN actions the Runner has taken
+    /// this turn BEFORE the one in progress, read from the open history.
+    ///
+    /// "Before the one in progress" is the whole of the arithmetic: 5.2.2
+    /// records `ActionTaken` as the action is initiated, and every caller asks
+    /// this question from inside that very action — so the current taking is
+    /// already in the log and the count runs up to it rather than through it.
+    fn earlier_run_actions_this_turn(&self) -> usize {
+        cite!("rule_same_actions");
+        cite!("rule_hidden_or_open_information");
+        let from = self.st.turn_log_start.min(self.changes.log.len());
+        let here = self.changes.log[from..]
+            .iter()
+            .rposition(|c| matches!(c, GameChange::ActionTaken { .. }))
+            .map(|i| from + i)
+            .unwrap_or(self.changes.log.len());
+        self.changes.log[from..here]
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c,
+                    GameChange::ActionTaken {
+                        action: crate::change::ActionIdentity::Basic(
+                            crate::change::BasicAction::Run
+                        ),
+                        ..
+                    }
+                )
+            })
+            .count()
     }
 
     /// CR 9.12.3a/e: is this player required to spend their first [click] of

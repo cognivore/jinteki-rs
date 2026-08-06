@@ -673,7 +673,7 @@ pub fn spin_doctor() -> Card {
 ///  As an additional cost to take the basic action to run a server for the
 ///  first time each turn, the Runner must spend [click]."
 ///
-/// PARTIAL: the current stays; the toll it charges cannot be stated.
+/// COMPLETE.
 ///
 /// The first sentence is 8.6.6c read exactly: instead of trashing the card at
 /// step 8.6.7g of playing it, a lingering effect is created whose duration
@@ -685,20 +685,23 @@ pub fn spin_doctor() -> Card {
 /// already carries, and it is what makes the second sentence a static ability
 /// of a card in play rather than something the operation does as it resolves.
 ///
-/// UNIMPLEMENTED: the second sentence. It is 1.16.10's additional cost on
-/// 5.2.7a's basic run action, paid at 6.9.1a before the run formally begins
-/// (which is exactly the CR's own worked example against Heinlein Grid: the
-/// click is spent to INITIATE the run and is not spent during it). The
-/// declaration for that cost exists and names which servers it reaches — but
-/// it says nothing about WHICH TAKINGS of the action it attaches to, and this
-/// card charges only the first each turn. Written with the word that exists
-/// the Runner would pay a click for every run action of every turn, which is
-/// a strictly worse card than the printed one and a 1.16.1b gate on actions
-/// the Runner is entitled to take for free. A conditional ability met by the
-/// first run each turn is not a substitute either: an additional cost gates
-/// the action (1.16.1b — an unpayable cost means the action cannot be taken
-/// at all), and a conditional resolves after it. So it is marked. The general
-/// capability wanted is on MEZZIE-QUEUE.md's Blockers.
+/// The second sentence is 1.16.10's additional cost on 5.2.7a's basic run
+/// action, paid at 6.9.1a before the run formally begins — which is exactly
+/// the CR's own worked example against Heinlein Grid: the click is spent to
+/// INITIATE the run and is not spent during it.
+///
+/// "For the first time each turn" is the printed ORDINAL, and it is content on
+/// the same declaration rather than a second mechanism. It is read from the
+/// change log (10.2.1's open history): the cost applies while no earlier basic
+/// run action has been taken this turn, which is 5.2.5a's action identity
+/// asked of the turn.
+///
+/// It is not a conditional ability met by the first run each turn, and the
+/// difference is 1.16.1b: an additional cost GATES the action — a Runner who
+/// cannot pay cannot take it at all — while a conditional resolves after the
+/// action and gates nothing. Nor could the ordinal be left off: the Runner
+/// would pay a click for every run action of every turn, which forbids runs
+/// the printed card leaves free.
 pub fn enhanced_login_protocol() -> Card {
     card("Enhanced Login Protocol")
         .corp()
@@ -710,7 +713,8 @@ pub fn enhanced_login_protocol() -> Card {
         .text("As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click].")
         .declares([not_trashed_until_an_agenda_is_stolen()])
         .named("the current stays in the play area")
-        .unimplemented("As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click].")
+        .declares([additional_cost_to_run_the_first_time_each_turn(clicks(1))])
+        .named("a click for the turn's first run")
         .build()
 }
 

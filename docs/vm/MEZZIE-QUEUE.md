@@ -54,7 +54,7 @@ Identity is COMPLETE. Printed text below is from
       "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
 - [x] **Spin Doctor** ◆ ×3 — asset · Character · cost 0, trash 2
       "When you rez this asset, draw 2 cards. / Remove this asset from the game: Shuffle up to 2 cards from Archives into R&D."
-- [ ] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
+- [x] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
       "This operation is not trashed until another current is played or an agenda is stolen. / As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."
 - [x] **Flood the Market** ×1 — operation · Double · cost 3
       "As an additional cost to play this operation, spend [click]. / Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice."
@@ -312,42 +312,14 @@ waits on this word and on the revealed-cards word below, so the card stays
 unticked. Both remaining halves are about the SAME reveal: which agenda may be
 revealed, and which cards "copies of that agenda" then means.
 
-### The printed ORDINAL on an additional-cost declaration (CR 1.16.10 / 5.2.5a)
+### The printed ORDINAL on an additional-cost declaration — LANDED (CR 1.16.10)
 
-`StaticDecl::AdditionalRunActionCost { cost, on }` says WHAT the cost is and
-WHICH servers it reaches, and nothing about WHICH TAKINGS of the action it
-attaches to. A sentence that charges only some of them — "…**for the first
-time each turn**" — has no position to say so, and written without it the cost
-is charged every time. That is not a small error: 1.16.1b makes an additional
-cost a gate on the action, so an over-broad one forbids actions the player is
-entitled to take for free.
-
-A conditional ability met by the first run each turn is not a substitute and
-must not be offered as one. An additional cost is paid at 6.9.1a to INITIATE
-the action and gates it; a conditional resolves after it and gates nothing.
-(The CR's own Heinlein Grid example turns on exactly that distinction: the
-click this cost charges is spent to initiate the run and is not spent during
-it.)
-
-Wanted: the ordinal as CONTENT on the one declaration, the way
-`StaticDecl::InherentCostMod` already carries `first_each_turn` — one
-position, read from the change log, covering "the first N times each turn" for
-every additional cost a card can print. That is the whole of what is missing.
-
-(An earlier wave also wanted the "names no server" set here, claiming a
-sentence naming no server could not be written at all. That was never true:
-`RunServerSet` is among `crate::edsl`'s re-exports, so
-`StaticDecl::AdditionalRunActionCost { cost, on: RunServerSet::Any }` is
-written directly, and `additional_cost_to_run`'s own doc comment names
-`RunServerSet::Any` as how to say it. What the two named helpers do not have
-is a THIRD helper for the empty set — a shorthand, not a capability.)
-
-Wants it: **Enhanced Login Protocol** (its second sentence; the current's own
-"not trashed until…" is done and tested). Note the kernel's doc comment on
-`AdditionalRunActionCost` names this card as its class exemplar — it is
-describing the ORIGINAL printing, which charged every run; the printed text in
-`netrunner-cards-json` is the revised one and it has the ordinal.
-
+`StaticDecl::AdditionalRunActionCost` gains `first_each_turn: bool`, the field
+`InherentCostMod` already carries and read the same way: from the change log,
+the cost applying while no EARLIER basic run action has been taken this turn
+(5.2.5a's action identity, asked of the turn). `false` at every existing site,
+which is what Service Outage and this card's ORIGINAL printing say. **Enhanced
+Login Protocol** is written and ticked.
 
 ### Hosted credits spendable on REZZING and on PLAYING — LANDED (CR 1.10.3c)
 

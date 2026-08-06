@@ -3346,7 +3346,7 @@ fn wari_names_a_subtype_and_bounces_matching_ice() {
             Plan::runner()
                 .when(Match::action().once(), Reply::run(ServerId::Hq))
                 .when(Match::reaction().once(), Reply::take("wari"))
-                .when(Match::nested_cost().once(), Reply::PayCost(true))
+                .when(Match::nested_cost(), Reply::PayCost(true))
                 .when(Match::options().once(), Reply::ChooseNamed(named))
                 .when(Match::targets().once(), Reply::target(ice))
                 .stop_at_action(),
@@ -7098,7 +7098,7 @@ fn null_whistleblower_trashes_from_the_grip_to_weaken_the_encountered_ice() {
         Plan::corp(),
         Plan::runner()
             .when(Match::action().once(), Reply::run(ServerId::Hq))
-            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::nested_cost(), Reply::PayCost(true))
             .when(Match::payment_cards().once(), Reply::Targets(vec![hand[0]]))
             .when(Match::of(Kind::JackOut).once(), Reply::Halt)
             .when(Match::of(Kind::JackOut), Reply::JackOut(false))
@@ -8210,7 +8210,7 @@ fn thunderbolt_armaments_pumps_and_arms_a_destroyer_rezzed_during_a_run() {
         Plan::corp().when(Match::paid().approaching_ice(), Reply::Take(Pick::RezApproachedIce)),
         Plan::runner()
             .when(Match::action().once(), Reply::run(ServerId::Archives))
-            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::nested_cost(), Reply::PayCost(true))
             .when(Match::payment_cards().once(), Reply::Targets(vec![rig]))
             .when(Match::of(Kind::JackOut).once(), Reply::Halt)
             .when(Match::of(Kind::JackOut), Reply::JackOut(false))
@@ -12681,7 +12681,7 @@ fn earth_station_taxes_the_run_on_hq_and_only_hq() {
         Plan::runner()
             .when(Match::action().once(), Reply::run(ServerId::Hq))
             // 1.16.10a: pay the 1[credit] and the run is made.
-            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::nested_cost(), Reply::PayCost(true))
             .when(Match::action().once(), Reply::run(ServerId::Archives))
             .when(Match::action(), Reply::Halt),
     );
@@ -12793,7 +12793,7 @@ fn earth_station_flips_for_a_click_and_the_back_taxes_remotes_until_hq_flips_it_
         Plan::runner()
             .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
             // The back face's toll on the remote: 6[credit], paid.
-            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::nested_cost(), Reply::PayCost(true))
             // HQ under the back face: no toll is asked at all — the next
             // decision after the run action is the action window again.
             .when(Match::action().once(), Reply::run(ServerId::Hq))
@@ -14776,7 +14776,7 @@ fn melies_flips_to_the_sealed_back_and_the_back_speaks_on_its_server() {
         Plan::corp()
             .when(Match::of(Kind::Options).once(), Reply::ChooseNamed("Subsurface Labs"))
             // 1.16.11a: pay the optional cost — trash the looked-at card.
-            .when(Match::nested_cost().once(), Reply::PayCost(true))
+            .when(Match::nested_cost(), Reply::PayCost(true))
             // "Add 1 card from Archives to HQ": the just-trashed card is in
             // Archives too and is honestly on offer; this Corp reaches for
             // the one that was buried all along.
@@ -18654,16 +18654,8 @@ fn spin_doctor_removes_itself_from_the_game_to_shuffle_two_of_three_back() {
 /// an agenda is what ends it.
 #[test]
 fn enhanced_login_protocol_stays_in_the_play_area_until_an_agenda_is_stolen() {
-    let elp = jinteki_cards::find("Enhanced Login Protocol")
-        .expect("Enhanced Login Protocol is in the card layer");
-    assert_eq!(
-        elp.unimplemented,
-        vec!["As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9131);
-    let card_id = vm.new_object(card_partial("Enhanced Login Protocol"), Zone::Hand(Side::Corp));
+    let card_id = vm.new_object(card("Enhanced Login Protocol"), Zone::Hand(Side::Corp));
     vm.st.hand.get_mut(&Side::Corp).unwrap().push(card_id);
     let agenda = tk::install_root(
         &mut vm,
@@ -18686,6 +18678,9 @@ fn enhanced_login_protocol_stays_in_the_play_area_until_an_agenda_is_stolen() {
             // fall through to the run on the second look at this window.
             .when(Match::action().first(), Reply::Halt)
             .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            // 1.16.10a: the current's toll is offered before the run is taken,
+            // and the Runner pays it.
+            .when(Match::nested_cost(), Reply::PayCost(true))
             .stop_at_action(),
     );
     g.run(&mut vm);
@@ -18709,6 +18704,78 @@ fn enhanced_login_protocol_stays_in_the_play_area_until_an_agenda_is_stolen() {
         "3.5.1b: the steal ended the lingering effect and the current was trashed: {}",
         g.transcript().tail(20)
     );
+}
+
+/// Enhanced Login Protocol: "As an additional cost to take the basic action to
+/// run a server for the first time each turn, the Runner must spend [click]."
+///
+/// Both halves of the ordinal, on one Runner turn with the current already in
+/// play. The Runner takes three basic run actions on an empty Archives; the
+/// FIRST is offered 1.16.10's nested cost and the second and third are not, so
+/// the turn's four clicks buy three runs and one toll rather than two runs and
+/// two tolls.
+///
+/// The clicks are what the assertion reads, because 1.16.1b is what the
+/// ordinal is about: an additional cost GATES the action, so charging it every
+/// time would cost the Runner a run they are entitled to take for free. Four
+/// allotted, one spent on the toll and three on the runs, leaves zero — and
+/// with the ordinal ignored the fourth click would have gone on a second toll
+/// and the third run would never have happened.
+#[test]
+fn enhanced_login_protocol_tolls_only_the_first_run_of_the_turn() {
+    for pay in [true, false] {
+        let mut vm = Vm::empty(9132);
+        // 8.6.6c: a current sits FACEUP and active in the play area, which is
+        // where the played card would have been left.
+        let elp = vm.new_object(card("Enhanced Login Protocol"), Zone::PlayArea(Side::Corp));
+        vm.st.active_seq += 1;
+        let seq = vm.st.active_seq;
+        let o = vm.st.objects.get_mut(&elp).unwrap();
+        o.faceup = true;
+        o.active_since = seq;
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        vm.start_turn(Side::Runner);
+        assert_eq!(
+            vm.st.runner.allotted_clicks, 4,
+            "5.6.1: the arithmetic below is written for the four clicks a turn allots"
+        );
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::nested_cost(), Reply::PayCost(pay))
+                .when(Match::action().times(3), Reply::run(ServerId::Archives))
+                .stop_at_action(),
+        );
+
+        let tolls = t
+            .entries
+            .iter()
+            .filter(|e| matches!(e.kind(), Kind::NestedCost))
+            .count();
+        assert_eq!(
+            tolls, 1,
+            "1.16.10 / 5.2.5a: the toll is offered for the FIRST basic run action of \
+             the turn and for no other (pay={pay}): {}",
+            t.tail(30)
+        );
+        let runs = vm
+            .changes
+            .log
+            .iter()
+            .filter(|c| matches!(c, GameChange::RunBegan { .. }))
+            .count();
+        assert_eq!(
+            runs,
+            if pay { 3 } else { 2 },
+            "1.16.10a: declining the cost means the action is not taken at all, so the \
+             turn buys one run fewer — and the two untolled runs happen either way \
+             (pay={pay}): {}",
+            t.tail(30)
+        );
+    }
 }
 
 /// Flood the Market: "As an additional cost to play this operation, spend

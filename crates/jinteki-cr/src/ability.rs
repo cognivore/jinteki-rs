@@ -1734,7 +1734,29 @@ pub enum StaticDecl {
     /// declaration (§12 rule 2), read at 6.9.1a where the attacked server is
     /// already announced — which is why the cost can be asked per server at
     /// all.
-    AdditionalRunActionCost { cost: Cost, on: crate::instr::RunServerSet },
+    /// `first_each_turn` is the printed ORDINAL — "…to take the basic action
+    /// to run a server **for the first time each turn**" (Enhanced Login
+    /// Protocol's current printing). It says WHICH TAKINGS of the action the
+    /// cost attaches to, exactly as
+    /// [`StaticDecl::InherentCostMod`]'s field of the same name says which
+    /// install or rez a modification reaches, and is read the same way: from
+    /// the change log (10.2.1 makes the history open information), the cost
+    /// applying while no EARLIER basic run action has been taken this turn.
+    ///
+    /// `false` is a sentence printing no ordinal at all, which is what
+    /// Service Outage prints and what this card's ORIGINAL printing did — so
+    /// every declaration written before this field existed is unchanged.
+    ///
+    /// The ordinal is not interchangeable with a conditional ability met by
+    /// the first run each turn, and the difference is 1.16.1b: an additional
+    /// cost is paid at 6.9.1a to INITIATE the action and gates it, so an
+    /// over-broad one forbids actions the player is entitled to take for
+    /// free, while a conditional resolves after the action and gates nothing.
+    AdditionalRunActionCost {
+        cost: Cost,
+        on: crate::instr::RunServerSet,
+        first_each_turn: bool,
+    },
     /// CR 1.16.2 / 5.2.5a: "The Runner pays 1[credit] more when spending a
     /// [click] to remove a tag **(not through a card ability)**" (SYNC,
     /// front) and "You may pay 2[credit] fewer when spending a [click] to
