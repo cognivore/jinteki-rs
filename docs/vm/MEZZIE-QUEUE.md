@@ -1,8 +1,8 @@
 # Mezzie's two decks — the card queue
 
-User-mandated, after the 150-identity campaign. Two decks, 99 cards, **37 distinct
-cards left to write**. Both identities are already complete (they came out of
-the identity queue), so this is cards only.
+User-mandated, after the 150-identity campaign. Two decks, 99 cards, 47 distinct
+cards, **all of them written and ticked**. Both identities came out of the
+identity queue already complete, so this was cards only.
 
 Same bar as every deck before it. CR SYS-D-12: a deck with one partial card
 cannot be played at all, so there is no partial credit — a deck is finished
@@ -34,7 +34,7 @@ Identity is COMPLETE. Printed text below is from
       "Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area."
 - [x] **Luminal Transubstantiation** ×1 — agenda · Research · adv 3/2
       "When you score this agenda, gain [click][click][click]. You cannot score agendas for the remainder of the turn. / Limit 1 per deck."
-- [ ] **Project Vacheron** ×3 — agenda · Research · adv 5/3
+- [x] **Project Vacheron** ×3 — agenda · Research · adv 5/3
       "[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters. / While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“"
 - [x] **Project Vitruvius** ×3 — agenda · Research · adv 3/2
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
@@ -136,19 +136,18 @@ Identity is COMPLETE.
 
 ## Blockers — kernel words these cards want, found while working the queue
 
-**State after the `work/finish` wave: 46 of 47 ticked, 1 printed
-sentence still unsayable, 1 card unticked.** Nine kernel words landed and
+**State after the `work/finish` wave: 47 of 47 ticked. The queue is EMPTY —
+every printed sentence of both decks is expressed in the public vocabulary,
+carries no `.unimplemented(…)`, and has a behaviour test driving it on a
+board.** Nine kernel words landed and
 two cards turned out never to have been blocked at all. Entries marked
 LANDED are kept, with what was built and what the entry got wrong, because
 the standing lesson of this queue is that a blocker is a claim about the
 kernel and claims have to be checked against it.
 
-The one that remains, and what it is waiting on:
-
-| Card | Waiting on |
-|---|---|
-| Project Vacheron | three: a CONJUNCTIVE stated condition, agenda points SET, a declaration granting a stated ability |
-
+Nothing remains. Every entry below is LANDED, and they are kept — with what
+each one got wrong — because the standing lesson of this queue is that a
+blocker is a claim about the kernel and claims have to be checked against it.
 
 Never approximated. A card that needs one of these is left unticked with the
 word it wants named here, exactly as the identity queue did it.
@@ -187,57 +186,48 @@ that ground when this list was re-read against the kernel:
   `if_met` inside the instruction, and 9.11.3 keeps the whole sentence one
   instruction.
 
-### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
+### A stated condition that asks about the SOURCE and the game state at once — LANDED (CR 9.3.7a)
 
-`AbilityDef::condition` holds one `Condition`, and `StaticCond` is a flat list
-of alternatives: an ability can state that it is active in a score area
-(`SourceInScoreAreaOf`, which 9.1.8b also reads to keep it alive there) or that
-some requirement about the game holds (`StateRequirement`), and never both. A
-printed "while this agenda is in the Runner's score area **with 1 or more
-hosted agenda counters**" is one stated condition with two clauses, and there
-is no position for the second.
+`StaticCond::All(Vec<StaticCond>)`, and 9.1.8b's first sentence now reads the
+zone clause wherever it sits in the list (`static_cond_states_zone` recurses),
+which the entry was right to insist on: without it the ability is inactive in
+the one zone it is about and never runs at all.
 
-Wanted: the stated condition as a CONJUNCTION — one list, whose members are
-the existing alternatives — so a sentence naming a zone and a state is one
-condition with two clauses and not two abilities. 9.1.8b must go on reading the
-zone clause wherever it appears in the list, or the ability is inactive in the
-one zone it is about.
+### Agenda points SET rather than modified — LANDED (CR 2.5 / 9.12.1a)
 
-Wants it: **Project Vacheron** (its second sentence, which also wants the two
-below).
+`StaticDecl::SelfAgendaPointsMod { amount, set }` and `CharOp::SetAgendaPoints`
+— 9.12.1a's FIRST stage said of the point value, applied in its own pass before
+the increases and decreases, so "worth 1 more", "worth 1 fewer" and "worth 0"
+are one declaration with different content. `set: false` at every site written
+before it. The entry called the set "the second stage"; it is the first, and
+the ordering is the whole reason the two can share a declaration.
 
-### Agenda points SET rather than modified (CR 2.5 / 9.12.1a)
+### A declaration that grants a STATED conditional ability — LANDED (CR 9.1.9b / 9.1.8b)
 
-`StaticDecl::SelfAgendaPointsMod(Quantity)` is 9.12.1a's third stage — it adds
-to the value, which is what Merger, Global Food Initiative and Project Beale
-print. A card printing "it **is worth 0** agenda points" states the second
-stage instead, and subtracting the printed value only lands on 0 while nothing
-else is modifying it.
+`StaticDecl::GainsStatedAbility(Box<AbilityDef>)` and
+`CharOp::GainStatedAbility`, read through the same 9.12.1d/e pipeline as
+`GainAbilitiesOf` so the checkpoint scan and every paid-window scan see the
+gained ability without knowing where it came from.
 
-Wanted: the set as content beside the modification on the one declaration —
-one position for the value with the STAGE as its content — so "worth 1 more",
-"worth 1 fewer" and "worth 0" are one declaration with different content, and
-9.12.1a's ordering does the rest.
+It did NOT go through `Payload::GrantedAbility`, and that entry's "the kernel
+has the payload and no declaration reaches it" was the wrong lead: a lingering
+payload is 9.10's mechanism for an effect created ahead of time, and this is a
+STATIC declaration — it must stop the moment its stated condition stops
+holding, which is exactly what makes Vacheron's agenda worth 3 again when the
+last counter comes off. Reached through a lingering effect it would have had to
+be created and destroyed by something.
 
-Wants it: **Project Vacheron** ("it is worth 0 agenda points").
-
-### A declaration that grants a STATED conditional ability (CR 9.1.9 / 9.10.2)
-
-`StaticDecl::GainSubroutines { sub, count }` grants a stated SUBROUTINE and
-`StaticDecl::GainAbilitiesOf { criteria }` copies another card's whole text,
-and between them there is no way to write the commonest form of all: a card
-that gains one ability the sentence spells out in quotation marks. The kernel
-has the payload (`Payload::GrantedAbility { to, def }`, 9.10.2) and no
-declaration reaches it.
-
-Wanted: the stated ability as content on one declaration, the way
-`GainSubroutines` already carries a stated subroutine — the ability being an
-`AbilityDef` of any class, so "gains '[subroutine] End the run.'", "gains 'When
-your turn begins, gain 1[credit].'" and "gains 'Hosted agenda counter: …'" are
-one declaration with different content.
-
-Wants it: **Project Vacheron** (gains "When the Runnerʼs turn begins, remove 1
-hosted agenda counter.").
+The half nobody had written down, and the one that made the card compile and do
+nothing until it was found: a gained ability was INACTIVE on an inactive card.
+4.5.4 leaves an agenda in the Runner's score area inactive, 9.1.8b's first
+sentence keeps the granting static alive there, and the granted ability states
+no zone of its own — so it was never offered. 9.1.8b's SECOND sentence is what
+answers it ("abilities that can only ever meet their conditions in a particular
+zone are active in that zone"): a gained ability exists only while its grant
+does, and the pipeline recomputes that continuously, so an ability that is
+present at all is one whose grantor is active. `AbilityDef::granted` is the
+flag the pipeline sets and `ability_active` reads; nothing in the card layer
+writes it.
 
 ### The approach condition naming WHICH server — LANDED (CR 6.9.4g)
 

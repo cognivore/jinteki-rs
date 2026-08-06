@@ -3643,6 +3643,30 @@ pub fn shuffle_into_owners_deck_instead_of_trashing(cards: TargetSpec) -> Instru
         to: TrashDestination::ShuffledIntoOwnersDeck,
     }
 }
+/// "This agenda is worth N **more** agenda points." (Project Beale, Merger;
+/// "1 **fewer**" is a negative quantity.) CR 9.12.1a's later stages: the
+/// value is modified, and a sentence SETTING it is applied first — see
+/// [`is_worth_agenda_points`].
+pub fn worth_n_more_agenda_points(amount: Quantity) -> StaticDecl {
+    StaticDecl::SelfAgendaPointsMod { amount, set: false }
+}
+/// "…**it is worth 0** agenda points" (Project Vacheron) — CR 9.12.1a's FIRST
+/// stage said of 2.5's point value. Not a subtraction of the printed value:
+/// that only lands on 0 while nothing else is modifying it, and 9.12.1a
+/// applies every modification AFTER a value is set.
+pub fn is_worth_agenda_points(amount: Quantity) -> StaticDecl {
+    StaticDecl::SelfAgendaPointsMod { amount, set: true }
+}
+/// "…and **gains \"<one ability>\"**." (Project Vacheron; CR 9.1.9b.) The
+/// source gains the ability the sentence spells out, for as long as this
+/// static ability is active. Any class of ability — the stated conditional
+/// is only the commonest.
+///
+/// "This card" inside the gained ability means the card that gained it
+/// (9.1.9b: an object's abilities include the ones it gained).
+pub fn gains_the_ability(def: AbilityDef) -> StaticDecl {
+    StaticDecl::GainsStatedAbility(Box::new(def))
+}
 /// "…whenever the Corp would resolve a subroutine, instead they resolve
 /// \"[subroutine] …\"." (Tsakhia "Bankhar" Gantulga; CR 9.8.9 / 9.9.8b.) The
 /// declaration replaces the imminent subroutine with the stated one and

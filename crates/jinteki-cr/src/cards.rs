@@ -548,9 +548,10 @@ pub fn project_beale() -> PrintedCard {
             false,
         )
         .labeled("project beale: 1 agenda counter for every 2 advancements past 3"),
-        AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod(
-            Quantity::CountersOnSource(CounterKind::Agenda),
-        )])
+        AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod {
+            set: false,
+            amount: Quantity::CountersOnSource(CounterKind::Agenda),
+        }])
         .labeled("project beale: worth 1 more agenda point per hosted agenda counter"),
     ];
     c
@@ -571,7 +572,7 @@ pub fn merger() -> PrintedCard {
     c.cost = None;
     c.advancement_requirement = Some(3);
     c.agenda_points = Some(2);
-    let mut a = AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod(Quantity::c(1))])
+    let mut a = AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod { set: false, amount: Quantity::c(1) }])
         .labeled("merger: worth 1 additional agenda point in the Runner's score area");
     a.condition = Some(Condition::Static(StaticCond::SourceInScoreAreaOf(Side::Runner)));
     c.abilities = vec![a];
@@ -590,10 +591,10 @@ pub fn global_food_initiative() -> PrintedCard {
     c.cost = None;
     c.advancement_requirement = Some(5);
     c.agenda_points = Some(3);
-    let mut a = AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod(Quantity::Minus(
-        Box::new(Quantity::c(0)),
-        Box::new(Quantity::c(1)),
-    ))])
+    let mut a = AbilityDef::static_ability(vec![StaticDecl::SelfAgendaPointsMod {
+        set: false,
+        amount: Quantity::Minus(Box::new(Quantity::c(0)), Box::new(Quantity::c(1))),
+    }])
     .labeled("global food initiative: worth 1 fewer agenda point in the Runner's score area");
     a.condition = Some(Condition::Static(StaticCond::SourceInScoreAreaOf(Side::Runner)));
     c.abilities = vec![a];

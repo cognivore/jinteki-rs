@@ -19454,26 +19454,17 @@ fn project_vitruvius_counts_the_advancements_past_three_and_spends_one_counter()
 /// Runner's score area from anywhere except Archives, instead it is added to
 /// their score area with 4 hosted agenda counters."
 ///
-/// PARTIAL — the second printed sentence, which is what the counters are FOR,
-/// is unsayable (see the card's doc comment and MEZZIE-QUEUE.md's Blockers),
-/// and the test says so out loud so the marker cannot quietly disappear.
-///
 /// 9.9.9c is the half worth asserting: the agenda still ENTERS the Runner's
 /// score area, so this is a replacement and not a prevention. Both halves of
 /// "from anywhere except Archives" are on the board — a copy in a remote root
-/// and a copy in Archives — and only one of them arrives with counters.
+/// and a copy in Archives — and only one of them arrives with counters. What
+/// the counters then DO is
+/// [`project_vacheron_is_worth_nothing_until_its_counters_run_out`].
 #[test]
 fn project_vacheron_is_stolen_with_four_agenda_counters_except_out_of_archives() {
-    let vach = jinteki_cards::find("Project Vacheron").expect("Project Vacheron is in the card layer");
-    assert_eq!(
-        vach.unimplemented.len(),
-        1,
-        "exactly one printed sentence is still unsayable, and it is the second one"
-    );
-
     let mut vm = Vm::empty(9308);
-    let installed = tk::install_root(&mut vm, card_partial("Project Vacheron"), ServerId::Remote(1), false);
-    let binned = vm.new_object(card_partial("Project Vacheron"), Zone::Discard(Side::Corp));
+    let installed = tk::install_root(&mut vm, card("Project Vacheron"), ServerId::Remote(1), false);
+    let binned = vm.new_object(card("Project Vacheron"), Zone::Discard(Side::Corp));
     vm.st.discard.get_mut(&Side::Corp).unwrap().push(binned);
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 6);
@@ -19514,6 +19505,89 @@ fn project_vacheron_is_stolen_with_four_agenda_counters_except_out_of_archives()
         "…and it came out of Archives, which the sentence excludes by name: {}",
         t.tail(24)
     );
+}
+
+/// Project Vacheron: "While this agenda is in the Runner's score area with 1
+/// or more hosted agenda counters, it is worth 0 agenda points and gains
+/// "When the Runner's turn begins, remove 1 hosted agenda counter.""
+///
+/// One board, four Runner turns. The agenda is stolen out of a remote, so it
+/// arrives with its four counters (the sibling test above); from then on the
+/// only thing that happens is the granted ability firing once a turn, and
+/// what is asserted after each is the Runner's SCORE (1.17.1) — 0 while a
+/// counter is left, and the printed 3 the moment the last one goes.
+///
+/// The score is the right thing to look at rather than the counter count:
+/// 2.5's point value is a characteristic recomputed wherever it is asked, so
+/// a card "worth 0" is worth 0 to the win condition and to everything else,
+/// and nothing was ever stamped on it — which is why it goes back to 3 by
+/// itself.
+#[test]
+fn project_vacheron_is_worth_nothing_until_its_counters_run_out() {
+    let mut vm = Vm::empty(9311);
+    let vach = tk::install_root(&mut vm, card("Project Vacheron"), ServerId::Remote(1), false);
+    tk::fill_hand(&mut vm, Side::Corp, 3);
+    tk::fill_deck(&mut vm, Side::Corp, 12);
+    tk::fill_deck(&mut vm, Side::Runner, 12);
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Runner);
+
+    // The Runner has 4 clicks a turn, so their nth action window says which
+    // turn it is: 1-4 is the first, 5-8 the second, and so on. The run is the
+    // first click of the first turn; every later halt is the start of a turn,
+    // after the granted ability has resolved from that turn's reaction window.
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp(),
+        Plan::runner()
+            .when(Match::action().nth(1), Reply::run(ServerId::Remote(1)))
+            .when(Match::action().nth(2), Reply::Halt)
+            .when(Match::action().nth(5), Reply::Halt)
+            .when(Match::action().nth(9), Reply::Halt)
+            .when(Match::action().nth(13), Reply::Halt)
+            .when(Match::action().nth(17), Reply::Halt)
+            .otherwise_click_credit(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&vach].zone,
+        Zone::ScoreArea(Side::Runner),
+        "stolen: {}",
+        g.transcript().tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&vach].counter(CounterKind::Agenda),
+        4,
+        "…with the four counters the first sentence gave it: {}",
+        g.transcript().tail(20)
+    );
+    assert_eq!(
+        vm.score(Side::Runner),
+        0,
+        "9.12.1a: the value is SET to 0 while a counter is hosted — not the \
+         printed 3 reduced by something: {}",
+        g.transcript().tail(20)
+    );
+
+    // Each further Runner turn removes one counter, and the score follows.
+    for expected_left in [3u32, 2, 1, 0] {
+        // Halt at the first action window of the next Runner turn.
+        g.run(&mut vm);
+        assert_eq!(
+            vm.st.objects[&vach].counter(CounterKind::Agenda),
+            expected_left,
+            "9.1.9b: the granted ability fires once as the Runner's turn \
+             begins (expected_left={expected_left}): {}",
+            g.transcript().tail(24)
+        );
+        assert_eq!(
+            vm.score(Side::Runner),
+            if expected_left == 0 { 3 } else { 0 },
+            "…and the stated condition stops holding with the last counter, so \
+             the agenda is worth its printed 3 again with nothing having been \
+             stamped on it (expected_left={expected_left}): {}",
+            g.transcript().tail(24)
+        );
+    }
 }
 
 /// Ash 2X3ZB9CY: "Whenever there is a successful run on this server, Trace[4].
@@ -22066,3 +22140,4 @@ fn a_second_console_is_trashed_even_though_it_shares_no_name_with_the_first() {
         "and the newer console stays installed"
     );
 }
+

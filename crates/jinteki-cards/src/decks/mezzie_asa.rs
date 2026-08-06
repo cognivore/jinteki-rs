@@ -46,6 +46,28 @@ fn while_in_the_score_area_of(side: Side, decls: Vec<StaticDecl>) -> AbilityDef 
     def
 }
 
+/// The same statement with a second clause: "while this agenda is in
+/// <side>'s score area **with 1 or more hosted agenda counters**" — CR
+/// 9.3.7a's stated condition as a CONJUNCTION.
+///
+/// The zone clause is still what 9.1.8b reads to keep the ability active in
+/// the score area (see [`while_in_the_score_area_of`]), and it goes on being
+/// read inside the conjunction — an ability inactive there could never meet
+/// the other clause either, since the counters this one asks about are only
+/// ever on a card in a score area.
+fn while_in_the_score_area_of_with(
+    side: Side,
+    also: Vec<TriggerRequirement>,
+    decls: Vec<StaticDecl>,
+) -> AbilityDef {
+    let mut def = AbilityDef::static_ability(decls);
+    def.condition = Some(Condition::Static(StaticCond::All(vec![
+        StaticCond::SourceInScoreAreaOf(side),
+        StaticCond::StateRequirement(also),
+    ])));
+    def
+}
+
 /// A mandatory [interrupt] (9.3.6d/9.9.1) that is also active while its source
 /// is the card being ACCESSED (9.1.8a).
 ///
@@ -95,7 +117,7 @@ pub fn global_food_initiative() -> Card {
         .text("Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area.")
         .ability(while_in_the_score_area_of(
             Runner,
-            vec![StaticDecl::SelfAgendaPointsMod(amount(-1))],
+            vec![worth_n_more_agenda_points(amount(-1))],
         ))
         .named("1 fewer in the runner's score area")
         .build()
@@ -169,8 +191,9 @@ pub fn luminal_transubstantiation() -> Card {
 ///  agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs
 ///  turn begins, remove 1 hosted agenda counter.“"
 ///
-/// PARTIAL: the steal arrives with its counters; what the counters DO is
-/// marked.
+/// COMPLETE. Two printed sentences: an interrupt that replaces the steal, and
+/// a static ability that describes the agenda while it sits in the Runner's
+/// score area with the counters that steal gave it.
 ///
 /// The first sentence is 9.9.8c's replacement effect, created ahead of the
 /// effect it replaces by an interrupt on the imminent steal. 9.9.9c is the part
@@ -203,18 +226,24 @@ pub fn luminal_transubstantiation() -> Card {
 /// are one zone (4.4), and the zone the agenda is in when the steal becomes
 /// imminent is what the sentence asks about.
 ///
-/// UNIMPLEMENTED: the second sentence, on three counts. It is one static
-/// ability whose stated condition is a zone AND a number of hosted counters,
-/// and 9.3.7a's condition slot holds one or the other and never both. Its
-/// first declaration SETS the point value ("it is worth 0 agenda points"),
-/// which is 9.12.1a's second stage, and the declaration that exists modifies
-/// the value instead — a subtraction of the printed 3 gives 0 only while
-/// nothing else is modifying it. Its second declaration grants the card a
-/// stated CONDITIONAL ability, and the only stated ability a declaration can
-/// grant is a subroutine. Written with any of the three approximated the card
-/// would be worth the wrong number of points in the Runner's score area, which
-/// is the one thing this agenda is about. The general capabilities wanted are
-/// on MEZZIE-QUEUE.md's Blockers.
+/// The second sentence is ONE static ability with two declarations, and its
+/// stated condition (9.3.7a) has two clauses: the zone and the counters. The
+/// zone clause is what 9.1.8b reads to keep the ability active in the Runner's
+/// score area at all, and it is still read inside the conjunction — see
+/// [`while_in_the_score_area_of_with`].
+///
+/// "It is worth 0 agenda points" SETS 2.5's value: 9.12.1a's first stage, not
+/// a subtraction of the printed 3, which would land on 0 only while nothing
+/// else was modifying it. The counters clause is what turns it off: once the
+/// last counter comes off, the whole condition fails and the agenda is worth
+/// its printed 3 again, with nothing ever having been stamped on it.
+///
+/// The gained ability is the sentence's own words (9.1.9b), and "this card"
+/// inside it is the card that gained it — so it removes one of ITS OWN
+/// counters. It is a conditional ability like any other: it goes pending at
+/// the checkpoint after the Runner's turn begins and resolves from the
+/// reaction window, which is why the agenda is worth 0 for four of the
+/// Runner's turns and then 3.
 pub fn project_vacheron() -> Card {
     card("Project Vacheron")
         .corp()
@@ -241,7 +270,22 @@ pub fn project_vacheron() -> Card {
             )],
         ))
         .named("stolen with four agenda counters")
-        .unimplemented("While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“")
+        .ability(while_in_the_score_area_of_with(
+            Runner,
+            vec![at_least(per_hosted_counter(CounterKind::Agenda), 1)],
+            vec![
+                is_worth_agenda_points(amount(0)),
+                gains_the_ability(
+                    AbilityDef::conditional(
+                        turn_begins(Runner),
+                        vec![remove_counters(CounterKind::Agenda, 1)],
+                        false,
+                    )
+                    .labeled("a counter off when the runner's turn begins"),
+                ),
+            ],
+        ))
+        .named("worth nothing while its counters last")
         .build()
 }
 

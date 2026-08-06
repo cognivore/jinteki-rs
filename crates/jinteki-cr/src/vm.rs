@@ -3153,7 +3153,7 @@ impl Vm {
             .get(&c.source.obj)
             .map(|o| o.printed.name)
             .unwrap_or("if successful");
-        let def = AbilityDef { controller: None,
+        let def = AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: None,
@@ -3214,6 +3214,7 @@ impl Vm {
             .map(|o| o.printed.name)
             .unwrap_or("stated about that run");
         let def = AbilityDef {
+            granted: false,
             controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
@@ -3274,7 +3275,7 @@ impl Vm {
             .get(&p.source)
             .map(|o| o.printed.name)
             .unwrap_or("set-aside trash group");
-        let def = AbilityDef { controller: None,
+        let def = AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: None,
@@ -3353,7 +3354,7 @@ impl Vm {
             .get(&c.source.obj)
             .map(|o| o.printed.name)
             .unwrap_or("if the run would be declared successful");
-        let def = AbilityDef { controller: None,
+        let def = AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: vec![AbilityFlag::Interrupt],
             condition: Some(Condition::Trigger(TriggerCond::WouldDeclareRunSuccessful)),
@@ -3512,6 +3513,13 @@ impl Vm {
             StaticCond::StateRequirement(reqs) => {
                 cite!("rule_condition_requirements_part_of_effect");
                 reqs.iter().all(|r| self.state_requirement_holds_for(r, Some(obj)))
+            }
+            // 9.3.7a: one sentence, several clauses, all of which must hold —
+            // "while this agenda is in the Runner's score area WITH 1 or more
+            // hosted agenda counters".
+            StaticCond::All(list) => {
+                cite!("rule_conditional_ability_with_static_condition");
+                list.iter().all(|c| self.static_cond_holds(obj, c))
             }
         }
     }
@@ -3819,19 +3827,37 @@ impl Vm {
                                 }
                             }
                         }
-                        StaticDecl::SelfAgendaPointsMod(q) => {
-                            // 2.5 through 9.12.1a: an increase or a decrease
-                            // of the source's own agenda point value,
-                            // evaluated continuously like every other
-                            // characteristic modification (so Project Beale's
-                            // "for each hosted agenda counter" tracks the
-                            // counters it actually has).
-                            cite!("rule_agenda_points_citation");
-                            let n = self.eval_quantity(q, Some(o.id)) as i32;
+                        StaticDecl::GainsStatedAbility(def) => {
+                            // 9.1.9b: the source gains the ability the
+                            // sentence spells out, for as long as this static
+                            // is active — read through the same 9.12.1
+                            // pipeline every other gain is, so the checkpoint
+                            // scan and the paid-window scan both see it.
+                            cite!("rule_determine_actual_abilities");
+                            cite!("rule_gaining_losing_abilities");
                             out.push(CharEffect {
                                 source: o.id,
                                 target: o.id,
-                                op: if n >= 0 {
+                                op: CharOp::GainStatedAbility(def.clone()),
+                            });
+                        }
+                        StaticDecl::SelfAgendaPointsMod { amount, set } => {
+                            // 2.5 through 9.12.1a: the source's own agenda
+                            // point value, at the STAGE the sentence states —
+                            // set first, then increased, then decreased.
+                            // Evaluated continuously like every other
+                            // characteristic modification (so Project Beale's
+                            // "for each hosted agenda counter" tracks the
+                            // counters it actually has, and a value SET stays
+                            // set only until something modifies it).
+                            cite!("rule_agenda_points_citation");
+                            let n = self.eval_quantity(amount, Some(o.id)) as i32;
+                            out.push(CharEffect {
+                                source: o.id,
+                                target: o.id,
+                                op: if *set {
+                                    CharOp::SetAgendaPoints(n)
+                                } else if n >= 0 {
                                     CharOp::IncreaseAgendaPoints(n)
                                 } else {
                                     CharOp::DecreaseAgendaPoints(-n)

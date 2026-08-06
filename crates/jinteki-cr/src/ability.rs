@@ -1306,6 +1306,22 @@ pub enum StaticCond {
     /// trigger condition, so a static ability and a conditional one say
     /// "while the Runner is tagged" with the same words.
     StateRequirement(Vec<TriggerRequirement>),
+    /// CR 9.3.7a: "While this agenda is in the Runner's score area **with 1 or
+    /// more hosted agenda counters**, …" (Project Vacheron) — ONE stated
+    /// condition with several clauses, all of which must hold.
+    ///
+    /// The alternatives above are what a sentence can say about the source or
+    /// about the game; a sentence saying both is not two abilities (9.11.3
+    /// gives it one), so the conjunction is content on the one condition
+    /// rather than a variant per pair. It nests, though no printed card in
+    /// either deck needs it to.
+    ///
+    /// 9.1.8b goes on reading the zone clause wherever it appears in the
+    /// list: an ability stating that it is active in a score area is active
+    /// there, and 4.5.4 leaves the agenda inactive without that statement —
+    /// so a conjunction whose zone clause were ignored would be an ability
+    /// that never runs at all, in the one zone it is about.
+    All(Vec<StaticCond>),
 }
 
 /// WHOSE the declaration speaks about, when a card can say either. "Your
@@ -1717,6 +1733,25 @@ pub enum StaticDecl {
         then: Vec<crate::instr::Instruction>,
         until_removed_with_it_this_turn: bool,
     },
+    /// CR 9.1.9b / 9.10.2 / 9.12.1: "…and **gains \"When the Runner's turn
+    /// begins, remove 1 hosted agenda counter.\"**" (Project Vacheron) — the
+    /// source gains ONE ability the sentence spells out, for as long as this
+    /// static ability is active.
+    ///
+    /// The commonest form of a gain and the one the kernel had no word for:
+    /// [`StaticDecl::GainSubroutines`] grants a stated SUBROUTINE and
+    /// [`StaticDecl::GainAbilitiesOf`] copies another card's whole text, and
+    /// between them there was no way to say a stated ability of any other
+    /// class. It carries an [`AbilityDef`] exactly as `GainSubroutines`
+    /// carries its subroutine, so "gains '[subroutine] End the run.'",
+    /// "gains 'When your turn begins, gain 1[credit].'" and a granted paid
+    /// ability are one declaration with different content.
+    ///
+    /// The gained ability is the SOURCE's (9.1.9b: an object's abilities
+    /// include the ones it gained), so "this card" inside it means the card
+    /// that gained it — which for Vacheron is what makes "remove 1 hosted
+    /// agenda counter" remove one of its own.
+    GainsStatedAbility(Box<AbilityDef>),
     /// CR 9.8.9 / 9.9.8b: while this static ability is active, an imminent
     /// subroutine is replaced by the stated one (Tsakhia "Bankhar" Gantulga
     /// class). "The replaced subroutine is treated as having the same source
@@ -2144,7 +2179,18 @@ pub enum StaticDecl {
     /// "1 more for each hosted agenda counter" is the same declaration as a
     /// flat "1 more", and "1 fewer" is a negative quantity
     /// (`Quantity::Minus`).
-    SelfAgendaPointsMod(crate::instr::Quantity),
+    ///
+    /// `set` is 9.12.1a's STAGE, and it is the difference between "worth 1
+    /// fewer" and "**it is worth 0** agenda points" (Project Vacheron): the
+    /// first is the third stage, applied after everything else, and the
+    /// second is the FIRST — the value is set, and any modification still
+    /// applies on top of it, which is the ordering 9.12.1a states and the
+    /// only reason the two can be one declaration. Subtracting the printed
+    /// value instead only lands on 0 while nothing else is modifying it.
+    ///
+    /// `false` at every site written before the stage existed, which is what
+    /// every "worth N more/fewer" sentence says.
+    SelfAgendaPointsMod { amount: crate::instr::Quantity, set: bool },
     /// CR 1.7.2a / 1.17.2: "Each player needs 1 fewer agenda point to win the
     /// game." (Harmony Medtech.) "For each hosted power counter, you need 1
     /// less agenda point to win the game." (Issuaq Adaptics.)
@@ -2403,6 +2449,22 @@ pub fn ability_source_model() {
 /// One ability as printed/granted: the unit of rules text (9.1.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityDef {
+    /// CR 9.1.9b + 9.1.8b: this ability was GAINED — an active ability of
+    /// some card put it here through the 9.12.1d/e pipeline, rather than its
+    /// being printed on the object.
+    ///
+    /// It is what 9.1.8b's second sentence needs to be askable: an ability
+    /// that exists only while its grant does "can only ever meet its
+    /// conditions" where the grant reaches, so it is active there — Project
+    /// Vacheron's granted "when the Runner's turn begins" is on an agenda in
+    /// the Runner's score area, which 4.5.4 leaves inactive, and the grant
+    /// itself is what states otherwise. The pipeline recomputes the gain
+    /// continuously, so an ability that is present is one whose grantor is
+    /// active by construction.
+    ///
+    /// `false` on every printed ability; the pipeline sets it where it adds
+    /// one, and nothing in the card layer writes it.
+    pub granted: bool,
     pub kind: AbilityKind,
     pub flags: Vec<AbilityFlag>,
     /// Conditional abilities: the primary condition (9.6.1).
@@ -2494,7 +2556,7 @@ impl AbilityDef {
     }
 
     pub fn conditional(cond: TriggerCond, instrs: Vec<Instruction>, optional: bool) -> Self {
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Conditional,
             flags: Vec::new(),
             condition: Some(Condition::Trigger(cond)),
@@ -2510,7 +2572,7 @@ impl AbilityDef {
 
     pub fn paid(cost: Cost, instrs: Vec<Instruction>) -> Self {
         // CR 9.5.3: paid abilities are always optional.
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Paid,
             flags: Vec::new(),
             condition: None,
@@ -2528,7 +2590,7 @@ impl AbilityDef {
     /// resolves as the card is played (step 8.6.7f).
     pub fn play(instrs: Vec<Instruction>) -> Self {
         cite!("rule_play_ability");
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Play,
             flags: Vec::new(),
             condition: None,
@@ -2543,7 +2605,7 @@ impl AbilityDef {
     }
 
     pub fn subroutine(instrs: Vec<Instruction>) -> Self {
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Subroutine,
             flags: Vec::new(),
             condition: None,
@@ -2558,7 +2620,7 @@ impl AbilityDef {
     }
 
     pub fn static_ability(statics: Vec<StaticDecl>) -> Self {
-        AbilityDef { controller: None,
+        AbilityDef { granted: false, controller: None,
             kind: AbilityKind::Static,
             flags: Vec::new(),
             condition: None,
@@ -2849,8 +2911,28 @@ pub fn ability_active(
     // otherwise" in person: an agenda in the Runner's score area is inactive,
     // and Merger's "…while it is in the Runner's score area" is the statement
     // that makes its one ability an exception.
-    if let Some(Condition::Static(StaticCond::SourceInScoreAreaOf(side))) = &def.condition {
-        if obj.zone == crate::object::Zone::ScoreArea(*side) {
+    // 9.1.8b's SECOND sentence — "abilities that can only ever meet their
+    // conditions in a particular zone are active in that zone" — said of an
+    // ability the object GAINED. A gained ability exists only while the
+    // ability that grants it is active, and the 9.12.1d/e pipeline recomputes
+    // that continuously, so an ability that is present at all is one whose
+    // grantor is active: the zone it can meet its conditions in is exactly
+    // the zone the grant reaches. Without this, Project Vacheron's granted
+    // "when the Runner's turn begins" would sit on an agenda 4.5.4 leaves
+    // inactive and never fire, and the grant would be a sentence that does
+    // nothing.
+    if def.granted {
+        cite!("rule_active_exception_catchall");
+        cite!("rule_determine_actual_abilities");
+        return true;
+    }
+    // …and 9.1.8b's FIRST sentence is read wherever its clause APPEARS,
+    // including inside a 9.3.7a conjunction: "while this agenda is in the Runner's score area
+    // with 1 or more hosted agenda counters" states the zone exactly as
+    // Merger's shorter sentence does, and an ability inactive in the score
+    // area could never meet the rest of it.
+    if let Some(Condition::Static(sc)) = &def.condition {
+        if static_cond_states_zone(sc, obj) {
             return true;
         }
     }
@@ -2880,6 +2962,19 @@ pub fn ability_active(
 /// zone the requirement names is the zone it is active in. Only POSITIVE
 /// statements count: "anywhere except in Archives" names no zone to be active
 /// in.
+/// CR 9.1.8b's first sentence asked of a STATED condition: does it say the
+/// ability is active in the zone this card is actually in? Recursive over
+/// 9.3.7a's conjunction, because a clause states the zone wherever it sits.
+fn static_cond_states_zone(cond: &StaticCond, obj: &Object) -> bool {
+    match cond {
+        StaticCond::SourceInScoreAreaOf(side) => {
+            obj.zone == crate::object::Zone::ScoreArea(*side)
+        }
+        StaticCond::All(list) => list.iter().any(|c| static_cond_states_zone(c, obj)),
+        _ => false,
+    }
+}
+
 fn requirement_states_zone(req: &TriggerRequirement, obj: &Object) -> Option<Zone> {
     match req {
         TriggerRequirement::SourceInDiscard => Some(Zone::Discard(obj.owner)),
