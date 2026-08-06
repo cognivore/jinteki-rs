@@ -414,7 +414,7 @@ pub fn bukhgalter() -> Card {
 /// words do not reach.
 ///
 /// "If this program can interface with the barrier you are encountering" is
-/// deliberately NOT 9.3.6d's interface flag, even though 3.9.5g is exactly
+/// deliberately NOT 9.3.6c's interface flag, even though 3.9.5g is exactly
 /// the question it asks. The flag is checked when the ability is OFFERED;
 /// this sentence is checked when the break instruction resolves (9.6.5d),
 /// which is after "+X strength" — and a Paperclip that had to match the
