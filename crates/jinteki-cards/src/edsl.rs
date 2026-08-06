@@ -3330,6 +3330,19 @@ pub fn shuffle_deck_of(side: Side) -> Instruction {
 pub fn printed_subroutine_broken() -> TriggerCond {
     TriggerCond::SubroutineBrokenOnSelf { printed_only: true }
 }
+/// "Whenever **a subroutine resolves**…" (Raindrops Cut Stone; CR 9.8.10e) —
+/// met once per subroutine RESOLVED, which is the complement of every
+/// break-shaped condition and not a substitute for one: 9.8.7 makes a broken
+/// subroutine one that does not resolve.
+///
+/// The criteria describe the ICE the subroutine resolved from, in the ordinary
+/// description words — `&[]` stipulates nothing, [`this_very_card`] says "on
+/// this ice". A subroutine 9.8.9 replaced still
+/// resolves from the ice, and 6.10's run-ending subroutine resolved before it
+/// ended the run, so both meet this without a word of their own.
+pub fn subroutine_resolves(criteria: &[TargetFilter]) -> TriggerCond {
+    TriggerCond::SubroutineResolved { criteria: criteria.to_vec() }
+}
 /// "…there is an installed AI program" (IP Block class) — at least `n` cards
 /// on the board match the description. The criteria are the same ones a
 /// target announcement uses, so 1.15.2c applies: without a criterion naming

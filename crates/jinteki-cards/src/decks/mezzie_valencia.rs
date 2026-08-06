@@ -346,23 +346,30 @@ pub fn moshing() -> Card {
 ///  When that run ends, draw 1 card for each hosted power counter and gain
 ///  3[credit]."
 ///
-/// PARTIAL — the run and the pay-off are expressed; the counter sentence is
-/// marked, which makes the draw half of the pay-off read zero until it lands.
+/// COMPLETE.
 ///
-/// The pay-off is a CONDITIONAL ability of the card and not a delayed one
-/// (9.6.13): 4.6.4e keeps a played event active in the play area for the whole
-/// of its resolution, and 5.2.2b suspends that resolution until the run ends,
-/// so the event is still there — with its counters on it — when "when that run
-/// ends" is met. 9.11.3 again makes "draw … and gain …" one instruction.
+/// Both of the card's abilities are CONDITIONAL abilities of the card and
+/// neither is a delayed one (9.6.13): 4.6.4e keeps a played event active in
+/// the play area for the whole of its resolution, and 5.2.2b suspends that
+/// resolution until the run ends — so the event is there, and collecting
+/// counters, for every subroutine of the run, and still there with those
+/// counters on it when "when that run ends" is met. That is also what makes
+/// "during that run" need no words: the ability exists for the span of one
+/// run and no other.
 ///
-/// The counter sentence needs a trigger condition met when a SUBROUTINE
-/// RESOLVES. 9.8.10's occurrence is recorded — `Quantity::SubroutinesResolvedThisRun`
-/// counts it from the change log — but no condition is met BY it, and the
-/// count is not a substitute for the counters: 1.12.1 makes a counter an
-/// object, so a power counter on this event is a thing other cards can see,
-/// count and remove, and a number recomputed from history is not. The
-/// parenthetical is 6.10's reminder that a subroutine ending the run still
-/// resolved, which is the same occurrence and needs no separate word.
+/// The counter sentence is 9.8.10e's occurrence, met once per subroutine
+/// RESOLVED. It is not any of the break-shaped conditions and not the count
+/// either: 1.12.1 makes a counter an OBJECT, so a power counter on this event
+/// is a thing other cards can see, count and remove, while
+/// `Quantity::SubroutinesResolvedThisRun` is a number recomputed from history
+/// and nothing can touch it.
+///
+/// The parenthetical asks for nothing extra. 6.10's run-ending subroutine
+/// RESOLVED and then ended the run, so it is already one of the occurrences;
+/// the reminder is there because a reader might expect the run ending to
+/// cancel it.
+///
+/// 9.11.3 makes "draw … and gain …" one instruction.
 pub fn raindrops_cut_stone() -> Card {
     card("Raindrops Cut Stone")
         .runner()
@@ -373,12 +380,13 @@ pub fn raindrops_cut_stone() -> Card {
         .text("Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event.")
         .text("When that run ends, draw 1 card for each hosted power counter and gain 3[credit].")
         .play([run_any_server([])])
+        .when(subroutine_resolves(&[]), [place(CounterKind::Power, 1)])
+        .named("one counter per subroutine resolved")
         .when(
             run_ends(),
             [combined([draw_q(Runner, per_hosted_counter(CounterKind::Power)), gain(Runner, 3)])],
         )
         .named("when that run ends")
-        .unimplemented("Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event.")
         .build()
 }
 

@@ -99,7 +99,7 @@ Identity is COMPLETE.
       "Run any server. When that run ends, if you stole an agenda during that run, add this event to your score area as an agenda worth 1 agenda point. Otherwise, suffer 1 meat damage."
 - [x] **Moshing** ×3 — event · cost 0
       "As an additional cost to play this event, trash 3 cards from your grip. / Gain 3[credit] and draw 3 cards."
-- [ ] **Raindrops Cut Stone** ×2 — event · Run · cost 1
+- [x] **Raindrops Cut Stone** ×2 — event · Run · cost 1
       "Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event. / When that run ends, draw 1 card for each hosted power counter and gain 3[credit]."
 - [x] **Rebirth** ×1 — event · cost 0
       "Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it. / Limit 1 per deck."
@@ -579,29 +579,17 @@ turn" are one count. Only the Runner steals (7.5), so no side rides on it.
 `HistoryWindow` is 1.12.6's span as a named thing, and it is the position any
 later history count should take. **Mad Dash** is written and ticked.
 
-### A trigger condition met when a SUBROUTINE RESOLVES (CR 9.8.10)
+### A trigger condition met when a SUBROUTINE RESOLVES — LANDED (CR 9.8.10)
 
-The subroutine conditions are about BREAKING (`SubroutineBrokenOnSelf`,
-`AllSubsBrokenOnEncounteredIce`, `SelfFullyBroken`) and about a run that
-followed one (`MakesSuccessfulRun`'s `after_subroutine_resolved` flag — a
-field on that condition, not a condition of its own). None is met by the
-resolution itself, though `GameChange::SubroutineResolved` records it and
-`Quantity::SubroutinesResolvedThisRun` counts it from the log.
-
-The count is not a substitute for the condition, and the card that wants it is
-what shows why: 1.12.1 makes a counter an OBJECT, so a power counter placed by
-each resolution is a thing other cards can see, count and remove, and a number
-recomputed from history is not.
-
-Wanted: one condition met when a subroutine resolves, with the stipulations as
-content — whose ice, which subroutine, and whether the run in progress is the
-one the sentence named (9.8.9's replacement still resolves from the ice, and
-6.10's run-ending subroutine still resolved, so both are met and neither needs
-a word of its own).
-
-Wants it: **Raindrops Cut Stone** ("Whenever a subroutine resolves during that
-run … place 1 power counter on this event"; the run and the "when that run
-ends" pay-off are done and tested).
+`TriggerCond::SubroutineResolved { criteria }`, met at step 9.8.10e once per
+subroutine. The criteria describe the ICE it resolved from in the shared filter
+vocabulary, so "a subroutine", "a subroutine on this ice" and "a subroutine on
+a bioroid" are one condition with different content. Two cases the rules
+already settle and neither got a word: 9.8.9's replaced subroutine "is treated
+as having the same source as the original imminent subroutine", so it still
+resolves from the ice; and 6.10's run-ending subroutine resolved before it
+ended the run. **Raindrops Cut Stone** is written and ticked, with the
+run-ending arm as its own board.
 
 ### Hosted credits TREATED AS pool credits, for a duration (CR 1.13.3 / 1.10.1)
 

@@ -19905,63 +19905,85 @@ fn mad_dash_pays_out_on_the_steal_and_bites_without_one() {
     }
 }
 
-/// Raindrops Cut Stone: "Run any server." / "When that run ends, draw 1 card
-/// for each hosted power counter and gain 3[credit]."
+/// Raindrops Cut Stone: "Run any server. Whenever a subroutine resolves during
+/// that run (including a subroutine that ends the run), place 1 power counter
+/// on this event." / "When that run ends, draw 1 card for each hosted power
+/// counter and gain 3[credit]."
 ///
-/// PARTIAL — the counter sentence is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear. Both expressed halves are asserted: the run
-/// happens, and the pay-off fires when it ENDS — which is only possible
-/// because 4.6.4e keeps a played event active in the play area while 5.2.2b
-/// suspends its resolution for the run. With the counter sentence marked, the
-/// hosted count is 0 and the draw half is worth nothing; the 3[credit] is
-/// what the sentence pays regardless, and it is what the assertion reads.
+/// The whole card, over three boards that differ only in what protects
+/// Archives: nothing, a piece of ice with three subroutines that let the run
+/// through, and a piece of ice whose one subroutine ends it.
+///
+/// Any of it is only possible because 4.6.4e keeps a played event active in
+/// the play area while 5.2.2b suspends its resolution for the run: the event
+/// has to be there to take the counters and still be there, with them on it,
+/// when the run ends.
+///
+/// The last board is the printed parenthetical, and it is the arm worth having
+/// — 6.10's run-ending subroutine RESOLVED before it ended the run, so it is
+/// one of the occurrences the sentence counts, and the pay-off still fires
+/// because the run ending is what it waits for.
+///
+/// The counters are asserted as OBJECTS and not as a number: read off the
+/// event, and then read again by the pay-off's own quantity. That is the
+/// difference 1.12.1 makes, and the reason the card wants a counter rather
+/// than `Quantity::SubroutinesResolvedThisRun`.
 #[test]
-fn raindrops_cut_stone_pays_out_when_the_run_it_made_ends() {
-    let rcs = jinteki_cards::find("Raindrops Cut Stone").expect("Raindrops Cut Stone is in the card layer");
-    assert_eq!(
-        rcs.unimplemented,
-        vec!["Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event."],
-        "exactly one printed sentence is still unsayable"
-    );
+fn raindrops_cut_stone_counts_every_subroutine_that_resolved_including_the_last() {
+    for (ice, counters) in [(0usize, 0u32), (1, 3), (2, 1)] {
+        let mut vm = Vm::empty(9411);
+        let card_id = vm.new_object(card("Raindrops Cut Stone"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+        match ice {
+            1 => {
+                tk::install_ice(&mut vm, tk::three_sub_ice("Bloop"), ServerId::Archives, true);
+            }
+            2 => {
+                tk::install_ice(&mut vm, tk::etr_ice("Toll Gate", 0, 1), ServerId::Archives, true);
+            }
+            _ => {}
+        }
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 1;
+        vm.start_turn(Side::Runner);
 
-    let mut vm = Vm::empty(9411);
-    let card_id = vm.new_object(card_partial("Raindrops Cut Stone"), Zone::Hand(Side::Runner));
-    vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
-    tk::fill_hand(&mut vm, Side::Corp, 3);
-    tk::fill_deck(&mut vm, Side::Corp, 5);
-    tk::fill_deck(&mut vm, Side::Runner, 5);
-    vm.st.runner.credits = 1;
-    vm.start_turn(Side::Runner);
+        let t = plan::play(
+            &mut vm,
+            Plan::corp(),
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(card_id))
+                .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
+                .stop_at_action(),
+        );
 
-    let t = plan::play(
-        &mut vm,
-        Plan::corp(),
-        Plan::runner()
-            .when(Match::action().once(), Reply::play_card(card_id))
-            .when(Match::attacked_server().once(), Reply::Server(ServerId::Archives))
-            .stop_at_action(),
-    );
-    assert!(
-        vm.changes.log.iter().any(|c| matches!(
-            c,
-            GameChange::RunDeclaredSuccessful { server: ServerId::Archives, .. }
-        )),
-        "the run happened: {}",
-        t.tail(20)
-    );
-    assert_eq!(
-        vm.st.runner.credits, 3,
-        "1 − the 1[credit] play cost + the 3[credit] the run's end pays: {}",
-        t.tail(20)
-    );
-    assert_eq!(
-        vm.st.hand[&Side::Runner].len(),
-        0,
-        "…and 0 cards, because the marked sentence is what would have put \
-         counters there: {}",
-        t.tail(20)
-    );
+        assert_eq!(
+            t.times_taken("one counter per subroutine resolved") as u32,
+            counters,
+            "9.8.10e: the condition is met once per subroutine that RESOLVED, the \
+             run-ending one included (ice={ice}): {}",
+            t.tail(40)
+        );
+        // The counters themselves are gone by now — 1.13.13 banks them when the
+        // event is trashed at 8.6.7g — so what proves they were OBJECTS on the
+        // card rather than a number is that the pay-off's own quantity read
+        // them off it while the event was still there.
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            counters as usize,
+            "…and the pay-off drew 1 card for each hosted power counter \
+             (ice={ice}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.runner.credits,
+            3,
+            "1 − the 1[credit] play cost + the 3[credit] the run's end pays, whether \
+             the run was ended by a subroutine or reached success (ice={ice}): {}",
+            t.tail(40)
+        );
+    }
 }
 
 /// Stimhack: "Place 9[credit] on this event, then run any server." / "When

@@ -547,6 +547,32 @@ pub enum TriggerCond {
     /// [`TriggerCond::SelfFullyBroken`] which is met once per encounter.
     /// `printed_only` is the origin stipulation as content (§12 rule 2).
     SubroutineBrokenOnSelf { printed_only: bool },
+    /// CR 9.8.10: "Whenever a subroutine RESOLVES…" (Raindrops Cut Stone
+    /// class) — the occurrence at step 9.8.10e, met once per subroutine
+    /// resolved.
+    ///
+    /// The complement of the three conditions above, which are all about
+    /// BREAKING, and not a substitute for either of them: 9.8.7 makes a
+    /// broken subroutine one that does not resolve, so a card counting
+    /// resolutions and a card counting breaks are asking about disjoint
+    /// occurrences.
+    ///
+    /// `criteria` describes the ICE the subroutine resolved from, in the
+    /// shared filter vocabulary (§12 rule 5), so "a subroutine on **this
+    /// ice**" is [`crate::instr::TargetFilter::IsSource`] and "a subroutine
+    /// on a piece of **bioroid** ice" is a subtype — one condition with
+    /// different content, never a condition per stipulation. An empty list is
+    /// a sentence that stipulates nothing about the ice, which is what
+    /// "whenever **a** subroutine resolves" prints.
+    ///
+    /// Two cases the rules already settle, so neither needs a word of its
+    /// own. 9.8.9's REPLACED subroutine "is treated as having the same source
+    /// as the original imminent subroutine", so it still resolves from the
+    /// ice and still meets this. And 6.10's run-ending subroutine resolved
+    /// like any other before it ended the run, which is what a printed
+    /// "(including a subroutine that ends the run)" is reminding the reader
+    /// of rather than asking for.
+    SubroutineResolved { criteria: Vec<crate::instr::TargetFilter> },
     /// "Whenever the Runner steals an agenda…" (Bacterial Programming /
     /// Seidr class drivers for the 7.4.7a examples). `requires` is 9.6.5c's
     /// additional stipulation — "…**if** you have more [nbn] cards rezzed
@@ -3348,6 +3374,16 @@ fn trigger_matches_dyn(
         ) => {
             cite!("rule_break_subroutine");
             *ice == source.id && (!*printed_only || *printed)
+        }
+        (
+            TriggerCond::SubroutineResolved { criteria },
+            GameChange::SubroutineResolved { ice, .. },
+        ) => {
+            // 9.8.10e: the resolution itself, one occurrence per subroutine.
+            // §12 rule 5: whatever else the sentence says about the ice is a
+            // description, asked the way every other description is.
+            cite!("step_subroutine_resolution");
+            matches_criteria(*ice, criteria)
         }
         (TriggerCond::RunnerStealsAgenda { .. }, GameChange::AgendaStolen { .. }) => true,
         (TriggerCond::CorpScoresAgenda { criteria, .. }, GameChange::AgendaScored { obj, .. }) => {
