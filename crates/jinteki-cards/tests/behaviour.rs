@@ -16287,6 +16287,7 @@ fn mirrormorph_comes_back_the_next_turn() {
     );
 }
 
+#[test]
 fn ag_infusion_trashes_the_approached_ice_and_moves_the_runner_to_the_chosen_remote() {
     let mut vm = Vm::empty(6430);
     tk::install_identity(&mut vm, card("AgInfusion: New Miracles for a New World"), Side::Corp);
