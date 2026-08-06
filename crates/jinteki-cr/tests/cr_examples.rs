@@ -11911,7 +11911,7 @@ fn example_rule_active_exception_catchall_1() {
         }
         // The grip holds exactly the one card, so the random damage trash
         // takes it (10.4.2a).
-        let ihw = vm.new_object(tk::ive_had_worse_like("IHW-like"), Zone::Hand(Side::Runner));
+        let ihw = vm.new_object(tk::ive_had_worse_like("IHW-like", &[DamageKind::Meat, DamageKind::Net, DamageKind::Core]), Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(ihw);
         vm.st.runner.credits = 0;
         vm.start_turn(Side::Runner);

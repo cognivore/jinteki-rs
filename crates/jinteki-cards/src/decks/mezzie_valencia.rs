@@ -128,8 +128,7 @@ pub fn hacktivist_meeting() -> Card {
 ///  Whenever I've Had Worse is trashed by taking net or meat damage, draw 3
 ///  cards."
 ///
-/// PARTIAL — the draw is expressed; the damage sentence is marked, and the
-/// reason is a DAMAGE KIND rather than a missing mechanism.
+/// COMPLETE.
 ///
 /// Note first what this card is NOT: it neither prevents nor reduces damage.
 /// 9.9.7's prevention and 9.9.6's reduction both act on an imminent effect
@@ -137,16 +136,17 @@ pub fn hacktivist_meeting() -> Card {
 /// taken this card with it, and what it does is draw. The card that "softens"
 /// damage does so only by replacing a card the damage already took.
 ///
-/// `TriggerCond::SelfTrashedByDamage` is the condition, and 9.1.8b is what
-/// makes it reachable at all: the ability has to be active in the GRIP for the
-/// trash to meet it, and the kernel keeps it active in the heap it lands in.
-/// What the condition cannot carry is WHICH damage. 10.4.2a resolves meat and
-/// net damage by trashing randomly-chosen cards from the grip — and 10.4.2b
-/// resolves CORE damage the same way, adding only the permanent hand-size
-/// reduction. So a condition that says nothing about the kind is met by core
-/// damage too, and this card's "net or meat" excludes it. That is a silent
-/// OVER-trigger: three cards drawn where the card promises none, from a
-/// Stimhack in this very deck. Marked rather than approximated.
+/// 9.1.8b is what makes the sentence reachable at all: the card is in the GRIP
+/// when the damage takes it, and 4.4.4 leaves everything there inactive — but
+/// the trash puts the card in the heap, and a condition that can only ever be
+/// met there is active there.
+///
+/// The KINDS are the whole of the rest, and they are not decoration. 10.4.2a
+/// resolves meat and net damage by trashing randomly-chosen cards from the
+/// grip; 10.4.2b resolves CORE damage the same way, adding only the permanent
+/// hand-size reduction. A condition silent about the kind is therefore met by
+/// core damage too — three cards drawn where this card promises none, off a
+/// Stimhack in this very deck.
 pub fn ive_had_worse() -> Card {
     card("I've Had Worse")
         .runner()
@@ -156,7 +156,11 @@ pub fn ive_had_worse() -> Card {
         .text("Draw 3 cards.")
         .text("Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards.")
         .play([draw(Runner, 3)])
-        .unimplemented("Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards.")
+        .when(
+            this_card_is_trashed_by_damage(&[DamageKind::Net, DamageKind::Meat]),
+            [draw(Runner, 3)],
+        )
+        .named("three more when the damage takes it")
         .build()
 }
 
@@ -410,20 +414,26 @@ pub fn raindrops_cut_stone() -> Card {
 /// "Draw 3 cards.
 ///  When this event is trashed from your grip or stack, you may draw 2 cards."
 ///
-/// PARTIAL — the draw is expressed; the second sentence is marked.
+/// COMPLETE.
 ///
 /// Like [`ive_had_worse`], this card prevents and reduces nothing: 9.9.7 and
 /// 9.9.6 act on an imminent effect, and this sentence is met after a trash has
 /// already happened. It replaces cards; it does not save them.
 ///
-/// What it wants is the twin of `TriggerCond::SelfTrashedByDamage`: THIS
-/// card's own trash, with the zone it was trashed FROM as content. The kernel
-/// has the zone-carrying condition (`CardTrashed { from_zone, … }`) and the
-/// self-scoped one, and no condition that is both — and the scope is not
-/// cosmetic, because 9.1.8b decides where the ability is ACTIVE from the
-/// condition alone. A grip and a stack are 4.3 and 4.2's hidden zones, where
-/// 4.4.4 leaves everything inactive unless the ability says otherwise, so a
-/// condition that cannot name them is a condition that can never be met.
+/// It is the same condition [`ive_had_worse`] uses with the other stipulation
+/// on it: this card's own trash, with the ZONE it was trashed from as content
+/// and no stipulation about damage at all. The two zones are one list, because
+/// "your grip **or** stack" is one sentence.
+///
+/// 9.1.8b again decides where the ability is ACTIVE, and here it is the whole
+/// reason the sentence can be said: a grip and a stack are 4.3 and 4.2's
+/// hidden zones, where 4.4.4 leaves everything inactive — but the trash puts
+/// the card in the heap, and the condition can only ever be met there.
+///
+/// Naming no damage kind is itself a stipulation: the condition reads the
+/// TRASH record rather than the damage one, so a copy taken out of the grip by
+/// net damage meets it exactly once, and a copy milled off the stack meets it
+/// too. "You may" is 9.6.9's optional ability — the whole of it is the draw.
 pub fn steelskin_scarring() -> Card {
     card("Steelskin Scarring")
         .runner()
@@ -433,7 +443,11 @@ pub fn steelskin_scarring() -> Card {
         .text("Draw 3 cards.")
         .text("When this event is trashed from your grip or stack, you may draw 2 cards.")
         .play([draw(Runner, 3)])
-        .unimplemented("When this event is trashed from your grip or stack, you may draw 2 cards.")
+        .may_when(
+            this_card_is_trashed_from(&[Zone::Hand(Runner), Zone::Deck(Runner)]),
+            [draw(Runner, 2)],
+        )
+        .named("two more when it is trashed from the grip or the stack")
         .build()
 }
 

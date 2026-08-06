@@ -2530,6 +2530,29 @@ pub fn suffers_damage(kind: DamageKind) -> TriggerCond {
 pub fn suffers_any_damage() -> TriggerCond {
     TriggerCond::RunnerSuffersDamage { kind: None, trashed_a_card: false, responsible: None }
 }
+/// "Whenever **this card** is trashed by taking **net or meat** damage…"
+/// (I've Had Worse; CR 10.4.2 / 9.1.8b.) The kinds are the sentence's whole
+/// stipulation and they are load-bearing: 10.4.2b resolves CORE damage by
+/// trashing from the grip exactly as 10.4.2a resolves the other two, so a
+/// sentence silent about the kind is met by core damage too.
+///
+/// 9.1.8b is what makes it reachable from the grip at all — the trash puts the
+/// card in the heap, so the ability is active there, which is the only place
+/// the condition can be met.
+pub fn this_card_is_trashed_by_damage(kinds: &[DamageKind]) -> TriggerCond {
+    TriggerCond::SelfTrashed { by_damage: kinds.to_vec(), from_zones: Vec::new() }
+}
+/// "When **this card** is trashed **from your grip or stack**…" (Steelskin
+/// Scarring) — the same condition with the other stipulation: the zone the
+/// card was trashed FROM, and no stipulation about damage at all. A sentence
+/// naming two zones is one condition with a longer list.
+///
+/// It reads the TRASH record rather than the damage one, so a card trashed by
+/// damage out of the grip meets it exactly once, and a card milled off the
+/// stack meets it too — which "or stack" is there for.
+pub fn this_card_is_trashed_from(zones: &[Zone]) -> TriggerCond {
+    TriggerCond::SelfTrashed { by_damage: Vec::new(), from_zones: zones.to_vec() }
+}
 /// "Whenever **you do** damage…" (AU Co.) — the same occurrence
 /// [`suffers_any_damage`] names, with 10.4.1's stipulation about who was
 /// RESPONSIBLE: a card that "does" damage makes its own side responsible,

@@ -89,7 +89,7 @@ Identity is COMPLETE.
       "Play only if the Corp has at least 1 bad publicity. / Run any server. The Corp cannot rez ice during that run."
 - [ ] **Hacktivist Meeting** ×3 — event · Current · cost 1
       "This card is not trashed until another current is played or an agenda is scored. / As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."
-- [ ] **I've Had Worse** ×3 — event · cost 1
+- [x] **I've Had Worse** ×3 — event · cost 1
       "Draw 3 cards. / Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."
 - [x] **Inject** ×3 — event · cost 1
       "Reveal the top 4 cards of your stack and trash all programs revealed. Gain 1[credit] for each program trashed, and add the rest of the revealed cards to your grip."
@@ -103,7 +103,7 @@ Identity is COMPLETE.
       "Run any server. Whenever a subroutine resolves during that run (including a subroutine that ends the run), place 1 power counter on this event. / When that run ends, draw 1 card for each hosted power counter and gain 3[credit]."
 - [x] **Rebirth** ×1 — event · cost 0
       "Switch your identity with another identity from the same faction. Remove Rebirth from the game instead of trashing it. / Limit 1 per deck."
-- [ ] **Steelskin Scarring** ×3 — event · cost 1
+- [x] **Steelskin Scarring** ×3 — event · cost 1
       "Draw 3 cards. / When this event is trashed from your grip or stack, you may draw 2 cards."
 - [ ] **Stimhack** ×1 — event · Run · cost 0
       "Place 9[credit] on this event, then run any server. During that run, hosted credits are considered to be in your credit pool. When that run ends, suffer 1 core damage. This damage cannot be prevented."
@@ -481,37 +481,25 @@ Wants it: **Hacktivist Meeting** ("As an additional cost to rez non-ice cards,
 the Corp must randomly trash a card from HQ"; the current's own "not trashed
 until…" is done and tested).
 
-### A card's OWN trash, with the occurrence's stipulations as content (CR 10.4.2 / 9.1.8b)
+### A card's OWN trash, with the occurrence's stipulations as content — LANDED
 
-Two conditions describe a trash and neither is both halves.
-`TriggerCond::SelfTrashedByDamage` is scoped to the source and says nothing
-about WHICH damage; `TriggerCond::CardTrashed { from_zone, … }` carries the
-zone and every other stipulation and cannot be scoped to the source at all —
-its `requires` vocabulary has no term for "the trashed card is this card".
+`TriggerCond::SelfTrashed { by_damage, from_zones }` replaces the contentless
+`SelfTrashedByDamage`. Both stipulations are load-bearing and in opposite
+directions: 10.4.2b resolves CORE damage by trashing from the grip exactly as
+10.4.2a resolves meat and net, so a sentence silent about the kind
+over-triggers; and 9.1.8b derives the zone the ability is ACTIVE in from the
+condition, which is what lets a sentence name the grip or the stack at all
+(4.4.4 leaves both inactive).
 
-Both halves are load-bearing, in opposite directions.
+An EMPTY `by_damage` is itself a stipulation and not a wildcard: the condition
+then reads the TRASH record (8.2.2) rather than the damage one, so a card taken
+out of the grip by damage meets such a sentence exactly once. **I've Had
+Worse** and **Steelskin Scarring** are written and ticked.
 
-- The KIND is not decoration: 10.4.2a resolves meat and net damage by trashing
-  randomly-chosen cards from the grip, and 10.4.2b resolves CORE damage the
-  same way, adding only the hand-size reduction. A condition silent about the
-  kind is met by core damage, so a card printing "net or meat" over-triggers —
-  and Stimhack, in this very deck, is what would trigger it.
-- The SCOPE decides where the ability is ACTIVE. 9.1.8b keeps an ability alive
-  in the zone its condition names, and the kernel derives that zone from the
-  condition alone (`SelfTrashedByDamage` → the discard pile). A grip or a stack
-  is 4.3/4.2's hidden zone where 4.4.4 leaves everything inactive, so a
-  condition that cannot name them can never be met at all.
-
-Wanted: ONE condition for "this card is trashed", with the damage kinds, the
-zone it was trashed FROM, and who trashed it all as content on it (§12 rule 2),
-and the 9.1.8b zone derived from that content — so "trashed by net or meat
-damage" and "trashed from your grip or stack" are the same word with different
-contents rather than two atoms, neither of which exists.
-
-Wants it: **I've Had Worse** ("Whenever I've Had Worse is trashed by taking net
-or meat damage, draw 3 cards" — the kind half); **Steelskin Scarring** ("When
-this event is trashed from your grip or stack, you may draw 2 cards" — the zone
-half and the scope). Both cards' "Draw 3 cards" is done and tested.
+`by` (who trashed it) is deliberately NOT on the atom. `CardTrashed` already
+carries it for the non-self case, no card in either deck asks for it, and an
+unread field is untested code; it belongs on this atom the day a card prints
+it.
 
 ### The cards THIS ABILITY revealed — LANDED (CR 1.21.6)
 

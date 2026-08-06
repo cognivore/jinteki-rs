@@ -242,10 +242,37 @@ pub enum TriggerCond {
     SelfWouldBeTrashed,
     /// CR 10.4.2 / 9.1.8b: "when this card is trashed by damage" (I've Had
     /// Worse class). The condition can ONLY ever be met by the card moving
-    /// from the grip to the heap, which is why 9.1.8b keeps the ability
-    /// active THERE — and why a replacement that sends the card anywhere else
-    /// leaves it inactive.
-    SelfTrashedByDamage,
+    /// to the heap, which is why 9.1.8b keeps the ability active THERE — and
+    /// why a replacement that sends the card anywhere else leaves it
+    /// inactive.
+    ///
+    /// ONE condition for "this card is trashed", with everything the printed
+    /// sentence can stipulate about the occurrence as content (§12 rule 2):
+    ///
+    /// * `by_damage` — WHICH damage, and it is not decoration. 10.4.2a
+    ///   resolves meat and net damage by trashing randomly-chosen cards from
+    ///   the grip, and 10.4.2b resolves CORE damage the same way, adding only
+    ///   the hand-size reduction — so a sentence silent about the kind is met
+    ///   by core damage too, and "trashed by taking net or meat damage"
+    ///   excludes it. An EMPTY list is a sentence that does not name damage at
+    ///   all ("when this event is trashed from your grip or stack"), and it is
+    ///   read off the trash record rather than the damage one, so a trash by
+    ///   damage meets such a sentence exactly once.
+    /// * `from_zones` — the zone the card was trashed FROM, read off the
+    ///   record's `was_zone`. Empty is a sentence that names none. A sentence
+    ///   naming several ("your grip **or** stack") is one condition with a
+    ///   longer list, not a disjunction of conditions.
+    ///
+    /// The 9.1.8b zone follows from the condition and not from the fields: a
+    /// trash puts the card in its owner's discard pile whichever zone it came
+    /// from, so the ability is active THERE, which is the only place it can be
+    /// met. That is what makes the grip and the stack sayable at all — 4.3 and
+    /// 4.2's hidden zones leave everything inactive (4.4.4), so a condition
+    /// that could not name the destination could never be met from them.
+    SelfTrashed {
+        by_damage: Vec<crate::effects::DamageKind>,
+        from_zones: Vec<Zone>,
+    },
     /// "Whenever the Runner breaches this server…" (Ash class).
     ThisServerBreached,
     /// "Whenever you breach <this server>…" (Cupellation class — the server
@@ -2729,9 +2756,11 @@ fn requirement_states_zone(req: &TriggerRequirement, obj: &Object) -> Option<Zon
 /// is what is compared.
 fn condition_only_met_in_zone(cond: &TriggerCond, obj: &Object) -> Option<Zone> {
     match cond {
-        // 10.4.2: damage trashes cards from the grip to the heap, so this
-        // condition can only ever be met with the card in its owner's heap.
-        TriggerCond::SelfTrashedByDamage => Some(Zone::Discard(obj.owner)),
+        // 8.2: a trash moves the card to its owner's discard pile, whichever
+        // zone it came from, so this condition can only ever be met with the
+        // card in that pile — which is what lets a sentence name the grip or
+        // the stack, where 4.4.4 would otherwise leave the ability inactive.
+        TriggerCond::SelfTrashed { .. } => Some(Zone::Discard(obj.owner)),
         // 1.17.3: only the Runner steals, and stealing moves the agenda to
         // the Runner's score area (1.17.7) — where 4.5.4 would otherwise
         // leave it inactive. Clone Retirement's "when you steal this agenda"
@@ -3341,9 +3370,32 @@ fn trigger_matches_dyn(
                 // 1.14.5: who did the trashing.
                 && by.is_none_or(|s| *trasher == s)
         }
-        (TriggerCond::SelfTrashedByDamage, GameChange::DamageSuffered { cards, .. }) => {
+        (
+            TriggerCond::SelfTrashed { by_damage, from_zones },
+            GameChange::DamageSuffered { kind, cards, .. },
+        ) => {
+            // 10.4.2a/b: a damage trash takes randomly-chosen cards from the
+            // grip. The KIND is on this record and nowhere else, so a sentence
+            // naming kinds is met here — and only here, which is why a
+            // sentence naming none is not (it reads the trash record below,
+            // so the one occurrence meets it once).
             cite!("rule_meat_net_damage");
-            cards.contains(&source.id)
+            cite!("rule_core_damage");
+            !by_damage.is_empty()
+                && by_damage.contains(kind)
+                && cards.contains(&source.id)
+                && (from_zones.is_empty() || from_zones.contains(&Zone::Hand(source.owner)))
+        }
+        (
+            TriggerCond::SelfTrashed { by_damage, from_zones },
+            GameChange::CardTrashed { obj, was_zone, .. },
+        ) => {
+            // 8.2.2: the trash movement is recorded whatever caused it, so
+            // this is where a sentence that names no damage kind is met.
+            cite!("movement_trash");
+            by_damage.is_empty()
+                && *obj == source.id
+                && (from_zones.is_empty() || from_zones.contains(was_zone))
         }
         (
             TriggerCond::EncounterEnds { criteria, with_advanced_ice },

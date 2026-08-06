@@ -6058,20 +6058,40 @@ pub fn skorpios_like(name: &'static str) -> PrintedCard {
 }
 
 /// I've-Had-Worse shape (9.1.8b): a Runner event with "When this card is
-/// trashed by damage, …". The condition can only ever be met by the card
-/// moving from the grip to the heap, so 9.1.8b keeps the ability active in the
-/// heap — and nowhere else.
+/// trashed by damage of these kinds, …". The condition can only ever be met by
+/// the card moving to the heap, so 9.1.8b keeps the ability active there — and
+/// nowhere else.
+///
+/// The KINDS are a parameter because 10.4.2b resolves core damage by trashing
+/// from the grip exactly as 10.4.2a resolves meat and net: a shape silent
+/// about the kind would be met by all three, which is a different card from
+/// the printed one.
 ///
 /// Simplification: the printed card draws 3; gaining credits is the same
 /// occurrence and is what the example's assertion is about.
-pub fn ive_had_worse_like(name: &'static str) -> PrintedCard {
+pub fn ive_had_worse_like(name: &'static str, kinds: &[DamageKind]) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Event);
     c.abilities = vec![AbilityDef::conditional(
-        TriggerCond::SelfTrashedByDamage,
+        TriggerCond::SelfTrashed { by_damage: kinds.to_vec(), from_zones: Vec::new() },
         vec![Instruction::GainCredits(Side::Runner, Quantity::c(3))],
         false,
     )
     .labeled("ihw: when trashed by damage")];
+    c
+}
+
+/// Steelskin Scarring shape (9.1.8b, the other half): a Runner event with
+/// "When this card is trashed FROM these zones, …" and no damage stipulation
+/// at all. It reads the trash record rather than the damage one, so a trash by
+/// damage meets it exactly once and a mill out of the stack meets it too.
+pub fn steelskin_like(name: &'static str, zones: &[Zone]) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Event);
+    c.abilities = vec![AbilityDef::conditional(
+        TriggerCond::SelfTrashed { by_damage: Vec::new(), from_zones: zones.to_vec() },
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(2))],
+        false,
+    )
+    .labeled("steelskin: when trashed from a named zone")];
     c
 }
 

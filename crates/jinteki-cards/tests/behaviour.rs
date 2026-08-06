@@ -8,6 +8,7 @@
 
 use jinteki_cr::change::{ActionIdentity, BasicAction, GameChange};
 use jinteki_cr::decision::{ActionOption, DecisionSpec};
+use jinteki_cr::effects::DamageKind;
 
 use jinteki_cr::instr::Instruction;
 use jinteki_cr::object::{CardType, CounterKind, ObjectId, PrintedCard, ServerId, Side, Zone};
@@ -19808,15 +19809,8 @@ fn hacktivist_meeting_stays_in_the_play_area_until_an_agenda_is_scored() {
 /// cannot quietly disappear.
 #[test]
 fn ive_had_worse_draws_three() {
-    let ihw = jinteki_cards::find("I've Had Worse").expect("I've Had Worse is in the card layer");
-    assert_eq!(
-        ihw.unimplemented,
-        vec!["Whenever I've Had Worse is trashed by taking net or meat damage, draw 3 cards."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9407);
-    let card_id = vm.new_object(card_partial("I've Had Worse"), Zone::Hand(Side::Runner));
+    let card_id = vm.new_object(card("I've Had Worse"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
     tk::fill_deck(&mut vm, Side::Runner, 6);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -19832,6 +19826,60 @@ fn ive_had_worse_draws_three() {
     assert_eq!(vm.st.runner.credits, 0, "1 − the 1[credit] play cost: {}", t.tail(12));
 }
 
+/// I've Had Worse: "Whenever I've Had Worse is trashed by taking net or meat
+/// damage, draw 3 cards."
+///
+/// Three boards, differing only in the KIND of damage the Corp does, because
+/// the kind is the whole of what the sentence stipulates. 10.4.2a resolves
+/// meat and net damage by trashing randomly-chosen cards from the grip, and
+/// 10.4.2b resolves CORE damage the same way — so a condition silent about the
+/// kind would fire on all three, and the third arm is what proves it does not.
+///
+/// The Runner's grip holds nothing but the card, so one point of damage takes
+/// it and nothing else, and the three cards it then draws are the only thing
+/// in the grip afterwards. 9.1.8b is what makes any of it possible: the card
+/// is in the grip when the damage takes it, 4.4.4 leaves everything there
+/// inactive, and the ability is active in the HEAP the trash puts it in.
+#[test]
+fn ive_had_worse_draws_three_more_on_a_net_or_meat_trash_and_not_on_a_core_one() {
+    for (kind, draws) in [(DamageKind::Net, 3usize), (DamageKind::Meat, 3), (DamageKind::Core, 0)] {
+        let mut vm = Vm::empty(9415);
+        let card_id = vm.new_object(card("I\'ve Had Worse"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+        let button = match kind {
+            DamageKind::Net => tk::net_damage_button("Hurt", 1),
+            DamageKind::Meat => tk::meat_damage_button("Hurt", 1),
+            DamageKind::Core => tk::core_damage_button("Hurt", 1),
+        };
+        tk::install_root(&mut vm, button, ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid().once(), Reply::take("damage")).stop_at_action(),
+            Plan::runner(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&card_id].zone,
+            Zone::Discard(Side::Runner),
+            "10.4.2: the damage trashed the only card in the grip whichever kind it was \
+             (kind={kind:?}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            draws,
+            "10.4.2a/b: net and meat meet the condition and CORE does not, though all \
+             three trash from the grip (kind={kind:?}): {}",
+            t.tail(24)
+        );
+    }
+}
+
 /// Steelskin Scarring: "Draw 3 cards."
 ///
 /// PARTIAL — "When this event is trashed from your grip or stack, you may
@@ -19840,15 +19888,8 @@ fn ive_had_worse_draws_three() {
 /// cannot quietly disappear.
 #[test]
 fn steelskin_scarring_draws_three() {
-    let ss = jinteki_cards::find("Steelskin Scarring").expect("Steelskin Scarring is in the card layer");
-    assert_eq!(
-        ss.unimplemented,
-        vec!["When this event is trashed from your grip or stack, you may draw 2 cards."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9408);
-    let card_id = vm.new_object(card_partial("Steelskin Scarring"), Zone::Hand(Side::Runner));
+    let card_id = vm.new_object(card("Steelskin Scarring"), Zone::Hand(Side::Runner));
     vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
     tk::fill_deck(&mut vm, Side::Runner, 6);
     tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -19861,6 +19902,67 @@ fn steelskin_scarring_draws_three() {
         Plan::runner().when(Match::action().once(), Reply::play_card(card_id)).stop_at_action(),
     );
     assert_eq!(vm.st.hand[&Side::Runner].len(), 3, "three cards drawn: {}", t.tail(12));
+}
+
+/// Steelskin Scarring: "When this event is trashed from your grip or stack,
+/// you may draw 2 cards."
+///
+/// Both zones the sentence names, on two boards. The grip arm is a net damage
+/// into a grip holding only this card; the stack arm is a mill off the top of
+/// the stack. Both put the card in the heap, which is where 9.1.8b keeps the
+/// ability active — and that is the whole reason a sentence about two HIDDEN
+/// zones (4.2, 4.3), where 4.4.4 leaves everything inactive, can be said.
+///
+/// Naming no damage kind is itself a stipulation, and the grip arm is where it
+/// shows: the condition reads the TRASH record rather than the damage one, so
+/// the damage that takes the card meets it exactly once and draws 2, not 4.
+#[test]
+fn steelskin_scarring_draws_two_more_when_it_is_trashed_from_the_grip_or_the_stack() {
+    for from_stack in [false, true] {
+        let mut vm = Vm::empty(9416);
+        let card_id = if from_stack {
+            let id = vm.new_object(card("Steelskin Scarring"), Zone::Deck(Side::Runner));
+            vm.st.deck.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        } else {
+            let id = vm.new_object(card("Steelskin Scarring"), Zone::Hand(Side::Runner));
+            vm.st.hand.get_mut(&Side::Runner).unwrap().push(id);
+            id
+        };
+        let button = if from_stack {
+            tk::corp_trash_button("Mill", vec![card_id])
+        } else {
+            tk::net_damage_button("Hurt", 1)
+        };
+        tk::install_root(&mut vm, button, ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Runner, 6);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        vm.start_turn(Side::Corp);
+
+        let needle = if from_stack { "trash the set" } else { "damage" };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::paid().once(), Reply::take(needle)).stop_at_action(),
+            // 9.6.9: the draw is a "you may", so the Runner is asked for it.
+            Plan::runner().when(Match::any(), Reply::take("two more when it is trashed")),
+        );
+
+        assert_eq!(
+            vm.st.objects[&card_id].zone,
+            Zone::Discard(Side::Runner),
+            "the card was trashed out of the zone under test (from_stack={from_stack}): {}",
+            t.tail(24)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Runner].len(),
+            2,
+            "9.1.8b: the ability is active in the heap the trash put it in, so a trash \
+             from either hidden zone the sentence names meets it — exactly once \
+             (from_stack={from_stack}): {}",
+            t.tail(24)
+        );
+    }
 }
 
 /// Inject: "Reveal the top 4 cards of your stack and trash all programs
