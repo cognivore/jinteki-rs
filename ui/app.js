@@ -578,17 +578,52 @@ function renderCrReady() {
   $("btn-cr-lobby").style.display = CR_READY.ready ? "" : "none";
 }
 
+/* ── THE SEED IS A STRING, THE WHOLE WAY DOWN ─────────────────────────────
+ *
+ * A game seed is a u64 on the server. JavaScript's only number is a double,
+ * so 2^53 is the last integer this client can hold exactly — and `parseInt`
+ * turned the seed 9661175140325481871 into 9661175140325482000 and jacked in
+ * to a DIFFERENT GAME from the one whose seed its player had pasted in to
+ * replay. Without a word, and with the wrong number echoed back to them in
+ * the log as if it were the one they asked for.
+ *
+ * So a seed is NEVER a Number here. The box's text goes on the wire as text,
+ * and the one parse to u64 happens on the server (`local::seed_from_wire`),
+ * where u64 is a type you can actually hold. BigInt does the range check
+ * because it is the only thing in this language that can compare nineteen
+ * digits without dropping any of them.
+ *
+ * Returns `undefined` for an empty box — the seed IS optional, and an absent
+ * one is a random game — the digit string when the box holds a seed, and
+ * `false` when it holds something else, which every caller reads as "it has
+ * been said out loud; start nothing". Nonsense is refused rather than
+ * silently rounded down to a game nobody asked for.
+ */
+const U64_MAX = 18446744073709551615n;
+function seedFromBox(id) {
+  const t = $(id).value.trim();
+  if (t === "") return undefined;
+  if (!/^\d+$/.test(t) || BigInt(t) > U64_MAX) {
+    toast("A seed is a whole number from 0 to " + U64_MAX);
+    return false;
+  }
+  return t;
+}
+
 $("btn-cr").onclick = () => {
   if (!CR_READY || !CR_READY.ready) { showCrGap(); return; }
+  // The seed is read BEFORE the socket: a refused seed must not leave a
+  // connection — and a game screen — behind it.
+  const seed = seedFromBox("cr-seed");
+  if (seed === false) return;
   mode = "cr";
   mySide = crSide;
   connect("/ws/local", () => {
-    const seed = parseInt($("cr-seed").value, 10);
     send({
       type: "start",
       engine: "cr",
       side: crSide,
-      seed: Number.isFinite(seed) ? seed : undefined,
+      seed,
       // Dev/test hook: `?timing=dev` (or `main:…,action:…,…`) starts this
       // game with clocks. Absent = untimed, as every game is today.
       timing: timingFromQuery(),
@@ -771,11 +806,12 @@ function crLobbySeated(seated) {
 }
 
 function crCreate(side) {
-  const seed = parseInt($("cr-seed").value, 10);
+  const seed = seedFromBox("cr-seed");
+  if (seed === false) return;
   send({
     type: "lobby-create",
     side,
-    seed: Number.isFinite(seed) ? seed : undefined,
+    seed,
     deck: crDeck(side),
     timing: crTiming(),
   });
@@ -954,13 +990,15 @@ function renderCrLobbies(list) {
 }
 
 $("btn-local").onclick = () => {
+  // Before the socket, for the same reason as the CR door above.
+  const seed = seedFromBox("seed");
+  if (seed === false) return;
   mode = "local";
   connect("/ws/local", () => {
-    const seed = parseInt($("seed").value, 10);
     send({
       type: "start",
       side: mySide,
-      seed: Number.isFinite(seed) ? seed : undefined,
+      seed,
       deck_id: selectedDeck ? selectedDeck.id : undefined,
     });
   });

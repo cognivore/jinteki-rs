@@ -1145,7 +1145,16 @@ pub async fn start(
         Some("corp") => Side::Corp,
         _ => Side::Runner,
     };
-    let seed = v["seed"].as_u64().unwrap_or_else(rand::random);
+    // The seed arrives as the digits the player typed (see
+    // `crate::local::seed_from_wire`): a u64 does not fit a JavaScript
+    // number, so the client never turns it into one.
+    let seed = match crate::local::seed_from_wire(v) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::local::send_err(ws, &e).await;
+            return None;
+        }
+    };
     let setup = match eternal_setup(seed) {
         Ok(s) => s,
         Err(r) => {
