@@ -133,7 +133,7 @@ pub enum TriggerCond {
     CardPlayed {
         by: Option<Side>,
         of_types: Vec<CardType>,
-        of_subtypes: Vec<&'static str>,
+        of_subtypes: Vec<crate::subtype::Subtype>,
         criteria: Vec<crate::instr::TargetFilter>,
         other_than_source: bool,
         also_installed: bool,
@@ -168,7 +168,7 @@ pub enum TriggerCond {
     /// other subtype query — and `requires` carries 9.6.5c requirements,
     /// including the zone statement ("install this program **from your heap**")
     /// that 9.1.8b reads to keep the ability active where it can act.
-    EncounterBegins { of_subtypes: Vec<&'static str>, requires: Vec<TriggerRequirement> },
+    EncounterBegins { of_subtypes: Vec<crate::subtype::Subtype>, requires: Vec<TriggerRequirement> },
     /// CR 6.9.4g: "Whenever the Runner approaches a server." (Formicary class
     /// — the last step of the Movement Phase, so the reaction window that
     /// follows it is not one a phase BEGINNING opened, which is what 6.8.2c
@@ -324,7 +324,7 @@ pub enum TriggerCond {
     /// `requires` is 9.6.5c's state stipulation ("…**during a run**").
     CorpRezzesCard {
         of_types: Vec<CardType>,
-        of_subtypes: Vec<&'static str>,
+        of_subtypes: Vec<crate::subtype::Subtype>,
         criteria: Vec<crate::instr::TargetFilter>,
         requires: Vec<TriggerRequirement>,
     },
@@ -684,7 +684,7 @@ pub enum TriggerCond {
     CardInstalledBy {
         side: Side,
         of_types: Vec<CardType>,
-        of_subtypes: Vec<&'static str>,
+        of_subtypes: Vec<crate::subtype::Subtype>,
         into_remote_server: bool,
         requires: Vec<TriggerRequirement>,
     },
@@ -1169,7 +1169,7 @@ pub enum TriggerRequirement {
     /// flag is checked when the ability is offered, and this sentence asks
     /// after "+X strength" has already resolved. Written as the flag, the
     /// card could never pump itself up to a barrier it did not already match.
-    CanInterfaceWithEncounteredIce { required_subtype: Option<&'static str> },
+    CanInterfaceWithEncounteredIce { required_subtype: Option<crate::subtype::Subtype> },
     /// CR 6.9.2b: "…**after an approach during which that ice was rezzed**"
     /// (Nasir Meidan). A 9.6.5c requirement listed inside an encounter
     /// condition, asked of the approach the encounter directly follows: the
@@ -1541,7 +1541,7 @@ pub enum TimingRestriction {
     /// All three stipulations are content on this one atom (§12 rule 2), and
     /// the empty value of each is a sentence that makes no such stipulation.
     EncounterOnly {
-        required_subtype: Option<&'static str>,
+        required_subtype: Option<crate::subtype::Subtype>,
         required_choice: Option<&'static str>,
         required_self: bool,
     },
@@ -1551,7 +1551,7 @@ pub enum TimingRestriction {
     /// approached ice as rezzed, `Some(false)` as unrezzed ("the unrezzed
     /// piece of ice the Runner is approaching", AgInfusion), and `None` is a
     /// sentence that says neither.
-    ApproachOnly { required_subtype: Option<&'static str>, rezzed: Option<bool> },
+    ApproachOnly { required_subtype: Option<crate::subtype::Subtype>, rezzed: Option<bool> },
     /// 9.3.3c: "Limits on when, WHERE, or how often an ability can be used
     /// are restrictions." An ability stating the zone it works from — "Play
     /// this operation **from Archives**" (Petty Cash) — can only be used
@@ -1654,7 +1654,7 @@ pub enum StaticDecl {
     /// The criteria are read shallowly (deviation 47's class): this
     /// declaration is gathered inside `char_effects`, which is the pipeline a
     /// deep `HasSubtype` would ask, so a subtype criterion here reads PRINTED
-    /// subtypes and a piece of ice that merely gained "bioroid" is not
+    /// subtypes and a piece of ice that merely gained `Subtype::Bioroid` is not
     /// described by it.
     StrengthModMatching { criteria: Vec<crate::instr::TargetFilter>, delta: i32 },
     /// CR 9.1.9a: "<the related card> loses all of its abilities." The
@@ -1668,7 +1668,7 @@ pub enum StaticDecl {
     /// ability removes one instance of a subtype it also prints.) 2.16.5
     /// counts instances, so removing one instance of a doubly-added subtype
     /// leaves the card with it.
-    SubtypeModSelf { add: Vec<&'static str>, remove: Vec<&'static str> },
+    SubtypeModSelf { add: Vec<crate::subtype::Subtype>, remove: Vec<crate::subtype::Subtype> },
     /// CR 9.1.9a: "<the described cards> lose all of their abilities."
     /// (Direct Access class: "identity cards do not have abilities".) The
     /// described set is the shared criteria vocabulary, so the whole class is
@@ -2833,7 +2833,7 @@ pub fn trigger_matches(
     // Whether an object named by the change has a subtype the condition
     // stipulates (2.16) — read through the 9.12.1b pipeline, so a subtype an
     // active effect granted counts.
-    has_subtype: impl Fn(ObjectId, &'static str) -> bool,
+    has_subtype: impl Fn(ObjectId, crate::subtype::Subtype) -> bool,
     // CR 9.10.3: whether an object named by the change matches the value the
     // SOURCE is maintaining under a key the condition stipulates — the same
     // question `TargetFilter::MatchesMaintainedChoice` asks of a description,
@@ -2869,7 +2869,7 @@ fn trigger_matches_dyn(
     server_of_source: Option<ServerId>,
     trashed_is_corp: &dyn Fn(ObjectId) -> bool,
     card_type_of: &dyn Fn(ObjectId) -> Option<crate::object::CardType>,
-    has_subtype: &dyn Fn(ObjectId, &'static str) -> bool,
+    has_subtype: &dyn Fn(ObjectId, crate::subtype::Subtype) -> bool,
     matches_choice: &dyn Fn(ObjectId, &'static str) -> bool,
     matches_criteria: &dyn Fn(ObjectId, &[crate::instr::TargetFilter]) -> bool,
 ) -> bool {
@@ -2997,7 +2997,7 @@ fn trigger_matches_dyn(
             by.is_none_or(|b| b == *side)
                 && (of_types.is_empty()
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
-                && of_subtypes.iter().all(|s| has_subtype(*obj, s))
+                && of_subtypes.iter().all(|s| has_subtype(*obj, *s))
                 && (!*other_than_source || *obj != source.id)
                 // 9.10.3 / 2.1.4: "a copy of that card" — the card that was
                 // played or installed is compared against what the source is
@@ -3058,7 +3058,7 @@ fn trigger_matches_dyn(
             GameChange::EncounterBegan { ice, .. },
         ) => {
             cite!("rule_subtypes_active");
-            of_subtypes.iter().all(|s| has_subtype(*ice, s))
+            of_subtypes.iter().all(|s| has_subtype(*ice, *s))
         }
         (
             TriggerCond::PlayerPaysCredits { side, caused_by, .. },
@@ -3137,7 +3137,7 @@ fn trigger_matches_dyn(
         ) => {
             cite!("rule_rez_in_paw");
             (of_types.is_empty() || of_types.contains(card_type))
-                && of_subtypes.iter().all(|s| has_subtype(*obj, s))
+                && of_subtypes.iter().all(|s| has_subtype(*obj, *s))
                 // §12 rule 5: the rest of what the sentence says about the
                 // card, asked the way a description asks it.
                 && matches_criteria(*obj, criteria)
@@ -3521,7 +3521,7 @@ fn trigger_matches_dyn(
             side == s
                 && (of_types.is_empty()
                     || card_type_of(*obj).is_some_and(|t| of_types.contains(&t)))
-                && of_subtypes.iter().all(|s| has_subtype(*obj, s))
+                && of_subtypes.iter().all(|s| has_subtype(*obj, *s))
                 // 4.6.6b + 4.6.8: where the install went, read from the record
                 // so that a card which has since moved still answers for the
                 // install it made.

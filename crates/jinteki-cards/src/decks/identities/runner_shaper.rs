@@ -6,6 +6,8 @@
 //! — it lives in `decks/gauntlet.rs`, because that deck plays it — and
 //! everything else in the faction lands here.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// One installed piece of ice — the description Tāo Salonga's sentence makes
@@ -36,7 +38,7 @@ pub fn akiko_nisei() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Clone"])
+        .subtypes(&[Subtype::Clone])
         .link(1)
         .text("Whenever you breach R&D, you and the Corp secretly spend 0[credit], 1[credit], or 2[credit]. Reveal spent credits. If you and the Corp spent the same number of credits, access 1 additional card.")
         .when(breaches_server_if(ServerId::Rnd, &[]), [psi_game([additional_accesses(1)], [])])
@@ -59,7 +61,7 @@ pub fn exile() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("Whenever you install a program from your heap, draw 1 card.")
         .when(installs_a_from(Runner, CardType::Program, the_heap()), [draw(Runner, 1)])
@@ -89,7 +91,7 @@ pub fn hayley_kaplan() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("The first time you install a card each turn, you may install another card of the same type from your grip (paying its install cost).")
         .may_when_first_each_turn(
             installs_a_card(Runner),
@@ -120,11 +122,11 @@ pub fn rielle_kit_peddler() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("The first time each turn you encounter a piece of ice, it gains code gate for the remainder of this run.")
         .when_first_each_turn(
             encounters_any_ice(),
-            [gains_subtypes(encountered_ice(), &["Code Gate"], WantedDuration::ThisRun)],
+            [gains_subtypes(encountered_ice(), &[Subtype::CodeGate], WantedDuration::ThisRun)],
         )
         .named("transhuman")
         .build()
@@ -145,7 +147,7 @@ pub fn the_professor() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("The first copy of each program in this deck does not count against your influence limit.")
         .build()
 }
@@ -174,7 +176,7 @@ pub fn tao_salonga() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Whenever an agenda is scored or stolen, you may swap 2 installed pieces of ice.")
         .may_when(
             corp_scores_agenda(),
@@ -212,7 +214,7 @@ pub fn captain_padma_isbister() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("The first time each turn a run on R&D begins, you may charge 1 of your installed cards. (Add 1 power counter to a card that already has one.)")
         .may_when_first_each_turn(
             run_begins_on(&[ServerId::Rnd]),
@@ -253,7 +255,7 @@ pub fn hiram_svensson() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Whenever you install or trash a piece of hardware (from any location), look at the top card of R&D.")
         .when(
             installs_a(Runner, CardType::Hardware),
@@ -291,7 +293,7 @@ pub fn the_collective() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Cybernetic"])
+        .subtypes(&[Subtype::Cybernetic])
         .link(1)
         .text("The first time you perform the same action three times in a row each turn, gain [click].")
         .when_first_each_turn(same_action_in_a_row(Runner, 3), [gain_clicks(Runner, 1)])
@@ -342,13 +344,13 @@ pub fn kabonesa_wu() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .link(1)
         .text("[click]: Search your stack for a non-virus program and install it, lowering its install cost by 1[credit], then shuffle your stack. If that program is still installed when your turn ends, remove it from the game.")
         .paid(
             clicks(1),
             [
-                search_stack(&[of_type(CardType::Program), non(with_subtype("Virus"))], 1),
+                search_stack(&[of_type(CardType::Program), non(with_subtype(Subtype::Virus))], 1),
                 install_paying_less(
                     found_by_search(),
                     InstallDest::RunnerChoiceHostOrRig,
@@ -386,7 +388,7 @@ pub fn kate_mac_mccaffrey() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("Lower the install cost of the first program or piece of hardware you install each turn by 1.")
         .declares([first_installed_each_turn_costs_less(
@@ -425,7 +427,7 @@ pub fn nasir_meidan() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .link(1)
         .text("Whenever you encounter a piece of ice after an approach during which that ice was rezzed, lose all credits in your credit pool. Gain credits equal to the rez cost of that ice.")
         .when(
@@ -459,7 +461,7 @@ pub fn jamie_bzzz_micken() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Draft format only.")
         .text("If you have more [shaper] cards installed than any other faction, when you install a card the first time each turn, draw 1 card.")
         .when_first_each_turn(
@@ -503,11 +505,11 @@ pub fn ele_smoke_scovak() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["G-mod", "Stealth"])
+        .subtypes(&[Subtype::GMod, Subtype::Stealth])
         .text("1[recurring-credit]")
         .text("Use this credit to pay for using icebreakers.")
         .recurring_credits(1)
-        .credits_only_for_using(&[with_subtype("Icebreaker")])
+        .credits_only_for_using(&[with_subtype(Subtype::Icebreaker)])
         .build()
 }
 
@@ -534,7 +536,7 @@ pub fn lat_ethical_freelancer() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("When your discard phase ends, if you have the same number of cards in your grip as the Corp has in HQ, you may draw 1 card.")
         .may_when(
@@ -572,7 +574,7 @@ pub fn jesminder_sareen() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("[interrupt] → The first time each run you would take 1 or more tags, prevent 1 tag.")
         .interrupt_first_each_run(would_take_tags(), [avoid_tags(1)])
         .named("girl behind the curtain")
@@ -615,7 +617,7 @@ pub fn arissana_rocha_nahu() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Once per turn → 0[credit]: Install 1 program from your grip (paying its install cost). Use this ability only during a run. When that run ends, trash that program if it is not a trojan.")
         .paid_once_per_turn_during_a_run(
             credits(0),
@@ -629,7 +631,7 @@ pub fn arissana_rocha_nahu() -> Card {
                     false,
                     false,
                     [if_met(
-                        &[earlier_choice_matches(0, &[non(with_subtype("Trojan"))])],
+                        &[earlier_choice_matches(0, &[non(with_subtype(Subtype::Trojan))])],
                         [trash(earlier_choice(0))],
                     )],
                 ),
@@ -671,7 +673,7 @@ pub fn magdalene_keino_chemutai() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("Whenever you discard cards to reach your maximum hand size, you may install 1 program or piece of hardware from among those cards.")
         .may_when(
             discards_cards_to_reach_maximum_hand_size(Runner),
@@ -710,7 +712,7 @@ pub fn dewi_subrotoputri() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Whenever you make a successful run, if your [mu] is full, you may flip this identity and gain 1[credit].")
         .may_when(
             makes_successful_run_if(&[at_most(unused_mu(), 0)]),
@@ -736,7 +738,7 @@ pub fn dewi_subrotoputri_shadow_guide() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Whenever you make a successful run, if you have at least 1 unused [mu], you may flip this identity and draw 1 card.")
         .may_when(
             makes_successful_run_if(&[at_least(unused_mu(), 1)]),
@@ -766,7 +768,7 @@ pub fn ayla_bios_rahim() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Before drawing your starting hand, set aside the top 6 cards of your stack facedown. (You may look at those cards at any time.) Shuffle 2 of those cards into your stack.")
         .text("[click]: Add 1 card set aside with this identity to your grip.")
         .when(

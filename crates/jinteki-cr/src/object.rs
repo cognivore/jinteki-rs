@@ -270,7 +270,7 @@ pub struct PrintedCard {
     /// begins; a faction is a runtime characteristic too, because 1.5.4b's
     /// identity references are stated in terms of it.
     pub faction: Option<&'static str>,
-    pub subtypes: Vec<&'static str>,
+    pub subtypes: Vec<crate::subtype::Subtype>,
     /// CR 2.7: strength (ice and icebreakers).
     pub strength: Option<i32>,
     /// CR 2.3: play/install/rez cost as printed.
@@ -667,8 +667,8 @@ pub enum CharOp {
     IncreaseAgendaPoints(i32),
     DecreaseAgendaPoints(i32),
     /// 9.12.1b add/remove by counting.
-    AddSubtype(&'static str),
-    RemoveSubtype(&'static str),
+    AddSubtype(crate::subtype::Subtype),
+    RemoveSubtype(crate::subtype::Subtype),
     /// "…gains the subtypes of <that card>" (Mother Goddess class): add one
     /// instance of every subtype the named object has *after* its own
     /// characteristics are computed. This is the 9.12.1d dependency in
@@ -704,7 +704,7 @@ pub struct Effective {
     /// for a card that prints none — 2.5.1: "the agenda point value appears
     /// only on agendas".
     pub agenda_points: Option<i32>,
-    pub subtypes: BTreeSet<&'static str>,
+    pub subtypes: BTreeSet<crate::subtype::Subtype>,
     /// Indexes into `printed.abilities` that are present (9.1.9a: a lost
     /// ability is completely ignored).
     pub ability_present: Vec<bool>,
@@ -851,7 +851,8 @@ fn compute_effective_inner(
     }
 
     cite!("rule_modify_subtypes");
-    let mut adds: std::collections::BTreeMap<&'static str, i32> = std::collections::BTreeMap::new();
+    let mut adds: std::collections::BTreeMap<crate::subtype::Subtype, i32> =
+        std::collections::BTreeMap::new();
     for s in &obj.printed.subtypes {
         *adds.entry(*s).or_insert(0) += 1;
     }
@@ -864,7 +865,7 @@ fn compute_effective_inner(
                 if !objects.contains_key(&from) {
                     continue;
                 }
-                let copied: BTreeSet<&'static str> = if visiting.contains(&from) {
+                let copied: BTreeSet<crate::subtype::Subtype> = if visiting.contains(&from) {
                     objects[&from].printed.subtypes.iter().copied().collect()
                 } else {
                     compute_effective_inner(objects, effects, from, visiting).subtypes

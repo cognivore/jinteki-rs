@@ -799,8 +799,8 @@ pub enum Instruction {
     /// counts instances, so an add and a printed subtype coexist.
     ModifySubtypes {
         target: TargetSpec,
-        add: Vec<&'static str>,
-        remove: Vec<&'static str>,
+        add: Vec<crate::subtype::Subtype>,
+        remove: Vec<crate::subtype::Subtype>,
         duration: crate::lingering::WantedDuration,
     },
     /// "The Runner loses N memory units until end of turn." (Bad Times.)
@@ -1902,7 +1902,7 @@ pub enum ChoiceSpec {
     Object(TargetSpec),
     /// "…this ice subtype." (Pelangi class.) As with `Server`, the choice
     /// between subtypes is an `Instruction::ChooseOne`.
-    Subtype(&'static str),
+    Subtype(crate::subtype::Subtype),
     /// CR 2.15.2: "name **asset**, **ice**, **operation** or **upgrade**"
     /// (Embezzle), "name a card type" (Azmari EdTech, Falsified Credentials,
     /// Ibrahim Salem). A card has exactly one type and there are ten of them,
@@ -2242,14 +2242,14 @@ pub enum TargetFilter {
     CardTypeIs(CardType),
     /// CR 2.16: "a virus program", "a region" — an effective subtype
     /// (9.12.1b counting applies through the characteristics pipeline).
-    HasSubtype(&'static str),
+    HasSubtype(crate::subtype::Subtype),
     /// CR 2.16: "…**virus or weapon** cards" (Asmund Pudlat) — ANY of these
     /// subtypes. The criteria of a description are a conjunction, so a
     /// printed "or" between subtypes cannot be two atoms; the disjunction is
-    /// content on one (§12 rule 2). A `&'static [&'static str]` rather than a
+    /// content on one (§12 rule 2). A `&'static [Subtype]` rather than a
     /// `Vec` so the filter vocabulary stays `Copy`, which is what lets a
     /// criterion be read wherever an object is examined.
-    HasAnySubtype(&'static [&'static str]),
+    HasAnySubtype(&'static [crate::subtype::Subtype]),
     /// CR 2.3: "…with printed install/rez/play cost N or lower".
     PrintedCostAtMost(u32),
     /// CR 8.1.2: "a rezzed piece of ice", "a rezzed card" — an installed

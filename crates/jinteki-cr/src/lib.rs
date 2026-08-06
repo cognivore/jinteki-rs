@@ -25,6 +25,7 @@ pub mod instr;
 pub mod lingering;
 pub mod object;
 pub mod plan;
+pub mod subtype;
 pub mod testkit;
 pub mod timing;
 pub mod view;
@@ -45,6 +46,7 @@ pub const EMBEDDED_SOURCES: &[(&str, &str)] = &[
     ("lingering.rs", include_str!("lingering.rs")),
     ("object.rs", include_str!("object.rs")),
     ("plan.rs", include_str!("plan.rs")),
+    ("subtype.rs", include_str!("subtype.rs")),
     ("testkit.rs", include_str!("testkit.rs")),
     ("timing.rs", include_str!("timing.rs")),
     ("view.rs", include_str!("view.rs")),
@@ -54,4 +56,5 @@ pub const EMBEDDED_SOURCES: &[(&str, &str)] = &[
 
 pub use decision::{DecisionAnswer, DecisionSpec, GameResult, Yield};
 pub use object::{ObjectId, ServerId, Side};
+pub use subtype::Subtype;
 pub use vm::{GameSetup, Vm};

@@ -7,6 +7,8 @@
 //! one and carries the other in its CR 1.5.4a pile — and everything else in
 //! the faction lands here.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// 419: Amoral Scammer — Identity: Natural. Link 1.
@@ -33,7 +35,7 @@ pub fn amoral_scammer() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("The first time the Corp installs a card each turn, you may expose that card unless the Corp pays 1[credit].")
         .may_when_first_each_turn(
@@ -56,7 +58,7 @@ pub fn armand_geist_walker() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .link(1)
         .text("Whenever you use a [trash] ability, draw 1 card.")
         .when(uses_a_trash_symbol_ability(Runner), [draw(Runner, 1)])
@@ -80,7 +82,7 @@ pub fn barry_baz_wong() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("Whenever the Corp rezzes a piece of ice, you may install 1 resource or piece of hardware from your grip.")
         .may_when(
             corp_rezzes_a(CardType::Ice),
@@ -113,7 +115,7 @@ pub fn gabriel_santiago() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("The first time you make a successful run on HQ each turn, gain 2[credit].")
         .when_first_each_turn(makes_successful_run_on(&[ServerId::Hq]), [gain(Runner, 2)])
         .named("the first HQ run of the turn")
@@ -136,7 +138,7 @@ pub fn iain_stirling() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("When your turn begins, gain 2[credit] if the Corp has more scored agenda points than you.")
         .when(turn_begins_if(Runner, &[agenda_points_ahead(Corp)]), [gain(Runner, 2)])
@@ -161,7 +163,7 @@ pub fn silhouette() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("The first time you make a successful run on HQ each turn, you may expose 1 card.")
         .may_when_first_each_turn(
             makes_successful_run_on(&[ServerId::Hq]),
@@ -187,7 +189,7 @@ pub fn los() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("The first time the Corp rezzes a piece of ice each turn, gain 2[credit].")
         .when_first_each_turn(corp_rezzes_a(CardType::Ice), [gain(Runner, 2)])
         .named("the first ice rez of the turn")
@@ -212,7 +214,7 @@ pub fn liza_talking_thunder() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("The first time you make a successful run on a central server each turn, draw 2 cards and take 1 tag.")
         .when_first_each_turn(
             makes_successful_run_on_a_central_server(),
@@ -244,7 +246,7 @@ pub fn laramy_fisk() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("The first time you make a successful run on a central server each turn, you may force the Corp to draw 1 card.")
         .may_when_first_each_turn(makes_successful_run_on_a_central_server(), [draw(Corp, 1)])
         .named("the first central run of the turn")
@@ -274,7 +276,7 @@ pub fn leela_patel() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Whenever an agenda is scored or stolen, add 1 unrezzed card to HQ.")
         .when(corp_scores_agenda(), [add_to_hand(choose(1, &[unrezzed()]))])
         .named("an agenda was scored")
@@ -303,7 +305,7 @@ pub fn nyusha_sintashta() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("When your turn begins, identify your mark. (If you don’t have a mark, a random central server becomes your mark for this turn.)")
         .text("The first time each turn you make a successful run on your mark, gain [click].")
         .when(turn_begins(Runner), [identify_mark()])
@@ -331,7 +333,7 @@ pub fn virtual_intelligence_pi() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Digital"])
+        .subtypes(&[Subtype::Digital])
         .text("Once per turn → [click], 1[credit]: Draw 1 card and remove 1 tag.")
         .paid_once_per_turn(
             clicks(1).plus_cost(credits(1)),
@@ -369,7 +371,7 @@ pub fn mercury() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Bioroid"])
+        .subtypes(&[Subtype::Bioroid])
         .text("Once per turn → When you breach HQ or R&D during a run, if you did not break any subroutines during that run, you may access 1 additional card.")
         .may_when_once_per_turn(
             breaches_one_of_if(
@@ -405,15 +407,15 @@ pub fn mercury() -> Card {
 pub fn muslihat() -> Card {
     let an_icebreaker_or_a_run_event = || {
         any_of(&[
-            &[with_subtype("Icebreaker")],
-            &[of_type(CardType::Event), with_subtype("Run")],
+            &[with_subtype(Subtype::Icebreaker)],
+            &[of_type(CardType::Event), with_subtype(Subtype::Run)],
         ])
     };
     card("MuslihaT: Multifarious Marketeer")
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("When your turn begins, look at the top card of your stack. If that card is an icebreaker or a run event, you may reveal it and add it to your grip.")
         .when(
             turn_begins(Runner),
@@ -459,7 +461,7 @@ pub fn zahya_sadeghi() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("Once per turn → When a run on HQ or R&D ends, you may gain 1[credit] for each time you accessed a card during that run.")
         .may_when_once_per_turn(
             run_on_ends(&[ServerId::Hq, ServerId::Rnd]),
@@ -498,13 +500,13 @@ pub fn az_mccaffrey() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .link(1)
         .text("The first job resource, connection resource, or piece of hardware you install each turn costs 1[credit] less to install.")
         .declares([first_installed_each_turn_costs_less(
             &[any_of(&[
-                &[of_type(CardType::Resource), with_subtype("Job")],
-                &[of_type(CardType::Resource), with_subtype("Connection")],
+                &[of_type(CardType::Resource), with_subtype(Subtype::Job)],
+                &[of_type(CardType::Resource), with_subtype(Subtype::Connection)],
                 &[of_type(CardType::Hardware)],
             ])],
             1,
@@ -533,12 +535,12 @@ pub fn khan() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("The first time you pass a piece of ice each turn, you may install an icebreaker from your hand, lowering the install cost by 1.")
         .may_when_first_each_turn(
             passes_any_ice(),
             [install_paying_less(
-                choose(1, &[in_hand_of(Runner), with_subtype("Icebreaker")]),
+                choose(1, &[in_hand_of(Runner), with_subtype(Subtype::Icebreaker)]),
                 InstallDest::RunnerChoiceHostOrRig,
                 1,
             )],
@@ -573,7 +575,7 @@ pub fn boris_syfr_kovac() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("Draft format only.")
         .text("If you have more [criminal] cards installed than any other faction, when your turn begins, remove 1 tag.")
         .when(
@@ -613,10 +615,10 @@ pub fn nero_severn() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("Once per turn → When you encounter a sentry, you may jack out.")
-        .may_when_once_per_turn(encounters_a("Sentry", &[]), [jack_out()])
+        .may_when_once_per_turn(encounters_a(Subtype::Sentry, &[]), [jack_out()])
         .named("information broker")
         .build()
 }
@@ -649,7 +651,7 @@ pub fn steve_cambridge() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("The first time each turn you make a successful run on HQ, you may choose 2 cards in your heap. If you do, the Corp removes 1 of those cards from the game, then you add the other card to your grip.")
         .may_when_first_each_turn(
             makes_successful_run_on(&[ServerId::Hq]),

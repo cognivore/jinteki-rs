@@ -6,6 +6,8 @@
 //!
 //! CR 2.13.2 gives Apex a faction of its own with a single identity in it.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Apex: Invasive Predator — Identity: Digital. Link 0.
@@ -48,10 +50,10 @@ pub fn apex() -> Card {
         .runner()
         .identity()
         .faction("Apex")
-        .subtypes(&["Digital"])
+        .subtypes(&[Subtype::Digital])
         .text("You cannot install non-virtual resources.")
         .text("When your turn begins, you may install 1 card from your grip facedown.")
-        .declares([cannot_install(&[of_type(CardType::Resource), non(with_subtype("Virtual"))])])
+        .declares([cannot_install(&[of_type(CardType::Resource), non(with_subtype(Subtype::Virtual))])])
         .may_when(
             turn_begins(Runner),
             [install_facedown(choose(1, &[in_hand_of(Runner)]), InstallDest::Rig)],

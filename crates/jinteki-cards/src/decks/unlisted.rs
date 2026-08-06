@@ -13,6 +13,8 @@
 //! deck odometer keeps measuring the decks, and `jinteki_cards::find` reaches
 //! them like any other card.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// DJ Fenris — Resource: Connection. Install 3. ◆
@@ -60,7 +62,7 @@ pub fn dj_fenris() -> Card {
         .runner()
         .resource()
         .faction("Neutral")
-        .subtypes(&["Connection"])
+        .subtypes(&[Subtype::Connection])
         .cost(3)
         .unique()
         .text("Host a g-mod identity that does not match the faction of your identity on DJ Fenris when he is installed. Remove hosted identity from the game if DJ Fenris is uninstalled.")
@@ -74,7 +76,7 @@ pub fn dj_fenris() -> Card {
                         1,
                         &[
                             in_identity_pile_of(Runner),
-                            with_subtype("G-mod"),
+                            with_subtype(Subtype::GMod),
                             faction_matching_identity_of(Runner, false),
                         ],
                     ),
@@ -104,7 +106,7 @@ pub fn chaos_theory() -> Card {
         .runner()
         .identity()
         .faction("Shaper")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("+1[mu]")
         .declares([plus_memory(1)])
         .build()
@@ -160,7 +162,7 @@ pub fn reclamation_order() -> Card {
         .corp()
         .operation()
         .faction("Haas-Bioroid")
-        .subtypes(&["Double"])
+        .subtypes(&[Subtype::Double])
         .cost(1)
         .text("As an additional cost to play this operation, spend [click].")
         .text("Name a card other than Reclamation Order. Reveal any number of copies of the named card from Archives and add them to HQ.")
@@ -196,7 +198,7 @@ pub fn salems_hospitality() -> Card {
         .corp()
         .operation()
         .faction("NBN")
-        .subtypes(&["Alliance", "Gray Ops"])
+        .subtypes(&[Subtype::Alliance, Subtype::GrayOps])
         .cost(2)
         .text("This operation costs 0 influence if you have 6 or more non-<strong>alliance</strong> [nbn] cards in your deck.")
         .text("Choose a card name. The Runner reveals the grip and trashes all cards with the chosen name revealed this way.")
@@ -232,7 +234,7 @@ pub fn azmari_edtech() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When your turn ends, you may name a card type. Gain 2[credit] the first time each turn the Runner plays or installs a card that has the type you last named this way.")
         .may_when(turn_ends(Corp), [name_a_card_type("azmari type")])
         .when_first_each_turn(
@@ -287,7 +289,7 @@ pub fn ibrahim_salem() -> Card {
         .corp()
         .asset()
         .faction("NBN")
-        .subtypes(&["Alliance", "Character"])
+        .subtypes(&[Subtype::Alliance, Subtype::Character])
         .cost(2)
         .trash_cost(5)
         .unique()
@@ -339,7 +341,7 @@ pub fn wari() -> Card {
                     trash_this_card(),
                     name_one_of_these_subtypes_for(
                         "wari subtype",
-                        &["Sentry", "Code Gate", "Barrier"],
+                        &[Subtype::Sentry, Subtype::CodeGate, Subtype::Barrier],
                         WantedDuration::ThisRun,
                     ),
                 ),
@@ -377,7 +379,7 @@ pub fn whistleblower() -> Card {
         .runner()
         .resource()
         .faction("Neutral")
-        .subtypes(&["Connection"])
+        .subtypes(&[Subtype::Connection])
         .cost(2)
         .unique()
         .text("Whenever you make a successful run, you may trash this resource to choose a card name. The next time this run you access an agenda with the chosen name, steal it, ignoring all costs. <em>(You are no longer accessing it.)</em>")
@@ -453,7 +455,7 @@ pub fn complete_image() -> Card {
         .corp()
         .operation()
         .faction("Jinteki")
-        .subtypes(&["Terminal", "Gray Ops"])
+        .subtypes(&[Subtype::Terminal, Subtype::GrayOps])
         .cost(4)
         .trash_cost(2)
         .text("Play only if the Runner has 3 or more agenda points and they made a successful run during their last turn.")
@@ -492,7 +494,7 @@ pub fn embezzle() -> Card {
         .runner()
         .event()
         .faction("Criminal")
-        .subtypes(&["Run", "Sabotage"])
+        .subtypes(&[Subtype::Run, Subtype::Sabotage])
         .cost(1)
         .text("Run HQ. If successful, instead of breaching HQ, name asset, ice, operation or upgrade, then reveal 2 cards from HQ at random. Trash each revealed card that has the named type, then gain 4[credit] for each card trashed this way.")
         .play([run(ServerId::Hq)])
@@ -563,7 +565,7 @@ pub fn asmund_pudlat() -> Card {
         .runner()
         .resource()
         .faction("Criminal")
-        .subtypes(&["Connection", "Seedy"])
+        .subtypes(&[Subtype::Connection, Subtype::Seedy])
         .cost(2)
         .unique()
         .text("When you install this resource, search your stack for up to 2 <strong>virus</strong> or <strong>weapon</strong> cards with different names. Host those cards faceup on this resource. <em>(They are not installed.)</em>")
@@ -571,7 +573,7 @@ pub fn asmund_pudlat() -> Card {
         .when(
             installed(),
             [
-                search_stack(&[with_any_subtype(&["Virus", "Weapon"]), with_different_names()], 2),
+                search_stack(&[with_any_subtype(&[Subtype::Virus, Subtype::Weapon]), with_different_names()], 2),
                 host_faceup(found_by_search(), this_card()),
             ],
         )
@@ -618,7 +620,7 @@ pub fn trickster_taka() -> Card {
         .runner()
         .resource()
         .faction("Anarch")
-        .subtypes(&["Companion", "Stealth", "Virtual"])
+        .subtypes(&[Subtype::Companion, Subtype::Stealth, Subtype::Virtual])
         .cost(1)
         .unique()
         .text("When your turn begins and whenever you steal an agenda, place 1[credit] on this resource.")

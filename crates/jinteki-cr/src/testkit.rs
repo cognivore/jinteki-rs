@@ -6,6 +6,8 @@
 //! hooks, no state manufacture (ARCHITECTURE §12 rules 3 and 5). Driving
 //! those cards is `plan`'s job, not this module's.
 
+use crate::subtype::Subtype;
+
 use crate::ability::{
     AbilityClass, AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl,
     TimingRestriction, TriggerCond, TriggerRequirement,
@@ -54,7 +56,7 @@ pub fn vanilla_ice(name: &'static str, rez: u32, strength: i32) -> PrintedCard {
 /// the run reach the other side of it.
 pub fn subtyped_ice(
     name: &'static str,
-    subtypes: Vec<&'static str>,
+    subtypes: Vec<crate::subtype::Subtype>,
     rez: u32,
     strength: i32,
 ) -> PrintedCard {
@@ -621,7 +623,7 @@ pub fn pump_breaker(name: &'static str, base_strength: i32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(base_strength);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
@@ -832,7 +834,7 @@ pub fn wotan_like(name: &'static str) -> PrintedCard {
     c.agenda_points = Some(1);
     c.abilities = vec![AbilityDef::paid(Cost::free(), vec![Instruction::GainCredits(Side::Corp, Quantity::c(1))])
         .with_timing(TimingRestriction::ApproachOnly {
-            required_subtype: Some("bioroid"),
+            required_subtype: Some(Subtype::Bioroid),
             rezzed: Some(true),
         })
         .labeled("wotan: approach-only ability")];
@@ -1475,7 +1477,7 @@ pub fn region_upgrade(name: &'static str, rez: u32) -> PrintedCard {
     // "Region", the way NSG data and every real card print it. This fixture
     // spelled it lowercase, matching a kernel that also spelled it lowercase —
     // so `like_cards` was wrong for every real card and the test still passed.
-    c.subtypes = vec!["Region"];
+    c.subtypes = vec![Subtype::Region];
     c
 }
 
@@ -1889,13 +1891,13 @@ pub fn play_operation_button(name: &'static str, card: ObjectId) -> PrintedCard 
 /// stolen", re-derived from the printed sentence.
 pub fn targeted_marketing_like(name: &'static str) -> PrintedCard {
     let mut c = operation(name, 0, vec![]);
-    c.subtypes = vec!["Current"];
+    c.subtypes = vec![Subtype::Current];
     c.abilities = vec![AbilityDef::static_ability(vec![StaticDecl::PlayedNotTrashedUntil {
         until: vec![
             TriggerCond::CardPlayed {
                 by: None,
                 of_types: vec![CardType::Operation, CardType::Event],
-                of_subtypes: vec!["Current"],
+                of_subtypes: vec![Subtype::Current],
                 criteria: Vec::new(),
                 other_than_source: true,
                 also_installed: false,
@@ -2273,17 +2275,17 @@ pub fn surveyor_like(name: &'static str) -> PrintedCard {
 /// gives it to the encountered ice for the remainder of the encounter. The
 /// choice BETWEEN subtypes is 9.11.4g's option choice, so each branch both
 /// maintains its own choice and applies the matching modification.
-pub fn pelangi_like(name: &'static str, subtypes: &[&'static str]) -> PrintedCard {
+pub fn pelangi_like(name: &'static str, subtypes: &[crate::subtype::Subtype]) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     let options: Vec<(&'static str, Vec<Instruction>)> = subtypes
         .iter()
         .map(|t| {
             (
-                *t,
+                t.as_str(),
                 vec![
                     Instruction::MaintainChoice {
                         key: "pelangi-subtype",
-                        of: crate::instr::ChoiceSpec::Subtype(t),
+                        of: crate::instr::ChoiceSpec::Subtype(*t),
                         duration: crate::lingering::WantedDuration::ThisEncounter,
                     },
                     Instruction::ModifySubtypes {
@@ -2477,7 +2479,7 @@ pub fn must_trash_by_paying_like(name: &'static str) -> PrintedCard {
 /// virus counter that trashes the accessed card at no further cost.
 pub fn imp_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
-    c.subtypes = vec!["virus"];
+    c.subtypes = vec![Subtype::Virus];
     c.abilities = vec![AbilityDef::paid(
         Cost::spend_counters(CounterKind::Virus, 1),
         vec![Instruction::TrashCards(TargetSpec::AccessedCard)],
@@ -2617,7 +2619,7 @@ pub fn mother_goddess_like(name: &'static str) -> PrintedCard {
 /// examples using this shape do not vary it.
 pub fn warden_fatuma_like(
     name: &'static str,
-    subtype: &'static str,
+    subtype: Subtype,
     sub: AbilityDef,
 ) -> PrintedCard {
     let mut c = vanilla_ice(name, 6, 8);
@@ -2643,7 +2645,7 @@ pub fn warden_fatuma_like(
 /// criteria fodder for 8.7.2a.
 pub fn virus_program(name: &'static str, cost: u32) -> PrintedCard {
     let mut c = program_cost(name, cost);
-    c.subtypes = vec!["virus"];
+    c.subtypes = vec![Subtype::Virus];
     c
 }
 
@@ -2833,7 +2835,7 @@ pub fn djinn_like(name: &'static str) -> PrintedCard {
                 zone: Zone::Deck(Side::Runner),
                 criteria: vec![
                     crate::instr::TargetFilter::CardTypeIs(CardType::Program),
-                    crate::instr::TargetFilter::HasSubtype("virus"),
+                    crate::instr::TargetFilter::HasSubtype(Subtype::Virus),
                 ],
                 count: Quantity::c(1),
                 may_fail: true,
@@ -2899,7 +2901,7 @@ pub fn off_campus_like(name: &'static str) -> PrintedCard {
         name,
         Side::Runner,
         CardType::Resource,
-        vec![crate::instr::TargetFilter::HasSubtype("connection")],
+        vec![crate::instr::TargetFilter::HasSubtype(Subtype::Connection)],
         None,
         "off-campus: hosts any number of connections",
     )
@@ -3103,7 +3105,7 @@ pub fn hosted_credit_source(name: &'static str, ty: CardType) -> PrintedCard {
 pub fn credit_cost_program(name: &'static str) -> PrintedCard {
     let mut c = program_cost(name, 0);
     c.strength = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
@@ -3341,7 +3343,7 @@ pub fn implicit_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(base);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
@@ -3360,7 +3362,7 @@ pub fn run_pump_breaker(name: &'static str, base: i32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(base);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(1),
         vec![Instruction::ModifyStrength {
@@ -3381,7 +3383,7 @@ pub fn attacked_server_breaker(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(0);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::SelfStrength(Quantity::Count(vec![
             crate::instr::TargetFilter::IceProtectingAttackedServer,
@@ -3407,7 +3409,7 @@ pub fn counter_strength_breaker(name: &'static str) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(0);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::SelfStrength(
             Quantity::base_plus_per_counter(1, 1, CounterKind::Virus),
@@ -3459,16 +3461,16 @@ pub fn abagnale_like(name: &'static str, strength: i32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(strength);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker"];
+    c.subtypes = vec![Subtype::Icebreaker];
     c.abilities = vec![
         AbilityDef::paid(Cost::trash_self(), vec![Instruction::BypassEncounteredIce])
-            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate"), required_choice: None, required_self: false })
+            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some(Subtype::CodeGate), required_choice: None, required_self: false })
             .labeled("abagnale: [trash] bypass this code gate"),
         AbilityDef::paid(Cost::credits(1), vec![Instruction::BreakSubroutines {
             subs: crate::instr::SubroutineSpec::Chosen { count: Quantity::c(1), up_to: false },
         }])
             .with_flag(AbilityFlag::Interface)
-            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("code gate"), required_choice: None, required_self: false })
+            .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some(Subtype::CodeGate), required_choice: None, required_self: false })
             .labeled("abagnale: interface break 1"),
     ];
     c
@@ -3477,7 +3479,7 @@ pub fn abagnale_like(name: &'static str, strength: i32) -> PrintedCard {
 /// A piece of ice with a subtype and one ETR subroutine.
 pub fn subtyped_etr_ice(
     name: &'static str,
-    subtype: &'static str,
+    subtype: Subtype,
     cost: u32,
     strength: i32,
 ) -> PrintedCard {
@@ -3547,7 +3549,7 @@ pub fn cleaver_like(name: &'static str, strength: i32) -> PrintedCard {
     let mut c = vanilla_runner_card(name, CardType::Program);
     c.strength = Some(strength);
     c.memory_cost = Some(1);
-    c.subtypes = vec!["icebreaker", "fracter"];
+    c.subtypes = vec![Subtype::Icebreaker, Subtype::Fracter];
     c.abilities = vec![AbilityDef::paid(
         Cost::credits(2),
         vec![Instruction::BreakSubroutines {
@@ -3555,7 +3557,7 @@ pub fn cleaver_like(name: &'static str, strength: i32) -> PrintedCard {
         }],
     )
     .with_flag(AbilityFlag::Interface)
-    .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some("barrier"), required_choice: None, required_self: false })
+    .with_timing(TimingRestriction::EncounterOnly { required_subtype: Some(Subtype::Barrier), required_choice: None, required_self: false })
     .labeled("cleaver: break up to 2 barrier subroutines")];
     c
 }
@@ -3581,7 +3583,7 @@ pub fn grappling_hook_like(name: &'static str) -> PrintedCard {
 /// and two "[sub] End the run." subroutines.
 pub fn heimdall_like(name: &'static str) -> PrintedCard {
     let mut c = vanilla_ice(name, 8, 6);
-    c.subtypes = vec!["barrier"];
+    c.subtypes = vec![Subtype::Barrier];
     c.abilities = vec![
         AbilityDef::subroutine(vec![Instruction::Damage {
             kind: DamageKind::Core,
@@ -3680,7 +3682,7 @@ pub fn tinkering_like(name: &'static str) -> PrintedCard {
             target: TargetSpec::Choose {
                 count: Quantity::c(1),
                 criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Ice)], up_to: false },
-            add: vec!["sentry", "code gate", "barrier"],
+            add: vec![Subtype::Sentry, Subtype::CodeGate, Subtype::Barrier],
             remove: Vec::new(),
             duration: crate::lingering::WantedDuration::ThisTurn,
         }],
@@ -3693,7 +3695,7 @@ pub fn tinkering_like(name: &'static str) -> PrintedCard {
 ///
 /// Simplification (§12 rule 3): the real morph ice swaps subtypes on being
 /// advanced; the counting is the whole point here.
-pub fn morph_ice(name: &'static str, prints: &'static str, loses: &'static str) -> PrintedCard {
+pub fn morph_ice(name: &'static str, prints: Subtype, loses: Subtype) -> PrintedCard {
     let mut c = vanilla_ice(name, 3, 3);
     c.subtypes = vec![prints];
     c.abilities = vec![AbilityDef { controller: None,
@@ -6339,7 +6341,7 @@ pub fn bioroid_ice(name: &'static str, rez: u32, strength: i32) -> PrintedCard {
     let mut c = PrintedCard::vanilla(name, Side::Corp, CardType::Ice);
     c.cost = Some(rez);
     c.strength = Some(strength);
-    c.subtypes = vec!["Code Gate", "Bioroid"];
+    c.subtypes = vec![Subtype::CodeGate, Subtype::Bioroid];
     c.abilities = vec![
         AbilityDef::paid(
             Cost::lose_clicks(1),

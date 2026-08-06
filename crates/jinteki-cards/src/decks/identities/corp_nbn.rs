@@ -7,6 +7,8 @@
 //! because that deck plays one and carries the other's back face — and
 //! everything else in the faction lands here.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// NBN: Reality Plus — Identity: Megacorp.
@@ -27,7 +29,7 @@ pub fn nbn_reality_plus() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("The first time each turn the Runner takes a tag, gain 2[credit] or draw 2 cards.")
         .when_first_each_turn(
             runner_takes_a_tag(),
@@ -56,7 +58,7 @@ pub fn nbn_the_world_is_yours() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Your maximum hand size is increased by 1.")
         .declares([max_hand_size_mod(1)])
         .named("the world is yours")
@@ -80,7 +82,7 @@ pub fn pravdivost_consulting() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn the Runner makes a successful run, you may place 1 advancement counter on an installed card you can advance.")
         .may_when_first_each_turn(
             makes_successful_run(),
@@ -106,9 +108,9 @@ pub fn spark_agency() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn you rez an advertisement, the Runner loses 1[credit].")
-        .when_first_each_turn(corp_rezzes_a_subtyped("Advertisement"), [lose(Runner, 1)])
+        .when_first_each_turn(corp_rezzes_a_subtyped(Subtype::Advertisement), [lose(Runner, 1)])
         .named("the first advertisement rez of the turn")
         .build()
 }
@@ -135,7 +137,7 @@ pub fn editorial_division() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn you take bad publicity, you may search R&D for 1 non-agenda black ops, gray ops, or liability card and reveal it. (Shuffle R&D after searching it.) Add that card to HQ.")
         .may_when_first_each_turn(
             takes_bad_publicity(Corp),
@@ -143,7 +145,7 @@ pub fn editorial_division() -> Card {
                 search_rnd(
                     &[
                         non(of_type(CardType::Agenda)),
-                        with_any_subtype(&["Black Ops", "Gray Ops", "Liability"]),
+                        with_any_subtype(&[Subtype::BlackOps, Subtype::GrayOps, Subtype::Liability]),
                     ],
                     1,
                 ),
@@ -178,7 +180,7 @@ pub fn information_dynamics() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Draft format only.")
         .text("If you have more [nbn] cards rezzed than any other faction, whenever an agenda is scored or stolen, give the runner 1 tag.")
         .when(corp_scores_agenda_if(&[more_nbn_rezzed()]), [give_tags(1)])
@@ -212,14 +214,14 @@ pub fn new_angeles_sol() -> Card {
     let a_current_in_hq_or_archives = || {
         choose(
             1,
-            &[with_subtype("Current"), any_of(&[&[in_hand_of(Corp)], &[in_archives()]])],
+            &[with_subtype(Subtype::Current), any_of(&[&[in_hand_of(Corp)], &[in_archives()]])],
         )
     };
     card("New Angeles Sol: Your News")
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever an agenda is scored or stolen, you may play 1 current from HQ or Archives (paying its play cost).")
         .may_when(corp_scores_agenda(), [play_card(a_current_in_hq_or_archives())])
         .named("an agenda was scored")
@@ -249,7 +251,7 @@ pub fn near_earth_hub() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn you create a remote server, draw 1 card.")
         .when_first_each_turn(creates_a_remote_server(Corp), [draw(Corp, 1)])
         .named("broadcast center")
@@ -277,7 +279,7 @@ pub fn haarpsichord_studios() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The Runner cannot steal more than one agenda each turn.")
         .declares([cannot_steal_more_than_each_turn(1)])
         .named("entertainment unleashed")
@@ -303,7 +305,7 @@ pub fn harishchandra_ent() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("While the Runner is tagged, they play with the grip revealed.")
         .declares_while(&[runner_is_tagged()], [hand_revealed(Runner)])
         .named("where you're the star")
@@ -334,7 +336,7 @@ pub fn nbn_controlling_the_message() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("The first time the Runner trashes an installed Corp card each turn, you may trace[4]. If successful, give the Runner 1 tag (cannot be avoided).")
         .may_when_first_each_turn(
             runner_trashes_an_installed_corp_card(),
@@ -374,7 +376,7 @@ pub fn gamenet() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Whenever a Corp card ability causes the Runner to spend or lose at least 1[credit] during a run, gain 1[credit].")
         .when(
             spends_or_loses_credits(Runner, &[controlled_by(Corp)], &[during_a_run()]),
@@ -414,7 +416,7 @@ pub fn synapse_global() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn a tag is removed, you may reveal and install 1 card from HQ, ignoring all costs.")
         .text("[click], remove 1 tag: Gain 2[credit].")
         .may_when_first_each_turn(
@@ -454,7 +456,7 @@ pub fn nbn_making_news() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("2[recurring-credit]")
         .text("Use these credits during trace attempts.")
         .recurring_credits(2)
@@ -496,7 +498,7 @@ pub fn epiphany_analytica() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The first time each turn the Runner steals or trashes a Corp card, place 1 power counter on this identity.")
         .text("[click], hosted power counter: Look at the top 3 cards of R&D. You may install 1 of those cards.")
         .when_first_each_turn(
@@ -541,7 +543,7 @@ pub fn sync_everything_everywhere() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("[click]: Flip this identity.")
         .text("The Runner pays 1[credit] more when spending a [click] to remove a tag (not through a card ability).")
         .paid(clicks(1), [flip_identity(Corp)])
@@ -572,7 +574,7 @@ pub fn sync_everything_everywhere_flipped() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("[click]: Flip this identity.")
         .text("You may pay 2[credit] fewer when spending a [click] to trash a resource (not through a card ability).")
         .paid(clicks(1), [flip_identity(Corp)])
@@ -632,7 +634,7 @@ pub fn acme_consulting() -> Card {
         .corp()
         .identity()
         .faction("NBN")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("The Runner is considered to have 1 additional tag (even if they have 0) during encounters with the outermost piece of ice protecting any server.")
         .declares_while(
             &[board_has(&[the_encountered_ice(), outermost_ice_of_its_server()], 1)],

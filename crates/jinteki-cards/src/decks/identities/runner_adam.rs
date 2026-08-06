@@ -10,6 +10,8 @@
 //! ordinary installed cards (1.5.3d). They are defined here beside the
 //! identity because nothing else brings them.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Adam: Compulsive Hacker — Identity: Bioroid.
@@ -30,9 +32,9 @@ pub fn adam() -> Card {
         .runner()
         .identity()
         .faction("Adam")
-        .subtypes(&["Bioroid"])
+        .subtypes(&[Subtype::Bioroid])
         .text("You start the game with 3 different directive cards installed (these cards are not considered part of your deck).")
-        .starts_the_game_with_installed(3, &[with_subtype("Directive")])
+        .starts_the_game_with_installed(3, &[with_subtype(Subtype::Directive)])
         .build()
 }
 
@@ -65,7 +67,7 @@ pub fn always_be_running() -> Card {
         .runner()
         .resource()
         .faction("Adam")
-        .subtypes(&["Directive", "Virtual"])
+        .subtypes(&[Subtype::Directive, Subtype::Virtual])
         .cost(0)
         .unique()
         .text("The first [click] you spend each turn must be spent to take the basic action to play an event or the basic action to run a server. You cannot take the action to play an event this way except if you play a run event.")
@@ -98,7 +100,7 @@ pub fn neutralize_all_threats() -> Card {
         .runner()
         .resource()
         .faction("Adam")
-        .subtypes(&["Directive", "Virtual"])
+        .subtypes(&[Subtype::Directive, Subtype::Virtual])
         .cost(0)
         .unique()
         .text("The first time each turn you access a card with a trash cost, reveal it. You must trash that card by paying its trash cost, if able.")
@@ -135,7 +137,7 @@ pub fn safety_first() -> Card {
         .runner()
         .resource()
         .faction("Adam")
-        .subtypes(&["Directive", "Virtual"])
+        .subtypes(&[Subtype::Directive, Subtype::Virtual])
         .cost(0)
         .unique()
         .text("Your maximum hand size is reduced by 2.")

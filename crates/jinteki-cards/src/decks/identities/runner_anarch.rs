@@ -5,6 +5,8 @@
 //! text alone (SYS-D-10). No Anarch identity existed before the queue, so
 //! every one of them lands here.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Alice Merchant: Clan Agitator — Identity: Cyborg. Link 0.
@@ -25,7 +27,7 @@ pub fn alice_merchant() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("The first time you make a successful run on Archives each turn, the Corp must trash 1 card from HQ.")
         .when_first_each_turn(
             makes_successful_run_on(&[ServerId::Archives]),
@@ -53,7 +55,7 @@ pub fn edward_kim() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("Trash the first operation you access each turn at no cost.")
         .when_first_each_turn(accesses_a(CardType::Operation), [trash(accessed_card())])
@@ -82,7 +84,7 @@ pub fn esa_afontov() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("The first time each turn you suffer core damage, you may draw 1 card and sabotage 2. (The Corp trashes 2 cards of their choice from HQ and/or the top of R&D.)")
         .may_when_first_each_turn(
             suffers_damage(DamageKind::Core),
@@ -109,7 +111,7 @@ pub fn maxx() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("When your turn begins, trash the top 2 cards of your stack. Draw 1 card.")
         .when(turn_begins(Runner), [trash(top_of_stack(amount(2))), draw(Runner, 1)])
         .named("maximum punk rock")
@@ -133,7 +135,7 @@ pub fn nathaniel_gnat_hall() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("When your turn begins, gain 1[credit] if you have 2 or fewer cards in your grip.")
         .when(
             turn_begins_if(Runner, &[board_has_at_most(&[in_hand_of(Runner)], 2)]),
@@ -162,10 +164,10 @@ pub fn noise() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("Whenever you install a virus program, the Corp trashes the top card of R&D.")
         .when(
-            installs_a_subtyped(Runner, CardType::Program, "Virus"),
+            installs_a_subtyped(Runner, CardType::Program, Subtype::Virus),
             [performed_by(Corp, trash(top_of_rnd(amount(1))))],
         )
         .named("hacker extraordinaire")
@@ -191,9 +193,9 @@ pub fn quetzal() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("Once per turn → 0[credit]: Break 1 barrier subroutine.")
-        .paid_once_per_turn_during_encounters_with(credits(0), "Barrier", [break_subroutines(1)])
+        .paid_once_per_turn_during_encounters_with(credits(0), Subtype::Barrier, [break_subroutines(1)])
         .named("break 1 barrier subroutine")
         .build()
 }
@@ -212,7 +214,7 @@ pub fn valencia_estevez() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("The Corp starts the game with 1 bad publicity.")
         .starting_bad_publicity(1)
         .build()
@@ -243,7 +245,7 @@ pub fn null_whistleblower() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Once per turn → When you encounter a piece of ice, you may trash 1 card from your grip. If you do, that ice gets –2 strength for the remainder of this run.")
         .when_once_per_turn(
             encounters_any_ice(),
@@ -286,7 +288,7 @@ pub fn ryo_phoenix_ono() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("The first time each turn a run becomes successful after a subroutine resolved during that run, gain 1[credit] and the Corp trashes 1 card from HQ.")
         .when_first_each_turn(
             makes_successful_run_after_subroutine_resolved(),
@@ -323,7 +325,7 @@ pub fn reina_roja() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Cyborg", "G-mod"])
+        .subtypes(&[Subtype::Cyborg, Subtype::GMod])
         .link(1)
         .text("The first piece of ice the Corp rezzes each turn costs 1[credit] more to rez.")
         .declares([first_rezzed_each_turn_costs_more(&[of_type(CardType::Ice)], 1)])
@@ -355,7 +357,7 @@ pub fn rene_loup_arcemont() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("The first time each turn you trash a card you are accessing, gain 1[credit] and draw 1 card.")
         .when_first_each_turn(
             trashes_the_card_being_accessed(Runner),
@@ -386,7 +388,7 @@ pub fn whizzard() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("3[recurring-credit]")
         .text("Use these credits to trash cards.")
         .recurring_credits(3)
@@ -427,7 +429,7 @@ pub fn wyvern() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("Draft format only.")
         .text("You must maintain the order of your heap.")
         .text("Whenever you trash a Corp card, if you have more [anarch] cards installed than any other faction, shuffle the top card of your heap into your stack.")
@@ -477,7 +479,7 @@ pub fn omar_keung() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Once per turn → [click]: Run Archives. If that run would be declared successful, change the attacked server to HQ or R&D for the remainder of that run.")
         .paid_once_per_turn(
             clicks(1),
@@ -518,7 +520,7 @@ pub fn topan() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Once per turn → [click]: Install 1 card from your grip, paying 2[credit] less. When you install that card, suffer 1 meat damage.")
         .paid_once_per_turn(
             clicks(1),
@@ -574,7 +576,7 @@ pub fn freedom_khumalo() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Cyborg"])
+        .subtypes(&[Subtype::Cyborg])
         .text("Access, once per turn → Any X virus counters: Trash the non-agenda card you are accessing. X must be equal to that card's rez or play cost.")
         .paid_access_once_per_turn(
             any_x_counters_equal_to(
@@ -610,7 +612,7 @@ pub fn hoshiko_shiro() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("When your turn ends, if you accessed a card this turn, gain 2[credit] and flip this identity.")
         .when(
             turn_ends_if(Runner, &[at_least(accesses_this_turn(), 1)]),
@@ -642,7 +644,7 @@ pub fn hoshiko_shiro_mahou_shoujo() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("When your turn begins, draw 1 card and lose 1[credit].")
         .text("When your turn ends, if you did not access any cards this turn, flip this identity.")
         .when(
@@ -687,7 +689,7 @@ pub fn sebastiao_souza_pessoa() -> Card {
         .runner()
         .identity()
         .faction("Anarch")
-        .subtypes(&["G-mod"])
+        .subtypes(&[Subtype::GMod])
         .text("Whenever you take 1 or more tags, if you had no tags, you may install 1 connection resource from your grip, paying 2[credit] less.")
         .text("As an additional cost to trash a connection resource with the basic action, the Corp must trash 1 card from HQ.")
         .when(
@@ -698,7 +700,7 @@ pub fn sebastiao_souza_pessoa() -> Card {
                     &[
                         in_hand_of(Runner),
                         of_type(CardType::Resource),
-                        with_subtype("Connection"),
+                        with_subtype(Subtype::Connection),
                     ],
                 ),
                 InstallDest::RunnerChoiceHostOrRig,
@@ -707,7 +709,7 @@ pub fn sebastiao_souza_pessoa() -> Card {
         )
         .named("sebastião: organize while clean")
         .declares([additional_cost_to_basic_trash_matching(
-            &[with_subtype("Connection")],
+            &[with_subtype(Subtype::Connection)],
             trash_cards_from_hand_of(Corp, 1),
         )])
         .named("sebastião: the connections cost HQ")

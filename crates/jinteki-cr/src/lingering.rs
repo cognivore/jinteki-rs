@@ -51,7 +51,11 @@ pub enum Payload {
     /// CR 2.16.5 / 9.12.1b: subtypes added to or removed from an object for
     /// a duration (Tinkering class). Instances COUNT — a subtype is present
     /// while its adds outnumber its removals.
-    SubtypeMod { target: ObjectId, add: Vec<&'static str>, remove: Vec<&'static str> },
+    SubtypeMod {
+        target: ObjectId,
+        add: Vec<crate::subtype::Subtype>,
+        remove: Vec<crate::subtype::Subtype>,
+    },
     /// CR 9.1.9/9.10.2: an ability granted to an object for a duration.
     GrantedAbility { to: ObjectId, def: AbilityDef },
     /// CR 9.9.8c: a replacement effect created ahead of time. `applies_to`
@@ -298,7 +302,7 @@ pub enum ChoiceValue {
     Server(ServerId),
     Object(ObjectId),
     /// CR 2.16: a chosen subtype (Pelangi class).
-    Subtype(&'static str),
+    Subtype(crate::subtype::Subtype),
     /// CR 2.15.2: a chosen card type (Azmari EdTech class).
     CardType(crate::object::CardType),
     /// CR 1.15.1b: a value NAMED from an open namespace — a card name (2.1.1)

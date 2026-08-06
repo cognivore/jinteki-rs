@@ -13,6 +13,8 @@
 //! so these identities denote into no abilities on purpose, and that is the
 //! whole of them rather than a gap.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Nova Initiumia: Catalyst & Impetus — Identity: Digital, Natural. Link 0.
@@ -28,7 +30,7 @@ pub fn nova_initiumia() -> Card {
         .runner()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Digital", "Natural"])
+        .subtypes(&[Subtype::Digital, Subtype::Natural])
         .text("Your deck cannot include more than 1 copy of any card.")
         .build()
 }
@@ -43,7 +45,7 @@ pub fn the_catalyst() -> Card {
         .runner()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Starter game only.")
         .build()
 }
@@ -58,7 +60,7 @@ pub fn the_masque() -> Card {
         .runner()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .text("Draft format only.")
         .build()
 }

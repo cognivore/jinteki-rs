@@ -15,6 +15,8 @@
 //! in CORPUS.md §5 cannot drift from the code. A partial card is legitimate
 //! only while the missing clause is orthogonal to every test using it.
 
+use crate::subtype::Subtype;
+
 use crate::ability::{
     AbilityDef, AbilityFlag, Condition, Cost, StaticCond, StaticDecl, TriggerCond,
     TriggerRequirement,
@@ -31,7 +33,7 @@ use crate::object::{CardType, CounterKind, PrintedCard, ServerId, Side};
 /// "Gain 9[credit]."
 pub fn hedge_fund() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Hedge Fund", Side::Corp, CardType::Operation);
-    c.subtypes = vec!["Transaction"];
+    c.subtypes = vec![Subtype::Transaction];
     c.cost = Some(5);
     c.abilities = vec![AbilityDef::play(vec![Instruction::GainCredits(Side::Corp, Quantity::c(9))])
         .labeled("hedge fund: gain 9 credits")];
@@ -43,7 +45,7 @@ pub fn hedge_fund() -> PrintedCard {
 ///  Gain 13[credit]."
 pub fn ipo() -> PrintedCard {
     let mut c = PrintedCard::vanilla("IPO", Side::Corp, CardType::Operation);
-    c.subtypes = vec!["Terminal", "Transaction"];
+    c.subtypes = vec![Subtype::Terminal, Subtype::Transaction];
     c.cost = Some(8);
     c.abilities = vec![AbilityDef::play(vec![
         Instruction::GainCredits(Side::Corp, Quantity::c(13)),
@@ -59,7 +61,7 @@ pub fn ipo() -> PrintedCard {
 /// "Gain 3[credit]."
 pub fn beanstalk_royalties() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Beanstalk Royalties", Side::Corp, CardType::Operation);
-    c.subtypes = vec!["Transaction"];
+    c.subtypes = vec![Subtype::Transaction];
     c.cost = Some(0);
     c.abilities = vec![AbilityDef::play(vec![Instruction::GainCredits(Side::Corp, Quantity::c(3))])
         .labeled("beanstalk royalties: gain 3 credits")];
@@ -75,7 +77,7 @@ pub fn beanstalk_royalties() -> PrintedCard {
 /// there is no choice to make (1.16.1b) and the Corp is never asked.
 pub fn extract() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Extract", Side::Corp, CardType::Operation);
-    c.subtypes = vec!["Transaction"];
+    c.subtypes = vec![Subtype::Transaction];
     c.cost = Some(3);
     c.abilities = vec![AbilityDef::play(vec![
         Instruction::GainCredits(Side::Corp, Quantity::c(6)),
@@ -101,7 +103,7 @@ pub fn extract() -> PrintedCard {
 /// only place it could ever matter.
 pub fn neural_emp() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Neural EMP", Side::Corp, CardType::Operation);
-    c.subtypes = vec!["Gray Ops"];
+    c.subtypes = vec![Subtype::GrayOps];
     c.cost = Some(2);
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
@@ -159,7 +161,7 @@ pub fn seamless_launch() -> PrintedCard {
 /// card keeps those.
 pub fn closed_accounts() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Closed Accounts", Side::Corp, CardType::Operation);
-    c.subtypes = vec!["Gray Ops"];
+    c.subtypes = vec![Subtype::GrayOps];
     c.cost = Some(1);
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::PlayOnlyIf(vec![
@@ -195,7 +197,7 @@ pub fn cyberdex_trial() -> PrintedCard {
 ///  [subroutine] End the run."
 pub fn ice_wall() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Ice Wall", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Barrier"];
+    c.subtypes = vec![Subtype::Barrier];
     c.cost = Some(1);
     c.strength = Some(1);
     c.abilities = vec![
@@ -223,7 +225,7 @@ pub fn ice_wall() -> PrintedCard {
 /// simply stays at zero — the subroutine still resolves.
 pub fn enigma() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Enigma", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Code Gate"];
+    c.subtypes = vec![Subtype::CodeGate];
     c.cost = Some(3);
     c.strength = Some(2);
     c.abilities = vec![
@@ -239,7 +241,7 @@ pub fn enigma() -> PrintedCard {
 ///  [subroutine] Gain 1[credit]."
 pub fn tithe() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Tithe", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Sentry", "AP"];
+    c.subtypes = vec![Subtype::Sentry, Subtype::Ap];
     c.cost = Some(1);
     c.strength = Some(1);
     c.abilities = vec![
@@ -263,7 +265,7 @@ pub fn tithe() -> PrintedCard {
 /// makes it the next instruction.
 pub fn pup() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Pup", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Sentry", "AP"];
+    c.subtypes = vec![Subtype::Sentry, Subtype::Ap];
     c.cost = Some(1);
     c.strength = Some(0);
     let sub = || {
@@ -287,7 +289,7 @@ pub fn pup() -> PrintedCard {
 ///  [subroutine] End the run."
 pub fn paper_wall() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Paper Wall", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Barrier"];
+    c.subtypes = vec![Subtype::Barrier];
     c.cost = Some(0);
     c.strength = Some(1);
     c.abilities = vec![
@@ -302,7 +304,7 @@ pub fn paper_wall() -> PrintedCard {
 /// "[subroutine] End the run."
 pub fn quandary() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Quandary", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Code Gate"];
+    c.subtypes = vec![Subtype::CodeGate];
     c.cost = Some(1);
     c.strength = Some(0);
     c.abilities =
@@ -314,7 +316,7 @@ pub fn quandary() -> PrintedCard {
 /// "[subroutine] End the run."
 pub fn vanilla_ice() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Vanilla", Side::Corp, CardType::Ice);
-    c.subtypes = vec!["Barrier"];
+    c.subtypes = vec![Subtype::Barrier];
     c.cost = Some(0);
     c.strength = Some(0);
     c.abilities =
@@ -330,7 +332,7 @@ pub fn vanilla_ice() -> PrintedCard {
 /// "When your turn begins, gain 1[credit]."
 pub fn pad_campaign() -> PrintedCard {
     let mut c = PrintedCard::vanilla("PAD Campaign", Side::Corp, CardType::Asset);
-    c.subtypes = vec!["Advertisement"];
+    c.subtypes = vec![Subtype::Advertisement];
     c.cost = Some(2);
     c.trash_cost = Some(4);
     c.abilities = vec![AbilityDef::conditional(
@@ -372,7 +374,7 @@ pub fn hostile_infrastructure() -> PrintedCard {
 /// checkpoint (10.3.1b) rather than silently drawing fewer.
 pub fn rashida_jaheem() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Rashida Jaheem", Side::Corp, CardType::Asset);
-    c.subtypes = vec!["Character"];
+    c.subtypes = vec![Subtype::Character];
     c.cost = Some(0);
     c.trash_cost = Some(1);
     c.abilities = vec![AbilityDef::conditional(
@@ -426,7 +428,7 @@ pub fn lt_todachine() -> PrintedCard {
 /// install tests use it for.
 pub fn breaker_bay_grid() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Breaker Bay Grid", Side::Corp, CardType::Upgrade);
-    c.subtypes = vec!["Region"];
+    c.subtypes = vec![Subtype::Region];
     c.cost = Some(0);
     c.trash_cost = Some(2);
     c
@@ -466,7 +468,7 @@ pub fn corporate_troubleshooter() -> PrintedCard {
 /// "When you score this agenda, gain 7[credit] and take 1 bad publicity."
 pub fn hostile_takeover() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Hostile Takeover", Side::Corp, CardType::Agenda);
-    c.subtypes = vec!["Expansion", "Liability"];
+    c.subtypes = vec![Subtype::Expansion, Subtype::Liability];
     c.cost = None;
     c.advancement_requirement = Some(2);
     c.agenda_points = Some(1);
@@ -493,7 +495,7 @@ pub fn hostile_takeover() -> PrintedCard {
 /// validates influence and size and nothing names a per-title limit.
 pub fn government_takeover() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Government Takeover", Side::Corp, CardType::Agenda);
-    c.subtypes = vec!["Expansion"];
+    c.subtypes = vec![Subtype::Expansion];
     c.cost = None;
     c.unique = true;
     c.advancement_requirement = Some(9);
@@ -522,7 +524,7 @@ pub fn government_takeover() -> PrintedCard {
 /// the Corp's score area (4.5.4), so its own declaration applies there.
 pub fn project_beale() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Project Beale", Side::Corp, CardType::Agenda);
-    c.subtypes = vec!["Research"];
+    c.subtypes = vec![Subtype::Research];
     c.cost = None;
     c.advancement_requirement = Some(3);
     c.agenda_points = Some(2);
@@ -565,7 +567,7 @@ pub fn project_beale() -> PrintedCard {
 /// while the Corp holds it.
 pub fn merger() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Merger", Side::Corp, CardType::Agenda);
-    c.subtypes = vec!["Expansion"];
+    c.subtypes = vec![Subtype::Expansion];
     c.cost = None;
     c.advancement_requirement = Some(3);
     c.agenda_points = Some(2);
@@ -584,7 +586,7 @@ pub fn merger() -> PrintedCard {
 /// 9.12.1a's third stage.
 pub fn global_food_initiative() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Global Food Initiative", Side::Corp, CardType::Agenda);
-    c.subtypes = vec!["Initiative"];
+    c.subtypes = vec![Subtype::Initiative];
     c.cost = None;
     c.advancement_requirement = Some(5);
     c.agenda_points = Some(3);
@@ -617,7 +619,7 @@ pub fn sure_gamble() -> PrintedCard {
 /// "Gain 3[credit]."
 pub fn easy_mark() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Easy Mark", Side::Runner, CardType::Event);
-    c.subtypes = vec!["Job"];
+    c.subtypes = vec![Subtype::Job];
     c.cost = Some(0);
     c.abilities =
         vec![AbilityDef::play(vec![Instruction::GainCredits(Side::Runner, Quantity::c(3))])
@@ -652,7 +654,7 @@ pub fn diesel() -> PrintedCard {
 /// is over — 9.2.4d's LIFO nesting).
 pub fn dirty_laundry() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Dirty Laundry", Side::Runner, CardType::Event);
-    c.subtypes = vec!["Run"];
+    c.subtypes = vec![Subtype::Run];
     c.cost = Some(2);
     c.abilities = vec![AbilityDef::play(vec![Instruction::run_any_server(vec![
         Instruction::CreateDelayedConditional {
@@ -756,7 +758,7 @@ pub fn daily_casts() -> PrintedCard {
 /// Fan Site cannot trigger itself). The conversion ends if it ever leaves.
 pub fn fan_site() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Fan Site", Side::Runner, CardType::Resource);
-    c.subtypes = vec!["Virtual"];
+    c.subtypes = vec![Subtype::Virtual];
     c.cost = Some(0);
     c.abilities = vec![AbilityDef::conditional(
         TriggerCond::CorpScoresAgenda { requires: Vec::new(), criteria: Vec::new() },
@@ -871,7 +873,7 @@ pub fn rezeki() -> PrintedCard {
 /// 9.5.6c's subtype restriction, and nothing else.
 pub fn mimic() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Mimic", Side::Runner, CardType::Program);
-    c.subtypes = vec!["Icebreaker", "Killer"];
+    c.subtypes = vec![Subtype::Icebreaker, Subtype::Killer];
     c.cost = Some(3);
     c.memory_cost = Some(1);
     c.strength = Some(3);
@@ -883,7 +885,7 @@ pub fn mimic() -> PrintedCard {
     )
     .with_flag(AbilityFlag::Interface)
     .with_timing(crate::ability::TimingRestriction::EncounterOnly {
-        required_subtype: Some("Sentry"),
+        required_subtype: Some(Subtype::Sentry),
         required_choice: None, required_self: false,
     })
     .labeled("mimic: break 1 sentry subroutine")];
@@ -902,7 +904,7 @@ pub fn mimic() -> PrintedCard {
 /// gives a pump — the current encounter.
 pub fn corroder() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Corroder", Side::Runner, CardType::Program);
-    c.subtypes = vec!["Icebreaker", "Fracter"];
+    c.subtypes = vec![Subtype::Icebreaker, Subtype::Fracter];
     c.cost = Some(2);
     c.memory_cost = Some(1);
     c.strength = Some(2);
@@ -918,7 +920,7 @@ pub fn corroder() -> PrintedCard {
         )
         .with_flag(AbilityFlag::Interface)
         .with_timing(crate::ability::TimingRestriction::EncounterOnly {
-            required_subtype: Some("Barrier"),
+            required_subtype: Some(Subtype::Barrier),
             required_choice: None, required_self: false,
         })
         .labeled("corroder: break 1 barrier subroutine"),
@@ -952,7 +954,7 @@ pub fn corroder() -> PrintedCard {
 /// installing Clot AFTER the agenda still blocks it.
 pub fn clot() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Clot", Side::Runner, CardType::Program);
-    c.subtypes = vec!["Virus"];
+    c.subtypes = vec![Subtype::Virus];
     c.cost = Some(2);
     c.memory_cost = Some(1);
     c.strength = None;
@@ -976,7 +978,7 @@ pub fn clot() -> PrintedCard {
 ///  <strong>Hosted virus counter:</strong> Gain 1[credit]."
 pub fn cache() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Cache", Side::Runner, CardType::Program);
-    c.subtypes = vec!["Virus"];
+    c.subtypes = vec![Subtype::Virus];
     c.cost = Some(1);
     c.memory_cost = Some(1);
     c.strength = Some(0);
@@ -1006,7 +1008,7 @@ pub fn cache() -> PrintedCard {
 ///  card you are accessing."
 pub fn imp() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Imp", Side::Runner, CardType::Program);
-    c.subtypes = vec!["Virus"];
+    c.subtypes = vec![Subtype::Virus];
     c.cost = Some(2);
     c.memory_cost = Some(1);
     c.abilities = vec![
@@ -1039,7 +1041,7 @@ pub fn imp() -> PrintedCard {
 ///  <strong>Hosted virus counter:</strong> Break 1 subroutine on host ice."
 pub fn botulus() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Botulus", Side::Runner, CardType::Program);
-    c.subtypes = vec!["Virus", "Trojan"];
+    c.subtypes = vec![Subtype::Virus, Subtype::Trojan];
     c.cost = Some(2);
     c.memory_cost = Some(1);
     let place_one = || Instruction::PlaceCounters {
@@ -1086,7 +1088,7 @@ pub fn botulus() -> PrintedCard {
 /// imminence pipeline, which is exactly what makes them avoidable.
 pub fn account_siphon() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Account Siphon", Side::Runner, CardType::Event);
-    c.subtypes = vec!["Run", "Sabotage"];
+    c.subtypes = vec![Subtype::Run, Subtype::Sabotage];
     c.cost = Some(0);
     c.abilities = vec![AbilityDef::play(vec![Instruction::InitiateRun {
         server: Some(ServerId::Hq),
@@ -1121,7 +1123,7 @@ pub fn account_siphon() -> PrintedCard {
 /// (The console limit is checkpoint step 10.3.1d, driven by `console: true`.)
 pub fn desperado() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Desperado", Side::Runner, CardType::Hardware);
-    c.subtypes = vec!["Console"];
+    c.subtypes = vec![Subtype::Console];
     c.cost = Some(3);
     c.unique = true;
     c.console = true;

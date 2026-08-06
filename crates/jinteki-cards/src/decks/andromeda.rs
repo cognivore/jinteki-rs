@@ -8,6 +8,8 @@
 //! rather than an approximation, and the kernel capability each one waits on
 //! is on the gap list in `docs/vm/WAVES.md`.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Andromeda: Dispossessed Ristie — Identity: Natural. Link 1.
@@ -17,7 +19,7 @@ pub fn andromeda() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Natural"])
+        .subtypes(&[Subtype::Natural])
         .link(1)
         .text("You draw a starting hand of 9 cards.")
         .starting_hand(9)
@@ -37,9 +39,9 @@ pub fn ken_tenma() -> Card {
         .runner()
         .identity()
         .faction("Criminal")
-        .subtypes(&["Clone"])
+        .subtypes(&[Subtype::Clone])
         .text("The first time each turn you play a run event, gain 1[credit].")
-        .when_first_each_turn(plays_a_subtyped(Runner, CardType::Event, "Run"), [gain(Runner, 1)])
+        .when_first_each_turn(plays_a_subtyped(Runner, CardType::Event, Subtype::Run), [gain(Runner, 1)])
         .named("a cut of every job")
         .build()
 }
@@ -80,7 +82,7 @@ pub fn clean_getaway() -> Card {
         .runner()
         .event()
         .faction("Criminal")
-        .subtypes(&["Run"])
+        .subtypes(&[Subtype::Run])
         .cost(3)
         .text("Run any server. If successful, gain 6[credit].")
         .play([run_any_server([gain(Runner, 6)])])
@@ -102,7 +104,7 @@ pub fn account_siphon() -> Card {
         .runner()
         .event()
         .faction("Criminal")
-        .subtypes(&["Run", "Sabotage"])
+        .subtypes(&[Subtype::Run, Subtype::Sabotage])
         .cost(0)
         .text("Run HQ. If successful, instead of breaching HQ, you may force the Corp to lose up to 5[credit], then you gain 2[credit] for each credit lost and take 2 tags.")
         .play([run_then_if_successful(
@@ -165,7 +167,7 @@ pub fn employee_strike() -> Card {
         .runner()
         .event()
         .faction("Neutral")
-        .subtypes(&["Current"])
+        .subtypes(&[Subtype::Current])
         .cost(1)
         .text("This event is not trashed until another current is played or an agenda is scored.")
         .text("The Corp's identity loses its printed abilities.")
@@ -199,7 +201,7 @@ pub fn mutual_favor() -> Card {
         .cost(0)
         .text("Search your stack for 1 icebreaker and reveal it. (Shuffle your stack after searching it.) If you made a successful run this turn, you may install that program. If you do not, add it to your grip.")
         .play([
-            search_stack(&[with_subtype("Icebreaker")], 1),
+            search_stack(&[with_subtype(Subtype::Icebreaker)], 1),
             reveal(TargetSpec::FoundBySearch),
             if_met_else(
                 &[made_a_successful_run_this_turn()],
@@ -234,7 +236,7 @@ pub fn pinhole_threading() -> Card {
         .runner()
         .event()
         .faction("Criminal")
-        .subtypes(&["Run"])
+        .subtypes(&[Subtype::Run])
         .cost(1)
         .text("Run any server. If successful, instead of breaching the attacked server, access 1 card in the root of another server. If that card is an agenda, you cannot steal or trash it during this access.")
         .play([Instruction::InitiateRun {
@@ -361,7 +363,7 @@ pub fn desperado() -> Card {
         .runner()
         .hardware()
         .faction("Criminal")
-        .subtypes(&["Console"])
+        .subtypes(&[Subtype::Console])
         .cost(3)
         .unique()
         .console()
@@ -386,14 +388,14 @@ pub fn bukhgalter() -> Card {
         .runner()
         .program()
         .faction("Criminal")
-        .subtypes(&["Icebreaker", "Killer"])
+        .subtypes(&[Subtype::Icebreaker, Subtype::Killer])
         .cost(3)
         .strength(1)
         .memory(1)
         .text("Interface → 1[credit]: Break 1 sentry subroutine.")
         .text("1[credit]: +1 strength.")
         .text("The first time each turn this program fully breaks a piece of ice, gain 2[credit].")
-        .paid_interface(credits(1), Some("Sentry"), [break_subroutines(1)])
+        .paid_interface(credits(1), Some(Subtype::Sentry), [break_subroutines(1)])
         .named("interface: break 1 sentry subroutine")
         .paid(credits(1), [pump(1)])
         .named("pump: +1 strength")
@@ -426,14 +428,14 @@ pub fn paperclip() -> Card {
         .runner()
         .program()
         .faction("Anarch")
-        .subtypes(&["Icebreaker", "Fracter"])
+        .subtypes(&[Subtype::Icebreaker, Subtype::Fracter])
         .cost(4)
         .strength(1)
         .memory(1)
         .text("Whenever you encounter a barrier, you may install this program from your heap.")
         .text("X[credit]: +X strength. Then, if this program can interface with the barrier you are encountering, break up to X subroutines.")
         .may_when(
-            encounters_a("Barrier", &[source_in_discard()]),
+            encounters_a(Subtype::Barrier, &[source_in_discard()]),
             [install_this_card()],
         )
         .named("install itself out of the heap")
@@ -442,7 +444,7 @@ pub fn paperclip() -> Card {
             [
                 pump_x(),
                 if_met(
-                    &[can_interface_with_the_encountered("Barrier")],
+                    &[can_interface_with_the_encountered(Subtype::Barrier)],
                     [break_up_to_x()],
                 ),
             ],
@@ -464,7 +466,7 @@ pub fn shibboleth() -> Card {
         .runner()
         .program()
         .faction("Criminal")
-        .subtypes(&["Icebreaker", "Decoder"])
+        .subtypes(&[Subtype::Icebreaker, Subtype::Decoder])
         .cost(1)
         .strength(3)
         .memory(1)
@@ -472,7 +474,7 @@ pub fn shibboleth() -> Card {
         .text("Interface → 1[credit]: Break 1 code gate subroutine.")
         .text("2[credit]: +2 strength.")
         .declares_at_threat(4, [strength_mod(-2)])
-        .paid_interface(credits(1), Some("Code Gate"), [break_subroutines(1)])
+        .paid_interface(credits(1), Some(Subtype::CodeGate), [break_subroutines(1)])
         .named("interface: break 1 code gate subroutine")
         .paid(credits(2), [pump(2)])
         .named("pump: +2 strength")
@@ -546,7 +548,7 @@ pub fn earthrise_hotel() -> Card {
         .runner()
         .resource()
         .faction("Neutral")
-        .subtypes(&["Location", "Ritzy"])
+        .subtypes(&[Subtype::Location, Subtype::Ritzy])
         .cost(4)
         .unique()
         .text("When you install this resource, load 3 power counters onto it. When it is empty, trash it.")
@@ -578,7 +580,7 @@ pub fn bloo_moose() -> Card {
         .runner()
         .resource()
         .faction("Neutral")
-        .subtypes(&["Location", "Seedy"])
+        .subtypes(&[Subtype::Location, Subtype::Seedy])
         .cost(4)
         .unique()
         .text("When your turn begins, you may remove 1 card in the heap from the game. If you do, gain 2[credit].")
@@ -604,7 +606,7 @@ pub fn citadel_sanctuary() -> Card {
         .runner()
         .resource()
         .faction("Neutral")
-        .subtypes(&["Location"])
+        .subtypes(&[Subtype::Location])
         .cost(2)
         .unique()
         .text("When your discard phase ends while you are tagged, the Corp must trace[1]. If unsuccessful, remove 1 tag.")
@@ -641,7 +643,7 @@ pub fn film_critic() -> Card {
         .runner()
         .resource()
         .faction("Shaper")
-        .subtypes(&["Connection"])
+        .subtypes(&[Subtype::Connection])
         .cost(1)
         .text("Film Critic can host a single agenda.")
         .text("Whenever you access an agenda, you may host that agenda on Film Critic (the agenda is no longer being accessed and is uninstalled).")
@@ -686,7 +688,7 @@ pub fn miss_bones() -> Card {
         .runner()
         .resource()
         .faction("Criminal")
-        .subtypes(&["Connection"])
+        .subtypes(&[Subtype::Connection])
         .cost(2)
         .unique()
         .text("Place 12[credit] from the bank on Miss Bones when she is installed. When there are no credits left on Miss Bones, trash her.")
@@ -721,7 +723,7 @@ pub fn the_class_act() -> Card {
         .runner()
         .resource()
         .faction("Criminal")
-        .subtypes(&["Connection", "Ritzy"])
+        .subtypes(&[Subtype::Connection, Subtype::Ritzy])
         .cost(4)
         .unique()
         .text("When a discard phase ends, if you installed this resource this turn, draw 4 cards.")
@@ -761,7 +763,7 @@ pub fn the_source() -> Card {
         .runner()
         .resource()
         .faction("Neutral")
-        .subtypes(&["Connection"])
+        .subtypes(&[Subtype::Connection])
         .cost(2)
         .unique()
         .text("The advancement requirement of all agendas is increased by 1.")

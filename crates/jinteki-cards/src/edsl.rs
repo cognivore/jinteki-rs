@@ -100,11 +100,11 @@
 //!     &[CardType::Asset, CardType::Ice, CardType::Operation, CardType::Upgrade],
 //! );
 //! // "Name sentry, code gate or barrier." / "Name a number." (1.1.3)
-//! let _ = name_one_of_these_subtypes("wari subtype", &["Sentry", "Code Gate", "Barrier"]);
+//! let _ = name_one_of_these_subtypes("wari subtype", &[Subtype::Sentry, Subtype::CodeGate, Subtype::Barrier]);
 //! let _ = name_a_number("rng key number", WantedDuration::ThisRun);
 //! // A card that is TRASHED to name says how long the name lasts.
 //! let _ = name_a_card_for("whistleblower name", WantedDuration::ThisRun);
-//! let _ = name_one_of_these_subtypes_for("wari subtype", &["Sentry"], WantedDuration::ThisRun);
+//! let _ = name_one_of_these_subtypes_for("wari subtype", &[Subtype::Sentry], WantedDuration::ThisRun);
 //! // "…of the named type" / "…all copies of that card in the heap"
 //! let _ = choose(1, &[in_hand_of(Runner), named_by("salem type")]);
 //! let _ = all_named_cards_in_discard_of(Runner, "ark lockdown target");
@@ -127,7 +127,7 @@
 //! ```
 //! use jinteki_cards::edsl::*;
 //! let _ = shuffle_into_deck(choose_up_to(5, &[in_heap(), with_different_names()]), Runner);
-//! let _ = search_stack(&[with_any_subtype(&["Virus", "Weapon"]), with_different_names()], 2);
+//! let _ = search_stack(&[with_any_subtype(&[Subtype::Virus, Subtype::Weapon]), with_different_names()], 2);
 //! let _ = host_faceup(found_by_search(), this_card());
 //! let _ = if_met(&[board_has_at_most(&[hosted_on_this_card()], 0)], [trash_self()]);
 //! ```
@@ -149,6 +149,11 @@
 //!     InstallDest::RunnerChoiceHostOrRig,
 //! );
 //! ```
+
+/// CR 2.16 subtypes, re-exported so a card definition written against
+/// `use jinteki_cards::edsl::*` names them the same way it names card types:
+/// as a value of a closed type, not as a string it could misspell.
+pub use jinteki_cr::Subtype;
 
 use jinteki_cr::ability::{AbilityDef, AbilityFlag, Condition, TimingRestriction};
 pub use jinteki_cr::effects::{DamageKind, EffectClass};
@@ -279,7 +284,7 @@ impl CardBuilder {
     }
 
     // ---- the numbers under the name -------------------------------------
-    pub fn subtypes(mut self, s: &[&'static str]) -> Self {
+    pub fn subtypes(mut self, s: &[jinteki_cr::Subtype]) -> Self {
         self.printed.subtypes = s.to_vec();
         self
     }
@@ -600,7 +605,7 @@ impl CardBuilder {
     pub fn paid_once_per_turn_during_encounters_with(
         self,
         cost: Cost,
-        ice_subtype: &'static str,
+        ice_subtype: Subtype,
         instrs: impl IntoIterator<Item = Instruction>,
     ) -> Self {
         self.ability(
@@ -672,7 +677,7 @@ impl CardBuilder {
     pub fn paid_interface(
         self,
         cost: Cost,
-        ice_subtype: Option<&'static str>,
+        ice_subtype: Option<Subtype>,
         instrs: impl IntoIterator<Item = Instruction>,
     ) -> Self {
         self.ability(
@@ -1898,13 +1903,13 @@ pub fn unrezzed() -> TargetFilter {
 pub fn of_type(t: CardType) -> TargetFilter {
     TargetFilter::CardTypeIs(t)
 }
-pub fn with_subtype(s: &'static str) -> TargetFilter {
+pub fn with_subtype(s: Subtype) -> TargetFilter {
     TargetFilter::HasSubtype(s)
 }
 /// "…**virus or weapon** cards" (2.16) — any one of these subtypes. The
 /// criteria of a description are otherwise a conjunction, so a printed "or"
 /// between subtypes is this one call.
-pub fn with_any_subtype(list: &'static [&'static str]) -> TargetFilter {
+pub fn with_any_subtype(list: &'static [Subtype]) -> TargetFilter {
     TargetFilter::HasAnySubtype(list)
 }
 /// "…cards **with different names**" (2.1.5) — no two of the cards chosen or
@@ -2127,7 +2132,7 @@ pub fn turn_begins_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCond {
 /// the sentence's subtype stipulation (2.16) and its 9.6.5c requirements. A
 /// requirement naming a zone is also what keeps the ability active there
 /// (9.1.8b), which is how a program talks from the heap.
-pub fn encounters_a(subtype: &'static str, reqs: &[TriggerRequirement]) -> TriggerCond {
+pub fn encounters_a(subtype: Subtype, reqs: &[TriggerRequirement]) -> TriggerCond {
     TriggerCond::EncounterBegins {
         of_subtypes: vec![subtype],
         requires: reqs.to_vec(),
@@ -2137,7 +2142,7 @@ pub fn encounters_a(subtype: &'static str, reqs: &[TriggerRequirement]) -> Trigg
 /// (Paperclip) — CR 3.9.5g's strength comparison and 3.9.5h's subtype, asked
 /// as a question the INSTRUCTIONS check (9.6.5d) rather than as the interface
 /// flag, because the card asks it after "+X strength" has resolved.
-pub fn can_interface_with_the_encountered(subtype: &'static str) -> TriggerRequirement {
+pub fn can_interface_with_the_encountered(subtype: Subtype) -> TriggerRequirement {
     TriggerRequirement::CanInterfaceWithEncounteredIce { required_subtype: Some(subtype) }
 }
 /// "X[credit]:" — 1.16.2c's variable cost, announced before it is paid. With
@@ -2400,7 +2405,7 @@ pub fn plays_a(by: Side, of: CardType) -> TriggerCond {
 /// "…you play a **run** event" (Ken Tenma class) — the same trigger with the
 /// sentence's subtype stipulation (2.16), which is read through the 9.12.1b
 /// pipeline like every other subtype query.
-pub fn plays_a_subtyped(by: Side, of: CardType, subtype: &'static str) -> TriggerCond {
+pub fn plays_a_subtyped(by: Side, of: CardType, subtype: Subtype) -> TriggerCond {
     TriggerCond::CardPlayed {
         by: Some(by),
         of_types: vec![of],
@@ -2738,7 +2743,7 @@ pub fn installs_a_card_if(side: Side, reqs: &[TriggerRequirement]) -> TriggerCon
 }
 /// "Whenever you install a <subtype> <type>…" (Noise class) — 2.15's type and
 /// 2.16's subtype, both stipulations on the one install condition.
-pub fn installs_a_subtyped(side: Side, of: CardType, subtype: &'static str) -> TriggerCond {
+pub fn installs_a_subtyped(side: Side, of: CardType, subtype: Subtype) -> TriggerCond {
     TriggerCond::CardInstalledBy {
         side,
         of_types: vec![of],
@@ -3238,7 +3243,7 @@ pub fn facedown() -> TargetFilter {
 }
 /// "Whenever you rez an <subtype>…" (Spark Agency class) — 8.1.2's rez with
 /// 2.16's subtype stipulation and no stipulation about the card's type.
-pub fn corp_rezzes_a_subtyped(subtype: &'static str) -> TriggerCond {
+pub fn corp_rezzes_a_subtyped(subtype: Subtype) -> TriggerCond {
     TriggerCond::CorpRezzesCard {
         of_types: Vec::new(),
         of_subtypes: vec![subtype],
@@ -3696,7 +3701,7 @@ pub fn another_current_is_played() -> TriggerCond {
     TriggerCond::CardPlayed {
         by: None,
         of_types: vec![CardType::Operation, CardType::Event],
-        of_subtypes: vec!["Current"],
+        of_subtypes: vec![Subtype::Current],
         criteria: Vec::new(),
         other_than_source: true,
         also_installed: false,
@@ -4278,11 +4283,11 @@ pub fn name_one_of_these_card_types(key: &'static str, types: &[CardType]) -> In
 }
 /// "Name **sentry**, **code gate** or **barrier**." (Wari.) One branch per
 /// printed subtype, exactly as the card writes them.
-pub fn name_one_of_these_subtypes(key: &'static str, subtypes: &[&'static str]) -> Instruction {
+pub fn name_one_of_these_subtypes(key: &'static str, subtypes: &[jinteki_cr::Subtype]) -> Instruction {
     Instruction::ChooseOne {
         options: subtypes
             .iter()
-            .map(|s| (*s, vec![name_the_subtype(key, s)]))
+            .map(|s| (s.as_str(), vec![name_the_subtype(key, *s)]))
             .collect(),
     }
 }
@@ -4295,7 +4300,7 @@ pub fn name_the_card_type(key: &'static str, t: CardType) -> Instruction {
     }
 }
 /// One branch of a "name a subtype" choice: remember exactly this subtype.
-pub fn name_the_subtype(key: &'static str, s: &'static str) -> Instruction {
+pub fn name_the_subtype(key: &'static str, s: Subtype) -> Instruction {
     Instruction::MaintainChoice {
         key,
         of: jinteki_cr::instr::ChoiceSpec::Subtype(s),
@@ -4306,7 +4311,7 @@ pub fn name_the_subtype(key: &'static str, s: &'static str) -> Instruction {
 /// choice (Wari), so that 9.10.3c would otherwise leave nothing remembered.
 pub fn name_one_of_these_subtypes_for(
     key: &'static str,
-    subtypes: &[&'static str],
+    subtypes: &[Subtype],
     duration: WantedDuration,
 ) -> Instruction {
     Instruction::ChooseOne {
@@ -4314,10 +4319,10 @@ pub fn name_one_of_these_subtypes_for(
             .iter()
             .map(|s| {
                 (
-                    *s,
+                    s.as_str(),
                     vec![Instruction::MaintainChoice {
                         key,
-                        of: jinteki_cr::instr::ChoiceSpec::Subtype(s),
+                        of: jinteki_cr::instr::ChoiceSpec::Subtype(*s),
                         duration,
                     }],
                 )
@@ -4591,7 +4596,7 @@ pub fn rez_cost_of_earlier_choice(nth: usize) -> Quantity {
 /// a printed one.)
 pub fn gains_subtypes(
     target: TargetSpec,
-    add: &[&'static str],
+    add: &[Subtype],
     duration: WantedDuration,
 ) -> Instruction {
     Instruction::ModifySubtypes {

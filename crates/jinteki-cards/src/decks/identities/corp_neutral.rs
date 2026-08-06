@@ -11,6 +11,8 @@
 //! puts such a sentence in the facts or nowhere. The fourth — Cyber Bureau —
 //! is the queue's one Neutral Corp identity that PLAYS, both faces of it.
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Ampère: Cybernetics For Anyone — Identity: Corp.
@@ -27,7 +29,7 @@ pub fn ampere() -> Card {
         .corp()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("Your deck cannot include more than 1 copy of any card.")
         .text("Your deck may include up to 2 different agenda cards from each Corp faction.")
         .build()
@@ -44,7 +46,7 @@ pub fn the_shadow() -> Card {
         .corp()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Draft format only.")
         .text("You can use agendas from all factions in this deck.")
         .build()
@@ -60,7 +62,7 @@ pub fn the_syndicate() -> Card {
         .corp()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Starter game only.")
         .build()
 }
@@ -108,7 +110,7 @@ pub fn cyber_bureau() -> Card {
         .corp()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Police Department"])
+        .subtypes(&[Subtype::PoliceDepartment])
         .text("You draw a starting hand of 10 cards.")
         .text("Before taking your first turn, install up to 5 cards, ignoring all install costs. Rez any number of them, lowering the total rez cost among all cards by 20. Flip this identity.")
         .starting_hand(10)
@@ -159,7 +161,7 @@ pub fn detectives_bureau() -> Card {
         .corp()
         .identity()
         .faction("Neutral")
-        .subtypes(&["Police Department"])
+        .subtypes(&[Subtype::PoliceDepartment])
         .text("The first time the Runner initiates a run each turn, force the Runner to lose 1[credit] for each agenda point in his or her score area, then you gain 1[credit] for each credit lost.")
         .text("[click]: Gain 3[credit] or draw 3 cards.")
         .when_first_each_turn(

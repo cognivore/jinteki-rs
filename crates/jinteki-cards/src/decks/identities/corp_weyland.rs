@@ -4,6 +4,8 @@
 //! (`crates/jinteki-core/carddata/cards.json`); behaviour written from that
 //! text alone (SYS-D-10).
 
+use jinteki_cr::Subtype;
+
 use crate::edsl::*;
 
 /// Argus Security: Protection Guaranteed — Identity: Corp.
@@ -27,7 +29,7 @@ pub fn argus_security() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("Whenever the Runner steals an agenda, they must take 1 tag or suffer 2 meat damage.")
         .when(
             runner_steals_agenda(),
@@ -56,7 +58,7 @@ pub fn grndl() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Division", "Liability"])
+        .subtypes(&[Subtype::Division, Subtype::Liability])
         .text("You start the game with 10[credit] and 1 bad publicity.")
         .starting_credits(10)
         .starting_bad_publicity(1)
@@ -81,7 +83,7 @@ pub fn gagarin_deep_space() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("As an additional cost to access a card in the root of a remote server, the Runner must pay 1[credit].")
         .declares([additional_cost_to_access_a_card_in_a_remote_root(credits(1))])
         .named("expanding the horizon")
@@ -101,7 +103,7 @@ pub fn the_outfit() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Subsidiary"])
+        .subtypes(&[Subtype::Subsidiary])
         .text("Whenever you take 1 or more bad publicity, gain 3[credit].")
         .when(takes_bad_publicity(Corp), [gain(Corp, 3)])
         .named("family owned and operated")
@@ -125,7 +127,7 @@ pub fn titan_transnational() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("Whenever you score an agenda, you may place 1 agenda counter on it.")
         .may_when(corp_scores_agenda(), [place_on(the_triggering_card(), CounterKind::Agenda, 1)])
         .named("investing in your future")
@@ -143,9 +145,9 @@ pub fn weyland_building_a_better_world() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Whenever you play a transaction operation, gain 1[credit].")
-        .when(plays_a_subtyped(Corp, CardType::Operation, "Transaction"), [gain(Corp, 1)])
+        .when(plays_a_subtyped(Corp, CardType::Operation, Subtype::Transaction), [gain(Corp, 1)])
         .named("building a better world")
         .build()
 }
@@ -165,7 +167,7 @@ pub fn weyland_built_to_last() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("Whenever you advance a card, gain 2[credit] if it had no advancement counters.")
         .when(advances_a_card(true), [gain(Corp, 2)])
         .named("built to last")
@@ -193,7 +195,7 @@ pub fn weyland_builder_of_nations() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("The first time each turn an encounter with an advanced piece of ice ends, do 1 meat damage.")
         .when_first_each_turn(
             encounter_with_advanced_ice_ends(),
@@ -228,7 +230,7 @@ pub fn fringe_applications() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Draft format only.")
         .text("If you have more [weyland-consortium] cards rezzed than any other faction, when the Runner's turn begins, place an advancement token on a piece of ice.")
         .when(
@@ -274,7 +276,7 @@ pub fn jemison_astronautics() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("Whenever you forfeit an agenda, place X advancement counters on 1 installed card. X is equal to the agenda point value of the forfeited agenda plus 1.")
         .when(
             forfeits_agenda(Corp),
@@ -308,7 +310,7 @@ pub fn the_zwicky_group() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Unsubstantiated"])
+        .subtypes(&[Subtype::Unsubstantiated])
         .text("The first time each turn you gain credits through an ability on an agenda or operation, you may draw 1 card.")
         .may_when_first_each_turn(
             gains_credits_through(
@@ -350,7 +352,7 @@ pub fn sso_industries() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("When your turn ends, you may choose a piece of ice with no advancement tokens on it. If you do, place 1 advancement token on that piece of ice for each agenda point on all installed faceup agendas.")
         .may_when(
             turn_ends(Corp),
@@ -398,7 +400,7 @@ pub fn weyland_because_we_built_it() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Megacorp"])
+        .subtypes(&[Subtype::Megacorp])
         .text("1[recurring-credit]")
         .text("Use this credit to advance ice.")
         .recurring_credits(1)
@@ -447,13 +449,13 @@ pub fn nuvem_sa() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("Whenever you finish resolving an operation or an action on an expendable card, look at the top card of R&D. You may trash that card.")
         .text("The first time you trash a card from R&D during each of your turns, gain 2[credit].")
         .when(
             either_of(&[
                 finishes_resolving_a_played_card(Corp, &[of_type(CardType::Operation)]),
-                finishes_an_action_on(Corp, &[with_subtype("Expendable")]),
+                finishes_an_action_on(Corp, &[with_subtype(Subtype::Expendable)]),
             ]),
             [
                 look_at(top_of_rnd(amount(1)), Corp),
@@ -496,7 +498,7 @@ pub fn blue_sun() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("When your turn begins, you may add 1 rezzed card to HQ and gain credits equal to its rez cost.")
         .may_when(
             turn_begins(Corp),
@@ -540,7 +542,7 @@ pub fn earth_station_sea_headquarters() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Limit 1 remote server.")
         .text("As an additional cost to run HQ, the Runner must pay 1[credit].")
         .text("[click]: Flip this identity.")
@@ -577,7 +579,7 @@ pub fn earth_station_ascending_to_orbit() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Division"])
+        .subtypes(&[Subtype::Division])
         .text("Limit 1 remote server.")
         .text("As an additional cost to run a remote server, the Runner must pay 6[credit].")
         .text("When the Runner makes a successful run on HQ, flip this identity.")
@@ -629,7 +631,7 @@ pub fn bangun() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("You may install agendas faceup. (This does not make their abilities active.)")
         .text("Whenever the Runner accesses a faceup installed agenda, do 2 meat damage and give the Runner 1 tag.")
         .declares([may_install_faceup(&[of_type(CardType::Agenda)])])
@@ -680,7 +682,7 @@ pub fn ob_superheavy_logistics() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Corp"])
+        .subtypes(&[Subtype::Corp])
         .text("Once per turn → When you trash a rezzed card, except during installation, you may search R&D for 1 card with a printed rez cost exactly 1[credit] less than the trashed card's printed rez cost. Install and rez the card you found, ignoring credit costs.")
         .may_when_once_per_turn(
             trashes_a_rezzed_card_except_during_install(Corp),
@@ -756,7 +758,7 @@ pub fn skorpios_defense_systems() -> Card {
         .corp()
         .identity()
         .faction("Weyland Consortium")
-        .subtypes(&["Subsidiary"])
+        .subtypes(&[Subtype::Subsidiary])
         .text("[interrupt] → Whenever 1 or more Runner cards would be trashed (from any location), set those cards aside instead of adding them to the heap. You can look at those cards. You may remove 1 of them from the game. Then, add all of those cards that are still set aside to the heap. Ignore this ability if you have already removed a card from the game with it this turn.")
         .declares([set_trashed_aside_then_until_removed_with_it_this_turn(
             &[controlled_by(Runner), in_any_location()],
