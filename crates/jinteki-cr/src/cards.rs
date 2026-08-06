@@ -1120,13 +1120,13 @@ pub fn account_siphon() -> PrintedCard {
 ///  Gain 1[credit] whenever you make a successful run.
 ///  Limit 1 console per player."
 ///
-/// (The console limit is checkpoint step 10.3.1d, driven by `console: true`.)
+/// (The console limit is checkpoint step 10.3.1d, driven by the Console
+/// subtype the card prints.)
 pub fn desperado() -> PrintedCard {
     let mut c = PrintedCard::vanilla("Desperado", Side::Runner, CardType::Hardware);
     c.subtypes = vec![Subtype::Console];
     c.cost = Some(3);
     c.unique = true;
-    c.console = true;
     c.abilities = vec![
         AbilityDef::static_ability(vec![StaticDecl::MemoryLimitMod(1)])
             .labeled("desperado: +1 memory"),

@@ -320,10 +320,6 @@ impl CardBuilder {
         self.printed.unique = true;
         self
     }
-    pub fn console(mut self) -> Self {
-        self.printed.console = true;
-        self
-    }
     /// Printed base link (1.20). The kernel reads link as the sum of active
     /// declarations, so a printed number is a declaration of the identity.
     pub fn link(mut self, n: i32) -> Self {

@@ -285,8 +285,6 @@ pub struct PrintedCard {
     pub memory_cost: Option<u32>,
     /// CR 2.2: unique (◆).
     pub unique: bool,
-    /// Console subtype shortcut for checkpoint step 10.3.1d.
-    pub console: bool,
     /// Recurring credits refilled at the refill steps.
     pub recurring_credits: Option<u32>,
     /// CR 1.16.10 printed additional cost to steal (Obokata class).
@@ -358,7 +356,6 @@ impl PrintedCard {
             trash_cost: None,
             memory_cost: None,
             unique: false,
-            console: false,
             recurring_credits: None,
             additional_steal_cost: None,
             additional_rez_cost: None,

@@ -21602,3 +21602,49 @@ fn a_real_region_in_another_server_is_left_alone() {
         "3.6.5: the limit is 1 region per SERVER, so a region elsewhere stays"
     );
 }
+
+/// CR 10.3.1d's console limit is CR 2.16's SUBTYPE, read off the card.
+///
+/// The kernel used to read a parallel `console: bool` set by hand beside
+/// `.subtypes(&[Subtype::Console])`, so a console written with only the
+/// subtype — the way every console is actually printed — escaped the limit
+/// entirely. That is the same class as spelling a subtype in two places and
+/// letting them drift, so the bool is gone and the checkpoint reads the
+/// subtype.
+///
+/// Desperado is the real console; the second is a plain shape carrying only
+/// the printed subtype and a different name, because Desperado is ◆ unique
+/// (2.2) and two copies of it would be trashed by 10.3.1d's OTHER half —
+/// which would prove nothing about consoles.
+#[test]
+fn a_second_console_is_trashed_even_though_it_shares_no_name_with_the_first() {
+    let mut vm = Vm::empty(10314);
+    let desperado = tk::install_rig(&mut vm, card("Desperado"));
+    assert!(
+        vm.st.objects[&desperado].printed.subtypes.contains(&Subtype::Console),
+        "the real card carries the subtype the limit is stated over"
+    );
+    assert!(
+        vm.st.objects[&desperado].printed.unique,
+        "…and is ◆ unique, which is why the second console must be another card"
+    );
+
+    let mut other = tk::vanilla_runner_card("Other-Console", CardType::Hardware);
+    other.subtypes = vec![Subtype::Console];
+    let second = tk::install_rig(&mut vm, other);
+    tk::fill_deck(&mut vm, Side::Runner, 3);
+    // 10.3.1 is the checkpoint, so the limit applies at the next one.
+    jinteki_cr::checkpoint::run_checkpoint(&mut vm);
+
+    assert_eq!(
+        vm.st.objects[&desperado].zone,
+        Zone::Discard(Side::Runner),
+        "10.3.1d: the console installed earlier is trashed, keeping the one \
+         that became active most recently"
+    );
+    assert_eq!(
+        vm.st.objects[&second].zone,
+        Zone::Rig,
+        "and the newer console stays installed"
+    );
+}

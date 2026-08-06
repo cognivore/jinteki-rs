@@ -186,6 +186,12 @@ const SUBTYPE_POSITIONS: &[&str] = &[
     "name_one_of_these_subtypes_for(",
     "ChoiceSpec::Subtype(",
     "ChoiceValue::Subtype(",
+    // Going around the type by comparing the canonical spelling to a string.
+    // `has_subtype(t, "icebreaker")` no longer compiles, so this is the only
+    // shape the original defect could still be written in.
+    "as_str() ==",
+    "as_str()==",
+    "eq_ignore_ascii_case(",
     // testkit shapes
     "subtyped_ice(",
     "subtyped_etr_ice(",

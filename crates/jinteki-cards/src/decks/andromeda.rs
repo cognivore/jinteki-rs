@@ -357,7 +357,8 @@ pub fn boomerang() -> Card {
 ///  Gain 1[credit] whenever you make a successful run.
 ///  Limit 1 console per player."
 ///
-/// (The console limit is a checkpoint rule, driven by `.console()`.)
+/// (The console limit is a checkpoint rule, 10.3.1d, driven by the Console
+/// subtype this card prints.)
 pub fn desperado() -> Card {
     card("Desperado")
         .runner()
@@ -366,7 +367,6 @@ pub fn desperado() -> Card {
         .subtypes(&[Subtype::Console])
         .cost(3)
         .unique()
-        .console()
         .text("+1[mu]")
         .text("Gain 1[credit] whenever you make a successful run.")
         .text("Limit 1 console per player.")
