@@ -367,8 +367,7 @@ pub fn estelle_moon() -> Card {
 ///  The first time you spend 3[click] on the same action each turn, gain
 ///  [click]."
 ///
-/// UNIMPLEMENTED: the second sentence, which is the whole of what this card
-/// does at the table.
+/// COMPLETE.
 ///
 /// The alliance line is not a sentence this card does. Like "Limit 1 per
 /// deck" it is a deckbuilding restriction on influence (1.4.5) — it changes
@@ -377,16 +376,20 @@ pub fn estelle_moon() -> Card {
 /// treatment Salem's Hospitality already has.
 ///
 /// "The first time you spend 3[click] on the same action each turn" counts
-/// CLICKS, and the trigger vocabulary counts ACTIONS. The nearest words are
-/// The Collective's "the same action three times in a row" and MirrorMorph's
-/// "three different actions", and neither is this sentence: 5.2.6h's basic
-/// purge action is ONE action costing three clicks and meets Jeeves, and a
-/// double operation followed by an ordinary one is TWO actions costing three
-/// clicks between them and meets Jeeves — both of which the official rulings
-/// list, and neither of which is any number of repeated actions. Written with
-/// the words that exist the card would silently fire less often than it
-/// should, so it is marked instead. The general capability wanted is on
-/// MEZZIE-QUEUE.md's Blockers.
+/// CLICKS, not actions, and the distinction is the card: 5.2.6h's basic purge
+/// is ONE action costing three clicks and meets it, and a double operation
+/// followed by an ordinary action is TWO actions costing three clicks between
+/// them and meets it too. Neither is any number of REPEATED actions, so The
+/// Collective's `same_action_in_a_row` and MirrorMorph's
+/// `different_actions_this_turn` are both the wrong word — the right one is
+/// 1.16.4d's [`spends_clicks_on_one_action`], whose "clicks spent to take the
+/// action" expressly aggregates the clicks of an additional cost paid several
+/// steps into the action's resolution.
+///
+/// "The first time … each turn" is 9.6.5c's ordinal and NOT 9.3.6g's
+/// once-per-turn flag: the sentence is entirely mandatory, 9.1.6 says a player
+/// never "uses" an entirely mandatory ability, and a flag that is spent by
+/// using would therefore never expend at all.
 pub fn jeeves_model_bioroids() -> Card {
     card("Jeeves Model Bioroids")
         .corp()
@@ -398,7 +401,8 @@ pub fn jeeves_model_bioroids() -> Card {
         .unique()
         .text("This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck.")
         .text("The first time you spend 3[click] on the same action each turn, gain [click].")
-        .unimplemented("The first time you spend 3[click] on the same action each turn, gain [click].")
+        .when_first_each_turn(spends_clicks_on_one_action(Corp, 3), [gain_clicks(Corp, 1)])
+        .named("three clicks on one action")
         .build()
 }
 
@@ -1149,37 +1153,48 @@ pub fn fairchild_3_0() -> Card {
 ///  cannot steal or trash Corp cards for the remainder of this run.
 ///  [subroutine] The Runner loses [click]."
 ///
-/// UNIMPLEMENTED: the first sentence — and, as of this merge, NOT because
-/// either half is unsayable any more. Both words landed, from two kernel
-/// waves that ran in parallel and each knew only its own half:
+/// COMPLETE — and it took two kernel waves that ran in parallel, each of
+/// which knew only its own half and each of which recorded the other as the
+/// blocker. Both words landed:
 ///
-///   * "if they have no [click] remaining" is a 9.6.5c requirement about a
-///     NUMBER (1.11.3), and `at_most(clicks_of(Runner), 0)` now states it in
-///     the direction the card prints it;
+///   * "if they have no [click] remaining" is a question about a NUMBER
+///     (1.11.3), and `at_most(clicks_of(Runner), 0)` states it in the
+///     direction the card prints it;
 ///   * "they cannot steal or trash Corp cards for the remainder of this run"
-///     is 1.2.2's cannot over an act, a duration and a description, all of
-///     which `ProhibitionScope::Matching` now carries.
+///     is 1.2.2's cannot over an act, a player, a description and a duration,
+///     all four of which `ProhibitionScope::Matching` carries.
 ///
-/// The sentence is one instruction (9.11.3), so it stays marked until it is
-/// written WHOLE — which is now a card-writing job and no longer a kernel
-/// one.
+/// The "if" is 9.6.5**d** and not 9.6.5c, which is decided by the word order
+/// and not by taste. 9.6.5c's own example is Quantum Predictive Model, whose
+/// requirement comes FIRST — "**If** the Runner is tagged **when** … is
+/// accessed" — and whose entire trigger condition is therefore both clauses.
+/// 9.6.5d's example is Underworld Contact, "**When** your turn begins, **if**
+/// you have 2 or more link, …", which is this card's template exactly: the
+/// requirement sits in the instructions and is checked when they resolve. So
+/// it is written with [`if_met`], which is 9.6.5d, rather than as a
+/// stipulation on the pass.
 ///
-/// The other half is no longer a blocker. "They cannot steal or trash Corp
-/// cards for the remainder of this run" is 9.10.1's prohibition with the run
-/// as its duration and a description for its scope, and the CR 1.2.2 wave
-/// added all three of the pieces it wanted: stealing (7.5) and trashing
-/// (7.1.5 / 1.19.4) are acts a "cannot" names, "Corp cards" is a description
-/// read where the act is offered, and "they" is the player the prohibition
-/// names — which matters here, because trashing is the one act BOTH players
-/// perform and the Corp must go on trashing its own cards.
+/// The whole sentence is still ONE instruction (9.11.3): `if_met` carries the
+/// condition and the effect together, so no checkpoint, reaction window or
+/// interrupt window opens between the test and the prohibition.
 ///
-/// The sentence still carries `.unimplemented(…)` whole, because 9.11.3 makes
-/// it ONE instruction: a requirement that cannot be stated is not a smaller
-/// version of the sentence, it is a prohibition that would apply when the
-/// printed one does not.
+/// Three things decide the prohibition's shape:
 ///
-/// The subroutine is complete: 1.11.3b's loss, which is not a spend, and
-/// which leaves a Runner with no clicks at zero rather than failing.
+/// * It is a LINGERING EFFECT (9.10.1) with a stated duration, not a static
+///   declaration of the ice — derez or trash the ice mid-run and the printed
+///   sentence lifts nothing, because it never said it would.
+/// * Its scope is a DESCRIPTION and not a named card. "Corp cards" is re-read
+///   wherever the act is offered, which is what reaches an agenda that is
+///   still in R&D — not installed, not in play — at the moment the sentence
+///   resolves. A named-card prohibition resolves through announced targets
+///   that 9.10.1 announces none of and would forbid nothing at all.
+/// * "**They**" is load-bearing, so the prohibition names the Runner.
+///   Stealing (7.5) is the Runner's act by definition, but trashing is the one
+///   act BOTH players perform, and the Corp must go on trashing its own cards
+///   — its own assets, its own operations on resolution — throughout the run.
+///
+/// The subroutine is 1.11.3b's loss, which is not a spend, and which leaves a
+/// Runner with no clicks at zero rather than failing.
 pub fn vertigo() -> Card {
     card("Vertigo")
         .corp()
@@ -1189,7 +1204,19 @@ pub fn vertigo() -> Card {
         .cost(1)
         .text("When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run.")
         .text("[subroutine] The Runner loses [click].")
-        .unimplemented("When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run.")
+        .when(
+            passed(),
+            [if_met(
+                &[at_most(clicks_of(Runner), 0)],
+                [cannot_act_on_matching(
+                    &[controlled_by(Corp)],
+                    Some(Runner),
+                    &[ProhibitedAction::Steal, ProhibitedAction::Trash],
+                    WantedDuration::ThisRun,
+                )],
+            )],
+        )
+        .named("no clicks, no stealing or trashing")
         .subroutine([lose_clicks(Runner, 1)])
         .named("the runner loses a click")
         .build()

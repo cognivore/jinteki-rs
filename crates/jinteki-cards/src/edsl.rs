@@ -2784,6 +2784,20 @@ pub fn same_action_in_a_row(side: Side, count: usize) -> TriggerCond {
 pub fn different_actions_this_turn(side: Side, count: usize) -> TriggerCond {
     TriggerCond::DifferentActionsThisTurn { side, count }
 }
+/// "The first time you spend N[click] on the same action each turn…"
+/// (Jeeves Model Bioroids; 1.16.4d). The third of 5.2.5's action-shaped
+/// conditions, and the one that counts CLICKS rather than actions: the
+/// clicks counted are every click spent to TAKE one action, including those
+/// of an additional cost paid several steps into its resolution — so a basic
+/// purge (one action, three clicks) meets it and so do a double operation
+/// and an ordinary action taken after it (two actions, three clicks between
+/// them).
+///
+/// Pair it with [`CardBuilder::when_first_each_turn`] for the printed "the
+/// first time … each turn": 9.6.5c's ordinal, not 9.3.6g's flag.
+pub fn spends_clicks_on_one_action(side: Side, count: u32) -> TriggerCond {
+    TriggerCond::ClicksSpentOnAction { side, count }
+}
 /// "Whenever the Runner draws a card…" (8.4.2: met once per card drawn).
 pub fn draws_a_card(side: Side) -> TriggerCond {
     TriggerCond::PlayerDrawsCards(side)

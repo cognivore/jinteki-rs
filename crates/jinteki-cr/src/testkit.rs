@@ -5756,6 +5756,22 @@ pub fn jeeves_like(name: &'static str, count: u32) -> PrintedCard {
     c
 }
 
+/// The same shape with the ordinal Jeeves Model Bioroids actually prints:
+/// "**The first time** you spend N[click] on the same action **each turn**,
+/// …" — 9.6.5c's stipulation about the occurrence, over 1.16.4d's condition.
+///
+/// The pair exists because the two interact, and getting the interaction
+/// wrong silences the card completely: 9.6.5c counts only the times the
+/// condition was actually MET, and 1.16.4d's condition is met by the Nth
+/// click spent on an action and not by the first. An ordinal read off the
+/// bare click records is spent by click one, and click three — the one the
+/// sentence is about — is then refused as a repeat.
+pub fn jeeves_like_first_each_turn(name: &'static str, count: u32) -> PrintedCard {
+    let mut c = jeeves_like(name, count);
+    c.abilities = c.abilities.into_iter().map(|a| a.first_time_each_turn()).collect();
+    c
+}
+
 /// Blue Level Clearance shape (1.16.4d): an operation with an ADDITIONAL play
 /// cost of 1 [click].
 pub fn additional_click_operation(name: &'static str, cost: u32) -> PrintedCard {

@@ -40,7 +40,7 @@ Identity is COMPLETE. Printed text below is from
       "When you score this agenda, place 1 agenda counter on it for each hosted advancement counter past 3. / Hosted agenda counter: Add 1 card from Archives to HQ."
 - [x] **Estelle Moon** ◆ ×3 — asset · Executive · cost 2, trash 3
       "Whenever you install a card in the root of a remote server, place 1 power counter on this asset. / [trash]: For each power counter on this asset, gain 2[credit] and draw 1 card."
-- [ ] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
+- [x] **Jeeves Model Bioroids** ◆ ×1 — asset · Alliance · cost 2, trash 5
       "This card costs 0 influence if you have 6 or more non-alliance [haas-bioroid] cards in your deck. / The first time you spend 3[click] on the same action each turn, gain [click]."
 - [ ] **Lakshmi Smartfabrics** ×2 — asset · cost 1, trash 3
       "Whenever you rez a card, place 1 power counter on Lakshmi Smartfabrics. / X hosted power counters: Reveal an agenda worth X points from HQ. The Runner cannot steal copies of that agenda for the remainder of this turn."
@@ -72,7 +72,7 @@ Identity is COMPLETE. Printed text below is from
       "[subroutine] End the run."
 - [x] **Fairchild 3.0** ×2 — ice · Code Gate - Bioroid - AP · cost 6, str 5
       "Lose [click][click][click]: Break up to 3 subroutines on this ice. Only the Runner can use this ability. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] The Runner must pay 3[credit] or trash 1 of their installed cards. / [subroutine] Do 1 core damage or end the run."
-- [ ] **Vertigo** ×1 — ice · Code Gate · cost 1, str 1
+- [x] **Vertigo** ×1 — ice · Code Gate · cost 1, str 1
       "When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run. / [subroutine] The Runner loses [click]."
 - [x] **Drafter** ×2 — ice · Sentry · cost 3, str 3
       "[subroutine] You may add 1 card from Archives to HQ. / [subroutine] You may install 1 card from Archives or HQ, ignoring all costs."
@@ -155,8 +155,23 @@ that ground when this list was re-read against the kernel:
   the W13e wave under CR 1.16.4d's citation rather than 5.2.1's; it is read by
   the checkpoint scan, `tk::jeeves_like` is its shape, and
   `example_rule_inherent_cost_aggregates_1` drives it on a board. **Jeeves
-  Model Bioroids** is finishable now and is not written yet — its sentence is
-  that condition under `when_first_each_turn`, with `gain_clicks(Corp, 1)`.
+  Model Bioroids** is written and ticked, as
+  `when_first_each_turn(spends_clicks_on_one_action(Corp, 3), …)`.
+  Writing it did turn up one defect in the word rather than a gap in the
+  vocabulary, fixed in the same wave: 9.6.5c's ordinal was read off the bare
+  `ClickSpent` records, so the FIRST click of a three-click action spent it and
+  the third — the one the sentence is about — was refused as a repeat. The
+  scan now asks "how many clicks had been spent on the action in progress AT
+  THAT POINT", of the log, exactly as `same_action_run_at` already did for
+  5.2.5's neighbour.
+- **The two halves of Vertigo's first sentence** — both landed, from two
+  kernel waves that ran in parallel and each recorded the other as the
+  blocker. `at_most(clicks_of(Runner), 0)` is the number, and
+  `ProhibitionScope::Matching` is the act, the player, the description and the
+  duration. **Vertigo** is written and ticked. The "if" is CR 9.6.5**d** —
+  Underworld Contact's word order, not Quantum Predictive Model's — so it is
+  `if_met` inside the instruction, and 9.11.3 keeps the whole sentence one
+  instruction.
 
 ### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
 

@@ -17153,21 +17153,10 @@ fn drafter_recovers_from_archives_and_installs_ignoring_all_costs() {
 }
 
 /// Vertigo: "[subroutine] The Runner loses [click]."
-///
-/// PARTIAL — the "when passed" sentence is unsayable (see the card's doc
-/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
-/// the marker cannot quietly disappear.
 #[test]
 fn vertigo_subroutine_takes_a_click_off_the_runner() {
-    let vertigo = jinteki_cards::find("Vertigo").expect("Vertigo is in the card layer");
-    assert_eq!(
-        vertigo.unimplemented,
-        vec!["When the Runner passes this ice, if they have no [click] remaining, they cannot steal or trash Corp cards for the remainder of this run."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     let mut vm = Vm::empty(9105);
-    tk::install_ice(&mut vm, card_partial("Vertigo"), ServerId::Hq, true);
+    tk::install_ice(&mut vm, card("Vertigo"), ServerId::Hq, true);
     tk::fill_hand(&mut vm, Side::Corp, 3);
     tk::fill_deck(&mut vm, Side::Corp, 5);
     tk::fill_deck(&mut vm, Side::Runner, 5);
@@ -17186,6 +17175,115 @@ fn vertigo_subroutine_takes_a_click_off_the_runner() {
         "1.11.3b: one click spent on the run action, one LOST to the subroutine: {}",
         t.tail(14)
     );
+}
+
+/// Vertigo: "When the Runner passes this ice, if they have no [click]
+/// remaining, they cannot steal or trash Corp cards for the remainder of this
+/// run."
+///
+/// Both acts the sentence names, on one board, against a control that differs
+/// in nothing but the Runner's click pool at the moment of the pass. The
+/// remote's root holds an agenda and a trashable upgrade, so one breach offers
+/// the Runner exactly the two acts "steal or trash" forbids.
+///
+/// The click arithmetic is the whole setup, and Vertigo's own subroutine is
+/// part of it. The Runner is allotted four clicks in both arms:
+///
+/// * PROHIBITED — three basic credit actions, then the run. One click is left
+///   to spend on the run, so the Runner meets the ice at 0; the subroutine's
+///   1.11.3b loss finds nothing to take and leaves them at 0; the pass reads 0.
+/// * FREE — one basic credit action, then the run. Two clicks survive the run
+///   action, the subroutine takes one, and the pass reads 1.
+///
+/// 9.6.5d is why the requirement is checked at the pass and not earlier: this
+/// card's "if" follows its "when", which is Underworld Contact's template and
+/// the CR's own example of a requirement that lives in the instructions.
+///
+/// 1.2.2 shows up differently for the two acts, and both are asserted:
+/// stealing is not an option at all (7.2.3 makes it happen during the access),
+/// so the agenda is accessed and simply stays in the root; trashing IS an
+/// option, and the "cannot" WITHHOLDS it rather than failing it — the Runner
+/// could pay the 2[credit] in either arm.
+#[test]
+fn vertigo_shuts_the_run_to_stealing_and_trashing_when_the_runner_has_no_clicks() {
+    for (credit_actions, prohibited) in [(1usize, false), (3usize, true)] {
+        let mut vm = Vm::empty(9106);
+        tk::install_ice(&mut vm, card("Vertigo"), ServerId::Remote(1), true);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Loose Agenda", 3, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        let upgrade = tk::install_root(
+            &mut vm,
+            {
+                let mut u = tk::vanilla_upgrade("Trashable Upgrade", 0);
+                u.trash_cost = Some(2);
+                u
+            },
+            ServerId::Remote(1),
+            true,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 8);
+        vm.st.runner.credits = 5;
+        vm.start_turn(Side::Runner);
+        assert_eq!(
+            vm.st.runner.allotted_clicks, 4,
+            "5.6.1: the arithmetic above is written for the four clicks a Runner's turn allots"
+        );
+
+        let t = plan::play(
+            &mut vm,
+            // Stop once the Runner's whole turn has gone by.
+            Plan::corp().when(Match::action().first(), Reply::Halt),
+            Plan::runner()
+                .when(Match::action().times(credit_actions), Reply::credit())
+                .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+                .when(Match::mid_access().once(), Reply::Take(Pick::BasicTrash))
+                .otherwise_click_credit(),
+        );
+
+        for card_id in [agenda, upgrade] {
+            assert!(
+                vm.changes
+                    .log
+                    .iter()
+                    .any(|c| matches!(c, GameChange::CardAccessed { obj } if *obj == card_id)),
+                "7.2/7.3: both root cards were accessed either way — the sentence forbids \
+                 the acts, not the access (prohibited={prohibited}): {}",
+                t.tail(40)
+            );
+        }
+        assert_eq!(
+            vm.st.objects[&agenda].zone == Zone::ScoreArea(Side::Runner),
+            !prohibited,
+            "1.2.2/7.5: the agenda is stolen only when the Runner still had a [click] at \
+             the pass (prohibited={prohibited}): {}",
+            t.tail(40)
+        );
+        let trash_was_offered = t
+            .entries
+            .iter()
+            .flat_map(|e| e.options())
+            .any(|o| matches!(o, jinteki_cr::decision::WindowOption::BasicTrash { card, .. } if *card == upgrade));
+        assert_eq!(
+            trash_was_offered, !prohibited,
+            "1.2.2/7.1.5: the basic trash ability is WITHHELD rather than failed, and the \
+             Runner held 5[credit] against a trash cost of 2 in both arms \
+             (prohibited={prohibited}): {}",
+            t.tail(40)
+        );
+        assert_eq!(
+            vm.st.objects[&upgrade].zone == Zone::Discard(Side::Corp),
+            !prohibited,
+            "…so the upgrade is trashed only when nothing forbade it \
+             (prohibited={prohibited}): {}",
+            t.tail(40)
+        );
+    }
 }
 
 /// Fairchild 3.0: "Lose [click][click][click]: Break up to 3 subroutines on
@@ -17895,6 +17993,97 @@ fn mca_austerity_policy_cashes_in_for_four_clicks_only_with_three_counters() {
             t.tail(30)
         );
     }
+}
+
+/// Jeeves Model Bioroids: "The first time you spend 3[click] on the same
+/// action each turn, gain [click]."
+///
+/// 5.2.6h's basic purge is ONE action that costs three clicks, which is the
+/// cleanest thing in the game that meets this condition — and the Corp's turn
+/// allots exactly three clicks, so the whole turn goes into it. What the Corp
+/// has left when the next action window opens is the card: 3 − 3 = 0 without
+/// Jeeves, and 1 with it.
+///
+/// The control arm is the basic credit action, which costs one click. It shows
+/// the threshold is real and, together with
+/// [`jeeves_model_bioroids_does_not_count_three_separate_one_click_actions`],
+/// that the condition is about CLICKS ON ONE ACTION and not about actions.
+#[test]
+fn jeeves_model_bioroids_hands_back_a_click_after_three_on_one_action() {
+    for (purge, clicks_left) in [(false, 2u32), (true, 1u32)] {
+        let mut vm = Vm::empty(9126);
+        tk::install_root(&mut vm, card("Jeeves Model Bioroids"), ServerId::Remote(1), true);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 0;
+        vm.start_turn(Side::Corp);
+        assert_eq!(
+            vm.st.corp.allotted_clicks, 3,
+            "5.6.1: the Corp's turn allots three clicks, which is exactly one purge"
+        );
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(
+                    Match::action().once(),
+                    if purge { Reply::Take(Pick::Purge) } else { Reply::credit() },
+                )
+                .stop_at_action(),
+            Plan::runner(),
+        );
+
+        assert_eq!(
+            t.ever_offered("three clicks on one action"),
+            purge,
+            "1.16.4d: the condition is met by the clicks spent to TAKE one action \
+             (purge={purge}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.corp.clicks, clicks_left,
+            "the Corp's pool after the action: 3 − 3 + 1 against 3 − 1 (purge={purge}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Jeeves Model Bioroids, the other half of "on the SAME action": three basic
+/// credit actions spend three clicks between them and meet nothing.
+///
+/// 5.2.5a makes all three of them the same action — the same basic action —
+/// so this is also the arm that separates this card from The Collective's
+/// "the same action three times in a row", which those three DO meet.
+/// 1.16.4d counts the clicks spent to take ONE action, and each of these
+/// actions cost one.
+#[test]
+fn jeeves_model_bioroids_does_not_count_three_separate_one_click_actions() {
+    let mut vm = Vm::empty(9127);
+    tk::install_root(&mut vm, card("Jeeves Model Bioroids"), ServerId::Remote(1), true);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 0;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp().otherwise_click_credit(),
+        // Stop once the Corp's whole turn has gone by.
+        Plan::runner().when(Match::action().first(), Reply::Halt),
+    );
+
+    assert!(
+        !t.ever_offered("three clicks on one action"),
+        "1.16.4d / 5.2.5a: three actions costing one click each are not three clicks \
+         spent on one action: {}",
+        t.tail(30)
+    );
+    assert_eq!(
+        vm.st.corp.credits, 3,
+        "…and the Corp took exactly three basic credit actions, so three clicks were \
+         spent in the turn: {}",
+        t.tail(30)
+    );
 }
 
 // ---------------------------------------------------------------------------
