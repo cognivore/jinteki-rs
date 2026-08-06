@@ -2981,10 +2981,34 @@ function cardInfoHtml(c, face) {
   const art = c.code && !back
     ? `<img class="zart" src="${cardImgUrl(c.code)}" alt="" onerror="this.remove()">`
     : "";
+  // THE CARD PRINTS ITS SUBROUTINES ONCE. The text box already carries every
+  // "[subroutine] …" line, and the live list adds exactly one thing the text
+  // cannot: whether that subroutine has been broken. Rendering both put IP
+  // Block's two subroutines on screen four times — twice as their printed
+  // text, then twice more as the builder's auto-labels ("Subroutine",
+  // "Subroutine 2"), which name nothing a player could act on. So: lift the
+  // printed lines out of the body, and render ONE row per subroutine, in
+  // printed order, carrying its own text and its broken state.
+  const rawText = (back ? back.text : c.text) || "";
+  const subLines = [];
+  const bodyLines = [];
+  rawText.split("\n").forEach((ln) => {
+    if (/^\s*\[subroutine\]/i.test(ln)) subLines.push(ln.replace(/^\s*\[subroutine\]\s*/i, ""));
+    else bodyLines.push(ln);
+  });
+  const subs = back ? [] : (c.subroutines || []);
+  const subRow = (text, broken) =>
+    `<div class="ztext ${broken ? "zline" : ""}">↳ ${text}${broken ? " (broken)" : ""}</div>`;
+  const subHtml = subs.length
+    // The i-th live subroutine is the i-th printed one (9.8: they resolve in
+    // printed order). Fall back to the label only if a card somehow has more
+    // live subroutines than printed lines — gained subroutines, one day.
+    ? subs.map((s, i) => subRow(sym(subLines[i] ?? "") || abilityText(s.label, c.title, false), s.broken)).join("")
+    : subLines.map((t) => subRow(sym(t), false)).join("");
   return `${art}<h3>${faceTitle(c, face)}</h3>
     <div class="zline">${lines.join("<br>")}</div>
-    <div class="ztext">${sym((back ? back.text : c.text) || "")}</div>
-    ${back ? "" : (c.subroutines || []).map((s) => `<div class="ztext ${s.broken ? "zline" : ""}">↳ ${abilityText(s.label, c.title, false)}${s.broken ? " (broken)" : ""}</div>`).join("")}`;
+    <div class="ztext">${sym(bodyLines.join("\n"))}</div>
+    ${subHtml}`;
 }
 
 /* The hover preview is the one thing on screen a click CANNOT close: it is
