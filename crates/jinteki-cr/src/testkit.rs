@@ -1193,6 +1193,48 @@ pub fn breach_replacement_card(
     c
 }
 
+/// The general 9.9.2b shape — "instead of <effect class>, <do these
+/// instructions>" — as a MANDATORY turn-bound replacement created by a paid
+/// ability. `applies_to` is a parameter because the thing worth testing is
+/// not any one class but what `SuppressAndResolve` does to EVERY class it is
+/// pointed at: the replacing instructions resolve as a rules ability of this
+/// card, on a frame of their own, and the effect they replaced does not
+/// happen. Pointed at `Breach` this is Pinhole Threading; pointed at
+/// `GainCredits` it is the same sentence applied inside an ability.
+pub fn instead_resolve_card(
+    name: &'static str,
+    label: &'static str,
+    applies_to: crate::effects::EffectClass,
+    instrs: Vec<Instruction>,
+) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Replacement {
+                optional: false,
+                applies_to,
+                with: crate::lingering::ReplacementTransform::SuppressAndResolve(instrs),
+            },
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled(label)];
+    c
+}
+
+/// A card whose paid ability simply gains credits — something for a
+/// `GainCredits`-class replacement to have to replace.
+pub fn gain_credits_card(name: &'static str, label: &'static str, amount: i64) -> PrintedCard {
+    let mut c = vanilla_runner_card(name, CardType::Resource);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::GainCredits(Side::Runner, Quantity::c(amount))],
+    )
+    .labeled(label)];
+    c
+}
+
 /// Marker shape (9.8.3e): a card whose paid ability grants a subroutine to
 /// ANOTHER piece of ice for a stated duration — an external grant, which
 /// sorts after the ice's printed subroutines and orders within its category

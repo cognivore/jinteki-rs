@@ -226,11 +226,15 @@ pub fn mutual_favor() -> Card {
 ///  access 1 card in the root of another server. If that card is an agenda,
 ///  you cannot steal or trash it during this access."
 ///
-/// UNIMPLEMENTED: both sentences. The breach replacement itself is sayable
-/// now (Account Siphon uses it), but the run's server is a choice the Runner
-/// makes, there is no instruction that accesses a card in the root of a
-/// server other than the one being breached, and nothing states a per-access
-/// prohibition on stealing or trashing.
+/// COMPLETE. "Run any server" names none, so the server is the Runner's own
+/// announcement at 6.9.1a, and the allowed set the clause is tied to (6.7.4a)
+/// is every server. "Instead of breaching the attacked server" is CR 9.9.2's
+/// replacement, MANDATORY here where Account Siphon's is a "you may" — and a
+/// replacement means the breach DOES NOT HAPPEN, so no card of the attacked
+/// server is ever accessed. The access it resolves instead is described
+/// relative to the run (7.5.5, "the root of another server"), and the last
+/// sentence is 1.2.2's prohibition scoped to that one access — the accessed
+/// agenda can be neither stolen nor trashed while it lasts.
 pub fn pinhole_threading() -> Card {
     card("Pinhole Threading")
         .runner()

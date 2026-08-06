@@ -1427,6 +1427,17 @@ impl Vm {
                 cite!("rule_step_in_timing_structure_is_instruction");
                 match op {
                     StepOp::Instr(k) | StepOp::InstrThenGoto(k, _) => {
+                        // The step's own frame index: making the instruction
+                        // imminent can push a frame above this one — CR
+                        // 9.9.2b's "instead, <do these instructions>" resolves
+                        // as the window opens (9.9.9b), and a MANDATORY one
+                        // needs no decision to get there. This frame's phase
+                        // must advance anyway, or the step would run its Enter
+                        // phase a SECOND time once that frame completes and
+                        // make a FRESH imminence — one the replacement has
+                        // already been consumed by, so the replaced effect
+                        // would happen after all.
+                        let me = self.frames.len() - 1;
                         let instr = self.step_instruction(k);
                         let atoms = self.expected_atoms(&instr, self.st.turn_side, &[], None);
                         let asked =
@@ -1439,7 +1450,7 @@ impl Vm {
                                 Vec::new(),
                                 atoms,
                             );
-                        self.set_structure_phase(StepPhase::Exec);
+                        self.set_structure_phase_at(me, StepPhase::Exec);
                         if asked {
                             // 9.9.11 order Decision pending; the answer path
                             // reopens the interrupt window before Exec runs.
@@ -7014,6 +7025,15 @@ impl Vm {
         }
     }
 
+    /// The same, addressing a frame by INDEX — for the callers that may have
+    /// had frames pushed above them since they last looked (a 9.9.2b
+    /// replacement resolving in place of what it replaced).
+    fn set_ability_phase_at(&mut self, idx: usize, p: AbilityPhase) {
+        if let Some(Frame::Ability(af)) = self.frames.get_mut(idx) {
+            af.phase = p;
+        }
+    }
+
     /// CR 1.15.4: every target the innermost resolving ability has
     /// announced, in announcement order.
     fn ability_targets(&self) -> Vec<ObjectId> {
@@ -9368,6 +9388,11 @@ impl Vm {
         // CR 9.6.12/9.8.8: independence at first-instruction imminence.
         cite!("rule_conditional_ability_independent");
         cite!("rule_subroutine_independent");
+        // This frame's index, for the same reason [`Vm::tick_structure`] takes
+        // one: a MANDATORY 9.9.2b replacement applied as the window opens
+        // (9.9.9b) pushes its own resolution frame above us, and everything
+        // below belongs to OUR frame, not to whatever now sits on top.
+        let me = self.frames.len() - 1;
         let asked = self.push_imminent(
             instr,
             controller,
@@ -9377,7 +9402,7 @@ impl Vm {
             counter_targets,
             atoms,
         );
-        if let Some(Frame::Ability(af)) = self.frames.last_mut() {
+        if let Some(Frame::Ability(af)) = self.frames.get_mut(me) {
             af.imminent_index = Some(0);
         }
         if asked {
@@ -9386,7 +9411,7 @@ impl Vm {
             return;
         }
         if !self.open_interrupt_window_if_relevant() {
-            self.set_ability_phase(AbilityPhase::Resolve);
+            self.set_ability_phase_at(me, AbilityPhase::Resolve);
         }
     }
 
