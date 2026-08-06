@@ -269,6 +269,288 @@ pub fn mca_austerity_policy() -> Card {
         .build()
 }
 
+/// Mumba Temple — Asset: Alliance - Facility. Rez 1, trash 3.
+/// "This card costs 0 influence if you have 15 or fewer ice in your deck.
+///  2[recurring-credit]
+///  Use these credits to rez cards."
+///
+/// PARTIAL: the credits arrive; nothing can spend them yet.
+///
+/// The alliance line is a 1.4.5 deckbuilding restriction on influence and not
+/// a sentence this card does — the same treatment Jeeves Model Bioroids's
+/// first line already has: carried as printed text, denoting into nothing,
+/// because nothing about it is ever asked during a game.
+///
+/// "2[recurring-credit]" is a printed fact rather than an ability (1.10.5),
+/// and 1.10.5b is what makes it observable: the credits are first placed as
+/// soon as the card becomes active — for a Corp asset, the moment it is
+/// rezzed — and 1.10.5d refills rather than accumulates them when the Corp's
+/// turn begins, so the card never holds more than the 2 it prints.
+///
+/// UNIMPLEMENTED: "Use these credits to rez cards." 1.10.3c is the whole of
+/// what hosted credits are — they may be spent only as the hosting card's
+/// ability allows — and the vocabulary names five allowances: any payment, a
+/// payment to trash described cards, a payment for USING described cards
+/// (9.1.6a's paid-ability trigger cost), a trace attempt's two spend steps,
+/// and a payment to advance described cards. Rezzing is none of them and is
+/// not a spelling of any of them: 8.1.2's rez procedure pays a card's rez
+/// cost and uses no ability at all, so writing this as the "using" allowance
+/// would let the credits pay for paid abilities they may not pay for and
+/// still not pay for a rez. With the restriction unsayable the placed credits
+/// are reachable by no payment, which is the honest reading of a card whose
+/// only permission is the marked sentence. The general capability wanted is
+/// on MEZZIE-QUEUE.md's Blockers.
+pub fn mumba_temple() -> Card {
+    card("Mumba Temple")
+        .corp()
+        .asset()
+        .faction("Neutral")
+        .subtypes(&["Alliance", "Facility"])
+        .cost(1)
+        .trash_cost(3)
+        .recurring_credits(2)
+        .text("This card costs 0 influence if you have 15 or fewer ice in your deck.")
+        .text("2[recurring-credit]")
+        .text("Use these credits to rez cards.")
+        .unimplemented("Use these credits to rez cards.")
+        .build()
+}
+
+/// Spin Doctor — Asset: Character. Rez 0, trash 2. ◆
+/// "When you rez this asset, draw 2 cards.
+///  Remove this asset from the game: Shuffle up to 2 cards from Archives into
+///  R&D."
+///
+/// COMPLETE. Two printed sentences and two abilities, and they are two rather
+/// than one because the second prints a colon: everything before it is a cost
+/// (1.16.1) and what follows is a paid ability, while the first is 9.6.1's
+/// conditional met by an occurrence.
+///
+/// The conditional's trigger is the REZ and not the install, for the reason
+/// Marilyn Campaign's is: a Corp card installed facedown is inactive (9.1.8)
+/// and has no ability to meet anything with until 8.1.3 turns it faceup, at
+/// which point it is there in time to be met by the occurrence that activated
+/// it.
+///
+/// The paid ability's cost removes its own source from the game (4.9), and
+/// 1.16.1 is what makes that the interesting half: a trigger cost is paid
+/// BEFORE the ability's effects resolve, so this card is already in the
+/// removed-from-game zone — and therefore inactive — while the shuffle it
+/// paid for happens. 9.1.8g is why the ability resolves anyway: an ability
+/// whose trigger condition was met, or whose cost has been paid, resolves
+/// even though its source has left the zone it was in. Nothing of the
+/// resolution reads the card, so nothing about it is diminished by the card
+/// being gone.
+///
+/// 9.6.10 is the other end of that rule and the reason the two halves are
+/// worth keeping apart: a PENDING instance of an ability that becomes
+/// inactive before it resolves never resolves. A card that derezzes or
+/// trashes this asset while its "when you rez" instance is still pending —
+/// the Councilman class — takes that draw away entirely, which is not what
+/// paying a cost does and not a case 9.1.8g reaches.
+///
+/// "Up to 2 cards from Archives" announces its targets (1.15.2) with 1.15.2e's
+/// floor of zero, and 4.2.3 shuffles the deck they go into.
+pub fn spin_doctor() -> Card {
+    card("Spin Doctor")
+        .corp()
+        .asset()
+        .faction("NBN")
+        .subtypes(&["Character"])
+        .cost(0)
+        .trash_cost(2)
+        .unique()
+        .text("When you rez this asset, draw 2 cards.")
+        .text("Remove this asset from the game: Shuffle up to 2 cards from Archives into R&D.")
+        .when(self_rezzed(), [draw(Corp, 2)])
+        .named("draw two on the rez")
+        .paid(remove_self_cost(), [shuffle_from_discard_into_deck(Corp, 2)])
+        .named("shuffle archives back into r&d")
+        .build()
+}
+
+// ---------------------------------------------------------------------------
+// Operations
+// ---------------------------------------------------------------------------
+
+/// Enhanced Login Protocol — Operation: Current. Cost 2.
+/// "This operation is not trashed until another current is played or an agenda
+///  is stolen.
+///  As an additional cost to take the basic action to run a server for the
+///  first time each turn, the Runner must spend [click]."
+///
+/// PARTIAL: the current stays; the toll it charges cannot be stated.
+///
+/// The first sentence is 8.6.6c read exactly: instead of trashing the card at
+/// step 8.6.7g of playing it, a lingering effect is created whose duration
+/// expires as one of the printed occurrences happens, and the card stays in
+/// the play area — and therefore active, and therefore still speaking —
+/// until then. 3.5.1b prints the two occurrences for a current OPERATION:
+/// another current operation or event being played by either player, and the
+/// Runner stealing an agenda. That is the same declaration Targeted Marketing
+/// already carries, and it is what makes the second sentence a static ability
+/// of a card in play rather than something the operation does as it resolves.
+///
+/// UNIMPLEMENTED: the second sentence. It is 1.16.10's additional cost on
+/// 5.2.7a's basic run action, paid at 6.9.1a before the run formally begins
+/// (which is exactly the CR's own worked example against Heinlein Grid: the
+/// click is spent to INITIATE the run and is not spent during it). The
+/// declaration for that cost exists and names which servers it reaches — but
+/// it says nothing about WHICH TAKINGS of the action it attaches to, and this
+/// card charges only the first each turn. Written with the word that exists
+/// the Runner would pay a click for every run action of every turn, which is
+/// a strictly worse card than the printed one and a 1.16.1b gate on actions
+/// the Runner is entitled to take for free. A conditional ability met by the
+/// first run each turn is not a substitute either: an additional cost gates
+/// the action (1.16.1b — an unpayable cost means the action cannot be taken
+/// at all), and a conditional resolves after it. So it is marked. The general
+/// capability wanted is on MEZZIE-QUEUE.md's Blockers.
+pub fn enhanced_login_protocol() -> Card {
+    card("Enhanced Login Protocol")
+        .corp()
+        .operation()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Current"])
+        .cost(2)
+        .text("This operation is not trashed until another current is played or an agenda is stolen.")
+        .text("As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click].")
+        .declares([not_trashed_until_an_agenda_is_stolen()])
+        .named("the current stays in the play area")
+        .unimplemented("As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click].")
+        .build()
+}
+
+/// Flood the Market — Operation: Double. Cost 3.
+/// "As an additional cost to play this operation, spend [click].
+///  Choose 1 installed card you can advance. Place 1 advancement counter on
+///  that card for each remote server that has a card in its root and is
+///  protected by ice."
+///
+/// PARTIAL: the double costs its extra click; the counters cannot be counted.
+///
+/// The first sentence is 5.6.2a's *double* said in the card's own words, and
+/// it is a printed FACT about this card rather than a declaration — 1.16.10's
+/// additional cost to play THIS operation, paid at step 8.6.7b along with the
+/// 3[credit], which is where BOOM! already carries the same line.
+///
+/// UNIMPLEMENTED: the rest, quoted as the two sentences it prints because
+/// 9.11.4c makes them ONE instruction — the first only chooses a target and
+/// the second acts on it, so the choice is announced as that one instruction
+/// becomes imminent and the counters land when it resolves. Marking half of
+/// it would leave a choice that nothing reads.
+///
+/// The half that has no words is the count. "For each remote server that has
+/// a card in its root and is protected by ice" is 9.12.2's calculated
+/// quantity over 4.6.6's SERVERS, and the quantity language counts cards,
+/// counters and pools and has no term for a server at all. No count of cards
+/// stands in for it: 4.6.6e lets a remote root hold an asset or agenda AND any
+/// number of upgrades, so counting what is in the qualifying roots over-counts
+/// a server with an upgrade on it, and counting the ice in front of them
+/// over-counts a server behind two. An over-count here is advancement counters
+/// the Corp did not earn, so it is marked rather than approximated. The
+/// general capability wanted is on MEZZIE-QUEUE.md's Blockers.
+pub fn flood_the_market() -> Card {
+    card("Flood the Market")
+        .corp()
+        .operation()
+        .faction("NBN")
+        .subtypes(&["Double"])
+        .cost(3)
+        .text("As an additional cost to play this operation, spend [click].")
+        .text("Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice.")
+        .additional_play_cost(clicks(1))
+        .unimplemented("Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice.")
+        .build()
+}
+
+/// Friends in High Places — Operation: Terminal. Cost 2.
+/// "After you resolve this operation, end your action phase.
+///  Install up to 2 cards from Archives (paying all install costs)."
+///
+/// COMPLETE. Two printed sentences: 5.6.2b's *terminal*, written as the
+/// conditional it is — met at step 8.6.7h, AFTER the play abilities have
+/// resolved, which is why the installs still happen — and the installs
+/// themselves.
+///
+/// "Install up to 2 cards" is written as two instructions and not one, which
+/// is 9.11.4b in so many words: a sentence directing a player to install more
+/// than one card handles each as a separate instruction, and the CR's own
+/// example rewrites Shipment from MirrorMorph's single sentence as one "you
+/// may install a card" per card. Each of the two therefore announces at most
+/// one card (1.15.2e's "up to" is what makes the floor zero, so a Corp with
+/// nothing worth installing declines both), and a card taken by the first is
+/// no longer in Archives for the second to describe.
+///
+/// Archives is where they come from, and 1.15.2c is why the description says
+/// so: a description reaches installed cards unless it names another zone.
+/// The cards there are INACTIVE (4.4.4) and that is no obstacle — installing
+/// is a movement into the play area, and 8.5.13 is what the facedown half of
+/// Archives makes interesting, since a card whose provenance was hidden is
+/// still installed the same way.
+///
+/// The parenthetical is the card refusing 1.16.5c: nothing is ignored, so
+/// 8.5.11a's 1[credit] for each piece of ice already protecting the
+/// destination server is paid, and 8.5.16b is a real choice for a Corp card —
+/// unlike the Runner's rig, a Corp destination is a server the installer
+/// declares, with 8.5.2a's brand-new remote among the options.
+pub fn friends_in_high_places() -> Card {
+    card("Friends in High Places")
+        .corp()
+        .operation()
+        .faction("Haas-Bioroid")
+        .subtypes(&["Terminal"])
+        .cost(2)
+        .text("After you resolve this operation, end your action phase.")
+        .text("Install up to 2 cards from Archives (paying all install costs).")
+        .when(after_this_resolves(), [end_action_phase(Corp)])
+        .named("terminal: the action phase ends")
+        .play([
+            install(choose_up_to(1, &[in_archives()]), InstallDest::DeclaredByInstaller),
+            install(choose_up_to(1, &[in_archives()]), InstallDest::DeclaredByInstaller),
+        ])
+        .named("two installs out of archives")
+        .build()
+}
+
+/// Fully Operational — Operation. Cost 1.
+/// "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server
+///  that has a card in its root and is protected by ice."
+///
+/// PARTIAL: the process is expressed; the repetition is not.
+///
+/// "Gain 2[credit] or draw 2 cards" is 9.11.4g's optioned effect: the choice
+/// itself ends an instruction and the option chosen begins the next, so a
+/// checkpoint falls between choosing and doing. 1.14.4 leaves the choice with
+/// the Corp, the controller of the ability's source, because the sentence
+/// names nobody else.
+///
+/// UNIMPLEMENTED: "Repeat this process for each remote server that has a card
+/// in its root and is protected by ice." The count is the same one Flood the
+/// Market wants and cannot have — 9.12.2's calculated quantity over 4.6.6's
+/// SERVERS, which the quantity language has no term for, and which no count of
+/// cards stands in for (4.6.6e's root holds an asset or agenda and any number
+/// of upgrades; a server can be behind more than one piece of ice). Note also
+/// that the repetition is one MORE for each such server: the process happens
+/// once and then again per server, so the number of times is 1 + N and never
+/// N. Written with a wrong count the card pays out credits and cards that were
+/// never earned, so it is marked. The general capability wanted is on
+/// MEZZIE-QUEUE.md's Blockers.
+pub fn fully_operational() -> Card {
+    card("Fully Operational")
+        .corp()
+        .operation()
+        .faction("Haas-Bioroid")
+        .cost(1)
+        .text("Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice.")
+        .play([choose_one([
+            ("gain 2[credit]", vec![gain(Corp, 2)]),
+            ("draw 2 cards", vec![draw(Corp, 2)]),
+        ])])
+        .named("gain two or draw two")
+        .unimplemented("Repeat this process for each remote server that has a card in its root and is protected by ice.")
+        .build()
+}
+
 // ---------------------------------------------------------------------------
 // Ice
 // ---------------------------------------------------------------------------
@@ -555,7 +837,13 @@ pub fn deck() -> Vec<Card> {
         lakshmi_smartfabrics(),
         marilyn_campaign(),
         mca_austerity_policy(),
+        mumba_temple(),
         super::gauntlet::rashida_jaheem(),
+        spin_doctor(),
+        enhanced_login_protocol(),
+        flood_the_market(),
+        friends_in_high_places(),
+        fully_operational(),
         tatu_bola(),
         vanilla(),
         fairchild_3_0(),

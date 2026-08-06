@@ -52,13 +52,13 @@ Identity is COMPLETE. Printed text below is from
       "This card costs 0 influence if you have 15 or fewer ice in your deck. / 2[recurring-credit] / Use these credits to rez cards."
 - [x] **Rashida Jaheem** ◆ ×3 — asset · Character · cost 0, trash 1
       "When your turn begins, you may trash Rashida Jaheem to gain 3[credit] and draw 3 cards."
-- [ ] **Spin Doctor** ◆ ×3 — asset · Character · cost 0, trash 2
+- [x] **Spin Doctor** ◆ ×3 — asset · Character · cost 0, trash 2
       "When you rez this asset, draw 2 cards. / Remove this asset from the game: Shuffle up to 2 cards from Archives into R&D."
 - [ ] **Enhanced Login Protocol** ×2 — operation · Current · cost 2
       "This operation is not trashed until another current is played or an agenda is stolen. / As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."
 - [ ] **Flood the Market** ×1 — operation · Double · cost 3
       "As an additional cost to play this operation, spend [click]. / Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice."
-- [ ] **Friends in High Places** ×3 — operation · Terminal · cost 2
+- [x] **Friends in High Places** ×3 — operation · Terminal · cost 2
       "After you resolve this operation, end your action phase. / Install up to 2 cards from Archives (paying all install costs)."
 - [ ] **Fully Operational** ×3 — operation · cost 1
       "Gain 2[credit] or draw 2 cards. Repeat this process for each remote server that has a card in its root and is protected by ice."
@@ -253,6 +253,94 @@ or lower" are one word with different content, and not a filter apiece.
 
 Wants it: **Lakshmi Smartfabrics** ("Reveal an agenda worth X points from HQ" —
 which also needs the prohibition above, so the sentence waits on both).
+
+### The printed ORDINAL on an additional-cost declaration (CR 1.16.10 / 5.2.5a)
+
+`StaticDecl::AdditionalRunActionCost { cost, on }` says WHAT the cost is and
+WHICH servers it reaches, and nothing about WHICH TAKINGS of the action it
+attaches to. A sentence that charges only some of them — "…**for the first
+time each turn**" — has no position to say so, and written without it the cost
+is charged every time. That is not a small error: 1.16.1b makes an additional
+cost a gate on the action, so an over-broad one forbids actions the player is
+entitled to take for free.
+
+A conditional ability met by the first run each turn is not a substitute and
+must not be offered as one. An additional cost is paid at 6.9.1a to INITIATE
+the action and gates it; a conditional resolves after it and gates nothing.
+(The CR's own Heinlein Grid example turns on exactly that distinction: the
+click this cost charges is spent to initiate the run and is not spent during
+it.)
+
+Wanted: the ordinal as CONTENT on the one declaration, the way
+`StaticDecl::InherentCostMod` already carries `first_each_turn` — one
+position, read from the change log, covering "the first N times each turn" for
+every additional cost a card can print. Wanted beside it: the "names no
+server" set (`RunServerSet::Any`) reachable from the card vocabulary, which
+today offers helpers only for a named list and for 4.6.8's remotes — a
+sentence naming no server cannot be written at all, and the servers it would
+have to enumerate include remotes that do not exist when the card is written.
+
+Wants it: **Enhanced Login Protocol** (its second sentence; the current's own
+"not trashed until…" is done and tested). Note the kernel's doc comment on
+`AdditionalRunActionCost` names this card as its class exemplar — it is
+describing the ORIGINAL printing, which charged every run; the printed text in
+`netrunner-cards-json` is the revised one and it has the ordinal.
+
+### A quantity that counts SERVERS matching a description (CR 4.6.6)
+
+The `Quantity` selector language counts cards (`Count(Vec<TargetFilter>)`),
+counters, pools, accesses and subroutines. It has no term for a SERVER, so a
+"for each" over 4.6.6's servers cannot be stated — neither the count nor any
+stipulation on it.
+
+No count of cards stands in for one. 4.6.6e lets a remote root hold an asset
+or agenda AND any number of upgrades, so counting the cards in the qualifying
+roots over-counts a server with an upgrade on it; counting the ice protecting
+them over-counts a server behind two. Both directions hand out payouts that
+were never earned, which is why these sentences are marked rather than
+approximated.
+
+Wanted: one selector for servers, with the stipulations as content in the same
+filter vocabulary the card descriptions already use — the server's type
+(central or remote, 4.6.6c), whether a described card is installed in its root,
+whether ice protects it — so "each remote server that has a card in its root
+and is protected by ice", "each central server" and "each server you have a
+card installed in" are one word with different content and not a selector
+apiece. (The instruction that repeats a process the resulting number of times
+exists in the kernel as `Instruction::ForEach { count, effects }`; it is
+unreachable from the card vocabulary, and it wants the same quantity, so the
+two land together. Note the printed arithmetic: "do this, then repeat for each
+X" is 1 + N resolutions, never N.)
+
+Wants it: **Flood the Market** ("Place 1 advancement counter on that card for
+each remote server that has a card in its root and is protected by ice" — the
+*double*'s extra [click] is done); **Fully Operational** ("Repeat this process
+for each remote server that has a card in its root and is protected by ice" —
+the gain-or-draw is done).
+
+### Hosted credits spendable on REZZING (CR 1.10.3c / 8.1.2)
+
+1.10.3c is the whole of what hosted credits are: they may be spent only as the
+hosting card's ability allows. `CreditUse` names five allowances — any
+payment, trashing described cards, USING described cards (9.1.6a's paid-ability
+trigger cost), a trace attempt's two spend steps, and advancing described
+cards — and rezzing is none of them.
+
+It is not `UsingAbilitiesOf` under another name, for the reason
+`AdvancingCards` is not either: 8.1.2's rez procedure pays a card's rez cost
+and uses no ability at all, so writing a rez permission as the "using"
+allowance would let the credits pay for paid abilities they may not pay for
+and STILL not pay for a rez. A card whose only permission is unsayable has
+credits placed on it that no payment can reach.
+
+Wanted: rezzing as one more purpose on `CreditUse`, with the cards described in
+the same filter vocabulary the other purposes use (so "to rez cards", "to rez
+ice" and "to rez bioroids" are one word with different content), paired with
+the matching `CreditPurpose` read at the one place 8.1.2d's rez cost is paid.
+
+Wants it: **Mumba Temple** ("Use these credits to rez cards" — the
+2[recurring-credit] itself is done and tested, placed at the rez and refilled
+without accumulating).
 
 ### The install LOCATION as content on the install condition (CR 4.6.6e / 4.6.9d)
 

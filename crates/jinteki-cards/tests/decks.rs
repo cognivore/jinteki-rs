@@ -32,7 +32,7 @@ fn both_decks_build() {
 fn mezzies_decks_are_honest_as_far_as_they_go() {
     let cards = mezzie_decks();
     assert!(!cards.is_empty(), "the two modules are registered and return their cards");
-    for (key, expect) in [("mezzie_asa", 13usize), ("mezzie_valencia", 6usize)] {
+    for (key, expect) in [("mezzie_asa", 19usize), ("mezzie_valencia", 6usize)] {
         let deck = deck_named(key).unwrap_or_else(|| panic!("the card layer has no deck {key:?}"));
         assert_eq!(deck.len(), expect, "{key}: the cards written so far");
         for c in &deck {
@@ -219,7 +219,7 @@ fn the_doc_comment_and_the_data_carry_the_same_printed_text() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 239, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face, Ascending to Orbit is Earth Station's; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue; mezzie_asa.rs is 6 of Mezzie's ice and 5 of her assets, mezzie_valencia.rs defines none yet)");
+    assert_eq!(checked, 245, "one check per card DEFINITION (Hedge Fund is defined but not listed; Gemilang Arena is Nebula's back face, Ascending to Orbit is Earth Station's; Ken Tenma is CR 1.5.4a's pile; unlisted.rs is what no deck lists; identities/ is the CR 1.5.4a queue; mezzie_asa.rs is 6 of Mezzie's ice, 7 of her assets and 4 of her operations, mezzie_valencia.rs defines none yet)");
 }
 
 /// Collapse to one space-separated line: the doc comment wraps for width and
@@ -275,7 +275,7 @@ fn every_definition_is_reachable_from_all_cards() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 239, "one reachability check per card definition");
+    assert_eq!(checked, 245, "one reachability check per card definition");
 }
 
 /// What `cards_in` reports for a card that declared `.no_printed_text()` —

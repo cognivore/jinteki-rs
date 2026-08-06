@@ -17726,3 +17726,420 @@ fn mca_austerity_policy_cashes_in_for_four_clicks_only_with_three_counters() {
         );
     }
 }
+
+/// Mumba Temple: "2[recurring-credit]"
+///
+/// PARTIAL — "Use these credits to rez cards." is unsayable (see the card's
+/// doc comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud
+/// so the marker cannot quietly disappear. What IS printed and observable is
+/// where the credits come from and when: 1.10.5b places them as soon as the
+/// card becomes active, which for a Corp asset is the rez and nothing before
+/// it, and 1.10.5d refills rather than accumulates them at the start of the
+/// Corp's turn — so a card that has spent none of them holds exactly the 2 it
+/// prints and never 4.
+#[test]
+fn mumba_temple_places_two_recurring_credits_on_the_rez_and_never_more() {
+    let temple = jinteki_cards::find("Mumba Temple").expect("Mumba Temple is in the card layer");
+    assert_eq!(
+        temple.unimplemented,
+        vec!["Use these credits to rez cards."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9128);
+    let mt = tk::install_root(&mut vm, card_partial("Mumba Temple"), ServerId::Remote(1), false);
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 3;
+    vm.start_turn(Side::Runner);
+
+    assert_eq!(
+        vm.st.objects[&mt].counter(CounterKind::Credit),
+        0,
+        "1.10.5b: nothing is placed while the asset is still facedown and inactive"
+    );
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp().when(Match::paid().once(), Reply::rez(mt)).stop_at_action(),
+        Plan::runner().when(Match::action().first(), Reply::Halt).otherwise_click_credit(),
+    );
+    // The Runner's turn, up to their first action window: by then the Corp has
+    // rezzed the temple in a paid window.
+    g.run(&mut vm);
+    assert!(vm.st.objects[&mt].faceup, "the asset was rezzed: {}", g.transcript().tail(12));
+    assert_eq!(
+        vm.st.objects[&mt].counter(CounterKind::Credit),
+        2,
+        "1.10.5b: the 2[recurring-credit] arrived with the rez: {}",
+        g.transcript().tail(12)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        2,
+        "3 − the 1[credit] rez cost, and none of the placed credits reached the pool (1.13.3)"
+    );
+
+    // The Runner spends the turn; the Corp's begins and the refill happens.
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&mt].counter(CounterKind::Credit),
+        2,
+        "1.10.5d: refilled to the printed 2 rather than accumulated to 4: {}",
+        g.transcript().tail(20)
+    );
+}
+
+/// Spin Doctor: "When you rez this asset, draw 2 cards."
+///
+/// The trigger is the REZ and not the install (9.1.8: a facedown Corp card is
+/// inactive and has no ability to meet anything with), so the two arms differ
+/// in nothing but whether the Corp rezzed it, and the draw follows the rez.
+#[test]
+fn spin_doctor_draws_two_when_it_is_rezzed_and_not_before() {
+    for rez_it in [false, true] {
+        let mut vm = Vm::empty(9129);
+        let sd = tk::install_root(&mut vm, card("Spin Doctor"), ServerId::Remote(1), false);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 3;
+        vm.start_turn(Side::Runner);
+
+        let mut corp = Plan::corp();
+        if rez_it {
+            corp = corp.when(Match::paid().once(), Reply::rez(sd));
+        }
+        let t = plan::play(&mut vm, corp, Plan::runner().stop_at_action());
+
+        assert_eq!(
+            vm.st.objects[&sd].faceup, rez_it,
+            "the asset was rezzed exactly when the plan rezzed it (rez_it={rez_it}): {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            if rez_it { 2 } else { 0 },
+            "the rez drew 2 cards into an HQ that was empty (rez_it={rez_it}): {}",
+            t.tail(16)
+        );
+        assert_eq!(
+            vm.st.deck[&Side::Corp].len(),
+            if rez_it { 6 } else { 8 },
+            "…and they came off the top of R&D (rez_it={rez_it}): {}",
+            t.tail(16)
+        );
+    }
+}
+
+/// Spin Doctor: "Remove this asset from the game: Shuffle up to 2 cards from
+/// Archives into R&D."
+///
+/// The cost removes the source from the game (4.9) BEFORE the effect resolves
+/// (1.16.1), and 9.1.8g is what makes the shuffle happen anyway: an ability
+/// whose cost has been paid resolves even though its source has left. "Up to
+/// 2" is 1.15.2e's floor of zero, proven by answering with 2 out of 3 — the
+/// third stays in Archives.
+#[test]
+fn spin_doctor_removes_itself_from_the_game_to_shuffle_two_of_three_back() {
+    let mut vm = Vm::empty(9130);
+    let sd = tk::install_root(&mut vm, card("Spin Doctor"), ServerId::Remote(1), true);
+    let d1 = vm.new_object(tk::corp_filler("Spun-1"), Zone::Discard(Side::Corp));
+    let d2 = vm.new_object(tk::corp_filler("Spun-2"), Zone::Discard(Side::Corp));
+    let d3 = vm.new_object(tk::corp_filler("Spun-3"), Zone::Discard(Side::Corp));
+    for d in [d1, d2, d3] {
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(d);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 4);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    // The RUNNER's turn: the Corp uses the ability in a paid window (8.1.1's
+    // freedom, read for paid abilities), and no mandatory draw pulls a
+    // just-shuffled card straight back out of R&D where the assertion could
+    // not see it.
+    vm.start_turn(Side::Runner);
+
+    let deck_before = vm.st.deck[&Side::Corp].len();
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::paid().once(), Reply::take("spin doctor: shuffle archives back into r&d"))
+            .when(Match::targets().once(), Reply::Targets(vec![d1, d2])),
+        Plan::runner().stop_at_action(),
+    );
+
+    assert_eq!(
+        vm.st.objects[&sd].zone,
+        Zone::RemovedFromGame,
+        "1.16.1: the trigger cost was paid before the effect resolved: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.deck[&Side::Corp].len(),
+        deck_before + 2,
+        "9.1.8g: the shuffle resolved although its source was already gone: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&d1].zone,
+        Zone::Deck(Side::Corp),
+        "the first chosen card went into R&D: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&d2].zone,
+        Zone::Deck(Side::Corp),
+        "…and so did the second: {}",
+        t.tail(16)
+    );
+    assert_eq!(
+        vm.st.objects[&d3].zone,
+        Zone::Discard(Side::Corp),
+        "…and the third stayed in Archives, which is what \"up to 2\" means: {}",
+        t.tail(16)
+    );
+}
+
+/// Enhanced Login Protocol: "This operation is not trashed until another
+/// current is played or an agenda is stolen." (8.6.6c / 3.5.1b.)
+///
+/// PARTIAL — the additional cost on the basic run action is unsayable (see the
+/// card's doc comment and MEZZIE-QUEUE.md's Blockers), and the test says so out
+/// loud so the marker cannot quietly disappear. The sentence that IS expressed
+/// is the one that keeps the card on the table at all: played, it stays in the
+/// play area instead of being trashed at step 8.6.7g, and the Runner stealing
+/// an agenda is what ends it.
+#[test]
+fn enhanced_login_protocol_stays_in_the_play_area_until_an_agenda_is_stolen() {
+    let elp = jinteki_cards::find("Enhanced Login Protocol")
+        .expect("Enhanced Login Protocol is in the card layer");
+    assert_eq!(
+        elp.unimplemented,
+        vec!["As an additional cost to take the basic action to run a server for the first time each turn, the Runner must spend [click]."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    let mut vm = Vm::empty(9131);
+    let card_id = vm.new_object(card_partial("Enhanced Login Protocol"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(card_id);
+    let agenda = tk::install_root(
+        &mut vm,
+        tk::vanilla_agenda("Loose Agenda", 3, 1),
+        ServerId::Remote(1),
+        false,
+    );
+    tk::fill_deck(&mut vm, Side::Corp, 5);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 5;
+    vm.st.runner.credits = 5;
+    vm.start_turn(Side::Corp);
+
+    let mut g = jinteki_cr::plan::Script::new(
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(card_id))
+            .otherwise_click_credit(),
+        Plan::runner()
+            // Halt once, to read the board while the current is in play, then
+            // fall through to the run on the second look at this window.
+            .when(Match::action().first(), Reply::Halt)
+            .when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+            .stop_at_action(),
+    );
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&card_id].zone,
+        Zone::PlayArea(Side::Corp),
+        "8.6.6c: not trashed at step 8.6.7g: {}",
+        g.transcript().tail(16)
+    );
+
+    g.run(&mut vm);
+    assert_eq!(
+        vm.st.objects[&agenda].zone,
+        Zone::ScoreArea(Side::Runner),
+        "the Runner stole it: {}",
+        g.transcript().tail(20)
+    );
+    assert_eq!(
+        vm.st.objects[&card_id].zone,
+        Zone::Discard(Side::Corp),
+        "3.5.1b: the steal ended the lingering effect and the current was trashed: {}",
+        g.transcript().tail(20)
+    );
+}
+
+/// Flood the Market: "As an additional cost to play this operation, spend
+/// [click]."
+///
+/// PARTIAL — the choose-and-place sentence is unsayable (see the card's doc
+/// comment and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so
+/// the marker cannot quietly disappear. The *double* IS expressed, and 1.16.10
+/// makes it observable as a whole action the Corp never gets: both arms spend
+/// every remaining click on the basic credit action (5.2.7b), so the credits
+/// the Corp finishes with count the clicks the play left it — one fewer than
+/// the same play at the same credit cost without the extra [click].
+#[test]
+fn flood_the_market_costs_a_click_on_top_of_its_play_cost() {
+    let flood = jinteki_cards::find("Flood the Market").expect("Flood the Market is in the card layer");
+    assert_eq!(
+        flood.unimplemented,
+        vec!["Choose 1 installed card you can advance. Place 1 advancement counter on that card for each remote server that has a card in its root and is protected by ice."],
+        "exactly one printed instruction is still unsayable"
+    );
+
+    for double in [false, true] {
+        let mut vm = Vm::empty(9132);
+        // The control is the same 3[credit] play made by an operation with no
+        // additional cost — one printed line apart, so what differs in the
+        // outcome is the [click] and nothing else.
+        let printed = if double {
+            card_partial("Flood the Market")
+        } else {
+            let mut c = tk::corp_filler("Plain Operation");
+            c.cost = Some(3);
+            c
+        };
+        let op = vm.new_object(printed, Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 3;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(op))
+                .otherwise_click_credit(),
+            Plan::runner().when(Match::action(), Reply::Halt),
+        );
+
+        assert_eq!(
+            vm.st.objects[&op].zone,
+            Zone::Discard(Side::Corp),
+            "the operation was played and trashed at 8.6.7g (double={double}): {}",
+            t.tail(20)
+        );
+        assert_eq!(
+            vm.st.corp.credits,
+            if double { 1 } else { 2 },
+            "3 − 3 to play, then one basic credit action per click the play left \
+             (double={double}): {}",
+            t.tail(20)
+        );
+    }
+}
+
+/// Friends in High Places: "After you resolve this operation, end your action
+/// phase." / "Install up to 2 cards from Archives (paying all install costs)."
+///
+/// Both halves are asserted on one board. The installs are two instructions
+/// (9.11.4b) out of an INACTIVE zone (4.4.4), each declaring its own 8.5.16b
+/// destination — one into a root, one protecting a server that already has a
+/// piece of ice, which is where "(paying all install costs)" bites: 8.5.11a
+/// charges 1[credit] for that ice and this card ignores nothing. The terminal
+/// is read off the credits: the Corp had three clicks and a plan that spends
+/// every spare one on the basic credit action, and after the operation it
+/// never gets another.
+#[test]
+fn friends_in_high_places_installs_two_out_of_archives_and_ends_the_action_phase() {
+    let mut vm = Vm::empty(9133);
+    let fhp = vm.new_object(card("Friends in High Places"), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(fhp);
+    // A remote already protected by one piece of ice, with an empty root.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Outer Guard", 1, 1), ServerId::Remote(1), false);
+    let buried_asset = vm.new_object(tk::vanilla_asset("Buried Asset", 1, 2), Zone::Discard(Side::Corp));
+    let buried_ice = vm.new_object(tk::vanilla_ice("Buried Ice", 2, 2), Zone::Discard(Side::Corp));
+    for d in [buried_asset, buried_ice] {
+        vm.st.discard.get_mut(&Side::Corp).unwrap().push(d);
+    }
+    tk::fill_deck(&mut vm, Side::Corp, 8);
+    tk::fill_deck(&mut vm, Side::Runner, 5);
+    vm.st.corp.credits = 3;
+    vm.start_turn(Side::Corp);
+
+    let t = plan::play(
+        &mut vm,
+        Plan::corp()
+            .when(Match::action().once(), Reply::play_card(fhp))
+            .when(Match::targets().once(), Reply::target(buried_asset))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Root(ServerId::Remote(1))),
+            )
+            .when(Match::targets().once(), Reply::target(buried_ice))
+            .when(
+                Match::destination().once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Protecting(ServerId::Remote(1))),
+            )
+            .otherwise_click_credit(),
+        Plan::runner().when(Match::action(), Reply::Halt),
+    );
+
+    assert_eq!(
+        vm.st.objects[&buried_asset].zone,
+        Zone::Root(ServerId::Remote(1)),
+        "the first install took a card out of Archives (4.4.4) and into a root: {}",
+        t.tail(28)
+    );
+    assert_eq!(
+        vm.st.objects[&buried_ice].zone,
+        Zone::Ice(ServerId::Remote(1)),
+        "9.11.4b: the second install is its own instruction and it happened too: {}",
+        t.tail(28)
+    );
+    assert_eq!(
+        vm.st.corp.credits,
+        0,
+        "3 − 2 to play − 8.5.11a's 1[credit] for the ice already protecting that server, \
+         and no basic credit action after it: {}",
+        t.tail(28)
+    );
+}
+
+/// Fully Operational: "Gain 2[credit] or draw 2 cards."
+///
+/// PARTIAL — "Repeat this process for each remote server that has a card in
+/// its root and is protected by ice." is unsayable (see the card's doc comment
+/// and MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
+/// cannot quietly disappear. The process itself is 9.11.4g's optioned effect,
+/// and each option is asserted on its own board: the Corp picks, and only the
+/// half it picked happens.
+#[test]
+fn fully_operational_gains_two_or_draws_two_as_the_corp_chooses() {
+    let fo = jinteki_cards::find("Fully Operational").expect("Fully Operational is in the card layer");
+    assert_eq!(
+        fo.unimplemented,
+        vec!["Repeat this process for each remote server that has a card in its root and is protected by ice."],
+        "exactly one printed sentence is still unsayable"
+    );
+
+    for (pick, credits, hand) in [("gain 2[credit]", 4u32, 1usize), ("draw 2 cards", 2u32, 3usize)] {
+        let mut vm = Vm::empty(9134);
+        let op = vm.new_object(card_partial("Fully Operational"), Zone::Hand(Side::Corp));
+        vm.st.hand.get_mut(&Side::Corp).unwrap().push(op);
+        tk::fill_deck(&mut vm, Side::Corp, 8);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.corp.credits = 3;
+        vm.start_turn(Side::Corp);
+
+        let t = plan::play(
+            &mut vm,
+            Plan::corp()
+                .when(Match::action().once(), Reply::play_card(op))
+                .when(Match::of(Kind::Options).once(), Reply::ChooseNamed(pick))
+                .stop_at_action(),
+            Plan::runner(),
+        );
+
+        assert_eq!(
+            vm.st.corp.credits, credits,
+            "3 − the 1[credit] play cost, plus 2 only where that half was chosen (pick={pick}): {}",
+            t.tail(20)
+        );
+        // The operation left HQ and the turn's mandatory draw put one back.
+        assert_eq!(
+            vm.st.hand[&Side::Corp].len(),
+            hand,
+            "…and 2 cards arrived only where THAT half was chosen (pick={pick}): {}",
+            t.tail(20)
+        );
+    }
+}
