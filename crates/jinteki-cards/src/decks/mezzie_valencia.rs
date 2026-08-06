@@ -25,7 +25,7 @@ use crate::edsl::*;
 /// "Play only if the Corp has at least 1 bad publicity.
 ///  Run any server. The Corp cannot rez ice during that run."
 ///
-/// PARTIAL — two of its three sentences are expressed, and the third is not.
+/// COMPLETE.
 ///
 /// "Play only if …" is a PLAY RESTRICTION and not a cost, and the difference
 /// decides where it goes. 9.3.3 states a restriction as a condition on
@@ -44,17 +44,29 @@ use crate::edsl::*;
 /// 10.6.2's bad publicity fund: those are credits the Runner controls, and
 /// 10.6.3c leaves them alone once a run has begun.
 ///
-/// UNIMPLEMENTED: "The Corp cannot rez ice during that run", which is marked
-/// for two reasons and neither is the acts. `ProhibitedAction::Rez` exists and
-/// `WantedDuration::ThisRun` exists; what does not is a moment to state them
-/// in, because the sentence is printed AFTER the sentence that runs and
-/// 5.2.2b suspends the play until the run completes — so an instruction
-/// written after the run would create its lingering effect when the run is
-/// already over. Beside that, the prohibition would have to reach the ice by
-/// DESCRIPTION and the lingering prohibition names one object fixed at
-/// creation. Both capabilities are on MEZZIE-QUEUE.md's Blockers. Reordering
-/// the prohibition in front of the run is not an answer either: it would
-/// invent an instruction boundary the card does not print (9.11.3).
+/// "The Corp cannot rez ice during that run" is 9.10.1's lingering effect with
+/// 1.2.2's precedence, and every piece of it is content on one instruction:
+/// `ProhibitedAction::Rez` is the act, `Some(Corp)` is the player the sentence
+/// names, "ice" is a DESCRIPTION re-read wherever a rez is offered — so a
+/// piece of ice still in HQ when this resolved is inside it — and
+/// `WantedDuration::ThisRun` is the span.
+///
+/// WHERE the sentence resolves is the only hard part, and it is why the run
+/// carries it. 5.2.2b: "if a timing structure is initiated during the
+/// resolution of an action, that action is not complete until the new timing
+/// structure is complete **and any further effects … following the completion
+/// of the new timing structure are resolved**." An instruction written after
+/// the run therefore does not resolve until the run is over, and the effect it
+/// created for "that run" would meet 9.10.4 — a duration based on a timing
+/// structure not in progress — and expire before anything read it. The card
+/// would compile and do nothing.
+///
+/// Reordering the prohibition in front of the run is not the answer either: it
+/// invents an instruction boundary the card does not print (9.11.3) and
+/// creates the effect while 9.10.4 still has no run to bind it to. So the
+/// sentence is stated ABOUT the run, on the instruction that makes it, beside
+/// the "if successful" position that already works this way — and it resolves
+/// as the run begins, which is what "during that run" means.
 pub fn blackmail() -> Card {
     card("Blackmail")
         .runner()
@@ -66,8 +78,12 @@ pub fn blackmail() -> Card {
         .text("Run any server. The Corp cannot rez ice during that run.")
         .declares([play_only_if(&[at_least(bad_publicity_of(Corp), 1)])])
         .named("play only if the Corp has bad publicity")
-        .play([run_any_server([])])
-        .unimplemented("The Corp cannot rez ice during that run.")
+        .play([run_any_server_during_which([cannot_act_on_matching(
+            &[of_type(CardType::Ice)],
+            Some(Corp),
+            &[ProhibitedAction::Rez],
+            WantedDuration::ThisRun,
+        )])])
         .build()
 }
 

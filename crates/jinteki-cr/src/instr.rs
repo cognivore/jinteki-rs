@@ -691,6 +691,34 @@ pub enum Instruction {
         /// is stated about "If successful" abilities; this sentence names the
         /// RUN ("that run"), and the run is what carries the clause.
         if_would_be_successful: Vec<Instruction>,
+        /// CR 6.9.1 / 5.2.2b: what the sentence states about the run it
+        /// initiates, UNCONDITIONALLY — "The Corp cannot rez ice **during
+        /// that run**" (Blackmail), "**During that run**, <X>". Resolved as
+        /// the run begins, before its first step.
+        ///
+        /// The third position beside `if_successful` and
+        /// `if_would_be_successful`, and it rides here for the same reason
+        /// both of those do: the sentence says "that run", and the run this
+        /// instruction creates is what identifies it.
+        ///
+        /// It is a position rather than an instruction written after the run
+        /// because 5.2.2b makes the two different things. "If a timing
+        /// structure is initiated during the resolution of an action, that
+        /// action is not complete until the new timing structure is complete
+        /// **and any further effects of the initiated action following the
+        /// completion of the new timing structure are resolved**" — so an
+        /// instruction printed after the run does not resolve until the run is
+        /// over, and a lingering effect it created for "that run" would meet
+        /// 9.10.4's "duration based on a timing structure that is not in
+        /// progress at the time the lingering effect is created" and expire
+        /// immediately. The card would do nothing at all.
+        ///
+        /// Neither workaround is offered. Reordering the sentence in front of
+        /// the run invents an instruction boundary the card does not print
+        /// (9.11.3) and creates the effect while there is no run to bind it
+        /// to; folding it into `if_successful` gates it on a success the card
+        /// never mentions.
+        during: Vec<Instruction>,
     },
     /// "Trace [N] — if successful, …; if unsuccessful, …" (10.8). Expanded
     /// by the resolution loop into the 10.8.6 step sequence. The base is a
@@ -1378,6 +1406,7 @@ impl Instruction {
             allowed: RunServerSet::Any,
             if_successful: Vec::new(),
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }
     }
 
@@ -1389,6 +1418,7 @@ impl Instruction {
             allowed: RunServerSet::Any,
             if_successful,
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }
     }
 
@@ -1581,9 +1611,16 @@ impl Instruction {
             }
             // 6.7.4/10.8/10.14: the conditional halves of a run, a trace and
             // a psi game resolve as their own ability chains later.
-            Instruction::InitiateRun { if_successful, if_would_be_successful, .. } => {
+            // …and so does 6.9.1c's unconditional clause: it resolves as its
+            // own pending instance when the run formally begins, so its
+            // targets are announced then and not here.
+            Instruction::InitiateRun { if_successful, if_would_be_successful, during, .. } => {
                 Contained::Deferred(
-                    if_successful.iter().chain(if_would_be_successful.iter()).collect(),
+                    if_successful
+                        .iter()
+                        .chain(if_would_be_successful.iter())
+                        .chain(during.iter())
+                        .collect(),
                 )
             }
             Instruction::Trace { if_successful, if_unsuccessful, determined_min, .. }

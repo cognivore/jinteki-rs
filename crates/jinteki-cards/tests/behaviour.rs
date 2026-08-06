@@ -19522,10 +19522,6 @@ fn same_old_thing_replays_an_event_out_of_the_heap_paying_for_it() {
 /// Blackmail: "Play only if the Corp has at least 1 bad publicity." / "Run any
 /// server." (the run half of its second printed line.)
 ///
-/// PARTIAL — the rez prohibition is unsayable (see the card's doc comment and
-/// MEZZIE-QUEUE.md's Blockers), and the test says so out loud so the marker
-/// cannot quietly disappear.
-///
 /// The restriction is asserted in both directions on the same board, which is
 /// what 9.1.8c and 1.2.2 between them require: with no bad publicity the basic
 /// play action does not offer the card at all, and with one it does. 10.6.1's
@@ -19535,16 +19531,9 @@ fn same_old_thing_replays_an_event_out_of_the_heap_paying_for_it() {
 /// Runner declares the attacked one as the run is initiated.
 #[test]
 fn blackmail_is_playable_only_against_a_corp_with_bad_publicity() {
-    let bm = jinteki_cards::find("Blackmail").expect("Blackmail is in the card layer");
-    assert_eq!(
-        bm.unimplemented,
-        vec!["The Corp cannot rez ice during that run."],
-        "exactly one printed sentence is still unsayable"
-    );
-
     for bad_publicity in [0u32, 1u32] {
         let mut vm = Vm::empty(9405);
-        let card_id = vm.new_object(card_partial("Blackmail"), Zone::Hand(Side::Runner));
+        let card_id = vm.new_object(card("Blackmail"), Zone::Hand(Side::Runner));
         vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
         tk::fill_hand(&mut vm, Side::Corp, 3);
         tk::fill_deck(&mut vm, Side::Corp, 5);
@@ -19593,6 +19582,76 @@ fn blackmail_is_playable_only_against_a_corp_with_bad_publicity() {
                 t.tail(16)
             );
         }
+    }
+}
+
+/// Blackmail: "Run any server. The Corp cannot rez ice during that run."
+///
+/// The sentence the run carries, on a board where the Corp is desperate to
+/// rez: an unrezzed piece of ice with "End the run." protects the remote, the
+/// Corp holds 5[credit] against its 0 rez cost, and the plan tells the Corp to
+/// rez the approached ice at every window it is offered one.
+///
+/// The control arm is the same board reached by the basic run action (5.2.7f)
+/// instead of by Blackmail. There the Corp rezzes, the subroutine ends the
+/// run, and the Runner never breaches. Under Blackmail the option is never put
+/// to the Corp — 1.2.2 WITHHOLDS the act rather than failing it — the ice
+/// stays unrezzed, and the run reaches the server.
+///
+/// Two things about the shape are asserted by that difference and not by
+/// inspection. The effect exists DURING the run, which 5.2.2b would have made
+/// impossible for an instruction written after it (9.10.4 would have expired
+/// the duration on creation). And the prohibition reaches the ice by
+/// DESCRIPTION: it is re-read at the rez window, so ice the sentence never saw
+/// is inside it.
+#[test]
+fn blackmail_shuts_the_corp_out_of_rezzing_ice_for_the_run_it_makes() {
+    for by_blackmail in [false, true] {
+        let mut vm = Vm::empty(9406);
+        let card_id = vm.new_object(card("Blackmail"), Zone::Hand(Side::Runner));
+        vm.st.hand.get_mut(&Side::Runner).unwrap().push(card_id);
+        let ice = tk::install_ice(&mut vm, tk::etr_ice("Toll Gate", 0, 1), ServerId::Remote(1), false);
+        let agenda = tk::install_root(
+            &mut vm,
+            tk::vanilla_agenda("Loose Agenda", 3, 2),
+            ServerId::Remote(1),
+            false,
+        );
+        tk::fill_hand(&mut vm, Side::Corp, 3);
+        tk::fill_deck(&mut vm, Side::Corp, 5);
+        tk::fill_deck(&mut vm, Side::Runner, 5);
+        vm.st.runner.credits = 3;
+        vm.st.corp.credits = 5;
+        vm.st.corp.bad_publicity = 1;
+        vm.start_turn(Side::Runner);
+
+        let runner = if by_blackmail {
+            Plan::runner()
+                .when(Match::action().once(), Reply::play_card(card_id))
+                .when(Match::attacked_server().once(), Reply::Server(ServerId::Remote(1)))
+        } else {
+            Plan::runner().when(Match::action().once(), Reply::run(ServerId::Remote(1)))
+        };
+        let t = plan::play(
+            &mut vm,
+            Plan::corp().when(Match::any(), Reply::Take(Pick::RezApproachedIce)),
+            runner.stop_at_action(),
+        );
+
+        assert_eq!(
+            vm.st.objects[&ice].faceup,
+            !by_blackmail,
+            "1.2.2/8.1.2: the Corp rezzes when nothing forbids it and is never even \
+             offered the option when something does (by_blackmail={by_blackmail}): {}",
+            t.tail(30)
+        );
+        assert_eq!(
+            vm.st.objects[&agenda].zone == Zone::ScoreArea(Side::Runner),
+            by_blackmail,
+            "…so the run only reaches the server on the arm where the ice stayed \
+             unrezzed and its subroutine never resolved (by_blackmail={by_blackmail}): {}",
+            t.tail(30)
+        );
     }
 }
 

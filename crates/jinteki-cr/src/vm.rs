@@ -2047,6 +2047,12 @@ impl Vm {
                 };
                 self.current_run = Some((run_id, server, false));
                 self.changes.record(GameChange::RunBegan { server });
+                // CR 6.9.1c: the run has formally begun, so this is the moment
+                // a sentence stating something ABOUT it takes effect — with
+                // the run in progress, which is what 9.10.4 needs of a "this
+                // run" duration, and before 6.9.1e's paid window where the
+                // Corp may rez.
+                self.pend_stated_about_run();
             }
             StepKind::SetPositionOutermost => {
                 cite!("rule_position_initial");
@@ -3160,6 +3166,66 @@ impl Vm {
         }
     }
 
+    /// CR 6.9.1c: the sentence the effect that initiated this run STATED about
+    /// it becomes pending, as a mandatory conditional instance, exactly as
+    /// [`Vm::pend_if_successful`]'s clause does — the same 9.6.14d mechanism,
+    /// with no condition of its own, because the sentence states no condition.
+    ///
+    /// It fires once and is cleared, so a run moved (6.1.2d) or a Runner sent
+    /// back to a new position does not restate it.
+    fn pend_stated_about_run(&mut self) {
+        let Some(c) = self.run_ctx().and_then(|r| r.stated_about_run.clone()) else { return };
+        cite!("step_initiation_formal_begin");
+        let label = self
+            .st
+            .objects
+            .get(&c.source.obj)
+            .map(|o| o.printed.name)
+            .unwrap_or("stated about that run");
+        let def = AbilityDef {
+            controller: None,
+            kind: AbilityKind::Conditional,
+            flags: Vec::new(),
+            condition: None,
+            cost: None,
+            instructions: c.effects.clone(),
+            statics: Vec::new(),
+            optional: false,
+            timing: None,
+            ordinal: None,
+            label,
+        };
+        let id = self.next_instance_id();
+        cite!("rule_pending_instances");
+        let gen = self.generation(c.source.obj);
+        self.instances.insert(
+            id,
+            AbilityInstance {
+                id,
+                ability: c.source,
+                def,
+                controller: c.controller,
+                mandatory: true,
+                window: None,
+                hangover: false,
+                independent: false,
+                source_generation: gen,
+                occurrence_group: 0,
+                from_lingering: None,
+                run_id: self.current_run.map(|(r, _, _)| r),
+                triggering_card: None,
+                triggering_cards: Vec::new(),
+                bound_targets: Vec::new(),
+                bound_installs: Vec::new(),
+                set_aside_group: None,
+            },
+        );
+        self.pending_from_effect.push(id);
+        if let Some(r) = self.run_ctx_mut() {
+            r.stated_about_run = None;
+        }
+    }
+
     /// CR 9.9.8b + 4.8.7: the follow-up of a completed trash-replacement
     /// group (Skorpios class) becomes pending, as a conditional instance in
     /// the ordinary 9.6.14d way — [`Vm::pend_if_successful`]'s shape, for a
@@ -4248,6 +4314,7 @@ impl Vm {
                 jump_to_run_ends: false,
                 if_successful: None,
                 if_would_be_successful: None,
+                stated_about_run: None,
                 last_encounter: None,
             }),
         }));
@@ -11155,6 +11222,7 @@ impl Vm {
                 allowed,
                 if_successful,
                 if_would_be_successful,
+                during,
             } => {
                 cite!("rule_run_timing_structure");
                 // 6.9.1a: the attacked server has been announced by now — an
@@ -11192,6 +11260,23 @@ impl Vm {
                     };
                     if let Some(r) = self.run_ctx_mut() {
                         r.if_would_be_successful = Some(clause);
+                    }
+                }
+                // CR 6.9.1c / 5.2.2b: what the sentence STATES about the run
+                // it initiates, unconditionally. It travels with the run for
+                // the same reason the two clauses above do, and it is a
+                // position on the instruction rather than an instruction of
+                // its own because 5.2.2b would not reach one written after the
+                // run until the run was over — at which point 9.10.4 expires
+                // any "this run" duration the moment it is created.
+                if !during.is_empty() {
+                    cite!("step_initiation_formal_begin");
+                    cite!("rule_action_timing_structure_completion");
+                    cite!("rule_lingering_effect_inapplicable_timing_structure");
+                    let clause =
+                        WouldBeSuccessful { source, controller, effects: during.clone() };
+                    if let Some(r) = self.run_ctx_mut() {
+                        r.stated_about_run = Some(clause);
                     }
                 }
                 // The nested run frame is now on top; this ability resumes

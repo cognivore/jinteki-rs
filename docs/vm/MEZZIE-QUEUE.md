@@ -85,7 +85,7 @@ Identity is COMPLETE. Printed text below is from
 
 Identity is COMPLETE.
 
-- [ ] **Blackmail** ×3 — event · Run · cost 1
+- [x] **Blackmail** ×3 — event · Run · cost 1
       "Play only if the Corp has at least 1 bad publicity. / Run any server. The Corp cannot rez ice during that run."
 - [ ] **Hacktivist Meeting** ×3 — event · Current · cost 1
       "This card is not trashed until another current is played or an agenda is scored. / As an additional cost to rez non-ice cards, the Corp must randomly trash a card from HQ."
@@ -452,34 +452,20 @@ is ticked and tested on the first (scored for 3, stolen for 2, on one board);
 with four agenda counters out of a remote, and without them out of Archives),
 and it stays unticked for its second sentence alone.
 
-### What a run-initiating sentence states about THAT run (CR 6.9.1 / 5.2.2b)
+### What a run-initiating sentence states about THAT run — LANDED (CR 6.9.1c)
 
-`Instruction::InitiateRun` carries two positions for effects tied to the run it
-starts — `if_successful` (6.7.4) and `if_would_be_successful` (9.9.1) — and no
-position for one that applies UNCONDITIONALLY from the run's beginning. That
-is not a small gap, because 5.2.2b suspends the ability resolving the run until
-the run completes: an instruction written AFTER the run in printed order does
-not resolve until the run is over, so a lingering effect it creates for "that
-run" is created when there is no longer a run to reach.
+One more position on `Instruction::InitiateRun`, beside `if_successful`
+(6.7.4) and `if_would_be_successful` (9.9.1): `during`, the effects the
+sentence states about the run it initiates, gated on nothing. It travels on the
+run itself, exactly as the other two do, and is pended at 6.9.1c — the run has
+formally begun, so 9.10.4 has a run to bind a "this run" duration to, and
+6.9.1e's rez window has not opened yet. **Blackmail** is written and ticked.
 
-The two workarounds are both wrong and neither should be offered. Reordering
-the sentence in front of the run invents an instruction boundary the card does
-not print (9.11.3) and creates the effect while 9.6.13d has no run to attach
-it to; folding it into `if_successful` gates on a success the card never
-mentions.
-
-Wanted: one more position on the same instruction — the effects the sentence
-states about the run it initiates, resolved as the run begins — so "the Corp
-cannot rez ice during that run", "during that run, <X>" and "if successful, …"
-are three contents of one word rather than three mechanisms.
-
-Wants it: **Blackmail** ("The Corp cannot rez ice during that run" —
-`ProhibitedAction::Rez` and `WantedDuration::ThisRun` both exist; the moment to
-state them in does not). It wants the DESCRIBED prohibition above as well, and
-an earlier entry here was wrong to say the moment was all that was missing:
-"ice" is a description and `LingeringSpec::Prohibit` names one object fixed
-when the effect was created, so the sentence waits on both words. The play
-restriction and the run are done and tested.
+The entry's second claim was WRONG and is deleted: "'ice' is a description and
+`LingeringSpec::Prohibit` names one object fixed when the effect was created".
+`ProhibitionSpec::Matching` takes a description and has since the CR 1.2.2
+wave; the queue's own text already corrected itself two entries down and the
+card's doc comment did not.
 
 ### An additional cost to REZ the cards a description reaches (CR 1.16.10 / 8.1.2)
 

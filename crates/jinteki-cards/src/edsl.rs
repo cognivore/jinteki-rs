@@ -1170,6 +1170,7 @@ pub fn run_then_if_successful(
         allowed: RunServerSet::These(vec![server]),
         if_successful: if_successful.into_iter().collect(),
         if_would_be_successful: Vec::new(),
+        during: Vec::new(),
     }
 }
 /// "Run any server. If successful, …" — the effect names no server, so the
@@ -1177,6 +1178,33 @@ pub fn run_then_if_successful(
 /// allows (minus any server 6.3.2a forbids initiating a run on).
 pub fn run_any_server(if_successful: impl IntoIterator<Item = Instruction>) -> Instruction {
     Instruction::run_any_server(if_successful.into_iter().collect())
+}
+/// "Run any server. **<X> during that run.**" (Blackmail; CR 6.9.1 / 5.2.2b.)
+/// The effects the sentence states about the run it initiates, resolved as the
+/// run begins and gated on nothing.
+///
+/// The third thing a run-initiating sentence can say about its own run, beside
+/// [`run_any_server`]'s "if successful" and
+/// [`run_then_if_would_be_successful`]'s "would be". It has to ride on the
+/// instruction rather than follow it because 5.2.2b suspends the ability until
+/// the run completes: an instruction written after the run does not resolve
+/// until the run is over, and 9.10.4 would expire the "this run" duration it
+/// then created before anything could read it.
+pub fn run_any_server_during_which(
+    during: impl IntoIterator<Item = Instruction>,
+) -> Instruction {
+    match Instruction::run_any_server(Vec::new()) {
+        Instruction::InitiateRun { server, allowed, if_successful, if_would_be_successful, .. } => {
+            Instruction::InitiateRun {
+                server,
+                allowed,
+                if_successful,
+                if_would_be_successful,
+                during: during.into_iter().collect(),
+            }
+        }
+        other => other,
+    }
 }
 /// "Run <server>. If that run **would** be declared successful, …" (Omar
 /// Keung.) 9.9.1's "would" makes the second sentence an INTERRUPT, relevant
@@ -1198,6 +1226,7 @@ pub fn run_then_if_would_be_successful(
         allowed: RunServerSet::These(vec![server]),
         if_successful: Vec::new(),
         if_would_be_successful: if_would_be_successful.into_iter().collect(),
+        during: Vec::new(),
     }
 }
 /// "The attacked server becomes <server>." (6.1.2d.) The run's timing step is

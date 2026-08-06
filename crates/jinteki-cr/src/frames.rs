@@ -52,6 +52,11 @@ pub struct RunCtx {
     /// that initiated this run carried. Cleared when it becomes pending, so
     /// the one declaration offers it once.
     pub if_would_be_successful: Option<crate::vm::WouldBeSuccessful>,
+    /// CR 6.9.1c: what the effect that initiated this run STATED about it,
+    /// unconditionally — "the Corp cannot rez ice during that run". Resolved
+    /// as the run formally begins, and cleared then, so the one sentence
+    /// resolves once.
+    pub stated_about_run: Option<crate::vm::WouldBeSuccessful>,
     /// CR 6.1.3e: the Encounter Ice Phase the run has come DIRECTLY from,
     /// which is what makes a pass a pass "after an encounter" — `(ice, all
     /// its subroutines were broken during that encounter (6.1.3f/6.5.7), any

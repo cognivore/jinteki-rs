@@ -5585,8 +5585,8 @@ pub fn because_i_can_like(name: &'static str, server: ServerId, gain: i64) -> Pr
             server: Some(server),
             allowed: crate::instr::RunServerSet::AnyRemote,
             if_successful: vec![Instruction::GainCredits(Side::Runner, Quantity::c(gain))],
-        
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }],
     )
 }
@@ -5611,8 +5611,8 @@ pub fn account_siphon_like(name: &'static str, gain: u32) -> PrintedCard {
                 },
                 duration: crate::lingering::WantedDuration::ThisRun,
             }],
-        
             if_would_be_successful: Vec::new(),
+            during: Vec::new(),
         }],
     )
 }
