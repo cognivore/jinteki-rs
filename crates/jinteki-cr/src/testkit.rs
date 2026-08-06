@@ -471,7 +471,21 @@ pub fn suffer_damage_button(name: &'static str, kind: DamageKind, n: u32) -> Pri
 /// A runner card with a free paid ability trashing fixed targets (Singularity
 /// stand-in driver: one instruction, simultaneous set trash — 9.12.2a).
 pub fn trash_set_button(name: &'static str, targets: Vec<ObjectId>) -> PrintedCard {
-    let mut c = vanilla_runner_card(name, CardType::Resource);
+    trash_set_button_of(Side::Runner, name, targets)
+}
+
+/// The same button on either side. Whose card it is decides who controls the
+/// ability (1.14.4) and therefore who is DOING the trashing, which is the
+/// question a 1.2.2 prohibition naming a player asks of it.
+pub fn trash_set_button_of(
+    side: Side,
+    name: &'static str,
+    targets: Vec<ObjectId>,
+) -> PrintedCard {
+    let mut c = match side {
+        Side::Runner => vanilla_runner_card(name, CardType::Resource),
+        Side::Corp => vanilla_asset(name, 0, 3),
+    };
     c.abilities = vec![AbilityDef::paid(
         Cost::free(),
         vec![Instruction::TrashCards(TargetSpec::Objects(targets))],
@@ -6269,5 +6283,65 @@ pub fn bioroid_ice(name: &'static str, rez: u32, strength: i32) -> PrintedCard {
         .labeled("bioroid: lose [click] to break 1 subroutine"),
         AbilityDef::subroutine(vec![Instruction::EndTheRun]).labeled("[sub] End the run"),
     ];
+    c
+}
+
+/// CR 1.2.2 + 9.10.1 shape: a card whose free paid ability forbids a named
+/// player a list of acts over a DESCRIBED set of cards for a stated duration
+/// — "The Runner cannot steal or trash Corp cards for the remainder of this
+/// run" (Vertigo), "You cannot score agendas for the remainder of the turn"
+/// (Luminal Transubstantiation), "The Runner cannot steal copies of that
+/// agenda for the remainder of this turn" (Lakshmi Smartfabrics).
+///
+/// Every part a printed "cannot" varies in is a parameter here because every
+/// one of them is CONTENT on the one lingering effect (§12 rule 2): who, which
+/// cards, which acts, how long. There is no per-card shape to build.
+pub fn prohibiting_asset(
+    name: &'static str,
+    by: Option<Side>,
+    actions: Vec<crate::lingering::ProhibitedAction>,
+    criteria: Vec<crate::instr::TargetFilter>,
+    duration: crate::lingering::WantedDuration,
+) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Prohibit {
+                scope: crate::instr::ProhibitionSpec::Matching(criteria),
+                by,
+                actions,
+            },
+            duration,
+        }],
+    )
+    .labeled("cannot: forbid the described cards")];
+    c
+}
+
+/// The same card written the WRONG way: a description smuggled into the
+/// position that NAMES its cards. CR 1.15.2 makes that resolve through the
+/// instruction's announced targets, and 9.10.1's
+/// [`crate::instr::Instruction::CreateLingeringEffect`] announces none — so
+/// the prohibition would reach nothing and report nothing. Exists only so a
+/// test can show the kernel refuses it instead.
+pub fn misdescribing_prohibiting_asset(name: &'static str) -> PrintedCard {
+    let mut c = vanilla_asset(name, 0, 3);
+    c.abilities = vec![AbilityDef::paid(
+        Cost::free(),
+        vec![Instruction::CreateLingeringEffect {
+            payload: crate::instr::LingeringSpec::Prohibit {
+                scope: crate::instr::ProhibitionSpec::Cards(TargetSpec::Choose {
+                    count: Quantity::c(1),
+                    criteria: vec![crate::instr::TargetFilter::CardTypeIs(CardType::Agenda)],
+                    up_to: false,
+                }),
+                by: Some(Side::Corp),
+                actions: vec![crate::lingering::ProhibitedAction::Score],
+            },
+            duration: crate::lingering::WantedDuration::ThisTurn,
+        }],
+    )
+    .labeled("cannot: written over a description in the naming position")];
     c
 }

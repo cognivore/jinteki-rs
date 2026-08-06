@@ -120,19 +120,35 @@ pub enum Payload {
     /// offered in any window — and, since paid abilities are always optional
     /// (9.5.3), a 9.12.3a "must" cannot force one that is prohibited.
     CannotUseAbilitiesOf(ObjectId),
-    /// CR 1.2.2: "you cannot <do these things to> **that card**" for a
-    /// duration (Saraswati Mnemonics class). A prohibition about ONE named
-    /// object rather than about a description, which is what makes it a
-    /// lingering effect and not [`crate::ability::StaticDecl`]'s
-    /// `CannotScoreMatching`: the card is fixed when the ability that created
-    /// the effect resolved, so a second copy of the same card installed later
-    /// is untouched by it.
+    /// CR 1.2.2: "<a player> cannot <do these things to> <these cards> [for a
+    /// duration]" (Saraswati Mnemonics, A Teia, Luminal Transubstantiation,
+    /// Vertigo, Lakshmi Smartfabrics). ONE atom, with everything a printed
+    /// "cannot" varies in as content beside it (§12 rule 2):
     ///
-    /// WHICH things are forbidden is content on the one atom (§12 rule 2) —
-    /// a sentence naming two of them (Saraswati names scoring and rezzing) is
-    /// one prohibition, not two effects, and one that names only scoring
-    /// (A Teia) is the same atom with a shorter list.
-    Prohibited { target: ObjectId, actions: Vec<ProhibitedAction> },
+    /// * `by` — WHO the sentence forbids. `None` is "nobody may", which is
+    ///   what a sentence naming no player means when only one player can
+    ///   perform the act at all (only the Corp scores, 1.17.3; only the
+    ///   Runner steals, 7.5). It matters as soon as an act BOTH players can
+    ///   perform is forbidden: Vertigo's "**they** cannot … trash Corp cards"
+    ///   must not stop the Corp trashing its own assets.
+    /// * `scope` — WHICH cards, named or described; see [`ProhibitionScope`].
+    /// * `actions` — WHICH acts. A sentence naming two of them (Saraswati
+    ///   names scoring and rezzing; Vertigo names stealing and trashing) is
+    ///   one prohibition, not two effects, and one naming a single act
+    ///   (A Teia) is the same atom with a shorter list.
+    ///
+    /// Being a lingering effect (9.10.1) is the whole point of the atom: it is
+    /// created once, expires on its own stated duration, and exists
+    /// independently of its source — so forfeiting the source out of a score
+    /// area or blanking it (9.1.9) lifts nothing the sentence did not say it
+    /// would lift. That is what separates it from
+    /// [`crate::ability::StaticDecl::CannotScoreMatching`], which is a
+    /// declaration of an ACTIVE card with no duration and no life of its own.
+    Prohibited {
+        by: Option<Side>,
+        scope: ProhibitionScope,
+        actions: Vec<ProhibitedAction>,
+    },
     /// CR 8.6.6c: a played card kept in the play area instead of being
     /// trashed at 8.6.7g; when one of the indicated effects occurs, the
     /// effect expires at checkpoint step 10.3.1b and the card is trashed as
@@ -162,9 +178,43 @@ pub enum Payload {
     AdditionalAccess { server: ServerId, extra: u32 },
 }
 
-/// CR 1.2.2: the things a "cannot" ability can forbid a player doing to one
-/// named object. One variant per act the CR states as its own procedure, so a
-/// printed sentence names them and never describes them.
+/// CR 1.2.2: WHICH CARDS a "cannot" is about — the scope of the prohibition,
+/// as content on the one atom (§12 rule 2) rather than as two atoms.
+///
+/// The two variants are the two ways a printed sentence can pick its cards,
+/// and CR 1.15.2 makes the difference a real one rather than a spelling:
+///
+/// * [`ProhibitionScope::Object`] is "**that card**" — the object is FIXED
+///   when the effect is created (Saraswati Mnemonics, A Teia). A second copy
+///   of the same card installed a moment later is untouched, and so is the
+///   same card if it leaves and returns as a new object (1.12.3).
+/// * [`ProhibitionScope::Matching`] is a DESCRIPTION — "agendas", "Corp
+///   cards", "copies of that agenda" — in the shared filter vocabulary, and
+///   9.10.1 makes it a description rather than a target: it is re-read every
+///   time the act is offered, so an agenda drawn and installed after the
+///   effect was created is inside it, exactly as Clot's static description is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProhibitionScope {
+    /// "…**that card**": one object, named when the effect was created.
+    Object(ObjectId),
+    /// "…**agendas**": every card the criteria describe, re-read wherever the
+    /// act is offered. The criteria combine as a conjunction, exactly as a
+    /// target announcement's and a search's do (§12 rule 5); an empty list
+    /// describes every card, which is what a sentence naming no restriction
+    /// at all would mean.
+    Matching(Vec<crate::instr::TargetFilter>),
+}
+
+/// CR 1.2.2: the things a "cannot" ability can forbid a player doing. One
+/// variant per act the CR states as its own procedure, so a printed sentence
+/// names them and never describes them.
+///
+/// Every one of these is read where the act is OFFERED OR DIRECTED, because
+/// 1.2.2 makes a "cannot" beat the permission rather than compete with it:
+/// an option that is prohibited is not put to the player at all, and an
+/// instruction that directs the act does not perform it. An unofferable act
+/// and an act that fizzles are observably different to a player, and the
+/// former is what the rule says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProhibitedAction {
     /// CR 1.17.3 / 5.4: scoring the agenda. The (S) option is not offered at
@@ -172,6 +222,21 @@ pub enum ProhibitedAction {
     Score,
     /// CR 8.1.2: rezzing the card, wherever a rez is offered or directed.
     Rez,
+    /// CR 7.5 / 7.2.3: stealing the agenda. Stealing is not an option the
+    /// Runner takes — 7.2.3 makes it happen during the access, and 1.17.3
+    /// makes it mandatory when it costs nothing — so 1.2.2's precedence shows
+    /// up as the steal simply not happening, and the access carrying on. That
+    /// is the shape Haarpsichord Studios' limit already takes
+    /// ([`crate::ability::StaticDecl::StealsPerTurnAtMost`]), and this is the
+    /// same act forbidden by description and for a duration instead.
+    Steal,
+    /// CR 7.1.5 / 1.19.4: trashing the card. Read in both of the places the
+    /// Runner can trash a Corp card: the basic trash ability's mid-access
+    /// option is not offered (7.1.4), and an instruction of a prohibited
+    /// player's ability that would trash the card expects nothing of it —
+    /// the same treatment [`crate::ability::StaticDecl::CannotBeTrashed`]
+    /// already gets, which 9.9.2 says leaves nothing expected.
+    Trash,
 }
 
 /// Kernel-wave replacement transforms (the mechanism is real; the vocabulary

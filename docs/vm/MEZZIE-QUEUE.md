@@ -32,7 +32,7 @@ Identity is COMPLETE. Printed text below is from
 
 - [x] **Global Food Initiative** ×1 — agenda · Initiative · adv 5/3
       "Global Food Initiative is worth 1 fewer agenda point while in the Runner's score area."
-- [ ] **Luminal Transubstantiation** ×1 — agenda · Research · adv 3/2
+- [x] **Luminal Transubstantiation** ×1 — agenda · Research · adv 3/2
       "When you score this agenda, gain [click][click][click]. You cannot score agendas for the remainder of the turn. / Limit 1 per deck."
 - [ ] **Project Vacheron** ×3 — agenda · Research · adv 5/3
       "[interrupt] → When this agenda would be added to the Runnerʼs score area from anywhere except Archives, instead it is added to their score area with 4 hosted agenda counters. / While this agenda is in the Runnerʼs score area with 1 or more hosted agenda counters, it is worth 0 agenda points and gains “When the Runnerʼs turn begins, remove 1 hosted agenda counter.“"
@@ -161,61 +161,6 @@ ability printed on a Runner card.
 Wants it: **Fairchild 3.0** (the "Lose [click][click][click]: Break up to 3
 subroutines on this ice" ability; the three subroutines are done).
 
-### A "cannot" that names an act other than scoring or rezzing (CR 9.10.1 / 1.2.2)
-
-`LingeringSpec::Prohibit` takes a list of acts, but `ProhibitedAction` has two
-variants — `Score` and `Rez`. A sentence forbidding anything else has nothing
-to say "cannot" about, and 1.2.2 gives a "cannot" precedence over every
-permission, so getting it wrong is not a small error.
-
-Wanted: the same one atom with the rest of the acts a card can forbid as
-content — stealing (7.5), trashing (7.1.5 / 1.19.4), advancing, installing,
-drawing, running — added as variants of `ProhibitedAction` rather than as new
-prohibition atoms.
-
-Wants it: **Vertigo** ("they cannot steal or trash Corp cards for the
-remainder of this run"); **Lakshmi Smartfabrics** ("the Runner cannot steal
-copies of that agenda for the remainder of this turn" — stealing again, with a
-turn for its duration instead of a run).
-
-### A "cannot" over a DESCRIPTION that also has a duration (CR 9.10.1 / 1.2.2)
-
-The neighbouring gap, and a different one: the ACT is not the problem here.
-The kernel says "cannot" in two shapes and neither is "you cannot <verb>
-<described cards> for <a duration>".
-
-`Payload::Prohibited { target: ObjectId, actions }` is a lingering effect, so
-it has a duration and 9.10.1 keeps it alive after its source is gone — but it
-names ONE object, fixed when the effect was created, which is exactly right
-for Saraswati Mnemonics' and A Teia's "that card" and cannot say "agendas".
-`StaticDecl::CannotScoreMatching { criteria }` describes its cards in the
-shared filter vocabulary — but it is a declaration of an ACTIVE card, with no
-duration at all and no life of its own: forfeiting the source out of the score
-area (24/7 News Cycle, Archer) or blanking it (9.1.9) lifts a prohibition the
-card said nothing about lifting.
-
-Feeding the lingering one a description is not a third option and must not be
-offered as one. `LingeringSpec::Prohibit`'s position resolves through
-`TargetSpec`, and every describing `TargetSpec` (`Choose`, `Each`) resolves to
-the instruction's ANNOUNCED targets (1.15.2) — while `Instruction::
-CreateLingeringEffect` announces nothing, deliberately (9.10.1: the position
-describes rather than targets). So a prohibition written over a description
-resolves to the empty set and forbids nothing, silently, which is how a first
-attempt at Luminal Transubstantiation passed its build and failed its
-behaviour test.
-
-Wanted: the described set as CONTENT on the lingering prohibition — the
-criteria in the same filter vocabulary, read where the act is offered rather
-than resolved once at creation, so "you cannot score agendas for the remainder
-of the turn", "the Runner cannot steal copies of that agenda for the remainder
-of this turn" and "you cannot score or rez that card until your next turn
-begins" are one atom with different content. That also makes the existing
-static a special case of it rather than a second mechanism.
-
-Wants it: **Luminal Transubstantiation** ("You cannot score agendas for the
-remainder of the turn"; the three clicks are done and tested). **Lakshmi
-Smartfabrics** wants this too, on top of the missing act above.
-
 ### A stated condition that asks about the SOURCE and the game state at once (CR 9.3.7a)
 
 `AbilityDef::condition` holds one `Condition`, and `StaticCond` is a flat list
@@ -322,8 +267,13 @@ Wanted: one selector for the pool, read the way `CreditsInPoolOf(Side)` reads
 the credit pool, with the side as content; the existing `at_least`/`at_most`
 supply the threshold and the polarity.
 
-Wants it: **Vertigo** (same sentence as above — it needs both this and the
-prohibition).
+Wants it: **Vertigo**. This is now the ONLY thing its sentence waits on — the
+prohibition half ("they cannot steal or trash Corp cards for the remainder of
+this run") is written and tested as of the CR 1.2.2 wave: stealing and
+trashing are acts a "cannot" names, the run is a duration it takes, and "Corp
+cards" is a description it reads where the act is offered. The sentence is one
+instruction (9.11.3) with a 9.6.5c requirement in front of it, so it stays
+marked in full until the requirement can be stated.
 
 ### A trigger condition over the CLICKS spent on one action (CR 5.2.1 / 1.11.3b)
 
@@ -384,8 +334,12 @@ reads, and one comparison position whose two sides are quantities — so "an
 agenda worth X points", "a card with printed cost X" and "ice with strength X
 or lower" are one word with different content, and not a filter apiece.
 
-Wants it: **Lakshmi Smartfabrics** ("Reveal an agenda worth X points from HQ" —
-which also needs the prohibition above, so the sentence waits on both).
+Wants it: **Lakshmi Smartfabrics** ("Reveal an agenda worth X points from HQ").
+Its prohibition is no longer a blocker — CR 1.2.2's "cannot" now names
+stealing and takes a description with a duration — but the sentence still
+waits on this word and on the revealed-cards word below, so the card stays
+unticked. Both remaining halves are about the SAME reveal: which agenda may be
+revealed, and which cards "copies of that agenda" then means.
 
 ### The printed ORDINAL on an additional-cost declaration (CR 1.16.10 / 5.2.5a)
 
@@ -679,7 +633,11 @@ actually trashed, with the description as content.
 
 Wants it: **Inject** ("Gain 1[credit] for each program trashed, and add the
 rest of the revealed cards to your grip" — the reveal and the trash are done
-and tested); **Embezzle**, already recorded in `unlisted.rs`.
+and tested); **Embezzle**, already recorded in `unlisted.rs`; **Lakshmi
+Smartfabrics** ("The Runner cannot steal **copies of that agenda**" — the
+prohibition is written and takes a description, and what the description has
+to say is "cards with the same name as the card this ability revealed", which
+is this word read for a characteristic instead of for identity).
 
 ### A count of the agendas STOLEN inside a window (CR 7.5 / 1.12.6)
 

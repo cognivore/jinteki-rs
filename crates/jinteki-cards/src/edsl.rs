@@ -3746,7 +3746,47 @@ pub fn cannot_be(
     duration: WantedDuration,
 ) -> Instruction {
     Instruction::CreateLingeringEffect {
-        payload: LingeringSpec::Prohibit { targets: target, actions: actions.to_vec() },
+        payload: LingeringSpec::Prohibit {
+            scope: jinteki_cr::instr::ProhibitionSpec::Cards(target),
+            by: None,
+            actions: actions.to_vec(),
+        },
+        duration,
+    }
+}
+/// "**<A player> cannot <act on> <the described cards>** for <a duration>."
+/// (Luminal Transubstantiation's "You cannot score agendas for the remainder
+/// of the turn"; CR 1.2.2 + 9.10.1.)
+///
+/// The neighbour of [`cannot_be`], and the difference is the whole point. That
+/// one NAMES its card, once, when the effect is created; this one DESCRIBES
+/// its cards and the description is re-read wherever the act is offered — so
+/// an agenda that was still in R&D when the sentence resolved is inside it.
+/// A description must be written here and cannot be smuggled into
+/// [`cannot_be`]: a describing position there resolves through announced
+/// targets (1.15.2) that 9.10.1 never announces, and the kernel refuses it
+/// rather than build a prohibition that forbids nothing.
+///
+/// It is a LINGERING EFFECT and not a declaration, which is what the printed
+/// duration asks for: 9.10.1 gives it a life independent of its source, so
+/// forfeiting the source out of a score area (24/7 News Cycle, Archer) or
+/// blanking it (9.1.9) lifts nothing this sentence did not say it would lift.
+///
+/// `by` is the player the sentence names. `None` binds both, which is right
+/// only when the act itself names its actor (1.17.3's scoring, 7.5's
+/// stealing); an act both players can perform — trashing — must say whose.
+pub fn cannot_act_on_matching(
+    criteria: &[TargetFilter],
+    by: Option<Side>,
+    actions: &[ProhibitedAction],
+    duration: WantedDuration,
+) -> Instruction {
+    Instruction::CreateLingeringEffect {
+        payload: LingeringSpec::Prohibit {
+            scope: jinteki_cr::instr::ProhibitionSpec::Matching(criteria.to_vec()),
+            by,
+            actions: actions.to_vec(),
+        },
         duration,
     }
 }

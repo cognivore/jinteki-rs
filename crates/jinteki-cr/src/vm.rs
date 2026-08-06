@@ -2332,6 +2332,14 @@ impl Vm {
                     cite!("rule_cannot_precedence");
                     return;
                 }
+                // Vertigo / Lakshmi class: "…cannot steal <these cards> for
+                // the remainder of <a duration>" — 9.10.1's lingering
+                // prohibition, whose scope may be a description read right
+                // here. 1.2.2 again: the steal does not happen, and the
+                // access carries on as it does above.
+                if self.steal_prohibited(card) {
+                    return;
+                }
                 if self.st.objects[&card].printed.card_type == CardType::Agenda {
                     let total = self.steal_cost_of(card);
                     // 1.16.1b: a cost that cannot be paid is not a choice —
@@ -2431,12 +2439,17 @@ impl Vm {
         cite!("rule_cannot_precedence");
         cite!("rule_score_not_an_action");
         let Some(o) = self.st.objects.get(&card) else { return false };
-        if self.act_prohibited(card, ProhibitedAction::Score) {
+        // 1.17.3: only the Corp scores, so the act names its own actor.
+        if self.act_prohibited(card, ProhibitedAction::Score, Side::Corp) {
             return true;
         }
+        // Clot class: the same description, declared by an ACTIVE card
+        // instead of created as a lingering effect — no duration of its own,
+        // so it lifts the moment the declaring card stops being active. The
+        // criteria are read exactly as a lingering prohibition's are.
         self.active_statics().iter().any(|(obj, d)| match d {
             StaticDecl::CannotScoreMatching { criteria } => {
-                criteria.iter().all(|f| self.filter_matches(o, *f, Some(*obj)))
+                self.description_reaches(o, criteria, *obj)
             }
             _ => false,
         })
@@ -2449,17 +2462,61 @@ impl Vm {
     pub fn rez_prohibited(&self, card: ObjectId) -> bool {
         cite!("rule_cannot_precedence");
         cite!("sec_rez");
-        self.act_prohibited(card, ProhibitedAction::Rez)
+        // 8.1.2: only the Corp rezzes.
+        self.act_prohibited(card, ProhibitedAction::Rez, Side::Corp)
     }
 
-    /// CR 9.10.1: does a lingering effect forbid this act on this object right
-    /// now? The prohibition names the card, so it is read here and not through
-    /// the description machinery a static declaration uses.
-    fn act_prohibited(&self, card: ObjectId, act: ProhibitedAction) -> bool {
-        self.lingering.iter().any(|l| {
-            matches!(&l.payload, Payload::Prohibited { target, actions }
-                if *target == card && actions.contains(&act))
+    /// CR 1.2.2 / 7.5: is the Runner prohibited from stealing this agenda?
+    /// Asked at step 7.2.3, where the steal happens. Stealing is not an
+    /// option the Runner takes, so 1.2.2's precedence shows as the steal not
+    /// happening while the access carries on — the shape Haarpsichord's limit
+    /// and a Pinhole-class access restriction both already take.
+    pub fn steal_prohibited(&self, card: ObjectId) -> bool {
+        cite!("rule_cannot_precedence");
+        cite!("rule_after_mid_access_agenda");
+        self.act_prohibited(card, ProhibitedAction::Steal, Side::Runner)
+    }
+
+    /// CR 9.10.1: does a lingering effect forbid `by` doing `act` to this
+    /// object right now?
+    ///
+    /// Both scopes are read here. A NAMED card was fixed when the effect was
+    /// created and is compared by identity; a DESCRIPTION is re-read now, at
+    /// the moment the act is offered, which is what makes "you cannot score
+    /// agendas for the remainder of the turn" cover an agenda that was still
+    /// in R&D when the sentence resolved. `by: None` is a prohibition that
+    /// names no player and so binds whoever tries.
+    fn act_prohibited(&self, card: ObjectId, act: ProhibitedAction, by: Side) -> bool {
+        cite!("rule_cannot_precedence");
+        let Some(o) = self.st.objects.get(&card) else { return false };
+        self.lingering.iter().any(|l| match &l.payload {
+            Payload::Prohibited { by: whom, scope, actions } => {
+                if !actions.contains(&act) || whom.is_some_and(|w| w != by) {
+                    return false;
+                }
+                match scope {
+                    crate::lingering::ProhibitionScope::Object(t) => *t == card,
+                    crate::lingering::ProhibitionScope::Matching(criteria) => {
+                        self.description_reaches(o, criteria, l.source)
+                    }
+                }
+            }
+            _ => false,
         })
+    }
+
+    /// Does a description in the shared filter vocabulary reach this card?
+    /// §12 rule 5: the criteria combine as a conjunction, and an empty list
+    /// describes every card. `source` is the card the description is written
+    /// on, which the filters that compare against it need (9.10.1 keeps a
+    /// lingering effect's source recorded for exactly this).
+    fn description_reaches(
+        &self,
+        o: &Object,
+        criteria: &[crate::instr::TargetFilter],
+        source: ObjectId,
+    ) -> bool {
+        criteria.iter().all(|f| self.filter_matches(o, *f, Some(source)))
     }
 
     fn run_success_prohibited(&self, server: ServerId) -> bool {
@@ -5231,6 +5288,14 @@ impl Vm {
                 let filtered: Vec<ObjectId> = resolved
                     .into_iter()
                     .filter(|t| !self.trash_prohibited(*t))
+                    // 1.2.2: "<a player> cannot trash <these cards>" reaches a
+                    // trash this player's ability DIRECTS as well as the basic
+                    // trash ability's option — the "cannot" beats the
+                    // permission wherever the permission comes from, and
+                    // 9.9.2 leaves nothing expected of a card it covers.
+                    .filter(|t| {
+                        !self.act_prohibited(*t, ProhibitedAction::Trash, controller)
+                    })
                     .filter(|t| {
                         !matches!(self.st.objects[t].zone, Zone::Discard(_))
                     })
@@ -5311,6 +5376,9 @@ impl Vm {
                 let tgt: Vec<ObjectId> = source
                     .into_iter()
                     .filter(|t| !self.trash_prohibited(*t))
+                    .filter(|t| {
+                        !self.act_prohibited(*t, ProhibitedAction::Trash, controller)
+                    })
                     .collect();
                 if tgt.is_empty() {
                     vec![]
@@ -11271,20 +11339,71 @@ impl Vm {
                     }
                     return;
                 }
-                // 1.2.2: the same per-target shape — the prohibition is about
-                // each named card, so a sentence naming several makes one
-                // effect each and a sentence naming none makes none at all.
-                if let crate::instr::LingeringSpec::Prohibit { targets, actions } = payload {
+                // 1.2.2: a "cannot" takes precedence over every permission, so
+                // how it picks its cards decides what it forbids and getting
+                // it wrong is not a small error.
+                if let crate::instr::LingeringSpec::Prohibit { scope, by, actions } = payload {
                     cite!("rule_cannot_precedence");
-                    for t in self.resolve_targets(targets, Some(source.obj), &imm.targets) {
-                        let id = self.next_lingering;
-                        self.next_lingering += 1;
-                        self.lingering.push(LingeringEffect::new(
-                            id,
-                            source.obj,
-                            Payload::Prohibited { target: t, actions: actions.clone() },
-                            dur,
-                        ));
+                    // A description written into the NAMING position resolves
+                    // through announced targets (1.15.2) and this instruction
+                    // announces none (9.10.1) — so it would forbid nothing and
+                    // report nothing. Refuse it here, where it is detectable,
+                    // rather than create the prohibition that is not there.
+                    if let Some(what) = scope.misdescribes() {
+                        panic!(
+                            "CR 1.2.2/9.10.1: the prohibition on {} names its cards with {}, \
+                             which DESCRIBES them — CreateLingeringEffect announces no targets, \
+                             so this would forbid nothing at all. Write the description in \
+                             ProhibitionSpec::Matching, which is re-read where the act is offered.",
+                            self.st
+                                .objects
+                                .get(&source.obj)
+                                .map(|o| o.printed.name)
+                                .unwrap_or("<unknown source>"),
+                            what,
+                        );
+                    }
+                    match scope {
+                        // The prohibition is about each named card, so a
+                        // sentence naming several makes one effect each and a
+                        // sentence naming none makes none at all.
+                        crate::instr::ProhibitionSpec::Cards(targets) => {
+                            for t in self.resolve_targets(targets, Some(source.obj), &imm.targets) {
+                                let id = self.next_lingering;
+                                self.next_lingering += 1;
+                                self.lingering.push(LingeringEffect::new(
+                                    id,
+                                    source.obj,
+                                    Payload::Prohibited {
+                                        by: *by,
+                                        scope: crate::lingering::ProhibitionScope::Object(t),
+                                        actions: actions.clone(),
+                                    },
+                                    dur,
+                                ));
+                            }
+                        }
+                        // A description is ONE prohibition however many cards
+                        // it happens to reach right now — 9.10.1 keeps it
+                        // alive for its stated duration and it is re-read
+                        // every time, so a card that arrives later is inside
+                        // it and a card that leaves is out of it.
+                        crate::instr::ProhibitionSpec::Matching(criteria) => {
+                            let id = self.next_lingering;
+                            self.next_lingering += 1;
+                            self.lingering.push(LingeringEffect::new(
+                                id,
+                                source.obj,
+                                Payload::Prohibited {
+                                    by: *by,
+                                    scope: crate::lingering::ProhibitionScope::Matching(
+                                        criteria.clone(),
+                                    ),
+                                    actions: actions.clone(),
+                                },
+                                dur,
+                            ));
+                        }
                     }
                     return;
                 }
@@ -14441,7 +14560,14 @@ impl Vm {
                     CreditPurpose::Trashing(card),
                 );
             if avail >= tc {
-                if !self.access_restricted() {
+                // 1.2.2: a "cannot" removes the OPTION rather than making it
+                // fail — a Pinhole-class restriction on this access, or a
+                // Vertigo-class lingering prohibition on trashing these cards
+                // for a duration. Either way the basic trash ability is not
+                // put to the Runner at all.
+                if !self.access_restricted()
+                    && !self.act_prohibited(card, ProhibitedAction::Trash, Side::Runner)
+                {
                     out.push(WindowOption::BasicTrash { card, cost: tc });
                 }
             }

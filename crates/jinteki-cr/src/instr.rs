@@ -1622,16 +1622,68 @@ pub enum LingeringSpec {
     /// run" (Hudson 1.0 class). The bound is a quantity position (§12 rule 6)
     /// evaluated when the effect is created.
     AccessLimit { limit: Quantity },
-    /// CR 1.2.2: "you cannot <do these things to> **that card** [for a
-    /// duration]" (Saraswati Mnemonics class). The cards are a POSITION and
-    /// the forbidden acts are content (§12 rule 2), so one sentence naming
-    /// two of them is one effect per card and not two effects.
+    /// CR 1.2.2 + 9.10.1: "<a player> cannot <do these things to> <these
+    /// cards> [for a duration]" (Saraswati Mnemonics, A Teia, Luminal
+    /// Transubstantiation). WHO, WHICH CARDS and WHICH ACTS are all content
+    /// on the one instruction (§12 rule 2) — see
+    /// [`crate::lingering::Payload::Prohibited`], which this creates.
+    Prohibit {
+        scope: ProhibitionSpec,
+        by: Option<Side>,
+        actions: Vec<crate::lingering::ProhibitedAction>,
+    },
+}
+
+/// CR 1.2.2: how a printed "cannot" picks the cards it is about, as written
+/// on the card rather than as the effect ends up holding them
+/// ([`crate::lingering::ProhibitionScope`]).
+///
+/// The split is NOT cosmetic and the kernel does not let a card author blur
+/// it. A NAMING position resolves once, when the effect is created; a
+/// DESCRIPTION is never resolved at all, and is re-read wherever the act is
+/// offered. Writing a description into the naming position is the one mistake
+/// this enum exists to prevent: [`Instruction::CreateLingeringEffect`]
+/// announces nothing, deliberately (9.10.1 — the position describes rather
+/// than targets), so every describing [`TargetSpec`] resolves through the
+/// instruction's ANNOUNCED targets (1.15.2) and finds the empty set. Such a
+/// prohibition forbids nothing and says nothing about it, which is a card
+/// that compiles, looks implemented and does not exist. `Cards` therefore
+/// REFUSES a describing spec outright rather than resolving it to nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProhibitionSpec {
+    /// "…**that card**" — a position that NAMES its objects: the card an
+    /// earlier instruction of the same ability installed (8.5.16f), the
+    /// source, the triggering card, an explicit list. One lingering effect is
+    /// created per object named, because the prohibition is about each of
+    /// them; a position that names none creates none, which is what a
+    /// Saraswati whose install found an empty HQ correctly does.
+    Cards(TargetSpec),
+    /// "…**agendas**", "…**Corp cards**" — a DESCRIPTION in the shared filter
+    /// vocabulary. One lingering effect, carrying the criteria, read wherever
+    /// the act is offered.
+    Matching(Vec<TargetFilter>),
+}
+
+impl ProhibitionSpec {
+    /// Does this naming position actually DESCRIBE its cards? CR 1.15.2: a
+    /// describing spec resolves through the announced targets, and
+    /// [`Instruction::CreateLingeringEffect`] announces none — so a
+    /// prohibition written this way is silently empty and
+    /// [`ProhibitionSpec::Matching`] is the position that was meant.
     ///
-    /// Like [`LingeringSpec::CannotUseAbilitiesOf`] the position DESCRIBES its
-    /// objects rather than targeting them (9.10.1), so nothing is announced:
-    /// "that card" is the card an earlier instruction of the same ability
-    /// installed, which 8.5.16f records and 1.15.2 never saw.
-    Prohibit { targets: TargetSpec, actions: Vec<crate::lingering::ProhibitedAction> },
+    /// This is a property of the card DEFINITION, not of the game state: the
+    /// answer is the same on every board, so a card that passes it once
+    /// passes it always, and a card that fails it fails the first time it is
+    /// driven rather than quietly doing nothing forever.
+    pub fn misdescribes(&self) -> Option<&'static str> {
+        let ProhibitionSpec::Cards(spec) = self else { return None };
+        match spec {
+            TargetSpec::Choose { .. } => Some("TargetSpec::Choose"),
+            TargetSpec::Each(_) => Some("TargetSpec::Each"),
+            TargetSpec::AccessedCardMatching(_) => Some("TargetSpec::AccessedCardMatching"),
+            _ => None,
+        }
+    }
 }
 
 /// CR 9.8.2/9.8.3: what an ability grants when it grants subroutines.

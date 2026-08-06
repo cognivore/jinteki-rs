@@ -18512,35 +18512,46 @@ fn global_food_initiative_is_worth_three_scored_and_two_stolen() {
 }
 
 /// Luminal Transubstantiation: "When you score this agenda, gain
-/// [click][click][click]. …"
+/// [click][click][click]. You cannot score agendas for the remainder of the
+/// turn."
 ///
-/// PARTIAL — "You cannot score agendas for the remainder of the turn." is
-/// unsayable (see the card's doc comment and MEZZIE-QUEUE.md's Blockers), and
-/// the test says so out loud, twice: once by pinning the marker, and once by
-/// scoring a second agenda in the same turn, which is exactly what the marked
-/// sentence would have forbidden. When it becomes sayable this assertion is the
-/// one that has to flip.
+/// Both sentences of the one conditional ability (9.11.3 — two sentences, two
+/// instructions, one trigger), each asserted as what it promises a player.
 ///
-/// The sentence that IS written is read off the turn itself: 5.6.4a allots the
-/// Corp three clicks, the score happens in the paid window of the first action
-/// window, and the turn then runs to six actions instead of three.
+/// The clicks are read off the turn itself: 5.6.4a allots the Corp three, the
+/// score happens in the paid window of the first action window, and the turn
+/// then runs to six actions instead of three.
+///
+/// The prohibition is asserted on an agenda that DID NOT EXIST IN PLAY when
+/// the sentence resolved — it is installed from HQ a click later, needs no
+/// advancement at all, and is still never offered. That is the half a
+/// description gets and a named card does not: 9.10.1's lingering effect
+/// carries the criteria and they are re-read every time the (S) option is
+/// weighed, so the agenda is inside the prohibition the moment it arrives.
+/// And 1.2.2 makes it an option WITHHELD rather than an offer that fails,
+/// which is what the assertion looks for.
+///
+/// The last two assertions are the duration doing its own work: "the remainder
+/// of the turn" ends with the turn, and the same agenda is scorable next turn
+/// with nothing else about the board changed.
 #[test]
-fn luminal_transubstantiation_pays_three_clicks_when_it_is_scored() {
+fn luminal_transubstantiation_pays_three_clicks_and_shuts_the_turn_to_agendas() {
     let lt = jinteki_cards::find("Luminal Transubstantiation")
         .expect("Luminal Transubstantiation is in the card layer");
-    assert_eq!(
-        lt.unimplemented,
-        vec!["You cannot score agendas for the remainder of the turn."],
-        "exactly one printed sentence is still unsayable"
+    assert!(
+        lt.unimplemented.is_empty(),
+        "every printed sentence is sayable now: {:?}",
+        lt.unimplemented
     );
 
     let mut vm = Vm::empty(9306);
     let luminal = tk::install_root(&mut vm, card_partial("Luminal Transubstantiation"), ServerId::Remote(1), false);
-    let other = tk::install_root(&mut vm, tk::vanilla_agenda("Loose Agenda", 3, 1), ServerId::Remote(2), false);
-    for a in [luminal, other] {
-        vm.st.objects.get_mut(&a).unwrap().counters.insert(CounterKind::Advancement, 3);
-    }
-    tk::fill_hand(&mut vm, Side::Corp, 3);
+    vm.st.objects.get_mut(&luminal).unwrap().counters.insert(CounterKind::Advancement, 3);
+    // 4.6.8d: a second remote exists because a piece of ice protects it, so
+    // its root is free for the agenda that arrives mid-turn.
+    tk::install_ice(&mut vm, tk::vanilla_ice("Guard", 0, 1), ServerId::Remote(2), false);
+    let other = vm.new_object(tk::vanilla_agenda("Free Agenda", 0, 1), Zone::Hand(Side::Corp));
+    vm.st.hand.get_mut(&Side::Corp).unwrap().push(other);
     tk::fill_deck(&mut vm, Side::Corp, 8);
     tk::fill_deck(&mut vm, Side::Runner, 8);
     vm.start_turn(Side::Corp);
@@ -18549,7 +18560,11 @@ fn luminal_transubstantiation_pays_three_clicks_when_it_is_scored() {
         &mut vm,
         Plan::corp()
             .when(Match::paid().once(), Reply::score(luminal))
-            .when(Match::paid().once(), Reply::score(other))
+            .when(Match::action().once(), Reply::Take(Pick::InstallCard(other)))
+            .when(
+                Match::of(Kind::Destination).once(),
+                Reply::Destination(jinteki_cr::instr::InstallDest::Root(ServerId::Remote(2))),
+            )
             .otherwise_click_credit(),
         Plan::runner().when(Match::action(), Reply::Halt),
     );
@@ -18569,16 +18584,42 @@ fn luminal_transubstantiation_pays_three_clicks_when_it_is_scored() {
         "5.6.4a's three clicks plus the three the agenda gained, spent as actions: {}",
         t.tail(20)
     );
-    // The marked sentence, stated as the behaviour it is missing. 1.2.2 would
-    // have removed the (S) option for every agenda for the rest of the turn.
+    assert_eq!(
+        vm.st.objects[&other].zone,
+        Zone::Root(ServerId::Remote(2)),
+        "the second agenda is installed and needs no advancement: {}",
+        t.tail(30)
+    );
+    assert!(
+        !offered_options(&t).iter().any(|o| matches!(
+            o,
+            jinteki_cr::decision::WindowOption::Score { card } if *card == other
+        )),
+        "1.2.2: the (S) option is WITHHELD for every agenda for the rest of the turn — \
+         including one that reached the board after the sentence resolved, because the \
+         description is re-read where the option is offered: {}",
+        t.tail(30)
+    );
+    assert_eq!(vm.score(Side::Corp), 2, "Luminal's 2 points and nothing else");
+
+    let t2 = plan::play(
+        &mut vm,
+        Plan::corp().when(Match::paid().once(), Reply::score(other)).otherwise_click_credit(),
+        Plan::runner().otherwise_click_credit(),
+    );
+    assert_eq!(
+        vm.st.turn_side,
+        Side::Corp,
+        "the Corp's next turn came round: {}",
+        t2.tail(40)
+    );
     assert_eq!(
         vm.st.objects[&other].zone,
         Zone::ScoreArea(Side::Corp),
-        "a second agenda scored the same turn — which the marked sentence forbids, \
-         so this assertion flips when it is written: {}",
-        t.tail(20)
+        "…and 'the remainder of the turn' ran out with the turn it named — 9.10.1's \
+         effect expired on its own duration and the same agenda scored: {}",
+        t2.tail(40)
     );
-    assert_eq!(vm.score(Side::Corp), 3, "2 + 1, for the same reason");
 }
 
 /// Project Vitruvius: "When you score this agenda, place 1 agenda counter on it

@@ -104,31 +104,33 @@ pub fn global_food_initiative() -> Card {
 ///  agendas for the remainder of the turn.
 ///  Limit 1 per deck."
 ///
-/// PARTIAL: the clicks arrive; the sentence that pays for them does not.
+/// COMPLETE.
 ///
 /// The printed line is two sentences and therefore two instructions (9.11.3)
 /// of ONE conditional ability (9.6.1) — the trigger is stated once and governs
-/// both. The first is written; the second is marked, so the ability keeps the
-/// one instruction it can say.
+/// both.
 ///
-/// UNIMPLEMENTED: "You cannot score agendas for the remainder of the turn."
-/// The ACT is not the problem — 1.17.3's scoring is one of the two acts the
-/// prohibition vocabulary names, and 1.2.2 would give it precedence over the
-/// (S) option exactly as A Teia's does. What has no words is the SCOPE
-/// together with the DURATION. A prohibition with a stated duration is
-/// 9.10.1's lingering effect, and the kernel's lingering prohibition names ONE
-/// object, fixed when the effect is created: it is the right shape for
-/// Saraswati Mnemonics' "that card" and it cannot say "agendas". The
-/// description-shaped prohibition that exists beside it is a STATIC
-/// declaration of an active card, which has no duration at all — written that
-/// way, forfeiting this agenda out of the score area later the same turn (24/7
-/// News Cycle, Archer) would lift a prohibition the card says nothing about
-/// lifting, and 9.10.1 is explicit that a lingering effect outlives its
-/// source. Feeding the lingering one a description is not a third option: the
-/// position resolves through the announced targets (1.15.2), so a sentence
-/// that announces nothing prohibits nothing, silently — which is what a first
-/// attempt at this card did. The general capability wanted is on
-/// MEZZIE-QUEUE.md's Blockers.
+/// "You cannot score agendas for the remainder of the turn" is 9.10.1's
+/// lingering effect over a DESCRIPTION. Three things about it decide the
+/// shape, and each of them rules out something that was tried:
+///
+/// * It is a lingering effect and NOT a static declaration, because it has a
+///   stated duration and 9.10.1 gives such an effect a life independent of its
+///   source. Written as a declaration of this active agenda, forfeiting it out
+///   of the score area later the same turn (24/7 News Cycle, Archer) or
+///   blanking it (9.1.9) would lift a prohibition the card says nothing about
+///   lifting.
+/// * Its scope is a DESCRIPTION and not a named card. "Agendas" is every
+///   agenda, including one still in R&D when this resolved, so the criteria
+///   are re-read wherever the (S) option is offered rather than resolved once.
+///   A prohibition written over the naming position instead resolves through
+///   the announced targets (1.15.2) that 9.10.1 announces none of, and forbids
+///   nothing at all — the kernel now refuses that spelling outright rather
+///   than build the prohibition that is not there.
+/// * 1.2.2 gives the "cannot" precedence over the permission, so the (S)
+///   option is not OFFERED for the rest of the turn — the same treatment
+///   A Teia's "you cannot score the second card this turn" already gets, and
+///   observably different from an offer that fails.
 ///
 /// "Limit 1 per deck" is a deckbuilding restriction (1.4), not a sentence this
 /// card does: it is carried as printed text and denotes into nothing, the same
@@ -141,9 +143,19 @@ pub fn luminal_transubstantiation() -> Card {
         .subtypes(&["Research"])
         .text("When you score this agenda, gain [click][click][click]. You cannot score agendas for the remainder of the turn.")
         .text("Limit 1 per deck.")
-        .when(scored(), [gain_clicks(Corp, 3)])
+        .when(
+            scored(),
+            [
+                gain_clicks(Corp, 3),
+                cannot_act_on_matching(
+                    &[of_type(CardType::Agenda)],
+                    Some(Corp),
+                    &[ProhibitedAction::Score],
+                    this_turn(),
+                ),
+            ],
+        )
         .named("three clicks on the score")
-        .unimplemented("You cannot score agendas for the remainder of the turn.")
         .build()
 }
 
@@ -406,16 +418,22 @@ pub fn jeeves_model_bioroids() -> Card {
 /// the rez, so the ability is there in time to be met by the occurrence that
 /// activated it.
 ///
-/// The paid ability is marked, on two counts that are each enough on their
-/// own. "The Runner cannot steal copies of that agenda for the remainder of
-/// this turn" is 9.10.1's prohibition, and the prohibition vocabulary names
-/// scoring and rezzing and nothing else — stealing (7.5) is not among the
-/// acts a card can forbid, and 1.2.2 gives a "cannot" precedence over every
-/// permission, so a wrong one is not a small error. And "an agenda worth X
-/// points" is a description stipulating a characteristic — the card's agenda
-/// points, compared against the X announced for the cost (1.16.2c) — which
-/// the description vocabulary cannot say either. Both are on
-/// MEZZIE-QUEUE.md's Blockers as general capabilities.
+/// The paid ability is marked, and what it waits on is now the REVEAL at both
+/// ends of it rather than the prohibition. The prohibition itself is written:
+/// the CR 1.2.2 wave made stealing (7.5) an act a "cannot" names and gave the
+/// lingering prohibition a description and a duration, so "…for the remainder
+/// of this turn" is sayable.
+///
+/// What is not sayable is which agenda may be revealed and which cards the
+/// sentence then means. "An agenda worth X points" is a description
+/// stipulating a characteristic the filter vocabulary does not read — the
+/// card's agenda points (2.4.2), compared against the X announced for the
+/// ability's own trigger cost (1.16.2c). And "copies of that agenda" is a
+/// description of cards sharing a characteristic with the card THIS ABILITY
+/// REVEALED, which 1.21.3's reveal records nowhere: unlike 1.21.2's look, a
+/// reveal keeps nothing on the resolving ability for a later instruction to
+/// refer back to. Both are on MEZZIE-QUEUE.md's Blockers as general
+/// capabilities, and both belong to the same reveal.
 pub fn lakshmi_smartfabrics() -> Card {
     card("Lakshmi Smartfabrics")
         .corp()
@@ -1075,21 +1093,26 @@ pub fn fairchild_3_0() -> Card {
 ///  cannot steal or trash Corp cards for the remainder of this run.
 ///  [subroutine] The Runner loses [click]."
 ///
-/// UNIMPLEMENTED: the first sentence, on two counts, and neither of them is
-/// close enough to fudge.
+/// UNIMPLEMENTED: the first sentence, on ONE remaining count.
 ///
 /// "If they have no [click] remaining" is a 9.6.5c requirement about a
 /// NUMBER — the clicks in the Runner's click pool (1.11) — and the quantity
 /// language has no selector that reads a click pool, so the requirement
-/// cannot be stated at all.
+/// cannot be stated at all. It is on MEZZIE-QUEUE.md's Blockers.
 ///
-/// "They cannot steal or trash Corp cards for the remainder of this run" is a
-/// 9.10.1 prohibition with the run as its duration, and the prohibition
-/// vocabulary names only two acts: scoring and rezzing. Stealing (7.5) and
-/// trashing (7.1.5 / 1.19.4) are not among them, so there is nothing to say
-/// "cannot" about. Written with what exists, the sentence would either do
-/// nothing or forbid the wrong thing, and 1.2.2 gives a "cannot" precedence
-/// over every permission — so getting it wrong is not a small error.
+/// The other half is no longer a blocker. "They cannot steal or trash Corp
+/// cards for the remainder of this run" is 9.10.1's prohibition with the run
+/// as its duration and a description for its scope, and the CR 1.2.2 wave
+/// added all three of the pieces it wanted: stealing (7.5) and trashing
+/// (7.1.5 / 1.19.4) are acts a "cannot" names, "Corp cards" is a description
+/// read where the act is offered, and "they" is the player the prohibition
+/// names — which matters here, because trashing is the one act BOTH players
+/// perform and the Corp must go on trashing its own cards.
+///
+/// The sentence still carries `.unimplemented(…)` whole, because 9.11.3 makes
+/// it ONE instruction: a requirement that cannot be stated is not a smaller
+/// version of the sentence, it is a prohibition that would apply when the
+/// printed one does not.
 ///
 /// The subroutine is complete: 1.11.3b's loss, which is not a spend, and
 /// which leaves a Runner with no clicks at zero rather than failing.
