@@ -1469,16 +1469,20 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .reveal-overlay .zoom-card > .chip.go { align-self: flex-start; margin-top: 8px;
   min-height: 46px; font-size: 15px; font-weight: 700; padding: 12px 22px; }
 
-/* Pile reader (Archives, score areas): tappable rows with thumbnails. */
-.zoom-card.pile { max-height: 86vh; overflow-y: auto; gap: 6px; }
-.pilerow { display: flex; align-items: center; gap: 8px; padding: 5px 6px;
-  border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
-  cursor: pointer; }
-.pilerow:active { border-color: var(--gold); }
-.pilethumb { width: 34px; height: 25px; border-radius: 4px; flex-shrink: 0;
-  background-size: cover; background-position: center 15%; }
-.pilename { flex: 1; font-size: 13px; }
-.pilepts { color: var(--gold); font-weight: 700; font-size: 12px; }
+/* Pile reader (the heap, Archives, score areas): a GRID of the same square
+   tiles the board draws, in the order the cards were placed. A list of rows
+   made a thirty-card heap a column taller than any screen; a grid puts it
+   on one, and every tile is the card as the player already knows it.
+   Bounded to the viewport and scrolling inside itself, always — the pile
+   that overflows is the one you most need to read. */
+.zoom-card.pile { width: min(92vw, 760px); max-height: 86vh; overflow-y: auto; gap: 6px; }
+.pilehint { color: var(--dim); font-size: 11px; margin-top: -4px; }
+.pilegrid { display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  align-content: start; }
+.pilecell { position: relative; cursor: pointer; display: flex; }
+.pilecell .card { width: 100%; height: auto; aspect-ratio: 1 / 1; }
+.pilecell:active .card { border-color: var(--gold); }
 
 /* ── The rail: MTGA's bounded fan, in Netrunner's clothes ───────────────
    Deliberately large. It is the only way to reach the rest of a big list,

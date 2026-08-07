@@ -4883,35 +4883,58 @@ function paintZoomFace(o, c, face) {
   });
 }
 
+/* ── A PILE IS A GRID OF CARDS, IN THE ORDER THEY WERE PUT THERE ─────────
+ *
+ * It used to be a LIST: one row per card, a thumbnail and a name. A list is
+ * the wrong object twice. A pile of thirty is thirty rows — a column taller
+ * than any screen, which is how a heap became something you scroll rather
+ * than something you read — and a row is not what a card looks like
+ * anywhere else in this UI (THE LAW §5: cards render as cards).
+ *
+ * A grid of tiles fits a thirty-card heap on one screen, reads at a glance,
+ * and is the same square tile the board draws, so a card looks like itself
+ * wherever it is.
+ *
+ * ORDER IS THE POINT. The kernel appends to a discard pile as cards arrive
+ * (`Zone::Discard(s) => push(id)`, never sorted, never reversed anywhere)
+ * and the server ships that array untouched, so index order IS placement
+ * order. The grid reads oldest-first, newest-last, and says so — because
+ * "what did they just trash" and "what is at the bottom of this" are
+ * different questions and a pile that does not commit to an order answers
+ * neither. 4.4.2's "top of the pile" is the most recently placed card, which
+ * is the last tile. */
 function zoomPile(cards, title) {
   const o = $("zoom-overlay");
   zoomShowing = null;
   o.style.display = "flex";
-  const rows = cards.map((c, i) => `
-    <div class="pilerow" data-i="${i}">
-      ${c.code ? `<span class="pilethumb" style="background-image:url(${cardImgUrl(c.code)})"></span>` : ""}
-      <span class="pilename">${c.title || "🂠 facedown"}</span>
-      ${c.agendapoints != null ? `<span class="pilepts">${c.agendapoints} pts</span>` : ""}
-    </div>`).join("");
   o.innerHTML = `<div class="zoom-card pile"><h3>${title}</h3>
-    ${rows || "<div class='zline'>none yet</div>"}</div>
+    ${cards.length > 1 ? `<div class="pilehint">oldest first · newest last</div>` : ""}
+    <div class="pilegrid"></div></div>
     <div class="tapaway">tap anywhere to close</div>`;
-  // UX.md THE LAW §5: every display mode previews. A pile row is a card in
-  // compact clothing, so it gets hover preview on a pointer device and
-  // long-press on touch, exactly like the card it stands for.
-  o.querySelectorAll(".pilerow").forEach((row) => {
-    const c = cards[+row.dataset.i];
-    if (!c || !c.title) return;
-    attachZoom(row, c);
+  const grid = o.querySelector(".pilegrid");
+  if (!cards.length) {
+    grid.appendChild(el("div", "zline", "none yet"));
+  }
+  cards.forEach((c, i) => {
+    const cell = el("div", "pilecell");
+    cell.dataset.i = String(i);
+    // The card as the board draws it — square, cropped, named — so the pile
+    // is legible without opening anything, and identical to what the player
+    // already knows how to read.
+    cell.appendChild(cardEl(c, { side: c.side || "corp", reveal: true, pile: true }));
+    grid.appendChild(cell);
+    if (!c.title) return;
+    // THE LAW §5: every display mode previews.
+    attachZoom(cell, c);
     if (hoverCapable) {
-      row.addEventListener("pointerenter", () => showHoverPreview(c, row));
-      row.addEventListener("pointerleave", hideHoverPreview);
+      cell.addEventListener("pointerenter", () => showHoverPreview(c, cell));
+      cell.addEventListener("pointerleave", hideHoverPreview);
     }
   });
-  // Tap a row to read that card; tap anywhere else to close.
+  // Tap a tile to read that card; tap anywhere else to close.
   dismissOnTapAway(o, (e) => {
-    const row = e.target.closest(".pilerow");
-    const c = row ? cards[+row.dataset.i] : null;
+    const cell = e.target.closest(".pilecell");
+    const c = cell ? cards[+cell.dataset.i] : null;
     if (c && c.title) { zoomCard(c); return true; }
     return false;
   });

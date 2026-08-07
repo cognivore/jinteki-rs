@@ -295,25 +295,41 @@ suite("Ice order: outermost nearest the Runner, in BOTH seats", (stage) => {
 suite("Nothing that lists things can run off the screen", (stage) => {
   const ov = document.createElement("div");
   ov.className = "zoom-overlay"; ov.style.position = "relative"; ov.style.inset = "auto";
-  ov.style.height = "220px";
   const pile = document.createElement("div");
   pile.className = "zoom-card pile";
-  pile.innerHTML = "<h3>Heap (30)</h3>" +
-    Array.from({ length: 30 }, (_, i) => `<div class="pilerow"><span class="pilename">Card ${i + 1}</span></div>`).join("");
+  const grid = `<div class="pilegrid">` +
+    Array.from({ length: 30 }, (_, i) => `<div class="pilecell">${
+      `<div class="card"><div class="cname">Card ${i + 1}</div></div>`}</div>`).join("") + `</div>`;
+  pile.innerHTML = "<h3>Heap (30)</h3>" + grid;
   ov.appendChild(pile);
   stage.appendChild(ov);
   const sheet = document.createElement("div");
   sheet.className = "action-sheet"; sheet.style.position = "relative";
   sheet.innerHTML = Array.from({ length: 12 }, (_, i) => `<button class="chip">Server ${i + 1}</button>`).join("");
   stage.appendChild(sheet);
-  return { pile, sheet };
+  return { pile, sheet, grid: pile.querySelector(".pilegrid") };
 }, (t, c) => {
   t.ok(getComputedStyle(c.pile).overflowY === "auto", "the pile reader scrolls");
-  t.ok(c.pile.scrollHeight > c.pile.clientHeight, "and it has somewhere to scroll to");
   t.ok(getComputedStyle(c.pile).touchAction === "pan-y", "the browser owns the pan (a drag is not a tap)");
   t.ok(getComputedStyle(c.sheet).overflowY === "auto", "a long action sheet scrolls");
-  t.ok(parseFloat(getComputedStyle(c.sheet).maxHeight) <= window.innerHeight,
-    "and can never be taller than the screen");
+
+  // MEASURED, NOT DECLARED. This used to read `max-height` off the computed
+  // style and call that "never taller than the screen" — a property is not a
+  // box, and the assertion passed while the thing on screen ran off the
+  // bottom of it. Both are now asked the only question that matters: how
+  // tall are you, actually?
+  for (const [what, e] of [["the pile reader", c.pile], ["a long action sheet", c.sheet]]) {
+    t.ok(rect(e).height <= window.innerHeight,
+      `${what} is not taller than the screen (${Math.round(rect(e).height)} ≤ ${window.innerHeight})`);
+  }
+
+  // A PILE IS A GRID, not a column: thirty cards must not be thirty rows.
+  const cells = [...c.grid.querySelectorAll(".pilecell")].map(rect);
+  const rows = new Set(cells.map((r) => Math.round(r.y)));
+  t.ok(cells.length === 30 && rows.size < 30 / 2,
+    `thirty cards lay out as a grid, not a column (${rows.size} rows)`);
+  t.ok(cells[0].y < cells[cells.length - 1].y || cells[0].x < cells[cells.length - 1].x,
+    "and they run in placement order: first placed first, most recent last");
 });
 
 /* AFTER LOAD, never at parse time: the stylesheet is attached by script and
