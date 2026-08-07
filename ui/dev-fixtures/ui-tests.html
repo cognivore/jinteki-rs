@@ -207,6 +207,46 @@ suite("Cards: square at most, cropped to art, name always readable", (stage) => 
     "art is CROPPED to fill the tile, never letterboxed or scrolled");
 });
 
+/* ── 1c. A SERVER'S ROOT: every card in the stack is its own card ───────
+ *
+ * Two cards in a remote read as ONE card with a smudge behind it, and the
+ * covered one had a 26px sliver to be hit on — a tuck cut for the 88px
+ * portrait card and never re-cut when a tabled card became a 64px square.
+ * Under a thumb that is nothing. Every card in a stack must own a band deep
+ * enough to see AND to hit, and the layers must be told apart at a glance —
+ * including from a HOSTED card, which is a 16px bar and a different thing
+ * entirely. */
+const THUMB = 36;   // the least band a finger should have to find
+suite("A server's root: every card in the stack can be seen and tapped", (stage) => {
+  const stack = document.createElement("div");
+  stack.className = "root-stack tucked";
+  ["Rashida Jaheem", "Manegarm Skunk…", "Global Food Ini…"].forEach((n) => stack.appendChild(card("", n)));
+  stage.appendChild(stack);
+  return { stack, cards: [...stack.querySelectorAll(".card")] };
+}, (t, c) => {
+  const boxes = c.cards.map(rect);
+  // Each card's OWN band: the vertical strip not covered by the next one.
+  for (let i = 0; i < boxes.length; i++) {
+    const band = i === boxes.length - 1
+      ? boxes[i].height
+      : boxes[i + 1].y - boxes[i].y;
+    t.ok(band >= THUMB, `card ${i + 1} keeps a band a thumb can find (${Math.round(band)}px ≥ ${THUMB})`);
+    // …and that band really belongs to it: hit-test the middle of the strip.
+    const at = drawnAt(c.cards[i], boxes[i].width / 2, Math.min(band, boxes[i].height) / 2);
+    t.ok(at === c.cards[i] || c.cards[i].contains(at),
+      `card ${i + 1}'s own band answers to card ${i + 1}`);
+  }
+  // A stack of three is not three cards' worth of board.
+  const total = rect(c.stack).height;
+  t.ok(total < boxes[0].height * boxes.length,
+    `three tucked cards cost less than three cards of height (${Math.round(total)}px)`);
+  // NOT CONFUSABLE WITH A HOSTED CARD: a hosted card is a 16px bar inside a
+  // host's own square; a stacked card is a whole card with a seam above it.
+  const seam = getComputedStyle(c.cards[1]).boxShadow;
+  t.ok(seam && seam !== "none", "each layer draws a seam, so two tiles never read as one");
+  t.ok(boxes[1].height >= 60, "a stacked card is a whole card, not a bar");
+});
+
 /* ── 2. Counters sit dead centre, and cannot eat a tap ───────────────── */
 const BADGES = `<div class="badges tight">
   <div class="badge adv">3</div><div class="badge cred">⬡2</div><div class="badge vir">☣1</div></div>`;
@@ -317,9 +357,15 @@ suite("Nothing that lists things can run off the screen", (stage) => {
   pile.innerHTML = "<h3>Heap (30)</h3>" + grid;
   ov.appendChild(pile);
   stage.appendChild(ov);
+  // NOT a run menu. Choosing a server to run is asked ON THE BOARD — gold
+  // candidates, tap to arm, tap to run (see `runPick` in app.js) — and the
+  // list this replaced is gone. Action sheets are still how a card with
+  // several abilities, or a server column carrying two different choices,
+  // asks its question, and those are what this probe bounds. Labelled
+  // "Option" so the page cannot be misread as the old menu returning.
   const sheet = document.createElement("div");
   sheet.className = "action-sheet"; sheet.style.position = "relative";
-  sheet.innerHTML = Array.from({ length: 12 }, (_, i) => `<button class="chip">Server ${i + 1}</button>`).join("");
+  sheet.innerHTML = Array.from({ length: 12 }, (_, i) => `<button class="chip">Option ${i + 1}</button>`).join("");
   stage.appendChild(sheet);
   return { pile, sheet, grid: pile.querySelector(".pilegrid") };
 }, (t, c) => {

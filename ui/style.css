@@ -284,22 +284,36 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 
    Later siblings paint over earlier ones by DOM order (every card is
    `position: relative`), so "newest on top" needs no z-index. */
+/* THE TUCK IS A TAP TARGET, not a decoration. 26px was cut for the 88px
+   portrait card and never re-cut when a tabled card became a 64px square:
+   two cards in a root then read as ONE card with a smudge behind it, and the
+   covered one had a 26px sliver to be hit on — under a thumb, nothing. Each
+   card in a stack now keeps a band deeper than half its own height, which is
+   both legible (name band plus counters) and hittable, and the layers are
+   separated by a hard shadow line so a stack of two never reads as one card.
+   `--tuck` IS the exposed band; the margin derives from it. */
 .root-stack { display: flex; flex-direction: column; align-items: center; gap: 4px;
-  --tuck: 26px; }
+  --tuck: 40px; }
 .root-stack.tucked { gap: 0; }
-.root-stack.tucked .card + .card { margin-top: calc(var(--tuck) - 64px); }
+.root-stack.tucked .card + .card { margin-top: calc(var(--tuck) - 64px);
+  /* The seam. Without it two dark tiles at 40px apart are one dark tile. */
+  box-shadow: 0 -3px 7px rgba(0,0,0,.85);
+  border-top-color: rgba(255,255,255,.28); }
 /* THE ARMED card comes forward, whole. It is the one the next tap acts on
    (9.2.7f: what it takes resolves to the end), and a gate you can only half
    see is not a gate. Nothing else is reordered — the stack's meaning is its
    order, and arming is a moment, not a state of the board. */
 .root-stack.tucked .card.armed { z-index: 6; }
 /* Badges ride the edge that SURVIVES, the same law the fan follows: the tuck
-   covers all but the top 26px of every card but the last, so a covered card's
-   counters cannot sit in its middle (§11 default) — that middle is under the
-   next card. They anchor into the strip that is still on screen, for both
-   board orientations, because the tuck is the same tuck either way. */
+   covers everything below `--tuck` on every card but the last, so a covered
+   card's counters cannot sit in its middle (§11 default) — that middle is
+   under the next card. They anchor into the strip that is still on screen,
+   for both board orientations, because the tuck is the same tuck either way.
+   BELOW the name band, which now lives at the top of every card: the two
+   things a covered card must still say are what it is and what it carries,
+   and they cannot be written in the same 18 pixels. */
 .root-stack.tucked .card:not(:last-child) .badges {
-  inset: 1px 1px auto auto; padding: 0;
+  inset: 2.3em 1px auto auto; padding: 0;
   flex-direction: row-reverse;
   align-content: flex-start; align-items: flex-start; justify-content: flex-start;
   max-width: calc(100% - 2px); }
