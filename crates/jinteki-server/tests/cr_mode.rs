@@ -85,7 +85,11 @@ async fn cr_readiness_endpoint_reports_the_true_fraction() {
     let mut total = 0usize;
     let mut complete = 0usize;
     let mut incomplete: Vec<(String, Vec<String>)> = Vec::new();
-    for key in ["andromeda", "gauntlet"] {
+    // The SAME decks the endpoint counts, asked of the server rather than
+    // listed here. This test exists to recompute the fraction independently;
+    // a hardcoded pair stops being independent the moment a deck is seated,
+    // and then it fails for the one reason that is not a defect.
+    for key in jinteki_server::cr::deck_specs().map(|s| s.key) {
         let deck = jinteki_cards::deck_named(key).expect("the deck exists");
         // CR 1.5.4a: the additional identities come to the table with the
         // deck, so the gate counts them with it.

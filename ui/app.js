@@ -1115,7 +1115,11 @@ function renderDecks(list) {
     const b = document.createElement("button");
     b.className = "chip";
     const idt = d.identity && (d.identity.title || d.identity) || "";
-    b.textContent = `${d.name || "deck"} — ${idt}`;
+    // [untested]: every card of this deck is complete and behaviour-tested,
+    // but nobody has played the DECK end to end. Said out loud, next to the
+    // name, so choosing it is the player's call and not a silent gamble.
+    b.textContent = `${d.name || "deck"}${d.untested ? " [untested]" : ""} — ${idt}`;
+    if (d.untested) b.classList.add("untested");
     b.onclick = () => { send({ type: "deck", "deck-id": d._id }); box.style.display = "none"; };
     box.appendChild(b);
   });

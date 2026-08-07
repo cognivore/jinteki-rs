@@ -1915,3 +1915,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
   display: flex; flex-direction: column; gap: 2px; color: #e88;
 }
 .pair-refusal b { color: #f5a; }
+
+/* An [untested] deck: complete card by card, never played end to end. Amber,
+   not red — it is a caveat, not a fault, and it must not read as broken. */
+.chip.untested { border-color: #d8a34a; color: #f0c987; }

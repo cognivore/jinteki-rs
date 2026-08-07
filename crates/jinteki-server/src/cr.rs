@@ -184,6 +184,20 @@ pub struct DeckSpec {
     /// entry per card — the pile is a set of distinct identities, not a list
     /// with copy counts.
     pub pile: &'static [&'static str],
+    /// Every card of this deck is `is_complete()` — each printed sentence
+    /// resolves and is driven by a behaviour test — but the DECK has never
+    /// been played end to end by anybody.
+    ///
+    /// Card-level completeness is a card-level claim. A deck can still fall
+    /// over for a deck-level reason no per-card test would reach: a 1.5.4a
+    /// pile that offers nothing, a mulligan interaction, two cards whose
+    /// lingering effects only meet at the table. Rather than hold a finished
+    /// deck back until someone has played it, we seat it and SAY SO — the
+    /// player decides whether to take the bet, which is a better trade than
+    /// an empty lobby and a promise.
+    ///
+    /// Set false the moment a deck has been played through.
+    pub untested: bool,
     /// The narrowest tournament format whose CURRENT card pool contains every
     /// card of `list` and `pile` — this deck's most likely competitive home.
     ///
@@ -221,6 +235,7 @@ pub const ANDROMEDA: DeckSpec = DeckSpec {
     side: Side::Runner,
     list: ANDROMEDA_LIST,
     pile: ANDROMEDA_PILE,
+    untested: false,
     // Account Siphon, Desperado, Andromeda herself: fourteen of the deck's
     // own cards, and fourteen of the pile's identities, rotated out of
     // Standard long ago.
@@ -237,6 +252,7 @@ pub const GAUNTLET: DeckSpec = DeckSpec {
     list: GAUNTLET_LIST,
     // 1.5.4a: the pile is the Runner's.
     pile: &[],
+    untested: false,
     // AstroScript, Jackson Howard, Breaking News — eighteen cards outside the
     // Standard pool.
     format: Format::Eternal,
@@ -248,8 +264,13 @@ pub const GAUNTLET: DeckSpec = DeckSpec {
 /// zero partial cards. `readiness()` gates a game on THESE — deliberately not
 /// on [`carried_decks`], whose other members are mid-queue and would make the
 /// table unstartable.
-pub fn deck_specs() -> [&'static DeckSpec; 2] {
-    [&ANDROMEDA, &GAUNTLET]
+pub fn deck_specs() -> [&'static DeckSpec; 4] {
+    // Mezzie's pair joins the two eternal decks. Every card of both is
+    // `is_complete()` — 25/25 and 24/24, each printed sentence driven by a
+    // behaviour test — so `readiness()` passes them and SYS-D-12 is satisfied.
+    // Neither has been played end to end, which is what `untested` says out
+    // loud rather than what an empty lobby says by omission.
+    [&ANDROMEDA, &GAUNTLET, &MEZZIE_ASA, &MEZZIE_VALENCIA]
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -398,6 +419,7 @@ pub const MEZZIE_VALENCIA: DeckSpec = DeckSpec {
     side: Side::Runner,
     list: MEZZIE_VALENCIA_LIST,
     pile: &[],
+    untested: true,
     // Blackmail, Same Old Thing, Valencia herself: sixteen cards outside
     // Standard.
     format: Format::Eternal,
@@ -412,6 +434,7 @@ pub const MEZZIE_ASA: DeckSpec = DeckSpec {
     side: Side::Corp,
     list: MEZZIE_ASA_LIST,
     pile: &[],
+    untested: true,
     // Jeeves, Mumba Temple, Ash 2X3ZB9CY: sixteen cards outside Standard.
     format: Format::Eternal,
     // No NetrunnerDB id recorded, as above.
@@ -424,6 +447,7 @@ pub const NOTW_RESTORING_HUMANITY: DeckSpec = DeckSpec {
     side: Side::Corp,
     list: NOTW_RESTORING_HUMANITY_LIST,
     pile: &[],
+    untested: true,
     // A Standard tournament list, and the computation agrees: every card is
     // in the Standard pool, five are outside Startup's.
     format: Format::Standard,
@@ -438,6 +462,7 @@ pub const NOTW_SABLE: DeckSpec = DeckSpec {
     side: Side::Runner,
     list: NOTW_SABLE_LIST,
     pile: &[],
+    untested: true,
     // Standard: fifteen cards outside the Startup pool, none outside
     // Standard's.
     format: Format::Standard,
@@ -3974,6 +3999,44 @@ mod tests {
     /// way to tell them apart, unless the CARD travels with the choice —
     /// which it did not, because only window options and actions were mapped
     /// back to a card and a target announcement is answered with neither.
+    /// Seating Mezzie's pair is only honest if `readiness()` really passes
+    /// them — SYS-D-12 says one partial card makes a deck unplayable, and the
+    /// whole reason they sat in `carried_decks()` was that they were not
+    /// finished. Now they are: 25/25 and 24/24.
+    ///
+    /// The flag is asserted too. `untested` is a claim about the DECK, not
+    /// its cards, and it must not drift into meaning "incomplete" — the two
+    /// eternal decks are played and false; everything newer is true until
+    /// somebody plays it.
+    #[test]
+    fn the_four_seated_decks_are_ready_and_say_which_are_untested() {
+        let r = readiness();
+        assert!(
+            r.ready,
+            "all four seated decks are complete, so the lobby opens: {:?}",
+            r.problems
+        );
+        assert_eq!(deck_specs().len(), 4, "Andromeda, Gauntlet, and Mezzie's pair");
+        for spec in deck_specs() {
+            let cards = jinteki_cards::deck_named(spec.key)
+                .unwrap_or_else(|| panic!("the card layer has no deck {:?}", spec.key));
+            let partial: Vec<&str> =
+                cards.iter().filter(|c| !c.is_complete()).map(|c| c.name()).collect();
+            assert!(
+                partial.is_empty(),
+                "{}: a seated deck may not carry a partial card (SYS-D-12): {partial:?}",
+                spec.key
+            );
+        }
+        let untested: Vec<&str> =
+            deck_specs().into_iter().filter(|s| s.untested).map(|s| s.key).collect();
+        assert_eq!(
+            untested,
+            vec!["mezzie_asa", "mezzie_valencia"],
+            "the two eternal decks have been played; Mezzie's pair has not"
+        );
+    }
+
     #[test]
     fn a_target_announcement_offers_cards_not_titles() {
         let mut g = dealt_game();

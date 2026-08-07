@@ -122,6 +122,10 @@ fn builtin_summary(spec: &'static DeckSpec) -> Value {
         "side": side_key(spec.side),
         "identity": identity,
         "legal": verdict.legal,
+        // Complete card by card, never played as a deck. The client shows it
+        // as a badge; a player who wants a known-good table can still pick
+        // the two that have been played for weeks.
+        "untested": spec.untested,
     })
 }
 
@@ -134,6 +138,7 @@ fn builtin_full(spec: &'static DeckSpec) -> Value {
         "identity": identity,
         "cards": cards,
         "legal": verdict.legal,
+        "untested": spec.untested,
         "problems": verdict.problems,
     })
 }

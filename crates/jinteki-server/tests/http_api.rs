@@ -116,7 +116,28 @@ async fn eternal_catalog_and_deck_contract() {
     assert_eq!(decks[1]["key"], "gauntlet");
     assert_eq!(decks[1]["name"], "Mezzie's Making Stars");
     assert_eq!(decks[1]["builtin"], true);
-    assert_eq!(decks.len(), 2, "a fresh account has only the defaults");
+    // Mezzie's pair joined the defaults: complete card by card (25/25 and
+    // 24/24) and therefore past SYS-D-12's gate, but never played end to end,
+    // which the `untested` flag says out loud in the library and the picker.
+    assert_eq!(decks[2]["key"], "mezzie_asa");
+    assert_eq!(decks[2]["builtin"], true);
+    assert_eq!(decks[3]["key"], "mezzie_valencia");
+    assert_eq!(decks[3]["builtin"], true);
+    assert_eq!(decks.len(), 4, "a fresh account has only the defaults");
+    let flags: Vec<(&str, bool)> = decks
+        .iter()
+        .map(|d| (d["key"].as_str().unwrap(), d["untested"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(
+        flags,
+        vec![
+            ("andromeda", false),
+            ("gauntlet", false),
+            ("mezzie_asa", true),
+            ("mezzie_valencia", true)
+        ],
+        "the two played decks carry no caveat; the two new ones do"
+    );
 
     // A built-in reads whole, in catalog ids, and refuses writes.
     let gauntlet: serde_json::Value = c
@@ -155,10 +176,14 @@ async fn eternal_catalog_and_deck_contract() {
     let mine: serde_json::Value = c.get(format!("{base}/api/decks")).send().await.unwrap()
         .json().await.unwrap();
     let decks = mine["decks"].as_array().unwrap();
-    assert_eq!(decks.len(), 3);
-    assert_eq!(decks[2]["key"], key.as_str());
-    assert_eq!(decks[2]["builtin"], false);
-    assert_eq!(decks[2]["legal"], false);
+    // Relative to however many decks ship as defaults, not a literal — the
+    // count moves whenever a finished deck is seated, and that is not what
+    // this test is about.
+    let defaults = jinteki_server::cr::deck_specs().len();
+    assert_eq!(decks.len(), defaults + 1);
+    assert_eq!(decks[defaults]["key"], key.as_str());
+    assert_eq!(decks[defaults]["builtin"], false);
+    assert_eq!(decks[defaults]["legal"], false);
 
     // Update, read whole, delete.
     let updated: serde_json::Value = c
