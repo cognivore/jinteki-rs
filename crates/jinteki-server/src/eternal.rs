@@ -13,6 +13,11 @@
 //! title slug; the EDN and v2 disagree on apostrophes, so neither raw slug is
 //! usable directly).
 //!
+//! Influence is priced through [`crate::influence`], not read straight off
+//! the card: twelve cards print a waiver that makes them cost 0 influence in
+//! a deck that meets a condition of their own, so a line's cost depends on
+//! the whole deck. Nothing about that is a CR rule — it is printed card text.
+//!
 //! Rule sources, cited per check below:
 //!   - docs/rules/CR-v26.03.md §1.4 (Deck Construction) — note the CR keeps
 //!     deck construction in 1.4; 1.5 is Extra Cards;
@@ -23,6 +28,7 @@
 //!     validator.cljc:215-252`, `combine-id-and-cards` + `deck-point-count`).
 
 use crate::carddata::{self, Card};
+use crate::influence;
 use jinteki_cr::object::PrintedCard;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -468,6 +474,19 @@ pub fn validate(identity_id: &str, cards: &BTreeMap<String, u32>) -> Verdict {
     let min_deck_size = identity.and_then(|c| c.min_deck_size).unwrap_or(45);
     let influence_limit = identity.and_then(|c| c.influence_limit);
 
+    // Influence is a function of the DECK, not of one card: twelve cards
+    // print a waiver that zeroes their own influence when the deck around
+    // them satisfies a condition (`influence.rs`). The tally has to exist
+    // before any line is priced, so it is taken in a pre-pass over the same
+    // ids the loop below resolves. Unknown ids contribute nothing here and
+    // are reported there.
+    let counts = influence::DeckCounts::tally(
+        cards
+            .iter()
+            .filter(|(_, &qty)| qty > 0)
+            .filter_map(|(id, &qty)| carddata::by_nsg_id(id).map(|c| (c, qty))),
+    );
+
     let mut n_cards: i64 = 0;
     let mut influence_used: i64 = 0;
     let mut agenda_points: i64 = 0;
@@ -533,7 +552,26 @@ pub fn validate(identity_id: &str, cards: &BTreeMap<String, u32>) -> Verdict {
         if let (Some(idf), Some(cf)) = (id_faction, card.faction.as_deref()) {
             if cf != idf {
                 match card.influence_cost {
-                    Some(pips) => influence_used += pips * i64::from(qty),
+                    // …except where the card's own printed text waives it.
+                    // The waiver makes the line cost ZERO, not less
+                    // (`influence.rs`); an unreadable waiver sentence is
+                    // reported as a problem rather than quietly charged.
+                    Some(pips) => match influence::line_cost(card, pips, qty, &counts) {
+                        Ok(spent) => influence_used += spent,
+                        Err((why, full)) => {
+                            influence_used += full;
+                            push(
+                                "influence",
+                                format!(
+                                    "{} prints an influence waiver this server cannot \
+                                     read ({why}); it is charged {full} influence until \
+                                     the condition is implemented",
+                                    card.title
+                                ),
+                                Some(id),
+                            );
+                        }
+                    },
                     None => push(
                         "influence",
                         format!(

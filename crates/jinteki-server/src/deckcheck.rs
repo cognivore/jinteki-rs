@@ -12,11 +12,17 @@
 //!     validator.cljc` at the pin, whose outcomes v1 must reproduce
 //!     (DESIGN.md SYS-K-3); line anchors noted where the CR is silent.
 //!
-//! Deferred to v2 (validator.cljc anchors): alliance discounts (:13-42), The
-//! Professor (:88-92,111-113), singleton identities Nova/Ampère (:68-78,
-//! 146-167), Custom Biotics (:180-181), full MWL/points machinery (:253+).
+//! Alliance and the other printed influence waivers (validator.cljc:13-42)
+//! are no longer deferred: they live in [`crate::influence`], which parses
+//! the condition out of the printed text rather than keying off titles, and
+//! both this checker and the Eternal validator price their lines through it.
+//!
+//! Deferred to v2 (validator.cljc anchors): The Professor (:88-92,111-113),
+//! singleton identities Nova/Ampère (:68-78, 146-167), Custom Biotics
+//! (:180-181), full MWL/points machinery (:253+).
 
 use crate::carddata::{self, Card};
+use crate::influence;
 use jinteki_core::printed;
 use serde::Serialize;
 
@@ -137,6 +143,14 @@ pub fn check(identity_title: &str, lines: &[DeckLine]) -> Verdict {
         }
     }
 
+    // The deck-wide tally the printed influence waivers are read against
+    // (`influence.rs`); it must exist before any line is priced.
+    let counts = influence::DeckCounts::tally(
+        lines
+            .iter()
+            .filter_map(|l| carddata::by_title(&l.title).map(|c| (c, l.qty))),
+    );
+
     let mut n_cards: u32 = 0;
     let mut influence_used: i64 = 0;
     let mut agenda_points: i64 = 0;
@@ -203,10 +217,28 @@ pub fn check(identity_title: &str, lines: &[DeckLine]) -> Verdict {
                 ),
             );
         }
-        // CR 1.4.5 + 1.4.5a: out-of-faction influence, counted by copy.
+        // CR 1.4.5 + 1.4.5a: out-of-faction influence, counted by copy —
+        // less whatever the card's own printed waiver zeroes (`influence.rs`;
+        // an unreadable waiver is reported, never silently charged).
         let spent = match (id_faction, card.faction.as_deref()) {
             (Some(idf), Some(cf)) if cf != idf => {
-                card.influence_cost.unwrap_or(0) * i64::from(line.qty)
+                let pips = card.influence_cost.unwrap_or(0);
+                match influence::line_cost(card, pips, line.qty, &counts) {
+                    Ok(spent) => spent,
+                    Err((why, full)) => {
+                        push(
+                            &mut problems,
+                            "influence-waiver-unreadable",
+                            format!(
+                                "{} prints an influence waiver this server cannot read \
+                                 ({why}); it is charged {full} influence until the \
+                                 condition is implemented",
+                                card.title
+                            ),
+                        );
+                        full
+                    }
+                }
             }
             _ => 0,
         };

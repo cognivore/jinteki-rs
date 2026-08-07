@@ -9,6 +9,7 @@
 //! need: `by_title`, `by_code` (latest printings), `by_previous_code`
 //! (reference lookup parity: `web/nrdb.clj:29-31`).
 
+use jinteki_cr::Subtype;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -75,6 +76,20 @@ impl Card {
     }
     pub fn is_agenda(&self) -> bool {
         self.card_type == "Agenda"
+    }
+    pub fn is_ice(&self) -> bool {
+        self.card_type == "ICE"
+    }
+    pub fn is_asset(&self) -> bool {
+        self.card_type == "Asset"
+    }
+    /// CR 2.16 subtype, asked with the closed enum rather than a string. The
+    /// generated data still stores subtypes as printed strings; this is the
+    /// one place that gap is crossed, and it is crossed through
+    /// [`Subtype::from_canonical`] so a spelling no card carries matches
+    /// nothing.
+    pub fn has_subtype(&self, want: Subtype) -> bool {
+        self.subtypes.iter().any(|s| Subtype::from_canonical(s) == Some(want))
     }
 }
 

@@ -17,6 +17,7 @@ pub mod eternal;
 pub mod eternal_decks;
 pub mod format;
 pub mod guard;
+pub mod influence;
 pub mod lobby;
 pub mod local;
 pub mod mail;
