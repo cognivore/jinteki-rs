@@ -52,6 +52,15 @@ browser, at real sizes. Open this page (it is served at
    way to check one is to lay the real markup out under the real stylesheet
    and measure it. No DOM stub can do that: a stub would be asserting my
    description of the CSS rather than the CSS. */
+/* THE RUN MUST NOT DEPEND ON WHERE THE PAGE WAS SCROLLED. A browser restores
+   the previous scroll position on reload, and `elementFromPoint` answers
+   `null` for anything off screen — so a reload after reading the bottom of
+   this page failed hit-tests in suites that were fine, and passed them again
+   after a scroll to the top. A test whose result depends on the reader's
+   scrollbar is not a test. */
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+window.scrollTo(0, 0);
+
 const results = [];
 const suites = [];
 function suite(name, build, checks) { suites.push([name, build, checks]); }
@@ -75,6 +84,11 @@ function runSuite(name, build, checks) {
     .map((l) => `<div class="${l.startsWith("PASS") ? "pass" : "fail"}">${l}</div>`).join("");
 }
 const rect = (e) => e.getBoundingClientRect();
+const el2 = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  e.className = cls; e.textContent = text;
+  return e;
+};
 /* WHAT IS ACTUALLY DRAWN AT THIS POINT. `elementFromPoint` speaks viewport
    coordinates and answers `null` for anything scrolled off screen — which,
    on a page long enough to need scrolling, silently turned every hit-test
@@ -119,9 +133,9 @@ suite("Hosting: the host is the top card, what it carries is tucked behind", (st
   // hit-testing the middle of the host. A z-index comparison would not do:
   // the carried cards inherit `auto` inside their own stacking context, so
   // the numbers say nothing about what a tap actually lands on.
-  const h = rect(host(c.five));
-  const hit = document.elementFromPoint(h.x + h.width / 2, h.y + 4);
-  t.ok(hit === host(c.five) || host(c.five).contains(hit),
+  const hostEl = host(c.five);
+  const hit = drawnAt(hostEl, rect(hostEl).width / 2, 4);
+  t.ok(hit === hostEl || hostEl.contains(hit),
     "the host's own face is the top card where nothing is carried over it");
 
   // EVERY CARRIED CARD SAYS WHAT IT IS. The previous version of this test
@@ -130,14 +144,14 @@ suite("Hosting: the host is the top card, what it carries is tucked behind", (st
   // was there and never learn what. An edge is not an answer; a NAME is.
   kids(c.five).forEach((k, i) => {
     const name = k.querySelector(".cname");
-    const nr = rect(name), kr = rect(k);
+    const nr = rect(name);
     const cs = getComputedStyle(name);
     const visible = cs.visibility === "visible" && cs.display !== "none" &&
       nr.width >= 24 && nr.height >= 7;
     t.ok(visible, `carried card ${i + 1} shows a readable name (${Math.round(nr.width)}×${Math.round(nr.height)})`);
     // …and shows it OVER the host, not behind it: the point on the board
     // where that name is drawn must belong to that card.
-    const at = document.elementFromPoint(nr.x + nr.width / 2, nr.y + nr.height / 2);
+    const at = drawnAt(name, nr.width / 2, nr.height / 2);
     t.ok(at === name || k.contains(at), `carried card ${i + 1}'s name is not covered by the host`);
   });
 
@@ -330,6 +344,68 @@ suite("Nothing that lists things can run off the screen", (stage) => {
     `thirty cards lay out as a grid, not a column (${rows.size} rows)`);
   t.ok(cells[0].y < cells[cells.length - 1].y || cells[0].x < cells[cells.length - 1].x,
     "and they run in placement order: first placed first, most recent last");
+});
+
+/* ── 4b. …IN BOTH ORIENTATIONS ───────────────────────────────────────────
+ *
+ * The suite above only ever asked the question in whatever shape the tester's
+ * window happened to be. That is how a real bug shipped: the landscape CARD
+ * READER layout (art left, text right) also caught the PILE, reserving an
+ * empty 36% column and crushing thirty tiles into one column of thirty rows
+ * — invisible in a portrait window, glaring on a desktop. A test that only
+ * runs in one orientation tests one orientation.
+ *
+ * An iframe's media queries follow ITS OWN box, so both shapes can be asked
+ * on one screen: 900x420 is landscape, 420x900 is portrait, and the pile
+ * must be a grid in each. */
+/* The frames are built HERE, at parse time, not inside the suite: an iframe
+   created during the run has not fetched its stylesheet yet, and measuring an
+   unstyled box measures nothing. Built before `load`, they are laid out and
+   styled by the time any suite runs, because `load` waits for them. */
+const ORIENT_FRAMES = (() => {
+  const holder = document.createElement("div");
+  holder.id = "orient-frames";
+  holder.style.cssText = "display:flex;flex-wrap:wrap;gap:8px";
+  const mk = (w, h) => {
+    const f = document.createElement("iframe");
+    f.width = w; f.height = h;
+    // `flex: 0 0 auto` is load-bearing: a shrunk 900px frame is not a
+    // landscape frame — the media query follows the box it ends up with.
+    f.style.cssText = `width:${w}px;height:${h}px;flex:0 0 auto;border:1px solid #2a3350;border-radius:8px;background:#0b0f18`;
+    f.srcdoc = `<link rel="stylesheet" href="/style.css?bust=${Date.now()}">
+      <body style="margin:0;background:#0b0f18">
+      <div class="zoom-overlay" style="position:relative;inset:auto">
+      <div class="zoom-card pile"><h3>Heap (30)</h3><div class="pilegrid">` +
+      Array.from({ length: 30 }, (_, i) =>
+        `<div class="pilecell"><div class="card"><div class="cname">Card ${i + 1}</div></div></div>`).join("") +
+      `</div></div></div>`;
+    holder.appendChild(f);
+    return f;
+  };
+  const frames = { holder, land: mk(900, 420), port: mk(420, 900) };
+  document.addEventListener("DOMContentLoaded", () => document.body.appendChild(holder));
+  return frames;
+})();
+
+suite("A pile is a grid in BOTH orientations", (stage) => {
+  // NOT re-parented: moving an iframe in the DOM reloads it, and a reloaded
+  // frame is an empty one. The probes stay where they were built (below) and
+  // this stage only says so.
+  stage.appendChild(el2("div", "zline",
+    "the two probe frames are at the foot of this page — 900×420 and 420×900"));
+  return { land: ORIENT_FRAMES.land, port: ORIENT_FRAMES.port };
+}, (t, c) => {
+  for (const [what, f] of [["landscape", c.land], ["portrait", c.port]]) {
+    const d = f.contentDocument;
+    const win = f.contentWindow;
+    t.ok(win.matchMedia("(orientation: " + what + ")").matches, `the ${what} frame really is ${what}`);
+    const cells = [...d.querySelectorAll(".pilecell")].map((e) => e.getBoundingClientRect());
+    const rows = new Set(cells.map((r) => Math.round(r.y)));
+    t.ok(rows.size < 30 / 2, `${what}: thirty cards lay out as a grid (${rows.size} rows)`);
+    const pile = d.querySelector(".zoom-card.pile");
+    t.ok(pile.getBoundingClientRect().height <= win.innerHeight,
+      `${what}: and the pile fits the screen it is on`);
+  }
 });
 
 /* AFTER LOAD, never at parse time: the stylesheet is attached by script and

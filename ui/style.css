@@ -1295,7 +1295,13 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .zoom-overlay .zoom-card .zart { max-height: 48vh; width: auto; max-width: 100%;
   align-self: center; }
 @media (orientation: landscape) {
-  .zoom-overlay .zoom-card {
+  /* THE READER, NOT THE PILE. This two-column layout exists for a CARD:
+     art on the left, text on the right. A pile has no art column, so the
+     reserved `minmax(170px, 36%)` was an empty gutter and everything else
+     was forced into column 2 — which crushed a thirty-card grid into a
+     single column of thirty rows on any wide screen. The reader keeps its
+     columns; the pile keeps its grid. */
+  .zoom-overlay .zoom-card:not(.pile) {
     display: grid;
     /* The art column is a fixed share of the card, NOT `auto`: an auto column
        measures the image, so it collapses to 0 until the art loads and the
@@ -1309,7 +1315,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     max-height: 90vh;
     padding: 14px 16px;
   }
-  .zoom-overlay .zoom-card .zart {
+  .zoom-overlay .zoom-card:not(.pile) .zart {
     grid-column: 1;
     grid-row: 1 / span 40;
     width: 100%;
@@ -1320,8 +1326,10 @@ button.go.alt { background: var(--gold); color: #2a2005; }
     margin: 0;
     border-radius: 10px;
   }
-  .zoom-overlay .zoom-card > :not(.zart) { grid-column: 2; }
+  .zoom-overlay .zoom-card:not(.pile) > :not(.zart) { grid-column: 2; }
   .zoom-overlay .zoom-card h3 { margin-top: 0; }
+  /* A pile uses the width a landscape screen actually has. */
+  .zoom-overlay .zoom-card.pile { width: min(94vw, 1000px); max-height: 90vh; }
 }
 @media (orientation: landscape) and (max-height: 640px) {
   .zoom-overlay .zoom-card {
