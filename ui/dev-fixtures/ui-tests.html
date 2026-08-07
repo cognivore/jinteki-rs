@@ -75,6 +75,16 @@ function runSuite(name, build, checks) {
     .map((l) => `<div class="${l.startsWith("PASS") ? "pass" : "fail"}">${l}</div>`).join("");
 }
 const rect = (e) => e.getBoundingClientRect();
+/* WHAT IS ACTUALLY DRAWN AT THIS POINT. `elementFromPoint` speaks viewport
+   coordinates and answers `null` for anything scrolled off screen — which,
+   on a page long enough to need scrolling, silently turned every hit-test
+   into a failure that looked like a layout bug. Scroll the subject into view
+   first, then ask. */
+function drawnAt(el, dx, dy) {
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  const r = el.getBoundingClientRect();
+  return document.elementFromPoint(r.x + dx, r.y + dy);
+}
 const card = (cls, name) => {
   const d = document.createElement("div");
   d.className = "card" + (cls ? " " + cls : "");
@@ -184,24 +194,73 @@ suite("Cards: square at most, cropped to art, name always readable", (stage) => 
 });
 
 /* ── 2. Counters sit dead centre, and cannot eat a tap ───────────────── */
-suite("Counters: dead centre on the card, transparent to taps", (stage) => {
-  const c = card("", "Ice Wall");
-  c.innerHTML += `<div class="badges tight">
-    <div class="badge adv">3</div><div class="badge cred">⬡2</div><div class="badge vir">☣1</div></div>`;
-  stage.appendChild(c);
-  return { c };
+const BADGES = `<div class="badges tight">
+  <div class="badge adv">3</div><div class="badge cred">⬡2</div><div class="badge vir">☣1</div></div>`;
+suite("Counters: dead centre, over art, clear of the name, on every size", (stage) => {
+  const plain = card("", "Ice Wall");
+  plain.innerHTML += BADGES;
+  const art = card("art", "Nebula Talent Management: Making Stars");
+  art.style.backgroundImage = "linear-gradient(135deg,#3a6ea5,#0e1424)";
+  art.innerHTML += BADGES;
+  // The deepest truncation the board draws: a carried card's bar.
+  const box = document.createElement("div"); box.className = "hosting";
+  const stack = document.createElement("div"); stack.className = "host-stack";
+  const bar = card("", "Archived Mem…");
+  bar.innerHTML += BADGES;
+  bar.style.setProperty("--namepad", 3 * 12 + 4 + "px");   // what `hostBox` sets
+  stack.appendChild(bar);
+  box.appendChild(stack); box.appendChild(card("", "Cupellation"));
+  stage.appendChild(plain); stage.appendChild(art); stage.appendChild(box);
+  return { plain, art, bar };
 }, (t, ctx) => {
-  const cr = rect(ctx.c);
-  const discs = [...ctx.c.querySelectorAll(".badge")].map(rect);
-  const cx = cr.x + cr.width / 2, cy = cr.y + cr.height / 2;
-  const mid = discs.map((d) => d.y + d.height / 2);
-  t.near(Math.min(...mid), cy, 2, "the discs sit on the card's vertical centre");
-  const spanL = Math.min(...discs.map((d) => d.x)), spanR = Math.max(...discs.map((d) => d.right));
-  t.near((spanL + spanR) / 2, cx, 2, "and are centred horizontally as a group");
-  t.ok(discs.every((d) => d.x >= cr.x && d.right <= cr.right && d.y >= cr.y && d.bottom <= cr.bottom),
-    "every disc is inside the card");
-  t.ok(getComputedStyle(ctx.c.querySelector(".badges")).pointerEvents === "none",
-    "the badge box cannot eat a tap meant for the card");
+  for (const [what, e] of [["a plain card", ctx.plain], ["a card showing art", ctx.art]]) {
+    const cr = rect(e);
+    const discs = [...e.querySelectorAll(".badge")].map(rect);
+    const cx = cr.x + cr.width / 2, cy = cr.y + cr.height / 2;
+    t.near(discs[0].y + discs[0].height / 2, cy, 2, `${what}: the discs sit on its vertical centre`);
+    const spanL = Math.min(...discs.map((d) => d.x)), spanR = Math.max(...discs.map((d) => d.right));
+    t.near((spanL + spanR) / 2, cx, 2, `${what}: and are centred horizontally as a group`);
+    t.ok(discs.every((d) => d.x >= cr.x && d.right <= cr.right && d.y >= cr.y && d.bottom <= cr.bottom),
+      `${what}: every disc is inside it`);
+    // The two things that must both be readable at once, asserted the way a
+    // player reads them: hit-test the name, hit-test a disc.
+    const nameEl = e.querySelector(".cname");
+    const atName = drawnAt(nameEl, 6, 4);
+    t.ok(nameEl.contains(atName) || atName === nameEl, `${what}: no disc covers the name`);
+    t.ok(getComputedStyle(e.querySelector(".badges")).pointerEvents === "none",
+      `${what}: the badge box cannot eat a tap meant for the card`);
+  }
+  // …and on the bar, where they used to be dropped outright.
+  const br = rect(ctx.bar), bd = [...ctx.bar.querySelectorAll(".badge")].map(rect);
+  t.ok(bd.length === 3 && bd.every((d) => d.width > 4 && d.height > 4),
+    "a carried card's bar still shows every counter it is holding");
+  t.ok(bd.every((d) => d.right <= br.right + 0.5 && d.y >= br.y - 0.5 && d.bottom <= br.bottom + 0.5),
+    "…inside the bar, at its end");
+  // The name yields the room: its box still spans the bar (it is the scrim),
+  // but its TEXT stops short of the discs, which is what padding buys.
+  const pad = parseFloat(getComputedStyle(ctx.bar.querySelector(".cname")).paddingRight);
+  t.ok(pad >= Math.max(...bd.map((d) => d.right)) - Math.min(...bd.map((d) => d.x)),
+    `…and the name's text yields the room rather than running under them (${pad}px)`);
+});
+
+/* ── 2b. The name is at the top, and a fixed length ──────────────────── */
+suite("Names: top of the tile, cut to a fixed length", (stage) => {
+  const short = card("", "Sure Gamble");
+  const long = card("", "Nebula Talent Man…");   // what `tileName` produces
+  stage.appendChild(short); stage.appendChild(long);
+  return { short, long };
+}, (t, c) => {
+  for (const [what, e] of [["a short name", c.short], ["a cut name", c.long]]) {
+    const cr = rect(e), nr = rect(e.querySelector(".cname"));
+    // Inside the border, not outside it: an absolutely-positioned `top: 0`
+    // is the top of the padding box, so the card's own 1.5px border is the
+    // whole of the difference.
+    t.ok(nr.y - cr.y <= 3, `${what} is laid across the TOP of the tile (+${(nr.y - cr.y).toFixed(1)}px)`);
+    t.ok(nr.height <= cr.height * 0.42, `${what}'s band is a fixed slice of the tile, not half of it`);
+  }
+  t.near(rect(c.short.querySelector(".cname")).height,
+    rect(c.long.querySelector(".cname")).height, 1.5,
+    "a long name and a short one give the SAME band height");
 });
 
 /* ── 3. The ice stack turns around with its seat ─────────────────────── */

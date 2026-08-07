@@ -342,10 +342,23 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .host-stack .card { position: relative; top: auto; left: auto;
   width: 100%; height: 16px; padding: 0; border-width: 1px; border-radius: 3px;
   background-position: center 35%; font-size: 8px; }
-.host-stack .card .ctype, .host-stack .card .subs, .host-stack .card .badges { display: none; }
+.host-stack .card .ctype, .host-stack .card .subs { display: none; }
+/* COUNTERS SURVIVE THE BAR. A carried card is the deepest truncation this UI
+   draws, and it was the one that dropped them — which is the counter bug all
+   over again (§11: a counter the player cannot see is a counter they will
+   misplay). They ride the right end of the bar, over the name's scrim, and
+   the name yields the room rather than the counters. */
+.host-stack .card .badges { inset: 0 1px 0 auto; z-index: 3;
+  flex-direction: row-reverse; justify-content: flex-start; gap: 1px;
+  padding: 0; font-size: 7px; }
+.host-stack .card .badges .badge { min-width: 1.5em; height: 1.5em; }
+/* The room the name gives up is measured from HOW MANY counters there are,
+   set per bar by `hostBox` — a fixed reserve is either too small for three
+   kinds (the name runs under them) or wasted on the many bars carrying
+   none. */
 /* The band IS the bar: at 16px the name fills it, on the same scrim every
    card's name sits on, so it reads over any art. */
-.host-stack .card .cname { top: 0; padding: 1px 2px; max-height: none;
+.host-stack .card .cname { top: 0; padding: 1px var(--namepad, 2px) 1px 2px; max-height: none;
   display: flex; align-items: center; line-height: 1;
   background: rgba(6,10,20,.82); white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; }
@@ -397,8 +410,7 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .card .cost { position: absolute; top: 1px; left: 1px; width: 1.9em; height: 1.9em; border-radius: 50%;
   background: var(--gold); color: #241c04; font-weight: 800; display: flex; align-items: center;
   justify-content: center; font-size: 1.05em; z-index: 2; }
-.card .ctype { color: var(--dim); font-size: 8.5px; margin-top: auto;
-  padding-bottom: 2.3em; }
+.card .ctype { color: var(--dim); font-size: 8.5px; margin-top: auto; }
 .card .cstr { position: absolute; bottom: 1px; left: 1px; width: 1.9em; height: 1.9em; border-radius: 50%;
   background: var(--runner); color: #fff; font-weight: 800; display: flex; align-items: center;
   justify-content: center; font-size: 1.05em; z-index: 2; }
@@ -928,13 +940,17 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .card.art { background-size: cover; background-position: center 28%; }
 .card.art .ctype, .card.art .subs { visibility: hidden; }
 .card.art.ice { background-position: center; }
-/* The name band: laid over the bottom of the crop, on a scrim dark enough
-   that white text survives whatever the art puts under it. Two lines at
-   most, then it clips — the reader has the rest. */
-.card .cname { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
-  margin: 0; padding: 3px 3px 2px; font-weight: 700; line-height: 1.05;
+/* The name band: laid over the TOP of the crop, on a scrim dark enough that
+   white text survives whatever the art puts under it. Top, because that is
+   where a card prints its own name and where a player's eye goes first, and
+   because it leaves the middle of the tile — where the counters live — and
+   the bottom — where art usually carries its subject — alone. Two lines,
+   fixed: `tileName` cuts the string at a set number of letters, so this band
+   is the same height on every card whatever arrives in it. */
+.card .cname { position: absolute; left: 0; right: 0; top: 0; z-index: 2;
+  margin: 0; padding: 2px 3px 3px; font-weight: 700; line-height: 1.05;
   max-height: 2.3em; overflow: hidden;
-  background: linear-gradient(180deg, rgba(6,10,20,0) 0%, rgba(6,10,20,.86) 42%, rgba(6,10,20,.96) 100%);
+  background: linear-gradient(0deg, rgba(6,10,20,0) 0%, rgba(6,10,20,.86) 42%, rgba(6,10,20,.96) 100%);
   text-shadow: 0 1px 2px rgba(0,0,0,.95); word-break: break-word; }
 .zoom-card .zart { width: 100%; border-radius: 10px; margin-bottom: 4px; }
 .hover-preview .zoom-card.small .zart { width: 100%; }

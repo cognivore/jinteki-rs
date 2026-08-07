@@ -2197,7 +2197,14 @@ function hostBox(c, opts) {
   const box = el("div", "hosting");
   const stack = el("div", "host-stack");
   kids.forEach((k) => {
-    stack.appendChild(cardEl(k, { side: (opts && opts.side) || "runner", hosted: true }));
+    const kid = cardEl(k, { side: (opts && opts.side) || "runner", hosted: true });
+    // §11 again, at the deepest truncation there is: the counters ride the
+    // end of the bar and the NAME gives up exactly the room they need —
+    // measured from how many there are, because a fixed reserve is either
+    // too small for three kinds or wasted on the bars carrying none.
+    const n = counterItems(k).length;
+    if (n) kid.style.setProperty("--namepad", `${n * 12 + 4}px`);
+    stack.appendChild(kid);
   });
   // Behind first, host last: the host is the top card in the DOM as well as
   // in z-index, so a tap that lands on both resolves to the host.
@@ -2922,7 +2929,7 @@ function cardEl(c, opts) {
 
   el.innerHTML = `
     ${showCost ? `<div class="cost">${c.cost}</div>` : ""}
-    <div class="cname">${facedown ? "" : (c.title || "")}</div>
+    <div class="cname" title="${esc(c.title || "")}">${facedown ? "" : tileName(c.title, opts.hosted)}</div>
     ${opts.ice && c.subroutines ? `<div class="subs">${c.subroutines.map((s) => `<span class="${s.broken ? "broken" : ""}">↳</span>`).join("")}</div>` : ""}
     <div class="ctype">${facedown ? "" : (c.type || "")}</div>
     ${showStr ? `<div class="cstr">${c.strength}</div>` : ""}
@@ -3073,6 +3080,36 @@ function cardEl(c, opts) {
    for a card with genuinely no art, and is now the exception, not the rule. */
 function cardImgUrl(code) {
   return `/img/card/${encodeURIComponent(code)}.jpg`;
+}
+
+/* ── THE NAME ON A TILE IS A FIXED LENGTH ────────────────────────────────
+ *
+ * Card names are not a bounded set: "Nebula Talent Management: Making Stars"
+ * and "Sure Gamble" are the same field. Letting the tile wrap to whatever
+ * arrives makes the name band a different height on every card — the board
+ * stops being a grid of equal tiles and starts being a ragged one, and the
+ * long names still do not fit.
+ *
+ * So the tile cuts at a fixed number of LETTERS, not at whatever the box
+ * happens to hold: the band is the same height on every card, always, and
+ * the cut lands in the same place for the same name every time it is drawn.
+ * The full name is one press away (and rides the element's `title` for a
+ * mouse) — the tile's job is to be recognised, not to be complete.
+ *
+ * The subtitle after a colon goes first: "Nebula Talent Management" is what
+ * a player calls that card, and ": Making Stars" is what they never say.
+ */
+const TILE_NAME_MAX = 18;      // a card tile
+const BAR_NAME_MAX = 13;       // a carried card's bar, which is one line
+function tileName(title, hosted) {
+  if (!title) return "";
+  const max = hosted ? BAR_NAME_MAX : TILE_NAME_MAX;
+  let s = String(title);
+  if (s.length > max) {
+    const colon = s.indexOf(":");
+    if (colon > 3 && colon <= max) s = s.slice(0, colon);
+  }
+  return esc(s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s);
 }
 
 /* Every counter a card is carrying, on the card. The server already sends
