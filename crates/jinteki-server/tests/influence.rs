@@ -387,8 +387,14 @@ fn an_alliance_card_cannot_pay_for_itself() {
 
 #[test]
 fn the_one_off_waivers_evaluate_on_the_decks_they_describe() {
-    let card = |t: &str| carddata::by_title(t).unwrap_or_else(|| panic!("{t} exists"));
-    let waiver = |t: &str| influence::waiver_of(card(t)).unwrap().unwrap();
+    let card = |t: &str| {
+        carddata::by_title(t).unwrap_or_else(|| panic!("{t} is in the card database"))
+    };
+    let waiver = |t: &str| {
+        influence::waiver_of(card(t))
+            .unwrap_or_else(|e| panic!("{t} prints a readable waiver, got: {e}"))
+            .unwrap_or_else(|| panic!("{t} prints a waiver at all"))
+    };
 
     // Museum of History: 50 or more CARDS, counting itself.
     let fifty = DeckCounts::tally([(card("Museum of History"), 3), (card("Hedge Fund"), 47)]);
