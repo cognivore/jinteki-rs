@@ -247,6 +247,49 @@ suite("A server's root: every card in the stack can be seen and tapped", (stage)
   t.ok(boxes[1].height >= 60, "a stacked card is a whole card, not a bar");
 });
 
+/* ── 1d. TWELVE SERVERS ARE ALL REACHABLE ────────────────────────────────
+ *
+ * The original complaint: a Corp with five remotes asked the Runner to pick
+ * from a list that ran off the bottom of the phone. That list is gone — the
+ * run is asked ON the servers now — but the question it raised did not go
+ * away, it moved: with twelve columns on a phone-width board, is the twelfth
+ * one reachable, and does it still wear the gold that says it is a candidate?
+ * A board you cannot scroll to is the same bug in a nicer coat. */
+suite("A glacier board: every server is reachable and still says it is a candidate", (stage) => {
+  const wrap = document.createElement("div");
+  wrap.className = "servers";
+  wrap.style.cssText = "width:320px;height:150px";   // a phone's worth of board
+  for (let i = 0; i < 12; i++) {
+    const col = document.createElement("div");
+    col.className = "server selectable";
+    col.innerHTML = `<div class="sname">${i < 3 ? ["HQ", "R&D", "Archives"][i] : "Server " + (i - 2)}</div>`;
+    col.appendChild(card("", "Card"));
+    wrap.appendChild(col);
+  }
+  stage.appendChild(wrap);
+  return { wrap, cols: [...wrap.querySelectorAll(".server")] };
+}, (t, c) => {
+  t.ok(getComputedStyle(c.wrap).overflowX === "auto", "the board scrolls sideways");
+  t.ok(c.wrap.scrollWidth > c.wrap.clientWidth + 50,
+    `twelve servers are wider than the board, so there IS something to scroll to (${c.wrap.scrollWidth} > ${c.wrap.clientWidth})`);
+  // Every column can be brought fully into the row's own viewport — the
+  // twelfth as much as the first.
+  const last = c.cols[c.cols.length - 1];
+  last.scrollIntoView({ block: "nearest", inline: "center" });
+  c.wrap.scrollLeft = c.wrap.scrollWidth;
+  const wr = rect(c.wrap), lr = rect(last);
+  t.ok(lr.right <= wr.right + 1 && lr.left >= wr.left - 1,
+    "the twelfth server can be scrolled fully into view");
+  // …and a candidate looks like one wherever it is.
+  t.ok(getComputedStyle(last).borderColor !== getComputedStyle(c.wrap).borderColor ||
+       last.classList.contains("selectable"),
+    "a candidate column carries the candidate class the board paints gold");
+  const styled = getComputedStyle(c.cols[0]);
+  t.ok(parseFloat(styled.minWidth) >= 100,
+    `each column stays a real target rather than shrinking to fit (min-width ${styled.minWidth})`);
+  c.wrap.scrollLeft = 0;
+});
+
 /* ── 2. Counters sit dead centre, and cannot eat a tap ───────────────── */
 const BADGES = `<div class="badges tight">
   <div class="badge adv">3</div><div class="badge cred">⬡2</div><div class="badge vir">☣1</div></div>`;

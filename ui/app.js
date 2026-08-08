@@ -1467,15 +1467,31 @@ function renderBars() {
    let the stylesheet place what the arithmetic sized. Runs on every state
    push (digit counts change width) and on resize (the box is in vh). */
 const STATS_FLOOR_PX = 9;
+/* THE TWO RAILS CANNOT BOTH HAVE HALF THE SCREEN IF THE SCREEN HAS LESS
+   THAN A WHOLE ONE. Each rail was bounded by `50vh - 60px` — its own half —
+   but the halves are measured from the viewport while the rails are anchored
+   inside the insets (a top offset, and a bottom one that clears the hand).
+   On a short landscape phone the two boxes therefore overlapped, and the
+   seats drew straight through each other: the Corp's zone counts written over
+   the Runner's. The real budget is the gap BETWEEN the anchors, split in
+   two, and it is measured here rather than assumed by the stylesheet. */
+function railBudget() {
+  const board = document.getElementById("board");
+  const r = board ? board.getBoundingClientRect() : { top: 30, bottom: window.innerHeight - 150 };
+  const between = Math.max(120, r.bottom - r.top - 12);
+  return Math.floor(between / 2) - 6;
+}
 function fitSideStats() {
+  const budget = railBudget();
   for (const id of ["opp-bar", "my-bar"]) {
     const bar = document.getElementById(id);
     if (!bar || !bar.firstElementChild) continue;
-    bar.classList.remove("cram");
+    bar.classList.remove("cram", "collapsed");
     bar.style.setProperty("--sscale", "1");
+    bar.style.maxHeight = budget + "px";
     const cs = getComputedStyle(bar);
     const boxW = parseFloat(cs.maxWidth) || bar.clientWidth || 1;
-    const boxH = parseFloat(cs.maxHeight) || Infinity;
+    const boxH = Math.min(parseFloat(cs.maxHeight) || Infinity, budget);
     const base = parseFloat(cs.fontSize) || 11.5;
     const floor = Math.min(1, STATS_FLOOR_PX / base);
     let scale = fitStatsScale(bar, boxW, boxH, 0);
@@ -1490,6 +1506,21 @@ function fitSideStats() {
       bar.classList.add("cram");
       bar.style.setProperty("--sscale", "1");
       scale = fitStatsScale(bar, boxW, boxH, floor);
+    }
+    // AND IF IT ONLY FITS BY GOING BELOW THE FLOOR, IT COLLAPSES INSTEAD.
+    // The floor is where shrinking stops being reading, and the fitter will
+    // cheerfully go past it — the box is chased wherever it leads — so
+    // "did it overflow?" is the wrong question: it never overflows, it just
+    // ends up at 6px. The question is whether it fit at a size a player can
+    // READ. Below that, the choice is between a stat too small to read and a
+    // stat that is somewhere else, and somewhere else wins: the seat's own
+    // avatar is one tap away and an 8px number is nothing at any distance.
+    // The chip stays — it IS the seat — and everything it was carrying is in
+    // the seat sheet, the one place either player's whole state (counts,
+    // score area, discard pile) can be read at any size.
+    if (scale < floor - 0.01) {
+      bar.classList.add("collapsed");
+      scale = floor;
     }
     bar.style.setProperty("--sscale", String(Math.round(scale * 1000) / 1000));
   }
@@ -1784,8 +1815,85 @@ document.addEventListener("click", (e) => {
   // first tap is the white ring and the second is the one that commits.
   const answerable = isSelectCandidate(c.cid) || promptChoicesFor(c.cid).length > 0;
   if (answerable) { armTap(BOARD_ARM, c.cid, () => onCardTap(c, { identity: true }, chip)); return; }
-  onCardTap(c, { identity: true }, chip);
+  // Nothing to answer: the chip is the SEAT, and tapping a seat opens what
+  // that seat is holding — every stat, the score area and the discard pile,
+  // both of them readable. The identity card is in there too, so the read
+  // this used to do directly is one further tap and never lost.
+  openSeatSheet(chip.dataset.side);
 });
+
+/* ── THE SEAT SHEET ──────────────────────────────────────────────────────
+ *
+ * A rail is a glance, not a record. On a short landscape phone it cannot
+ * even be a glance: the two rails are anchored inside the board's insets and
+ * the halves they were promised do not exist, so they collapse (see
+ * `fitSideStats`) — and a stat that has nowhere to go is a stat a player
+ * plays without.
+ *
+ * So every seat has a sheet, reachable at any size by tapping that seat's
+ * avatar: the counts, the score area and the discard pile, with the two
+ * ZONES tappable because they are piles and a pile is read as a grid of
+ * cards (4.4.2 / 4.4.7b / 4.5.2 make all three open information, for both
+ * players — which is why the opponent's seat opens exactly as your own).
+ */
+function openSeatSheet(side) {
+  if (!S || !side) return;
+  const st = S[side] || {};
+  const who = side === "corp" ? "Corp" : "Runner";
+  const zone = (k) => ZONE(side, k);
+  const rows = [];
+  const num = (label, value) => rows.push({ label, value });
+  const pile = (label, value, cards, title) => rows.push({ label, value, cards, title });
+
+  num("Credits", `⬡ ${st.credit ?? 0}`);
+  num("Clicks", String(st.click ?? 0));
+  if (side === "runner") {
+    const tags = st.tag ? (st.tag.total ?? st.tag.base ?? 0) : 0;
+    num("Tags", String(tags));
+    if (st.memory) num("Memory", `${st.memory.available ?? "?"} / ${st.memory.limit ?? 4}`);
+  } else {
+    num("Bad publicity", String((st["bad-publicity"] || {}).base ?? 0));
+  }
+  num(zone("hand").label, String(st["hand-count"] ?? (st.hand || []).length));
+  num(zone("deck").label, String(st["deck-count"] ?? 0));
+  const disc = st.discard || [];
+  pile(zone("discard").label, String(disc.length), disc, `${zone("discard").label} (${disc.length})`);
+  const scored = st.scored || [];
+  pile("Agendas", `${st["agenda-point"] ?? 0} pts`, scored,
+    `${who} agendas — ${st["agenda-point"] ?? 0} points`);
+
+  const o = $("zoom-overlay");
+  zoomShowing = null;
+  o.style.display = "flex";
+  o.innerHTML = `<div class="zoom-card seat"><h3>${who}${st.user && st.user.username && st.user.username !== "you" ? " · " + esc(st.user.username) : ""}</h3>
+    <div class="seatrows"></div></div><div class="tapaway">tap anywhere to close</div>`;
+  const box = o.querySelector(".seatrows");
+  rows.forEach((r, i) => {
+    const row = el("div", "seatrow" + (r.cards ? " tappable" : ""));
+    row.dataset.i = String(i);
+    row.appendChild(el("span", "seatlabel", r.label));
+    row.appendChild(el("span", "seatvalue", r.value));
+    if (r.cards) row.appendChild(el("span", "seatgo", "›"));
+    box.appendChild(row);
+  });
+  // The identity, as the card it is.
+  if (st.identity) {
+    const idrow = el("div", "seatid");
+    idrow.appendChild(cardEl(st.identity, { side, identity: true, reveal: true }));
+    idrow.appendChild(el("span", "seatlabel", st.identity.title || ""));
+    box.appendChild(idrow);
+    attachZoom(idrow, st.identity);
+  }
+  dismissOnTapAway(o, (e) => {
+    const idrow = e.target.closest(".seatid");
+    if (idrow && st.identity) { zoomCard(st.identity); return true; }
+    const row = e.target.closest(".seatrow.tappable");
+    if (!row) return false;
+    const r = rows[+row.dataset.i];
+    zoomPile(r.cards, r.title);
+    return true;
+  });
+}
 
 // Tap AP to see the agendas behind the number (both sides' score areas are
 // public information).

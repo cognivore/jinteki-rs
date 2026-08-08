@@ -1499,6 +1499,26 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    that overflows is the one you most need to read. */
 .zoom-card.pile { width: min(92vw, 760px); max-height: 86vh; overflow-y: auto; gap: 6px; }
 .pilehint { color: var(--dim); font-size: 11px; margin-top: -4px; }
+
+/* The seat sheet: one seat's whole state, reachable from its avatar at any
+   size — and the only place a collapsed rail's stats still live. */
+.zoom-card.seat { width: min(92vw, 380px); max-height: 86vh; overflow-y: auto; }
+.seatrows { display: flex; flex-direction: column; gap: 4px; }
+.seatrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
+  min-height: 40px; }
+.seatrow.tappable { cursor: pointer; border-color: #3b4a6f; }
+.seatrow.tappable:active { border-color: var(--gold); }
+.seatlabel { flex: 1; font-size: 13px; color: var(--dim); }
+.seatvalue { font-size: 15px; font-weight: 700; }
+.seatgo { color: var(--gold); font-weight: 700; }
+.seatid { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
+
+/* A rail with nowhere to put its stats keeps the seat and drops the rest —
+   `openSeatSheet` is where they went, one tap on the avatar away. */
+.side-bar.collapsed .stat { display: none; }
+.side-bar.collapsed .idchip::after { content: "▾"; color: var(--gold);
+  font-size: .9em; margin-left: .15em; }
 .pilegrid { display: grid; gap: 6px;
   grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
   align-content: start; }
