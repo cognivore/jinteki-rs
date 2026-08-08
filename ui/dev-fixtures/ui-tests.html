@@ -22,6 +22,14 @@
      unreachable. Overridden loudly, and only here. */
   html, body { overflow: auto !important; height: auto !important;
                position: static !important; }
+  /* NOTHING MOVES WHILE IT IS BEING MEASURED. The game pops its readers in
+     with `animation: pop .18s`, which starts at `scale(.6)` — and a
+     `getBoundingClientRect` taken during that animation reports the SCALED
+     box, so a 41px row measured 24px and a passing layout looked like a
+     failing one. (Worse in the other direction: a broken layout could
+     measure fine mid-pop.) A test page measures layout, not choreography. */
+  *, *::before, *::after {
+    animation: none !important; transition: none !important; }
   body { font: 13px/1.5 ui-monospace, monospace; background: #0b0f18; color: #e8ecf5;
          margin: 0; padding: 16px 16px 60px; -webkit-overflow-scrolling: touch; }
   h1 { font-size: 17px; margin: 0 0 4px; }
@@ -288,6 +296,50 @@ suite("A glacier board: every server is reachable and still says it is a candida
   t.ok(parseFloat(styled.minWidth) >= 100,
     `each column stays a real target rather than shrinking to fit (min-width ${styled.minWidth})`);
   c.wrap.scrollLeft = 0;
+});
+
+/* ── 1e. A COLLAPSED RAIL, AND THE SHEET THAT HOLDS WHAT IT DROPPED ──────
+ *
+ * When the space between the two seat anchors cannot hold a rail at a
+ * readable size, the rail collapses to its avatar (see `fitSideStats`) and
+ * everything it was carrying is reachable by tapping that avatar. Two stats
+ * stay on the rail regardless, because they are the two you must watch
+ * rather than ask for: credits, and the opponent's clock. */
+suite("A collapsed rail keeps the seat, the credits and the clock", (stage) => {
+  const bar = document.createElement("div");
+  bar.className = "side-bar top collapsed";
+  bar.style.cssText = "position:relative;inset:auto;max-width:none";
+  bar.innerHTML = `<span class="idchip" data-side="corp"><span class="idthumb"></span><span class="who">Asa Group</span></span>
+    <span class="stat clock" data-clock="corp">⏱ 12:04</span>
+    <span class="stat cred">⬡ 6</span>
+    <span class="stat">●●●</span>
+    <span class="stat zones"><span>HQ 4</span><span>R&amp;D 39</span><span class="tappable" data-stat="discard">Archives 1</span></span>
+    <span class="stat tappable" data-stat="ap">AP 0</span>`;
+  stage.appendChild(bar);
+  const sheet = document.createElement("div");
+  sheet.className = "zoom-card seat";
+  sheet.innerHTML = `<h3>Corp</h3><div class="seatrows">
+    <div class="seatrow"><span class="seatlabel">Credits</span><span class="seatvalue">⬡ 6</span></div>
+    <div class="seatrow tappable"><span class="seatlabel">Archives</span><span class="seatvalue">1</span><span class="seatgo">›</span></div>
+    <div class="seatrow tappable"><span class="seatlabel">Agendas</span><span class="seatvalue">0 pts</span><span class="seatgo">›</span></div>
+  </div>`;
+  stage.appendChild(sheet);
+  return { bar, sheet };
+}, (t, c) => {
+  const shown = (s) => getComputedStyle(s).display !== "none";
+  const stats = [...c.bar.querySelectorAll(".stat")];
+  t.ok(shown(c.bar.querySelector(".idchip")), "the avatar survives the collapse — it IS the seat");
+  t.ok(shown(c.bar.querySelector(".stat.cred")), "credits stay: every decision is priced in them");
+  t.ok(shown(c.bar.querySelector(".stat.clock")), "the clock stays: a deadline cannot wait behind a tap");
+  t.ok(!shown(c.bar.querySelector(".stat.zones")), "the zone counts go to the sheet");
+  t.ok(!shown(c.bar.querySelector('[data-stat="ap"]')), "…and so does the score");
+  t.ok(rect(c.bar).height <= 70,
+    `what is left fits the budget that triggered the collapse (${Math.round(rect(c.bar).height)}px)`);
+  // The sheet's zone rows are real targets, not text.
+  const rows = [...c.sheet.querySelectorAll(".seatrow.tappable")];
+  t.ok(rows.length === 2, "the sheet offers the discard pile and the score area");
+  t.ok(rows.every((r) => rect(r).height >= THUMB),
+    `and each is a thumb-sized target (${rows.map((r) => Math.round(rect(r).height)).join(",")}px)`);
 });
 
 /* ── 2. Counters sit dead centre, and cannot eat a tap ───────────────── */

@@ -1504,9 +1504,12 @@ button.go.alt { background: var(--gold); color: #2a2005; }
    size — and the only place a collapsed rail's stats still live. */
 .zoom-card.seat { width: min(92vw, 380px); max-height: 86vh; overflow-y: auto; }
 .seatrows { display: flex; flex-direction: column; gap: 4px; }
+/* `flex: 0 0 auto` because a row in a column flex container is a flex ITEM,
+   and an item shrinks: these were laid out at 24px — under a thumb, three
+   targets in the space of one. A tappable row is 40px or it is decoration. */
 .seatrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
   border-radius: 8px; background: var(--bg2); border: 1px solid var(--line);
-  min-height: 40px; }
+  min-height: 40px; flex: 0 0 auto; }
 .seatrow.tappable { cursor: pointer; border-color: #3b4a6f; }
 .seatrow.tappable:active { border-color: var(--gold); }
 .seatlabel { flex: 1; font-size: 13px; color: var(--dim); }
@@ -1515,8 +1518,23 @@ button.go.alt { background: var(--gold); color: #2a2005; }
 .seatid { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; }
 
 /* A rail with nowhere to put its stats keeps the seat and drops the rest —
-   `openSeatSheet` is where they went, one tap on the avatar away. */
-.side-bar.collapsed .stat { display: none; }
+   `openSeatSheet` is where they went, one tap on the avatar away.
+
+   TWO STAY. Credits are the number every decision in this game is priced in,
+   and the opponent's CLOCK is a deadline you cannot ask for later — a stat
+   you must watch is not a stat you can put behind a tap. Together with the
+   chip they are about 48px, which fits the tightest budget that triggers a
+   collapse at all. */
+.side-bar.collapsed .stat:not(.clock):not(.cred) { display: none; }
+/* AND WHAT IS LEFT LIES DOWN. The rail is a column, so three survivors
+   stacked still wanted 96px — more than the budget that triggered the
+   collapse in the first place, and `overflow: hidden` would simply have
+   eaten the clock. Collapsed, the seat is a ROW: avatar, credits, clock,
+   side by side in one line's worth of height, which fits any budget that
+   can collapse. */
+.side-bar.collapsed { flex-direction: row; align-items: center; gap: .4em;
+  max-width: none; width: auto; flex-wrap: nowrap; }
+.side-bar.collapsed .idchip { max-width: 7.5em; }
 .side-bar.collapsed .idchip::after { content: "▾"; color: var(--gold);
   font-size: .9em; margin-left: .15em; }
 .pilegrid { display: grid; gap: 6px;
